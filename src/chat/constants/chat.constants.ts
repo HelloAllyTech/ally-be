@@ -13,4 +13,7 @@ export enum ChatEvents {
   DISCONNECT = 'disconnect',
   TRANSCRIPTION = 'TRANSCRIPTION',
   TYPING = 'TYPING',
+  ICE_CANDIDATE = 'webrtc-ice-candidate',
+  WEBRTC_OFFER = 'webrtc-offer',
+  WEBRTC_ANSWER = 'webrtc-answer',
 }
