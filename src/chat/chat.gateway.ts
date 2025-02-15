@@ -18,6 +18,7 @@ import { ChatService } from './chat.service';
 import { forwardRef, Inject } from '@nestjs/common';
 import { MessageType } from '../common/entities/message.entity';
 import { AiService } from '../ai/ai.service';
+import { writeFileSync } from 'fs';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -214,9 +215,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     try {
       this.logger.info(`🎤 Audio message to room ${room} from ${client.id}`);
-      this.server
-        .to(room)
-        .emit('audioMessage', { clientId: client.id, audioData });
+      //const session = this.sessions[client.id];
+      // writeFileSync(`audio-${session?.userId}-${Date.now()}.wav`, audioData);
+      // this.server
+      //   .to(room)
+      //   .emit('audioMessage', { clientId: client.id, audioData });
 
       // TODO: Store audio in backend (S3, database, etc.)
     } catch (error) {
@@ -227,5 +230,49 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   sendMessagesToRoom(room: string, payload: MessagePayload) {
     const event = payload.type || ChatEvents.MESSAGE_RECEIVED;
     this.server.to(room).emit(event, payload);
+  }
+
+  @SubscribeMessage(ChatEvents.WEBRTC_OFFER)
+  handleOffer(client: Socket, data: any) {
+    this.logger.info(`WebRTC Offer from ${client.id}`);
+    return this.sendWebRTCMessage(client, data, ChatEvents.WEBRTC_OFFER);
+  }
+
+  @SubscribeMessage(ChatEvents.WEBRTC_ANSWER)
+  handleAnswer(client: Socket, data: any) {
+    this.logger.info(`WebRTC Answer from ${client.id} `);
+    return this.sendWebRTCMessage(client, data, ChatEvents.WEBRTC_ANSWER);
+  }
+
+  @SubscribeMessage(ChatEvents.ICE_CANDIDATE)
+  handleIceCandidate(client: Socket, data: any) {
+    this.logger.info(`ICE Candidate from ${client.id} `);
+    return this.sendWebRTCMessage(client, data, ChatEvents.ICE_CANDIDATE);
+  }
+
+  /**WebRTC Message Handling**
+   * send WebRTC message to the other participant in the chat
+   **/
+
+  async sendWebRTCMessage(client: Socket, data: any, event: string) {
+    const sid = client.id;
+    const session = this.sessions[sid];
+    if (!session) {
+      this.logger.error(`Session not found for client ${sid}`);
+      return;
+    }
+
+    const chatId = data.chat_id;
+    const senderId = session.userId;
+    const chat = await this.chatService.getChatById(chatId);
+    if (!chat) {
+      this.logger.error(`Chat not found for chatId: ${chatId}`);
+      client.emit('error', 'Chat not found');
+      return;
+    }
+    const clientId = chat.clientId;
+    const counselorId = chat.counselorId;
+    const target = `user-${senderId === clientId ? counselorId : clientId}`;
+    this.server.to(target).emit(event, data);
   }
 }
