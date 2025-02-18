@@ -1,14 +1,4 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  ManyToOne,
-  OneToMany,
-  JoinColumn,
-} from 'typeorm';
-import { Message } from './message.entity';
-import { User } from './user.entity';
-import { ChatRoom } from './chat-room.entity';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 import { BaseEntity } from './base.entity';
 
 // You'll need to create this enum to match the Python ChatStatus

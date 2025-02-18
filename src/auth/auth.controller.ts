@@ -3,7 +3,6 @@ import {
   Post,
   Body,
   UseGuards,
-  Get,
   Req,
   UnauthorizedException,
   HttpCode,
@@ -12,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { LoginDto, RegisterDto } from './dto';
+import { LoginDto } from './dto';
 import { UserCreateDto } from './dto/user-create.dto';
 import { JwtRefreshAuthGuard } from './guards/jwt-refresh-auth.guard';
 

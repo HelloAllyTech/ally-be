@@ -1,5 +1,4 @@
 import { Controller, Get } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   HealthCheck,
   HealthCheckService,
