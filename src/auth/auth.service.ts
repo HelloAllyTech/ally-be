@@ -7,7 +7,6 @@ import { JwtService } from '@nestjs/jwt';
 import { DataSource, Repository, MoreThan } from 'typeorm';
 import { User } from '../common/entities/user.entity';
 import * as bcrypt from 'bcrypt';
-import { ConfigService } from '@nestjs/config';
 import { RefreshToken } from '../common/entities/refresh-token.entity';
 import { AppConfigService } from '../config/config.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';

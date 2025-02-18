@@ -2,7 +2,6 @@ import { forwardRef, HttpException, Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Message, MessageType } from '../common/entities/message.entity';
-import { User } from '../common/entities/user.entity';
 import { Chat, ChatStatus } from '../common/entities/chat.entity';
 import { LoggerService } from '../logger/logger.service';
 import { ChatRoom } from '../common/entities/chat-room.entity';
@@ -11,8 +10,7 @@ import { QueueStatus } from '../common/constants/chat.constants';
 import { ChatGateway } from './chat.gateway';
 import { UserService } from '../user/user.service';
 import { ChatEvents } from './constants/chat.constants';
-import { MESSAGES } from '@nestjs/core/constants';
-import { last } from 'rxjs';
+import { Feedback } from '../common/entities/feedback.entity';
 
 @Injectable()
 export class ChatService {
@@ -118,12 +116,19 @@ export class ChatService {
 
   async getChatsByUserIds(
     userIds: number[],
-    options?: { status?: ChatStatus[] },
+    options?: {
+      status?: ChatStatus[];
+      sort?: 'asc' | 'desc';
+      orderBy?: 'createdAt' | 'updatedAt';
+    },
   ) {
     return this.chatRepository.find({
       where: {
         clientId: In(userIds),
         ...(options?.status ? { status: In(options.status) } : {}),
+      },
+      order: {
+        [options?.orderBy || 'createdAt']: options?.sort || 'desc',
       },
     });
   }
@@ -205,6 +210,12 @@ export class ChatService {
     const query = this.messageRepository
       .createQueryBuilder('message')
       .where('message.chatId = :chatId', { chatId })
+      .leftJoinAndMapOne(
+        'message.feedback',
+        Feedback,
+        'feedback',
+        'feedback.messageId = message.id',
+      )
       .orderBy('message.createdAt', 'DESC');
     if (filter?.type) {
       query.andWhere('message.type = :type', { type: filter.type });
@@ -215,7 +226,7 @@ export class ChatService {
     return query.getMany();
   }
 
-  formatMessage(message: Message) {
+  formatMessage(message: Message & { feedback?: Feedback }) {
     return {
       message_id: message.id,
       chat_id: message.chatId,
@@ -224,6 +235,7 @@ export class ChatService {
       content: message.content,
       context: message.context,
       created_at: message.createdAt.toISOString(),
+      feedback: message.feedback,
     };
   }
 
@@ -289,5 +301,47 @@ export class ChatService {
       throw new HttpException('Chat not found', 404);
     }
     return this.getChatResponse(chats[0]);
+  }
+
+  async getMessages(
+    chatId: number,
+    userId: number,
+    limit: number = 50,
+    offset: number = 0,
+  ) {
+    const chat = await this.chatRepository.findOne({
+      where: {
+        id: chatId,
+      },
+    });
+
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
+    }
+
+    if (chat.clientId !== userId && chat.counselorId !== userId) {
+      throw new HttpException(
+        'You are not authorized to access this chat',
+        403,
+      );
+    }
+
+    const query = this.messageRepository.createQueryBuilder('message');
+    query
+      .where('message.chatId = :chatId', { chatId })
+      .leftJoinAndMapOne(
+        'message.feedback',
+        Feedback,
+        'feedback',
+        'feedback.messageId = message.id',
+      )
+      .orderBy('message.createdAt', 'DESC');
+    if (limit) {
+      query.limit(limit);
+    }
+    if (offset) {
+      query.offset(offset);
+    }
+    return query.getMany();
   }
 }

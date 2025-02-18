@@ -18,7 +18,6 @@ import { ChatService } from './chat.service';
 import { forwardRef, Inject } from '@nestjs/common';
 import { MessageType } from '../common/entities/message.entity';
 import { AiService } from '../ai/ai.service';
-import { writeFileSync } from 'fs';
 
 @WebSocketGateway({
   cors: { origin: '*' },

@@ -1,4 +1,3 @@
-import { MessageType } from '../../common/entities/message.entity';
 import { ChatEvents } from '../constants/chat.constants';
 
 export type UserChatSessionData = {
