@@ -1,3 +1,5 @@
+import { Feedback } from '../../common/entities/feedback.entity';
+import { Message, MessageType } from '../../common/entities/message.entity';
 import { ChatEvents } from '../constants/chat.constants';
 
 export type UserChatSessionData = {
@@ -6,6 +8,9 @@ export type UserChatSessionData = {
   user: any;
   role: string;
   room: string;
+  chatId: number;
+  clientId: number;
+  counselorId: number;
 };
 
 export type ServiceSessionData = {
@@ -18,4 +23,25 @@ export type ServiceSessionData = {
 export type MessagePayload = {
   type: ChatEvents;
   payload: any;
+};
+
+export type MessageWithFeedback = Message & {
+  feedback?: Feedback;
+};
+
+export interface FormattedChatMessage {
+  message_id: string | number;
+  chat_id: string | number;
+  sender_id: number | undefined;
+  message_type: MessageType;
+  content: string;
+  context?: string | null;
+  created_at: string;
+  feedback?: Feedback;
+}
+
+export type SendMessageWebSocketData = {
+  chat_id: number;
+  content: string;
+  context?: string;
 };

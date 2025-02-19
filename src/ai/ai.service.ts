@@ -1,11 +1,22 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { AppConfigService } from '../config/config.service';
+import { GenerateSummaryRequest, MessageRequest } from './dto/ai.request.dto';
+import { GenerateSummaryResponse } from './dto/ai.response.dto';
+import { createClient, DeepgramClient } from '@deepgram/sdk';
 
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
-  constructor(private config: AppConfigService) {}
+  private readonly deepgramClient: DeepgramClient;
+  constructor(private config: AppConfigService) {
+    this.deepgramClient = createClient(config.ai.deepgramApiKey);
+  }
+
+  // async transcribeAudioWithDeepgram(liveClient: LiveClient, audioBuffer: Buffer): Promise<string> {
+  //   const live = this.deepgramClient.listen.live({ model: 'nova-3' });
+  //   live.
+  // }
 
   async transcribeAudio(audioBuffer: Buffer): Promise<string> {
     try {
@@ -44,5 +55,29 @@ export class AiService {
       this.logger.error(`AI Service Error: ${error.message}`);
       throw new Error('AI nudge request failed');
     }
+  }
+
+  async generateSummary(messages: MessageRequest[]) {
+    const request: GenerateSummaryRequest = {
+      messages,
+    };
+    const response = await this.makeRequest<
+      GenerateSummaryResponse,
+      GenerateSummaryRequest
+    >('generate-summary', request);
+    return response.summary;
+  }
+
+  private async makeRequest<R, T>(endpoint: string, data: T): Promise<R> {
+    const response = await axios.post(
+      `${this.config.ai.apiUrl}/${endpoint}`,
+      data,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+    return response.data;
   }
 }

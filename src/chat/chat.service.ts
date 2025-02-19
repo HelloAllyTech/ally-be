@@ -11,6 +11,11 @@ import { ChatGateway } from './chat.gateway';
 import { UserService } from '../user/user.service';
 import { ChatEvents } from './constants/chat.constants';
 import { Feedback } from '../common/entities/feedback.entity';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { User } from '../common/entities/user.entity';
+import { AiService } from '../ai/ai.service';
+import { MessageRequest } from '../ai/dto/ai.request.dto';
+import { MessageWithFeedback } from './type/chat.type';
 
 @Injectable()
 export class ChatService {
@@ -27,6 +32,9 @@ export class ChatService {
     private queueService: QueueService,
     private gateway: ChatGateway,
     private userService: UserService,
+    private eventEmitter: EventEmitter2,
+    private aiService: AiService,
+
     //  private kafkaProducerService: KafkaProducerService,
   ) {}
 
@@ -226,7 +234,7 @@ export class ChatService {
     return query.getMany();
   }
 
-  formatMessage(message: Message & { feedback?: Feedback }) {
+  formatMessage(message: MessageWithFeedback) {
     return {
       message_id: message.id,
       chat_id: message.chatId,
@@ -289,7 +297,9 @@ export class ChatService {
       status: ChatStatus.ENDED,
       endedAt: new Date(),
     });
-    return this.getChatById(chatId);
+    const updatedChat = await this.getChatById(chatId);
+    this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
+    return updatedChat;
   }
 
   async getMyChats(id: number) {
@@ -343,5 +353,35 @@ export class ChatService {
       query.offset(offset);
     }
     return query.getMany();
+  }
+
+  async handleChatEnded(chat: Chat) {
+    this.logger.info(`handleChatEnded - chat:${chat.id}`);
+    const messages: any = await this.messageRepository
+      .createQueryBuilder('message')
+      .leftJoinAndMapOne(
+        'message.sender',
+        User,
+        'sender',
+        'sender.id = message.senderId',
+      )
+      .where('message.chatId = :chatId', { chatId: chat.id })
+      .andWhere('message.type = :type', { type: MessageType.TEXT })
+      .orderBy('message.createdAt', 'DESC')
+      .getMany();
+    const summary = await this.generateSummary(messages);
+    await this.chatRepository.update({ id: chat.id }, { summary });
+  }
+
+  async generateSummary(
+    messages: (Message & { sender: User })[],
+  ): Promise<string> {
+    const messageRequests: MessageRequest[] = messages.map((message) => ({
+      role: message.sender.role,
+      content: message.content,
+      timestamp: message.createdAt.toISOString(),
+    }));
+    const summary = await this.aiService.generateSummary(messageRequests);
+    return summary;
   }
 }

@@ -3,6 +3,8 @@ import { BaseEntity } from './base.entity';
 
 export enum MessageType {
   TEXT = 'TEXT',
+  SYSTEM = 'SYSTEM',
+  NUDGE = 'NUDGE',
 }
 
 @Entity('messages')
