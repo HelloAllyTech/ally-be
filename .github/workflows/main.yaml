@@ -11,7 +11,7 @@
 # DEV_AWS_ROLE
 # DEV_AWS_REGION
 
-name: Deploy lifeline-be
+name: Deploy lifeline-ai
 
 permissions:
   id-token: write
@@ -87,11 +87,15 @@ jobs:
             echo "AWS_ROLE=STG_AWS_ROLE" >> $GITHUB_OUTPUT
             echo "AWS_REGION=STG_AWS_REGION" >> $GITHUB_OUTPUT
             echo "PROJECT_PREFIX=life-stg" >> $GITHUB_OUTPUT
+            echo "SUBNETS=[\"subnet-072921dfa30408828\", \"subnet-0f1841479bce3a1e0\"]" >> $GITHUB_OUTPUT
+            echo "SECURITY_GROUPS=[\"sg-0ddb892b2ac184ee3\"]" >> $GITHUB_OUTPUT
           elif [ $ENV == 'dev' ]
           then
             echo "AWS_ROLE=DEV_AWS_ROLE" >> $GITHUB_OUTPUT
             echo "AWS_REGION=DEV_AWS_REGION" >> $GITHUB_OUTPUT
             echo "PROJECT_PREFIX=life-dev" >> $GITHUB_OUTPUT
+            echo "SUBNETS=[\"subnet-072921dfa30408828\", \"subnet-0f1841479bce3a1e0\"]" >> $GITHUB_OUTPUT
+            echo "SECURITY_GROUPS=[\"sg-058afe1ec009268c0\"]" >> $GITHUB_OUTPUT
           else
             echo "Branch not configured!"
             exit 1
@@ -103,9 +107,9 @@ jobs:
         run: |
           PROJECT_PREFIX=${{ steps.vars.outputs.PROJECT_PREFIX }}
           echo "ECS_CLUSTER=$PROJECT_PREFIX-sg-ecs-cluster"  >> $GITHUB_OUTPUT
-          echo "ECS_SERVICE=$PROJECT_PREFIX-svc-be" >> $GITHUB_OUTPUT
-          echo "ECR_IMAGE=$PROJECT_PREFIX-ecr-be" >> $GITHUB_OUTPUT
-          echo "TASK_DEFINITION=$PROJECT_PREFIX-td-be" >> $GITHUB_OUTPUT
+          echo "ECS_SERVICE=$PROJECT_PREFIX-svc-ai" >> $GITHUB_OUTPUT
+          echo "ECR_IMAGE=$PROJECT_PREFIX-ecr-ai" >> $GITHUB_OUTPUT
+          echo "TASK_DEFINITION=$PROJECT_PREFIX-td-ai" >> $GITHUB_OUTPUT
           echo "ENVIRONMENT_BUCKET=$PROJECT_PREFIX-s3-environment"  >> $GITHUB_OUTPUT
           echo ":seedling: Branch:${GITHUB_REF#refs/heads/}" >> $GITHUB_STEP_SUMMARY
   build:
