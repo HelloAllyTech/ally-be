@@ -11,7 +11,7 @@
 # DEV_AWS_ROLE
 # DEV_AWS_REGION
 
-name: Deploy lifeline-ai
+name: Deploy lifeline-be
 
 permissions:
   id-token: write
@@ -107,9 +107,9 @@ jobs:
         run: |
           PROJECT_PREFIX=${{ steps.vars.outputs.PROJECT_PREFIX }}
           echo "ECS_CLUSTER=$PROJECT_PREFIX-sg-ecs-cluster"  >> $GITHUB_OUTPUT
-          echo "ECS_SERVICE=$PROJECT_PREFIX-svc-ai" >> $GITHUB_OUTPUT
-          echo "ECR_IMAGE=$PROJECT_PREFIX-ecr-ai" >> $GITHUB_OUTPUT
-          echo "TASK_DEFINITION=$PROJECT_PREFIX-td-ai" >> $GITHUB_OUTPUT
+          echo "ECS_SERVICE=$PROJECT_PREFIX-svc-core" >> $GITHUB_OUTPUT
+          echo "ECR_IMAGE=$PROJECT_PREFIX-ecr-core" >> $GITHUB_OUTPUT
+          echo "TASK_DEFINITION=$PROJECT_PREFIX-td-core" >> $GITHUB_OUTPUT
           echo "ENVIRONMENT_BUCKET=$PROJECT_PREFIX-s3-environment"  >> $GITHUB_OUTPUT
           echo ":seedling: Branch:${GITHUB_REF#refs/heads/}" >> $GITHUB_STEP_SUMMARY
   build:
