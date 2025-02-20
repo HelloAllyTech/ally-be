@@ -9,8 +9,6 @@ export type UserChatSessionData = {
   role: string;
   room: string;
   chatId: number;
-  clientId: number;
-  counselorId: number;
 };
 
 export type ServiceSessionData = {

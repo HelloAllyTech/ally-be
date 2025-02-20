@@ -135,11 +135,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.info(
         `🔴 Client disconnected: ${client.id}, reason: ${reason}`,
       );
+      this.handleDisconnect(client);
     });
   }
 
   handleDisconnect(client: Socket) {
     this.logger.info(`🔴 Client disconnected: ${client.id}`);
+    const sid = client.id;
+    const session = this.sessions[sid];
+    if (!session) {
+      this.logger.error(`Session not found for client ${sid}`);
+      return;
+    }
+    this.deepgramService.stopLiveTranscription(session.chatId);
   }
 
   @SubscribeMessage('leaveRoom')
@@ -304,7 +312,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       })
       .catch((error) => {
         this.logger.error(
-          `AI Nudge Error: ${error.message} | client : ${session.clientId} | user : ${session.userId}`,
+          `AI Nudge Error: ${error.message} | chatId : ${session.chatId} | userId : ${session.userId}`,
         );
       });
   }
@@ -324,10 +332,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleDeepgramTranscript(session: UserChatSessionData, eventData: any) {
     this.logger.info(`🎤 Deepgram transcript: ${eventData}`);
-    if (!session) {
-      this.logger.error(`Session not found`);
-      return;
-    }
     const data = {
       chat_id: session.chatId,
       content: eventData.transcript,
