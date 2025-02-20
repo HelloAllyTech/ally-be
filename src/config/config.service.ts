@@ -31,7 +31,8 @@ export class AppConfigService {
 
   get ai() {
     return {
-      apiUrl: this.configService.get<string>('AI_API_URL'),
+      apiUrl: this.configService.get<string>('AI_SERVICE_API_URL'),
+      deepgramApiKey: this.configService.get<string>('DEEPGRAM_API_KEY')!,
     };
   }
 

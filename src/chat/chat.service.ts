@@ -11,6 +11,12 @@ import { ChatGateway } from './chat.gateway';
 import { UserService } from '../user/user.service';
 import { ChatEvents } from './constants/chat.constants';
 import { Feedback } from '../common/entities/feedback.entity';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { User } from '../common/entities/user.entity';
+import { AiService } from '../ai/ai.service';
+import { MessageRequest } from '../ai/dto/ai.request.dto';
+import { MessageWithFeedback } from './type/chat.type';
+import { Pagination } from '../common/type/common.type';
 
 @Injectable()
 export class ChatService {
@@ -27,6 +33,9 @@ export class ChatService {
     private queueService: QueueService,
     private gateway: ChatGateway,
     private userService: UserService,
+    private eventEmitter: EventEmitter2,
+    private aiService: AiService,
+
     //  private kafkaProducerService: KafkaProducerService,
   ) {}
 
@@ -226,7 +235,7 @@ export class ChatService {
     return query.getMany();
   }
 
-  formatMessage(message: Message & { feedback?: Feedback }) {
+  formatMessage(message: MessageWithFeedback) {
     return {
       message_id: message.id,
       chat_id: message.chatId,
@@ -289,7 +298,9 @@ export class ChatService {
       status: ChatStatus.ENDED,
       endedAt: new Date(),
     });
-    return this.getChatById(chatId);
+    const updatedChat = await this.getChatById(chatId);
+    this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
+    return updatedChat;
   }
 
   async getMyChats(id: number) {
@@ -343,5 +354,52 @@ export class ChatService {
       query.offset(offset);
     }
     return query.getMany();
+  }
+
+  async handleChatEnded(chat: Chat) {
+    this.logger.info(`handleChatEnded - chat:${chat.id}`);
+    const summary = await this.generateSummary(chat.id);
+    await this.chatRepository.update({ id: chat.id }, { summary });
+  }
+
+  async generateSummary(chatId: number): Promise<string> {
+    const messageRequests: MessageRequest[] =
+      await this.getChatHistoryForAIService(chatId);
+    const summary = await this.aiService.generateSummary(messageRequests);
+    return summary;
+  }
+
+  async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {
+    const query = this.messageRepository
+      .createQueryBuilder('message')
+      .leftJoinAndMapOne(
+        'message.sender',
+        User,
+        'sender',
+        'sender.id = message.senderId',
+      )
+      .where('message.chatId = :chatId', { chatId })
+      .andWhere('message.type = :type', { type: MessageType.TEXT })
+      .orderBy('message.createdAt', 'DESC');
+
+    if (pagination) {
+      query.offset(pagination.offset).limit(pagination.limit);
+    }
+
+    if (pagination?.sort) {
+      query.orderBy(
+        `message.${pagination.sort}`,
+        pagination.order as 'ASC' | 'DESC',
+      );
+    }
+
+    const messages = await query.getMany();
+
+    const messageRequests: MessageRequest[] = messages.map((message: any) => ({
+      role: message.sender.role,
+      content: message.content,
+      timestamp: message.createdAt.toISOString(),
+    }));
+    return messageRequests;
   }
 }

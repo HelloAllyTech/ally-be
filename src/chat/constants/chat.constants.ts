@@ -9,6 +9,7 @@ export enum ChatEvents {
   PONG = 'PONG',
   TRANSCRIPTION_COMPLETE = 'TRANSCRIPTION_COMPLETE',
   NUDGE = 'NUDGE',
+  STAGE = 'STAGE',
   CONNECT = 'connect',
   DISCONNECT = 'disconnect',
   TRANSCRIPTION = 'TRANSCRIPTION',
@@ -16,4 +17,8 @@ export enum ChatEvents {
   ICE_CANDIDATE = 'webrtc-ice-candidate',
   WEBRTC_OFFER = 'webrtc-offer',
   WEBRTC_ANSWER = 'webrtc-answer',
+  CHAT_ENDED = 'CHAT_ENDED',
+  START_AUDIO_CHAT = 'START_AUDIO_CHAT',
+  AUDIO_CHAT_ENDED = 'AUDIO_CHAT_ENDED',
+  AUDIO_MESSAGE = 'AUDIO_MESSAGE',
 }
