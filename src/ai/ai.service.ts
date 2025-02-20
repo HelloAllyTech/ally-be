@@ -71,7 +71,7 @@ export class AiService {
 
   async generateSummary(messages: MessageRequest[]) {
     const request: GenerateSummaryRequest = {
-      messages,
+      chat_history: messages,
     };
     const response = await this.makeRequest<
       GenerateSummaryResponse,

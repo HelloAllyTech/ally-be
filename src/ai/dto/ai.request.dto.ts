@@ -1,5 +1,5 @@
 export type GenerateSummaryRequest = {
-  messages: { role: string; content: string }[];
+  chat_history: MessageRequest[];
 };
 
 export type MessageRequest = {
