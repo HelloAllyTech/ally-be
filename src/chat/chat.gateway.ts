@@ -149,37 +149,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.deepgramService.stopLiveTranscription(session.chatId);
   }
 
-  @SubscribeMessage('leaveRoom')
-  handleLeaveRoom(client: Socket, room: string) {
-    try {
-      client.leave(room);
-      this.logger.info(`🚪 Client ${client.id} left room: ${room}`);
-      client.emit('leftRoom', `You left room: ${room}`);
-    } catch (error) {
-      this.logger.error(
-        `❌ Error leaving room ${room} for client ${client.id}:`,
-        error,
-      );
-    }
-  }
-
-  @SubscribeMessage('roomMessage')
-  handleRoomMessage(
-    client: Socket,
-    { room, message }: { room: string; message: string },
-  ) {
-    try {
-      this.logger.info(
-        `📨 Message to room ${room} from ${client.id}: ${message}`,
-      );
-      this.server
-        .to(room)
-        .emit('roomMessage', { clientId: client.id, message });
-    } catch (error) {
-      this.logger.error(`❌ Error sending message to room ${room}:`, error);
-    }
-  }
-
   @SubscribeMessage(ChatEvents.SEND_MESSAGE)
   async handleSendMessage(client: Socket, data: SendMessageWebSocketData) {
     const sid = client.id;
@@ -207,15 +176,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // **Audio Chat Handling**
   @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
-  startAudioChat(client: Socket, { room }: { room: string }) {
+  startAudioChat(client: Socket, { chatId }: { chatId: number }) {
     try {
-      this.logger.info(`🎤 Audio message to room ${room} from ${client.id}`);
+      this.logger.info(
+        `🎤 Audio message to chatId ${chatId} from ${client.id}`,
+      );
       const session = this.sessions[client.id];
       if (!session) {
         this.logger.error(`Session not found for client ${client.id}`);
         return;
       }
-      this.logger.info(`✅ User ${session.userId} joined room: ${room}`);
+      session.chatId = chatId;
+      this.logger.info(`✅ User ${session.userId} joined chatId: ${chatId}`);
       this.deepgramService.startLiveTranscription(
         session,
         this.handleDeepgramTranscript.bind(this),
@@ -223,7 +195,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // TODO: Store audio in backend (S3, database, etc.)
     } catch (error) {
-      this.logger.error(`Error sending audio to room ${room}:`, error);
+      this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
     }
   }
 
