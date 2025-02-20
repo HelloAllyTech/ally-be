@@ -9,6 +9,7 @@ export enum ChatEvents {
   PONG = 'PONG',
   TRANSCRIPTION_COMPLETE = 'TRANSCRIPTION_COMPLETE',
   NUDGE = 'NUDGE',
+  STAGE = 'STAGE',
   CONNECT = 'connect',
   DISCONNECT = 'disconnect',
   TRANSCRIPTION = 'TRANSCRIPTION',

@@ -16,6 +16,7 @@ import { User } from '../common/entities/user.entity';
 import { AiService } from '../ai/ai.service';
 import { MessageRequest } from '../ai/dto/ai.request.dto';
 import { MessageWithFeedback } from './type/chat.type';
+import { Pagination } from '../common/type/common.type';
 
 @Injectable()
 export class ChatService {
@@ -357,7 +358,19 @@ export class ChatService {
 
   async handleChatEnded(chat: Chat) {
     this.logger.info(`handleChatEnded - chat:${chat.id}`);
-    const messages: any = await this.messageRepository
+    const summary = await this.generateSummary(chat.id);
+    await this.chatRepository.update({ id: chat.id }, { summary });
+  }
+
+  async generateSummary(chatId: number): Promise<string> {
+    const messageRequests: MessageRequest[] =
+      await this.getChatHistoryForAIService(chatId);
+    const summary = await this.aiService.generateSummary(messageRequests);
+    return summary;
+  }
+
+  async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {
+    const query = this.messageRepository
       .createQueryBuilder('message')
       .leftJoinAndMapOne(
         'message.sender',
@@ -365,23 +378,28 @@ export class ChatService {
         'sender',
         'sender.id = message.senderId',
       )
-      .where('message.chatId = :chatId', { chatId: chat.id })
+      .where('message.chatId = :chatId', { chatId })
       .andWhere('message.type = :type', { type: MessageType.TEXT })
-      .orderBy('message.createdAt', 'DESC')
-      .getMany();
-    const summary = await this.generateSummary(messages);
-    await this.chatRepository.update({ id: chat.id }, { summary });
-  }
+      .orderBy('message.createdAt', 'DESC');
 
-  async generateSummary(
-    messages: (Message & { sender: User })[],
-  ): Promise<string> {
-    const messageRequests: MessageRequest[] = messages.map((message) => ({
+    if (pagination) {
+      query.offset(pagination.offset).limit(pagination.limit);
+    }
+
+    if (pagination?.sort) {
+      query.orderBy(
+        `message.${pagination.sort}`,
+        pagination.order as 'ASC' | 'DESC',
+      );
+    }
+
+    const messages = await query.getMany();
+
+    const messageRequests: MessageRequest[] = messages.map((message: any) => ({
       role: message.sender.role,
       content: message.content,
       timestamp: message.createdAt.toISOString(),
     }));
-    const summary = await this.aiService.generateSummary(messageRequests);
-    return summary;
+    return messageRequests;
   }
 }

@@ -4,6 +4,8 @@ import { AppConfigService } from '../config/config.service';
 import { GenerateSummaryRequest, MessageRequest } from './dto/ai.request.dto';
 import { GenerateSummaryResponse } from './dto/ai.response.dto';
 import { createClient, DeepgramClient } from '@deepgram/sdk';
+import { ENDPOINTS } from './constants/endpoints.constants';
+import { NudgeRequest, NudgeResponse } from '../chat/type/chat.type';
 
 @Injectable()
 export class AiService {
@@ -38,19 +40,29 @@ export class AiService {
     }
   }
 
-  async getNudge(newMessage: string, previousMessage: string) {
+  async getNudge(
+    newMessage: string,
+    chat_history: MessageRequest[],
+    requireNudge = false,
+  ) {
     try {
       this.logger.log('🔄 Requesting nudge from AI service...');
       if (!this.config.ai.apiUrl) {
         return;
       }
-      const response = await axios.post(`${this.config.ai.apiUrl}/nudge`, {
-        newMessage,
-        previousMessage,
-      });
+      const response = await this.makeRequest<NudgeResponse, NudgeRequest>(
+        ENDPOINTS.CONVERSATION,
+        {
+          latest_message: newMessage,
+          chat_history: chat_history,
+          generate_nudge: requireNudge,
+        },
+      );
 
-      this.logger.log(`Nudge received: ${response.data.nudge}`);
-      return response.data.nudge; // Assuming API returns `{ nudge: "..." }`
+      this.logger.log(
+        `Nudge received: ${response.nudge} | stage: ${response.stage}`,
+      );
+      return response; // Assuming API returns `{ nudge: "..." }`
     } catch (error) {
       this.logger.error(`AI Service Error: ${error.message}`);
       throw new Error('AI nudge request failed');
@@ -64,20 +76,25 @@ export class AiService {
     const response = await this.makeRequest<
       GenerateSummaryResponse,
       GenerateSummaryRequest
-    >('generate-summary', request);
+    >(ENDPOINTS.SUMMARY, request);
     return response.summary;
   }
 
   private async makeRequest<R, T>(endpoint: string, data: T): Promise<R> {
-    const response = await axios.post(
-      `${this.config.ai.apiUrl}/${endpoint}`,
-      data,
-      {
-        headers: {
-          'Content-Type': 'application/json',
+    try {
+      const response = await axios.post(
+        `${this.config.ai.apiUrl}/${endpoint}`,
+        data,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
         },
-      },
-    );
-    return response.data;
+      );
+      return response.data;
+    } catch (error) {
+      this.logger.error(`AI Service Error: ${error.message}`);
+      throw new Error('AI request failed');
+    }
   }
 }

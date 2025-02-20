@@ -1,3 +1,4 @@
+import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { ChatEvents } from '../constants/chat.constants';
@@ -42,4 +43,15 @@ export type SendMessageWebSocketData = {
   chat_id: number;
   content: string;
   context?: string;
+};
+
+export type NudgeResponse = {
+  nudge: string;
+  stage: string;
+};
+
+export type NudgeRequest = {
+  latest_message: string;
+  chat_history: MessageRequest[];
+  generate_nudge: boolean;
 };

@@ -11,7 +11,7 @@ import { UserService } from '../user/user.service';
 import {
   FormattedChatMessage,
   MessagePayload,
-  MessageWithFeedback,
+  NudgeResponse,
   SendMessageWebSocketData,
   ServiceSessionData,
   UserChatSessionData,
@@ -19,7 +19,6 @@ import {
 import { ChatEvents } from './constants/chat.constants';
 import { ChatService } from './chat.service';
 import { forwardRef, Inject } from '@nestjs/common';
-import { MessageType } from '../common/entities/message.entity';
 import { AiService } from '../ai/ai.service';
 import { DeepgramService } from '../ai/deepgram.service';
 
@@ -292,22 +291,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private async triggerNudge(newMessage: string, session: UserChatSessionData) {
-    const messages = await this.chatService.getMessageByChatId(session.chatId, {
-      type: MessageType.TEXT,
-      limit: 4,
-    });
-    const previousMessage = messages.reduce(
-      (acc, cur) => acc + cur.content,
-      '\n',
+    const messages = await this.chatService.getChatHistoryForAIService(
+      session.chatId,
+      {
+        sort: 'createdAt',
+        order: 'DESC',
+        limit: 4,
+      },
     );
+    const formattedNewMessage = `${session.role}: ${newMessage}`;
+
     this.aiService
-      .getNudge(newMessage, previousMessage)
+      .getNudge(formattedNewMessage, messages)
       .then((nudge) => {
         if (nudge) {
-          this.sendMessagesToRoom(session.room, {
-            type: ChatEvents.NUDGE,
-            payload: nudge,
-          });
+          this.handleNudge(nudge, session);
         }
       })
       .catch((error) => {
@@ -315,6 +313,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           `AI Nudge Error: ${error.message} | chatId : ${session.chatId} | userId : ${session.userId}`,
         );
       });
+  }
+
+  private handleNudge(
+    nudgeResponse: NudgeResponse,
+    session: UserChatSessionData,
+  ) {
+    this.logger.info(
+      `handleNudge - nudge :${nudgeResponse.nudge} | stage :${nudgeResponse.stage}`,
+    );
+    const { nudge, stage } = nudgeResponse;
+    if (nudge) {
+      this.sendMessagesToRoom(session.room, {
+        type: ChatEvents.NUDGE,
+        payload: nudge,
+      });
+    }
+    if (stage) {
+      this.sendMessagesToRoom(session.room, {
+        type: ChatEvents.STAGE,
+        payload: stage,
+      });
+    }
   }
 
   private async sendMessageToParticipant(
