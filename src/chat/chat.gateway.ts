@@ -303,7 +303,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       })
       .catch((error) => {
         this.logger.error(
-          `AI Nudge Error: ${error.message} | chatId : ${session.chatId} | userId : ${session.userId}`,
+          `AI Nudge Error: ${error.message} | chatId : ${chatId} | userId : ${session.userId}`,
         );
       });
   }

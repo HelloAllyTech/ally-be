@@ -55,5 +55,5 @@ export type NudgeResponse = {
 export type NudgeRequest = {
   latest_message: string;
   chat_history: MessageRequest[];
-  force_nudge: boolean;
+  force_nudge?: boolean;
 };
