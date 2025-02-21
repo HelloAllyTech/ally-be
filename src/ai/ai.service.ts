@@ -55,7 +55,7 @@ export class AiService {
         {
           latest_message: newMessage,
           chat_history: chat_history,
-          generate_nudge: requireNudge,
+          force_nudge: requireNudge,
         },
       );
 
