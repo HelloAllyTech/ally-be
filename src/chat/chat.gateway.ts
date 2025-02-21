@@ -25,7 +25,6 @@ import { Message, MessageType } from '../common/entities/message.entity';
 
 @WebSocketGateway({
   cors: { origin: '*' },
-  namespace: 'ws', // Ensure client connects to this namespace
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private sessions: { [key: string]: UserChatSessionData } = {};
