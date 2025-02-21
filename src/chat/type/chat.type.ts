@@ -43,8 +43,8 @@ export type SendMessageWebSocketData = {
   chat_id: number;
   content: string;
   context?: string;
-  message_type?: MessageType;
-  parent_message_id?: number;
+  messageType?: MessageType;
+  parentMessageId?: number;
 };
 
 export type NudgeResponse = {

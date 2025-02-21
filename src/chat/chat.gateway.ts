@@ -99,13 +99,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    const data = client.data;
-    if (!data.chatId) {
-      this.logger.error(`Missing chatId for client ${client.id}`);
-      client.disconnect();
-      return;
-    }
-
     const room = `user-${userId || client.id}`;
     this.sessions[client.id] = {
       userId: user.id,
@@ -113,7 +106,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       type: 'user',
       role: user.role,
       room,
-      chatId: data.chatId,
+      chatId: -99,
     };
 
     client.join(room);
@@ -323,7 +316,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         {
           chat_id: parentMessage.chatId,
           content: nudge,
-          message_type: MessageType.SYSTEM,
+          messageType: MessageType.NUDGE,
         },
         {
           event: ChatEvents.NUDGE,
@@ -336,7 +329,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         {
           chat_id: parentMessage.chatId,
           content: stage,
-          message_type: MessageType.SYSTEM,
+          messageType: MessageType.STAGE,
         },
         {
           event: ChatEvents.STAGE,

@@ -5,6 +5,7 @@ export enum MessageType {
   TEXT = 'TEXT',
   SYSTEM = 'SYSTEM',
   NUDGE = 'NUDGE',
+  STAGE = 'STAGE',
 }
 
 @Entity('messages')
