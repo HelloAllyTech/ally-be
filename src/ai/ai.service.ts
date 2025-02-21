@@ -82,14 +82,15 @@ export class AiService {
 
   private async makeRequest<R, T>(endpoint: string, data: T): Promise<R> {
     try {
-      const response = await axios.post(
-        `${this.config.ai.apiUrl}/${endpoint}`,
-        data,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
+      const url = `${this.config.ai.apiUrl}/${endpoint}`;
+      this.logger.log(`🔄 Making request to ${url} | ${JSON.stringify(data)}`);
+      const response = await axios.post(url, data, {
+        headers: {
+          'Content-Type': 'application/json',
         },
+      });
+      this.logger.log(
+        `🔄 Response from ${url} | ${JSON.stringify(response.data)}`,
       );
       return response.data;
     } catch (error) {
