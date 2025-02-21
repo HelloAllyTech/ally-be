@@ -251,14 +251,14 @@ export class ChatService {
   async saveMessage(
     chatId: number,
     senderId: number,
-    data: { content: string; context?: string },
+    data: { content: string; context?: string; messageType?: MessageType },
   ) {
     const message = this.messageRepository.create({
       chatId,
       senderId,
       content: data.content,
       context: data.context,
-      type: MessageType.TEXT,
+      type: data.messageType || MessageType.TEXT,
     });
     return this.messageRepository.save(message);
   }

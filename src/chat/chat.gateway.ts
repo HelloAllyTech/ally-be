@@ -21,6 +21,7 @@ import { ChatService } from './chat.service';
 import { forwardRef, Inject } from '@nestjs/common';
 import { AiService } from '../ai/ai.service';
 import { DeepgramService } from '../ai/deepgram.service';
+import { Message, MessageType } from '../common/entities/message.entity';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -157,21 +158,38 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Session not found for client ${sid}`);
       return;
     }
-    await this.persistAndBroadcastMessage(session, data);
-    this.triggerNudge(data.content, session);
+    const message = await this.persistAndBroadcastMessage(session, data);
+    this.triggerNudge(message, session, data.chat_id);
   }
 
   private async persistAndBroadcastMessage(
     session: UserChatSessionData,
     data: SendMessageWebSocketData,
+    broadCastOptions: {
+      event?: ChatEvents;
+    } = {
+      event: ChatEvents.MESSAGE_RECEIVED,
+    },
   ) {
     const chatId = data.chat_id;
     const senderId = session.userId;
     const message = await this.chatService.saveMessage(chatId, senderId, data);
     const formattedMessage = this.chatService.formatMessage(message);
     const chat = await this.chatService.getChatById(chatId);
-    const participants = [chat?.clientId!, chat?.counselorId!];
-    this.sendMessageToParticipant(participants, formattedMessage);
+    const participants = [chat?.counselorId!];
+    if (
+      broadCastOptions.event != ChatEvents.NUDGE &&
+      broadCastOptions.event != ChatEvents.STAGE
+    ) {
+      participants.push(chat?.clientId!);
+    }
+
+    this.sendMessageToParticipant(
+      participants,
+      formattedMessage,
+      broadCastOptions,
+    );
+    return message;
   }
 
   // **Audio Chat Handling**
@@ -190,6 +208,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.info(`✅ User ${session.userId} joined chatId: ${chatId}`);
       this.deepgramService.startLiveTranscription(
         session,
+        chatId,
         this.handleDeepgramTranscript.bind(this),
       );
 
@@ -262,22 +281,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(target).emit(event, data);
   }
 
-  private async triggerNudge(newMessage: string, session: UserChatSessionData) {
-    const messages = await this.chatService.getChatHistoryForAIService(
-      session.chatId,
-      {
-        sort: 'createdAt',
-        order: 'DESC',
-        limit: 4,
-      },
-    );
-    const formattedNewMessage = `${session.role}: ${newMessage}`;
+  private async triggerNudge(
+    newMessage: Message,
+    session: UserChatSessionData,
+    chatId: number,
+  ) {
+    const messages = await this.chatService.getChatHistoryForAIService(chatId, {
+      sort: 'createdAt',
+      order: 'DESC',
+      limit: 4,
+    });
+    const formattedNewMessage = `${session.role}: ${newMessage.content}`;
 
     this.aiService
       .getNudge(formattedNewMessage, messages)
       .then((nudge) => {
         if (nudge) {
-          this.handleNudge(nudge, session);
+          this.handleNudge(nudge, session, newMessage);
         }
       })
       .catch((error) => {
@@ -287,50 +307,72 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
   }
 
-  private handleNudge(
+  private async handleNudge(
     nudgeResponse: NudgeResponse,
     session: UserChatSessionData,
+    parentMessage: Message,
   ) {
     this.logger.info(
       `handleNudge - nudge :${nudgeResponse.nudge} | stage :${nudgeResponse.stage}`,
     );
     const { nudge, stage } = nudgeResponse;
     if (nudge) {
-      this.sendMessagesToRoom(session.room, {
-        type: ChatEvents.NUDGE,
-        payload: nudge,
-      });
+      await this.persistAndBroadcastMessage(
+        session,
+        {
+          chat_id: parentMessage.chatId,
+          content: nudge,
+          message_type: MessageType.SYSTEM,
+        },
+        {
+          event: ChatEvents.NUDGE,
+        },
+      );
     }
     if (stage) {
-      this.sendMessagesToRoom(session.room, {
-        type: ChatEvents.STAGE,
-        payload: stage,
-      });
+      await this.persistAndBroadcastMessage(
+        session,
+        {
+          chat_id: parentMessage.chatId,
+          content: stage,
+          message_type: MessageType.SYSTEM,
+        },
+        {
+          event: ChatEvents.STAGE,
+        },
+      );
     }
   }
 
   private async sendMessageToParticipant(
     participants: number[],
     message: FormattedChatMessage,
+    broadCastOptions?: {
+      event?: ChatEvents;
+    },
   ) {
     participants.forEach((participant) => {
       const room = `user-${participant}`;
       this.sendMessagesToRoom(room, {
-        type: ChatEvents.MESSAGE_RECEIVED,
+        type: broadCastOptions?.event || ChatEvents.MESSAGE_RECEIVED,
         payload: message,
       });
     });
   }
 
-  handleDeepgramTranscript(session: UserChatSessionData, eventData: any) {
+  async handleDeepgramTranscript(
+    session: UserChatSessionData,
+    chatId: number,
+    eventData: any,
+  ) {
     this.logger.info(`🎤 Deepgram transcript: ${eventData}`);
     const data = {
-      chat_id: session.chatId,
+      chat_id: chatId,
       content: eventData.transcript,
       context: '',
     };
-    this.persistAndBroadcastMessage(session, data);
-    this.triggerNudge(data.content, session);
+    const message = await this.persistAndBroadcastMessage(session, data);
+    this.triggerNudge(message, session, chatId);
   }
 
   sendMessagesToRoom(room: string, payload: MessagePayload) {

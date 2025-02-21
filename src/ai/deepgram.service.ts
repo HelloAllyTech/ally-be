@@ -24,32 +24,38 @@ export class DeepgramService {
 
   async startLiveTranscription(
     session: UserChatSessionData,
-    callback: (session: UserChatSessionData, event: any) => void,
+    chatId: number,
+    callback: (
+      session: UserChatSessionData,
+      chatId: number,
+      event: any,
+    ) => void,
   ) {
-    this.logger.info(`startLiveTranscription - chatId :${session.chatId}`);
-    if (this.liveClients[session.chatId]) {
+    this.logger.info(`startLiveTranscription - chatId :${chatId}`);
+    if (this.liveClients[chatId]) {
       return;
     }
     const liveClient = this.deepgramClient.listen.live({
       model: 'nova-3',
       smart_format: true,
     });
-    this.liveClients[session.chatId] = {
+    this.liveClients[chatId] = {
       liveClient,
     };
-    this.keepAlive(session.chatId);
-    this.addTranscriptListener(session, callback);
+    this.keepAlive(chatId);
+    this.addTranscriptListener(session, chatId, callback);
     return liveClient;
   }
 
   private addTranscriptListener(
     session: UserChatSessionData,
-    callback: (session: UserChatSessionData, data: any) => void,
+    chatId: number,
+    callback: (session: UserChatSessionData, chatId: number, data: any) => void,
   ) {
-    const liveClient = this.liveClients[session.chatId].liveClient;
+    const liveClient = this.liveClients[chatId].liveClient;
     liveClient.on(LiveTranscriptionEvents.Open, () => {
       liveClient.on(LiveTranscriptionEvents.Transcript, (data) => {
-        callback(session, data);
+        callback(session, chatId, data);
       });
     });
   }
