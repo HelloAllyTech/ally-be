@@ -1,45 +1,44 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
 export class CustomException extends HttpException {
-  constructor(
-    message: string,
-    errorCode: string,
-    statusCode: HttpStatus = HttpStatus.BAD_REQUEST,
-    error?: any,
-  ) {
+  constructor(message: string, status: HttpStatus = HttpStatus.BAD_REQUEST) {
     super(
       {
         message,
-        errorCode,
-        statusCode,
-        error,
-        timestamp: new Date().toISOString(),
+        error: 'Custom Error',
+        status,
       },
-      statusCode,
+      status,
     );
   }
 }
 
-export class ValidationException extends CustomException {
-  constructor(message: string, error?: any) {
-    super(message, 'VALIDATION_ERROR', HttpStatus.BAD_REQUEST, error);
-  }
-}
-
-export class NotFoundException extends CustomException {
-  constructor(message: string, error?: any) {
-    super(message, 'NOT_FOUND', HttpStatus.NOT_FOUND, error);
+export class ResourceNotFoundException extends CustomException {
+  constructor(resource: string) {
+    super(`${resource} not found`, HttpStatus.NOT_FOUND);
   }
 }
 
 export class UnauthorizedException extends CustomException {
-  constructor(message: string, error?: any) {
-    super(message, 'UNAUTHORIZED', HttpStatus.UNAUTHORIZED, error);
+  constructor(message: string = 'Unauthorized access') {
+    super(message, HttpStatus.UNAUTHORIZED);
+  }
+}
+
+export class ValidationException extends CustomException {
+  constructor(message: string) {
+    super(message, HttpStatus.BAD_REQUEST);
+  }
+}
+
+export class NotFoundException extends CustomException {
+  constructor(message: string) {
+    super(message, HttpStatus.NOT_FOUND);
   }
 }
 
 export class ForbiddenException extends CustomException {
   constructor(message: string, error?: any) {
-    super(message, 'FORBIDDEN', HttpStatus.FORBIDDEN, error);
+    super(message, HttpStatus.FORBIDDEN);
   }
 }

@@ -14,9 +14,10 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { LoginDto } from './dto';
 import { UserCreateDto } from './dto/user-create.dto';
 import { JwtRefreshAuthGuard } from './guards/jwt-refresh-auth.guard';
-
+import { LoggerService } from '../logger/logger.service';
 @Controller('v1/auth')
 export class AuthController {
+  private logger = LoggerService.getInstance(AuthController.name);
   constructor(private authService: AuthService) {}
 
   @Post('login')
@@ -35,6 +36,7 @@ export class AuthController {
         user,
       };
     } catch (error) {
+      this.logger.error(error.message);
       if (error instanceof BadRequestException) {
         throw error;
       }

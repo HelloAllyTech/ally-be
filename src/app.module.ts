@@ -13,6 +13,8 @@ import { HealthModule } from './health/health.module';
 import { UserModule } from './user/user.module';
 import { QueueModule } from './queue/queue.module';
 import { AiModule } from './ai/ai.module';
+import { CustomExceptionFilter } from './exception/custom.exception.filter';
+import { APP_FILTER } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -32,6 +34,12 @@ import { AiModule } from './ai/ai.module';
     AiModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_FILTER,
+      useClass: CustomExceptionFilter,
+    },
+  ],
 })
 export class AppModule {}
