@@ -159,6 +159,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     const message = await this.persistAndBroadcastMessage(session, data);
+    this.logger.info(`🔄 Triggering nudge for chatId: ${data.chat_id}`);
     this.triggerNudge(message, session, data.chat_id);
   }
 
