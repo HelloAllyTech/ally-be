@@ -219,13 +219,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     { room, audioData }: { room: string; audioData: Buffer },
   ) {
     try {
-      this.logger.info(`🎤 Audio message to room ${room} from ${client.id}`);
+      this.logger.info(
+        `🎤 Audio message to room ${room} from ${client.id} - ${new Date().toISOString()}`,
+      );
       const session = this.sessions[client.id];
       if (!session) {
         this.logger.error(`Session not found for client ${client.id}`);
         return;
       }
-      this.deepgramService.sendAudio(session.chatId, audioData);
+
+      this.deepgramService
+        .sendAudio(session.chatId, audioData)
+        .catch((error) => {
+          this.logger.error(`Error sending audio to room ${room}:`, error);
+        });
     } catch (error) {
       this.logger.error(`Error sending audio to room ${room}:`, error);
     }
@@ -357,12 +364,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleDeepgramTranscript(
     session: UserChatSessionData,
     chatId: number,
-    eventData: any,
+    transcript: string,
   ) {
-    this.logger.info(`🎤 Deepgram transcript: ${eventData}`);
+    this.logger.info(
+      `🎤 handleDeepgramTranscript : ${transcript} - ${new Date().toISOString()}`,
+    );
     const data = {
       chat_id: chatId,
-      content: eventData.transcript,
+      content: transcript,
       context: '',
     };
     const message = await this.persistAndBroadcastMessage(session, data);

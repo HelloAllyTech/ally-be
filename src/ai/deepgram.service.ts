@@ -1,3 +1,4 @@
+import { Blob } from 'buffer';
 import {
   createClient,
   DeepgramClient,
@@ -20,6 +21,11 @@ export class DeepgramService {
 
   constructor(private config: AppConfigService) {
     this.deepgramClient = createClient(config.ai.deepgramApiKey);
+
+    // Define Blob globally so Deepgram doesn't crash
+    if (typeof globalThis.Blob === 'undefined') {
+      globalThis.Blob = Blob as any;
+    }
   }
 
   async startLiveTranscription(
@@ -55,7 +61,19 @@ export class DeepgramService {
     const liveClient = this.liveClients[chatId].liveClient;
     liveClient.on(LiveTranscriptionEvents.Open, () => {
       liveClient.on(LiveTranscriptionEvents.Transcript, (data) => {
-        callback(session, chatId, data);
+        this.logger.info(
+          `Transcript received for chatId: ${chatId}| ${data.channel.alternatives[0].transcript}`,
+        );
+        callback(session, chatId, data.channel.alternatives[0].transcript);
+      });
+      liveClient.on(LiveTranscriptionEvents.Close, () => {
+        this.logger.info(`Live transcription closed for chatId: ${chatId}`);
+      });
+      liveClient.on(LiveTranscriptionEvents.Error, (error) => {
+        this.logger.error(
+          `Live transcription error for chatId: ${chatId}`,
+          error,
+        );
       });
     });
   }
@@ -85,6 +103,12 @@ export class DeepgramService {
   async sendAudio(chatId: number, audio: Buffer) {
     this.logger.info(`sendAudio - chatId :${chatId}`);
     const liveClient = this.liveClients[chatId];
-    liveClient.liveClient.send(audio);
+
+    const arrayBuffer = audio.buffer.slice(
+      audio.byteOffset,
+      audio.byteOffset + audio.byteLength,
+    );
+
+    liveClient.liveClient.send(arrayBuffer);
   }
 }

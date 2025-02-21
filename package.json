@@ -43,6 +43,7 @@
     "bcrypt": "^5.1.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "fetch-blob": "^4.0.0",
     "joi": "^17.13.3",
     "kafkajs": "^2.2.4",
     "passport": "^0.6.0",
