@@ -169,6 +169,8 @@ jobs:
       - build
     env:
       PROJECT_PREFIX: ${{needs.prepare-env.outputs.PROJECT_PREFIX}}
+      AWS_ROLE: ${{ needs.prepare-env.outputs.AWS_ROLE }}
+      AWS_REGION: ${{ needs.prepare-env.outputs.AWS_REGION }}
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -176,8 +178,8 @@ jobs:
         id: run_db_migration
         uses: ./.github/actions/run-migration
         with:
-          aws-region: ${{needs.prepare-env.outputs.AWS_REGION}}
-          aws-role: ${{ needs.prepare-env.outputs.AWS_ROLE }}
+          aws-region: ${{ vars[env.AWS_REGION] }}
+          aws-role: ${{ vars[env.AWS_ROLE] }}
           task-definition: "${{ needs.prepare-env.outputs.TASK_DEFINITION }}-dbmigrate"
           container-name: "${{ needs.prepare-env.outputs.CONTAINER_NAME }}-dbmigrate"
           ecs-cluster: ${{ needs.prepare-env.outputs.ECS_CLUSTER }}
