@@ -103,8 +103,8 @@ jobs:
             echo "ECR_REPOSITORY=DEV_ECR_REPOSITORY" >> $GITHUB_OUTPUT
             echo "PROJECT_PREFIX=life-dev" >> $GITHUB_OUTPUT
             echo "PROJECT_REGION=sg" >> $GITHUB_OUTPUT
-            echo "SUBNETS=[\"subnet-072921dfa30408828\", \"subnet-0f1841479bce3a1e0\"]" >> $GITHUB_OUTPUT
-            echo "SECURITY_GROUPS=[\"sg-058afe1ec009268c0\"]" >> $GITHUB_OUTPUT
+            echo "SUBNETS=[\"subnet-0ec5761d885d00e27\", \"subnet-0f03d6917d235294c\", \"subnet-0230678c7b10a60b1\"]" >> $GITHUB_OUTPUT
+            echo "SECURITY_GROUPS=[\"sg-03ddac75c50904759\"]" >> $GITHUB_OUTPUT
           else
             echo "Branch not configured!"
             exit 1
