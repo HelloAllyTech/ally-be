@@ -1,4 +1,4 @@
 export const ENDPOINTS = {
-  SUMMARY: 'summary',
-  CONVERSATION: 'conversation/analyze',
+  SUMMARY: 'api/v1/summary',
+  CONVERSATION: 'api/v1/conversation/analyze',
 };
