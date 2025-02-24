@@ -12,6 +12,4 @@ RUN npm run build
 
 EXPOSE 8000
 
-RUN chmod +x docker-entrypoint.sh
-
-CMD ["./docker-entrypoint.sh"]
+CMD ["npm", "run", "start:prod"]
