@@ -44,6 +44,8 @@ export class DeepgramService {
     const liveClient = this.deepgramClient.listen.live({
       model: 'nova-3',
       smart_format: true,
+      diarize: true,
+      endpointing: false,
     });
     this.liveClients[chatId] = {
       liveClient,
@@ -62,7 +64,7 @@ export class DeepgramService {
     liveClient.on(LiveTranscriptionEvents.Open, () => {
       liveClient.on(LiveTranscriptionEvents.Transcript, (data) => {
         this.logger.info(
-          `Transcript received for chatId: ${chatId}| ${data.channel.alternatives[0].transcript}`,
+          `Transcript received for chatId: ${chatId}| ${data.channel.alternatives[0].transcript} | is Final :${JSON.stringify(data)}`,
         );
         callback(session, chatId, data.channel.alternatives[0].transcript);
       });
@@ -104,11 +106,12 @@ export class DeepgramService {
     this.logger.info(`sendAudio - chatId :${chatId}`);
     const liveClient = this.liveClients[chatId];
 
-    const arrayBuffer = audio.buffer.slice(
-      audio.byteOffset,
-      audio.byteOffset + audio.byteLength,
-    );
+    // const arrayBuffer = audio.buffer.slice(
+    //   audio.byteOffset,
+    //   audio.byteOffset + audio.byteLength,
+    // );
 
-    liveClient.liveClient.send(arrayBuffer);
+    //liveClient.liveClient.sendBuffer(arrayBuffer);
+    liveClient.liveClient.send(audio);
   }
 }

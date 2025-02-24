@@ -48,7 +48,7 @@ export class AuthController {
   @Post('refresh')
   async refreshTokens(@Req() req: any) {
     const userId = req.user.id;
-    const refreshToken = req.user.refresh_token;
+    const refreshToken = req.user.refreshToken;
     const tokens = await this.authService.refreshTokens(refreshToken, userId);
     if (!tokens) {
       throw new UnauthorizedException('Invalid refresh token');
