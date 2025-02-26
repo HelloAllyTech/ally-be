@@ -76,7 +76,12 @@ export class DeepgramService {
         this.logger.info(
           `Transcript received for userId: ${userId}| ${data.channel.alternatives[0].transcript} | is Final :${JSON.stringify(data)}`,
         );
-        callback(session, chatId, data.channel.alternatives[0].transcript);
+        if (
+          data.channel.alternatives[0].is_final &&
+          data.channel.alternatives[0].transcript?.trim()
+        ) {
+          callback(session, chatId, data.channel.alternatives[0].transcript);
+        }
       });
       liveClient.on(LiveTranscriptionEvents.Close, () => {
         this.logger.info(`Live transcription closed for userId: ${userId}`);
