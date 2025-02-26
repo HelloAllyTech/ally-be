@@ -373,6 +373,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   sendMessagesToRoom(room: string, payload: MessagePayload) {
     const event = payload.type || ChatEvents.MESSAGE_RECEIVED;
+    this.logger.info(
+      `Sending message to room: ${room} | event: ${JSON.stringify(event)}`,
+    );
     this.server.to(room).emit(event, payload);
   }
 }
