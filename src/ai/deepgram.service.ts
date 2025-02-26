@@ -58,7 +58,7 @@ export class DeepgramService {
       // endpointing: false,
       //channels: 1,
       //encoding: 'mulaw',
-      sample_rate: 8000,
+      // sample_rate: 8000,
       // utterance_end_ms: 1000,
       // extra: '',
     });
@@ -133,7 +133,10 @@ export class DeepgramService {
   async sendAudio(userId: number, audio: Buffer) {
     this.logger.info(`sendAudio - userId :${userId}`);
     const liveClient = this.liveClients[userId];
-    if (!liveClient) return;
+    if (!liveClient) {
+      this.logger.error(`Live client not found for userId: ${userId}`);
+      return;
+    }
 
     liveClient.audioBuffer.push(audio);
     liveClient.currentBufferSize += audio.length;
