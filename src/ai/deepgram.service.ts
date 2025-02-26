@@ -45,23 +45,31 @@ export class DeepgramService {
     const liveClient = this.deepgramClient.listen.live({
       model: 'nova-3',
       smart_format: true,
-      diarize: true,
-      interim_results: true,
+      //diarize: true,
+      //interim_results: true,
       numerals: true,
       punctuate: true,
-      endpointing: false,
-      channels: 1,
+      // endpointing: false,
+      //channels: 1,
       //encoding: 'mulaw',
-      //sample_rate: 16000,
-      utterance_end_ms: 1000,
-      extra: '',
+      sample_rate: 8000,
+      // utterance_end_ms: 1000,
+      // extra: '',
     });
     this.liveClients[userId] = {
       liveClient,
     };
-    this.keepAlive(userId);
-    this.addTranscriptListener(session, chatId, callback);
-    return liveClient;
+    try {
+      this.keepAlive(userId);
+      this.addTranscriptListener(session, chatId, callback);
+      return liveClient;
+    } catch (error) {
+      this.logger.error(
+        `Error starting live transcription for userId: ${userId}`,
+        error,
+      );
+      return null;
+    }
   }
 
   private addTranscriptListener(
@@ -76,7 +84,7 @@ export class DeepgramService {
         this.logger.info(
           `Transcript received for userId: ${userId}| ${data.channel.alternatives[0].transcript} | is Final :${JSON.stringify(data)}`,
         );
-        if (data.is_final && data.channel.alternatives[0].transcript?.trim()) {
+        if (data.channel.alternatives[0].transcript?.trim()) {
           callback(session, chatId, data.channel.alternatives[0].transcript);
         }
       });

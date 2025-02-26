@@ -193,11 +193,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
       session.chatId = chatId;
       this.logger.info(`✅ User ${session.userId} joined chatId: ${chatId}`);
-      this.deepgramService.startLiveTranscription(
-        session,
-        chatId,
-        this.handleDeepgramTranscript.bind(this),
-      );
+      this.deepgramService
+        .startLiveTranscription(
+          session,
+          chatId,
+          this.handleDeepgramTranscript.bind(this),
+        )
+        .catch((error) => {
+          this.logger.error(
+            `Error starting live transcription for chatId ${chatId}:`,
+            error,
+          );
+        });
 
       // TODO: Store audio in backend (S3, database, etc.)
     } catch (error) {
