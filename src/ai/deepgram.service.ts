@@ -15,8 +15,14 @@ export class DeepgramService {
   private logger = LoggerService.getInstance(DeepgramService.name);
   private deepgramClient: DeepgramClient;
   private keepAliveInterval = 3000;
+  private bufferSize = 16000; // Default buffer size (can be adjusted)
   private liveClients: {
-    [key: string]: { liveClient: LiveClient; keepAlive?: NodeJS.Timeout };
+    [key: string]: {
+      liveClient: LiveClient;
+      keepAlive?: NodeJS.Timeout;
+      audioBuffer: Buffer[];
+      currentBufferSize: number;
+    };
   } = {};
 
   constructor(private config: AppConfigService) {
@@ -46,7 +52,7 @@ export class DeepgramService {
       model: 'nova-3',
       smart_format: true,
       //diarize: true,
-      //interim_results: true,
+      interim_results: true,
       numerals: true,
       punctuate: true,
       // endpointing: false,
@@ -58,6 +64,8 @@ export class DeepgramService {
     });
     this.liveClients[userId] = {
       liveClient,
+      audioBuffer: [],
+      currentBufferSize: 0,
     };
     try {
       this.keepAlive(userId);
@@ -125,13 +133,18 @@ export class DeepgramService {
   async sendAudio(userId: number, audio: Buffer) {
     this.logger.info(`sendAudio - userId :${userId}`);
     const liveClient = this.liveClients[userId];
+    if (!liveClient) return;
 
-    // const arrayBuffer = audio.buffer.slice(
-    //   audio.byteOffset,
-    //   audio.byteOffset + audio.byteLength,
-    // );
+    liveClient.audioBuffer.push(audio);
+    liveClient.currentBufferSize += audio.length;
 
-    //liveClient.liveClient.sendBuffer(arrayBuffer);
-    liveClient.liveClient.send(audio);
+    if (liveClient.currentBufferSize >= this.bufferSize) {
+      const concatenatedBuffer = Buffer.concat(liveClient.audioBuffer);
+      liveClient.liveClient.send(concatenatedBuffer);
+
+      // Reset buffer
+      liveClient.audioBuffer = [];
+      liveClient.currentBufferSize = 0;
+    }
   }
 }
