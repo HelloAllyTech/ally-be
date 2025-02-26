@@ -209,11 +209,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage(ChatEvents.AUDIO_MESSAGE)
   handleAudioMessage(
     client: Socket,
-    { room, audioData }: { room: string; audioData: Buffer },
+    { chatId, audioData }: { chatId: number; audioData: Buffer },
   ) {
     try {
       this.logger.info(
-        `🎤 Audio message to room ${room} from ${client.id} - ${new Date().toISOString()}`,
+        `🎤 Audio message to chatId ${chatId} from ${client.id} - ${new Date().toISOString()}`,
       );
       const session = this.sessions[client.id];
       if (!session) {
@@ -222,12 +222,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       this.deepgramService
-        .sendAudio(session.chatId, audioData)
+        .sendAudio(session.userId, audioData)
         .catch((error) => {
-          this.logger.error(`Error sending audio to room ${room}:`, error);
+          this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
         });
     } catch (error) {
-      this.logger.error(`Error sending audio to room ${room}:`, error);
+      this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
     }
   }
 

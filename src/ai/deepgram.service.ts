@@ -33,24 +33,33 @@ export class DeepgramService {
     chatId: number,
     callback: (
       session: UserChatSessionData,
-      chatId: number,
+      userId: number,
       event: any,
     ) => void,
   ) {
-    this.logger.info(`startLiveTranscription - chatId :${chatId}`);
-    if (this.liveClients[chatId]) {
+    const userId = session.userId;
+    this.logger.info(`startLiveTranscription - userId :${userId}`);
+    if (this.liveClients[userId]) {
       return;
     }
     const liveClient = this.deepgramClient.listen.live({
       model: 'nova-3',
       smart_format: true,
       diarize: true,
+      interim_results: true,
+      numerals: true,
+      punctuate: true,
       endpointing: false,
+      channels: 1,
+      //encoding: 'mulaw',
+      //sample_rate: 16000,
+      utterance_end_ms: 1000,
+      extra: '',
     });
-    this.liveClients[chatId] = {
+    this.liveClients[userId] = {
       liveClient,
     };
-    this.keepAlive(chatId);
+    this.keepAlive(userId);
     this.addTranscriptListener(session, chatId, callback);
     return liveClient;
   }
@@ -60,28 +69,29 @@ export class DeepgramService {
     chatId: number,
     callback: (session: UserChatSessionData, chatId: number, data: any) => void,
   ) {
-    const liveClient = this.liveClients[chatId].liveClient;
+    const userId = session.userId;
+    const liveClient = this.liveClients[userId].liveClient;
     liveClient.on(LiveTranscriptionEvents.Open, () => {
       liveClient.on(LiveTranscriptionEvents.Transcript, (data) => {
         this.logger.info(
-          `Transcript received for chatId: ${chatId}| ${data.channel.alternatives[0].transcript} | is Final :${JSON.stringify(data)}`,
+          `Transcript received for userId: ${userId}| ${data.channel.alternatives[0].transcript} | is Final :${JSON.stringify(data)}`,
         );
         callback(session, chatId, data.channel.alternatives[0].transcript);
       });
       liveClient.on(LiveTranscriptionEvents.Close, () => {
-        this.logger.info(`Live transcription closed for chatId: ${chatId}`);
+        this.logger.info(`Live transcription closed for userId: ${userId}`);
       });
       liveClient.on(LiveTranscriptionEvents.Error, (error) => {
         this.logger.error(
-          `Live transcription error for chatId: ${chatId}`,
+          `Live transcription error for userId: ${userId}`,
           error,
         );
       });
     });
   }
 
-  private keepAlive(chatId: number) {
-    const liveClient = this.liveClients[chatId];
+  private keepAlive(userId: number) {
+    const liveClient = this.liveClients[userId];
     if (!liveClient) {
       return;
     }
@@ -91,20 +101,20 @@ export class DeepgramService {
     return liveClient.keepAlive;
   }
 
-  async stopLiveTranscription(chatId: number) {
-    this.logger.info(`stopLiveTranscription - chatId :${chatId}`);
-    const liveClient = this.liveClients[chatId];
+  async stopLiveTranscription(userId: number) {
+    this.logger.info(`stopLiveTranscription - userId :${userId}`);
+    const liveClient = this.liveClients[userId];
     if (!liveClient) {
       return;
     }
     liveClient.keepAlive && clearInterval(liveClient.keepAlive);
     liveClient.liveClient.requestClose();
-    delete this.liveClients[chatId];
+    delete this.liveClients[userId];
   }
 
-  async sendAudio(chatId: number, audio: Buffer) {
-    this.logger.info(`sendAudio - chatId :${chatId}`);
-    const liveClient = this.liveClients[chatId];
+  async sendAudio(userId: number, audio: Buffer) {
+    this.logger.info(`sendAudio - userId :${userId}`);
+    const liveClient = this.liveClients[userId];
 
     // const arrayBuffer = audio.buffer.slice(
     //   audio.byteOffset,
