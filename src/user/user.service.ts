@@ -51,25 +51,25 @@ export class UserService {
         role: user.role,
         chat: chat
           ? {
-              chat_id: chat.id,
-              room_id: chat.roomId,
-              client_id: chat.clientId,
-              counselor_id: chat.counselorId,
+              chatId: chat.id,
+              roomId: chat.roomId,
+              clientId: chat.clientId,
+              counselorId: chat.counselorId,
               status: chat.status,
-              started_at: chat.startedAt,
-              ended_at: chat.endedAt,
+              startedAt: chat.startedAt,
+              endedAt: chat.endedAt,
             }
           : [],
       };
     });
-    return { total_waiting: clientIds.size, clients: formattedData };
+    return { totalWaiting: clientIds.size, clients: formattedData };
   }
 
   getMinimalUserInfo(user: User | null) {
     if (!user) return null;
     return {
       id: user.id,
-      user_id: user.id,
+      userId: user.id,
       name: user.name,
       email: user.email,
       role: user.role,

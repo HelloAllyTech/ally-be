@@ -9,7 +9,6 @@ import { Server, Socket } from 'socket.io';
 import { LoggerService } from '../logger/logger.service';
 import { UserService } from '../user/user.service';
 import {
-  FormattedChatMessage,
   MessagePayload,
   NudgeResponse,
   SendMessageWebSocketData,
@@ -84,7 +83,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private async authenticateUser(client: Socket, auth: any) {
-    const userId = auth?.user?.user_id;
+    const userId = auth?.user?.userId;
     if (!userId) {
       this.logger.error(` Missing userId for client ${client.id}`);
       client.disconnect();
@@ -151,8 +150,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     const message = await this.persistAndBroadcastMessage(session, data);
-    this.logger.info(`🔄 Triggering nudge for chatId: ${data.chat_id}`);
-    this.triggerNudge(message, session, data.chat_id);
+    this.logger.info(`🔄 Triggering nudge for chatId: ${data.chatId}`);
+    this.triggerNudge(message, session, data.chatId);
   }
 
   private async persistAndBroadcastMessage(
@@ -164,10 +163,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       event: ChatEvents.MESSAGE_RECEIVED,
     },
   ) {
-    const chatId = data.chat_id;
+    const chatId = data.chatId;
     const senderId = session.userId;
     const message = await this.chatService.saveMessage(chatId, senderId, data);
-    const formattedMessage = this.chatService.formatMessage(message);
     const chat = await this.chatService.getChatById(chatId);
     const participants = [chat?.counselorId!];
     if (
@@ -177,11 +175,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       participants.push(chat?.clientId!);
     }
 
-    this.sendMessageToParticipant(
-      participants,
-      formattedMessage,
-      broadCastOptions,
-    );
+    this.sendMessageToParticipant(participants, message, broadCastOptions);
     return message;
   }
 
@@ -267,7 +261,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    const chatId = data.chat_id;
+    const chatId = data.chatId;
     const senderId = session.userId;
     const chat = await this.chatService.getChatById(chatId);
     if (!chat) {
@@ -320,7 +314,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await this.persistAndBroadcastMessage(
         session,
         {
-          chat_id: parentMessage.chatId,
+          chatId: parentMessage.chatId,
           content: nudge,
           messageType: MessageType.NUDGE,
         },
@@ -333,7 +327,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await this.persistAndBroadcastMessage(
         session,
         {
-          chat_id: parentMessage.chatId,
+          chatId: parentMessage.chatId,
           content: stage,
           messageType: MessageType.STAGE,
         },
@@ -346,7 +340,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async sendMessageToParticipant(
     participants: number[],
-    message: FormattedChatMessage,
+    message: Message,
     broadCastOptions?: {
       event?: ChatEvents;
     },
@@ -369,7 +363,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       `🎤 handleDeepgramTranscript : ${transcript} - ${new Date().toISOString()}`,
     );
     const data = {
-      chat_id: chatId,
+      chatId: chatId,
       content: transcript,
       context: '',
     };

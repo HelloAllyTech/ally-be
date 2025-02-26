@@ -237,13 +237,13 @@ export class ChatService {
 
   formatMessage(message: MessageWithFeedback) {
     return {
-      message_id: message.id,
-      chat_id: message.chatId,
-      sender_id: message.senderId,
-      message_type: message.type,
+      messageId: message.id,
+      chatId: message.chatId,
+      senderId: message.senderId,
+      messageType: message.type,
       content: message.content,
       context: message.context,
-      created_at: message.createdAt.toISOString(),
+      createdAt: message.createdAt.toISOString(),
       feedback: message.feedback,
     };
   }
@@ -282,13 +282,13 @@ export class ChatService {
     const payload = {
       counselor: this.userService.getMinimalUserInfo(counselor),
       client: this.userService.getMinimalUserInfo(client),
-      messages: messages.map(this.formatMessage),
-      chat_id: chat.id,
-      client_id: chat.clientId,
-      counselor_id: chat.counselorId,
+      messages: messages, //messages.map(this.formatMessage),
+      chatId: chat.id,
+      clientId: chat.clientId,
+      counselorId: chat.counselorId,
       status: chat.status,
-      started_at: chat.startedAt,
-      ended_at: chat.endedAt,
+      startedAt: chat.startedAt,
+      endedAt: chat.endedAt,
     };
     return payload;
   }

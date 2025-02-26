@@ -34,11 +34,11 @@ export class QueueService {
     }
     const stats = await query.getMany();
     return stats.map((stat) => ({
-      entry_id: stat.entryId,
-      client_id: stat.clientId,
-      chat_id: stat.chatId,
+      entryId: stat.entryId,
+      clientId: stat.clientId,
+      chatId: stat.chatId,
       priority: stat.priority,
-      wait_start_time: stat.waitStartTime,
+      waitStartTime: stat.waitStartTime,
       status: stat.status,
     }));
   }

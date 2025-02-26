@@ -29,18 +29,18 @@ export type MessageWithFeedback = Message & {
 };
 
 export interface FormattedChatMessage {
-  message_id: string | number;
-  chat_id: string | number;
-  sender_id: number | undefined;
-  message_type: MessageType;
+  id: string | number;
+  chatId: string | number;
+  senderId: number | undefined;
+  messageType: MessageType;
   content: string;
   context?: string | null;
-  created_at: string;
+  createdAt: string;
   feedback?: Feedback;
 }
 
 export type SendMessageWebSocketData = {
-  chat_id: number;
+  chatId: number;
   content: string;
   context?: string;
   messageType?: MessageType;
