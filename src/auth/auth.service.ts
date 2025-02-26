@@ -136,9 +136,8 @@ export class AuthService {
         username: user.username,
         role: user.role,
       },
-      access_token: tokens.accessToken,
-      refresh_token: tokens.refreshToken,
-      token_type: 'bearer',
+      ...tokens,
+      tokenType: 'bearer',
     };
   }
 

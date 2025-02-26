@@ -54,9 +54,8 @@ export class AuthController {
       throw new UnauthorizedException('Invalid refresh token');
     }
     return {
-      access_token: tokens.accessToken,
-      refresh_token: tokens.refreshToken,
-      token_type: 'bearer',
+      ...tokens,
+      tokenType: 'bearer',
     };
   }
 
