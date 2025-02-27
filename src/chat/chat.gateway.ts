@@ -228,11 +228,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      this.deepgramService
-        .sendAudio(session.userId, audioData)
-        .catch((error) => {
-          this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
-        });
+      this.deepgramService.sendAudio(session, audioData).catch((error) => {
+        this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
+      });
     } catch (error) {
       this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
     }
@@ -252,7 +250,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(ChatEvents.ICE_CANDIDATE)
   handleIceCandidate(client: Socket, data: any) {
-    this.logger.info(`ICE Candidate from ${client.id} `);
     return this.sendWebRTCMessage(client, data, ChatEvents.ICE_CANDIDATE);
   }
 

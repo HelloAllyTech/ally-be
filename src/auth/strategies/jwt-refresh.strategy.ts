@@ -11,7 +11,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
 ) {
   constructor(configService: AppConfigService) {
     super({
-      jwtFromRequest: ExtractJwt.fromBodyField('refresh_token'),
+      jwtFromRequest: ExtractJwt.fromBodyField('refreshToken'),
       ignoreExpiration: false,
       secretOrKey: configService.jwt.refreshToken.secret,
       passReqToCallback: true,
