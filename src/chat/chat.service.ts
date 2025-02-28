@@ -17,9 +17,26 @@ import { AiService } from '../ai/ai.service';
 import { MessageRequest } from '../ai/dto/ai.request.dto';
 import { MessageWithFeedback } from './type/chat.type';
 import { Pagination } from '../common/type/common.type';
+import { CallDetails } from '../common/entities/call.details.entity';
 
 @Injectable()
 export class ChatService {
+  async getChat(id: number) {
+    const chatQuery = this.chatRepository
+      .createQueryBuilder('chat')
+      .leftJoinAndMapOne(
+        'chat.details',
+        CallDetails,
+        'details',
+        'details.chatId = chat.id',
+      )
+      .where('chat.id = :id', { id });
+    const chat = await chatQuery.getOne();
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
+    }
+    return chat;
+  }
   logger = LoggerService.getInstance(ChatService.name);
   constructor(
     @InjectRepository(Message)
@@ -29,6 +46,8 @@ export class ChatService {
 
     @InjectRepository(ChatRoom)
     private chatRoomRepository: Repository<ChatRoom>,
+    @InjectRepository(CallDetails)
+    private callDetailsRepository: Repository<CallDetails>,
     @Inject(forwardRef(() => QueueService))
     private queueService: QueueService,
     private gateway: ChatGateway,
@@ -97,12 +116,16 @@ export class ChatService {
   }
 
   async createChat(userId: number, roomId: number) {
-    const chat = this.chatRepository.create({
+    const chatObject = this.chatRepository.create({
       clientId: userId,
       roomId: roomId,
       status: ChatStatus.PAUSED,
     });
-    return this.chatRepository.save(chat);
+    const chat = await this.chatRepository.save(chatObject);
+    await this.callDetailsRepository.save({
+      chatId: chat.id,
+    });
+    return chat;
   }
 
   async getOrCreateChatRoom(userId: number) {
@@ -178,11 +201,16 @@ export class ChatService {
     if (chat.counselorId) {
       throw new HttpException('Chat already has a counselor', 400);
     }
-
+    const startTime = new Date();
     chat.counselorId = counselorId;
     chat.status = ChatStatus.ACTIVE;
-    chat.startedAt = new Date();
-    return this.chatRepository.save(chat);
+    chat.startedAt = startTime;
+    const updatedChat = await this.chatRepository.save(chat);
+    await this.callDetailsRepository.update(
+      { chatId: chatId },
+      { startTime: startTime },
+    );
+    return updatedChat;
   }
 
   async accept(councilorId: number, chatId: number) {
@@ -358,15 +386,69 @@ export class ChatService {
 
   async handleChatEnded(chat: Chat) {
     this.logger.info(`handleChatEnded - chat:${chat.id}`);
-    const summary = await this.generateSummary(chat.id);
-    await this.chatRepository.update({ id: chat.id }, { summary });
+    await Promise.allSettled([
+      this.updateSummaryAndTags(chat),
+      this.updateMessageStatistics(chat),
+    ]);
   }
 
-  async generateSummary(chatId: number): Promise<string> {
+  async updateSummaryAndTags(chat: Chat) {
+    const { summary, tags } = await this.generateSummary(chat.id);
+    await this.callDetailsRepository.update(
+      { chatId: chat.id },
+      { summary, tags },
+    );
+  }
+
+  async updateMessageStatistics(chat: Chat) {
+    const chatId = chat.id;
+    const messages = await this.getMessageByChatId(chatId);
+    const startDate = chat.startedAt || new Date();
+    const endDate = chat.endedAt || new Date();
+    // duration in seconds as integer
+    const durationInSeconds = Math.floor(
+      (endDate.getTime() - startDate.getTime()) / 1000,
+    );
+
+    let noOfNudges = 0;
+    let noOfStages = 0;
+    messages.forEach((message) => {
+      if (message.type === MessageType.NUDGE) {
+        noOfNudges++;
+      }
+      if (message.type === MessageType.STAGE) {
+        noOfStages++;
+      }
+    });
+    //format transcript
+    const transcript = messages
+      .filter((message) => message.type === MessageType.TEXT)
+      .map((message) => message.content)
+      .join('\n');
+
+    const updates = {
+      noOfNudges,
+      noOfStages,
+      transcript,
+      endTime: chat.endedAt,
+      callDuration: durationInSeconds,
+    };
+
+    const details = await this.callDetailsRepository.update(
+      { chatId },
+      updates,
+    );
+    return details;
+  }
+
+  async generateSummary(
+    chatId: number,
+  ): Promise<{ summary: string; tags: string }> {
     const messageRequests: MessageRequest[] =
       await this.getChatHistoryForAIService(chatId);
-    const summary = await this.aiService.generateSummary(messageRequests);
-    return summary;
+    const { summary, tags } =
+      await this.aiService.generateSummaryAndTags(messageRequests);
+    return { summary, tags };
   }
 
   async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {
@@ -386,9 +468,9 @@ export class ChatService {
       query.offset(pagination.offset).limit(pagination.limit);
     }
 
-    if (pagination?.sort) {
+    if (pagination?.sortBy) {
       query.orderBy(
-        `message.${pagination.sort}`,
+        `message.${pagination.sortBy}`,
         pagination.order as 'ASC' | 'DESC',
       );
     }
@@ -401,5 +483,34 @@ export class ChatService {
       timestamp: message.createdAt.toISOString(),
     }));
     return messageRequests;
+  }
+
+  getCallLogs(id: number, options: Pagination) {
+    const query = this.chatRepository
+      .createQueryBuilder('chat')
+      .leftJoinAndMapOne(
+        'chat.details',
+        CallDetails,
+        'details',
+        'details.chatId = chat.id',
+      )
+      .leftJoinAndMapOne(
+        'chat.client',
+        User,
+        'client',
+        'client.id = chat.clientId',
+      )
+      .where('chat.counselorId = :counselorId', { counselorId: id });
+    if (options.limit) {
+      query.limit(options.limit);
+    }
+    if (options.offset) {
+      query.offset(options.offset);
+    }
+    if (options.sortBy) {
+      query.orderBy(`chat.${options.sortBy}`, options.order as 'ASC' | 'DESC');
+    }
+
+    return query.getMany();
   }
 }
