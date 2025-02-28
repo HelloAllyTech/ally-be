@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { RedisService } from './service/redis.service';
 import { RedisModule as NestRedisModule } from '@liaoliaots/nestjs-redis';
 
+@Global()
 @Module({
   imports: [
     NestRedisModule.forRoot({
@@ -11,5 +12,6 @@ import { RedisModule as NestRedisModule } from '@liaoliaots/nestjs-redis';
     }),
   ],
   providers: [RedisService],
+  exports: [RedisService],
 })
 export class RedisModule {}
