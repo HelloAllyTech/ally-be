@@ -1,42 +1,27 @@
 import { forwardRef, HttpException, Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { Message, MessageType } from '../common/entities/message.entity';
-import { Chat, ChatStatus } from '../common/entities/chat.entity';
-import { LoggerService } from '../logger/logger.service';
-import { ChatRoom } from '../common/entities/chat-room.entity';
-import { QueueService } from '../queue/queue.service';
-import { QueueStatus } from '../common/constants/chat.constants';
-import { ChatGateway } from './chat.gateway';
-import { UserService } from '../user/user.service';
-import { ChatEvents } from './constants/chat.constants';
-import { Feedback } from '../common/entities/feedback.entity';
+import { Message, MessageType } from '../../common/entities/message.entity';
+import { Chat, ChatStatus } from '../../common/entities/chat.entity';
+import { LoggerService } from '../../logger/logger.service';
+import { ChatRoom } from '../../common/entities/chat-room.entity';
+import { QueueService } from '../../queue/service/queue.service';
+import { QueueStatus } from '../../common/constants/chat.constants';
+import { ChatGateway } from '../gateway/chat.gateway';
+import { UserService } from '../../user/user.service';
+import { ChatEvents } from '../constants/chat.constants';
+import { Feedback } from '../../common/entities/feedback.entity';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { User } from '../common/entities/user.entity';
-import { AiService } from '../ai/ai.service';
-import { MessageRequest } from '../ai/dto/ai.request.dto';
-import { MessageWithFeedback } from './type/chat.type';
-import { Pagination } from '../common/type/common.type';
-import { CallDetails } from '../common/entities/call.details.entity';
+import { User } from '../../common/entities/user.entity';
+import { AiService } from '../../ai/service/ai.service';
+import { MessageRequest } from '../../ai/dto/ai.request.dto';
+import { MessageWithFeedback } from '../type/chat.type';
+import { Pagination } from '../../common/type/common.type';
+import { CallDetails } from '../../common/entities/call.details.entity';
+import { RedisService } from '../../redis/service/redis.service';
 
 @Injectable()
 export class ChatService {
-  async getChat(id: number) {
-    const chatQuery = this.chatRepository
-      .createQueryBuilder('chat')
-      .leftJoinAndMapOne(
-        'chat.details',
-        CallDetails,
-        'details',
-        'details.chatId = chat.id',
-      )
-      .where('chat.id = :id', { id });
-    const chat = await chatQuery.getOne();
-    if (!chat) {
-      throw new HttpException('Chat not found', 404);
-    }
-    return chat;
-  }
   logger = LoggerService.getInstance(ChatService.name);
   constructor(
     @InjectRepository(Message)
@@ -54,38 +39,27 @@ export class ChatService {
     private userService: UserService,
     private eventEmitter: EventEmitter2,
     private aiService: AiService,
+    private readonly cache: RedisService,
 
     //  private kafkaProducerService: KafkaProducerService,
   ) {}
 
-  // async createMessage(data: { senderId: number; receiverId: number; content: string }) {
-  //   const sender = await this.userRepository.findOne({ where: { id: data.senderId } });
-  //   const receiver = await this.userRepository.findOne({ where: { id: data.receiverId } });
-
-  //   const message = this.messageRepository.create({
-  //     content: data.content,
-  //     sender,
-  //     receiver,
-  //   });
-
-  //   // Send to Kafka instead of directly saving
-  //   await this.kafkaProducerService.sendMessage('chat-messages', message);
-
-  //   return message;
-  // }
-
-  // async getMessages(userId: number) {
-  //   return this.messageRepository.find({
-  //     where: [
-  //       { sender: { id: userId } },
-  //       { receiver: { id: userId } },
-  //     ],
-  //     relations: ['sender', 'receiver'],
-  //     order: {
-  //       createdAt: 'DESC',
-  //     },
-  //   });
-  // }
+  async getChat(id: number) {
+    const chatQuery = this.chatRepository
+      .createQueryBuilder('chat')
+      .leftJoinAndMapOne(
+        'chat.details',
+        CallDetails,
+        'details',
+        'details.chatId = chat.id',
+      )
+      .where('chat.id = :id', { id });
+    const chat = await chatQuery.getOne();
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
+    }
+    return chat;
+  }
 
   async requestChat(userId: number) {
     this.logger.info(`requestChat - userId:${userId}`);
@@ -485,7 +459,7 @@ export class ChatService {
     return messageRequests;
   }
 
-  getCallLogs(id: number, options: Pagination) {
+  async getCallLogs(id: number, options: Pagination) {
     const query = this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndMapOne(
@@ -510,7 +484,7 @@ export class ChatService {
     if (options.sortBy) {
       query.orderBy(`chat.${options.sortBy}`, options.order as 'ASC' | 'DESC');
     }
-
-    return query.getMany();
+    const callLogs = await query.getMany();
+    return callLogs;
   }
 }

@@ -5,9 +5,9 @@ import {
   LiveTranscriptionEvents,
 } from '@deepgram/sdk';
 import { Injectable } from '@nestjs/common';
-import { AppConfigService } from '../config/config.service';
-import { LoggerService } from '../logger/logger.service';
-import { UserChatSessionData } from '../chat/type/chat.type';
+import { AppConfigService } from '../../config/config.service';
+import { LoggerService } from '../../logger/logger.service';
+import { UserChatSessionData } from '../../chat/type/chat.type';
 
 @Injectable()
 export class DeepgramService {

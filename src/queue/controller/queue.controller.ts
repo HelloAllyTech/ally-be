@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { QueueService } from './queue.service';
+import { QueueService } from '../service/queue.service';
 
 @Controller('v1/queue')
 export class QueueController {

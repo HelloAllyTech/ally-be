@@ -1,8 +1,8 @@
 import { forwardRef, Module } from '@nestjs/common';
-import { QueueService } from './queue.service';
+import { QueueService } from './service/queue.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { QueueEntry } from '../common/entities/queue.entity';
-import { QueueController } from './queue.controller';
+import { QueueController } from './controller/queue.controller';
 import { ChatModule } from '../chat/chat.module';
 
 @Module({

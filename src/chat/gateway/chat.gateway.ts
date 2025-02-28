@@ -6,21 +6,21 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { LoggerService } from '../logger/logger.service';
-import { UserService } from '../user/user.service';
+import { LoggerService } from '../../logger/logger.service';
+import { UserService } from '../../user/user.service';
 import {
   MessagePayload,
   NudgeResponse,
   SendMessageWebSocketData,
   ServiceSessionData,
   UserChatSessionData,
-} from './type/chat.type';
-import { ChatEvents } from './constants/chat.constants';
-import { ChatService } from './chat.service';
+} from '../type/chat.type';
+import { ChatEvents } from '../constants/chat.constants';
+import { ChatService } from '../services/chat.service';
 import { forwardRef, Inject } from '@nestjs/common';
-import { AiService } from '../ai/ai.service';
-import { DeepgramService } from '../ai/deepgram.service';
-import { Message, MessageType } from '../common/entities/message.entity';
+import { AiService } from '../../ai/service/ai.service';
+import { DeepgramService } from '../../ai/service/deepgram.service';
+import { Message, MessageType } from '../../common/entities/message.entity';
 
 @WebSocketGateway({
   cors: { origin: '*' },

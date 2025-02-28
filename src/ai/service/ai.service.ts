@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
-import { AppConfigService } from '../config/config.service';
-import { GenerateSummaryRequest, MessageRequest } from './dto/ai.request.dto';
-import { GenerateSummaryResponse } from './dto/ai.response.dto';
+import { AppConfigService } from '../../config/config.service';
+import { GenerateSummaryRequest, MessageRequest } from '../dto/ai.request.dto';
+import { GenerateSummaryResponse } from '../dto/ai.response.dto';
 import { createClient, DeepgramClient } from '@deepgram/sdk';
-import { ENDPOINTS } from './constants/endpoints.constants';
-import { NudgeRequest, NudgeResponse } from '../chat/type/chat.type';
+import { ENDPOINTS } from '../constants/endpoints.constants';
+import { NudgeRequest, NudgeResponse } from '../../chat/type/chat.type';
 
 @Injectable()
 export class AiService {
