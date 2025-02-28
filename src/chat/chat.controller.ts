@@ -44,8 +44,8 @@ export class ChatController {
     @CurrentUser() tokenUser: TokenUser,
     @Query('limit') limit: number,
     @Query('offset') offset: number,
-    @Query('sortBy') sortBy: string,
-    @Query('order') order: 'ASC' | 'DESC',
+    @Query('sortBy') sortBy: string = 'createdAt',
+    @Query('order') order: 'ASC' | 'DESC' = 'DESC',
   ) {
     return this.service.getCallLogs(tokenUser.id, {
       limit,

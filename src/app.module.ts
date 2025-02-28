@@ -1,7 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { validationSchema } from './config/env.validation';
 import authConfig from './config/auth.config';
@@ -33,9 +31,8 @@ import { APP_FILTER } from '@nestjs/core';
     QueueModule,
     AiModule,
   ],
-  controllers: [AppController],
+  controllers: [],
   providers: [
-    AppService,
     {
       provide: APP_FILTER,
       useClass: CustomExceptionFilter,

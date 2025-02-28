@@ -15,6 +15,8 @@ import { LoginDto } from './dto';
 import { UserCreateDto } from './dto/user-create.dto';
 import { JwtRefreshAuthGuard } from './guards/jwt-refresh-auth.guard';
 import { LoggerService } from '../logger/logger.service';
+import { ApiBody } from '@nestjs/swagger';
+import { RefreshTokenDto } from './dto/refresh.dto';
 @Controller('v1/auth')
 export class AuthController {
   private logger = LoggerService.getInstance(AuthController.name);
@@ -46,6 +48,10 @@ export class AuthController {
 
   @UseGuards(JwtRefreshAuthGuard)
   @Post('refresh')
+  @ApiBody({
+    type: RefreshTokenDto,
+    description: 'Refresh token credentials',
+  })
   async refreshTokens(@Req() req: any) {
     const userId = req.user.id;
     const refreshToken = req.user.refreshToken;
