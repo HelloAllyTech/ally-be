@@ -5,13 +5,13 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DataSource, Repository, MoreThan } from 'typeorm';
-import { User } from '../common/entities/user.entity';
+import { User } from '../../common/entities/user.entity';
 import * as bcrypt from 'bcrypt';
-import { RefreshToken } from '../common/entities/refresh-token.entity';
-import { AppConfigService } from '../config/config.service';
+import { RefreshToken } from '../../common/entities/refresh-token.entity';
+import { AppConfigService } from '../../config/config.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { UserRole, UserStatus } from '../common/constants/user.constants';
-import { UserCreateDto } from './dto/user-create.dto';
+import { UserRole, UserStatus } from '../../common/constants/user.constants';
+import { UserCreateDto } from '../dto/user-create.dto';
 
 @Injectable()
 export class AuthService {

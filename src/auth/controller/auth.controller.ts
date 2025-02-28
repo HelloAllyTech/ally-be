@@ -9,14 +9,14 @@ import {
   HttpStatus,
   BadRequestException,
 } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { LoginDto } from './dto';
-import { UserCreateDto } from './dto/user-create.dto';
-import { JwtRefreshAuthGuard } from './guards/jwt-refresh-auth.guard';
-import { LoggerService } from '../logger/logger.service';
+import { AuthService } from '../service/auth.service';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { LoginDto } from '../dto';
+import { UserCreateDto } from '../dto/user-create.dto';
+import { JwtRefreshAuthGuard } from '../guards/jwt-refresh-auth.guard';
+import { LoggerService } from '../../logger/logger.service';
 import { ApiBody } from '@nestjs/swagger';
-import { RefreshTokenDto } from './dto/refresh.dto';
+import { RefreshTokenDto } from '../dto/refresh.dto';
 @Controller('v1/auth')
 export class AuthController {
   private logger = LoggerService.getInstance(AuthController.name);

@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { ChatService } from './chat.service';
+import { ChatService } from '../services/chat.service';
 import { OnEvent } from '@nestjs/event-emitter';
-import { Chat } from '../common/entities/chat.entity';
-import { ChatEvents } from './constants/chat.constants';
+import { Chat } from '../../common/entities/chat.entity';
+import { ChatEvents } from '../constants/chat.constants';
 
 @Injectable()
 export class ChatEventConsumer {

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { User } from '../common/entities/user.entity';
-import { QueueService } from '../queue/queue.service';
+import { QueueService } from '../queue/service/queue.service';
 import { Chat, ChatStatus } from '../common/entities/chat.entity';
 
 @Injectable()

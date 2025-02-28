@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { AiService } from './ai.service';
-import { DeepgramService } from './deepgram.service';
+import { AiService } from './service/ai.service';
+import { DeepgramService } from './service/deepgram.service';
 
 @Module({
   providers: [AiService, DeepgramService],
