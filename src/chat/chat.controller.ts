@@ -39,6 +39,22 @@ export class ChatController {
     return this.service.getCounsellorChat(tokenUser.id);
   }
 
+  @Get('call-logs')
+  async getCallLogs(
+    @CurrentUser() tokenUser: TokenUser,
+    @Query('limit') limit: number,
+    @Query('offset') offset: number,
+    @Query('sortBy') sortBy: string,
+    @Query('order') order: 'ASC' | 'DESC',
+  ) {
+    return this.service.getCallLogs(tokenUser.id, {
+      limit,
+      offset,
+      sortBy,
+      order,
+    });
+  }
+
   @Post(':id/accept')
   async accept(@CurrentUser() tokenUser: TokenUser, @Param('id') id: string) {
     return this.service.accept(tokenUser.id, parseInt(id));
@@ -84,5 +100,10 @@ export class ChatController {
     @Body() updateFeedbackDto: CreateFeedbackDto,
   ) {
     return this.feedbackService.update(id, updateFeedbackDto);
+  }
+
+  @Get(':id')
+  async getChat(@Param('id', ParseIntPipe) id: number) {
+    return this.service.getChat(id);
   }
 }

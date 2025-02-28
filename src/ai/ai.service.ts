@@ -69,7 +69,7 @@ export class AiService {
     }
   }
 
-  async generateSummary(messages: MessageRequest[]) {
+  async generateSummaryAndTags(messages: MessageRequest[]) {
     const request: GenerateSummaryRequest = {
       chat_history: messages,
     };
@@ -77,7 +77,7 @@ export class AiService {
       GenerateSummaryResponse,
       GenerateSummaryRequest
     >(ENDPOINTS.SUMMARY, request);
-    return response.summary;
+    return { summary: response.summary, tags: response.tags };
   }
 
   private async makeRequest<R, T>(endpoint: string, data: T): Promise<R> {

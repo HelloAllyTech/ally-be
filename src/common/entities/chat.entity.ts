@@ -31,7 +31,4 @@ export class Chat extends BaseEntity {
 
   @Column({ type: 'timestamp', nullable: true })
   endedAt?: Date;
-
-  @Column({ nullable: true })
-  summary?: string;
 }

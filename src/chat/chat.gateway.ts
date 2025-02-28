@@ -285,7 +285,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     chatId: number,
   ) {
     const messages = await this.chatService.getChatHistoryForAIService(chatId, {
-      sort: 'createdAt',
+      sortBy: 'createdAt',
       order: 'DESC',
       limit: 4,
     });
