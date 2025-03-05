@@ -19,6 +19,7 @@ import { MessageWithFeedback } from '../type/chat.type';
 import { Pagination } from '../../common/type/common.type';
 import { CallDetails } from '../../common/entities/call.details.entity';
 import { RedisService } from '../../redis/service/redis.service';
+import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
 
 @Injectable()
 export class ChatService {
@@ -367,10 +368,10 @@ export class ChatService {
   }
 
   async updateSummaryAndTags(chat: Chat) {
-    const { summary, tags } = await this.generateSummary(chat.id);
+    const { summary, tags, call_quality } = await this.generateSummary(chat.id);
     await this.callDetailsRepository.update(
       { chatId: chat.id },
-      { summary, tags },
+      { summary, tags, callQuality: call_quality },
     );
   }
 
@@ -415,14 +416,12 @@ export class ChatService {
     return details;
   }
 
-  async generateSummary(
-    chatId: number,
-  ): Promise<{ summary: string; tags: string }> {
+  async generateSummary(chatId: number): Promise<GenerateSummaryResponse> {
     const messageRequests: MessageRequest[] =
       await this.getChatHistoryForAIService(chatId);
-    const { summary, tags } =
+    const { summary, tags, call_quality } =
       await this.aiService.generateSummaryAndTags(messageRequests);
-    return { summary, tags };
+    return { summary, tags, call_quality };
   }
 
   async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {

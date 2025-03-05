@@ -77,7 +77,11 @@ export class AiService {
       GenerateSummaryResponse,
       GenerateSummaryRequest
     >(ENDPOINTS.SUMMARY, request);
-    return { summary: response.summary, tags: response.tags };
+    return {
+      summary: response.summary,
+      tags: response.tags,
+      call_quality: response.call_quality,
+    };
   }
 
   private async makeRequest<R, T>(endpoint: string, data: T): Promise<R> {

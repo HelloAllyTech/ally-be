@@ -15,7 +15,10 @@ import { ChatService } from '../services/chat.service';
 import { FeedbackService } from '../services/feedback.service';
 import { ParseIntPipe } from '@nestjs/common';
 import { CreateFeedbackDto } from '../dto/create-feedback.dto';
+import { ApiOperation, ApiResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { CallLogResponse } from '../dto/call-log.response.dto';
 
+@ApiTags('Chats')
 @Controller('v1/chats')
 @UseGuards(JwtAuthGuard)
 export class ChatController {
@@ -39,6 +42,37 @@ export class ChatController {
     return this.service.getCounsellorChat(tokenUser.id);
   }
 
+  @ApiOperation({ summary: 'Get counsellor call logs' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the list of call logs',
+    type: CallLogResponse,
+    isArray: true,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by (default: createdAt)',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    description: 'Sort order (default: DESC)',
+  })
   @Get('call-logs')
   async getCallLogs(
     @CurrentUser() tokenUser: TokenUser,

@@ -36,4 +36,7 @@ export class CallDetails extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   callOutcome?: string; // Outcome of thse call
+
+  @Column({ type: 'float', nullable: true })
+  callQuality?: number; // Quality of the call
 }
