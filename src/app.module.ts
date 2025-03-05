@@ -14,6 +14,7 @@ import { AiModule } from './ai/ai.module';
 import { CustomExceptionFilter } from './exception/custom.exception.filter';
 import { APP_FILTER } from '@nestjs/core';
 import { RedisModule } from './redis/redis.module';
+import { AudioIngestModule } from './audio-ingest/audio-ingest.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { RedisModule } from './redis/redis.module';
     QueueModule,
     AiModule,
     RedisModule,
+    AudioIngestModule,
   ],
   controllers: [],
   providers: [
