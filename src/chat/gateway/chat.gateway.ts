@@ -17,17 +17,20 @@ import {
 } from '../type/chat.type';
 import { ChatEvents } from '../constants/chat.constants';
 import { ChatService } from '../services/chat.service';
-import { forwardRef, Inject } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { AiService } from '../../ai/service/ai.service';
 import { DeepgramService } from '../../ai/service/deepgram.service';
 import { Message, MessageType } from '../../common/entities/message.entity';
+import { ITranscriptionService } from '../../ai/interfaces/transcription.interface';
 
 @WebSocketGateway({
   cors: { origin: '*' },
 })
+@Injectable()
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private sessions: { [key: string]: UserChatSessionData } = {};
   private serverSessions: { [key: string]: ServiceSessionData } = {};
+  private transcriptionService: ITranscriptionService;
 
   constructor(
     private userService: UserService,
@@ -35,7 +38,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private chatService: ChatService,
     private aiService: AiService,
     private deepgramService: DeepgramService,
-  ) {}
+  ) {
+    this.transcriptionService = this.deepgramService;
+  }
 
   logger = LoggerService.getInstance(ChatGateway.name);
 
@@ -138,7 +143,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Session not found for client ${sid}`);
       return;
     }
-    this.deepgramService.stopLiveTranscription(session.chatId);
+    this.transcriptionService.stopLiveTranscription(session.userId);
   }
 
   @SubscribeMessage(ChatEvents.SEND_MESSAGE)
@@ -193,7 +198,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
       session.chatId = chatId;
       this.logger.info(`✅ User ${session.userId} joined chatId: ${chatId}`);
-      this.deepgramService
+      this.transcriptionService
         .startLiveTranscription(
           session,
           chatId,
@@ -228,7 +233,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      this.deepgramService.sendAudio(session, audioData).catch((error) => {
+      this.transcriptionService.sendAudio(session, audioData).catch((error) => {
         this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
       });
     } catch (error) {
@@ -372,7 +377,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       context: '',
     };
     const message = await this.persistAndBroadcastMessage(session, data);
-    this.triggerNudge(message, session, chatId);
+    //   this.triggerNudge(message, session, chatId);
   }
 
   sendMessagesToRoom(room: string, payload: MessagePayload) {

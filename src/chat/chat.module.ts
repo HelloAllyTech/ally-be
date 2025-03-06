@@ -23,6 +23,6 @@ import { ChatEventConsumer } from './event/chat.event.consumer';
   ],
   controllers: [ChatController],
   providers: [ChatService, ChatGateway, FeedbackService, ChatEventConsumer],
-  exports: [ChatService, FeedbackService],
+  exports: [ChatService, FeedbackService, ChatGateway],
 })
 export class ChatModule {}

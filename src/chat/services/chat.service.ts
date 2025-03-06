@@ -15,7 +15,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { User } from '../../common/entities/user.entity';
 import { AiService } from '../../ai/service/ai.service';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
-import { MessageWithFeedback } from '../type/chat.type';
+import { MessageWithFeedback, UserChatSessionData } from '../type/chat.type';
 import { Pagination } from '../../common/type/common.type';
 import { CallDetails } from '../../common/entities/call.details.entity';
 import { RedisService } from '../../redis/service/redis.service';
@@ -213,6 +213,14 @@ export class ChatService {
       payload: chatResponse,
     };
     this.gateway.sendMessagesToRoom(room, payload);
+  }
+
+  async handleDeepgramTranscript(
+    session: UserChatSessionData,
+    chatId: number,
+    transcript: string,
+  ) {
+    return this.gateway.handleDeepgramTranscript(session, chatId, transcript);
   }
 
   async getMessageByChatId(
@@ -481,7 +489,10 @@ export class ChatService {
       query.offset(options.offset);
     }
     if (options.sortBy) {
-      query.orderBy(`chat.${options.sortBy}`, options.order as 'ASC' | 'DESC');
+      query.orderBy(
+        `details.${options.sortBy}`,
+        options.order as 'ASC' | 'DESC',
+      );
     }
     const callLogs = await query.getMany();
     return callLogs;
