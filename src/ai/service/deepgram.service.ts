@@ -165,7 +165,6 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     }
 
     try {
-      writeFileSync(`./audio-${new Date().getTime()}.mp3`, audio);
       clientSession.liveClient.send(audio);
     } catch (error) {
       this.logger.error(`Failed to send audio for userId: ${userId}`, error);

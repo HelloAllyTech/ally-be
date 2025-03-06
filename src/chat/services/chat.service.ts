@@ -490,7 +490,10 @@ export class ChatService {
       query.offset(options.offset);
     }
     if (options.sortBy) {
-      query.orderBy(`chat.${options.sortBy}`, options.order as 'ASC' | 'DESC');
+      query.orderBy(
+        `details.${options.sortBy}`,
+        options.order as 'ASC' | 'DESC',
+      );
     }
     const callLogs = await query.getMany();
     return callLogs;
