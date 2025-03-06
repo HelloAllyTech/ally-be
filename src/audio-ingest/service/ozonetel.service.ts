@@ -99,7 +99,14 @@ export class OzonetelService {
         );
       },
     );
-    return this.getRecordingXML();
+    return this.getStreamingXML();
+  }
+
+  private getStreamingXML() {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+   <response>
+<stream is_sip='true' url='https://3ea6d5cc8ee2ae6f762c35973d86284d.serveo.net'>513239</stream>
+</response>`;
   }
 
   private getRecordingXML() {
