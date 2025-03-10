@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ChatStatus } from '../../common/entities/chat.entity';
+import { SummaryDetails } from '../../common/entities/type/call.details.type';
 
 class UserInfo {
   @ApiProperty()
@@ -16,12 +17,6 @@ class UserInfo {
 }
 
 class CallDetails {
-  @ApiProperty({ required: false })
-  summary?: string;
-
-  @ApiProperty({ required: false })
-  tags?: string;
-
   @ApiProperty({ required: false })
   transcript?: string;
 
@@ -41,7 +36,7 @@ class CallDetails {
   callDuration?: number;
 
   @ApiProperty({ required: false })
-  callQuality?: number;
+  summary?: SummaryDetails;
 }
 
 export class CallLogResponse {

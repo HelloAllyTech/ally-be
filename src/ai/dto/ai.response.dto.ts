@@ -1,5 +1,7 @@
+import { SummaryNote } from '../../common/entities/type/call.details.type';
+
 export type GenerateSummaryResponse = {
-  summary: string;
-  tags: string;
+  summaryNote: SummaryNote;
+  tags: string[];
   call_quality: number;
 };

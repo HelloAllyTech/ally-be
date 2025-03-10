@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
+import { CallInfo, SummaryDetails } from './type/call.details.type';
 
 @Entity('call_details')
 export class CallDetails extends BaseEntity {
@@ -28,15 +29,12 @@ export class CallDetails extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   transcript?: string; // Transcript as a single text
 
-  @Column({ type: 'text', nullable: true })
-  summary?: string;
-
-  @Column({ type: 'text', nullable: true })
-  tags?: string;
+  @Column({ type: 'jsonb', nullable: true })
+  summary?: SummaryDetails;
 
   @Column({ type: 'text', nullable: true })
   callOutcome?: string; // Outcome of thse call
 
-  @Column({ type: 'float', nullable: true })
-  callQuality?: number; // Quality of the call
+  @Column({ type: 'jsonb', nullable: true })
+  callInfo?: CallInfo; // Additional information about the call
 }

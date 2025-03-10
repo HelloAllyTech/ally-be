@@ -376,10 +376,18 @@ export class ChatService {
   }
 
   async updateSummaryAndTags(chat: Chat) {
-    const { summary, tags, call_quality } = await this.generateSummary(chat.id);
+    const { summaryNote, tags, call_quality } = await this.generateSummary(
+      chat.id,
+    );
     await this.callDetailsRepository.update(
       { chatId: chat.id },
-      { summary, tags, callQuality: call_quality },
+      {
+        summary: {
+          summaryNote: summaryNote,
+          tags: tags,
+          callQuality: call_quality,
+        },
+      },
     );
   }
 
@@ -429,7 +437,7 @@ export class ChatService {
       await this.getChatHistoryForAIService(chatId);
     const { summary, tags, call_quality } =
       await this.aiService.generateSummaryAndTags(messageRequests);
-    return { summary, tags, call_quality };
+    return { summaryNote: summary, tags, call_quality };
   }
 
   async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {
