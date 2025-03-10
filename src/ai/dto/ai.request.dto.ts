@@ -7,3 +7,7 @@ export type MessageRequest = {
   content: string;
   timestamp?: string;
 };
+
+export type EnhanceTextRequest = {
+  content: string;
+};

@@ -5,3 +5,7 @@ export type GenerateSummaryResponse = {
   tags: string[];
   call_quality: number;
 };
+
+export type EnhanceTextResponse = {
+  enhanced_content: string;
+};

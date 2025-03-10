@@ -505,4 +505,8 @@ export class ChatService {
     const callLogs = await query.getMany();
     return callLogs;
   }
+
+  async enhance(summary: string) {
+    return this.aiService.enhance(summary);
+  }
 }
