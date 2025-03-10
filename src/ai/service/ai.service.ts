@@ -1,8 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { AppConfigService } from '../../config/config.service';
-import { GenerateSummaryRequest, MessageRequest } from '../dto/ai.request.dto';
-import { GenerateSummaryResponse } from '../dto/ai.response.dto';
+import {
+  EnhanceTextRequest,
+  GenerateSummaryRequest,
+  MessageRequest,
+} from '../dto/ai.request.dto';
+import {
+  EnhanceTextResponse,
+  GenerateSummaryResponse,
+} from '../dto/ai.response.dto';
 import { createClient, DeepgramClient } from '@deepgram/sdk';
 import { ENDPOINTS } from '../constants/endpoints.constants';
 import { NudgeRequest, NudgeResponse } from '../../chat/type/chat.type';
@@ -101,5 +108,16 @@ export class AiService {
       this.logger.error(`AI Service Error: ${error.message}`);
       throw new Error('AI request failed');
     }
+  }
+
+  async enhance(summary: string) {
+    const request: EnhanceTextRequest = {
+      content: summary,
+    };
+    const response = await this.makeRequest<
+      EnhanceTextResponse,
+      EnhanceTextRequest
+    >(ENDPOINTS.ENHANCE, request);
+    return response;
   }
 }

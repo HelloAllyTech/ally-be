@@ -15,7 +15,13 @@ import { ChatService } from '../services/chat.service';
 import { FeedbackService } from '../services/feedback.service';
 import { ParseIntPipe } from '@nestjs/common';
 import { CreateFeedbackDto } from '../dto/create-feedback.dto';
-import { ApiOperation, ApiResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiResponse,
+  ApiQuery,
+  ApiTags,
+  ApiBody,
+} from '@nestjs/swagger';
 import { CallLogResponse } from '../dto/call-log.response.dto';
 
 @ApiTags('Chats')
@@ -139,5 +145,35 @@ export class ChatController {
   @Get(':id')
   async getChat(@Param('id', ParseIntPipe) id: number) {
     return this.service.getChat(id);
+  }
+
+  @ApiOperation({ summary: 'Enhance chat summary' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns enhanced summary content',
+    schema: {
+      type: 'object',
+      properties: {
+        enhanced_content: { type: 'string' },
+      },
+    },
+  })
+  @ApiBody({
+    description: 'Summary content to enhance',
+    schema: {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: 'Original summary content',
+          example: 'This is a chat summary that needs enhancement',
+        },
+      },
+      required: ['content'],
+    },
+  })
+  @Post('enhance')
+  async enhance(@Body() body: { content: string }) {
+    return this.service.enhance(body.content);
   }
 }
