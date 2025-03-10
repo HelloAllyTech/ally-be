@@ -10,7 +10,6 @@ import { LoggerService } from '../../logger/logger.service';
 import { UserChatSessionData } from '../../chat/type/chat.type';
 import { ITranscriptionService } from '../interfaces/transcription.interface';
 import { DeepgramTranscriptionOptions } from '../type/transcription.type';
-import { writeFileSync } from 'fs';
 
 interface LiveClientSession {
   liveClient: LiveClient;
@@ -89,6 +88,8 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       numerals: options?.numerals ?? true,
       punctuate: options?.punctuate ?? true,
       channels: options?.channels ?? 1,
+      endpointing: 2000,
+      utterance_end_ms: 2000,
     });
   }
 
@@ -193,6 +194,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   }
 
   private async cleanupAllConnections(): Promise<void> {
+    this.logger.info('Cleaning up all connections');
     const cleanup = Array.from(this.liveClients.keys()).map((userId) =>
       this.cleanupConnection(userId),
     );
