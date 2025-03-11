@@ -16,6 +16,8 @@ interface LiveClientSession {
   keepAlive?: NodeJS.Timeout;
   audioBuffer: Buffer[];
   currentBufferSize: number;
+  transcriptBuffer: string;
+  currentUtterance: number;
 }
 
 @Injectable()
@@ -61,6 +63,8 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
         liveClient,
         audioBuffer: [],
         currentBufferSize: 0,
+        transcriptBuffer: '',
+        currentUtterance: 0,
       };
 
       this.liveClients.set(userId.toString(), clientSession);
@@ -140,8 +144,40 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   ): void {
     liveClient.on(LiveTranscriptionEvents.Transcript, (data) => {
       const transcript = data.channel.alternatives[0].transcript?.trim();
+      const clientSession = this.liveClients.get(session.userId.toString());
+      const duration = data.duration;
+      //duration": 1.65
       if (transcript && data.is_final) {
-        callback(session, chatId, transcript);
+        // check if it is a complete sentence
+        if (
+          transcript.endsWith('.') ||
+          transcript.endsWith('!') ||
+          transcript.endsWith('?') ||
+          (clientSession?.currentUtterance &&
+            clientSession.currentUtterance - duration > 500)
+        ) {
+          const finalTranscript = clientSession?.transcriptBuffer + transcript;
+          callback(session, chatId, finalTranscript);
+          if (clientSession) {
+            clientSession.transcriptBuffer = '';
+            clientSession.currentUtterance = 0;
+          }
+        } else if (clientSession) {
+          // add to buffer
+          clientSession.transcriptBuffer += transcript;
+          // clientSession.currentUtterance = data.channel.alternatives[0].;
+        }
+      }
+    });
+
+    liveClient.on(LiveTranscriptionEvents.UtteranceEnd, (data) => {
+      this.logger.info(`Utterance end for userId: ${session.userId}`);
+      const clientSession = this.liveClients.get(session.userId.toString());
+      if (clientSession) {
+        clientSession.currentUtterance = data.duration;
+        callback(session, chatId, clientSession.transcriptBuffer);
+        clientSession.transcriptBuffer = '';
+        clientSession.currentUtterance = 0;
       }
     });
 
