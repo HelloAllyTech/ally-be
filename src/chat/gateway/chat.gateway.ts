@@ -22,6 +22,7 @@ import { AiService } from '../../ai/service/ai.service';
 import { DeepgramService } from '../../ai/service/deepgram.service';
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { ITranscriptionService } from '../../ai/interfaces/transcription.interface';
+import { AppConfigService } from '../../config/config.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -38,6 +39,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private chatService: ChatService,
     private aiService: AiService,
     private deepgramService: DeepgramService,
+    private config: AppConfigService,
   ) {
     this.transcriptionService = this.deepgramService;
   }
@@ -157,6 +159,38 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const message = await this.persistAndBroadcastMessage(session, data);
     this.logger.info(`🔄 Triggering nudge for chatId: ${data.chatId}`);
     this.triggerNudge(message, session, data.chatId);
+  }
+
+  private async prepareMessage(
+    session: UserChatSessionData,
+    data: SendMessageWebSocketData,
+    broadCastOptions: {
+      event?: ChatEvents;
+    },
+  ) {
+    const chatId = data.chatId;
+    const senderId = session.userId;
+    const chat = await this.chatService.getChatById(chatId);
+    const message = await this.chatService.getMessageObject(
+      chatId,
+      senderId,
+      data,
+    );
+    if (!chat) {
+      this.logger.error(`Chat not found for chatId: ${chatId}`);
+      return;
+    }
+    const participants = [chat?.counselorId!];
+    if (
+      broadCastOptions.event != ChatEvents.NUDGE &&
+      broadCastOptions.event != ChatEvents.STAGE
+    ) {
+      participants.push(chat?.clientId!);
+    }
+    return {
+      participants,
+      message,
+    };
   }
 
   private async persistAndBroadcastMessage(
@@ -285,7 +319,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private async triggerNudge(
-    newMessage: Message,
+    newMessage: { content: string; chatId: number },
     session: UserChatSessionData,
     chatId: number,
   ) {
@@ -313,7 +347,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private async handleNudge(
     nudgeResponse: NudgeResponse,
     session: UserChatSessionData,
-    parentMessage: Message,
+    parentMessage: { content: string; chatId: number },
   ) {
     this.logger.info(
       `handleNudge - nudge :${nudgeResponse.nudge} | stage :${nudgeResponse.stage}`,
@@ -354,6 +388,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       event?: ChatEvents;
     },
   ) {
+    if (!participants.length || !message.content) {
+      this.logger.error(
+        `No participants or message content found for chatId: ${message.chatId} | message: ${message.content}`,
+      );
+      return;
+    }
     participants.forEach((participant) => {
       const room = `user-${participant}`;
       this.sendMessagesToRoom(room, {
@@ -367,17 +407,50 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     session: UserChatSessionData,
     chatId: number,
     transcript: string,
-  ) {
+    metadata?: { isFinal: boolean; currentTranscriptBuffer: string },
+  ): Promise<void> {
+    const { isFinal, currentTranscriptBuffer } = metadata || {};
     this.logger.info(
-      `🎤 handleDeepgramTranscript : ${transcript} - ${new Date().toISOString()}`,
+      `🎤 Transcription: ${transcript} - ${new Date().toISOString()}`,
     );
-    const data = {
-      chatId: chatId,
-      content: transcript,
-      context: '',
-    };
-    const message = await this.persistAndBroadcastMessage(session, data);
-    this.triggerNudge(message, session, chatId);
+
+    if (!transcript?.trim() && !currentTranscriptBuffer?.trim()) {
+      this.logger.error(
+        `No transcript or currentTranscriptBuffer found for chatId: ${chatId}`,
+      );
+      return;
+    }
+
+    const messageData = { chatId, content: transcript, context: '' };
+    const { participants, message } = (await this.prepareMessage(
+      session,
+      messageData,
+      {
+        event: ChatEvents.MESSAGE_RECEIVED,
+      },
+    )) || { participants: [], message: {} as Message };
+    if (!participants.length || !message) {
+      this.logger.error(
+        `No participants or message found for chatId: ${chatId}`,
+      );
+      return;
+    }
+
+    this.sendMessageToParticipant(participants, message); // Broadcast the transcript immediately
+
+    if (this.config.ai.sentenceCompletionRequired && isFinal) {
+      const completedMessage = await this.chatService.saveMessage(
+        chatId,
+        session.userId,
+        {
+          content: currentTranscriptBuffer || transcript,
+        },
+      );
+      this.triggerNudge(completedMessage, session, chatId);
+    } else if (!this.config.ai.sentenceCompletionRequired) {
+      const savedMessage = await this.chatService.save(message);
+      this.triggerNudge(savedMessage, session, chatId);
+    }
   }
 
   sendMessagesToRoom(room: string, payload: MessagePayload) {

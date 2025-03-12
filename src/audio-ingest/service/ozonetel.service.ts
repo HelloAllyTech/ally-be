@@ -81,6 +81,7 @@ export class OzonetelService {
   }
   handleNewCall(data: any) {
     this.logger.info(`handleNewCall ${JSON.stringify(data)}`);
+    // TODO handle deepgram transcription and sentence completion
     this.transcriptionService.startLiveTranscription(
       {
         type: 'user',
