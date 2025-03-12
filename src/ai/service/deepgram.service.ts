@@ -162,7 +162,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
         // reset buffer if sentence is complete
         if (isSentenceComplete) {
           clientSession.transcriptBuffer = '';
-          clientSession.currentUtterance = 0;
+          clientSession.currentUtterance = data.duration * 1000;
         } else {
           // add to buffer
           clientSession.transcriptBuffer = finalTranscript;
@@ -174,13 +174,13 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       this.logger.info(`Utterance end for userId: ${session.userId}`);
       const clientSession = this.liveClients.get(session.userId.toString());
       if (clientSession) {
-        clientSession.currentUtterance = data.duration;
+        clientSession.currentUtterance = data.duration * 1000;
         callback(session, chatId, '', {
           isFinal: true,
           currentTranscriptBuffer: clientSession.transcriptBuffer,
         });
         clientSession.transcriptBuffer = '';
-        clientSession.currentUtterance = 0;
+        clientSession.currentUtterance = data.duration * 1000;
       }
     });
 
@@ -197,12 +197,11 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   ): boolean {
     const transcript: string =
       data.channel.alternatives[0].transcript?.trim() || '';
-    const duration = data.duration;
+    //const duration = data.duration * 1000;
     const lastChar = transcript[transcript.length - 1];
     const isEndOfSentence = this.endOfSentencePunctuation.includes(lastChar);
-    const isMinUtteranceDuration =
-      clientSession.currentUtterance - duration > this.minUtteranceDuration;
-    return isEndOfSentence || isMinUtteranceDuration;
+    // TODO include nlp to check if the sentence is complete
+    return isEndOfSentence;
   }
 
   async stopLiveTranscription(userId: number): Promise<void> {
