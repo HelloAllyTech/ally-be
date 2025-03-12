@@ -16,6 +16,8 @@ interface LiveClientSession {
   keepAlive?: NodeJS.Timeout;
   audioBuffer: Buffer[];
   currentBufferSize: number;
+  transcriptBuffer: string;
+  currentUtterance: number;
 }
 
 @Injectable()
@@ -25,6 +27,8 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   private readonly keepAliveInterval = 3000;
   private readonly bufferSize = 48000;
   private readonly liveClients: Map<string, LiveClientSession> = new Map();
+  private endOfSentencePunctuation = ['.', '!', '?'];
+  private minUtteranceDuration = 500;
 
   constructor(private readonly config: AppConfigService) {
     this.deepgramClient = createClient(config.ai.deepgramApiKey);
@@ -61,6 +65,8 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
         liveClient,
         audioBuffer: [],
         currentBufferSize: 0,
+        transcriptBuffer: '',
+        currentUtterance: 0,
       };
 
       this.liveClients.set(userId.toString(), clientSession);
@@ -135,13 +141,46 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       session: UserChatSessionData,
       chatId: number,
       transcript: string,
+      metadata: {
+        isFinal: boolean;
+        currentTranscriptBuffer: string;
+      },
     ) => void,
     liveClient: LiveClient,
   ): void {
     liveClient.on(LiveTranscriptionEvents.Transcript, (data) => {
       const transcript = data.channel.alternatives[0].transcript?.trim();
-      if (transcript && data.is_final) {
-        callback(session, chatId, transcript);
+      const clientSession = this.liveClients.get(session.userId.toString());
+      if (transcript && data.is_final && clientSession) {
+        const isSentenceComplete = this.isSentenceComplete(clientSession, data);
+        const finalTranscript = clientSession?.transcriptBuffer + transcript;
+        callback(session, chatId, transcript, {
+          isFinal: isSentenceComplete,
+          currentTranscriptBuffer: finalTranscript,
+        });
+
+        // reset buffer if sentence is complete
+        if (isSentenceComplete) {
+          clientSession.transcriptBuffer = '';
+          clientSession.currentUtterance = 0;
+        } else {
+          // add to buffer
+          clientSession.transcriptBuffer = finalTranscript;
+        }
+      }
+    });
+
+    liveClient.on(LiveTranscriptionEvents.UtteranceEnd, (data) => {
+      this.logger.info(`Utterance end for userId: ${session.userId}`);
+      const clientSession = this.liveClients.get(session.userId.toString());
+      if (clientSession) {
+        clientSession.currentUtterance = data.duration;
+        callback(session, chatId, '', {
+          isFinal: true,
+          currentTranscriptBuffer: clientSession.transcriptBuffer,
+        });
+        clientSession.transcriptBuffer = '';
+        clientSession.currentUtterance = 0;
       }
     });
 
@@ -150,6 +189,20 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
         `Live transcription closed for userId: ${session.userId}`,
       );
     });
+  }
+
+  private isSentenceComplete(
+    clientSession: LiveClientSession,
+    data: any,
+  ): boolean {
+    const transcript: string =
+      data.channel.alternatives[0].transcript?.trim() || '';
+    const duration = data.duration;
+    const lastChar = transcript[transcript.length - 1];
+    const isEndOfSentence = this.endOfSentencePunctuation.includes(lastChar);
+    const isMinUtteranceDuration =
+      clientSession.currentUtterance - duration > this.minUtteranceDuration;
+    return isEndOfSentence || isMinUtteranceDuration;
   }
 
   async stopLiveTranscription(userId: number): Promise<void> {

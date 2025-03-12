@@ -33,6 +33,9 @@ export class AppConfigService {
     return {
       apiUrl: this.configService.get<string>('AI_SERVICE_API_URL'),
       deepgramApiKey: this.configService.get<string>('DEEPGRAM_API_KEY')!,
+      sentenceCompletionRequired:
+        this.configService.get<string>('SENTENCE_COMPLETION_REQUIRED') ===
+        'true',
     };
   }
 

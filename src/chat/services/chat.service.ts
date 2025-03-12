@@ -219,8 +219,14 @@ export class ChatService {
     session: UserChatSessionData,
     chatId: number,
     transcript: string,
+    metadata?: { isFinal: boolean; currentTranscriptBuffer: string },
   ) {
-    return this.gateway.handleDeepgramTranscript(session, chatId, transcript);
+    return this.gateway.handleDeepgramTranscript(
+      session,
+      chatId,
+      transcript,
+      metadata,
+    );
   }
 
   async getMessageByChatId(
@@ -272,6 +278,24 @@ export class ChatService {
       type: data.messageType || MessageType.TEXT,
     });
     return this.messageRepository.save(message);
+  }
+
+  async save(message: Message) {
+    return this.messageRepository.save(message);
+  }
+
+  async getMessageObject(
+    chatId: number,
+    senderId: number,
+    data: { content: string; context?: string; messageType?: MessageType },
+  ) {
+    return this.messageRepository.create({
+      chatId,
+      senderId,
+      content: data.content,
+      context: data.context,
+      type: data.messageType || MessageType.TEXT,
+    });
   }
 
   async getCounsellorChat(id: number) {
