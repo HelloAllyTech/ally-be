@@ -20,11 +20,10 @@ import { ChatEvents } from '../constants/chat.constants';
 import { ChatService } from '../services/chat.service';
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { AiService } from '../../ai/service/ai.service';
-import { DeepgramService } from '../../ai/service/deepgram.service';
 import { Message, MessageType } from '../../common/entities/message.entity';
-import { ITranscriptionService } from '../../ai/interfaces/transcription.interface';
 import { AppConfigService } from '../../config/config.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
+import { TranscriptionService } from '../../ai/service/transcription.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -33,7 +32,6 @@ import { MessageBrokerService } from '../../message-broker/service/message-broke
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private sessions: { [key: string]: UserChatSessionData } = {};
   private serverSessions: { [key: string]: ServiceSessionData } = {};
-  private transcriptionService: ITranscriptionService;
   private connectedUsers = new Set<number>();
 
   constructor(
@@ -41,12 +39,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @Inject(forwardRef(() => ChatService))
     private chatService: ChatService,
     private aiService: AiService,
-    private deepgramService: DeepgramService,
+    private transcriptionService: TranscriptionService,
     private config: AppConfigService,
     private publisher: MessageBrokerService,
-  ) {
-    this.transcriptionService = this.deepgramService;
-  }
+  ) {}
 
   logger = LoggerService.getInstance(ChatGateway.name);
 
