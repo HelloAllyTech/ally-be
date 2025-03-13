@@ -6,9 +6,13 @@ import { RedisModule as NestRedisModule } from '@liaoliaots/nestjs-redis';
 @Module({
   imports: [
     NestRedisModule.forRoot({
-      config: {
-        url: process.env.REDIS_URL,
-      },
+      config: [
+        {
+          name: 'default',
+          host: process.env.REDIS_HOST,
+          port: parseInt(process.env.REDIS_PORT || '6379'),
+        },
+      ],
     }),
   ],
   providers: [RedisService],
