@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Chat } from '../common/entities/chat.entity';
 import { ChatRoom } from '../common/entities/chat-room.entity';
@@ -13,6 +13,7 @@ import { Feedback } from '../common/entities/feedback.entity';
 import { FeedbackService } from './services/feedback.service';
 import { CallDetails } from '../common/entities/call.details.entity';
 import { ChatEventConsumer } from './event/chat.event.consumer';
+import { BrokerModule } from '../message-broker/broker.module';
 
 @Module({
   imports: [
@@ -20,9 +21,15 @@ import { ChatEventConsumer } from './event/chat.event.consumer';
     UserModule,
     QueueModule,
     AiModule,
+    forwardRef(() => BrokerModule),
   ],
   controllers: [ChatController],
   providers: [ChatService, ChatGateway, FeedbackService, ChatEventConsumer],
   exports: [ChatService, FeedbackService, ChatGateway],
 })
-export class ChatModule {}
+export class ChatModule implements OnModuleInit {
+  constructor(private readonly chatGateway: ChatGateway) {}
+  onModuleInit() {
+    this.chatGateway.subscribeToChatMessages();
+  }
+}

@@ -11,6 +11,14 @@ export class RedisService {
     this.redis = this.redisService.getOrThrow();
   }
 
+  // Create a new client dynamically (for pub/sub)
+  createClient(name: string): Redis {
+    const baseClient = this.redisService.getOrThrow();
+    return baseClient.duplicate({
+      name,
+    });
+  }
+
   async set(key: string, value: string) {
     const fullKey = this.getFullKey(key);
     await this.redis.set(fullKey, value);
