@@ -34,6 +34,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private sessions: { [key: string]: UserChatSessionData } = {};
   private serverSessions: { [key: string]: ServiceSessionData } = {};
   private transcriptionService: ITranscriptionService;
+  private connectedUsers = new Set<number>();
 
   constructor(
     private userService: UserService,
@@ -118,6 +119,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     };
 
     client.join(room);
+    this.connectedUsers.add(+userId);
     this.logger.info(`✅ User ${userId} joined room: ${room}`);
   }
 
@@ -148,6 +150,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Session not found for client ${sid}`);
       return;
     }
+    this.connectedUsers.delete(+session.userId);
     this.transcriptionService.stopLiveTranscription(session.userId);
   }
 
@@ -398,11 +401,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     participants.forEach((participant) => {
-      const room = `user-${participant}`;
-      this.sendMessagesToRoom(room, {
-        type: broadCastOptions?.event || ChatEvents.MESSAGE_RECEIVED,
-        payload: message,
-      });
+      if (this.connectedUsers.has(participant)) {
+        const room = `user-${participant}`;
+        this.sendMessagesToRoom(room, {
+          type: broadCastOptions?.event || ChatEvents.MESSAGE_RECEIVED,
+          payload: message,
+        });
+      }
     });
   }
 
