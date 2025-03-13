@@ -1,20 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { ITranscriptionService } from '../../ai/interfaces/transcription.interface';
-import { DeepgramService } from '../../ai/service/deepgram.service';
 import { LoggerService } from '../../logger/logger.service';
 import axios from 'axios';
 import { writeFileSync } from 'fs';
 import { ChatGateway } from '../../chat/gateway/chat.gateway';
+import { TranscriptionService } from '../../ai/service/transcription.service';
 @Injectable()
 export class OzonetelService {
-  private readonly transcriptionService: ITranscriptionService;
   private readonly logger = LoggerService.getInstance(OzonetelService.name);
   constructor(
-    private deepgramService: DeepgramService,
+    private transcriptionService: TranscriptionService,
     private chatGateway: ChatGateway,
-  ) {
-    this.transcriptionService = deepgramService;
-  }
+  ) {}
 
   async initiateOzonetel(data: any) {
     const event = data.event;

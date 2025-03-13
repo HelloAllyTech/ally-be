@@ -57,3 +57,20 @@ export type NudgeRequest = {
   chat_history: MessageRequest[];
   force_nudge?: boolean;
 };
+
+export type ClientMessage = Message & {
+  isFinal: boolean;
+  isSentenceComplete: boolean;
+  currentTranscriptBuffer: string;
+};
+
+export type SubscriptionData = {
+  participants: number[];
+  message: ClientMessage;
+};
+
+export type DeepgramTranscriptMetadata = {
+  isFinal: boolean;
+  isSentenceComplete: boolean;
+  currentTranscriptBuffer: string;
+};
