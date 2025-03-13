@@ -9,6 +9,7 @@ import { Server, Socket } from 'socket.io';
 import { LoggerService } from '../../logger/logger.service';
 import { UserService } from '../../user/user.service';
 import {
+  DeepgramTranscriptMetadata,
   MessagePayload,
   NudgeResponse,
   SendMessageWebSocketData,
@@ -23,6 +24,7 @@ import { DeepgramService } from '../../ai/service/deepgram.service';
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { ITranscriptionService } from '../../ai/interfaces/transcription.interface';
 import { AppConfigService } from '../../config/config.service';
+import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -40,6 +42,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private aiService: AiService,
     private deepgramService: DeepgramService,
     private config: AppConfigService,
+    private publisher: MessageBrokerService,
   ) {
     this.transcriptionService = this.deepgramService;
   }
@@ -407,9 +410,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     session: UserChatSessionData,
     chatId: number,
     transcript: string,
-    metadata?: { isFinal: boolean; currentTranscriptBuffer: string },
+    metadata?: DeepgramTranscriptMetadata,
   ): Promise<void> {
-    const { isFinal, currentTranscriptBuffer } = metadata || {};
+    const { isSentenceComplete, currentTranscriptBuffer, isFinal } =
+      metadata || {};
     this.logger.info(
       `🎤 Transcription: ${transcript} - ${new Date().toISOString()}`,
     );
@@ -436,9 +440,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    this.sendMessageToParticipant(participants, message); // Broadcast the transcript immediately
+    this.publisher.publish('chat-message', {
+      participants,
+      message: {
+        ...message,
+        isFinal,
+        isSentenceComplete,
+        currentTranscriptBuffer,
+      },
+    });
 
-    if (this.config.ai.sentenceCompletionRequired && isFinal) {
+    //this.sendMessageToParticipant(participants, message); // Broadcast the transcript immediately
+
+    if (this.config.ai.sentenceCompletionRequired && isSentenceComplete) {
       const completedMessage = await this.chatService.saveMessage(
         chatId,
         session.userId,
@@ -459,5 +473,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       `Sending message to room: ${room} | event: ${JSON.stringify(event)}`,
     );
     this.server.to(room).emit(event, payload);
+  }
+
+  subscribeToChatMessages() {
+    this.publisher.subscribe('chat-message', (data) => {
+      this.sendMessageToParticipant(data.participants, data.message);
+    });
   }
 }

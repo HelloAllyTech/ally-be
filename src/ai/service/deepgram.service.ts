@@ -7,7 +7,10 @@ import {
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
-import { UserChatSessionData } from '../../chat/type/chat.type';
+import {
+  DeepgramTranscriptMetadata,
+  UserChatSessionData,
+} from '../../chat/type/chat.type';
 import { ITranscriptionService } from '../interfaces/transcription.interface';
 import { DeepgramTranscriptionOptions } from '../type/transcription.type';
 
@@ -141,21 +144,19 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       session: UserChatSessionData,
       chatId: number,
       transcript: string,
-      metadata: {
-        isFinal: boolean;
-        currentTranscriptBuffer: string;
-      },
+      metadata: DeepgramTranscriptMetadata,
     ) => void,
     liveClient: LiveClient,
   ): void {
     liveClient.on(LiveTranscriptionEvents.Transcript, (data) => {
       const transcript = data.channel.alternatives[0].transcript?.trim();
       const clientSession = this.liveClients.get(session.userId.toString());
-      if (transcript && data.is_final && clientSession) {
+      if (transcript && clientSession) {
         const isSentenceComplete = this.isSentenceComplete(clientSession, data);
         const finalTranscript = clientSession?.transcriptBuffer + transcript;
         callback(session, chatId, transcript, {
-          isFinal: isSentenceComplete,
+          isFinal: data.is_final,
+          isSentenceComplete,
           currentTranscriptBuffer: finalTranscript,
         });
 
@@ -176,8 +177,9 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       if (clientSession) {
         clientSession.currentUtterance = data.duration * 1000;
         callback(session, chatId, '', {
-          isFinal: true,
+          isFinal: data.is_final,
           currentTranscriptBuffer: clientSession.transcriptBuffer,
+          isSentenceComplete: true,
         });
         clientSession.transcriptBuffer = '';
         clientSession.currentUtterance = data.duration * 1000;

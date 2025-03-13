@@ -15,11 +15,16 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { User } from '../../common/entities/user.entity';
 import { AiService } from '../../ai/service/ai.service';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
-import { MessageWithFeedback, UserChatSessionData } from '../type/chat.type';
+import {
+  DeepgramTranscriptMetadata,
+  MessageWithFeedback,
+  UserChatSessionData,
+} from '../type/chat.type';
 import { Pagination } from '../../common/type/common.type';
 import { CallDetails } from '../../common/entities/call.details.entity';
 import { RedisService } from '../../redis/service/redis.service';
 import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
+import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 
 @Injectable()
 export class ChatService {
@@ -41,6 +46,7 @@ export class ChatService {
     private eventEmitter: EventEmitter2,
     private aiService: AiService,
     private readonly cache: RedisService,
+    private readonly messageBrokerService: MessageBrokerService,
 
     //  private kafkaProducerService: KafkaProducerService,
   ) {}
@@ -219,7 +225,7 @@ export class ChatService {
     session: UserChatSessionData,
     chatId: number,
     transcript: string,
-    metadata?: { isFinal: boolean; currentTranscriptBuffer: string },
+    metadata?: DeepgramTranscriptMetadata,
   ) {
     return this.gateway.handleDeepgramTranscript(
       session,
