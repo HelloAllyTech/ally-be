@@ -448,20 +448,26 @@ export class ChatService {
 
     let noOfNudges = 0;
     let noOfStages = 0;
-    messages.forEach((message) => {
-      if (message.type === MessageType.NUDGE) {
-        noOfNudges++;
-      }
-      if (message.type === MessageType.STAGE) {
-        noOfStages++;
-      }
-    });
     let clientMessages = '';
     let counselorMessages = '';
     //format transcript also get the client talking percentage
     let transcript = '';
+    let currentStage = '';
 
     messages.forEach((message) => {
+      if (message.type === MessageType.NUDGE) {
+        noOfNudges++;
+      }
+      if (
+        message.type === MessageType.STAGE &&
+        currentStage !== message.content
+      ) {
+        noOfStages++;
+        currentStage = message.content;
+      }
+      if (message.type !== MessageType.TEXT) {
+        return;
+      }
       if (message.senderId == chat.clientId) {
         clientMessages += message.content.length;
         transcript += `Client: ${message.content}\n`;

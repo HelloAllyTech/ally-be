@@ -192,6 +192,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return {
       participants,
       message,
+      broadCastOptions,
     };
   }
 
@@ -216,7 +217,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       participants.push(chat?.clientId!);
     }
 
-    this.sendMessageToParticipant(participants, message, broadCastOptions);
+    this.publisher.publish('chat-message', {
+      participants,
+      message,
+      broadCastOptions,
+    });
     return message;
   }
 
@@ -321,7 +326,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private async triggerNudge(
-    newMessage: { content: string; chatId: number },
+    newMessage: { content: string; chatId: number; id: number },
     session: UserChatSessionData,
     chatId: number,
   ) {
@@ -349,7 +354,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private async handleNudge(
     nudgeResponse: NudgeResponse,
     session: UserChatSessionData,
-    parentMessage: { content: string; chatId: number },
+    parentMessage: { content: string; chatId: number; id: number },
   ) {
     this.logger.info(
       `handleNudge - nudge :${nudgeResponse.nudge} | stage :${nudgeResponse.stage}`,
@@ -362,6 +367,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           chatId: parentMessage.chatId,
           content: nudge,
           messageType: MessageType.NUDGE,
+          parentMessageId: parentMessage.id,
         },
         {
           event: ChatEvents.NUDGE,
@@ -375,6 +381,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           chatId: parentMessage.chatId,
           content: stage,
           messageType: MessageType.STAGE,
+          parentMessageId: parentMessage.id,
         },
         {
           event: ChatEvents.STAGE,
@@ -427,13 +434,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     const messageData = { chatId, content: transcript, context: '' };
-    const { participants, message } = (await this.prepareMessage(
-      session,
-      messageData,
-      {
+    const { participants, message, broadCastOptions } =
+      (await this.prepareMessage(session, messageData, {
         event: ChatEvents.MESSAGE_RECEIVED,
-      },
-    )) || { participants: [], message: {} as Message };
+      })) || { participants: [], message: {} as Message };
     if (!participants.length || !message) {
       this.logger.error(
         `No participants or message found for chatId: ${chatId}`,
@@ -449,6 +453,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         isSentenceComplete,
         currentTranscriptBuffer,
       },
+      broadCastOptions,
     });
 
     //this.sendMessageToParticipant(participants, message); // Broadcast the transcript immediately
@@ -478,7 +483,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   subscribeToChatMessages() {
     this.publisher.subscribe('chat-message', (data) => {
-      this.sendMessageToParticipant(data.participants, data.message);
+      this.sendMessageToParticipant(
+        data.participants,
+        data.message,
+        data.broadCastOptions,
+      );
     });
   }
 }
