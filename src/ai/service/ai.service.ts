@@ -106,7 +106,8 @@ export class AiService {
       return response.data;
     } catch (error) {
       this.logger.error(`AI Service Error: ${error.message}`);
-      throw new Error('AI request failed');
+      // throw new Error('AI request failed');
+      return {} as R;
     }
   }
 

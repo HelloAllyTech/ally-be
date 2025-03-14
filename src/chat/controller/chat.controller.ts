@@ -23,6 +23,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { CallLogResponse } from '../dto/call-log.response.dto';
+import { ChatResponseDto } from '../dto/chat.response.dto';
 
 @ApiTags('Chats')
 @Controller('v1/chats')
@@ -142,6 +143,12 @@ export class ChatController {
     return this.feedbackService.update(id, updateFeedbackDto);
   }
 
+  @ApiOperation({ summary: 'Get chat details' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the chat details',
+    type: ChatResponseDto,
+  })
   @Get(':id')
   async getChat(@Param('id', ParseIntPipe) id: number) {
     return this.service.getChat(id);
@@ -175,5 +182,28 @@ export class ChatController {
   @Post('enhance')
   async enhance(@Body() body: { content: string }) {
     return this.service.enhance(body.content);
+  }
+
+  @ApiOperation({ summary: 'Update call details' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the updated call details',
+    type: ChatResponseDto,
+  })
+  @ApiBody({
+    description: 'Call details to update',
+    schema: {
+      type: 'object',
+      properties: {
+        callDetails: { type: 'object' },
+      },
+    },
+  })
+  @Post(':id/update-call-details')
+  async updateCallDetails(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { callDetails: any },
+  ) {
+    return this.service.updateCallDetails(id, body.callDetails);
   }
 }

@@ -25,6 +25,7 @@ import { CallDetails } from '../../common/entities/call.details.entity';
 import { RedisService } from '../../redis/service/redis.service';
 import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
+import { CallInfo } from '../../common/entities/type/call.details.type';
 
 @Injectable()
 export class ChatService {
@@ -455,20 +456,36 @@ export class ChatService {
         noOfStages++;
       }
     });
-    //format transcript
-    const transcript = messages
-      .filter((message) => message.type === MessageType.TEXT)
-      .map((message) =>
-        message.senderId == chat.clientId
-          ? `Client: ${message.content}`
-          : `Counselor: ${message.content}`,
-      )
-      .join('\n');
+    let clientMessages = '';
+    let counselorMessages = '';
+    //format transcript also get the client talking percentage
+    let transcript = '';
 
+    messages.forEach((message) => {
+      if (message.senderId == chat.clientId) {
+        clientMessages += message.content.length;
+        transcript += `Client: ${message.content}\n`;
+      } else {
+        counselorMessages += message.content.length;
+        transcript += `Counselor: ${message.content}\n`;
+      }
+    });
+    const clientTalkingPercentage =
+      (clientMessages.length /
+        (clientMessages.length + counselorMessages.length)) *
+      100;
+    const counselorTalkingPercentage =
+      (counselorMessages.length /
+        (clientMessages.length + counselorMessages.length)) *
+      100;
     const updates = {
       noOfNudges,
       noOfStages,
       transcript,
+      callInfo: {
+        clientTalkingPercentage,
+        counselorTalkingPercentage,
+      } as CallInfo,
       endTime: chat.endedAt,
       callDuration: durationInSeconds,
     };
@@ -556,5 +573,13 @@ export class ChatService {
 
   async enhance(summary: string) {
     return this.aiService.enhance(summary);
+  }
+
+  async updateCallDetails(chatId: number, callDetails: any) {
+    await this.callDetailsRepository.update(
+      { chatId },
+      { summary: callDetails },
+    );
+    return this.getChat(chatId);
   }
 }

@@ -15,8 +15,14 @@ class UserInfo {
   @ApiProperty()
   role?: string;
 }
+class CallInfo {
+  @ApiProperty({ required: false })
+  clientTalkingPercentage?: number;
 
-class CallDetails {
+  @ApiProperty({ required: false })
+  counselorTalkingPercentage?: number;
+}
+export class CallDetails {
   @ApiProperty({ required: false })
   transcript?: string;
 
@@ -37,6 +43,9 @@ class CallDetails {
 
   @ApiProperty({ required: false })
   summary?: SummaryDetails;
+
+  @ApiProperty({ type: CallInfo })
+  callInfo?: CallInfo;
 }
 
 export class CallLogResponse {

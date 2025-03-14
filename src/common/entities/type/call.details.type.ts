@@ -1,6 +1,7 @@
 export type CallInfo = {
-  callId: string;
-  listeningRatio: number;
+  callId?: string;
+  clientTalkingPercentage?: number;
+  counselorTalkingPercentage?: number;
 };
 
 export enum NewCallFollowUp {
