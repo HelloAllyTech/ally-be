@@ -237,7 +237,13 @@ export class ChatService {
 
   async getMessageByChatId(
     chatId: number,
-    filter?: { type?: MessageType; limit?: number },
+    filter?: {
+      type?: MessageType;
+      limit?: number;
+      offset?: number;
+      sortBy?: string;
+      order?: 'ASC' | 'DESC';
+    },
   ) {
     const query = this.messageRepository
       .createQueryBuilder('message')
@@ -247,8 +253,13 @@ export class ChatService {
         Feedback,
         'feedback',
         'feedback.messageId = message.id',
-      )
-      .orderBy('message.createdAt', 'DESC');
+      );
+
+    query.orderBy(
+      `message.${filter?.sortBy || 'createdAt'}`,
+      filter?.order || 'DESC',
+    );
+
     if (filter?.type) {
       query.andWhere('message.type = :type', { type: filter.type });
     }
@@ -406,14 +417,14 @@ export class ChatService {
   }
 
   async updateSummaryAndTags(chat: Chat) {
-    const { summaryNote, tags, call_quality } = await this.generateSummary(
+    const { summary_note, tags, call_quality } = await this.generateSummary(
       chat.id,
     );
     await this.callDetailsRepository.update(
       { chatId: chat.id },
       {
         summary: {
-          summaryNote: summaryNote,
+          summaryNote: summary_note,
           tags: tags,
           callQuality: call_quality,
         },
@@ -423,7 +434,10 @@ export class ChatService {
 
   async updateMessageStatistics(chat: Chat) {
     const chatId = chat.id;
-    const messages = await this.getMessageByChatId(chatId);
+    const messages = await this.getMessageByChatId(chatId, {
+      sortBy: 'createdAt',
+      order: 'ASC',
+    });
     const startDate = chat.startedAt || new Date();
     const endDate = chat.endedAt || new Date();
     // duration in seconds as integer
@@ -444,7 +458,11 @@ export class ChatService {
     //format transcript
     const transcript = messages
       .filter((message) => message.type === MessageType.TEXT)
-      .map((message) => message.content)
+      .map((message) =>
+        message.senderId == chat.clientId
+          ? `Client: ${message.content}`
+          : `Counselor: ${message.content}`,
+      )
       .join('\n');
 
     const updates = {
@@ -465,9 +483,9 @@ export class ChatService {
   async generateSummary(chatId: number): Promise<GenerateSummaryResponse> {
     const messageRequests: MessageRequest[] =
       await this.getChatHistoryForAIService(chatId);
-    const { summary, tags, call_quality } =
+    const { summary_note, tags, call_quality } =
       await this.aiService.generateSummaryAndTags(messageRequests);
-    return { summaryNote: summary, tags, call_quality };
+    return { summary_note, tags, call_quality };
   }
 
   async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {

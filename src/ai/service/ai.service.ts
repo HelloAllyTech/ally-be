@@ -85,8 +85,8 @@ export class AiService {
       GenerateSummaryRequest
     >(ENDPOINTS.SUMMARY, request);
     return {
-      summary: response.summaryNote,
-      tags: response.tags,
+      summary_note: response.summary_note,
+      tags: response.summary_note?.tags,
       call_quality: response.call_quality,
     };
   }

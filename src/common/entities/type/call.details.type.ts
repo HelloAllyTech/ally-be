@@ -70,4 +70,6 @@ export type SummaryNote = {
     additionalInsights: string;
     counselorFeelings: string;
   };
+  tags: string[];
+  callQuality: number;
 };

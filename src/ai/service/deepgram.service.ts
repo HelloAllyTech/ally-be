@@ -173,20 +173,24 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       }
     });
 
-    // liveClient.on(LiveTranscriptionEvents.UtteranceEnd, (data) => {
-    //   this.logger.info(`Utterance end for userId: ${session.userId}`);
-    //   const clientSession = this.liveClients.get(session.userId.toString());
-    //   if (clientSession) {
-    //     clientSession.currentUtterance = data.duration * 1000;
-    //     callback(session, chatId, '', {
-    //       isFinal: data.is_final,
-    //       currentTranscriptBuffer: clientSession.transcriptBuffer,
-    //       isSentenceComplete: true,
-    //     });
-    //     clientSession.transcriptBuffer = '';
-    //     clientSession.currentUtterance = data.duration * 1000;
-    //   }
-    // });
+    liveClient.on(LiveTranscriptionEvents.UtteranceEnd, (data) => {
+      this.logger.info(
+        `Utterance end for userId: ${session.userId} | data : ${JSON.stringify(
+          data,
+        )}`,
+      );
+      //const clientSession = this.liveClients.get(session.userId.toString());
+      // if (clientSession) {
+      //   clientSession.currentUtterance = data.duration * 1000;
+      //   callback(session, chatId, '', {
+      //     isFinal: data.is_final,
+      //     currentTranscriptBuffer: clientSession.transcriptBuffer,
+      //     isSentenceComplete: true,
+      //   });
+      //   clientSession.transcriptBuffer = '';
+      //   clientSession.currentUtterance = data.duration * 1000;
+      // }
+    });
 
     liveClient.on(LiveTranscriptionEvents.Close, () => {
       this.logger.info(
