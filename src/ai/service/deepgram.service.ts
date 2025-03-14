@@ -55,12 +55,15 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     const userId = session.userId;
     this.logger.info(`startLiveTranscription -  userId: ${userId}`);
 
-    if (this.liveClients.has(userId.toString())) {
-      this.logger.warn(
-        `startLiveTranscription - Live transcription already exists for userId: ${userId}`,
-      );
-      return;
-    }
+    // if (this.liveClients.has(userId.toString())) {
+    //   this.logger.warn(
+    //     `startLiveTranscription - Live transcription already exists for userId: ${userId}`,
+    //   );
+    //   return;
+    // }
+    const existingLiveClient = this.liveClients.get(
+      userId.toString(),
+    )?.liveClient;
 
     try {
       const liveClient = this.createLiveClient(options);
@@ -80,6 +83,13 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
         callback,
         liveClient,
       );
+      if (existingLiveClient) {
+        this.logger.warn(
+          `startLiveTranscription - Live transcription already exists for userId: ${userId}`,
+        );
+        existingLiveClient.removeAllListeners();
+        existingLiveClient.requestClose();
+      }
     } catch (error) {
       this.logger.error(
         `startLiveTranscription - Failed to start live transcription for userId: ${userId}`,
