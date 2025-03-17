@@ -25,8 +25,8 @@ export class TranscriptionService {
     );
   }
 
-  async stopLiveTranscription(userId: number) {
-    await this.transcriptionService.stopLiveTranscription(userId);
+  async stopLiveTranscription(session: UserChatSessionData) {
+    await this.transcriptionService.stopLiveTranscription(session);
   }
 
   async sendAudio(session: UserChatSessionData, audio: Buffer) {

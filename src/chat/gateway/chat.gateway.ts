@@ -79,6 +79,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const room = `service-${service.id}`;
     this.serverSessions[service.id] = {
+      id: service.id,
       serviceId,
       service,
       room,
@@ -106,6 +107,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const room = `user-${userId || client.id}`;
     this.sessions[client.id] = {
+      id: client.id,
       userId: user.id,
       user,
       type: 'user',
@@ -147,7 +149,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     this.connectedUsers.delete(+session.userId);
-    this.transcriptionService.stopLiveTranscription(session.userId);
+    this.transcriptionService.stopLiveTranscription(session);
   }
 
   @SubscribeMessage(ChatEvents.SEND_MESSAGE)

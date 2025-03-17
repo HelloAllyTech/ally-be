@@ -4,6 +4,7 @@ import { Message, MessageType } from '../../common/entities/message.entity';
 import { ChatEvents } from '../constants/chat.constants';
 
 export type UserChatSessionData = {
+  id: string;
   type: 'user';
   userId: number;
   user: any;
@@ -13,6 +14,7 @@ export type UserChatSessionData = {
 };
 
 export type ServiceSessionData = {
+  id: number;
   type: 'service';
   serviceId: number;
   service: any;

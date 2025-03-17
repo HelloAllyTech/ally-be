@@ -13,7 +13,7 @@ export interface ITranscriptionService {
     options?: DeepgramTranscriptionOptions,
   ): Promise<void>;
 
-  stopLiveTranscription(userId: number): Promise<void>;
+  stopLiveTranscription(session: UserChatSessionData): Promise<void>;
 
   sendAudio(session: UserChatSessionData, audio: Buffer): Promise<void>;
 }

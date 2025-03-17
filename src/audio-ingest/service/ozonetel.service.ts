@@ -51,6 +51,7 @@ export class OzonetelService {
 
       await this.transcriptionService.sendAudio(
         {
+          id: 'user-1',
           type: 'user',
           userId: 1,
           user: {},
@@ -80,6 +81,7 @@ export class OzonetelService {
     // TODO handle deepgram transcription and sentence completion
     this.transcriptionService.startLiveTranscription(
       {
+        id: 'user-1',
         type: 'user',
         userId: 1,
         user: {},
