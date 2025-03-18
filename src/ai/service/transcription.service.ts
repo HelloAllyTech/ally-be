@@ -32,4 +32,8 @@ export class TranscriptionService {
   async sendAudio(session: UserChatSessionData, audio: Buffer) {
     await this.transcriptionService.sendAudio(session, audio);
   }
+
+  async handleAudioChatMuted(session: UserChatSessionData) {
+    await this.transcriptionService.handleAudioChatMuted(session);
+  }
 }

@@ -285,6 +285,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage(ChatEvents.AUDIO_CHAT_MUTED)
+  async handleAudioChatMuted(client: Socket, { chatId }: { chatId: number }) {
+    try {
+      this.logger.info(
+        `🎤 handleAudioChatMuted  chatId ${chatId} from ${client.id}`,
+      );
+      const session = this.sessions[client.id];
+      if (!session) {
+        this.logger.error(`Session not found for client ${client.id}`);
+        return;
+      }
+
+      await this.transcriptionService.handleAudioChatMuted(session);
+    } catch (error) {
+      this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
+    }
+  }
+
   @SubscribeMessage(ChatEvents.WEBRTC_OFFER)
   handleOffer(client: Socket, data: any) {
     this.logger.info(`WebRTC Offer from ${client.id}`);
@@ -455,6 +473,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         isFinal,
         isSentenceComplete,
         currentTranscriptBuffer,
+        createdAt: metadata?.currentTranscriptCreatedAt,
       },
       broadCastOptions,
     });
@@ -467,6 +486,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         session.userId,
         {
           content: currentTranscriptBuffer || transcript,
+          createdAt: metadata?.currentTranscriptCreatedAt,
         },
       );
       this.triggerNudge(completedMessage, session, chatId);

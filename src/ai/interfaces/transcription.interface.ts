@@ -2,6 +2,7 @@ import { UserChatSessionData } from '../../chat/type/chat.type';
 import { DeepgramTranscriptionOptions } from '../type/transcription.type';
 
 export interface ITranscriptionService {
+  handleAudioChatMuted(session: UserChatSessionData): Promise<void>;
   startLiveTranscription(
     session: UserChatSessionData,
     chatId: number,

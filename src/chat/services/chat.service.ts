@@ -286,7 +286,12 @@ export class ChatService {
   async saveMessage(
     chatId: number,
     senderId: number,
-    data: { content: string; context?: string; messageType?: MessageType },
+    data: {
+      content: string;
+      context?: string;
+      messageType?: MessageType;
+      createdAt?: Date;
+    },
   ) {
     const message = this.messageRepository.create({
       chatId,

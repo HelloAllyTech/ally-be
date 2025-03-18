@@ -21,6 +21,7 @@ interface LiveClientSession {
   currentBufferSize: number;
   transcriptBuffer: string;
   currentUtterance: number;
+  currentTranscriptCreatedAt: Date | null;
 }
 
 @Injectable()
@@ -36,6 +37,14 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
 
   constructor(private readonly config: AppConfigService) {
     this.deepgramClient = createClient(config.ai.deepgramApiKey);
+  }
+  async handleAudioChatMuted(session: UserChatSessionData): Promise<void> {
+    this.logger.info(`handleAudioChatMuted for userId: ${session.userId}`);
+    const clientSession = this.liveClients.get(session.id);
+    if (clientSession) {
+      await clientSession.liveClient.finalize();
+    }
+    return;
   }
 
   async onModuleDestroy() {
@@ -71,6 +80,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
         currentBufferSize: 0,
         transcriptBuffer: '',
         currentUtterance: 0,
+        currentTranscriptCreatedAt: null,
       };
       this.setupKeepAlive(clientSession, liveClient);
       await this.setupTranscriptionListeners(
@@ -159,6 +169,8 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       const clientSession = this.liveClients.get(session.id);
       if (transcript && clientSession) {
         const finalTranscript = clientSession?.transcriptBuffer + transcript;
+        clientSession.currentTranscriptCreatedAt =
+          clientSession.currentTranscriptCreatedAt || new Date();
         const isSentenceComplete =
           data.is_final &&
           this.isSentenceComplete(clientSession, finalTranscript);
@@ -166,15 +178,18 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
           isFinal: data.is_final,
           isSentenceComplete,
           currentTranscriptBuffer: finalTranscript,
+          currentTranscriptCreatedAt: clientSession.currentTranscriptCreatedAt,
         });
 
         // reset buffer if sentence is complete
         if (isSentenceComplete) {
           clientSession.transcriptBuffer = '';
           clientSession.currentUtterance = data.duration * 1000;
+          clientSession.currentTranscriptCreatedAt = null;
         } else if (data.is_final) {
           // add to buffer
           clientSession.transcriptBuffer = finalTranscript;
+          clientSession.currentTranscriptCreatedAt = null;
         }
       }
     });
@@ -208,6 +223,8 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
           isFinal: true,
           isSentenceComplete: true,
           currentTranscriptBuffer: clientSession.transcriptBuffer,
+          currentTranscriptCreatedAt:
+            clientSession.currentTranscriptCreatedAt || new Date(),
         });
       }
       this.liveClients.delete(session.id);
