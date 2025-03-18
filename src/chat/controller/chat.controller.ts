@@ -24,6 +24,7 @@ import {
 } from '@nestjs/swagger';
 import { CallLogResponse } from '../dto/call-log.response.dto';
 import { ChatResponseDto } from '../dto/chat.response.dto';
+import { MessageRequest } from '../../ai/dto/ai.request.dto';
 
 @ApiTags('Chats')
 @Controller('v1/chats')
@@ -205,5 +206,19 @@ export class ChatController {
     @Body() body: { callDetails: any },
   ) {
     return this.service.updateCallDetails(id, body.callDetails);
+  }
+
+  @ApiOperation({ summary: 'Get chat summary' })
+  @Get(':id/summary')
+  async getChatSummary(@Param('id', ParseIntPipe) id: number) {
+    return this.service.generateSummary(id);
+  }
+
+  @ApiOperation({ summary: 'Get chat summary for message' })
+  @Post('summaryForMessage')
+  async getChatSummaryForMessage(
+    @Body() body: { messageRequests: MessageRequest[] },
+  ) {
+    return this.service.generateSummaryForMessage(body.messageRequests);
   }
 }

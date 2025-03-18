@@ -515,6 +515,14 @@ export class ChatService {
     return { summary_note, tags, call_quality };
   }
 
+  async generateSummaryForMessage(
+    messageRequests: MessageRequest[],
+  ): Promise<GenerateSummaryResponse> {
+    const { summary_note, tags, call_quality } =
+      await this.aiService.generateSummaryAndTags(messageRequests);
+    return { summary_note, tags, call_quality };
+  }
+
   async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {
     const query = this.messageRepository
       .createQueryBuilder('message')
