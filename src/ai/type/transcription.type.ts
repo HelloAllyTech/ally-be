@@ -19,4 +19,6 @@ export interface DeepgramTranscriptionOptions {
   numerals?: boolean;
   punctuate?: boolean;
   channels?: number;
+  endpointing?: number;
+  utteranceEndMs?: number;
 }

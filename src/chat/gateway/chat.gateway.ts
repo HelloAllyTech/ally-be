@@ -24,6 +24,7 @@ import { Message, MessageType } from '../../common/entities/message.entity';
 import { AppConfigService } from '../../config/config.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { TranscriptionService } from '../../ai/service/transcription.service';
+import { Chat } from '../../common/entities/chat.entity';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -490,6 +491,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         data.message,
         data.broadCastOptions,
       );
+    });
+  }
+
+  broadcastChatEndedEvent(chat: Chat) {
+    const chatId = chat.id;
+    const participants = [chat.counselorId, chat.clientId];
+    const message = {
+      chatId,
+      content: 'Chat ended',
+      messageType: MessageType.SYSTEM,
+    };
+    this.publisher.publish('chat-message', {
+      participants,
+      message,
+      broadCastOptions: {
+        event: ChatEvents.CHAT_ENDED,
+      },
     });
   }
 }

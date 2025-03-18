@@ -95,11 +95,11 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       model: options?.model ?? 'nova-3',
       smart_format: options?.smartFormat ?? true,
       interim_results: options?.interimResults ?? true,
-      numerals: options?.numerals ?? true,
+      numerals: options?.numerals ?? false,
       punctuate: options?.punctuate ?? true,
       channels: options?.channels ?? 1,
-      endpointing: 2000,
-      utterance_end_ms: 2000,
+      endpointing: options?.endpointing ?? 300,
+      utterance_end_ms: options?.utteranceEndMs ?? 2000,
     });
   }
 
@@ -153,6 +153,9 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   ): void {
     liveClient.on(LiveTranscriptionEvents.Transcript, (data) => {
       const transcript = data.channel.alternatives[0].transcript?.trim();
+      this.logger.debug(
+        `Transcript for userId: ${session.userId} | transcript: ${transcript} | isFinal: ${data.is_final} | isSpeech:${data.speech_final}`,
+      );
       const clientSession = this.liveClients.get(session.id);
       if (transcript && clientSession) {
         const finalTranscript = clientSession?.transcriptBuffer + transcript;
@@ -199,6 +202,15 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       this.logger.info(
         `Live transcription closed for userId: ${session.userId}`,
       );
+      const clientSession = this.liveClients.get(session.id);
+      if (clientSession?.transcriptBuffer?.trim()) {
+        callback(session, chatId, clientSession.transcriptBuffer, {
+          isFinal: true,
+          isSentenceComplete: true,
+          currentTranscriptBuffer: clientSession.transcriptBuffer,
+        });
+      }
+      this.liveClients.delete(session.id);
     });
 
     liveClient.on(LiveTranscriptionEvents.Error, (error) => {
@@ -278,14 +290,13 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     }
 
     try {
+      await clientSession.liveClient.finalize();
       await clientSession.liveClient.requestClose();
     } catch (error) {
       this.logger.error(
         `Error closing connection for userId: ${sessionId}`,
         error,
       );
-    } finally {
-      this.liveClients.delete(sessionId);
     }
   }
 

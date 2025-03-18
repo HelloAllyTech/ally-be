@@ -352,7 +352,11 @@ export class ChatService {
       endedAt: new Date(),
     });
     const updatedChat = await this.getChatById(chatId);
+    if (updatedChat) {
+      this.gateway.broadcastChatEndedEvent(updatedChat);
+    }
     this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
+
     return updatedChat;
   }
 
