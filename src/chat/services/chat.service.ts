@@ -496,8 +496,8 @@ export class ChatService {
       noOfStages,
       transcript,
       callInfo: {
-        clientTalkingPercentage: clientTalkingPercentage?.toFixed(2) || 0,
-        counselorTalkingPercentage: counselorTalkingPercentage?.toFixed(2) || 0,
+        clientTalkingPercentage: clientTalkingPercentage?.toFixed(3) || 0,
+        counselorTalkingPercentage: counselorTalkingPercentage?.toFixed(3) || 0,
       } as CallInfo,
       endTime: chat.endedAt,
       callDuration: durationInSeconds,
