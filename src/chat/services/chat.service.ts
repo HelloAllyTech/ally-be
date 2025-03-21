@@ -486,20 +486,18 @@ export class ChatService {
       }
     });
     const clientTalkingPercentage =
-      (clientMessages.length /
-        (clientMessages.length + counselorMessages.length)) *
-      100;
+      clientMessages.length /
+      (clientMessages.length + counselorMessages.length);
     const counselorTalkingPercentage =
-      (counselorMessages.length /
-        (clientMessages.length + counselorMessages.length)) *
-      100;
+      counselorMessages.length /
+      (clientMessages.length + counselorMessages.length);
     const updates = {
       noOfNudges,
       noOfStages,
       transcript,
       callInfo: {
-        clientTalkingPercentage,
-        counselorTalkingPercentage,
+        clientTalkingPercentage: clientTalkingPercentage?.toFixed(2) || 0,
+        counselorTalkingPercentage: counselorTalkingPercentage?.toFixed(2) || 0,
       } as CallInfo,
       endTime: chat.endedAt,
       callDuration: durationInSeconds,
