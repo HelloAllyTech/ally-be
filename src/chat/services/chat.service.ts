@@ -486,11 +486,15 @@ export class ChatService {
       }
     });
     const clientTalkingPercentage =
-      clientMessages.length /
-      (clientMessages.length + counselorMessages.length);
+      clientMessages.length > 0
+        ? clientMessages.length /
+          (clientMessages.length + counselorMessages.length)
+        : 0;
     const counselorTalkingPercentage =
-      counselorMessages.length /
-      (clientMessages.length + counselorMessages.length);
+      counselorMessages.length > 0
+        ? counselorMessages.length /
+          (clientMessages.length + counselorMessages.length)
+        : 0;
     const updates = {
       noOfNudges,
       noOfStages,
