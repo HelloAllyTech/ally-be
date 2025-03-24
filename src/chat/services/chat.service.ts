@@ -607,4 +607,8 @@ export class ChatService {
     );
     return this.getChat(chatId);
   }
+
+  getNudge(newMessage: string, messageRequests: MessageRequest[]) {
+    return this.aiService.getNudge(newMessage, messageRequests);
+  }
 }
