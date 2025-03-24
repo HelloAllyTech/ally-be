@@ -79,7 +79,7 @@ export class AiService {
     >(ENDPOINTS.SUMMARY, request);
     return {
       summary_note: response.summary_note,
-      tags: response.summary_note?.tags,
+      tags: response.tags,
       call_quality: response.call_quality,
     };
   }
