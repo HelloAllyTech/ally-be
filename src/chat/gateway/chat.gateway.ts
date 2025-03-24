@@ -361,6 +361,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.aiService
       .getNudge(formattedNewMessage, messages)
       .then((nudge) => {
+        this.logger.info(
+          `Nudge:${newMessage.content} | chatId :${chatId} | ${nudge?.nudge} | stage: ${nudge?.stage}`,
+        );
         if (nudge) {
           this.handleNudge(nudge, session, newMessage);
         }

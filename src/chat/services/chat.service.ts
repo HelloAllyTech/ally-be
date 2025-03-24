@@ -515,10 +515,14 @@ export class ChatService {
   }
 
   async generateSummary(chatId: number): Promise<GenerateSummaryResponse> {
+    this.logger.info(`generateSummary - chatId:${chatId}`);
     const messageRequests: MessageRequest[] =
       await this.getChatHistoryForAIService(chatId);
     const { summary_note, tags, call_quality } =
       await this.aiService.generateSummaryAndTags(messageRequests);
+    this.logger.info(
+      `generateSummary - chatId:${chatId} | summary_note:${JSON.stringify(summary_note)} | tags:${JSON.stringify(tags)} | call_quality:${call_quality}`,
+    );
     return { summary_note, tags, call_quality };
   }
 
