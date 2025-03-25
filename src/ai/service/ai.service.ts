@@ -13,7 +13,7 @@ import {
 import { createClient, DeepgramClient } from '@deepgram/sdk';
 import { ENDPOINTS } from '../constants/endpoints.constants';
 import { NudgeRequest, NudgeResponse } from '../../chat/type/chat.type';
-
+import { v4 as uuidv4 } from 'uuid';
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
@@ -29,8 +29,6 @@ export class AiService {
 
   async transcribeAudio(audioBuffer: Buffer): Promise<string> {
     try {
-      this.logger.log('🔄 Sending audio for transcription...');
-
       const response = await axios.post(
         `${this.config.ai.apiUrl}/transcribe`,
         audioBuffer,
@@ -53,7 +51,6 @@ export class AiService {
     requireNudge = false,
   ) {
     try {
-      this.logger.log('🔄 Requesting nudge from AI service...');
       if (!this.config.ai.apiUrl) {
         return;
       }
@@ -64,10 +61,6 @@ export class AiService {
           chat_history: chat_history,
           //force_nudge: requireNudge,
         },
-      );
-
-      this.logger.log(
-        `Nudge received: ${response.nudge} | stage: ${response.stage}`,
       );
       return response; // Assuming API returns `{ nudge: "..." }`
     } catch (error) {
@@ -86,26 +79,31 @@ export class AiService {
     >(ENDPOINTS.SUMMARY, request);
     return {
       summary_note: response.summary_note,
-      tags: response.summary_note?.tags,
+      tags: response.tags,
       call_quality: response.call_quality,
     };
   }
 
   private async makeRequest<R, T>(endpoint: string, data: T): Promise<R> {
+    const execId = uuidv4();
     try {
       const url = `${this.config.ai.apiUrl}/${endpoint}`;
-      this.logger.log(`🔄 Making request to ${url} | ${JSON.stringify(data)}`);
+      this.logger.log(
+        `🔄 Making request to ${endpoint} | ${execId} | ${JSON.stringify(data)}`,
+      );
       const response = await axios.post(url, data, {
         headers: {
           'Content-Type': 'application/json',
         },
       });
       this.logger.log(
-        `🔄 Response from ${url} | ${JSON.stringify(response.data)}`,
+        `🔄 Response from ${endpoint} | ${execId} | ${JSON.stringify(response.data)}`,
       );
       return response.data;
     } catch (error) {
-      this.logger.error(`AI Service Error: ${error.message}`);
+      this.logger.error(
+        `AI Service Error: ${error.message} | ${execId} | ${JSON.stringify(data)}`,
+      );
       // throw new Error('AI request failed');
       return {} as R;
     }

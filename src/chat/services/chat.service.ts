@@ -486,20 +486,22 @@ export class ChatService {
       }
     });
     const clientTalkingPercentage =
-      (clientMessages.length /
-        (clientMessages.length + counselorMessages.length)) *
-      100;
+      clientMessages.length > 0
+        ? clientMessages.length /
+          (clientMessages.length + counselorMessages.length)
+        : 0;
     const counselorTalkingPercentage =
-      (counselorMessages.length /
-        (clientMessages.length + counselorMessages.length)) *
-      100;
+      counselorMessages.length > 0
+        ? counselorMessages.length /
+          (clientMessages.length + counselorMessages.length)
+        : 0;
     const updates = {
       noOfNudges,
       noOfStages,
       transcript,
       callInfo: {
-        clientTalkingPercentage,
-        counselorTalkingPercentage,
+        clientTalkingPercentage: clientTalkingPercentage?.toFixed(3) || 0,
+        counselorTalkingPercentage: counselorTalkingPercentage?.toFixed(3) || 0,
       } as CallInfo,
       endTime: chat.endedAt,
       callDuration: durationInSeconds,
@@ -513,10 +515,14 @@ export class ChatService {
   }
 
   async generateSummary(chatId: number): Promise<GenerateSummaryResponse> {
+    this.logger.info(`generateSummary - chatId:${chatId}`);
     const messageRequests: MessageRequest[] =
       await this.getChatHistoryForAIService(chatId);
     const { summary_note, tags, call_quality } =
       await this.aiService.generateSummaryAndTags(messageRequests);
+    this.logger.info(
+      `generateSummary - chatId:${chatId} | summary_note:${JSON.stringify(summary_note)} | tags:${JSON.stringify(tags)} | call_quality:${call_quality}`,
+    );
     return { summary_note, tags, call_quality };
   }
 
@@ -604,5 +610,9 @@ export class ChatService {
       { summary: callDetails },
     );
     return this.getChat(chatId);
+  }
+
+  getNudge(newMessage: string, messageRequests: MessageRequest[]) {
+    return this.aiService.getNudge(newMessage, messageRequests);
   }
 }

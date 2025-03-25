@@ -232,16 +232,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
   startAudioChat(client: Socket, { chatId }: { chatId: number }) {
     try {
-      this.logger.info(
-        `🎤 Audio message to chatId ${chatId} from ${client.id}`,
-      );
       const session = this.sessions[client.id];
       if (!session) {
         this.logger.error(`Session not found for client ${client.id}`);
         return;
       }
       session.chatId = chatId;
-      this.logger.info(`✅ User ${session.userId} joined chatId: ${chatId}`);
       this.transcriptionService
         .startLiveTranscription(
           session,
@@ -268,9 +264,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     { chatId, audioData }: { chatId: number; audioData: Buffer },
   ) {
     try {
-      this.logger.info(
-        `🎤 Audio message to chatId ${chatId} from ${client.id} - ${new Date().toISOString()}`,
-      );
       const session = this.sessions[client.id];
       if (!session) {
         this.logger.error(`Session not found for client ${client.id}`);
@@ -361,6 +354,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.aiService
       .getNudge(formattedNewMessage, messages)
       .then((nudge) => {
+        this.logger.info(
+          `Nudge:${newMessage.content} | chatId :${chatId} | ${nudge?.nudge} | stage: ${nudge?.stage}`,
+        );
         if (nudge) {
           this.handleNudge(nudge, session, newMessage);
         }

@@ -221,4 +221,12 @@ export class ChatController {
   ) {
     return this.service.generateSummaryForMessage(body.messageRequests);
   }
+
+  @ApiOperation({ summary: 'Get chat AI nugde for message' })
+  @Post('nudge')
+  async getChatNudge(
+    @Body() body: { newMessage: string; chatHistory: MessageRequest[] },
+  ) {
+    return this.service.getNudge(body.newMessage, body.chatHistory);
+  }
 }
