@@ -141,7 +141,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     this.logger.info(`🔴 Client disconnected: ${client.id}`);
     const sid = client.id;
     const session = this.sessions[sid];
@@ -151,6 +151,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     this.connectedUsers.delete(+session.userId);
     this.transcriptionService.stopLiveTranscription(session);
+    const chatId = await this.chatService.getChatById(session.chatId);
+    if (chatId) {
+      this.publisher.publish('chat-message', {
+        participants: [chatId.counselorId, chatId.clientId],
+        message: {
+          content: 'User disconnected',
+          messageType: MessageType.SYSTEM,
+          userId: session.userId,
+        },
+        broadCastOptions: {
+          event: ChatEvents.USER_DISCONNECTED,
+        },
+      });
+    }
   }
 
   @SubscribeMessage(ChatEvents.SEND_MESSAGE)
@@ -230,7 +244,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // **Audio Chat Handling**
   @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
-  startAudioChat(client: Socket, { chatId }: { chatId: number }) {
+  async startAudioChat(client: Socket, { chatId }: { chatId: number }) {
     try {
       const session = this.sessions[client.id];
       if (!session) {
@@ -238,7 +252,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
       session.chatId = chatId;
-      this.transcriptionService
+      await this.transcriptionService
         .startLiveTranscription(
           session,
           chatId,
@@ -250,6 +264,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             error,
           );
         });
+      const chat = await this.chatService.getChatById(chatId);
+      if (chat) {
+        this.publisher.publish('chat-message', {
+          participants: [chat.counselorId, chat.clientId],
+          message: {
+            userId: session.userId,
+            chatId,
+            content: 'User joined audio chat',
+            messageType: MessageType.SYSTEM,
+          },
+          broadCastOptions: {
+            event: ChatEvents.USER_JOINED,
+          },
+        });
+      }
 
       // TODO: Store audio in backend (S3, database, etc.)
     } catch (error) {
@@ -437,11 +466,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     transcript: string,
     metadata?: DeepgramTranscriptMetadata,
   ): Promise<void> {
-    const { isSentenceComplete, currentTranscriptBuffer, isFinal } =
-      metadata || {};
+    const {
+      isSentenceComplete,
+      currentTranscriptBuffer,
+      isFinal,
+      isUtteranceEnd,
+    } = metadata || {};
     this.logger.info(
       `🎤 Transcription: ${transcript} - ${new Date().toISOString()}`,
     );
+
+    if (isUtteranceEnd) {
+      await this.handleUtteranceEnd(session, chatId, transcript, metadata);
+      return;
+    }
 
     if (!transcript?.trim() && !currentTranscriptBuffer?.trim()) {
       this.logger.error(
@@ -489,6 +527,50 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } else if (!this.config.ai.sentenceCompletionRequired) {
       const savedMessage = await this.chatService.save(message);
       this.triggerNudge(savedMessage, session, chatId);
+    }
+  }
+
+  private async handleUtteranceEnd(
+    session: UserChatSessionData,
+    chatId: number,
+    transcript: string,
+    metadata?: DeepgramTranscriptMetadata,
+  ): Promise<void> {
+    const { currentTranscriptBuffer } = metadata || {};
+    this.logger.info(
+      `🎤 Utterance end for userId: ${session.userId} | currentUtterance: ${currentTranscriptBuffer}`,
+    );
+
+    const messageData = { chatId, content: 'Speaker stopped', context: '' };
+    const { participants, message, broadCastOptions } =
+      (await this.prepareMessage(session, messageData, {
+        event: ChatEvents.UTTERANCE_ENDED,
+      })) || { participants: [], message: {} as Message };
+    if (!participants.length || !message) {
+      this.logger.error(
+        `No participants or message found for chatId: ${chatId}`,
+      );
+      return;
+    }
+
+    this.publisher.publish('chat-message', {
+      participants,
+      message: {
+        ...message,
+      },
+      broadCastOptions,
+    });
+
+    if (currentTranscriptBuffer?.trim()) {
+      const completedMessage = await this.chatService.saveMessage(
+        chatId,
+        session.userId,
+        {
+          content: currentTranscriptBuffer || transcript,
+          createdAt: metadata?.currentTranscriptCreatedAt,
+        },
+      );
+      this.triggerNudge(completedMessage, session, chatId);
     }
   }
 
