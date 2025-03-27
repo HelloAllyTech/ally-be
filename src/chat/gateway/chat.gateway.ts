@@ -152,9 +152,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.connectedUsers.delete(+session.userId);
     this.transcriptionService.stopLiveTranscription(session);
     const chatId = await this.chatService.getChatById(session.chatId);
+    const participants = [chatId?.counselorId!, chatId?.clientId!].filter(
+      (id) => id !== session.userId,
+    );
+
     if (chatId) {
       this.publisher.publish('chat-message', {
-        participants: [chatId.counselorId, chatId.clientId],
+        participants,
         message: {
           content: 'User disconnected',
           messageType: MessageType.SYSTEM,
@@ -266,8 +270,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         });
       const chat = await this.chatService.getChatById(chatId);
       if (chat) {
+        const participants = [chat.counselorId, chat.clientId].filter(
+          (id) => id !== session.userId,
+        );
         this.publisher.publish('chat-message', {
-          participants: [chat.counselorId, chat.clientId],
+          participants,
           message: {
             userId: session.userId,
             chatId,
