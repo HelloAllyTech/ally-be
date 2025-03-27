@@ -184,12 +184,10 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
         // reset buffer if sentence is complete
         if (isSentenceComplete) {
           clientSession.transcriptBuffer = '';
-          clientSession.currentUtterance = data.duration * 1000;
           clientSession.currentTranscriptCreatedAt = null;
         } else if (data.is_final) {
           // add to buffer
           clientSession.transcriptBuffer = finalTranscript;
-          clientSession.currentTranscriptCreatedAt = null;
         }
       }
     });
@@ -211,6 +209,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
             clientSession?.currentTranscriptCreatedAt || new Date(),
         });
         clientSession.transcriptBuffer = '';
+        clientSession.currentTranscriptCreatedAt = null;
       }
     });
 
