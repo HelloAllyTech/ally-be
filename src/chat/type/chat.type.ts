@@ -76,4 +76,5 @@ export type DeepgramTranscriptMetadata = {
   isSentenceComplete: boolean;
   currentTranscriptBuffer: string;
   currentTranscriptCreatedAt: Date;
+  isUtteranceEnd?: boolean;
 };

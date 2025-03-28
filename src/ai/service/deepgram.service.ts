@@ -184,12 +184,10 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
         // reset buffer if sentence is complete
         if (isSentenceComplete) {
           clientSession.transcriptBuffer = '';
-          clientSession.currentUtterance = data.duration * 1000;
           clientSession.currentTranscriptCreatedAt = null;
         } else if (data.is_final) {
           // add to buffer
           clientSession.transcriptBuffer = finalTranscript;
-          // clientSession.currentTranscriptCreatedAt = null;
         }
       }
     });
@@ -200,17 +198,19 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
           data,
         )}`,
       );
-      //const clientSession = this.liveClients.get(session.userId.toString());
-      // if (clientSession) {
-      //   clientSession.currentUtterance = data.duration * 1000;
-      //   callback(session, chatId, '', {
-      //     isFinal: data.is_final,
-      //     currentTranscriptBuffer: clientSession.transcriptBuffer,
-      //     isSentenceComplete: true,
-      //   });
-      //   clientSession.transcriptBuffer = '';
-      //   clientSession.currentUtterance = data.duration * 1000;
-      // }
+      const clientSession = this.liveClients.get(session.id);
+      if (clientSession) {
+        callback(session, chatId, '', {
+          isFinal: data.is_final,
+          currentTranscriptBuffer: clientSession?.transcriptBuffer || '',
+          isSentenceComplete: true,
+          isUtteranceEnd: true,
+          currentTranscriptCreatedAt:
+            clientSession?.currentTranscriptCreatedAt || new Date(),
+        });
+        clientSession.transcriptBuffer = '';
+        clientSession.currentTranscriptCreatedAt = null;
+      }
     });
 
     liveClient.on(LiveTranscriptionEvents.Close, () => {

@@ -26,6 +26,7 @@ import { RedisService } from '../../redis/service/redis.service';
 import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { CallInfo } from '../../common/entities/type/call.details.type';
+import { StringUtil } from '../../common/util/string.util';
 
 @Injectable()
 export class ChatService {
@@ -457,8 +458,8 @@ export class ChatService {
 
     let noOfNudges = 0;
     let noOfStages = 0;
-    let clientMessages = '';
-    let counselorMessages = '';
+    let clientMessages = 0;
+    let counselorMessages = 0;
     //format transcript also get the client talking percentage
     let transcript = '';
     let currentStage = '';
@@ -478,22 +479,20 @@ export class ChatService {
         return;
       }
       if (message.senderId == chat.clientId) {
-        clientMessages += message.content.length;
+        clientMessages += StringUtil.wordCount(message.content);
         transcript += `Client: ${message.content}\n`;
       } else {
-        counselorMessages += message.content.length;
+        counselorMessages += StringUtil.wordCount(message.content);
         transcript += `Counselor: ${message.content}\n`;
       }
     });
     const clientTalkingPercentage =
-      clientMessages.length > 0
-        ? clientMessages.length /
-          (clientMessages.length + counselorMessages.length)
+      clientMessages > 0
+        ? clientMessages / (clientMessages + counselorMessages)
         : 0;
     const counselorTalkingPercentage =
-      counselorMessages.length > 0
-        ? counselorMessages.length /
-          (clientMessages.length + counselorMessages.length)
+      counselorMessages > 0
+        ? counselorMessages / (clientMessages + counselorMessages)
         : 0;
     const updates = {
       noOfNudges,
