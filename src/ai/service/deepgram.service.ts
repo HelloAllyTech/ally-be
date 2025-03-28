@@ -189,7 +189,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
         } else if (data.is_final) {
           // add to buffer
           clientSession.transcriptBuffer = finalTranscript;
-          clientSession.currentTranscriptCreatedAt = null;
+          // clientSession.currentTranscriptCreatedAt = null;
         }
       }
     });
