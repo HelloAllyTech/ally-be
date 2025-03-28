@@ -8,9 +8,11 @@ import {
 import { Response } from 'express';
 import { QueryFailedError } from 'typeorm';
 import { LoggerService } from '../logger/logger.service';
-
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { NotificationErrorType } from '../notification/type/notification.error.type';
 @Catch()
 export class CustomExceptionFilter implements ExceptionFilter {
+  constructor(private eventEmitter: EventEmitter2) {}
   private logger = LoggerService.getInstance(CustomExceptionFilter.name);
   catch(exception: unknown, host: ArgumentsHost) {
     this.logger.error(exception);
@@ -45,5 +47,12 @@ export class CustomExceptionFilter implements ExceptionFilter {
       message,
       error,
     });
+    this.eventEmitter.emit('exception', {
+      statusCode: status,
+      timestamp: new Date().toISOString(),
+      path: ctx.getRequest().url,
+      message,
+      type: 'Request Error',
+    } as NotificationErrorType);
   }
 }
