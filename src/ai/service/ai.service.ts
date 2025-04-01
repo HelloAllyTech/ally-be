@@ -16,6 +16,7 @@ import { NudgeRequest, NudgeResponse } from '../../chat/type/chat.type';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationErrorType } from '../../notification/type/notification.error.type';
+import { RetryOnFail } from '../../common/decorator/retry.decorator';
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
@@ -76,14 +77,21 @@ export class AiService {
     }
   }
 
+  @RetryOnFail(3, 1000)
   async generateSummaryAndTags(messages: MessageRequest[]) {
     const request: GenerateSummaryRequest = {
       chat_history: messages,
     };
-    const response = await this.makeRequest<
-      GenerateSummaryResponse,
-      GenerateSummaryRequest
-    >(ENDPOINTS.SUMMARY, request);
+    let response: GenerateSummaryResponse;
+    try {
+      response = await this.makeRequest<
+        GenerateSummaryResponse,
+        GenerateSummaryRequest
+      >(ENDPOINTS.SUMMARY, request, true);
+    } catch (error) {
+      this.logger.error(`AI Service Error: ${error.message}`);
+      return;
+    }
     return {
       summary_note: response.summary_note,
       tags: response.tags,
@@ -91,7 +99,11 @@ export class AiService {
     };
   }
 
-  private async makeRequest<R, T>(endpoint: string, data: T): Promise<R> {
+  private async makeRequest<R, T>(
+    endpoint: string,
+    data: T,
+    throwError = false,
+  ): Promise<R> {
     const execId = uuidv4();
     let timeoutId: NodeJS.Timeout | undefined;
     const startTime = new Date().toISOString();
@@ -131,7 +143,9 @@ export class AiService {
         message: `${execId} | startTime: ${startTime} | ${error.message} `,
         type: 'AI Request Error',
       } as NotificationErrorType);
-      // throw new Error('AI request failed');
+      if (throwError) {
+        throw new Error(error.message);
+      }
       return {} as R;
     } finally {
       if (timeoutId !== undefined) {

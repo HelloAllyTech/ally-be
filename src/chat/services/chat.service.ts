@@ -428,9 +428,8 @@ export class ChatService {
   }
 
   async updateSummaryAndTags(chat: Chat) {
-    const { summary_note, tags, call_quality } = await this.generateSummary(
-      chat.id,
-    );
+    const { summary_note, tags, call_quality } =
+      (await this.generateSummary(chat.id)) || {};
     await this.callDetailsRepository.update(
       { chatId: chat.id },
       {
@@ -513,27 +512,40 @@ export class ChatService {
     return details;
   }
 
-  async generateSummary(chatId: number): Promise<GenerateSummaryResponse> {
+  async generateSummary(
+    chatId: number,
+  ): Promise<GenerateSummaryResponse | undefined> {
     this.logger.info(`generateSummary - chatId:${chatId}`);
     const messageRequests: MessageRequest[] =
       await this.getChatHistoryForAIService(chatId, {
         sortBy: 'createdAt',
         order: 'ASC',
       });
-    const { summary_note, tags, call_quality } =
+    const aiResponse =
       await this.aiService.generateSummaryAndTags(messageRequests);
-    this.logger.info(
-      `generateSummary - chatId:${chatId} | summary_note:${JSON.stringify(summary_note)} | tags:${JSON.stringify(tags)} | call_quality:${call_quality}`,
-    );
-    return { summary_note, tags, call_quality };
+    if (aiResponse) {
+      return {
+        summary_note: aiResponse.summary_note,
+        tags: aiResponse.tags,
+        call_quality: aiResponse.call_quality,
+      };
+    }
+    return;
   }
 
   async generateSummaryForMessage(
     messageRequests: MessageRequest[],
-  ): Promise<GenerateSummaryResponse> {
-    const { summary_note, tags, call_quality } =
+  ): Promise<GenerateSummaryResponse | undefined> {
+    const aiResponse =
       await this.aiService.generateSummaryAndTags(messageRequests);
-    return { summary_note, tags, call_quality };
+    if (aiResponse) {
+      return {
+        summary_note: aiResponse.summary_note,
+        tags: aiResponse.tags,
+        call_quality: aiResponse.call_quality,
+      };
+    }
+    return;
   }
 
   async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {
