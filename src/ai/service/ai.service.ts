@@ -14,11 +14,19 @@ import { createClient, DeepgramClient } from '@deepgram/sdk';
 import { ENDPOINTS } from '../constants/endpoints.constants';
 import { NudgeRequest, NudgeResponse } from '../../chat/type/chat.type';
 import { v4 as uuidv4 } from 'uuid';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { NotificationErrorType } from '../../notification/type/notification.error.type';
+import { RetryOnFail } from '../../common/decorator/retry.decorator';
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly deepgramClient: DeepgramClient;
-  constructor(private config: AppConfigService) {
+  private readonly alertThresholdTimeout = 3 * 60 * 1000; // 3 minutes
+  private readonly maxTimeout = 5 * 60 * 1000; // 5 minutes
+  constructor(
+    private config: AppConfigService,
+    private eventEmitter: EventEmitter2,
+  ) {
     this.deepgramClient = createClient(config.ai.deepgramApiKey);
   }
 
@@ -69,14 +77,21 @@ export class AiService {
     }
   }
 
+  @RetryOnFail(3, 1000)
   async generateSummaryAndTags(messages: MessageRequest[]) {
     const request: GenerateSummaryRequest = {
       chat_history: messages,
     };
-    const response = await this.makeRequest<
-      GenerateSummaryResponse,
-      GenerateSummaryRequest
-    >(ENDPOINTS.SUMMARY, request);
+    let response: GenerateSummaryResponse;
+    try {
+      response = await this.makeRequest<
+        GenerateSummaryResponse,
+        GenerateSummaryRequest
+      >(ENDPOINTS.SUMMARY, request, true);
+    } catch (error) {
+      this.logger.error(`AI Service Error: ${error.message}`);
+      return;
+    }
     return {
       summary_note: response.summary_note,
       tags: response.tags,
@@ -84,17 +99,34 @@ export class AiService {
     };
   }
 
-  private async makeRequest<R, T>(endpoint: string, data: T): Promise<R> {
+  private async makeRequest<R, T>(
+    endpoint: string,
+    data: T,
+    throwError = false,
+  ): Promise<R> {
     const execId = uuidv4();
+    let timeoutId: NodeJS.Timeout | undefined;
+    const startTime = new Date().toISOString();
     try {
       const url = `${this.config.ai.apiUrl}/${endpoint}`;
       this.logger.log(
         `🔄 Making request to ${endpoint} | ${execId} | ${JSON.stringify(data)}`,
       );
+      // set timeout for alert threshold
+      timeoutId = setTimeout(() => {
+        this.eventEmitter.emit('exception', {
+          statusCode: 500,
+          timestamp: new Date().toISOString(),
+          path: endpoint,
+          message: `${execId} | Request Exceeded Time Limit | startTime: ${startTime}`,
+          type: 'AI Request Time Exceeded',
+        } as NotificationErrorType);
+      }, this.alertThresholdTimeout);
       const response = await axios.post(url, data, {
         headers: {
           'Content-Type': 'application/json',
         },
+        timeout: this.maxTimeout,
       });
       this.logger.log(
         `🔄 Response from ${endpoint} | ${execId} | ${JSON.stringify(response.data)}`,
@@ -104,8 +136,21 @@ export class AiService {
       this.logger.error(
         `AI Service Error: ${error.message} | ${execId} | ${JSON.stringify(data)}`,
       );
-      // throw new Error('AI request failed');
+      this.eventEmitter.emit('exception', {
+        statusCode: 500,
+        timestamp: new Date().toISOString(),
+        path: endpoint,
+        message: `${execId} | startTime: ${startTime} | ${error.message} `,
+        type: 'AI Request Error',
+      } as NotificationErrorType);
+      if (throwError) {
+        throw new Error(error.message);
+      }
       return {} as R;
+    } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 

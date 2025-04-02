@@ -58,4 +58,11 @@ export class AppConfigService {
       },
     };
   }
+
+  get slack() {
+    return {
+      botToken: this.configService.get<string>('SLACK_BOT_TOKEN'),
+      channel: this.configService.get<string>('SLACK_CHANNEL'),
+    };
+  }
 }

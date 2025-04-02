@@ -16,6 +16,7 @@ import { APP_FILTER } from '@nestjs/core';
 import { RedisModule } from './redis/redis.module';
 import { AudioIngestModule } from './audio-ingest/audio-ingest.module';
 import { BrokerModule } from './message-broker/broker.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { BrokerModule } from './message-broker/broker.module';
     RedisModule,
     AudioIngestModule,
     BrokerModule,
+    NotificationModule,
   ],
   controllers: [],
   providers: [
