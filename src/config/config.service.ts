@@ -45,7 +45,7 @@ export class AppConfigService {
         secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
         expiresIn: this.configService.get<string>(
           'JWT_ACCESS_EXPIRES_IN',
-          '15m',
+          '1d',
         ),
       },
       refreshToken: {
