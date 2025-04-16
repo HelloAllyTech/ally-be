@@ -1,6 +1,6 @@
 import { forwardRef, HttpException, Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { Chat, ChatStatus } from '../../common/entities/chat.entity';
 import { LoggerService } from '../../logger/logger.service';
@@ -49,6 +49,7 @@ export class ChatService {
     private aiService: AiService,
     private readonly cache: RedisService,
     private readonly messageBrokerService: MessageBrokerService,
+    private dataSource: DataSource,
 
     //  private kafkaProducerService: KafkaProducerService,
   ) {}
@@ -72,47 +73,62 @@ export class ChatService {
 
   async requestChat(userId: number) {
     this.logger.info(`requestChat - userId:${userId}`);
-    const activeChats = await this.chatRepository.findOne({
-      where: {
-        clientId: userId,
-        status: ChatStatus.ACTIVE,
-      },
-    });
+    return this.dataSource.transaction(async (entityManager) => {
+      const repo = entityManager.getRepository(Chat) || this.chatRepository;
+      const activeChats = await repo.findOne({
+        where: {
+          clientId: userId,
+          status: In([ChatStatus.ACTIVE, ChatStatus.PAUSED]),
+        },
+      });
 
-    if (activeChats) {
-      this.logger.info(`requestChat - activeChats:${activeChats.id}`);
-      throw new HttpException(
-        'You already have an active or waiting chat session',
-        400,
+      if (activeChats) {
+        this.logger.info(`requestChat - activeChats:${activeChats.id}`);
+        throw new HttpException(
+          'You already have an active or waiting chat session',
+          400,
+        );
+      }
+
+      const chatRoom = await this.getOrCreateChatRoom(userId, entityManager);
+
+      const chat = await this.createChat(userId, chatRoom.id, entityManager);
+
+      return this.queueService.enqueue(
+        {
+          userId,
+          chatId: chat.id,
+          priority: 1,
+        },
+        entityManager,
       );
-    }
-
-    const chatRoom = await this.getOrCreateChatRoom(userId);
-
-    const chat = await this.createChat(userId, chatRoom.id);
-
-    return this.queueService.enqueue({
-      userId,
-      chatId: chat.id,
-      priority: 1,
     });
   }
 
-  async createChat(userId: number, roomId: number) {
-    const chatObject = this.chatRepository.create({
+  async createChat(
+    userId: number,
+    roomId: number,
+    entityManager?: EntityManager,
+  ) {
+    const repo = entityManager?.getRepository(Chat) || this.chatRepository;
+    const callDetailsRepo =
+      entityManager?.getRepository(CallDetails) || this.callDetailsRepository;
+    const chatObject = repo.create({
       clientId: userId,
       roomId: roomId,
       status: ChatStatus.PAUSED,
     });
-    const chat = await this.chatRepository.save(chatObject);
-    await this.callDetailsRepository.save({
+    const chat = await repo.save(chatObject);
+    await callDetailsRepo.save({
       chatId: chat.id,
     });
     return chat;
   }
 
-  async getOrCreateChatRoom(userId: number) {
-    const chatRoom = await this.chatRoomRepository.findOne({
+  async getOrCreateChatRoom(userId: number, entityManager?: EntityManager) {
+    const repo =
+      entityManager?.getRepository(ChatRoom) || this.chatRoomRepository;
+    const chatRoom = await repo.findOne({
       where: {
         clientId: userId,
       },
@@ -122,11 +138,11 @@ export class ChatService {
       return chatRoom;
     }
 
-    const newChatRoom = this.chatRoomRepository.create({
+    const newChatRoom = repo.create({
       clientId: userId,
     });
 
-    return this.chatRoomRepository.save(newChatRoom);
+    return repo.save(newChatRoom);
   }
 
   async getChatsByUserIds(
