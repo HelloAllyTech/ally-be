@@ -1,4 +1,3 @@
-// auth-roles.decorator.ts
 import { applyDecorators, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport'; // or your custom guard
 import { RolesGuard } from '../guards/roles.guard';
