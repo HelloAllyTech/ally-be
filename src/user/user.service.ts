@@ -4,6 +4,8 @@ import { In, Repository } from 'typeorm';
 import { User } from '../common/entities/user.entity';
 import { QueueService } from '../queue/service/queue.service';
 import { Chat, ChatStatus } from '../common/entities/chat.entity';
+import { UserRole } from '../common/constants/user.constants';
+import { RedisService } from '../redis/service/redis.service';
 
 @Injectable()
 export class UserService {
@@ -11,6 +13,7 @@ export class UserService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private queueService: QueueService,
+    private readonly cache: RedisService,
   ) {}
 
   async get(id: number): Promise<User | null> {
@@ -74,5 +77,16 @@ export class UserService {
       email: user.email,
       role: user.role,
     };
+  }
+
+  async getUserRole(id: number): Promise<UserRole | undefined> {
+    const cachedUserRole = await this.cache.get(`user_role_${id}`);
+    if (cachedUserRole) return cachedUserRole as UserRole;
+    const user = await this.userRepository.findOne({
+      where: { id },
+    });
+    const userRole = user?.role;
+    if (userRole) await this.cache.set(`user_role_${id}`, userRole);
+    return userRole;
   }
 }

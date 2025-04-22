@@ -25,6 +25,8 @@ import {
 import { CallLogResponse } from '../dto/call-log.response.dto';
 import { ChatResponseDto } from '../dto/chat.response.dto';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
+import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
+import { UserRole } from '../../common/constants/user.constants';
 
 @ApiTags('Chats')
 @Controller('v1/chats')
@@ -35,16 +37,19 @@ export class ChatController {
     private readonly feedbackService: FeedbackService,
   ) {}
 
+  @AuthRoles(UserRole.CLIENT, UserRole.COUNSELOR)
   @Get('my-chat')
   async getMyChats(@CurrentUser() tokenUser: TokenUser) {
     return this.service.getMyChats(tokenUser.id);
   }
 
+  @AuthRoles(UserRole.CLIENT)
   @Post('request')
   async requestChat(@CurrentUser() tokenUser: TokenUser) {
     return this.service.requestChat(tokenUser.id);
   }
 
+  @AuthRoles(UserRole.COUNSELOR)
   @Get('counsellor-chat')
   async getCounsellorChat(@CurrentUser() tokenUser: TokenUser) {
     return this.service.getCounsellorChat(tokenUser.id);
@@ -81,6 +86,7 @@ export class ChatController {
     enum: ['ASC', 'DESC'],
     description: 'Sort order (default: DESC)',
   })
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @Get('call-logs')
   async getCallLogs(
     @CurrentUser() tokenUser: TokenUser,
@@ -89,7 +95,7 @@ export class ChatController {
     @Query('sortBy') sortBy: string = 'createdAt',
     @Query('order') order: 'ASC' | 'DESC' = 'DESC',
   ) {
-    return this.service.getCallLogs(tokenUser.id, {
+    return this.service.getCallLogs(tokenUser, {
       limit,
       offset,
       sortBy,
@@ -97,16 +103,19 @@ export class ChatController {
     });
   }
 
+  @AuthRoles(UserRole.COUNSELOR)
   @Post(':id/accept')
   async accept(@CurrentUser() tokenUser: TokenUser, @Param('id') id: string) {
     return this.service.accept(tokenUser.id, parseInt(id));
   }
 
+  @AuthRoles(UserRole.COUNSELOR, UserRole.CLIENT)
   @Post(':id/end')
   async endChat(@CurrentUser() tokenUser: TokenUser, @Param('id') id: string) {
     return this.service.endChat(tokenUser.id, parseInt(id));
   }
 
+  @AuthRoles(UserRole.COUNSELOR)
   @Get(':id/messages')
   async getMessages(
     @CurrentUser() tokenUser: TokenUser,
@@ -117,6 +126,7 @@ export class ChatController {
     return this.service.getMessages(parseInt(id), tokenUser.id, limit, offset);
   }
 
+  @AuthRoles(UserRole.COUNSELOR)
   @Post('messages/:messageId/feedback')
   async createFeedback(
     @Param('messageId', ParseIntPipe) messageId: number,
@@ -131,11 +141,13 @@ export class ChatController {
     return this.feedbackService.create(feedback);
   }
 
+  @AuthRoles(UserRole.COUNSELOR)
   @Get('messages/:messageId/feedback')
   async getFeedback(@Param('messageId', ParseIntPipe) messageId: number) {
     return this.feedbackService.findByMessageId(messageId);
   }
 
+  @AuthRoles(UserRole.COUNSELOR)
   @Patch('messages/feedback/:id')
   async updateFeedback(
     @Param('id', ParseIntPipe) id: number,
@@ -150,6 +162,7 @@ export class ChatController {
     description: 'Returns the chat details',
     type: ChatResponseDto,
   })
+  @AuthRoles(UserRole.COUNSELOR)
   @Get(':id')
   async getChat(@Param('id', ParseIntPipe) id: number) {
     return this.service.getChat(id);
@@ -180,6 +193,7 @@ export class ChatController {
       required: ['content'],
     },
   })
+  @AuthRoles(UserRole.COUNSELOR)
   @Post('enhance')
   async enhance(@Body() body: { content: string }) {
     return this.service.enhance(body.content);
@@ -200,6 +214,7 @@ export class ChatController {
       },
     },
   })
+  @AuthRoles(UserRole.COUNSELOR)
   @Post(':id/update-call-details')
   async updateCallDetails(
     @Param('id', ParseIntPipe) id: number,
@@ -209,12 +224,14 @@ export class ChatController {
   }
 
   @ApiOperation({ summary: 'Get chat summary' })
+  @AuthRoles(UserRole.COUNSELOR)
   @Get(':id/summary')
   async getChatSummary(@Param('id', ParseIntPipe) id: number) {
     return this.service.generateSummary(id);
   }
 
   @ApiOperation({ summary: 'Get chat summary for message' })
+  @AuthRoles(UserRole.COUNSELOR)
   @Post('summaryForMessage')
   async getChatSummaryForMessage(
     @Body() body: { messageRequests: MessageRequest[] },
@@ -223,6 +240,7 @@ export class ChatController {
   }
 
   @ApiOperation({ summary: 'Get chat AI nugde for message' })
+  @AuthRoles(UserRole.COUNSELOR)
   @Post('nudge')
   async getChatNudge(
     @Body() body: { newMessage: string; chatHistory: MessageRequest[] },
