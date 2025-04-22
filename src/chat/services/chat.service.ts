@@ -27,6 +27,8 @@ import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { CallInfo } from '../../common/entities/type/call.details.type';
 import { StringUtil } from '../../common/util/string.util';
+import { TokenUser } from '../../auth/type/auth.types';
+import { UserRole } from '../../common/constants/user.constants';
 
 @Injectable()
 export class ChatService {
@@ -598,7 +600,7 @@ export class ChatService {
     return messageRequests;
   }
 
-  async getCallLogs(id: number, options: Pagination) {
+  async getCallLogs(user: TokenUser, options: Pagination) {
     const query = this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndMapOne(
@@ -612,8 +614,10 @@ export class ChatService {
         User,
         'client',
         'client.id = chat.clientId',
-      )
-      .where('chat.counselorId = :counselorId', { counselorId: id });
+      );
+    if (user.role === UserRole.COUNSELOR) {
+      query.where('chat.counselorId = :counselorId', { counselorId: user.id });
+    }
     if (options.limit) {
       query.limit(options.limit);
     }
