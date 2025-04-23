@@ -21,4 +21,5 @@ export interface DeepgramTranscriptionOptions {
   channels?: number;
   endpointing?: number;
   utteranceEndMs?: number;
+  language?: string;
 }
