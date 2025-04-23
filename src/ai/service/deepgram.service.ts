@@ -110,6 +110,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       channels: options?.channels ?? 1,
       endpointing: options?.endpointing ?? 300,
       utterance_end_ms: options?.utteranceEndMs ?? 2000,
+      language: options?.language ?? 'multi',
     });
   }
 
