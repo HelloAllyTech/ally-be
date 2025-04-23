@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
+import { TIME } from '../common/constants/time.constants';
 @Injectable()
 export class AppConfigService {
   constructor(private configService: ConfigService) {}
@@ -63,6 +63,25 @@ export class AppConfigService {
     return {
       botToken: this.configService.get<string>('SLACK_BOT_TOKEN'),
       channel: this.configService.get<string>('SLACK_CHANNEL'),
+    };
+  }
+
+  get rateLimit() {
+    return {
+      otp: {
+        ttl: this.configService.get<number>(
+          'THROTTLE_TTL_OTP',
+          TIME.MINUTE_IN_MS * 10,
+        ),
+        limit: this.configService.get<number>('THROTTLE_LIMIT_OTP', 5),
+      },
+    };
+  }
+
+  get redis() {
+    return {
+      host: this.configService.get<string>('REDIS_HOST'),
+      port: this.configService.get<number>('REDIS_PORT'),
     };
   }
 }
