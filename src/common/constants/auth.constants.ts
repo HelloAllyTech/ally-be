@@ -7,8 +7,4 @@ export const PERMISSIONS = [
   'VIEW:NAVBAR:SETTINGS',
 ];
 
-export const GROUPS = [
-  'CLIENT',
-  'COUNSELOR',
-  'ADMIN',
-];
+export const GROUPS = ['CLIENT', 'COUNSELOR', 'ADMIN'];

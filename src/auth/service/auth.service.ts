@@ -32,7 +32,8 @@ export class AuthService {
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
     this.userGroupRepository = this.dataSource.getRepository(UserGroup);
     this.groupRepository = this.dataSource.getRepository(Group);
-    this.groupPermissionRepository = this.dataSource.getRepository(GroupPermission);
+    this.groupPermissionRepository =
+      this.dataSource.getRepository(GroupPermission);
   }
 
   private userRepository: Repository<User>;
@@ -189,7 +190,7 @@ export class AuthService {
     const group = await this.groupRepository.findOne({
       where: { group: userData.role || UserRole.CLIENT },
     });
-    
+
     if (group) {
       // Add user to default group
       await this.userGroupRepository.save({
@@ -220,7 +221,7 @@ export class AuthService {
     // Get user's groups from cache or DB
     const cachedUserGroups = await this.cache.get(`user_groups_${id}`);
     let userGroups;
-    
+
     if (cachedUserGroups) {
       userGroups = JSON.parse(cachedUserGroups);
     } else {
@@ -228,9 +229,9 @@ export class AuthService {
       userGroups = await this.userGroupRepository
         .find({
           select: { groupId: true },
-          where: { userId: id }
+          where: { userId: id },
         })
-        .then(rows => rows.map(row => row.groupId));
+        .then((rows) => rows.map((row) => row.groupId));
 
       await this.cache.set(`user_groups_${id}`, JSON.stringify(userGroups));
     }
@@ -240,10 +241,12 @@ export class AuthService {
     // Get permissions for each group from cache or DB
     const permissions = new Set<string>();
     const missingGroupIds = new Set<number>();
-    
+
     // First check cache for all groups
     for (const groupId of userGroups) {
-      const cachedGroupPermissions = await this.cache.get(`group_permissions_${groupId}`);
+      const cachedGroupPermissions = await this.cache.get(
+        `group_permissions_${groupId}`,
+      );
       if (cachedGroupPermissions) {
         const groupPermissions = JSON.parse(cachedGroupPermissions);
         groupPermissions.forEach((p: string) => permissions.add(p));
@@ -259,24 +262,29 @@ export class AuthService {
         .select('gp.groupId', 'groupId')
         .addSelect('p.permission', 'permission')
         .innerJoin('permissions', 'p', 'p.id = gp.permissionId')
-        .where('gp.groupId IN (:...groupIds)', { groupIds: [...missingGroupIds] })
+        .where('gp.groupId IN (:...groupIds)', {
+          groupIds: [...missingGroupIds],
+        })
         .getRawMany();
 
       // Group permissions by groupId
-      const groupedPermissions = missingPermissions.reduce((acc, curr) => {
-        if (!acc[curr.groupId]) {
-          acc[curr.groupId] = [];
-        }
-        acc[curr.groupId].push(curr.permission);
-        permissions.add(curr.permission);
-        return acc;
-      }, {} as Record<number, string[]>);
+      const groupedPermissions = missingPermissions.reduce(
+        (acc, curr) => {
+          if (!acc[curr.groupId]) {
+            acc[curr.groupId] = [];
+          }
+          acc[curr.groupId].push(curr.permission);
+          permissions.add(curr.permission);
+          return acc;
+        },
+        {} as Record<number, string[]>,
+      );
 
       // Cache each group's permissions
       await Promise.all(
-        Object.entries(groupedPermissions).map(([groupId, perms]) => 
-          this.cache.set(`group_permissions_${groupId}`, JSON.stringify(perms))
-        )
+        Object.entries(groupedPermissions).map(([groupId, perms]) =>
+          this.cache.set(`group_permissions_${groupId}`, JSON.stringify(perms)),
+        ),
       );
     }
 
