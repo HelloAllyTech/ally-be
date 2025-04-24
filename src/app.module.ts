@@ -17,6 +17,7 @@ import { RedisModule } from './redis/redis.module';
 import { AudioIngestModule } from './audio-ingest/audio-ingest.module';
 import { BrokerModule } from './message-broker/broker.module';
 import { NotificationModule } from './notification/notification.module';
+import { RateLimitModule } from './rate-limit/rate-limit.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { NotificationModule } from './notification/notification.module';
     AudioIngestModule,
     BrokerModule,
     NotificationModule,
+    RateLimitModule,
   ],
   controllers: [],
   providers: [

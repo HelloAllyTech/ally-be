@@ -1,0 +1,5 @@
+export const TIME = {
+  MINUTE_IN_MS: 60000,
+  HOUR_IN_MS: 3600000,
+  DAY_IN_MS: 86400000,
+};
