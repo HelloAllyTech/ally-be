@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { AuthService } from '../service/auth.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
-import { LoginDto } from '../dto';
+import { GenerateOtpDto, LoginDto, VerifyOtpDto } from '../dto';
 import { UserCreateDto } from '../dto/user-create.dto';
 import { JwtRefreshAuthGuard } from '../guards/jwt-refresh-auth.guard';
 import { LoggerService } from '../../logger/logger.service';
@@ -26,6 +26,17 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto.username, loginDto.password);
+  }
+
+  @Post('generate-otp')
+  @HttpCode(HttpStatus.OK)
+  async generateOtp(@Body() generateOtpDto: GenerateOtpDto) {
+    return this.authService.generateOtp(generateOtpDto.phone);
+  }
+
+  @Post('verify-otp')
+  async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
+    return this.authService.verifyOtp(verifyOtpDto.phone, verifyOtpDto.otp);
   }
 
   @Post('signup')

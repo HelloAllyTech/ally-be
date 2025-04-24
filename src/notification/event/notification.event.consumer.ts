@@ -10,4 +10,9 @@ export class NotificationEventConsumer {
   handleException(payload: NotificationErrorType) {
     this.notificationService.handleException(payload);
   }
+
+  @OnEvent('otp.generated')
+  handleOtpGenerated(payload: { phone: string; otp: string }) {
+    this.notificationService.sendOTP(payload.phone, payload.otp);
+  }
 }
