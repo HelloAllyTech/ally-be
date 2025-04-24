@@ -15,6 +15,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UserRole, UserStatus } from '../../common/constants/user.constants';
 import { UserCreateDto } from '../dto/user-create.dto';
 import { RedisService } from 'src/redis/service/redis.service';
+import { GroupPermission } from 'src/common/entities/group-permission.entity';
 
 @Injectable()
 export class AuthService {
@@ -31,12 +32,14 @@ export class AuthService {
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
     this.userGroupRepository = this.dataSource.getRepository(UserGroup);
     this.groupRepository = this.dataSource.getRepository(Group);
+    this.groupPermissionRepository = this.dataSource.getRepository(GroupPermission);
   }
 
   private userRepository: Repository<User>;
   private refreshTokenRepository: Repository<RefreshToken>;
   private userGroupRepository: Repository<UserGroup>;
   private groupRepository: Repository<Group>;
+  private groupPermissionRepository: Repository<GroupPermission>;
 
   // ... existing validateUser and validateUserById methods ...
 
@@ -214,23 +217,69 @@ export class AuthService {
   }
 
   async getUserPermissions(id: number): Promise<string[]> {
-    const cachedUserPermissions = await this.cache.get(
-      `user_permissions_${id}`,
-    );
-    if (cachedUserPermissions) return JSON.parse(cachedUserPermissions);
+    // Get user's groups from cache or DB
+    const cachedUserGroups = await this.cache.get(`user_groups_${id}`);
+    let userGroups;
+    
+    if (cachedUserGroups) {
+      userGroups = JSON.parse(cachedUserGroups);
+    } else {
+      // Fetch user groups from DB
+      userGroups = await this.userGroupRepository
+        .find({
+          select: { groupId: true },
+          where: { userId: id }
+        })
+        .then(rows => rows.map(row => row.groupId));
 
-    const permissionsData = await this.userGroupRepository
-      .createQueryBuilder('ug')
-      .select('DISTINCT p.permission', 'permission')
-      .innerJoin('group_permissions', 'gp', 'gp.groupId = ug.groupId')
-      .innerJoin('permissions', 'p', 'p.id = gp.permissionId')
-      .where('ug.userId = :userId', { userId: id })
-      .getRawMany();
+      await this.cache.set(`user_groups_${id}`, JSON.stringify(userGroups));
+    }
 
-    const permissions = permissionsData.map(p => p.permission);
+    if (!userGroups.length) return [];
 
-    await this.cache.set(`user_permissions_${id}`, JSON.stringify(permissions));
+    // Get permissions for each group from cache or DB
+    const permissions = new Set<string>();
+    const missingGroupIds = new Set<number>();
+    
+    // First check cache for all groups
+    for (const groupId of userGroups) {
+      const cachedGroupPermissions = await this.cache.get(`group_permissions_${groupId}`);
+      if (cachedGroupPermissions) {
+        const groupPermissions = JSON.parse(cachedGroupPermissions);
+        groupPermissions.forEach((p: string) => permissions.add(p));
+      } else {
+        missingGroupIds.add(groupId);
+      }
+    }
 
-    return permissions;
+    // If any permissions are missing from cache, fetch them all at once
+    if (missingGroupIds.size > 0) {
+      const missingPermissions = await this.groupPermissionRepository
+        .createQueryBuilder('gp')
+        .select('gp.groupId', 'groupId')
+        .addSelect('p.permission', 'permission')
+        .innerJoin('permissions', 'p', 'p.id = gp.permissionId')
+        .where('gp.groupId IN (:...groupIds)', { groupIds: [...missingGroupIds] })
+        .getRawMany();
+
+      // Group permissions by groupId
+      const groupedPermissions = missingPermissions.reduce((acc, curr) => {
+        if (!acc[curr.groupId]) {
+          acc[curr.groupId] = [];
+        }
+        acc[curr.groupId].push(curr.permission);
+        permissions.add(curr.permission);
+        return acc;
+      }, {} as Record<number, string[]>);
+
+      // Cache each group's permissions
+      await Promise.all(
+        Object.entries(groupedPermissions).map(([groupId, perms]) => 
+          this.cache.set(`group_permissions_${groupId}`, JSON.stringify(perms))
+        )
+      );
+    }
+
+    return [...permissions];
   }
 }
