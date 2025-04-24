@@ -6,12 +6,15 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { DataSource, Repository, MoreThan } from 'typeorm';
 import { User } from '../../common/entities/user.entity';
+import { UserGroup } from '../../common/entities/user-group.entity';
+import { Group } from '../../common/entities/group.entity';
 import * as bcrypt from 'bcrypt';
 import { RefreshToken } from '../../common/entities/refresh-token.entity';
 import { AppConfigService } from '../../config/config.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UserRole, UserStatus } from '../../common/constants/user.constants';
 import { UserCreateDto } from '../dto/user-create.dto';
+import { RedisService } from 'src/redis/service/redis.service';
 
 @Injectable()
 export class AuthService {
@@ -22,13 +25,18 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: AppConfigService,
     private eventEmitter: EventEmitter2,
+    private readonly cache: RedisService,
   ) {
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
+    this.userGroupRepository = this.dataSource.getRepository(UserGroup);
+    this.groupRepository = this.dataSource.getRepository(Group);
   }
 
   private userRepository: Repository<User>;
   private refreshTokenRepository: Repository<RefreshToken>;
+  private userGroupRepository: Repository<UserGroup>;
+  private groupRepository: Repository<Group>;
 
   // ... existing validateUser and validateUserById methods ...
 
@@ -174,6 +182,19 @@ export class AuthService {
     // Save user
     const savedUser = await this.userRepository.save(newUser);
 
+    // find group id using role
+    const group = await this.groupRepository.findOne({
+      where: { group: userData.role || UserRole.CLIENT },
+    });
+    
+    if (group) {
+      // Add user to default group
+      await this.userGroupRepository.save({
+        userId: savedUser.id,
+        groupId: group.id,
+      });
+    }
+
     // Emit user created event
     this.eventEmitter.emit('user.created', {
       userId: savedUser.id,
@@ -190,5 +211,26 @@ export class AuthService {
       password,
       name: username, // Using username as name, you might want to separate these
     });
+  }
+
+  async getUserPermissions(id: number): Promise<string[]> {
+    const cachedUserPermissions = await this.cache.get(
+      `user_permissions_${id}`,
+    );
+    if (cachedUserPermissions) return JSON.parse(cachedUserPermissions);
+
+    const permissionsData = await this.userGroupRepository
+      .createQueryBuilder('ug')
+      .select('DISTINCT p.permission', 'permission')
+      .innerJoin('group_permissions', 'gp', 'gp.groupId = ug.groupId')
+      .innerJoin('permissions', 'p', 'p.id = gp.permissionId')
+      .where('ug.userId = :userId', { userId: id })
+      .getRawMany();
+
+    const permissions = permissionsData.map(p => p.permission);
+
+    await this.cache.set(`user_permissions_${id}`, JSON.stringify(permissions));
+
+    return permissions;
   }
 }
