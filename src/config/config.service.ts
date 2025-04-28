@@ -101,4 +101,14 @@ export class AppConfigService {
       ttl: this.configService.get<number>('OTP_TTL', TIME.MINUTE_IN_MS * 5),
     };
   }
+
+  get analytics() {
+    return {
+      integration: this.configService.get<string>('ANALYTICS_INTEGRATION'),
+      metabase: {
+        url: this.configService.get<string>('METABASE_URL')!,
+        apiKey: this.configService.get<string>('METABASE_API_KEY')!,
+      },
+    };
+  }
 }
