@@ -27,4 +27,7 @@ export class User extends BaseEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
+
+  @Column({ type: 'text', nullable: true, unique: true })
+  phone?: string;
 }

@@ -23,6 +23,14 @@ export class UserService {
     return user || null;
   }
 
+  async getUsersByPhoneNumbers(phoneNumbers: string[]): Promise<User[] | null> {
+    return this.userRepository.find({
+      where: {
+        phone: In(phoneNumbers),
+      },
+    });
+  }
+
   async getUsersByIds(ids: number[]): Promise<User[]> {
     return this.userRepository.find({
       where: {
@@ -88,5 +96,26 @@ export class UserService {
     const userRole = user?.role;
     if (userRole) await this.cache.set(`user_role_${id}`, userRole);
     return userRole;
+  }
+
+  async createUser({
+    role,
+    phoneNumber,
+    name,
+    email,
+  }: {
+    phoneNumber: string;
+    role: UserRole;
+    name?: string;
+    email?: string;
+  }) {
+    // TODO: Add phone number to the user table and update this query
+    const user = this.userRepository.create({
+      role,
+      phone: phoneNumber,
+      name: name || 'Anonymous user',
+      email: email || 'placeholder@placeholder.com',
+    });
+    return this.userRepository.save(user);
   }
 }

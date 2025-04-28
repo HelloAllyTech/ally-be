@@ -27,6 +27,7 @@ import { ChatResponseDto } from '../dto/chat.response.dto';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
+import { CallStartDto } from '../dto/call-start.dto';
 
 @ApiTags('Chats')
 @Controller('v1/chats')
@@ -101,6 +102,12 @@ export class ChatController {
       sortBy,
       order,
     });
+  }
+
+  @AuthRoles(UserRole.COUNSELOR, UserRole.CLIENT)
+  @Patch('call-start')
+  async callStart(@Body() params: CallStartDto) {
+    return this.service.startCall(params.participantPhoneNumbers);
   }
 
   @AuthRoles(UserRole.COUNSELOR)

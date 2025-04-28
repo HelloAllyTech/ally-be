@@ -147,6 +147,7 @@ export class AuthService {
   }
 
   async signup(userData: UserCreateDto): Promise<Omit<User, 'password'>> {
+    // TODO: Revisit this once we have a phone number in table & cofnirmation on how the flow works with admins
     // Check if user with email already exists
     const existingUser = await this.userRepository.findOne({
       where: { email: userData.email },
@@ -169,6 +170,7 @@ export class AuthService {
       status: UserStatus.ACTIVE,
       metadata: {},
       username: userData.email,
+      phone: userData.phone,
     });
 
     // Save user
