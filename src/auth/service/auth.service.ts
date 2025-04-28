@@ -202,7 +202,7 @@ export class AuthService {
 
   async generateOtp(phone: string) {
     const user = await this.userRepository.findOne({
-      where: { email: phone },
+      where: { phone: phone },
     });
     if (!user) {
       this.logger.error(`User not found for phone ${phone}`);
@@ -230,7 +230,7 @@ export class AuthService {
     if (cachedOtp === otp) {
       // generate token
       const user = await this.userRepository.findOne({
-        where: { email: phone },
+        where: { phone: phone },
       });
       if (!user) {
         throw new BadRequestException('User not found');
