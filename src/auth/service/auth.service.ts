@@ -12,19 +12,25 @@ import { AppConfigService } from '../../config/config.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UserRole, UserStatus } from '../../common/constants/user.constants';
 import { UserCreateDto } from '../dto/user-create.dto';
+import { LoggerService } from '../../logger/logger.service';
+import { RedisService } from '../../redis/service/redis.service';
+import { AuthUtil } from '../util/auth.util';
 
 @Injectable()
 export class AuthService {
   private readonly PASSWORD_MIN_LENGTH = 6; // Move to config service if needed
-
+  private readonly logger = LoggerService.getInstance(AuthService.name);
+  private readonly OTP_TTL;
   constructor(
     private dataSource: DataSource,
     private jwtService: JwtService,
     private configService: AppConfigService,
     private eventEmitter: EventEmitter2,
+    private cacheService: RedisService,
   ) {
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
+    this.OTP_TTL = this.configService.otp.ttl;
   }
 
   private userRepository: Repository<User>;
@@ -192,5 +198,44 @@ export class AuthService {
       password,
       name: username, // Using username as name, you might want to separate these
     });
+  }
+
+  async generateOtp(phone: string) {
+    const user = await this.userRepository.findOne({
+      where: { phone: phone },
+    });
+    if (!user) {
+      this.logger.error(`User not found for phone ${phone}`);
+      return true; // to prevent user enumeration
+      //throw new BadRequestException('User not found');
+    }
+    const otp = AuthUtil.generateOtp();
+    await this.cacheService.set(phone, otp, this.OTP_TTL);
+
+    // send otp to user
+    this.eventEmitter.emit('otp.generated', {
+      phone,
+      otp,
+    });
+    return true;
+  }
+
+  async verifyOtp(phone: string, otp: string) {
+    const cachedOtp = await this.cacheService.get(phone);
+    if (cachedOtp !== otp) {
+      throw new BadRequestException('Invalid OTP');
+    }
+    await this.cacheService.del(phone);
+
+    if (cachedOtp === otp) {
+      // generate token
+      const user = await this.userRepository.findOne({
+        where: { phone: phone },
+      });
+      if (!user) {
+        throw new BadRequestException('User not found');
+      }
+      return this.generateTokens(user);
+    }
   }
 }

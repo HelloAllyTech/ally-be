@@ -84,4 +84,21 @@ export class AppConfigService {
       port: this.configService.get<number>('REDIS_PORT'),
     };
   }
+
+  get sms() {
+    return {
+      integration: this.configService.get<string>('SMS_INTEGRATION'),
+      msg91: {
+        apiKey: this.configService.get<string>('MSG91_API_KEY')!,
+        templateId: this.configService.get<string>('MSG91_TEMPLATE_ID')!,
+        apiUrl: this.configService.get<string>('MSG91_API_URL')!,
+      },
+    };
+  }
+
+  get otp() {
+    return {
+      ttl: this.configService.get<number>('OTP_TTL', TIME.MINUTE_IN_MS * 5),
+    };
+  }
 }
