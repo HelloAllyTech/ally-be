@@ -6,10 +6,19 @@ export class AnalyticsService {
     @Inject('AnalyticsInterface')
     private readonly analyticsInterface: AnalyticsInterface,
   ) {}
-  refreshDashboardUrl(dashboardId: string) {
-    return this.analyticsInterface.refreshDashboardUrl(dashboardId);
+  async refreshDashboardUrl(dashboardId: string) {
+    return {
+      url: await this.analyticsInterface.refreshDashboardUrl(dashboardId),
+    };
   }
-  getDashboardUrl(dashboardId: string, params: Record<string, any>) {
-    return this.analyticsInterface.getDashboardUrl(dashboardId, params);
+
+  async getDashboardUrl(dashboardId: string, params: Record<string, any>) {
+    const url = await this.analyticsInterface.getDashboardUrl(
+      dashboardId,
+      params,
+    );
+    return {
+      url,
+    };
   }
 }
