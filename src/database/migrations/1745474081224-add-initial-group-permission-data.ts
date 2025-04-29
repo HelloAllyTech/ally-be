@@ -25,15 +25,14 @@ export class AddInitialGroupPermissionData1745474081224
 
       // Get all permission IDs
       const allPermissions: Permission[] = await queryRunner.query(
-        `SELECT id FROM "permissions"`,
+        `SELECT id,name FROM "permissions"`,
       );
 
       const counselorGroupId = counselorGroup?.id;
       const superAdminGroupId = superAdminGroup?.id;
 
       const counselorPermissions = allPermissions.filter(
-        (permission) =>
-          permission.permission === PERMISSIONS.ViewNavBarAnalytics,
+        (permission) => permission.name != PERMISSIONS.ViewNavBarAnalytics,
       );
 
       // Insert group permissions for COUNSELOR group

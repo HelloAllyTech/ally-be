@@ -16,6 +16,7 @@ import { UserRole, UserStatus } from '../../common/constants/user.constants';
 import { UserCreateDto } from '../dto/user-create.dto';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GroupPermission } from 'src/common/entities/group-permission.entity';
+import { Permission } from '../../common/entities/permission.entity';
 
 @Injectable()
 export class AuthService {
@@ -259,9 +260,9 @@ export class AuthService {
     if (missingGroupIds.size > 0) {
       const missingPermissions = await this.groupPermissionRepository
         .createQueryBuilder('gp')
+        .leftJoin(Permission, 'p', 'p.id = gp."permissionId"')
         .select('gp.groupId', 'groupId')
-        .addSelect('p.permission', 'permission')
-        .innerJoin('permissions', 'p', 'p.id = gp.permissionId')
+        .addSelect('p.name', 'permission')
         .where('gp.groupId IN (:...groupIds)', {
           groupIds: [...missingGroupIds],
         })

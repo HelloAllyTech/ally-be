@@ -7,5 +7,5 @@ export class Permission extends BaseEntity {
   id!: number;
 
   @Column()
-  permission!: string;
+  name!: string;
 }
