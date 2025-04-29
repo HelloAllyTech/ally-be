@@ -1,9 +1,10 @@
 import {
+  IsEnum,
   IsEmail,
   IsString,
   MinLength,
   IsOptional,
-  IsEnum,
+  IsPhoneNumber,
 } from 'class-validator';
 import { UserRole } from '../../common/constants/user.constants';
 import { PASSWORD_VALIDATION } from '../../common/constants/validation.constants';
@@ -42,15 +43,15 @@ export class UserCreateDto {
   @IsEnum(UserRole)
   role?: UserRole;
 
-  @IsOptional()
-  @IsString()
-  username?: string;
-
   @ApiProperty({
-    description: 'User phone number',
+    description: 'Phone number',
     example: '+1234567890',
   })
   @IsOptional()
-  @IsString()
+  @IsPhoneNumber()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  username?: string;
 }

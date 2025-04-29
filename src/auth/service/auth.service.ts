@@ -17,10 +17,19 @@ import { UserCreateDto } from '../dto/user-create.dto';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GroupPermission } from 'src/common/entities/group-permission.entity';
 import { Permission } from '../../common/entities/permission.entity';
+import { LoggerService } from '../../logger/logger.service';
+import { AuthUtil } from '../util/auth.util';
 
 @Injectable()
 export class AuthService {
   private readonly PASSWORD_MIN_LENGTH = 6; // Move to config service if needed
+  private readonly logger = LoggerService.getInstance(AuthService.name);
+  private readonly OTP_TTL;
+  private userRepository: Repository<User>;
+  private refreshTokenRepository: Repository<RefreshToken>;
+  private userGroupRepository: Repository<UserGroup>;
+  private groupRepository: Repository<Group>;
+  private groupPermissionRepository: Repository<GroupPermission>;
 
   constructor(
     private dataSource: DataSource,
@@ -35,13 +44,10 @@ export class AuthService {
     this.groupRepository = this.dataSource.getRepository(Group);
     this.groupPermissionRepository =
       this.dataSource.getRepository(GroupPermission);
+    this.userRepository = this.dataSource.getRepository(User);
+    this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
+    this.OTP_TTL = this.configService.otp.ttl;
   }
-
-  private userRepository: Repository<User>;
-  private refreshTokenRepository: Repository<RefreshToken>;
-  private userGroupRepository: Repository<UserGroup>;
-  private groupRepository: Repository<Group>;
-  private groupPermissionRepository: Repository<GroupPermission>;
 
   // ... existing validateUser and validateUserById methods ...
 
@@ -160,6 +166,7 @@ export class AuthService {
   }
 
   async signup(userData: UserCreateDto): Promise<Omit<User, 'password'>> {
+    // TODO: Revisit this once we have a phone number in table & cofnirmation on how the flow works with admins
     // Check if user with email already exists
     const existingUser = await this.userRepository.findOne({
       where: { email: userData.email },
@@ -182,6 +189,7 @@ export class AuthService {
       status: UserStatus.ACTIVE,
       metadata: {},
       username: userData.email,
+      phone: userData.phone,
     });
 
     // Save user
@@ -290,5 +298,44 @@ export class AuthService {
     }
 
     return [...permissions];
+  }
+
+  async generateOtp(phone: string) {
+    const user = await this.userRepository.findOne({
+      where: { phone: phone },
+    });
+    if (!user) {
+      this.logger.error(`User not found for phone ${phone}`);
+      return true; // to prevent user enumeration
+      //throw new BadRequestException('User not found');
+    }
+    const otp = AuthUtil.generateOtp();
+    await this.cache.set(phone, otp, this.OTP_TTL);
+
+    // send otp to user
+    this.eventEmitter.emit('otp.generated', {
+      phone,
+      otp,
+    });
+    return true;
+  }
+
+  async verifyOtp(phone: string, otp: string) {
+    const cachedOtp = await this.cache.get(phone);
+    if (cachedOtp !== otp) {
+      throw new BadRequestException('Invalid OTP');
+    }
+    await this.cache.del(phone);
+
+    if (cachedOtp === otp) {
+      // generate token
+      const user = await this.userRepository.findOne({
+        where: { phone: phone },
+      });
+      if (!user) {
+        throw new BadRequestException('User not found');
+      }
+      return this.generateTokens(user);
+    }
   }
 }
