@@ -4,6 +4,7 @@ import {
   Body,
   UseGuards,
   Req,
+  Get,
   UnauthorizedException,
   HttpCode,
   HttpStatus,
@@ -81,5 +82,11 @@ export class AuthController {
   async logout(@Req() req: { user: { id: string } }) {
     await this.authService.logout(parseInt(req.user.id));
     return { message: 'Logged out successfully' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('permissions')
+  async getPermissions(@Req() req: { user: { id: string } }) {
+    return await this.authService.getUserPermissions(parseInt(req.user.id));
   }
 }
