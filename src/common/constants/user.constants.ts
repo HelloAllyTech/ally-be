@@ -7,5 +7,5 @@ export enum UserStatus {
 export enum UserRole {
   CLIENT = 'CLIENT',
   COUNSELOR = 'COUNSELOR',
-  ADMIN = 'ADMIN',
+  SUPER_ADMIN = 'SUPER_ADMIN',
 }

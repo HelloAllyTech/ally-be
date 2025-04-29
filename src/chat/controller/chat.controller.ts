@@ -86,7 +86,7 @@ export class ChatController {
     enum: ['ASC', 'DESC'],
     description: 'Sort order (default: DESC)',
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN)
   @Get('call-logs')
   async getCallLogs(
     @CurrentUser() tokenUser: TokenUser,

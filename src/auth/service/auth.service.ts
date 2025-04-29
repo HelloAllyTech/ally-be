@@ -188,7 +188,7 @@ export class AuthService {
 
     // find group id using role
     const group = await this.groupRepository.findOne({
-      where: { group: userData.role || UserRole.CLIENT },
+      where: { name: userData.role || UserRole.CLIENT },
     });
 
     if (group) {
@@ -219,7 +219,7 @@ export class AuthService {
 
   async getUserPermissions(id: number): Promise<string[]> {
     // Get user's groups from cache or DB
-    const cachedUserGroups = await this.cache.get(`user_groups_${id}`);
+    const cachedUserGroups = await this.cache.get(`user:groups:${id}`);
     let userGroups;
 
     if (cachedUserGroups) {
@@ -233,7 +233,7 @@ export class AuthService {
         })
         .then((rows) => rows.map((row) => row.groupId));
 
-      await this.cache.set(`user_groups_${id}`, JSON.stringify(userGroups));
+      await this.cache.set(`user:groups:${id}`, JSON.stringify(userGroups));
     }
 
     if (!userGroups.length) return [];
@@ -245,7 +245,7 @@ export class AuthService {
     // First check cache for all groups
     for (const groupId of userGroups) {
       const cachedGroupPermissions = await this.cache.get(
-        `group_permissions_${groupId}`,
+        `group:permissions:${groupId}`,
       );
       if (cachedGroupPermissions) {
         const groupPermissions = JSON.parse(cachedGroupPermissions);
@@ -283,7 +283,7 @@ export class AuthService {
       // Cache each group's permissions
       await Promise.all(
         Object.entries(groupedPermissions).map(([groupId, perms]) =>
-          this.cache.set(`group_permissions_${groupId}`, JSON.stringify(perms)),
+          this.cache.set(`group:permissions:${groupId}`, JSON.stringify(perms)),
         ),
       );
     }

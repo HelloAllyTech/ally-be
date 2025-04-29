@@ -7,5 +7,5 @@ export class Group extends BaseEntity {
   id!: number;
 
   @Column()
-  group!: string;
+  name!: string;
 }

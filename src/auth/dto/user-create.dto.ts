@@ -45,4 +45,12 @@ export class UserCreateDto {
   @IsOptional()
   @IsString()
   username?: string;
+
+  @ApiProperty({
+    description: 'User phone number',
+    example: '+1234567890',
+  })
+  @IsOptional()
+  @IsString()
+  phone?: string;
 }

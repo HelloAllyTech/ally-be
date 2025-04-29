@@ -14,7 +14,7 @@ export class AddUserPermissions1745471638067 implements MigrationInterface {
       `CREATE TABLE "group_permissions" ("createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "id" SERIAL NOT NULL, "groupId" integer NOT NULL, "permissionId" integer NOT NULL, CONSTRAINT "PK_2eb53190d645a321bc8cad558ac" PRIMARY KEY ("id"))`,
     );
     await queryRunner.query(
-      `CREATE TABLE "groups" ("createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "id" SERIAL NOT NULL, "group" character varying NOT NULL, CONSTRAINT "PK_659d1483316afb28afd3a90646e" PRIMARY KEY ("id"))`,
+      `CREATE TABLE "groups" ("createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "id" SERIAL NOT NULL, "name" character varying NOT NULL, CONSTRAINT "PK_659d1483316afb28afd3a90646e" PRIMARY KEY ("id"))`,
     );
   }
 
