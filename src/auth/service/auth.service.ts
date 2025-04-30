@@ -46,7 +46,7 @@ export class AuthService {
       this.dataSource.getRepository(GroupPermission);
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
-    this.OTP_TTL = this.configService.otp.ttl;
+    this.OTP_TTL = +this.configService.otp.ttl;
   }
 
   // ... existing validateUser and validateUserById methods ...
@@ -310,7 +310,7 @@ export class AuthService {
       //throw new BadRequestException('User not found');
     }
     const otp = AuthUtil.generateOtp();
-    await this.cache.set(phone, otp, this.OTP_TTL);
+    await this.cache.set(`otp:${phone}`, otp, this.OTP_TTL);
 
     // send otp to user
     this.eventEmitter.emit('otp.generated', {

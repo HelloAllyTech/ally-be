@@ -98,7 +98,10 @@ export class AppConfigService {
 
   get otp() {
     return {
-      ttl: this.configService.get<number>('OTP_TTL', TIME.MINUTE_IN_MS * 5),
+      ttl: this.configService.get<number>(
+        'OTP_TTL',
+        TIME.MINUTE_IN_SECONDS * 5,
+      ),
     };
   }
 

@@ -48,7 +48,7 @@ export class UserCreateDto {
     example: '+1234567890',
   })
   @IsOptional()
-  @IsPhoneNumber()
+  @IsString()
   phone?: string;
 
   @IsOptional()

@@ -7,7 +7,7 @@ export class RedisService {
   private prefix: string;
   private redis: Redis;
   constructor(private readonly redisService: NestRedisService) {
-    this.prefix = process.env.REDIS_PREFIX || '';
+    this.prefix = process.env.REDIS_PREFIX || 'ally';
     this.redis = this.redisService.getOrThrow();
   }
 
