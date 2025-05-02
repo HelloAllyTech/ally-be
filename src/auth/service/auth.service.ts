@@ -310,7 +310,7 @@ export class AuthService {
       //throw new BadRequestException('User not found');
     }
     const otp = AuthUtil.generateOtp();
-    await this.cache.set(`otp:${phone}`, otp, this.OTP_TTL);
+    await this.cache.set(this.getOtpKey(phone), otp, this.OTP_TTL);
 
     // send otp to user
     this.eventEmitter.emit('otp.generated', {
@@ -321,11 +321,11 @@ export class AuthService {
   }
 
   async verifyOtp(phone: string, otp: string) {
-    const cachedOtp = await this.cache.get(phone);
+    const cachedOtp = await this.cache.get(this.getOtpKey(phone));
     if (cachedOtp !== otp) {
       throw new BadRequestException('Invalid OTP');
     }
-    await this.cache.del(phone);
+    await this.cache.del(this.getOtpKey(phone));
 
     if (cachedOtp === otp) {
       // generate token
@@ -337,5 +337,8 @@ export class AuthService {
       }
       return this.generateTokens(user);
     }
+  }
+  private getOtpKey(phone: string) {
+    return `otp:${phone}`;
   }
 }
