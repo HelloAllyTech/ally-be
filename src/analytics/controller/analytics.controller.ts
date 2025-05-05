@@ -9,8 +9,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AnalyticsService } from '../service/analytics.service';
-import { DashboardDto } from '../type/analytics.type';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import {
+  CreateDashboardDto,
+  DashboardIdParamDto,
+  DashboardParamsDto,
+} from '../validation/analytics.validation';
 
 @Controller('v1/analytics')
 export class AnalyticsController {
@@ -18,19 +22,19 @@ export class AnalyticsController {
 
   @Get('dashboard/:dashboardId')
   getDashboardUrl(
-    @Param('dashboardId') dashboardId: string,
-    @Query('params') params: any,
+    @Param() { dashboardId }: DashboardIdParamDto,
+    @Query() { params }: DashboardParamsDto,
   ) {
-    return this.analyticsService.getDashboardUrl(dashboardId, params);
+    return this.analyticsService.getDashboardUrl(dashboardId, params || {});
   }
 
   @Post('dashboard/:dashboardId/refresh')
-  refreshDashboardUrl(@Param('dashboardId') dashboardId: string) {
+  refreshDashboardUrl(@Param() { dashboardId }: DashboardIdParamDto) {
     return this.analyticsService.refreshDashboardUrl(dashboardId);
   }
 
   @Post('dashboard')
-  createDashboard(@Body() dashboard: DashboardDto) {
+  createDashboard(@Body() dashboard: CreateDashboardDto) {
     return this.analyticsService.createDashboard(dashboard);
   }
 
