@@ -4,6 +4,8 @@ import { In, Repository } from 'typeorm';
 import { User } from '../common/entities/user.entity';
 import { QueueService } from '../queue/service/queue.service';
 import { Chat, ChatStatus } from '../common/entities/chat.entity';
+import { UserRole } from '../common/constants/user.constants';
+import { RedisService } from '../redis/service/redis.service';
 
 @Injectable()
 export class UserService {
@@ -11,6 +13,7 @@ export class UserService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private queueService: QueueService,
+    private readonly cache: RedisService,
   ) {}
 
   async get(id: number): Promise<User | null> {
@@ -18,6 +21,14 @@ export class UserService {
       where: { id },
     });
     return user || null;
+  }
+
+  async getUsersByPhoneNumbers(phoneNumbers: string[]): Promise<User[] | null> {
+    return this.userRepository.find({
+      where: {
+        phone: In(phoneNumbers),
+      },
+    });
   }
 
   async getUsersByIds(ids: number[]): Promise<User[]> {
@@ -74,5 +85,37 @@ export class UserService {
       email: user.email,
       role: user.role,
     };
+  }
+
+  async getUserRole(id: number): Promise<UserRole | undefined> {
+    const cachedUserRole = await this.cache.get(`user_role_${id}`);
+    if (cachedUserRole) return cachedUserRole as UserRole;
+    const user = await this.userRepository.findOne({
+      where: { id },
+    });
+    const userRole = user?.role;
+    if (userRole) await this.cache.set(`user_role_${id}`, userRole);
+    return userRole;
+  }
+
+  async createUser({
+    role,
+    phoneNumber,
+    name,
+    email,
+  }: {
+    phoneNumber: string;
+    role: UserRole;
+    name?: string;
+    email?: string;
+  }) {
+    // TODO: Add phone number to the user table and update this query
+    const user = this.userRepository.create({
+      role,
+      phone: phoneNumber,
+      name: name || 'Anonymous user',
+      email: email || 'placeholder@placeholder.com',
+    });
+    return this.userRepository.save(user);
   }
 }

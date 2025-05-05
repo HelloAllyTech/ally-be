@@ -1,6 +1,6 @@
 import { forwardRef, HttpException, Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { Chat, ChatStatus } from '../../common/entities/chat.entity';
 import { LoggerService } from '../../logger/logger.service';
@@ -27,6 +27,8 @@ import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { CallInfo } from '../../common/entities/type/call.details.type';
 import { StringUtil } from '../../common/util/string.util';
+import { TokenUser } from '../../auth/type/auth.types';
+import { UserRole } from '../../common/constants/user.constants';
 
 @Injectable()
 export class ChatService {
@@ -49,6 +51,7 @@ export class ChatService {
     private aiService: AiService,
     private readonly cache: RedisService,
     private readonly messageBrokerService: MessageBrokerService,
+    private dataSource: DataSource,
 
     //  private kafkaProducerService: KafkaProducerService,
   ) {}
@@ -72,47 +75,100 @@ export class ChatService {
 
   async requestChat(userId: number) {
     this.logger.info(`requestChat - userId:${userId}`);
-    const activeChats = await this.chatRepository.findOne({
-      where: {
-        clientId: userId,
-        status: ChatStatus.ACTIVE,
-      },
-    });
+    return this.dataSource.transaction(async (entityManager) => {
+      const repo = entityManager.getRepository(Chat) || this.chatRepository;
+      const activeChats = await repo.findOne({
+        where: {
+          clientId: userId,
+          status: In([ChatStatus.ACTIVE, ChatStatus.PAUSED]),
+        },
+      });
 
-    if (activeChats) {
-      this.logger.info(`requestChat - activeChats:${activeChats.id}`);
-      throw new HttpException(
-        'You already have an active or waiting chat session',
-        400,
+      if (activeChats) {
+        this.logger.info(`requestChat - activeChats:${activeChats.id}`);
+        throw new HttpException(
+          'You already have an active or waiting chat session',
+          400,
+        );
+      }
+
+      const chatRoom = await this.getOrCreateChatRoom(userId, entityManager);
+
+      const chat = await this.createChat(userId, chatRoom.id, entityManager);
+
+      return this.queueService.enqueue(
+        {
+          userId,
+          chatId: chat.id,
+          priority: 1,
+        },
+        entityManager,
       );
-    }
-
-    const chatRoom = await this.getOrCreateChatRoom(userId);
-
-    const chat = await this.createChat(userId, chatRoom.id);
-
-    return this.queueService.enqueue({
-      userId,
-      chatId: chat.id,
-      priority: 1,
     });
   }
 
-  async createChat(userId: number, roomId: number) {
-    const chatObject = this.chatRepository.create({
+  async addNewChatWithCounselor(counselorId: number, clientId: number) {
+    return this.dataSource.transaction(async (entityManager) => {
+      const chatRepo = entityManager.getRepository(Chat) || this.chatRepository;
+      const chatRoomRepo =
+        entityManager.getRepository(ChatRoom) || this.chatRoomRepository;
+      const activeChats = await chatRepo.findOne({
+        where: {
+          clientId,
+          counselorId,
+          status: In([ChatStatus.ACTIVE, ChatStatus.PAUSED]),
+        },
+      });
+
+      if (activeChats) {
+        this.logger.info(`requestChat - activeChats:${activeChats.id}`);
+        throw new HttpException(
+          'You already have an active or waiting chat session',
+          400,
+        );
+      }
+
+      const newChatRoom = chatRoomRepo.create({
+        clientId,
+        counselorId,
+      });
+
+      await chatRoomRepo.save(newChatRoom);
+
+      const newChat = chatRepo.create({
+        clientId,
+        counselorId,
+        roomId: newChatRoom.id,
+      });
+
+      return chatRepo.save(newChat);
+    });
+  }
+
+  async createChat(
+    userId: number,
+    roomId: number,
+    entityManager?: EntityManager,
+  ) {
+    const repo = entityManager?.getRepository(Chat) || this.chatRepository;
+    const callDetailsRepo =
+      entityManager?.getRepository(CallDetails) || this.callDetailsRepository;
+    const chatObject = repo.create({
       clientId: userId,
       roomId: roomId,
       status: ChatStatus.PAUSED,
     });
-    const chat = await this.chatRepository.save(chatObject);
-    await this.callDetailsRepository.save({
+    const chat = await repo.save(chatObject);
+    await callDetailsRepo.save({
       chatId: chat.id,
     });
     return chat;
   }
 
-  async getOrCreateChatRoom(userId: number) {
-    const chatRoom = await this.chatRoomRepository.findOne({
+  async getOrCreateChatRoom(userId: number, entityManager?: EntityManager) {
+    const repo =
+      entityManager?.getRepository(ChatRoom) || this.chatRoomRepository;
+    const chatRoom = await repo.findOne({
       where: {
         clientId: userId,
       },
@@ -122,11 +178,11 @@ export class ChatService {
       return chatRoom;
     }
 
-    const newChatRoom = this.chatRoomRepository.create({
+    const newChatRoom = repo.create({
       clientId: userId,
     });
 
-    return this.chatRoomRepository.save(newChatRoom);
+    return repo.save(newChatRoom);
   }
 
   async getChatsByUserIds(
@@ -194,6 +250,51 @@ export class ChatService {
       { startTime: startTime },
     );
     return updatedChat;
+  }
+
+  async startCall(participantPhoneNumbers: string[]) {
+    if (!participantPhoneNumbers || participantPhoneNumbers?.length < 2) {
+      throw new HttpException('Need at least 2 participants', 400);
+    }
+    const participants = await this.userService.getUsersByPhoneNumbers(
+      participantPhoneNumbers,
+    );
+
+    const counselor = participants?.find(
+      (participant) => participant.role === UserRole.COUNSELOR,
+    );
+    if (!counselor) {
+      throw new HttpException(`Counselor not found`, 404);
+    }
+    let client = participants?.find(
+      (participant) => participant.role === UserRole.CLIENT,
+    );
+    if (!client) {
+      // TODO: UPDATE this once we have a phone number in table
+      const clientPhoneNumber = participantPhoneNumbers?.find(
+        (phn) => phn !== counselor.name,
+      );
+      if (!clientPhoneNumber) {
+        throw new HttpException('Client phone number not found', 404);
+      }
+      client = await this.userService.createUser({
+        phoneNumber: clientPhoneNumber,
+        role: UserRole.CLIENT,
+      });
+    }
+    // TODO: check if we could reuse requestChat method
+    const chat = await this.addNewChatWithCounselor(counselor.id, client.id);
+    const chatResponse = await this.getChatResponse(chat);
+    const payload = {
+      type: ChatEvents.CALL_STARTED,
+      payload: chatResponse,
+    };
+    this.gateway.sendMessagesToRoomUsingPublish(
+      ChatEvents.CALL_STARTED,
+      [counselor.id, client.id],
+      payload,
+    );
+    return chat;
   }
 
   async accept(councilorId: number, chatId: number) {
@@ -582,7 +683,7 @@ export class ChatService {
     return messageRequests;
   }
 
-  async getCallLogs(id: number, options: Pagination) {
+  async getCallLogs(user: TokenUser, options: Pagination) {
     const query = this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndMapOne(
@@ -596,8 +697,10 @@ export class ChatService {
         User,
         'client',
         'client.id = chat.clientId',
-      )
-      .where('chat.counselorId = :counselorId', { counselorId: id });
+      );
+    if (user.role === UserRole.COUNSELOR) {
+      query.where('chat.counselorId = :counselorId', { counselorId: user.id });
+    }
     if (options.limit) {
       query.limit(options.limit);
     }

@@ -7,7 +7,7 @@ export class RedisService {
   private prefix: string;
   private redis: Redis;
   constructor(private readonly redisService: NestRedisService) {
-    this.prefix = process.env.REDIS_PREFIX || '';
+    this.prefix = process.env.REDIS_PREFIX || 'ally';
     this.redis = this.redisService.getOrThrow();
   }
 
@@ -19,9 +19,14 @@ export class RedisService {
     });
   }
 
-  async set(key: string, value: string) {
+  // ttl in seconds
+  async set(key: string, value: string, ttl?: number) {
     const fullKey = this.getFullKey(key);
-    await this.redis.set(fullKey, value);
+    if (ttl) {
+      await this.redis.set(fullKey, value, 'EX', ttl);
+    } else {
+      await this.redis.set(fullKey, value);
+    }
   }
 
   async get(key: string) {
