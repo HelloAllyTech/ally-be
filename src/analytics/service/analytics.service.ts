@@ -5,6 +5,7 @@ import { In, Repository } from 'typeorm';
 import { Dashboard } from '../../common/entities/dashboard.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { GroupService } from '../../user/group.service';
+import { ExecutionManager } from '../../common/execution/execution-manager';
 @Injectable()
 export class AnalyticsService {
   constructor(
@@ -39,7 +40,10 @@ export class AnalyticsService {
     const userGroups = await this.groupService.getUserGroups(userId);
     if (!userGroups.length) return;
     return this.dashboardRepository.find({
-      where: { groupId: In(userGroups) },
+      where: {
+        groupId: In(userGroups),
+        tenantId: ExecutionManager.getTenantId(),
+      },
     });
   }
 }

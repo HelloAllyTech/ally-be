@@ -31,6 +31,12 @@ export class ExecutionManager {
   }
 
   public static setInContext(key: string, value: any) {
+    console.log(
+      'setInContext',
+      key,
+      value,
+      JSON.stringify(ExecutionManager.getExecutionContext()?.getStore()),
+    );
     ExecutionManager.getExecutionContext()?.getStore()?.set(key, value);
   }
 
@@ -56,6 +62,10 @@ export class ExecutionManager {
 
   static getContext() {
     return ExecutionManager.getExecutionContext()?.getStore();
+  }
+
+  static getTenantId() {
+    return ExecutionManager.getFromContext<string>('tenantId');
   }
 
   static setAuthContext(userId: string, role: string, tenantId: string) {

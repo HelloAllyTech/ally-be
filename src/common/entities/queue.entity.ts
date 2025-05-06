@@ -3,11 +3,12 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  BaseEntity,
 } from 'typeorm';
 import { QueueStatus } from '../constants/chat.constants';
 
 @Entity('queue_entries')
-export class QueueEntry {
+export class QueueEntry extends BaseEntity {
   @PrimaryGeneratedColumn({ name: 'entry_id' })
   entryId!: number;
 

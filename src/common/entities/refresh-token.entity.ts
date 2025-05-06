@@ -3,10 +3,11 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  BaseEntity,
 } from 'typeorm';
 
 @Entity()
-export class RefreshToken {
+export class RefreshToken extends BaseEntity {
   @PrimaryGeneratedColumn()
   id!: number;
 

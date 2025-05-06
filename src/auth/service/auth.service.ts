@@ -75,6 +75,7 @@ export class AuthService {
       sub: user.id,
       username: user.username,
       role: user.role,
+      tenantId: user.tenantId,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -135,7 +136,7 @@ export class AuthService {
   async login(username: string, password: string) {
     const user = await this.userRepository.findOne({
       where: { username },
-      select: ['id', 'username', 'password', 'role'],
+      select: ['id', 'username', 'password', 'role', 'tenantId'],
     });
 
     if (!user) {
@@ -190,6 +191,7 @@ export class AuthService {
       metadata: {},
       username: userData.email,
       phone: userData.phone,
+      tenantId: userData.tenantId,
     });
 
     // Save user
@@ -216,14 +218,6 @@ export class AuthService {
     // Remove password from response
     const { password, ...userWithoutPassword } = savedUser;
     return userWithoutPassword;
-  }
-
-  async register(email: string, password: string, username: string) {
-    return this.signup({
-      email,
-      password,
-      name: username, // Using username as name, you might want to separate these
-    });
   }
 
   async getUserPermissions(id: number): Promise<string[]> {

@@ -46,7 +46,7 @@ export class LoggerService {
 
     let logMessage = `[${moduleName}] ${messageString}`;
 
-    const executionId = ExecutionManager.getExecutionId();
+    const executionId = ExecutionManager.getContext();
     if (executionId) {
       logMessage = `[${executionId}] ${logMessage}`;
     }
