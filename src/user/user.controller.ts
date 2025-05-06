@@ -3,6 +3,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/user.decorator';
 import { TokenUser } from '../auth/type/auth.types';
 import { UserService } from './user.service';
+import { AuthRoles } from '../auth/decorators/auth-roles.decorator';
+import { UserRole } from '../common/constants/user.constants';
 
 @Controller('v1/users')
 export class UserController {
@@ -18,6 +20,7 @@ export class UserController {
     return this.userService.getMinimalUserInfo(user);
   }
 
+  @AuthRoles(UserRole.COUNSELOR)
   @Get('waiting-list')
   getWaitingList() {
     return this.userService.getWaitingList();

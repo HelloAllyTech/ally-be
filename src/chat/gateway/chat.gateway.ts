@@ -599,6 +599,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  sendMessagesToRoomUsingPublish(
+    event: ChatEvents,
+    participantIds: number[],
+    message?: any,
+  ) {
+    this.logger.info(
+      `Sending message to participants: ${JSON.stringify(participantIds)} | event: ${JSON.stringify(event)}`,
+    );
+    this.publisher.publish('chat-message', {
+      participants: participantIds,
+      message,
+      broadCastOptions: {
+        event,
+      },
+    });
+  }
+
   broadcastChatEndedEvent(chat: Chat) {
     const chatId = chat.id;
     const participants = [chat.counselorId, chat.clientId];

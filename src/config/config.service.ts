@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
+import { TIME } from '../common/constants/time.constants';
 @Injectable()
 export class AppConfigService {
   constructor(private configService: ConfigService) {}
@@ -45,7 +45,7 @@ export class AppConfigService {
         secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
         expiresIn: this.configService.get<string>(
           'JWT_ACCESS_EXPIRES_IN',
-          '15m',
+          '1d',
         ),
       },
       refreshToken: {
@@ -63,6 +63,55 @@ export class AppConfigService {
     return {
       botToken: this.configService.get<string>('SLACK_BOT_TOKEN'),
       channel: this.configService.get<string>('SLACK_CHANNEL'),
+    };
+  }
+
+  get rateLimit() {
+    return {
+      otp: {
+        ttl: this.configService.get<number>(
+          'THROTTLE_TTL_OTP',
+          TIME.MINUTE_IN_MS * 10,
+        ),
+        limit: this.configService.get<number>('THROTTLE_LIMIT_OTP', 5),
+      },
+    };
+  }
+
+  get redis() {
+    return {
+      host: this.configService.get<string>('REDIS_HOST'),
+      port: this.configService.get<number>('REDIS_PORT'),
+    };
+  }
+
+  get sms() {
+    return {
+      integration: this.configService.get<string>('SMS_INTEGRATION'),
+      msg91: {
+        apiKey: this.configService.get<string>('MSG91_API_KEY')!,
+        templateId: this.configService.get<string>('MSG91_TEMPLATE_ID')!,
+        apiUrl: this.configService.get<string>('MSG91_API_URL')!,
+      },
+    };
+  }
+
+  get otp() {
+    return {
+      ttl: this.configService.get<number>(
+        'OTP_TTL',
+        TIME.MINUTE_IN_SECONDS * 5,
+      ),
+    };
+  }
+
+  get analytics() {
+    return {
+      integration: this.configService.get<string>('ANALYTICS_INTEGRATION'),
+      metabase: {
+        url: this.configService.get<string>('METABASE_URL')!,
+        apiKey: this.configService.get<string>('METABASE_API_KEY')!,
+      },
     };
   }
 }
