@@ -1,7 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { RedisService } from './service/redis.service';
 import { RedisModule as NestRedisModule } from '@liaoliaots/nestjs-redis';
-
+import { CacheController } from './controller/cache.controller';
 @Global()
 @Module({
   imports: [
@@ -17,5 +17,6 @@ import { RedisModule as NestRedisModule } from '@liaoliaots/nestjs-redis';
   ],
   providers: [RedisService],
   exports: [RedisService],
+  controllers: [CacheController],
 })
 export class RedisModule {}

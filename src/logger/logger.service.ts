@@ -1,4 +1,5 @@
 import winston, { createLogger, format, transports } from 'winston';
+import { ExecutionManager } from '../common/execution/execution-manager';
 
 export class LoggerService {
   private readonly winstonLogger: winston.Logger;
@@ -44,6 +45,11 @@ export class LoggerService {
     }
 
     let logMessage = `[${moduleName}] ${messageString}`;
+
+    const executionId = ExecutionManager.getExecutionId();
+    if (executionId) {
+      logMessage = `[${executionId}] ${logMessage}`;
+    }
 
     if (error) {
       const errorObject =
