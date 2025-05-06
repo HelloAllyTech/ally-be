@@ -2,7 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-
+import { ExecutionContextInterceptor } from './common/execution/execution-context.interceptor';
+import { ExecutionManager } from './common/execution/execution-manager';
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   try {
@@ -11,6 +12,8 @@ async function bootstrap() {
     });
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ transform: true }));
+    ExecutionManager.init();
+    app.useGlobalInterceptors(new ExecutionContextInterceptor());
     app.enableCors();
 
     const port = process.env.PORT || 3000;

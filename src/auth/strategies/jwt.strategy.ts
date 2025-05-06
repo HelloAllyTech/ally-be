@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Injectable } from '@nestjs/common';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
+import { ExecutionManager } from '../../common/execution/execution-manager';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -18,10 +19,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: any) {
     this.logger.info('JwtStrategy validate called');
-    return {
+
+    const user = {
       id: parseInt(payload.sub),
       username: payload.username,
       role: payload.role,
+      tenantId: payload.tenantId,
     };
+
+    // Set the execution context with user information
+    ExecutionManager.setAuthContext(
+      user.id.toString(),
+      user.role,
+      user.tenantId,
+    );
+
+    return user;
   }
 }
