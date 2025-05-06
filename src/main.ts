@@ -4,6 +4,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ExecutionContextInterceptor } from './common/execution/execution-context.interceptor';
 import { ExecutionManager } from './common/execution/execution-manager';
+import helmet from 'helmet';
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   try {
@@ -14,7 +15,10 @@ async function bootstrap() {
     app.useGlobalPipes(new ValidationPipe({ transform: true }));
     ExecutionManager.init();
     app.useGlobalInterceptors(new ExecutionContextInterceptor());
+    app.use(helmet());
     app.enableCors();
+    // remove x-powered-by header
+    app.getHttpAdapter().getInstance().disable('x-powered-by');
 
     const port = process.env.PORT || 3000;
 
