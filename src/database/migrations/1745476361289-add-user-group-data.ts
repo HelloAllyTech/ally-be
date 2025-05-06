@@ -7,7 +7,7 @@ export class AddUserGroupData1745476361289 implements MigrationInterface {
 
     // Get group IDs
     const groupsData = await queryRunner.query(`SELECT id, "name" FROM groups`);
-    const groupMap = new Map(groupsData.map((g: any) => [g.group, g.id]));
+    const groupMap = new Map(groupsData.map((g: any) => [g.name, g.id]));
 
     // Create user-group associations based on user roles
     for (const user of users) {
