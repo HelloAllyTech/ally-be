@@ -5,7 +5,6 @@ import { TokenUser } from '../auth/type/auth.types';
 import { UserService } from './user.service';
 import { AuthRoles } from '../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../common/constants/user.constants';
-
 @Controller('v1/users')
 export class UserController {
   constructor(private userService: UserService) {}

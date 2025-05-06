@@ -19,6 +19,7 @@ import { BrokerModule } from './message-broker/broker.module';
 import { NotificationModule } from './notification/notification.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({

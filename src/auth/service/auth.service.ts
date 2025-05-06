@@ -227,6 +227,7 @@ export class AuthService {
   }
 
   async getUserPermissions(id: number): Promise<string[]> {
+    this.logger.info(`Getting user permissions for user ${id}`);
     // Get user's groups from cache or DB
     const cachedUserGroups = await this.cache.get(`user:groups:${id}`);
     let userGroups;

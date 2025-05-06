@@ -42,4 +42,16 @@ export class RedisService {
   private getFullKey(key: string) {
     return `${this.prefix}:${key}`;
   }
+
+  async getByPattern(pattern: string) {
+    return await this.redis.keys(pattern);
+  }
+
+  async deleteByPattern(pattern: string) {
+    const keys = await this.redis.keys(pattern);
+    if (keys.length > 0) {
+      await this.redis.del(keys);
+    }
+    return keys;
+  }
 }
