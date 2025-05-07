@@ -336,7 +336,16 @@ export class AuthService {
       if (!user) {
         throw new BadRequestException('User not found');
       }
-      return this.generateTokens(user);
+      const tokens = await this.generateTokens(user);
+      return {
+        user: {
+          id: user.id,
+          username: user.username,
+          role: user.role,
+        },
+        ...tokens,
+        tokenType: 'bearer',
+      };
     }
   }
   private getOtpKey(phone: string) {
