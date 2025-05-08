@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ExecutionContextInterceptor } from './common/execution/execution-context.interceptor';
 import { ExecutionManager } from './common/execution/execution-manager';
 import helmet from 'helmet';
+import { AudioIngestGateway } from './audio-ingest/gateway/audio.ingest.gateway';
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   try {
@@ -30,6 +31,8 @@ async function bootstrap() {
       .build();
     const documentFactory = () => SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('api-docs', app, documentFactory);
+    const audioIngestGateway = app.get(AudioIngestGateway);
+    audioIngestGateway.initialize(app.getHttpServer());
 
     await app.listen(port);
     logger.log(`Application is running on: http://localhost:${port}`);
