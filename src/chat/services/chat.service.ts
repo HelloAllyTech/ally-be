@@ -713,8 +713,11 @@ export class ChatService {
         options.order as 'ASC' | 'DESC',
       );
     }
-    const callLogs = await query.getMany();
-    return callLogs;
+    const [callLogs, count] = await query.getManyAndCount();
+    return {
+      data: callLogs,
+      count,
+    };
   }
 
   async enhance(summary: string) {
