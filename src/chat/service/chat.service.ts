@@ -29,6 +29,7 @@ import { CallInfo } from '../../common/entities/type/call.details.type';
 import { StringUtil } from '../../common/util/string.util';
 import { TokenUser } from '../../auth/type/auth.types';
 import { UserRole } from '../../common/constants/user.constants';
+import { ExecutionManager } from '../../common/execution/execution-manager';
 
 @Injectable()
 export class ChatService {
@@ -65,7 +66,10 @@ export class ChatService {
         'details',
         'details.chatId = chat.id',
       )
-      .where('chat.id = :id', { id });
+      .where('chat.id = :id', { id })
+      .andWhere('chat.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
+      });
     const chat = await chatQuery.getOne();
     if (!chat) {
       throw new HttpException('Chat not found', 404);
@@ -81,6 +85,7 @@ export class ChatService {
         where: {
           clientId: userId,
           status: In([ChatStatus.ACTIVE, ChatStatus.PAUSED]),
+          tenantId: ExecutionManager.getTenantId(),
         },
       });
 
@@ -117,6 +122,7 @@ export class ChatService {
           clientId,
           counselorId,
           status: In([ChatStatus.ACTIVE, ChatStatus.PAUSED]),
+          tenantId: ExecutionManager.getTenantId(),
         },
       });
 
@@ -131,6 +137,7 @@ export class ChatService {
       const newChatRoom = chatRoomRepo.create({
         clientId,
         counselorId,
+        tenantId: ExecutionManager.getTenantId(),
       });
 
       await chatRoomRepo.save(newChatRoom);
@@ -139,6 +146,7 @@ export class ChatService {
         clientId,
         counselorId,
         roomId: newChatRoom.id,
+        tenantId: ExecutionManager.getTenantId(),
       });
 
       return chatRepo.save(newChat);
@@ -157,10 +165,12 @@ export class ChatService {
       clientId: userId,
       roomId: roomId,
       status: ChatStatus.PAUSED,
+      tenantId: ExecutionManager.getTenantId(),
     });
     const chat = await repo.save(chatObject);
     await callDetailsRepo.save({
       chatId: chat.id,
+      tenantId: ExecutionManager.getTenantId(),
     });
     return chat;
   }
@@ -171,6 +181,7 @@ export class ChatService {
     const chatRoom = await repo.findOne({
       where: {
         clientId: userId,
+        tenantId: ExecutionManager.getTenantId(),
       },
     });
 
@@ -180,6 +191,7 @@ export class ChatService {
 
     const newChatRoom = repo.create({
       clientId: userId,
+      tenantId: ExecutionManager.getTenantId(),
     });
 
     return repo.save(newChatRoom);
@@ -197,6 +209,7 @@ export class ChatService {
       where: {
         clientId: In(userIds),
         ...(options?.status ? { status: In(options.status) } : {}),
+        tenantId: ExecutionManager.getTenantId(),
       },
       order: {
         [options?.orderBy || 'createdAt']: options?.sort || 'desc',
@@ -207,6 +220,7 @@ export class ChatService {
     return this.chatRepository.findOne({
       where: {
         id: chatId,
+        tenantId: ExecutionManager.getTenantId(),
       },
     });
   }
@@ -219,6 +233,7 @@ export class ChatService {
       where: {
         counselorId: counselorId,
         ...options,
+        tenantId: ExecutionManager.getTenantId(),
       },
       order: {
         createdAt: 'DESC',
@@ -230,6 +245,7 @@ export class ChatService {
     const chat = await this.chatRepository.findOne({
       where: {
         id: chatId,
+        tenantId: ExecutionManager.getTenantId(),
       },
     });
 
@@ -246,7 +262,7 @@ export class ChatService {
     chat.startedAt = startTime;
     const updatedChat = await this.chatRepository.save(chat);
     await this.callDetailsRepository.update(
-      { chatId: chatId },
+      { chatId: chatId, tenantId: ExecutionManager.getTenantId() },
       { startTime: startTime },
     );
     return updatedChat;
@@ -726,7 +742,7 @@ export class ChatService {
 
   async updateCallDetails(chatId: number, callDetails: any) {
     await this.callDetailsRepository.update(
-      { chatId },
+      { chatId, tenantId: ExecutionManager.getTenantId() },
       { summary: callDetails },
     );
     return this.getChat(chatId);

@@ -1,5 +1,4 @@
 import {
-  SubscribeMessage,
   WebSocketGateway,
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -17,7 +16,7 @@ import {
   UserChatSessionData,
 } from '../type/chat.type';
 import { ChatEvents } from '../constants/chat.constants';
-import { ChatService } from '../services/chat.service';
+import { ChatService } from '../service/chat.service';
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { AiService } from '../../ai/service/ai.service';
 import { Message, MessageType } from '../../common/entities/message.entity';
@@ -25,6 +24,7 @@ import { AppConfigService } from '../../config/config.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { TranscriptionService } from '../../ai/service/transcription.service';
 import { Chat } from '../../common/entities/chat.entity';
+import { SubscribeAndRunWithContext } from '../decorators/chat-event.decorator';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -171,7 +171,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeMessage(ChatEvents.SEND_MESSAGE)
+  @SubscribeAndRunWithContext(ChatEvents.SEND_MESSAGE)
   async handleSendMessage(client: Socket, data: SendMessageWebSocketData) {
     const sid = client.id;
     const session = this.sessions[sid];
@@ -246,8 +246,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return message;
   }
 
-  // **Audio Chat Handling**
-  @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
+  @SubscribeAndRunWithContext(ChatEvents.START_AUDIO_CHAT)
   async startAudioChat(client: Socket, { chatId }: { chatId: number }) {
     try {
       const session = this.sessions[client.id];
@@ -293,8 +292,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // **Audio Chat Handling**
-  @SubscribeMessage(ChatEvents.AUDIO_MESSAGE)
+  @SubscribeAndRunWithContext(ChatEvents.AUDIO_MESSAGE)
   handleAudioMessage(
     client: Socket,
     { chatId, audioData }: { chatId: number; audioData: Buffer },
@@ -314,7 +312,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeMessage(ChatEvents.AUDIO_CHAT_MUTED)
+  @SubscribeAndRunWithContext(ChatEvents.AUDIO_CHAT_MUTED)
   async handleAudioChatMuted(client: Socket, { chatId }: { chatId: number }) {
     try {
       this.logger.info(
@@ -332,19 +330,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeMessage(ChatEvents.WEBRTC_OFFER)
+  @SubscribeAndRunWithContext(ChatEvents.WEBRTC_OFFER)
   handleOffer(client: Socket, data: any) {
     this.logger.info(`WebRTC Offer from ${client.id}`);
     return this.sendWebRTCMessage(client, data, ChatEvents.WEBRTC_OFFER);
   }
 
-  @SubscribeMessage(ChatEvents.WEBRTC_ANSWER)
+  @SubscribeAndRunWithContext(ChatEvents.WEBRTC_ANSWER)
   handleAnswer(client: Socket, data: any) {
     this.logger.info(`WebRTC Answer from ${client.id} `);
     return this.sendWebRTCMessage(client, data, ChatEvents.WEBRTC_ANSWER);
   }
 
-  @SubscribeMessage(ChatEvents.ICE_CANDIDATE)
+  @SubscribeAndRunWithContext(ChatEvents.ICE_CANDIDATE)
   handleIceCandidate(client: Socket, data: any) {
     return this.sendWebRTCMessage(client, data, ChatEvents.ICE_CANDIDATE);
   }

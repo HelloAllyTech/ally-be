@@ -3,9 +3,9 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
-  BaseEntity,
 } from 'typeorm';
 import { QueueStatus } from '../constants/chat.constants';
+import { BaseEntity } from './base.entity';
 
 @Entity('queue_entries')
 export class QueueEntry extends BaseEntity {

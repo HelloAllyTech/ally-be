@@ -1,5 +1,6 @@
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { config } from 'dotenv';
+import { DBLogger } from './db.logger';
 // Import other entities as needed
 
 config(); // Load .env file
@@ -18,7 +19,8 @@ export const dataSourceOptions: DataSourceOptions = {
     process.env.NODE_ENV === 'production'
       ? { rejectUnauthorized: false }
       : false,
-  logging: false,
+  logger: new DBLogger(),
+  logging: true,
 };
 
 const dataSource = new DataSource(dataSourceOptions);

@@ -11,8 +11,8 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
 import { TokenUser } from '../../auth/type/auth.types';
-import { ChatService } from '../services/chat.service';
-import { FeedbackService } from '../services/feedback.service';
+import { ChatService } from '../service/chat.service';
+import { FeedbackService } from '../service/feedback.service';
 import { ParseIntPipe } from '@nestjs/common';
 import { CreateFeedbackDto } from '../dto/create-feedback.dto';
 import {
