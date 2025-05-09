@@ -1,50 +1,56 @@
 import { Injectable } from '@nestjs/common';
-
 import * as WebSocket from 'ws';
-
-import { Server } from 'http';
-
 import { LoggerService } from '../../logger/logger.service';
+import { OnGatewayConnection } from '@nestjs/websockets';
 
 @Injectable()
-export class AudioIngestGateway {
-  private wss: WebSocket.Server | undefined;
+export class AudioIngestGateway implements OnGatewayConnection {
+  private wss: WebSocket.Server;
 
-  private logger = LoggerService.getInstance(AudioIngestGateway.name);
+  private readonly logger = LoggerService.getInstance(AudioIngestGateway.name);
 
-  initialize(httpServer: Server) {
+  constructor() {
+    this.wss = new WebSocket.Server({ noServer: true });
+    this.initialize();
+  }
+  handleConnection(client: any, ...args: any[]) {
+    this.logger.info('3rd-party WS client connected - ' + client.id);
+  }
+
+  getWss(): WebSocket.Server {
+    return this.wss;
+  }
+
+  initialize(): void {
     this.logger.info('Initializing Audio Ingest Gateway');
-
-    this.wss = new WebSocket.Server({ server: httpServer, path: '/ws' });
 
     this.wss.on('connection', (ws) => {
       let isAlive = true;
 
-      console.log('3rd-party WS client connected');
+      this.logger.info('3rd-party WS client connected');
 
-      ws.send('Hello from the server!!!!!sldkvcldkfv');
+      ws.send('Hello from the server!');
 
       ws.on('pong', () => {
         isAlive = true;
       });
 
       ws.on('message', (msg) => {
-        console.log('Received from 3rd party:', msg.toString());
+        this.logger.info(`Received from 3rd-party: ${msg.toString()}`);
       });
 
-      // send ping every 30 seconds
-
       const pingInterval = setInterval(() => {
-        if (isAlive) {
-          this.logger.info('Sending ping to 3rd-party WS client');
-
-          ws.ping();
+        if (!isAlive) {
+          this.logger.warn('3rd-party WS client unresponsive, terminating');
+          return ws.terminate();
         }
-      }, 30 * 1000);
+
+        isAlive = false;
+        ws.ping();
+      }, 30_000);
 
       ws.on('close', () => {
         clearInterval(pingInterval);
-
         this.logger.info('3rd-party WS client disconnected');
       });
     });
