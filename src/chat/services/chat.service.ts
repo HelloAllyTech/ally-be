@@ -204,11 +204,19 @@ export class ChatService {
     });
   }
   async getChatById(chatId: number) {
-    return this.chatRepository.findOne({
+    const cachedChat = await this.cache.get(`chat:${chatId}`);
+    if (cachedChat) {
+      return JSON.parse(cachedChat) as Chat;
+    }
+    const chat = await this.chatRepository.findOne({
       where: {
         id: chatId,
       },
     });
+    if (chat) {
+      await this.cache.set(`chat:${chatId}`, JSON.stringify(chat));
+    }
+    return chat;
   }
 
   async getChatsByCouncilorId(

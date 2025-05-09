@@ -295,7 +295,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // **Audio Chat Handling**
   @SubscribeMessage(ChatEvents.AUDIO_MESSAGE)
-  handleAudioMessage(
+  async handleAudioMessage(
     client: Socket,
     { chatId, audioData }: { chatId: number; audioData: Buffer },
   ) {
@@ -309,6 +309,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.transcriptionService.sendAudio(session, audioData).catch((error) => {
         this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
       });
+      //broadcast the audio message
+      const chat = await this.chatService.getChatById(chatId);
+      if (chat) {
+        const participants = [chat.counselorId];
+        this.publisher.publish('chat-message', {
+          participants,
+          message: {
+            userId: session.userId,
+            audioData,
+            chatId,
+            content: 'Audio message',
+          },
+          broadCastOptions: {
+            event: ChatEvents.AUDIO_STREAM,
+          },
+        });
+      }
     } catch (error) {
       this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
     }
