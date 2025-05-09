@@ -9,18 +9,13 @@ export enum ExecutionContextPropagation {
 
 export function WithExecutionContext(
   propagation: ExecutionContextPropagation = ExecutionContextPropagation.SUPPORTS,
-) {
-  return function (
-    target: any,
-    propertyKey: string,
-    descriptor: PropertyDescriptor,
-  ) {
+): MethodDecorator {
+  return (target, propertyKey, descriptor: PropertyDescriptor): void => {
     const originalMethod = descriptor.value;
 
     descriptor.value = async function (...args: any[]) {
       const currentContext = ExecutionManager.getCurrentContext();
 
-      // Handle different propagation strategies
       switch (propagation) {
         case ExecutionContextPropagation.REQUIRED:
           if (!currentContext) {
@@ -31,7 +26,7 @@ export function WithExecutionContext(
         case ExecutionContextPropagation.REQUIRES_NEW:
           return ExecutionManager.runWithContext(
             () => originalMethod.apply(this, args),
-            `${target.constructor.name}.${propertyKey}`,
+            `${target.constructor.name}.${String(propertyKey)}`,
           );
 
         case ExecutionContextPropagation.SUPPORTS:
@@ -40,7 +35,7 @@ export function WithExecutionContext(
           }
           return ExecutionManager.runWithContext(
             () => originalMethod.apply(this, args),
-            `${target.constructor.name}.${propertyKey}`,
+            `${target.constructor.name}.${String(propertyKey)}`,
           );
 
         case ExecutionContextPropagation.NOT_SUPPORTED:
@@ -53,7 +48,5 @@ export function WithExecutionContext(
           return originalMethod.apply(this, args);
       }
     };
-
-    return descriptor;
   };
 }

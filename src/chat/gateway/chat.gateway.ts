@@ -3,6 +3,7 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
   WebSocketServer,
+  SubscribeMessage,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { LoggerService } from '../../logger/logger.service';
@@ -24,7 +25,11 @@ import { AppConfigService } from '../../config/config.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { TranscriptionService } from '../../ai/service/transcription.service';
 import { Chat } from '../../common/entities/chat.entity';
-import { SubscribeAndRunWithContext } from '../decorators/chat-event.decorator';
+import {
+  ExecutionContextPropagation,
+  WithExecutionContext,
+} from '../../common/decorator/execution.context.decorator';
+import { ExecutionManager } from '../../common/execution/execution-manager';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -115,6 +120,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       role: user.role,
       room,
       chatId: -99,
+      tenantId: user.tenantId,
     };
 
     client.join(room);
@@ -171,7 +177,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeAndRunWithContext(ChatEvents.SEND_MESSAGE)
+  @SubscribeMessage(ChatEvents.SEND_MESSAGE)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleSendMessage(client: Socket, data: SendMessageWebSocketData) {
     const sid = client.id;
     const session = this.sessions[sid];
@@ -179,6 +186,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Session not found for client ${sid}`);
       return;
     }
+    //! Need to set the auth context before persisting and broadcasting the message
+    this.setAuthContext(session);
     const message = await this.persistAndBroadcastMessage(session, data);
     this.logger.info(`🔄 Triggering nudge for chatId: ${data.chatId}`);
     this.triggerNudge(message, session, data.chatId);
@@ -246,14 +255,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return message;
   }
 
-  @SubscribeAndRunWithContext(ChatEvents.START_AUDIO_CHAT)
+  @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async startAudioChat(client: Socket, { chatId }: { chatId: number }) {
     try {
       const session = this.sessions[client.id];
+      this.logger.info(`startAudioChat - chatId: ${chatId} from ${client.id}}`);
       if (!session) {
         this.logger.error(`Session not found for client ${client.id}`);
         return;
       }
+      //! Need to set the auth context before persisting and broadcasting the message
+      this.setAuthContext(session);
       session.chatId = chatId;
       await this.transcriptionService
         .startLiveTranscription(
@@ -292,8 +305,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeAndRunWithContext(ChatEvents.AUDIO_MESSAGE)
-  handleAudioMessage(
+  @SubscribeMessage(ChatEvents.AUDIO_MESSAGE)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
+  async handleAudioMessage(
     client: Socket,
     { chatId, audioData }: { chatId: number; audioData: Buffer },
   ) {
@@ -303,16 +317,35 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.logger.error(`Session not found for client ${client.id}`);
         return;
       }
-
+      //! Need to set the auth context before persisting and broadcasting the message
+      this.setAuthContext(session);
       this.transcriptionService.sendAudio(session, audioData).catch((error) => {
         this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
       });
+      //broadcast the audio message
+      const chat = await this.chatService.getChatById(chatId);
+      if (chat) {
+        const participants = [chat.counselorId];
+        this.publisher.publish('chat-message', {
+          participants,
+          message: {
+            userId: session.userId,
+            audioData,
+            chatId,
+            content: 'Audio message',
+          },
+          broadCastOptions: {
+            event: ChatEvents.AUDIO_STREAM,
+          },
+        });
+      }
     } catch (error) {
       this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
     }
   }
 
-  @SubscribeAndRunWithContext(ChatEvents.AUDIO_CHAT_MUTED)
+  @SubscribeMessage(ChatEvents.AUDIO_CHAT_MUTED)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleAudioChatMuted(client: Socket, { chatId }: { chatId: number }) {
     try {
       this.logger.info(
@@ -323,6 +356,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.logger.error(`Session not found for client ${client.id}`);
         return;
       }
+      //! Need to set the auth context before persisting and broadcasting the message
+      this.setAuthContext(session);
 
       await this.transcriptionService.handleAudioChatMuted(session);
     } catch (error) {
@@ -330,19 +365,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeAndRunWithContext(ChatEvents.WEBRTC_OFFER)
+  @SubscribeMessage(ChatEvents.WEBRTC_OFFER)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   handleOffer(client: Socket, data: any) {
     this.logger.info(`WebRTC Offer from ${client.id}`);
     return this.sendWebRTCMessage(client, data, ChatEvents.WEBRTC_OFFER);
   }
 
-  @SubscribeAndRunWithContext(ChatEvents.WEBRTC_ANSWER)
+  @SubscribeMessage(ChatEvents.WEBRTC_ANSWER)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   handleAnswer(client: Socket, data: any) {
     this.logger.info(`WebRTC Answer from ${client.id} `);
     return this.sendWebRTCMessage(client, data, ChatEvents.WEBRTC_ANSWER);
   }
 
-  @SubscribeAndRunWithContext(ChatEvents.ICE_CANDIDATE)
+  @SubscribeMessage(ChatEvents.ICE_CANDIDATE)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   handleIceCandidate(client: Socket, data: any) {
     return this.sendWebRTCMessage(client, data, ChatEvents.ICE_CANDIDATE);
   }
@@ -358,6 +396,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Session not found for client ${sid}`);
       return;
     }
+    //! Need to set the auth context before persisting and broadcasting the message
+    this.setAuthContext(session);
 
     const chatId = data.chatId;
     const senderId = session.userId;
@@ -629,5 +669,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         event: ChatEvents.CHAT_ENDED,
       },
     });
+  }
+
+  setAuthContext(session: UserChatSessionData) {
+    ExecutionManager.setAuthContext(
+      session.userId.toString(),
+      session.role,
+      session.tenantId,
+    );
   }
 }

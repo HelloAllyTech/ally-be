@@ -11,6 +11,7 @@ export type UserChatSessionData = {
   role: string;
   room: string;
   chatId: number;
+  tenantId: string;
 };
 
 export type ServiceSessionData = {
