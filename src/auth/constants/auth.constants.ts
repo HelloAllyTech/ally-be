@@ -7,4 +7,6 @@ export const PERMISSIONS = {
   ViewNavBarSettings: 'view:navbar:settings',
 
   EditSummary: 'edit:summary',
+
+  ButtonStartCall: 'view:button:start-call',
 };
