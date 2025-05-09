@@ -219,7 +219,7 @@ export class ChatService {
   async getChatById(chatId: number) {
     const cachedChat = await this.cache.get(`chat:${chatId}`);
     if (cachedChat) {
-      return JSON.parse(cachedChat);
+      return JSON.parse(cachedChat) as Chat;
     }
     const chat = await this.chatRepository.findOne({
       where: {
