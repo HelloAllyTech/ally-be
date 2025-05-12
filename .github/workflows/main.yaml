@@ -191,6 +191,7 @@ jobs:
     needs:
       - build
       - prepare-env
+      - run-db-migration
     runs-on: ubuntu-22.04
     env:
       AWS_ROLE: ${{ needs.prepare-env.outputs.AWS_ROLE }}
