@@ -20,6 +20,7 @@ import { NotificationModule } from './notification/notification.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { ExecutionContextMiddleware } from './common/execution/execution-context.middleware';
+import { TenantModule } from './tenant/tenant.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { ExecutionContextMiddleware } from './common/execution/execution-context
     NotificationModule,
     RateLimitModule,
     AnalyticsModule,
+    TenantModule,
   ],
   controllers: [],
   providers: [
