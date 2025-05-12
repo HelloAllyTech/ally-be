@@ -19,8 +19,7 @@ export const dataSourceOptions: DataSourceOptions = {
     process.env.NODE_ENV === 'production'
       ? { rejectUnauthorized: false }
       : false,
-  logger: new DBLogger(),
-  logging: true,
+  logging: false,
 };
 
 const dataSource = new DataSource(dataSourceOptions);
