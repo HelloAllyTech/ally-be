@@ -1,9 +1,10 @@
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
+import { UserRole } from '../../common/constants/user.constants';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -34,6 +35,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       user.tenantId,
     );
 
+    if (user.role != UserRole.SUPER_ADMIN && !user.tenantId) {
+      throw new UnauthorizedException('Tenant ID is required');
+    }
     return user;
   }
 }

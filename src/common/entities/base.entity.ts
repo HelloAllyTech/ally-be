@@ -7,6 +7,6 @@ export class BaseEntity {
   @UpdateDateColumn()
   updatedAt!: Date;
 
-  @Column({ name: 'tenant_id', select: false })
+  @Column({ name: 'tenant_id' })
   tenantId!: string;
 }

@@ -505,12 +505,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleDeepgramTranscript(
     session: UserChatSessionData,
     chatId: number,
     transcript: string,
     metadata?: DeepgramTranscriptMetadata,
   ): Promise<void> {
+    this.setAuthContext(session);
     const {
       isSentenceComplete,
       currentTranscriptBuffer,
