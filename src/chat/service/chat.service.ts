@@ -393,6 +393,9 @@ export class ChatService {
     if (filter?.limit) {
       query.limit(filter.limit);
     }
+    query.andWhere('message.tenantId = :tenantId', {
+      tenantId: ExecutionManager.getTenantId(),
+    });
     return query.getMany();
   }
 
@@ -425,6 +428,7 @@ export class ChatService {
       content: data.content,
       context: data.context,
       type: data.messageType || MessageType.TEXT,
+      tenantId: ExecutionManager.getTenantId(),
     });
     return this.messageRepository.save(message);
   }
@@ -444,6 +448,7 @@ export class ChatService {
       content: data.content,
       context: data.context,
       type: data.messageType || MessageType.TEXT,
+      tenantId: ExecutionManager.getTenantId(),
     });
   }
 
@@ -511,6 +516,7 @@ export class ChatService {
     const chat = await this.chatRepository.findOne({
       where: {
         id: chatId,
+        tenantId: ExecutionManager.getTenantId(),
       },
     });
 
@@ -541,6 +547,9 @@ export class ChatService {
     if (offset) {
       query.offset(offset);
     }
+    query.andWhere('message.tenantId = :tenantId', {
+      tenantId: ExecutionManager.getTenantId(),
+    });
     return query.getMany();
   }
 
@@ -696,6 +705,9 @@ export class ChatService {
         pagination.order as 'ASC' | 'DESC',
       );
     }
+    query.andWhere('message.tenantId = :tenantId', {
+      tenantId: ExecutionManager.getTenantId(),
+    });
 
     const messages = await query.getMany();
 
@@ -737,6 +749,9 @@ export class ChatService {
         options.order as 'ASC' | 'DESC',
       );
     }
+    query.andWhere('chat.tenantId = :tenantId', {
+      tenantId: ExecutionManager.getTenantId(),
+    });
     const [callLogs, count] = await query.getManyAndCount();
     return {
       data: callLogs,
