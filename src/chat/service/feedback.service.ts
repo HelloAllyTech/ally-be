@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Feedback } from '../../common/entities/feedback.entity';
-
+import { ExecutionManager } from '../../common/execution/execution-manager';
 @Injectable()
 export class FeedbackService {
   constructor(
@@ -11,13 +11,16 @@ export class FeedbackService {
   ) {}
 
   async create(createFeedbackDto: Partial<Feedback>): Promise<Feedback> {
-    const feedback = this.feedbackRepository.create(createFeedbackDto);
+    const feedback = this.feedbackRepository.create({
+      ...createFeedbackDto,
+      tenantId: ExecutionManager.getTenantId(),
+    });
     return await this.feedbackRepository.save(feedback);
   }
 
   async findByMessageId(messageId: number): Promise<Feedback[]> {
     return await this.feedbackRepository.find({
-      where: { messageId },
+      where: { messageId, tenantId: ExecutionManager.getTenantId() },
     });
   }
 
@@ -26,7 +29,7 @@ export class FeedbackService {
     updateFeedbackDto: Partial<Feedback>,
   ): Promise<Feedback> {
     const feedback = await this.feedbackRepository.findOne({
-      where: { feedbackId: id },
+      where: { feedbackId: id, tenantId: ExecutionManager.getTenantId() },
     });
     if (!feedback) {
       throw new NotFoundException(`Feedback with ID ${id} not found`);

@@ -1,8 +1,13 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 @Entity('user_groups')
-export class UserGroup extends BaseEntity {
+export class UserGroup {
   @PrimaryGeneratedColumn()
   id!: number;
 
@@ -11,4 +16,10 @@ export class UserGroup extends BaseEntity {
 
   @Column()
   groupId!: number;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
 }

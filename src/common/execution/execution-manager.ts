@@ -1,66 +1,60 @@
-import { v4 as UUIDV4 } from 'uuid';
 import { AsyncLocalStorage } from 'async_hooks';
+import { randomUUID } from 'crypto';
+
+interface ExecutionContext {
+  id: string;
+  startTime: string;
+  origin?: string;
+  userId?: string;
+  role?: string;
+  tenantId?: string;
+  path?: string;
+}
 
 export class ExecutionManager {
-  private static asl: AsyncLocalStorage<Map<string, any>>;
+  private static storage = new AsyncLocalStorage<ExecutionContext>();
 
-  static init() {
-    ExecutionManager.asl = new AsyncLocalStorage();
-  }
-
-  static runWithContext<R>(
-    callback: (...args: any[]) => R,
-    origin?: string,
-  ): R {
-    return ExecutionManager.getExecutionContext().run(
-      new Map([
-        ['id', UUIDV4()],
-        ['startTime', new Date().toISOString()],
-        ['origin', origin],
-      ]),
-      () => callback.apply(this),
+  static runWithContext<T>(fn: () => T, path: string): T {
+    return this.storage.run(
+      {
+        id: randomUUID(),
+        startTime: new Date().toISOString(),
+        path,
+      },
+      fn,
     );
   }
 
-  private static getExecutionContext() {
-    return ExecutionManager.asl;
+  static setAuthContext(userId: string, role: string, tenantId: string): void {
+    const context = this.storage.getStore();
+    if (context) {
+      context.userId = userId;
+      context.role = role;
+      context.tenantId = tenantId;
+    }
   }
 
-  public static getFromContext<T>(key: string) {
-    return ExecutionManager.getExecutionContext()?.getStore()?.get(key) as T;
+  static getCurrentContext(): ExecutionContext | undefined {
+    return this.storage.getStore();
   }
 
-  public static setInContext(key: string, value: any) {
-    ExecutionManager.getExecutionContext()?.getStore()?.set(key, value);
+  static getUserId(): string | undefined {
+    return this.storage.getStore()?.userId;
   }
 
-  static getExecutionId(): string {
-    return ExecutionManager.getFromContext('id');
+  static getRole(): string | undefined {
+    return this.storage.getStore()?.role;
   }
 
-  static getExecutionStartTime(): string {
-    return ExecutionManager.getFromContext('startTime');
-  }
-  static setActor(actor: string) {
-    ExecutionManager.setInContext('actor', actor);
-  }
-  static getActor() {
-    return ExecutionManager.getFromContext<string>('actor');
-  }
-  static setOrigin(origin: string) {
-    ExecutionManager.setInContext('origin', origin);
-  }
-  static getOrigin() {
-    return ExecutionManager.getFromContext<string>('origin');
+  static getTenantId(): string | undefined {
+    return this.storage.getStore()?.tenantId;
   }
 
-  static getContext() {
-    return ExecutionManager.getExecutionContext()?.getStore();
+  static getPath(): string | undefined {
+    return this.storage.getStore()?.path;
   }
 
-  static setAuthContext(userId: string, role: string, tenantId: string) {
-    ExecutionManager.setInContext('userId', userId);
-    ExecutionManager.setInContext('role', role);
-    ExecutionManager.setInContext('tenantId', tenantId);
+  static getExecutionId(): string | undefined {
+    return this.storage.getStore()?.id;
   }
 }

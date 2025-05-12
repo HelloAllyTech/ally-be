@@ -1,8 +1,13 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 @Entity('group_permissions')
-export class GroupPermission extends BaseEntity {
+export class GroupPermission {
   @PrimaryGeneratedColumn()
   id!: number;
 
@@ -11,4 +16,10 @@ export class GroupPermission extends BaseEntity {
 
   @Column()
   permissionId!: number;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
 }

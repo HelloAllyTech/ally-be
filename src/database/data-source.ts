@@ -1,5 +1,6 @@
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { config } from 'dotenv';
+import { DBLogger } from './db.logger';
 // Import other entities as needed
 
 config(); // Load .env file

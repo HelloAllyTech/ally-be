@@ -2,8 +2,6 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { ExecutionContextInterceptor } from './common/execution/execution-context.interceptor';
-import { ExecutionManager } from './common/execution/execution-manager';
 import helmet from 'helmet';
 import { AudioIngestGateway } from './audio-ingest/gateway/audio.ingest.gateway';
 async function bootstrap() {
@@ -14,8 +12,6 @@ async function bootstrap() {
     });
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ transform: true }));
-    ExecutionManager.init();
-    app.useGlobalInterceptors(new ExecutionContextInterceptor());
     app.use(helmet());
     app.enableCors();
     // remove x-powered-by header

@@ -5,9 +5,10 @@ import {
   CreateDateColumn,
 } from 'typeorm';
 import { QueueStatus } from '../constants/chat.constants';
+import { BaseEntity } from './base.entity';
 
 @Entity('queue_entries')
-export class QueueEntry {
+export class QueueEntry extends BaseEntity {
   @PrimaryGeneratedColumn({ name: 'entry_id' })
   entryId!: number;
 

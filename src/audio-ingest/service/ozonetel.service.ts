@@ -58,6 +58,7 @@ export class OzonetelService {
           role: 'client',
           room: 'user-1',
           chatId: 3,
+          tenantId: '1',
         },
         buffer,
       );
@@ -88,6 +89,7 @@ export class OzonetelService {
         role: 'client',
         room: 'user-1',
         chatId: 3,
+        tenantId: '1',
       },
       3,
       async (session, chatId, transcript) => {

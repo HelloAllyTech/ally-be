@@ -54,4 +54,11 @@ export class UserCreateDto {
   @IsOptional()
   @IsString()
   username?: string;
+
+  @ApiProperty({
+    description: 'Tenant ID',
+    example: 'tenant-123',
+  })
+  @IsString()
+  tenantId!: string;
 }

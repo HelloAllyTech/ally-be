@@ -21,9 +21,6 @@ export class Dashboard extends BaseEntity {
   @Column()
   groupId!: string;
 
-  @Column({ nullable: true })
-  organizationId?: string;
-
   @Column({ nullable: true, type: 'jsonb' })
   data?: any;
 }

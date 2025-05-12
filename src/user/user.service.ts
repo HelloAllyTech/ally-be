@@ -6,6 +6,7 @@ import { QueueService } from '../queue/service/queue.service';
 import { Chat, ChatStatus } from '../common/entities/chat.entity';
 import { UserRole } from '../common/constants/user.constants';
 import { RedisService } from '../redis/service/redis.service';
+import { ExecutionManager } from '../common/execution/execution-manager';
 
 @Injectable()
 export class UserService {
@@ -18,7 +19,7 @@ export class UserService {
 
   async get(id: number): Promise<User | null> {
     const user = await this.userRepository.findOne({
-      where: { id },
+      where: { id, tenantId: ExecutionManager.getTenantId() },
     });
     return user || null;
   }
@@ -27,6 +28,7 @@ export class UserService {
     return this.userRepository.find({
       where: {
         phone: In(phoneNumbers),
+        tenantId: ExecutionManager.getTenantId(),
       },
     });
   }
@@ -35,6 +37,7 @@ export class UserService {
     return this.userRepository.find({
       where: {
         id: In(ids),
+        tenantId: ExecutionManager.getTenantId(),
       },
     });
   }
@@ -52,6 +55,9 @@ export class UserService {
         'chat',
         `chat.clientId = user.id and chat.status = '${ChatStatus.PAUSED}'`,
       )
+      .andWhere('chat.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
+      })
       .getMany();
     const formattedData = data.map((user: any) => {
       const chat = user.chat?.[0] as Chat;
@@ -91,7 +97,7 @@ export class UserService {
     const cachedUserRole = await this.cache.get(`user_role_${id}`);
     if (cachedUserRole) return cachedUserRole as UserRole;
     const user = await this.userRepository.findOne({
-      where: { id },
+      where: { id, tenantId: ExecutionManager.getTenantId() },
     });
     const userRole = user?.role;
     if (userRole) await this.cache.set(`user_role_${id}`, userRole);
@@ -115,6 +121,7 @@ export class UserService {
       phone: phoneNumber,
       name: name || 'Anonymous user',
       email: email || 'placeholder@placeholder.com',
+      tenantId: ExecutionManager.getTenantId(),
     });
     return this.userRepository.save(user);
   }
