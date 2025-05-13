@@ -70,7 +70,7 @@ export class QueueService {
 
   updateQueueStatus(id: any, status: QueueStatus) {
     return this.queueRepo.update(
-      { id, tenantId: ExecutionManager.getTenantId() },
+      { entryId: id, tenantId: ExecutionManager.getTenantId() },
       { status },
     );
   }
