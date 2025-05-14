@@ -30,6 +30,8 @@ import { StringUtil } from '../../common/util/string.util';
 import { TokenUser } from '../../auth/type/auth.types';
 import { UserRole } from '../../common/constants/user.constants';
 import { ExecutionManager } from '../../common/execution/execution-manager';
+import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException } from '../../exception/custom.exception';
 
 @Injectable()
 export class ChatService {
@@ -773,5 +775,93 @@ export class ChatService {
 
   getNudge(newMessage: string, messageRequests: MessageRequest[]) {
     return this.aiService.getNudge(newMessage, messageRequests);
+  }
+
+  async exportSummary(tokenUser: TokenUser, chatId: number): Promise<string> {
+    const { chat, callDetails } = await this.getChatWithCallDetails(chatId);
+    if (!chat) {
+      throw new NotFoundException(`Chat with ID ${chatId} not found`);
+    }
+
+    if (
+      tokenUser.role != UserRole.SUPER_ADMIN &&
+      tokenUser.id != chat.counselorId
+    ) {
+      throw new ForbiddenException(
+        'You are not authorized to export this chat summary',
+      );
+    }
+
+    // const client = await this.userService.get(chat.clientId);
+    // const counselor = await this.userService.get(chat.counselorId!);
+
+    // Assuming callDetails.summaryNote is available
+    const { tags = [], summaryNote } = callDetails?.summary || {};
+
+    let summary = `Chat Summary\n`;
+    summary += `============\n\n`;
+    summary += `Chat ID: ${chat.id}\n`;
+    // summary += `Client: ${client?.name || 'Unknown'}\n`;
+    // summary += `Counselor: ${counselor?.name || 'Unknown'}\n`;
+    summary += `Start Time: ${chat.createdAt}\n`;
+    summary += `End Time: ${chat.endedAt || 'Ongoing'}\n\n`;
+
+    // Include tags
+    if (tags.length) {
+      summary += `Tags: ${tags.join(', ')}\n\n`;
+    }
+
+    // Session details
+    if (summaryNote?.session_details) {
+      const d = summaryNote.session_details;
+      summary += `Session Details\n`;
+      summary += `===============\n`;
+      summary += `Counselor Name: ${d.counselor_name || 'N/A'}\n`;
+      summary += `Session Number: ${d.session_number || 'N/A'}\n`;
+      summary += `Date of Session: ${d.date_of_session || 'N/A'}\n`;
+      summary += `New Call/Follow-up: ${d.new_call_follow_up || 'N/A'}\n\n`;
+    }
+
+    // Demographic details
+    if (summaryNote?.demographic_details) {
+      const dd = summaryNote.demographic_details;
+      summary += `Demographic Details\n`;
+      summary += `===================\n`;
+      Object.entries(dd).forEach(([key, value]) => {
+        summary += `${key.replace(/_/g, ' ')}: ${value || 'N/A'}\n`;
+      });
+      summary += `\n`;
+    }
+
+    // Counselor impressions
+    if (summaryNote?.counselor_impressions) {
+      const ci = summaryNote.counselor_impressions;
+      summary += `Counselor Impressions\n`;
+      summary += `======================\n`;
+      Object.entries(ci).forEach(([key, value]) => {
+        summary += `${key.replace(/_/g, ' ')}: ${value || 'N/A'}\n`;
+      });
+      summary += `\n`;
+    }
+
+    // Session documentation
+    if (summaryNote?.session_documentation) {
+      const sd = summaryNote.session_documentation;
+      summary += `Session Documentation\n`;
+      summary += `======================\n`;
+      summary += `Work Done: ${sd.work_done || 'N/A'}\n`;
+      summary += `Key Concerns: ${(sd.key_concerns || []).join(', ') || 'N/A'}\n`;
+      summary += `Dominant Feelings: ${(sd.dominant_feelings || []).join(', ') || 'N/A'}\n\n`;
+    }
+
+    return summary;
+  }
+
+  async getChatWithCallDetails(chatId: number) {
+    const chat = await this.getChatById(chatId);
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+    return { chat, callDetails };
   }
 }

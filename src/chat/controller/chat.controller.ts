@@ -7,6 +7,7 @@ import {
   Body,
   Patch,
   Query,
+  Res,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
@@ -28,6 +29,7 @@ import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 import { CallStartDto } from '../dto/call-start.dto';
+import { Response } from 'express';
 
 @ApiTags('Chats')
 @Controller('v1/chats')
@@ -104,8 +106,8 @@ export class ChatController {
     });
   }
 
-  @AuthRoles(UserRole.COUNSELOR, UserRole.CLIENT)
-  @Patch('call-start')
+  @AuthRoles(UserRole.COUNSELOR)
+  @Post('call-start')
   async callStart(@Body() params: CallStartDto) {
     return this.service.startCall(params.participantPhoneNumbers);
   }
@@ -253,5 +255,34 @@ export class ChatController {
     @Body() body: { newMessage: string; chatHistory: MessageRequest[] },
   ) {
     return this.service.getNudge(body.newMessage, body.chatHistory);
+  }
+
+  @Get(':chatId/export-summary')
+  @ApiOperation({ summary: 'Export chat summary in TXT format' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the chat summary as a text file',
+    content: {
+      'text/plain': {
+        schema: {
+          type: 'string',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Chat not found' })
+  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN)
+  async exportSummary(
+    @Param('chatId', ParseIntPipe) chatId: number,
+    @CurrentUser() tokenUser: TokenUser,
+    @Res() res: Response,
+  ): Promise<void> {
+    const summary = await this.service.exportSummary(tokenUser, chatId);
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=chat-summary.txt',
+    );
+    res.send(summary);
   }
 }
