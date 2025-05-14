@@ -585,7 +585,7 @@ export class ChatService {
     const startDate = chat.startedAt || new Date();
     const endDate = chat.endedAt || new Date();
     // duration in seconds as integer
-    const durationInSeconds = Math.floor(
+    const callDurationInSeconds = Math.floor(
       (endDate.getTime() - startDate.getTime()) / 1000,
     );
 
@@ -634,9 +634,13 @@ export class ChatService {
       callInfo: {
         clientTalkingPercentage: clientTalkingPercentage?.toFixed(3) || 0,
         counselorTalkingPercentage: counselorTalkingPercentage?.toFixed(3) || 0,
+        clientTalkingTime: clientTalkingPercentage * callDurationInSeconds,
+        counselorTalkingTime:
+          counselorTalkingPercentage * callDurationInSeconds,
+        summaryName: `Call - ${chat.id} - ${chat.startedAt?.toISOString()}`,
       } as CallInfo,
       endTime: chat.endedAt,
-      callDuration: durationInSeconds,
+      callDuration: callDurationInSeconds,
     };
 
     const details = await this.callDetailsRepository.update(
