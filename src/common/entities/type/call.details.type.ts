@@ -5,6 +5,7 @@ export type CallInfo = {
   clientTalkingTime?: number;
   counselorTalkingTime?: number;
   summaryName?: string;
+  pauseNudge?: boolean;
 };
 
 export enum NewCallFollowUp {

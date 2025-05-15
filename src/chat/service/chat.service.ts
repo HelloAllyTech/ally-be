@@ -30,6 +30,8 @@ import { StringUtil } from '../../common/util/string.util';
 import { TokenUser } from '../../auth/type/auth.types';
 import { UserRole } from '../../common/constants/user.constants';
 import { ExecutionManager } from '../../common/execution/execution-manager';
+import { TIME } from '../../common/constants/time.constants';
+import { NotFoundException } from '@nestjs/common';
 
 @Injectable()
 export class ChatService {
@@ -807,5 +809,52 @@ export class ChatService {
 
   getNudge(newMessage: string, messageRequests: MessageRequest[]) {
     return this.aiService.getNudge(newMessage, messageRequests);
+  }
+
+  async pauseOrResumeNudge(chatId: number, pause: boolean) {
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: {
+        chatId,
+        tenantId: ExecutionManager.getTenantId(),
+      },
+    });
+
+    if (!callDetails) {
+      throw new NotFoundException(`Call details not found for chat ${chatId}`);
+    }
+
+    const updatedCallInfo = {
+      ...callDetails.callInfo,
+      pauseNudge: pause,
+    };
+
+    await this.callDetailsRepository.update(
+      { chatId, tenantId: ExecutionManager.getTenantId() },
+      { callInfo: updatedCallInfo },
+    );
+    await this.cache.set(
+      `nudge-paused-${chatId}`,
+      String(pause),
+      TIME.DAY_IN_SECONDS,
+    );
+  }
+
+  async isNudgePaused(chatId: number) {
+    const cachedValue = await this.cache.get(`nudge-paused-${chatId}`);
+    if (cachedValue) {
+      return cachedValue === 'true';
+    }
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+    const isPaused = callDetails?.callInfo?.pauseNudge;
+    if (isPaused !== undefined) {
+      await this.cache.set(
+        `nudge-paused-${chatId}`,
+        String(isPaused),
+        TIME.DAY_IN_SECONDS,
+      );
+    }
+    return isPaused;
   }
 }
