@@ -56,11 +56,17 @@ export class QueueService {
     });
   }
 
-  getQueueByChatId(chatId: number) {
-    return this.queueRepo.findOne({ where: { chatId } });
+  getQueueByChatId(chatId: number, entityManager?: EntityManager) {
+    const repo = entityManager?.getRepository(QueueEntry) || this.queueRepo;
+    return repo.findOne({ where: { chatId } });
   }
 
-  updateQueueStatus(id: any, status: QueueStatus) {
-    return this.queueRepo.update(id, { status });
+  updateQueueStatus(
+    id: any,
+    status: QueueStatus,
+    entityManager?: EntityManager,
+  ) {
+    const repo = entityManager?.getRepository(QueueEntry) || this.queueRepo;
+    return repo.update(id, { status });
   }
 }
