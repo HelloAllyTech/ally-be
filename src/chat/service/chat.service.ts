@@ -238,8 +238,10 @@ export class ChatService {
   async getChatsByCouncilorId(
     counselorId: number,
     options?: { status?: ChatStatus },
+    entityManager?: EntityManager,
   ) {
-    return this.chatRepository.findOne({
+    const repo = entityManager?.getRepository(Chat) || this.chatRepository;
+    return repo.findOne({
       where: {
         counselorId: counselorId,
         ...options,
@@ -251,8 +253,15 @@ export class ChatService {
     });
   }
 
-  async addCouncilorToChat(counselorId: number, chatId: number) {
-    const chat = await this.chatRepository.findOne({
+  async addCouncilorToChat(
+    counselorId: number,
+    chatId: number,
+    entityManager?: EntityManager,
+  ) {
+    const repo = entityManager?.getRepository(Chat) || this.chatRepository;
+    const callDetailsRepo =
+      entityManager?.getRepository(CallDetails) || this.callDetailsRepository;
+    const chat = await repo.findOne({
       where: {
         id: chatId,
         tenantId: ExecutionManager.getTenantId(),
@@ -270,8 +279,8 @@ export class ChatService {
     chat.counselorId = counselorId;
     chat.status = ChatStatus.ACTIVE;
     chat.startedAt = startTime;
-    const updatedChat = await this.chatRepository.save(chat);
-    await this.callDetailsRepository.update(
+    const updatedChat = await repo.save(chat);
+    await callDetailsRepo.update(
       { chatId: chatId, tenantId: ExecutionManager.getTenantId() },
       { startTime: startTime },
     );
@@ -324,30 +333,44 @@ export class ChatService {
   }
 
   async accept(councilorId: number, chatId: number) {
-    const activeChats = await this.getChatsByCouncilorId(councilorId, {
-      status: ChatStatus.ACTIVE,
+    return this.dataSource.transaction(async (entityManager) => {
+      const activeChats = await this.getChatsByCouncilorId(
+        councilorId,
+        {
+          status: ChatStatus.ACTIVE,
+        },
+        entityManager,
+      );
+      if (activeChats) {
+        throw new HttpException('You already have an active chat session', 400);
+      }
+
+      const chat = await this.addCouncilorToChat(
+        councilorId,
+        chatId,
+        entityManager,
+      );
+      const queueEntry = await this.queueService.getQueueByChatId(
+        chatId,
+        entityManager,
+      );
+
+      if (!queueEntry) {
+        throw new HttpException('Chat not found in queue', 404);
+      }
+      await this.queueService.updateQueueStatus(
+        queueEntry.entryId,
+        QueueStatus.MATCHED,
+        entityManager,
+      );
+      const room = `user-${chat.clientId}`;
+      const chatResponse = await this.getChatResponse(chat, entityManager);
+      const payload = {
+        type: ChatEvents.CHAT_ACCEPTED,
+        payload: chatResponse,
+      };
+      this.gateway.sendMessagesToRoom(room, payload);
     });
-    if (activeChats) {
-      throw new HttpException('You already have an active chat session', 400);
-    }
-
-    const chat = await this.addCouncilorToChat(councilorId, chatId);
-    const queueEntry = await this.queueService.getQueueByChatId(chatId);
-
-    if (!queueEntry) {
-      throw new HttpException('Chat not found in queue', 404);
-    }
-    await this.queueService.updateQueueStatus(
-      queueEntry.entryId,
-      QueueStatus.MATCHED,
-    );
-    const room = `user-${chat.clientId}`;
-    const chatResponse = await this.getChatResponse(chat);
-    const payload = {
-      type: ChatEvents.CHAT_ACCEPTED,
-      payload: chatResponse,
-    };
-    this.gateway.sendMessagesToRoom(room, payload);
   }
 
   async handleDeepgramTranscript(
@@ -373,8 +396,11 @@ export class ChatService {
       sortBy?: string;
       order?: 'ASC' | 'DESC';
     },
+    entityManager?: EntityManager,
   ) {
-    const query = this.messageRepository
+    const repo =
+      entityManager?.getRepository(Message) || this.messageRepository;
+    const query = repo
       .createQueryBuilder('message')
       .where('message.chatId = :chatId', { chatId })
       .leftJoinAndMapOne(
@@ -464,12 +490,16 @@ export class ChatService {
     return this.getChatResponse(latestChat);
   }
 
-  async getChatResponse(chat: Chat) {
+  async getChatResponse(chat: Chat, entityManager?: EntityManager) {
     const client = await this.userService.get(chat.clientId);
     const counselor = chat.counselorId
       ? await this.userService.get(chat.counselorId)
       : null;
-    const messages = await this.getMessageByChatId(chat.id);
+    const messages = await this.getMessageByChatId(
+      chat.id,
+      undefined,
+      entityManager,
+    );
     const payload = {
       counselor: this.userService.getMinimalUserInfo(counselor),
       client: this.userService.getMinimalUserInfo(client),
@@ -587,7 +617,7 @@ export class ChatService {
     const startDate = chat.startedAt || new Date();
     const endDate = chat.endedAt || new Date();
     // duration in seconds as integer
-    const durationInSeconds = Math.floor(
+    const callDurationInSeconds = Math.floor(
       (endDate.getTime() - startDate.getTime()) / 1000,
     );
 
@@ -636,9 +666,13 @@ export class ChatService {
       callInfo: {
         clientTalkingPercentage: clientTalkingPercentage?.toFixed(3) || 0,
         counselorTalkingPercentage: counselorTalkingPercentage?.toFixed(3) || 0,
+        clientTalkingTime: clientTalkingPercentage * callDurationInSeconds,
+        counselorTalkingTime:
+          counselorTalkingPercentage * callDurationInSeconds,
+        summaryName: `Call - ${chat.id} - ${chat.startedAt?.toISOString()}`,
       } as CallInfo,
       endTime: chat.endedAt,
-      callDuration: durationInSeconds,
+      callDuration: callDurationInSeconds,
     };
 
     const details = await this.callDetailsRepository.update(
