@@ -33,7 +33,6 @@ import { Response } from 'express';
 
 @ApiTags('Chats')
 @Controller('v1/chats')
-@UseGuards(JwtAuthGuard)
 export class ChatController {
   constructor(
     private service: ChatService,
@@ -277,11 +276,14 @@ export class ChatController {
     @CurrentUser() tokenUser: TokenUser,
     @Res() res: Response,
   ): Promise<void> {
-    const summary = await this.service.exportSummary(tokenUser, chatId);
+    const { summary, fileName } = await this.service.exportSummary(
+      tokenUser,
+      chatId,
+    );
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader(
       'Content-Disposition',
-      'attachment; filename=chat-summary.txt',
+      `attachment; filename=${fileName}.txt`,
     );
     res.send(summary);
   }

@@ -669,7 +669,7 @@ export class ChatService {
         clientTalkingTime: clientTalkingPercentage * callDurationInSeconds,
         counselorTalkingTime:
           counselorTalkingPercentage * callDurationInSeconds,
-        summaryName: `Call - ${chat.id} - ${chat.startedAt?.toISOString()}`,
+        summaryName: `Call:${chat.id}:${chat.startedAt}`,
       } as CallInfo,
       endTime: chat.endedAt,
       callDuration: callDurationInSeconds,
@@ -811,7 +811,10 @@ export class ChatService {
     return this.aiService.getNudge(newMessage, messageRequests);
   }
 
-  async exportSummary(tokenUser: TokenUser, chatId: number): Promise<string> {
+  async exportSummary(
+    tokenUser: TokenUser,
+    chatId: number,
+  ): Promise<{ summary: string; fileName: string }> {
     const { chat, callDetails } = await this.getChatWithCallDetails(chatId);
     if (!chat) {
       throw new NotFoundException(`Chat with ID ${chatId} not found`);
@@ -831,6 +834,8 @@ export class ChatService {
 
     // Assuming callDetails.summaryNote is available
     const { tags = [], summaryNote } = callDetails?.summary || {};
+    const summaryName =
+      callDetails?.callInfo?.summaryName || `Call:${chat.id}:${chat.startedAt}`;
 
     let summary = `Chat Summary\n`;
     summary += `============\n\n`;
@@ -839,6 +844,7 @@ export class ChatService {
     // summary += `Counselor: ${counselor?.name || 'Unknown'}\n`;
     summary += `Start Time: ${chat.createdAt}\n`;
     summary += `End Time: ${chat.endedAt || 'Ongoing'}\n\n`;
+    summary += `Summary Name: ${summaryName}\n\n`;
 
     // Include tags
     if (tags.length) {
@@ -888,7 +894,7 @@ export class ChatService {
       summary += `Dominant Feelings: ${(sd.dominant_feelings || []).join(', ') || 'N/A'}\n\n`;
     }
 
-    return summary;
+    return { summary, fileName: summaryName };
   }
 
   async getChatWithCallDetails(chatId: number) {
