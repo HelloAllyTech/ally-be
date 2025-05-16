@@ -311,6 +311,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client: Socket,
     { chatId, audioData }: { chatId: number; audioData: Buffer },
   ) {
+    const isNudgePaused = await this.chatService.isNudgePaused(chatId);
+    if (isNudgePaused) {
+      this.logger.info(`Nudge is paused for chatId ${chatId}`);
+      return;
+    }
     try {
       const session = this.sessions[client.id];
       if (!session) {
