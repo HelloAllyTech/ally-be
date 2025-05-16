@@ -311,6 +311,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client: Socket,
     { chatId, audioData }: { chatId: number; audioData: Buffer },
   ) {
+    const isNudgePaused = await this.chatService.isNudgePaused(chatId);
+    if (isNudgePaused) {
+      this.logger.info(`Nudge is paused for chatId ${chatId}`);
+      return;
+    }
     try {
       const session = this.sessions[client.id];
       if (!session) {
@@ -363,6 +368,38 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (error) {
       this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
     }
+  }
+
+  @SubscribeMessage(ChatEvents.AUDIO_CHAT_NUDGE_PAUSED)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
+  async handleAudioChatNudgePaused(
+    client: Socket,
+    { chatId }: { chatId: number },
+  ) {
+    this.logger.info(`Audio chat nudge paused for chatId ${chatId}`);
+    const session = this.sessions[client.id];
+    if (!session) {
+      this.logger.error(`Session not found for client ${client.id}`);
+      return;
+    }
+    this.setAuthContext(session);
+    await this.chatService.pauseOrResumeNudge(chatId, true);
+  }
+
+  @SubscribeMessage(ChatEvents.AUDIO_CHAT_NUDGE_RESUMED)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
+  async handleAudioChatNudgeResumed(
+    client: Socket,
+    { chatId }: { chatId: number },
+  ) {
+    this.logger.info(`Audio chat Nudge resumed for chatId ${chatId}`);
+    const session = this.sessions[client.id];
+    if (!session) {
+      this.logger.error(`Session not found for client ${client.id}`);
+      return;
+    }
+    this.setAuthContext(session);
+    await this.chatService.pauseOrResumeNudge(chatId, false);
   }
 
   @SubscribeMessage(ChatEvents.WEBRTC_OFFER)
@@ -418,6 +455,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     session: UserChatSessionData,
     chatId: number,
   ) {
+    const isNudgePaused = await this.chatService.isNudgePaused(chatId);
+    if (isNudgePaused) {
+      this.logger.info(`Nudge is paused for chatId ${chatId}`);
+      return;
+    }
     const messages = await this.chatService.getChatHistoryForAIService(chatId, {
       sortBy: 'createdAt',
       order: 'DESC',

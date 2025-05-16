@@ -32,6 +32,7 @@ import { UserRole } from '../../common/constants/user.constants';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { NotFoundException } from '@nestjs/common';
 import { ForbiddenException } from '../../exception/custom.exception';
+import { TIME } from '../../common/constants/time.constants';
 
 @Injectable()
 export class ChatService {
@@ -903,5 +904,52 @@ export class ChatService {
       where: { chatId, tenantId: ExecutionManager.getTenantId() },
     });
     return { chat, callDetails };
+  }
+
+  async pauseOrResumeNudge(chatId: number, pause: boolean) {
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: {
+        chatId,
+        tenantId: ExecutionManager.getTenantId(),
+      },
+    });
+
+    if (!callDetails) {
+      throw new NotFoundException(`Call details not found for chat ${chatId}`);
+    }
+
+    const updatedCallInfo = {
+      ...callDetails.callInfo,
+      pauseNudge: pause,
+    };
+
+    await this.callDetailsRepository.update(
+      { chatId, tenantId: ExecutionManager.getTenantId() },
+      { callInfo: updatedCallInfo },
+    );
+    await this.cache.set(
+      `nudge-paused-${chatId}`,
+      String(pause),
+      TIME.DAY_IN_SECONDS,
+    );
+  }
+
+  async isNudgePaused(chatId: number) {
+    const cachedValue = await this.cache.get(`nudge-paused-${chatId}`);
+    if (cachedValue) {
+      return cachedValue === 'true';
+    }
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+    const isPaused = callDetails?.callInfo?.pauseNudge;
+    if (isPaused !== undefined) {
+      await this.cache.set(
+        `nudge-paused-${chatId}`,
+        String(isPaused),
+        TIME.DAY_IN_SECONDS,
+      );
+    }
+    return isPaused;
   }
 }
