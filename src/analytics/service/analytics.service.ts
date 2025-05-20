@@ -32,7 +32,7 @@ export class AnalyticsService {
     if (!dashboard) {
       throw new Error('Dashboard not found');
     }
-    const paramKeyList = dashboard.data.params;
+    const paramKeyList = dashboard?.data?.params ?? [];
     const generatedParams = AnalyticsUtil.generateParamList(paramKeyList);
     const url = await this.analyticsInterface.getDashboardUrl(dashboardId, {
       params: { ...inputParams, ...generatedParams },
