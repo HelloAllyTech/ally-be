@@ -1,5 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseEntity } from './base.entity';
+import { DashboardData } from './type/dashboard.data.type';
 
 @Entity()
 export class Dashboard extends BaseEntity {
@@ -22,5 +23,5 @@ export class Dashboard extends BaseEntity {
   groupId!: string;
 
   @Column({ nullable: true, type: 'jsonb' })
-  data?: any;
+  data?: DashboardData;
 }

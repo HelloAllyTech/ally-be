@@ -6,6 +6,7 @@ import { Dashboard } from '../../common/entities/dashboard.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { GroupService } from '../../user/group.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
+import { AnalyticsUtil } from '../util/analytics.util';
 @Injectable()
 export class AnalyticsService {
   constructor(
@@ -21,11 +22,21 @@ export class AnalyticsService {
     };
   }
 
-  async getDashboardUrl(dashboardId: string, params: Record<string, any>) {
-    const url = await this.analyticsInterface.getDashboardUrl(
-      dashboardId,
-      params,
-    );
+  async getDashboardUrl(dashboardId: string, inputParams: Record<string, any>) {
+    const dashboard = await this.dashboardRepository.findOne({
+      where: {
+        externalId: dashboardId,
+        tenantId: ExecutionManager.getTenantId(),
+      },
+    });
+    if (!dashboard) {
+      throw new Error('Dashboard not found');
+    }
+    const paramKeyList = dashboard?.data?.params ?? [];
+    const generatedParams = AnalyticsUtil.generateParamList(paramKeyList);
+    const url = await this.analyticsInterface.getDashboardUrl(dashboardId, {
+      params: { ...inputParams, ...generatedParams },
+    });
     return {
       url,
     };
