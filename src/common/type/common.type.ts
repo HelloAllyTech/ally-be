@@ -4,3 +4,7 @@ export type Pagination = {
   sortBy?: string;
   order?: 'ASC' | 'DESC';
 };
+
+export type PreferenceValue = {
+  params:Array<string>
+};

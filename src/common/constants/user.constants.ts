@@ -9,3 +9,8 @@ export enum UserRole {
   COUNSELOR = 'COUNSELOR',
   SUPER_ADMIN = 'SUPER_ADMIN',
 }
+
+export enum UserPreference {
+  SUMMARY_CUSTOMIZED_FIELDS = 'SUMMARY_CUSTOMIZED_FIELDS',
+  NUDGE_STATUS = 'NUDGE_STATUS',
+}
