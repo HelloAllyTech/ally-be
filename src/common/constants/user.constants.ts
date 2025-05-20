@@ -8,6 +8,7 @@ export enum UserRole {
   CLIENT = 'CLIENT',
   COUNSELOR = 'COUNSELOR',
   SUPER_ADMIN = 'SUPER_ADMIN',
+  ADMIN = 'ADMIN',
 }
 
 export enum UserPreference {
