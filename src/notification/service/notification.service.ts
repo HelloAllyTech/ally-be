@@ -10,12 +10,12 @@ export class NotificationService {
     private readonly smsService: SMSInterface,
   ) {}
   handleException(payload: NotificationErrorType) {
-    const { statusCode, timestamp, path, message, type } = payload;
+    const { statusCode, timestamp, path, message, type, channel } = payload;
     if (this.ignoreStatusCode.includes(statusCode)) {
       return;
     }
     const slackMessage = `*${type}* - ${message} - ${statusCode} - ${path} - ${timestamp}`;
-    this.slackService.sendMessage(slackMessage);
+    this.slackService.sendMessage(slackMessage, channel);
   }
 
   async sendSMS(to: string, body: string) {

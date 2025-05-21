@@ -37,6 +37,7 @@ export class Msg91Service implements SMSInterface {
       path: '/api/v1/sms/otp',
       message: 'OTP sent to ' + to + ' - ' + otp,
       type: 'SMS OTP',
+      channel: 'C08T402E3K5',
     });
     return;
   }

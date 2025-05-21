@@ -4,4 +4,5 @@ export type NotificationErrorType = {
   path: string;
   message: string;
   type: string;
+  channel?: string;
 };
