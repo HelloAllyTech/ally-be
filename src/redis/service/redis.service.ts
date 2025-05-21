@@ -54,4 +54,20 @@ export class RedisService {
     }
     return keys;
   }
+
+  // Increment a field in a Redis hash
+  async hincrBy(
+    key: string,
+    field: string,
+    increment: number,
+  ): Promise<number> {
+    const fullKey = this.getFullKey(key);
+    return this.redis.hincrby(fullKey, field, increment);
+  }
+
+  // Get all fields from a Redis hash
+  async hgetAll(key: string): Promise<Record<string, string>> {
+    const fullKey = this.getFullKey(key);
+    return this.redis.hgetall(fullKey);
+  }
 }

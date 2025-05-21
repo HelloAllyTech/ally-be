@@ -31,6 +31,7 @@ import {
 } from '../../common/decorator/execution.context.decorator';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { SettingsService } from '../../settings/service/settings.service';
+import { RedisService } from '../../redis/service/redis.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -50,6 +51,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private config: AppConfigService,
     private publisher: MessageBrokerService,
     private settingsService: SettingsService,
+    private cacheService: RedisService,
   ) {}
 
   logger = LoggerService.getInstance(ChatGateway.name);
@@ -567,6 +569,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       currentTranscriptBuffer,
       isFinal,
       isUtteranceEnd,
+      wordCountByLanguage,
     } = metadata || {};
     this.logger.info(
       `🎤 Transcription: ${transcript} - ${new Date().toISOString()}`,
@@ -582,6 +585,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         `No transcript or currentTranscriptBuffer found for chatId: ${chatId}`,
       );
       return;
+    }
+
+    if (Object.keys(wordCountByLanguage || {}).length) {
+      Object.entries(wordCountByLanguage || {}).forEach(([language, count]) => {
+        this.chatService.incrementWordCountByLanguage(chatId, language, count);
+      });
     }
 
     const messageData = { chatId, content: transcript, context: '' };

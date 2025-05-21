@@ -622,6 +622,9 @@ export class ChatService {
       (endDate.getTime() - startDate.getTime()) / 1000,
     );
 
+    // get word count by language
+    const wordCountByLanguage = await this.getWordCountByLanguage(chat.id);
+
     let noOfNudges = 0;
     let noOfStages = 0;
     let clientMessages = 0;
@@ -674,12 +677,15 @@ export class ChatService {
       } as CallInfo,
       endTime: chat.endedAt,
       callDuration: callDurationInSeconds,
+      wordCountByLanguage,
     };
 
     const details = await this.callDetailsRepository.update(
       { chatId },
       updates,
     );
+    // delete the word count from cache
+    await this.deleteWordCountByLanguage(chat.id);
     return details;
   }
 
@@ -951,5 +957,28 @@ export class ChatService {
       );
     }
     return isPaused;
+  }
+
+  incrementWordCountByLanguage(
+    chatId: number,
+    language: string,
+    count: number,
+  ) {
+    return this.cache.hincrBy(`call:${chatId}:word-count`, language, count);
+  }
+
+  private async getWordCountByLanguage(chatId: number) {
+    const rawCounts = await this.cache.hgetAll(`call:${chatId}:word-count`);
+    return Object.entries(rawCounts).reduce(
+      (acc, [lang, count]) => {
+        acc[lang] = parseInt(count, 10);
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+  }
+
+  private async deleteWordCountByLanguage(chatId: number) {
+    await this.cache.del(`call:${chatId}:word-count`);
   }
 }

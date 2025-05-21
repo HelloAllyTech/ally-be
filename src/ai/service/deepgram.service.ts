@@ -12,7 +12,10 @@ import {
   UserChatSessionData,
 } from '../../chat/type/chat.type';
 import { ITranscriptionService } from '../interfaces/transcription.interface';
-import { DeepgramTranscriptionOptions } from '../type/transcription.type';
+import {
+  DeepgramTranscriptionOptions,
+  DeepgramTranscriptResult,
+} from '../type/transcription.type';
 
 interface LiveClientSession {
   liveClient: LiveClient;
@@ -162,36 +165,44 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     ) => void,
     liveClient: LiveClient,
   ): void {
-    liveClient.on(LiveTranscriptionEvents.Transcript, (data) => {
-      const transcript = data.channel.alternatives[0].transcript?.trim();
-      this.logger.debug(
-        `Transcript for userId: ${session.userId} | transcript: ${transcript} | isFinal: ${data.is_final} | isSpeech:${data.speech_final}`,
-      );
-      const clientSession = this.liveClients.get(session.id);
-      if (transcript && clientSession) {
-        const finalTranscript = clientSession?.transcriptBuffer + transcript;
-        clientSession.currentTranscriptCreatedAt =
-          clientSession.currentTranscriptCreatedAt || new Date();
-        const isSentenceComplete =
-          data.is_final &&
-          this.isSentenceComplete(clientSession, finalTranscript);
-        callback(session, chatId, transcript, {
-          isFinal: data.is_final,
-          isSentenceComplete,
-          currentTranscriptBuffer: finalTranscript,
-          currentTranscriptCreatedAt: clientSession.currentTranscriptCreatedAt,
-        });
+    liveClient.on(
+      LiveTranscriptionEvents.Transcript,
+      (data: DeepgramTranscriptResult) => {
+        const transcript = data.channel.alternatives[0].transcript?.trim();
+        this.logger.debug(
+          `Transcript for userId: ${session.userId} | transcript: ${transcript} | isFinal: ${data.is_final} | isSpeech:${data.speech_final}`,
+        );
+        const clientSession = this.liveClients.get(session.id);
+        if (transcript && clientSession) {
+          const finalTranscript = clientSession?.transcriptBuffer + transcript;
+          clientSession.currentTranscriptCreatedAt =
+            clientSession.currentTranscriptCreatedAt || new Date();
+          const isSentenceComplete =
+            data.is_final &&
+            this.isSentenceComplete(clientSession, finalTranscript);
+          const wordCount = data.is_final
+            ? this.getWordCountByLanguage(data)
+            : undefined;
+          callback(session, chatId, transcript, {
+            isFinal: data.is_final,
+            isSentenceComplete,
+            currentTranscriptBuffer: finalTranscript,
+            currentTranscriptCreatedAt:
+              clientSession.currentTranscriptCreatedAt,
+            wordCountByLanguage: wordCount,
+          });
 
-        // reset buffer if sentence is complete
-        if (isSentenceComplete) {
-          clientSession.transcriptBuffer = '';
-          clientSession.currentTranscriptCreatedAt = null;
-        } else if (data.is_final) {
-          // add to buffer
-          clientSession.transcriptBuffer = finalTranscript;
+          // reset buffer if sentence is complete
+          if (isSentenceComplete) {
+            clientSession.transcriptBuffer = '';
+            clientSession.currentTranscriptCreatedAt = null;
+          } else if (data.is_final) {
+            // add to buffer
+            clientSession.transcriptBuffer = finalTranscript;
+          }
         }
-      }
-    });
+      },
+    );
 
     liveClient.on(LiveTranscriptionEvents.UtteranceEnd, (data) => {
       this.logger.info(
@@ -324,5 +335,21 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       this.cleanupConnection(sessionId),
     );
     await Promise.all(cleanup);
+  }
+
+  private getWordCountByLanguage(
+    data: DeepgramTranscriptResult,
+  ): Record<string, number> | undefined {
+    const wordList = data.channel.alternatives[0]?.words;
+
+    if (!wordList?.length) {
+      return undefined;
+    }
+
+    return wordList.reduce<Record<string, number>>((acc, word) => {
+      const language = word.language;
+      acc[language] = (acc[language] || 0) + 1;
+      return acc;
+    }, {});
   }
 }
