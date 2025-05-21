@@ -24,6 +24,14 @@ async function bootstrap() {
       .setDescription('The Lifeline API description')
       .setVersion('1.0')
       .addTag('lifeline')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+        },
+        'access-token',
+      )
       .build();
     const documentFactory = () => SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('api-docs', app, documentFactory);
