@@ -5,6 +5,12 @@ export type Pagination = {
   order?: 'ASC' | 'DESC';
 };
 
-export type PreferenceValue = {
+export type NudgePreferenceValue = {
+  status: boolean;
+};
+
+export type SummaryPreferenceValue = {
   fields: Array<string>;
 };
+
+export type PreferenceValue = SummaryPreferenceValue | NudgePreferenceValue;

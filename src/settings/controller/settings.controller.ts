@@ -48,4 +48,34 @@ export class SettingsController {
   updateSummaryFields(@Body() body: { hiddenFields: string[] }) {
     return this.service.updateSummaryFields(body.hiddenFields);
   }
+
+  @Get('nudge-status')
+  @ApiOperation({ summary: 'Get nudge status' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the nudge status',
+  })
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  getNudgeStatus() {
+    return this.service.getNudgeStatus();
+  }
+
+  @Put('nudge-status')
+  @ApiOperation({ summary: 'Update nudge status' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'boolean' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Nudge status updated successfully',
+  })
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  updateNudgeStatus(@Body() body: { status: boolean }) {
+    return this.service.updateNudgeStatus(body.status);
+  }
 }
