@@ -6,5 +6,5 @@ export type Pagination = {
 };
 
 export type PreferenceValue = {
-  params:Array<string>
+  fields: Array<string>;
 };

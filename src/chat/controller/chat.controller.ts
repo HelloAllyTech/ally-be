@@ -8,6 +8,7 @@ import {
   Patch,
   Query,
   Res,
+  Put,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
@@ -223,7 +224,7 @@ export class ChatController {
     },
   })
   @AuthRoles(UserRole.COUNSELOR)
-  @Post(':id/update-call-details')
+  @Put(':id/call-details')
   async updateCallDetails(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { callDetails: any },

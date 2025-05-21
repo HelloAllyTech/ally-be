@@ -12,7 +12,7 @@ export class PreferenceService {
     private readonly preferenceCache: RedisService,
   ) {}
 
-  async createPreference(preference: Preference): Promise<Preference> {
+  async createPreference(preference: Partial<Preference>): Promise<Preference> {
     return this.preferenceRepository.save(preference);
   }
 

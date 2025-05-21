@@ -11,7 +11,12 @@ export enum UserRole {
   ADMIN = 'ADMIN',
 }
 
-export enum UserPreference {
-  SUMMARY_CUSTOMIZED_FIELDS = 'SUMMARY_CUSTOMIZED_FIELDS',
+export enum PreferenceName {
+  SUMMARY_HIDDEN_FIELDS = 'SUMMARY_HIDDEN_FIELDS',
   NUDGE_STATUS = 'NUDGE_STATUS',
+}
+
+export enum PreferenceRelatedEntity {
+  ORGANIZATION = 'ORGANIZATION',
+  COUNSELOR = 'COUNSELOR',
 }
