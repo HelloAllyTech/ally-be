@@ -14,13 +14,14 @@ import { FeedbackService } from './service/feedback.service';
 import { CallDetails } from '../common/entities/call.details.entity';
 import { ChatEventConsumer } from './event/chat.event.consumer';
 import { BrokerModule } from '../message-broker/broker.module';
-
+import { SettingsModule } from '../settings/settings.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Message, Chat, ChatRoom, Feedback, CallDetails]),
     UserModule,
     QueueModule,
     AiModule,
+    SettingsModule,
     forwardRef(() => BrokerModule),
   ],
   controllers: [ChatController],

@@ -48,7 +48,7 @@ export class PreferenceService {
       where: { id },
     });
     if (updatePreference) {
-      const cacheKey = `preference:${updatePreference.relatedId}:${updatePreference.relatedEntity}`;
+      const cacheKey = `preference:${updatePreference.name}:${updatePreference.relatedId}:${updatePreference.relatedEntity}`;
       await this.preferenceCache.set(
         cacheKey,
         JSON.stringify(updatePreference),

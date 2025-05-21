@@ -30,6 +30,7 @@ import {
   WithExecutionContext,
 } from '../../common/decorator/execution.context.decorator';
 import { ExecutionManager } from '../../common/execution/execution-manager';
+import { SettingsService } from '../../settings/service/settings.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -48,6 +49,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private transcriptionService: TranscriptionService,
     private config: AppConfigService,
     private publisher: MessageBrokerService,
+    private settingsService: SettingsService,
   ) {}
 
   logger = LoggerService.getInstance(ChatGateway.name);
@@ -458,6 +460,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const isNudgePaused = await this.chatService.isNudgePaused(chatId);
     if (isNudgePaused) {
       this.logger.info(`Nudge is paused for chatId ${chatId}`);
+      return;
+    }
+    const isNudgeEnabled = await this.settingsService.getNudgeStatus();
+    if (!isNudgeEnabled) {
+      this.logger.info(`Nudge is disabled for chatId ${chatId}`);
       return;
     }
     const messages = await this.chatService.getChatHistoryForAIService(chatId, {
