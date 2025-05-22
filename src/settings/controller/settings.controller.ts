@@ -24,8 +24,9 @@ export class SettingsController {
   @ApiResponse({
     status: 200,
     description: 'Returns the summary fields configuration',
+    type: [String],
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN)
+  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
   getSummaryFields() {
     return this.service.getSummaryFieldsConfig();
   }

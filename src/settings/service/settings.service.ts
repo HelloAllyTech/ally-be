@@ -1,6 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { CommonUtil } from '../../common/util/common.util';
-import { DEFAULT_SUMMARY_FIELDS } from '../constants/settings.constants';
+import {
+  DEFAULT_SUMMARY_FIELDS_ARRAY,
+  DEFAULT_SUMMARY_FIELDS_SET,
+} from '../constants/settings.constants';
 import { PreferenceService } from '../../common/service/preference.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import {
@@ -30,13 +33,11 @@ export class SettingsService {
       ...((orgPreference?.value as SummaryPreferenceValue)?.fields || []),
       ...((counselorPreference?.value as SummaryPreferenceValue)?.fields || []),
     ];
-    const summaryFields = CommonUtil.setKeysToValue(
-      DEFAULT_SUMMARY_FIELDS,
-      hiddenFields,
-      false,
+    const hiddenFieldsSet = new Set(hiddenFields);
+    const visibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
+      (field) => !hiddenFieldsSet.has(field),
     );
-
-    return summaryFields;
+    return visibleFields;
   }
 
   async getHiddenSummaryFields() {
@@ -58,11 +59,8 @@ export class SettingsService {
   }
 
   async updateSummaryFields(summaryFields: string[]) {
-    if (!summaryFields?.length) {
-      throw new BadRequestException('Summary fields are required');
-    }
-    const invalidKeys = CommonUtil.getInvalidKeys(
-      DEFAULT_SUMMARY_FIELDS,
+    const invalidKeys = CommonUtil.getInvalidKeysFromSet(
+      DEFAULT_SUMMARY_FIELDS_SET,
       summaryFields,
     );
     if (invalidKeys.length > 0) {
