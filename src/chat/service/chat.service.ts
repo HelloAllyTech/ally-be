@@ -610,6 +610,7 @@ export class ChatService {
   }
 
   async updateMessageStatistics(chat: Chat) {
+    this.logger.info(`updateMessageStatistics:Start - chatId:${chat.id}`);
     const chatId = chat.id;
     const messages = await this.getMessageByChatId(chatId, {
       sortBy: 'createdAt',
@@ -679,13 +680,14 @@ export class ChatService {
       endTime: chat.endedAt,
       callDuration: callDurationInSeconds,
     };
-
+    this.logger.info(`updateMessageStatistics:updates:${JSON.stringify(updates)}`);
     const details = await this.callDetailsRepository.update(
       { chatId },
       updates,
     );
     // delete the word count from cache
     await this.deleteWordCountByLanguage(chat.id);
+    this.logger.info(`updateMessageStatistics:End - chatId:${chat.id}`);
     return details;
   }
 
