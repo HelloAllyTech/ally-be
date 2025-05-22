@@ -33,6 +33,7 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { NotFoundException } from '@nestjs/common';
 import { ForbiddenException } from '../../exception/custom.exception';
 import { TIME } from '../../common/constants/time.constants';
+import { plainToInstance } from 'class-transformer';
 
 @Injectable()
 export class ChatService {
@@ -222,7 +223,8 @@ export class ChatService {
   async getChatById(chatId: number) {
     const cachedChat = await this.cache.get(`chat:${chatId}`);
     if (cachedChat) {
-      return JSON.parse(cachedChat) as Chat;
+      const parsedChat = JSON.parse(cachedChat) as Chat;
+      return plainToInstance(Chat, parsedChat);
     }
     const chat = await this.chatRepository.findOne({
       where: {
