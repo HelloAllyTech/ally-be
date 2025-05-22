@@ -223,8 +223,7 @@ export class ChatService {
   async getChatById(chatId: number) {
     const cachedChat = await this.cache.get(`chat:${chatId}`);
     if (cachedChat) {
-      const parsedChat = JSON.parse(cachedChat) as Chat;
-      return plainToInstance(Chat, parsedChat);
+      return JSON.parse(cachedChat) as Chat;
     }
     const chat = await this.chatRepository.findOne({
       where: {
@@ -623,7 +622,7 @@ export class ChatService {
     const endDate = chat.endedAt || new Date();
     // duration in seconds as integer
     const callDurationInSeconds = Math.floor(
-      (endDate.getTime() - startDate.getTime()) / 1000,
+      (new Date(endDate).getTime() - new Date(startDate).getTime()) / 1000,
     );
 
     // get word count by language
