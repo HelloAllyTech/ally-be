@@ -13,6 +13,10 @@ export class CommonUtil {
     return keys.filter((key: string) => !(key in obj));
   }
 
+  static getInvalidKeysFromSet(set: Set<string>, keys: string[]) {
+    return keys.filter((key: string) => !set.has(key));
+  }
+
   /**
    * Sets the given keys in an object to a specific value if they exist.
    *
