@@ -674,10 +674,10 @@ export class ChatService {
         counselorTalkingTime:
           counselorTalkingPercentage * callDurationInSeconds,
         summaryName: `Call:${chat.id}:${chat.startedAt}`,
+        wordCountByLanguage,
       } as CallInfo,
       endTime: chat.endedAt,
       callDuration: callDurationInSeconds,
-      wordCountByLanguage,
     };
 
     const details = await this.callDetailsRepository.update(
