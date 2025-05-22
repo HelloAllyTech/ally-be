@@ -42,8 +42,26 @@ export class AnalyticsService {
     };
   }
 
-  createDashboard(dashboard: DashboardDto) {
-    const dashboardEntity = this.dashboardRepository.create(dashboard);
+  async createDashboard(dashboard: DashboardDto) {
+    const existingDashboard = await this.dashboardRepository.findOne({
+      where: {
+        externalId: dashboard.externalId,
+        tenantId: ExecutionManager.getTenantId(),
+        groupId: dashboard.groupId,
+      },
+    });
+    if (existingDashboard) {
+      await this.dashboardRepository.update(
+        { id: existingDashboard.id },
+        {
+          ...dashboard,
+        },
+      );
+      return existingDashboard;
+    }
+    const dashboardEntity = this.dashboardRepository.create({
+      ...dashboard,
+    });
     return this.dashboardRepository.save(dashboardEntity);
   }
 

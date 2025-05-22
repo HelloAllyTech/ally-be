@@ -15,12 +15,15 @@ import {
   DashboardIdParamDto,
   DashboardParamsDto,
 } from '../validation/analytics.validation';
+import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
+import { UserRole } from '../../common/constants/user.constants';
 
 @Controller('v1/analytics')
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
   @Get('dashboard/:dashboardId')
+  @UseGuards(JwtAuthGuard)
   getDashboardUrl(
     @Param() { dashboardId }: DashboardIdParamDto,
     @Query() { params }: DashboardParamsDto,
@@ -34,6 +37,7 @@ export class AnalyticsController {
   }
 
   @Post('dashboard')
+  @AuthRoles(UserRole.ADMIN)
   createDashboard(@Body() dashboard: CreateDashboardDto) {
     return this.analyticsService.createDashboard(dashboard);
   }

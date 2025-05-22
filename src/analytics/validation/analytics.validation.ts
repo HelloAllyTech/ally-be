@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsObject,
   IsNotEmpty,
+  IsArray,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
@@ -41,8 +42,9 @@ export class CreateDashboardDto {
   @IsNotEmpty()
   groupId!: string;
 
-  @IsString()
-  organizationId!: string;
+  @IsArray()
+  @IsOptional()
+  data?: string[];
 }
 
 export class DashboardIdParamDto {
