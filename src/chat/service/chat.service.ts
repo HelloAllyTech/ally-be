@@ -25,7 +25,7 @@ import { CallDetails } from '../../common/entities/call.details.entity';
 import { RedisService } from '../../redis/service/redis.service';
 import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
-import { CallInfo } from '../../common/entities/type/call.details.type';
+import { CallInfo, FlattenedSummaryNotePayload } from '../../common/entities/type/call.details.type';
 import { StringUtil } from '../../common/util/string.util';
 import { TokenUser } from '../../auth/type/auth.types';
 import { UserRole } from '../../common/constants/user.constants';
@@ -596,16 +596,12 @@ export class ChatService {
   }
 
   async updateSummaryAndTags(chat: Chat) {
-    const { summary_note, tags, call_quality } =
+    const summary =
       (await this.generateSummary(chat.id)) || {};
     await this.callDetailsRepository.update(
       { chatId: chat.id },
       {
-        summary: {
-          summaryNote: summary_note,
-          tags: tags,
-          callQuality: call_quality,
-        },
+        summary ,
       },
     );
   }
@@ -709,14 +705,7 @@ export class ChatService {
       });
     const aiResponse =
       await this.aiService.generateSummaryAndTags(messageRequests);
-    if (aiResponse) {
-      return {
-        summary_note: aiResponse.summary_note,
-        tags: aiResponse.tags,
-        call_quality: aiResponse.call_quality,
-      };
-    }
-    return;
+    return aiResponse;
   }
 
   async generateSummaryForMessage(
@@ -725,11 +714,7 @@ export class ChatService {
     const aiResponse =
       await this.aiService.generateSummaryAndTags(messageRequests);
     if (aiResponse) {
-      return {
-        summary_note: aiResponse.summary_note,
-        tags: aiResponse.tags,
-        call_quality: aiResponse.call_quality,
-      };
+      return aiResponse;
     }
     return;
   }

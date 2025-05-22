@@ -17,9 +17,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationErrorType } from '../../notification/type/notification.error.type';
 import { RetryOnFail } from '../../common/decorator/retry.decorator';
+import { LoggerService } from '../../logger/logger.service';
+
 @Injectable()
 export class AiService {
-  private readonly logger = new Logger(AiService.name);
+  logger = LoggerService.getInstance(AiService.name);
   private readonly deepgramClient: DeepgramClient;
   private readonly alertThresholdTimeout = 3 * 60 * 1000; // 3 minutes
   private readonly maxTimeout = 5 * 60 * 1000; // 5 minutes
@@ -45,10 +47,10 @@ export class AiService {
         },
       );
 
-      this.logger.log(`✅ Transcription received: ${response.data.text}`);
+      this.logger.info(`Transcription received: ${response.data.text}`);
       return response.data.text; // Assuming API returns `{ text: "..." }`
     } catch (error) {
-      this.logger.error(`❌ AI Service Error: ${error.message}`);
+      this.logger.error(`AI Service Error: ${error.message}`);
       throw new Error('AI transcription failed');
     }
   }
@@ -92,11 +94,7 @@ export class AiService {
       this.logger.error(`AI Service Error: ${error.message}`);
       return;
     }
-    return {
-      summary_note: response.summary_note,
-      tags: response.tags,
-      call_quality: response.call_quality,
-    };
+    return response;
   }
 
   private async makeRequest<R, T>(
@@ -109,8 +107,8 @@ export class AiService {
     const startTime = new Date().toISOString();
     try {
       const url = `${this.config.ai.apiUrl}/${endpoint}`;
-      this.logger.log(
-        `🔄 Making request to ${endpoint} | ${execId} | ${JSON.stringify(data)}`,
+      this.logger.info(
+        `Making request to ${endpoint} | ${execId} | ${JSON.stringify(data)}`,
       );
       // set timeout for alert threshold
       timeoutId = setTimeout(() => {
@@ -128,8 +126,8 @@ export class AiService {
         },
         timeout: this.maxTimeout,
       });
-      this.logger.log(
-        `🔄 Response from ${endpoint} | ${execId} | ${JSON.stringify(response.data)}`,
+      this.logger.info(
+        `Response from ${endpoint} | ${execId} | ${JSON.stringify(response.data)}`,
       );
       return response.data;
     } catch (error) {
