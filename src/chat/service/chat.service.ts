@@ -311,9 +311,8 @@ export class ChatService {
       (participant) => participant.role === UserRole.CLIENT,
     );
     if (!client) {
-      // TODO: UPDATE this once we have a phone number in table
       const clientPhoneNumber = participantPhoneNumbers?.find(
-        (phn) => phn !== counselor.name,
+        (phn) => phn !== counselor.phone,
       );
       if (!clientPhoneNumber) {
         throw new HttpException('Client phone number not found', 404);
@@ -486,7 +485,7 @@ export class ChatService {
     });
   }
 
-  async getCounsellorChat(id: number) {
+  async getCounselorChat(id: number) {
     const latestChat = await this.getChatsByCouncilorId(id, {
       status: ChatStatus.ACTIVE,
     });
@@ -809,7 +808,10 @@ export class ChatService {
     return this.aiService.enhance(summary);
   }
 
-  async updateCallDetails(chatId: number, callDetails: any) {
+  async updateCallDetails(
+    chatId: number,
+    callDetails: FlattenedSummaryNotePayloadCamelCase,
+  ) {
     await this.callDetailsRepository.update(
       { chatId, tenantId: ExecutionManager.getTenantId() },
       { summary: callDetails },
@@ -899,12 +901,12 @@ export class ChatService {
     if (ChatUtil.isSessionDocumentationAvailable(summaryInfo)) {
       summary += `Session Documentation\n`;
       summary += `======================\n`;
-      summary += `Key Concerns: ${summaryInfo.keyConcerns || 'N/A'}\n`;
-      summary += `Dominant Feelings: ${summaryInfo.dominantFeelings || 'N/A'}\n`;
-      summary += `Counseling Process Flow: ${summaryInfo.counselingProcessFlow || 'N/A'}\n`;
-      summary += `Therapeutic Interventions: ${summaryInfo.therapeuticInterventions || 'N/A'}\n`;
-      summary += `Issues Worked On: ${summaryInfo.issuesWorkedOn || 'N/A'}\n`;
-      summary += `Homework: ${summaryInfo.homework || 'N/A'}\n`;
+      summary += `Key Concerns: ${summaryInfo.keyConcerns?.join(', ') || 'N/A'}\n`;
+      summary += `Dominant Feelings: ${summaryInfo.dominantFeelings?.join(', ') || 'N/A'}\n`;
+      summary += `Counseling Process Flow: ${summaryInfo.counselingProcessFlow?.join(', ') || 'N/A'}\n`;
+      summary += `Therapeutic Interventions: ${summaryInfo.therapeuticInterventions?.join(', ') || 'N/A'}\n`;
+      summary += `Issues Worked On: ${summaryInfo.issuesWorkedOn?.join(', ') || 'N/A'}\n`;
+      summary += `Homework: ${summaryInfo.homework?.join(', ') || 'N/A'}\n`;
     }
 
     if (ChatUtil.isFollowUpPlanAvailable(summaryInfo)) {
@@ -912,7 +914,7 @@ export class ChatService {
       summary += `==============\n`;
       summary += `Follow-up Status: ${summaryInfo.followUpStatus || 'N/A'}\n`;
       summary += `Follow-up Date: ${summaryInfo.followUpDate || 'N/A'}\n`;
-      summary += `Follow-up Goals: ${summaryInfo.followUpGoals || 'N/A'}\n`;
+      summary += `Follow-up Goals: ${summaryInfo.followUpGoals?.join(', ') || 'N/A'}\n`;
     }
 
     if (ChatUtil.isCallQualityAvailable(summaryInfo)) {

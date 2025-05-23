@@ -1,12 +1,20 @@
 import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
 
 export class ChatUtil {
+  private static isValidSummary(
+    summary?: FlattenedSummaryNotePayloadCamelCase,
+  ): summary is FlattenedSummaryNotePayloadCamelCase {
+    return (
+      summary !== undefined &&
+      summary !== null &&
+      Object.keys(summary).length > 0
+    );
+  }
+
   static isDemographicDetailsAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return (
       summary.age !== null ||
       summary.gender !== null ||
@@ -20,9 +28,7 @@ export class ChatUtil {
   static isSessionDetailsAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return (
       summary.dateOfSession !== null ||
       summary.newCallFollowUp !== null ||
@@ -33,9 +39,7 @@ export class ChatUtil {
   static isCounselorImpressionsAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return (
       summary.clientAttitude !== null ||
       summary.emotionalStateStart !== null ||
@@ -49,41 +53,33 @@ export class ChatUtil {
   static isSessionDocumentationAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return (
-      summary.keyConcerns !== null ||
-      summary.dominantFeelings !== null ||
-      summary.counselingProcessFlow !== null ||
-      summary.therapeuticInterventions !== null ||
-      summary.issuesWorkedOn !== null ||
-      summary.homework !== null
+      summary.keyConcerns?.length ||
+      summary.dominantFeelings?.length ||
+      summary.counselingProcessFlow?.length ||
+      summary.therapeuticInterventions?.length ||
+      summary.issuesWorkedOn?.length ||
+      summary.homework?.length
     );
   }
 
   static isTagsAvailable(summary?: FlattenedSummaryNotePayloadCamelCase) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return summary?.tags?.length > 0;
   }
 
   static isCallQualityAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return summary.callQuality !== null;
   }
 
   static isFollowUpPlanAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return (
       summary.followUpStatus !== null ||
       summary.followUpDate !== null ||

@@ -14,7 +14,9 @@ export class AudioIngestGateway implements OnGatewayConnection {
     this.initialize();
   }
   handleConnection(client: any, ...args: any[]) {
-    this.logger.info('3rd-party WS client connected - ' + client.id);
+    this.logger.info(
+      '3rd-party WS client connected via NestJS gateway' + client.id,
+    );
   }
 
   getWss(): WebSocket.Server {

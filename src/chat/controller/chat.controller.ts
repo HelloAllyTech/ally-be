@@ -54,8 +54,8 @@ export class ChatController {
 
   @AuthRoles(UserRole.COUNSELOR)
   @Get('counsellor-chat')
-  async getCounsellorChat(@CurrentUser() tokenUser: TokenUser) {
-    return this.service.getCounsellorChat(tokenUser.id);
+  async getCounselorChat(@CurrentUser() tokenUser: TokenUser) {
+    return this.service.getCounselorChat(tokenUser.id);
   }
 
   @ApiOperation({ summary: 'Get counsellor call logs' })
