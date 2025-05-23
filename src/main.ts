@@ -13,7 +13,9 @@ async function bootstrap() {
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ transform: true }));
     app.use(helmet());
-    app.enableCors();
+    app.enableCors({
+      exposedHeaders: ['Content-Disposition'],
+    });
     // remove x-powered-by header
     app.getHttpAdapter().getInstance().disable('x-powered-by');
 
