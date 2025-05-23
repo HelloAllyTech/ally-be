@@ -7,8 +7,17 @@ if (!name) {
   process.exit(1);
 }
 
-const path = `src/database/migrations/${name}`;
-const command = `npx typeorm-ts-node-commonjs migration:create ${path}`;
+// Sanitize the name to prevent command injection
+const sanitizedName = name.replace(/[^a-zA-Z0-9_-]/g, '');
+const path = `src/database/migrations/${sanitizedName}`;
+const command = `npx typeorm-ts-node-commonjs migration:create ${JSON.stringify(path)}`;
 
 console.log(`📦 Creating migration at: ${path}`);
-execSync(command, { stdio: 'inherit' });
+
+try {
+  execSync(command, { stdio: 'inherit' });
+  console.log('✅ Migration created successfully!');
+} catch (error) {
+  console.error('❌ Failed to create migration:', error.message);
+  process.exit(1);
+}

@@ -2,10 +2,15 @@ import * as _ from 'lodash';
 
 export class CommonUtil {
   static hasExactKeys(obj: any, reference: any) {
+    if (!obj || !reference) return false;
     return _.isEqual(_.sortBy(_.keys(obj)), _.sortBy(_.keys(reference)));
   }
 
-  static difference(obj: any, reference: any) {
+  static difference(
+    obj: Record<string, any>,
+    reference: Record<string, any>,
+  ): string[] {
+    if (!obj || !reference) return [];
     return _.difference(_.keys(obj), _.keys(reference));
   }
 
@@ -51,6 +56,9 @@ export class CommonUtil {
   ): Record<string, any> | undefined {
     if (!input) {
       return undefined;
+    }
+    if (typeof input !== 'object' || Array.isArray(input)) {
+      throw new Error('Input must be an object');
     }
     return _.mapKeys(input, (value, key) => _.camelCase(key));
   }

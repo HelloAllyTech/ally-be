@@ -23,14 +23,14 @@ export type DeepgramTranscriptResult = {
     alternatives: {
       transcript: string;
       confidence: number;
-      languages: string[];
+      languages?: string[];
       words: {
         word: string;
         start: number;
         end: number;
         confidence: number;
         punctuated_word: string;
-        language: string;
+        language?: string;
       }[];
     }[];
   };
@@ -43,7 +43,7 @@ export type DeepgramTranscriptResult = {
     };
     model_uuid: string;
   };
-  from_finalize: boolean;
+  from_finalize?: boolean;
 };
 
 export interface DeepgramTranscriptionOptions {

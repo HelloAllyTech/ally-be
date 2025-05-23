@@ -11,7 +11,6 @@ import { AuthRoles } from '../auth/decorators/auth-roles.decorator';
 @ApiTags('Tenant')
 @Controller('v1/tenants')
 @AuthRoles(UserRole.SUPER_ADMIN)
-//@UseGuards(JwtAuthGuard)
 export class TenantController {
   constructor(private readonly tenantService: TenantService) {}
 

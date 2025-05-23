@@ -1,93 +1,90 @@
+import { isNil } from 'lodash';
 import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
 
 export class ChatUtil {
+  private static isValidSummary(
+    summary?: FlattenedSummaryNotePayloadCamelCase,
+  ): summary is FlattenedSummaryNotePayloadCamelCase {
+    return (
+      summary !== undefined &&
+      summary !== null &&
+      Object.keys(summary).length > 0
+    );
+  }
+
   static isDemographicDetailsAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return (
-      summary.age !== null ||
-      summary.gender !== null ||
-      summary.location !== null ||
-      summary.workingStatus !== null ||
-      summary.anyFormalDiagnosis !== null ||
-      summary.codeOfConcern !== null
+      !isNil(summary.age) ||
+      !isNil(summary.gender) ||
+      !isNil(summary.location) ||
+      !isNil(summary.workingStatus) ||
+      !isNil(summary.anyFormalDiagnosis) ||
+      !isNil(summary.codeOfConcern)
     );
   }
 
   static isSessionDetailsAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return (
-      summary.dateOfSession !== null ||
-      summary.newCallFollowUp !== null ||
-      summary.sessionNumber !== null
+      !isNil(summary.dateOfSession) ||
+      !isNil(summary.newCallFollowUp) ||
+      !isNil(summary.sessionNumber)
     );
   }
 
   static isCounselorImpressionsAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return (
-      summary.clientAttitude !== null ||
-      summary.emotionalStateStart !== null ||
-      summary.emotionalStateChange !== null ||
-      summary.problemAnalysis !== null ||
-      summary.additionalInsights !== null ||
-      summary.counselorFeelings !== null
+      !isNil(summary.clientAttitude) ||
+      !isNil(summary.emotionalStateStart) ||
+      !isNil(summary.emotionalStateChange) ||
+      !isNil(summary.problemAnalysis) ||
+      !isNil(summary.additionalInsights) ||
+      !isNil(summary.counselorFeelings)
     );
   }
 
   static isSessionDocumentationAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return (
-      summary.keyConcerns !== null ||
-      summary.dominantFeelings !== null ||
-      summary.counselingProcessFlow !== null ||
-      summary.therapeuticInterventions !== null ||
-      summary.issuesWorkedOn !== null ||
-      summary.homework !== null
+      summary.keyConcerns?.length ||
+      summary.dominantFeelings?.length ||
+      summary.counselingProcessFlow?.length ||
+      summary.therapeuticInterventions?.length ||
+      summary.issuesWorkedOn?.length ||
+      summary.homework?.length
     );
   }
 
   static isTagsAvailable(summary?: FlattenedSummaryNotePayloadCamelCase) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return summary?.tags?.length > 0;
   }
 
   static isCallQualityAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
-    return summary.callQuality !== null;
+    if (!this.isValidSummary(summary)) return false;
+    return !isNil(summary.callQuality);
   }
 
   static isFollowUpPlanAvailable(
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (!summary || Object.keys(summary).length === 0) {
-      return false;
-    }
+    if (!this.isValidSummary(summary)) return false;
     return (
-      summary.followUpStatus !== null ||
-      summary.followUpDate !== null ||
-      summary.followUpGoals !== null
+      !isNil(summary.followUpStatus) ||
+      !isNil(summary.followUpDate) ||
+      !isNil(summary.followUpGoals)
     );
   }
 }

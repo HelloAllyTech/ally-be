@@ -43,12 +43,21 @@ export class RedisService {
     return `${this.prefix}:${key}`;
   }
 
-  async getByPattern(pattern: string) {
-    return await this.redis.keys(pattern);
+  async getByPattern(pattern: string): Promise<string[]> {
+    const keys: string[] = [];
+    const stream = this.redis.scanStream({ match: pattern });
+
+    return new Promise((resolve, reject) => {
+      stream.on('data', (batch: string[]) => {
+        keys.push(...batch);
+      });
+      stream.on('end', () => resolve(keys));
+      stream.on('error', reject);
+    });
   }
 
   async deleteByPattern(pattern: string) {
-    const keys = await this.redis.keys(pattern);
+    const keys = await this.getByPattern(pattern);
     if (keys.length > 0) {
       await this.redis.del(keys);
     }
