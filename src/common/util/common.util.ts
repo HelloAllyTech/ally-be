@@ -45,4 +45,13 @@ export class CommonUtil {
   static removeHiddenFields(obj: Record<string, any>, hiddenFields: string[]) {
     return _.omit(obj, hiddenFields);
   }
+
+  static convertToCamelCase(
+    input: Record<string, any> | undefined,
+  ): Record<string, any> | undefined {
+    if (!input) {
+      return undefined;
+    }
+    return _.mapKeys(input, (value, key) => _.camelCase(key));
+  }
 }

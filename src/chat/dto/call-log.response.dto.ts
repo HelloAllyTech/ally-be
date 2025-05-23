@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ChatStatus } from '../../common/entities/chat.entity';
-import { SummaryDetails } from '../../common/entities/type/call.details.type';
+import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
 
 class UserInfo {
   @ApiProperty()
@@ -42,7 +42,7 @@ export class CallDetails {
   callDuration?: number;
 
   @ApiProperty({ required: false })
-  summary?: SummaryDetails;
+  summary?: FlattenedSummaryNotePayloadCamelCase;
 
   @ApiProperty({ type: CallInfo })
   callInfo?: CallInfo;

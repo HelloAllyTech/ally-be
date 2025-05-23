@@ -30,11 +30,6 @@ export enum FollowUpStatus {
   SCHEDULED = 'Scheduled',
   NOT_SCHEDULED = 'Not Scheduled',
 }
-export type SummaryDetails = {
-  summaryNote: SummaryNoteV2;
-  tags: string[];
-  callQuality: number;
-};
 
 export type SummaryNote = {
   sessionDetails: {
@@ -121,45 +116,39 @@ export type FlattenedSummaryNotePayload = {
   call_quality: number;
 };
 
-export type SummaryNoteV2 = {
-  session_details: {
-    date_of_session: string;
-    new_call_follow_up: NewCallFollowUp;
-    session_number: string | null;
-    counselor_name: string;
-  };
-  demographic_details: {
-    client_id: string | null;
-    gender: Gender;
-    age: number | null;
-    location: string | null;
-    working_status: WorkingStatus;
-    any_formal_diagnosis: string | null;
-    code_of_concern: string | null;
-  };
-  session_documentation: {
-    key_concerns: string[];
-    dominant_feelings: string[];
-    work_done: {
-      counseling_process_flow: string[];
-      therapeutic_interventions: string[];
-      issues_worked_on: string[];
-      homework: string[];
-      follow_up_plan: {
-        status: FollowUpStatus;
-        follow_up_date: string | null;
-        goals: string[];
-      };
-    };
-  };
-  counselor_impressions: {
-    client_attitude: string;
-    emotional_state_start: string | null;
-    emotional_state_change: string | null;
-    problem_analysis: string;
-    additional_insights: string | null;
-    counselor_feelings: string;
-  };
-  tags: string[];
-  call_quality: number;
+export type FlattenedSummaryNotePayloadCamelCase = {
+  dateOfSession: string | null;
+  newCallFollowUp: string | null; // Adjust to actual type if known (e.g., enum)
+  sessionNumber: string | null;
+  counselorName: string | null;
+
+  clientId: string | null;
+  gender: string | null; // Replace with `Gender` enum/type if available
+  age: number | null;
+  location: string | null;
+  workingStatus: string | null; // Replace with `WorkingStatus` if defined
+  anyFormalDiagnosis: string | null;
+  codeOfConcern: string | null;
+
+  keyConcerns: string[] | null;
+  dominantFeelings: string[];
+
+  counselingProcessFlow: string[] | null;
+  therapeuticInterventions: string[] | null;
+  issuesWorkedOn: string[] | null;
+  homework: string[] | null;
+
+  followUpStatus: string | null; // Replace with `FollowUpStatus` if available
+  followUpDate: string | null;
+  followUpGoals: string[] | null;
+
+  clientAttitude: string | null;
+  emotionalStateStart: string | null;
+  emotionalStateChange: string | null;
+  problemAnalysis: string | null;
+  additionalInsights: string | null;
+  counselorFeelings: string | null;
+
+  tags: Tag[]; // Assuming Tag is defined elsewhere
+  callQuality: number;
 };

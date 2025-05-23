@@ -25,7 +25,10 @@ import { CallDetails } from '../../common/entities/call.details.entity';
 import { RedisService } from '../../redis/service/redis.service';
 import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
-import { CallInfo, FlattenedSummaryNotePayload } from '../../common/entities/type/call.details.type';
+import {
+  CallInfo,
+  FlattenedSummaryNotePayloadCamelCase,
+} from '../../common/entities/type/call.details.type';
 import { StringUtil } from '../../common/util/string.util';
 import { TokenUser } from '../../auth/type/auth.types';
 import { UserRole } from '../../common/constants/user.constants';
@@ -33,7 +36,8 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { NotFoundException } from '@nestjs/common';
 import { ForbiddenException } from '../../exception/custom.exception';
 import { TIME } from '../../common/constants/time.constants';
-import { plainToInstance } from 'class-transformer';
+import { ChatUtil } from '../util/chat.util';
+import { CommonUtil } from '../../common/util/common.util';
 
 @Injectable()
 export class ChatService {
@@ -596,96 +600,98 @@ export class ChatService {
   }
 
   async updateSummaryAndTags(chat: Chat) {
-    const summary =
-      (await this.generateSummary(chat.id)) || {};
+    const summary = (await this.generateSummary(chat.id)) || {};
     await this.callDetailsRepository.update(
       { chatId: chat.id },
       {
-        summary ,
+        summary,
       },
     );
   }
 
   async updateMessageStatistics(chat: Chat) {
     this.logger.info(`updateMessageStatistics:Start - chatId:${chat.id}`);
-    try{
-    const chatId = chat.id;
-    const messages = await this.getMessageByChatId(chatId, {
-      sortBy: 'createdAt',
-      order: 'ASC',
-    });
-    const startDate = chat.startedAt || new Date();
-    const endDate = chat.endedAt || new Date();
-    // duration in seconds as integer
-    const callDurationInSeconds = Math.floor(
-      (new Date(endDate).getTime() - new Date(startDate).getTime()) / 1000,
-    );
+    try {
+      const chatId = chat.id;
+      const messages = await this.getMessageByChatId(chatId, {
+        sortBy: 'createdAt',
+        order: 'ASC',
+      });
+      const startDate = chat.startedAt || new Date();
+      const endDate = chat.endedAt || new Date();
+      // duration in seconds as integer
+      const callDurationInSeconds = Math.floor(
+        (new Date(endDate).getTime() - new Date(startDate).getTime()) / 1000,
+      );
 
-    // get word count by language
-    const wordCountByLanguage = await this.getWordCountByLanguage(chat.id);
+      // get word count by language
+      const wordCountByLanguage = await this.getWordCountByLanguage(chat.id);
 
-    let noOfNudges = 0;
-    let noOfStages = 0;
-    let clientMessages = 0;
-    let counselorMessages = 0;
-    //format transcript also get the client talking percentage
-    let transcript = '';
-    let currentStage = '';
+      let noOfNudges = 0;
+      let noOfStages = 0;
+      let clientMessages = 0;
+      let counselorMessages = 0;
+      //format transcript also get the client talking percentage
+      let transcript = '';
+      let currentStage = '';
 
-    messages.forEach((message) => {
-      if (message.type === MessageType.NUDGE) {
-        noOfNudges++;
-      }
-      if (
-        message.type === MessageType.STAGE &&
-        currentStage !== message.content
-      ) {
-        noOfStages++;
-        currentStage = message.content;
-      }
-      if (message.type !== MessageType.TEXT) {
-        return;
-      }
-      if (message.senderId == chat.clientId) {
-        clientMessages += StringUtil.wordCount(message.content);
-        transcript += `Client: ${message.content}\n`;
-      } else {
-        counselorMessages += StringUtil.wordCount(message.content);
-        transcript += `Counselor: ${message.content}\n`;
-      }
-    });
-    const clientTalkingPercentage =
-      clientMessages > 0
-        ? clientMessages / (clientMessages + counselorMessages)
-        : 0;
-    const counselorTalkingPercentage =
-      counselorMessages > 0
-        ? counselorMessages / (clientMessages + counselorMessages)
-        : 0;
-    const updates = {
-      noOfNudges,
-      noOfStages,
-      transcript,
-      callInfo: {
-        clientTalkingPercentage: clientTalkingPercentage?.toFixed(3) || 0,
-        counselorTalkingPercentage: counselorTalkingPercentage?.toFixed(3) || 0,
-        clientTalkingTime: clientTalkingPercentage * callDurationInSeconds,
-        counselorTalkingTime:
-          counselorTalkingPercentage * callDurationInSeconds,
-        summaryName: `Call:${chat.id}:${chat.startedAt}`,
-        wordCountByLanguage,
-      } as CallInfo,
-      endTime: chat.endedAt,
-      callDuration: callDurationInSeconds,
-    };
-    this.logger.info(`updateMessageStatistics:updates:${JSON.stringify(updates)}`);
-    const details = await this.callDetailsRepository.update(
-      { chatId },
-      updates,
-    );
-    // delete the word count from cache
-    await this.deleteWordCountByLanguage(chat.id);
-    this.logger.info(`updateMessageStatistics:End - chatId:${chat.id}`);
+      messages.forEach((message) => {
+        if (message.type === MessageType.NUDGE) {
+          noOfNudges++;
+        }
+        if (
+          message.type === MessageType.STAGE &&
+          currentStage !== message.content
+        ) {
+          noOfStages++;
+          currentStage = message.content;
+        }
+        if (message.type !== MessageType.TEXT) {
+          return;
+        }
+        if (message.senderId == chat.clientId) {
+          clientMessages += StringUtil.wordCount(message.content);
+          transcript += `Client: ${message.content}\n`;
+        } else {
+          counselorMessages += StringUtil.wordCount(message.content);
+          transcript += `Counselor: ${message.content}\n`;
+        }
+      });
+      const clientTalkingPercentage =
+        clientMessages > 0
+          ? clientMessages / (clientMessages + counselorMessages)
+          : 0;
+      const counselorTalkingPercentage =
+        counselorMessages > 0
+          ? counselorMessages / (clientMessages + counselorMessages)
+          : 0;
+      const updates = {
+        noOfNudges,
+        noOfStages,
+        transcript,
+        callInfo: {
+          clientTalkingPercentage: clientTalkingPercentage?.toFixed(3) || 0,
+          counselorTalkingPercentage:
+            counselorTalkingPercentage?.toFixed(3) || 0,
+          clientTalkingTime: clientTalkingPercentage * callDurationInSeconds,
+          counselorTalkingTime:
+            counselorTalkingPercentage * callDurationInSeconds,
+          summaryName: `Call:${chat.id}:${chat.startedAt}`,
+          wordCountByLanguage,
+        } as CallInfo,
+        endTime: chat.endedAt,
+        callDuration: callDurationInSeconds,
+      };
+      this.logger.info(
+        `updateMessageStatistics:updates:${JSON.stringify(updates)}`,
+      );
+      const details = await this.callDetailsRepository.update(
+        { chatId },
+        updates,
+      );
+      // delete the word count from cache
+      await this.deleteWordCountByLanguage(chat.id);
+      this.logger.info(`updateMessageStatistics:End - chatId:${chat.id}`);
       return details;
     } catch (err) {
       this.logger.error(
@@ -696,7 +702,7 @@ export class ChatService {
 
   async generateSummary(
     chatId: number,
-  ): Promise<GenerateSummaryResponse | undefined> {
+  ): Promise<FlattenedSummaryNotePayloadCamelCase | undefined> {
     this.logger.info(`generateSummary - chatId:${chatId}`);
     const messageRequests: MessageRequest[] =
       await this.getChatHistoryForAIService(chatId, {
@@ -705,7 +711,10 @@ export class ChatService {
       });
     const aiResponse =
       await this.aiService.generateSummaryAndTags(messageRequests);
-    return aiResponse;
+    const convertedResponse = CommonUtil.convertToCamelCase(
+      aiResponse,
+    ) as FlattenedSummaryNotePayloadCamelCase;
+    return convertedResponse;
   }
 
   async generateSummaryForMessage(
@@ -834,65 +843,80 @@ export class ChatService {
     // const counselor = await this.userService.get(chat.counselorId!);
 
     // Assuming callDetails.summaryNote is available
-    const { tags = [], summaryNote } = callDetails?.summary || {};
+    const summaryInfo =
+      callDetails?.summary || ({} as FlattenedSummaryNotePayloadCamelCase);
     const summaryName =
       callDetails?.callInfo?.summaryName || `Call:${chat.id}:${chat.startedAt}`;
 
     let summary = `Chat Summary\n`;
     summary += `============\n\n`;
     summary += `Chat ID: ${chat.id}\n`;
-    // summary += `Client: ${client?.name || 'Unknown'}\n`;
-    // summary += `Counselor: ${counselor?.name || 'Unknown'}\n`;
     summary += `Start Time: ${chat.createdAt}\n`;
-    summary += `End Time: ${chat.endedAt || 'Ongoing'}\n\n`;
+    summary += `End Time: ${chat.endedAt || 'Ongoing'}\n`;
     summary += `Summary Name: ${summaryName}\n\n`;
 
     // Include tags
-    if (tags.length) {
-      summary += `Tags: ${tags.join(', ')}\n\n`;
+    if (ChatUtil.isTagsAvailable(summaryInfo)) {
+      summary += `Tags: ${summaryInfo.tags.join(', ')}\n\n`;
     }
 
     // Session details
-    if (summaryNote?.session_details) {
-      const d = summaryNote.session_details;
+    if (ChatUtil.isSessionDetailsAvailable(summaryInfo)) {
       summary += `Session Details\n`;
       summary += `===============\n`;
-      summary += `Counselor Name: ${d.counselor_name || 'N/A'}\n`;
-      summary += `Session Number: ${d.session_number || 'N/A'}\n`;
-      summary += `Date of Session: ${d.date_of_session || 'N/A'}\n`;
-      summary += `New Call/Follow-up: ${d.new_call_follow_up || 'N/A'}\n\n`;
+      summary += `Counselor Name: ${summaryInfo.counselorName || 'N/A'}\n`;
+      summary += `Session Number: ${summaryInfo.sessionNumber || 'N/A'}\n`;
+      summary += `Date of Session: ${summaryInfo.dateOfSession || 'N/A'}\n`;
+      summary += `New Call/Follow-up: ${summaryInfo.newCallFollowUp || 'N/A'}\n\n`;
     }
 
     // Demographic details
-    if (summaryNote?.demographic_details) {
-      const dd = summaryNote.demographic_details;
+    if (ChatUtil.isDemographicDetailsAvailable(summaryInfo)) {
       summary += `Demographic Details\n`;
       summary += `===================\n`;
-      Object.entries(dd).forEach(([key, value]) => {
-        summary += `${key.replace(/_/g, ' ')}: ${value || 'N/A'}\n`;
-      });
-      summary += `\n`;
+      summary += `Client ID: ${summaryInfo.clientId || 'N/A'}\n`;
+      summary += `Gender: ${summaryInfo.gender || 'N/A'}\n`;
+      summary += `Age: ${summaryInfo.age || 'N/A'}\n`;
+      summary += `Location: ${summaryInfo.location || 'N/A'}\n`;
+      summary += `Working Status: ${summaryInfo.workingStatus || 'N/A'}\n`;
+      summary += `Any Formal Diagnosis: ${summaryInfo.anyFormalDiagnosis || 'N/A'}\n`;
+      summary += `Code of Concern: ${summaryInfo.codeOfConcern || 'N/A'}\n\n`;
     }
 
     // Counselor impressions
-    if (summaryNote?.counselor_impressions) {
-      const ci = summaryNote.counselor_impressions;
+    if (ChatUtil.isCounselorImpressionsAvailable(summaryInfo)) {
       summary += `Counselor Impressions\n`;
       summary += `======================\n`;
-      Object.entries(ci).forEach(([key, value]) => {
-        summary += `${key.replace(/_/g, ' ')}: ${value || 'N/A'}\n`;
-      });
-      summary += `\n`;
+      summary += `Client Attitude: ${summaryInfo.clientAttitude || 'N/A'}\n`;
+      summary += `Emotional State Start: ${summaryInfo.emotionalStateStart || 'N/A'}\n`;
+      summary += `Emotional State Change: ${summaryInfo.emotionalStateChange || 'N/A'}\n`;
+      summary += `Problem Analysis: ${summaryInfo.problemAnalysis || 'N/A'}\n`;
+      summary += `Additional Insights: ${summaryInfo.additionalInsights || 'N/A'}\n`;
+      summary += `Counselor Feelings: ${summaryInfo.counselorFeelings || 'N/A'}\n\n`;
     }
 
     // Session documentation
-    if (summaryNote?.session_documentation) {
-      const sd = summaryNote.session_documentation;
+    if (ChatUtil.isSessionDocumentationAvailable(summaryInfo)) {
       summary += `Session Documentation\n`;
       summary += `======================\n`;
-      summary += `Work Done: ${sd.work_done || 'N/A'}\n`;
-      summary += `Key Concerns: ${(sd.key_concerns || []).join(', ') || 'N/A'}\n`;
-      summary += `Dominant Feelings: ${(sd.dominant_feelings || []).join(', ') || 'N/A'}\n\n`;
+      summary += `Key Concerns: ${summaryInfo.keyConcerns || 'N/A'}\n`;
+      summary += `Dominant Feelings: ${summaryInfo.dominantFeelings || 'N/A'}\n`;
+      summary += `Counseling Process Flow: ${summaryInfo.counselingProcessFlow || 'N/A'}\n`;
+      summary += `Therapeutic Interventions: ${summaryInfo.therapeuticInterventions || 'N/A'}\n`;
+      summary += `Issues Worked On: ${summaryInfo.issuesWorkedOn || 'N/A'}\n`;
+      summary += `Homework: ${summaryInfo.homework || 'N/A'}\n`;
+    }
+
+    if (ChatUtil.isFollowUpPlanAvailable(summaryInfo)) {
+      summary += `Follow-up Plan\n`;
+      summary += `==============\n`;
+      summary += `Follow-up Status: ${summaryInfo.followUpStatus || 'N/A'}\n`;
+      summary += `Follow-up Date: ${summaryInfo.followUpDate || 'N/A'}\n`;
+      summary += `Follow-up Goals: ${summaryInfo.followUpGoals || 'N/A'}\n`;
+    }
+
+    if (ChatUtil.isCallQualityAvailable(summaryInfo)) {
+      summary += `Call Quality: ${summaryInfo.callQuality || 'N/A'}\n`;
     }
 
     return { summary, fileName: summaryName };
