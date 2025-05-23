@@ -27,8 +27,14 @@ export class TenantService {
   }
 
   async updateStatus(id: string, status: TenantStatus): Promise<Tenant | null> {
-    await this.tenantRepository.update(id, { status });
-    return this.findById(id);
+    const result = await this.tenantRepository
+      .createQueryBuilder()
+      .update(Tenant)
+      .set({ status })
+      .where('id = :id', { id })
+      .returning('*')
+      .execute();
+    return result.affected ? result.raw[0] : null;
   }
 
   async updateSettings(

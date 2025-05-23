@@ -347,7 +347,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     }
 
     return wordList.reduce<Record<string, number>>((acc, word) => {
-      const language = word.language;
+      const language = word.language || 'unknown';
       acc[language] = (acc[language] || 0) + 1;
       return acc;
     }, {});

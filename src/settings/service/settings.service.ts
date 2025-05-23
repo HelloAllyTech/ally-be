@@ -19,14 +19,19 @@ export class SettingsService {
   constructor(private readonly preferenceService: PreferenceService) {}
 
   async getSummaryFieldsConfig() {
+    const tenantId = ExecutionManager.getTenantId();
+    const userId = ExecutionManager.getUserId();
+    if (!tenantId || !userId) {
+      throw new BadRequestException('Tenant ID and User ID are required');
+    }
     const orgPreference = await this.preferenceService.getPreference(
       PreferenceName.SUMMARY_HIDDEN_FIELDS,
-      ExecutionManager.getTenantId()!,
+      tenantId,
       PreferenceRelatedEntity.ORGANIZATION,
     );
     const counselorPreference = await this.preferenceService.getPreference(
       PreferenceName.SUMMARY_HIDDEN_FIELDS,
-      ExecutionManager.getUserId()!,
+      userId,
       PreferenceRelatedEntity.COUNSELOR,
     );
     const hiddenFields = [

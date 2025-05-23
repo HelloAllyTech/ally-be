@@ -49,6 +49,9 @@ export class UserService {
     const data = await this.userRepository
       .createQueryBuilder('user')
       .where('user.id IN (:...clientIds)', { clientIds: Array.from(clientIds) })
+      .andWhere('user.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
+      })
       .leftJoinAndMapMany(
         'user.chat',
         Chat,

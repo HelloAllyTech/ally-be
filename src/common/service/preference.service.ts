@@ -63,8 +63,13 @@ export class PreferenceService {
     });
     if (preference) {
       await this.preferenceRepository.delete(id);
-      const cacheKey = `preference:${preference.relatedId}:${preference.relatedEntity}`;
-      await this.preferenceCache.del(cacheKey);
+      const cacheKey = `preference:${preference.name}:${preference.relatedId}:${preference.relatedEntity}`;
+      try {
+        await this.preferenceCache.del(cacheKey);
+      } catch (error) {
+        // Log cache deletion error but don't fail the operation
+        console.error('Failed to delete cache entry:', error);
+      }
     }
     return preference;
   }

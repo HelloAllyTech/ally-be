@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AnalyticsInterface } from '../interface/analytics.interface';
 import { DashboardDto } from '../type/analytics.type';
 import { In, Repository } from 'typeorm';
@@ -30,7 +30,7 @@ export class AnalyticsService {
       },
     });
     if (!dashboard) {
-      throw new Error('Dashboard not found');
+      throw new NotFoundException('Dashboard not found');
     }
     const paramKeyList = dashboard?.data?.params ?? [];
     const generatedParams = AnalyticsUtil.generateParamList(paramKeyList);

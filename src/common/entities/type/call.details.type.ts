@@ -94,7 +94,7 @@ export type FlattenedSummaryNotePayload = {
   code_of_concern: string | null;
 
   key_concerns: string[] | null;
-  dominant_feelings: string[];
+  dominant_feelings: string[] | null;
 
   counseling_process_flow: string[] | null;
   therapeutic_interventions: string[] | null;
