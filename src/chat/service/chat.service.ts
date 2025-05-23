@@ -859,7 +859,12 @@ export class ChatService {
 
     // Include tags
     if (ChatUtil.isTagsAvailable(summaryInfo)) {
-      summary += `Tags: ${summaryInfo.tags.join(', ')}\n\n`;
+      summary += `Tags\n`;
+      summary += `====\n`;
+      for (const tag of summaryInfo.tags) {
+        summary += `${tag.tag} - ${tag.positivity_rating}\n`;
+      }
+      summary += `\n`;
     }
 
     // Session details
@@ -918,7 +923,8 @@ export class ChatService {
     }
 
     if (ChatUtil.isCallQualityAvailable(summaryInfo)) {
-      summary += `Call Quality: ${summaryInfo.callQuality || 'N/A'}\n`;
+      summary += `\n`;
+      summary += `Call Quality: ${summaryInfo.callQuality}\n`;
     }
 
     return { summary, fileName: summaryName };

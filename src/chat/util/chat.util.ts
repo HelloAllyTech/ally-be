@@ -1,3 +1,4 @@
+import { isNil } from 'lodash';
 import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
 
 export class ChatUtil {
@@ -16,12 +17,12 @@ export class ChatUtil {
   ) {
     if (!this.isValidSummary(summary)) return false;
     return (
-      summary.age !== null ||
-      summary.gender !== null ||
-      summary.location !== null ||
-      summary.workingStatus !== null ||
-      summary.anyFormalDiagnosis !== null ||
-      summary.codeOfConcern !== null
+      !isNil(summary.age) ||
+      !isNil(summary.gender) ||
+      !isNil(summary.location) ||
+      !isNil(summary.workingStatus) ||
+      !isNil(summary.anyFormalDiagnosis) ||
+      !isNil(summary.codeOfConcern)
     );
   }
 
@@ -30,9 +31,9 @@ export class ChatUtil {
   ) {
     if (!this.isValidSummary(summary)) return false;
     return (
-      summary.dateOfSession !== null ||
-      summary.newCallFollowUp !== null ||
-      summary.sessionNumber !== null
+      !isNil(summary.dateOfSession) ||
+      !isNil(summary.newCallFollowUp) ||
+      !isNil(summary.sessionNumber)
     );
   }
 
@@ -41,12 +42,12 @@ export class ChatUtil {
   ) {
     if (!this.isValidSummary(summary)) return false;
     return (
-      summary.clientAttitude !== null ||
-      summary.emotionalStateStart !== null ||
-      summary.emotionalStateChange !== null ||
-      summary.problemAnalysis !== null ||
-      summary.additionalInsights !== null ||
-      summary.counselorFeelings !== null
+      !isNil(summary.clientAttitude) ||
+      !isNil(summary.emotionalStateStart) ||
+      !isNil(summary.emotionalStateChange) ||
+      !isNil(summary.problemAnalysis) ||
+      !isNil(summary.additionalInsights) ||
+      !isNil(summary.counselorFeelings)
     );
   }
 
@@ -73,7 +74,7 @@ export class ChatUtil {
     summary?: FlattenedSummaryNotePayloadCamelCase,
   ) {
     if (!this.isValidSummary(summary)) return false;
-    return summary.callQuality !== null;
+    return !isNil(summary.callQuality);
   }
 
   static isFollowUpPlanAvailable(
@@ -81,9 +82,9 @@ export class ChatUtil {
   ) {
     if (!this.isValidSummary(summary)) return false;
     return (
-      summary.followUpStatus !== null ||
-      summary.followUpDate !== null ||
-      summary.followUpGoals !== null
+      !isNil(summary.followUpStatus) ||
+      !isNil(summary.followUpDate) ||
+      !isNil(summary.followUpGoals)
     );
   }
 }
