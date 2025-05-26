@@ -38,6 +38,7 @@ import { ForbiddenException } from '../../exception/custom.exception';
 import { TIME } from '../../common/constants/time.constants';
 import { ChatUtil } from '../util/chat.util';
 import { CommonUtil } from '../../common/util/common.util';
+import { CallInfoDto } from '../dto/chat.response.dto';
 
 @Injectable()
 export class ChatService {
@@ -675,7 +676,7 @@ export class ChatService {
           clientTalkingTime: clientTalkingPercentage * callDurationInSeconds,
           counselorTalkingTime:
             counselorTalkingPercentage * callDurationInSeconds,
-          summaryName: `Call:${chat.id}:${chat.startedAt}`,
+          summaryName: ChatUtil.getSummaryName(chat),
           wordCountByLanguage,
         } as CallInfo,
         endTime: chat.endedAt,
@@ -819,6 +820,33 @@ export class ChatService {
     return this.getChat(chatId);
   }
 
+  async updateCallInfo(chatId: number, body: CallInfoDto) {
+    const chat = await this.getChatById(chatId);
+    if (!chat) {
+      throw new NotFoundException(`Chat with ID ${chatId} not found`);
+    }
+
+    if (
+      ExecutionManager.getRole() == UserRole.COUNSELOR &&
+      chat.counselorId != ExecutionManager.getUserId()
+    ) {
+      throw new ForbiddenException(
+        'You are not authorized to update call info',
+      );
+    }
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+    if (!callDetails) {
+      throw new NotFoundException(`Call details not found for chat ${chatId}`);
+    }
+    await this.callDetailsRepository.update(
+      { chatId, tenantId: ExecutionManager.getTenantId() },
+      { callInfo: { ...callDetails.callInfo, summaryName: body.summaryName } },
+    );
+    return this.getChat(chatId);
+  }
+
   getNudge(newMessage: string, messageRequests: MessageRequest[]) {
     return this.aiService.getNudge(newMessage, messageRequests);
   }
@@ -848,7 +876,7 @@ export class ChatService {
     const summaryInfo =
       callDetails?.summary || ({} as FlattenedSummaryNotePayloadCamelCase);
     const summaryName =
-      callDetails?.callInfo?.summaryName || `Call:${chat.id}:${chat.startedAt}`;
+      callDetails?.callInfo?.summaryName || ChatUtil.getSummaryName(chat);
 
     let summary = `Chat Summary\n`;
     summary += `============\n\n`;
@@ -990,11 +1018,13 @@ export class ChatService {
     language: string,
     count: number,
   ) {
-    return this.cache.hincrBy(`call:${chatId}:word-count`, language, count);
+    const key = this.getWordCountKey(chatId);
+    return this.cache.hincrBy(key, language, count);
   }
 
   private async getWordCountByLanguage(chatId: number) {
-    const rawCounts = await this.cache.hgetAll(`call:${chatId}:word-count`);
+    const key = this.getWordCountKey(chatId);
+    const rawCounts = await this.cache.hgetAll(key);
     return Object.entries(rawCounts).reduce(
       (acc, [lang, count]) => {
         acc[lang] = parseInt(count, 10);
@@ -1005,6 +1035,11 @@ export class ChatService {
   }
 
   private async deleteWordCountByLanguage(chatId: number) {
-    await this.cache.del(`call:${chatId}:word-count`);
+    const key = this.getWordCountKey(chatId);
+    await this.cache.del(key);
+  }
+
+  private getWordCountKey(chatId: number) {
+    return `call:${chatId}:word-count`;
   }
 }

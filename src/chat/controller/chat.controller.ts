@@ -25,7 +25,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { CallLogResponse } from '../dto/call-log.response.dto';
-import { ChatResponseDto } from '../dto/chat.response.dto';
+import { CallInfoDto, ChatResponseDto } from '../dto/chat.response.dto';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
@@ -287,5 +287,20 @@ export class ChatController {
       `attachment; filename=${fileName}.txt`,
     );
     res.send(summary);
+  }
+
+  @Patch(':chatId/call-info')
+  @ApiOperation({ summary: 'Update call info' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the updated call info',
+    type: ChatResponseDto,
+  })
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  async updateCallInfo(
+    @Param('chatId', ParseIntPipe) chatId: number,
+    @Body() body: CallInfoDto,
+  ) {
+    return this.service.updateCallInfo(chatId, body);
   }
 }

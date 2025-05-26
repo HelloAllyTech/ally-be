@@ -1,5 +1,6 @@
 import { isNil } from 'lodash';
 import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
+import { Chat } from '../../common/entities/chat.entity';
 
 export class ChatUtil {
   private static isValidSummary(
@@ -86,5 +87,10 @@ export class ChatUtil {
       !isNil(summary.followUpDate) ||
       !isNil(summary.followUpGoals)
     );
+  }
+  static getSummaryName(chat: Chat) {
+    const startedAt = new Date(chat.startedAt ?? chat.createdAt);
+    const date = startedAt.toISOString().split('T')[0];
+    return `CALL-${chat.id}-${date}`;
   }
 }
