@@ -61,6 +61,7 @@ export class AnalyticsService {
     }
     const dashboardEntity = this.dashboardRepository.create({
       ...dashboard,
+      tenantId: ExecutionManager.getTenantId(),
     });
     return this.dashboardRepository.save(dashboardEntity);
   }
