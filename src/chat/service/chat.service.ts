@@ -491,7 +491,7 @@ export class ChatService {
       status: ChatStatus.ACTIVE,
     });
     if (!latestChat) {
-      throw new HttpException('Chat not found', 404);
+      return [];
     }
     return this.getChatResponse(latestChat);
   }
@@ -540,7 +540,7 @@ export class ChatService {
     });
 
     if (!chats?.length) {
-      throw new HttpException('Chat not found', 404);
+      return [];
     }
     return this.getChatResponse(chats[0]);
   }
