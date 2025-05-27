@@ -10,7 +10,28 @@ function defineAllFields<T>() {
   ) => keys;
 }
 
-export const DEFAULT_SUMMARY_FIELDS_ARRAY =
+export type SummaryNoteConstantFields = {
+  callId: string;
+  callDuration: number;
+  callDate: string;
+  callTime: string;
+  clientId: string;
+  language: string;
+  listeningShare: number;
+};
+
+export const SUMMARY_NOTE_CONSTANT_FIELDS_ARRAY =
+  defineAllFields<SummaryNoteConstantFields>()([
+    'callId',
+    'callDuration',
+    'callDate',
+    'callTime',
+    'clientId',
+    'language',
+    'listeningShare',
+  ]);
+
+export const DEFAULT_AI_SUMMARY_FIELDS_ARRAY =
   defineAllFields<FlattenedSummaryNotePayloadCamelCase>()([
     'dateOfSession',
     'newCallFollowUp',
@@ -46,5 +67,15 @@ export const DEFAULT_SUMMARY_FIELDS_ARRAY =
 
     'tags',
     'callQuality',
+
+    'emotionalLift',
+    'reflectiveQuestionsAsked',
+    'listeningShare',
   ]);
+
+export const DEFAULT_SUMMARY_FIELDS_ARRAY = [
+  ...SUMMARY_NOTE_CONSTANT_FIELDS_ARRAY,
+  ...DEFAULT_AI_SUMMARY_FIELDS_ARRAY,
+];
+
 export const DEFAULT_SUMMARY_FIELDS_SET = new Set(DEFAULT_SUMMARY_FIELDS_ARRAY);

@@ -219,7 +219,7 @@ export class ChatController {
     schema: {
       type: 'object',
       properties: {
-        callDetails: { type: 'object' },
+        summary: { type: 'object' },
       },
     },
   })

@@ -114,6 +114,9 @@ export type FlattenedSummaryNotePayload = {
 
   tags: Tag[];
   call_quality: number;
+  emotional_lift: number;
+  reflective_questions_asked: number;
+  listening_share: number;
 };
 
 export type FlattenedSummaryNotePayloadCamelCase = {
@@ -151,4 +154,7 @@ export type FlattenedSummaryNotePayloadCamelCase = {
 
   tags: Tag[]; // Assuming Tag is defined elsewhere
   callQuality: number;
+  emotionalLift: number;
+  reflectiveQuestionsAsked: number;
+  listeningShare: number;
 };
