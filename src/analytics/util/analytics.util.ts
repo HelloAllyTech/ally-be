@@ -16,6 +16,12 @@ export class AnalyticsUtil {
     if (!paramKeyList || !Array.isArray(paramKeyList)) {
       return [];
     }
-    return paramKeyList.map((param) => AnalyticsUtil.getParamValue(param));
+    return paramKeyList.reduce((acc: Record<string, string>, param) => {
+      const value = AnalyticsUtil.getParamValue(param);
+      if (value) {
+        acc[param] = value;
+      }
+      return acc;
+    }, {});
   }
 }

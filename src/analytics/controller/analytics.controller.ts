@@ -24,11 +24,8 @@ export class AnalyticsController {
 
   @Get('dashboard/:dashboardId')
   @UseGuards(JwtAuthGuard)
-  getDashboardUrl(
-    @Param() { dashboardId }: DashboardIdParamDto,
-    @Query() { params }: DashboardParamsDto,
-  ) {
-    return this.analyticsService.getDashboardUrl(dashboardId, params || {});
+  getDashboardUrl(@Param() { dashboardId }: DashboardIdParamDto) {
+    return this.analyticsService.getDashboardUrl(dashboardId);
   }
 
   @Post('dashboard/:dashboardId/refresh')

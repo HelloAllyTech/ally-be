@@ -22,7 +22,7 @@ export class MetabaseService implements AnalyticsInterface {
     this.logger.info(`Getting dashboard url for ${dashboardId} | ${params}`);
     const payload = {
       resource: { dashboard: +dashboardId },
-      params: {},
+      params: params || {},
       exp: Math.round(Date.now() / 1000) + 10 * 60, // 10 minute expiration
     };
     const token = jwt.sign(payload, this.metabaseApiKey);

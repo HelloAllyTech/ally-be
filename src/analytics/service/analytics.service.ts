@@ -22,7 +22,7 @@ export class AnalyticsService {
     };
   }
 
-  async getDashboardUrl(dashboardId: string, inputParams: Record<string, any>) {
+  async getDashboardUrl(dashboardId: string) {
     const dashboard = await this.dashboardRepository.findOne({
       where: {
         externalId: dashboardId,
@@ -34,9 +34,10 @@ export class AnalyticsService {
     }
     const paramKeyList = dashboard?.data?.params ?? [];
     const generatedParams = AnalyticsUtil.generateParamList(paramKeyList);
-    const url = await this.analyticsInterface.getDashboardUrl(dashboardId, {
-      params: { ...inputParams, ...generatedParams },
-    });
+    const url = await this.analyticsInterface.getDashboardUrl(
+      dashboardId,
+      generatedParams,
+    );
     return {
       url,
     };
