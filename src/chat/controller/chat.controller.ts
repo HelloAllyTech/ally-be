@@ -227,9 +227,9 @@ export class ChatController {
   @Put(':id/call-details')
   async updateCallDetails(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { callDetails: any },
+    @Body() body: { summary: any },
   ) {
-    return this.service.updateCallDetails(id, body.callDetails);
+    return this.service.updateCallDetails(id, body.summary);
   }
 
   @ApiOperation({ summary: 'Get chat summary' })

@@ -811,11 +811,11 @@ export class ChatService {
 
   async updateCallDetails(
     chatId: number,
-    callDetails: FlattenedSummaryNotePayloadCamelCase,
+    summary: FlattenedSummaryNotePayloadCamelCase,
   ) {
     await this.callDetailsRepository.update(
       { chatId, tenantId: ExecutionManager.getTenantId() },
-      { summary: callDetails },
+      { summary: summary },
     );
     return this.getChat(chatId);
   }
