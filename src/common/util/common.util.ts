@@ -62,4 +62,12 @@ export class CommonUtil {
     }
     return _.mapKeys(input, (value, key) => _.camelCase(key));
   }
+
+  static generateQueryParams(params: Record<string, any>) {
+    return Object.entries(params)
+      .map(
+        ([key, val]) => `${encodeURIComponent(key)}=${encodeURIComponent(val)}`,
+      )
+      .join('&');
+  }
 }
