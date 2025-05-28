@@ -5,10 +5,12 @@ import {
   EnhanceTextRequest,
   GenerateSummaryRequest,
   MessageRequest,
+  TagPositivityRatingsRequest,
 } from '../dto/ai.request.dto';
 import {
   EnhanceTextResponse,
   GenerateSummaryResponse,
+  TagPositivityRatingsResponse,
 } from '../dto/ai.response.dto';
 import { createClient, DeepgramClient } from '@deepgram/sdk';
 import { ENDPOINTS } from '../constants/endpoints.constants';
@@ -94,6 +96,17 @@ export class AiService {
       this.logger.error(`AI Service Error: ${error.message}`);
       return;
     }
+    return response;
+  }
+
+  async generateTagPositivityRatings(tags: string[]) {
+    const request: TagPositivityRatingsRequest = {
+      tags: tags,
+    };
+    const response = await this.makeRequest<
+      TagPositivityRatingsResponse,
+      TagPositivityRatingsRequest
+    >(ENDPOINTS.TAG_POSITIVITY_RATINGS, request);
     return response;
   }
 

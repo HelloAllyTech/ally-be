@@ -11,3 +11,7 @@ export type MessageRequest = {
 export type EnhanceTextRequest = {
   content: string;
 };
+
+export type TagPositivityRatingsRequest = {
+  tags: string[];
+};
