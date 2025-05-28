@@ -15,12 +15,30 @@ class UserInfo {
   @ApiProperty()
   role?: string;
 }
-class CallInfo {
+export class CallInfo {
   @ApiProperty({ required: false })
   clientTalkingPercentage?: number;
 
   @ApiProperty({ required: false })
   counselorTalkingPercentage?: number;
+
+  @ApiProperty({ required: false })
+  provider?: 'WEBRTC' | 'EXOTEL';
+
+  @ApiProperty({ required: false })
+  callId?: string;
+
+  @ApiProperty({ required: false })
+  clientTalkingTime?: number;
+
+  @ApiProperty({ required: false })
+  counselorTalkingTime?: number;
+
+  @ApiProperty({ required: false })
+  summaryName?: string;
+
+  @ApiProperty({ required: false })
+  pauseNudge?: boolean;
 }
 export class CallDetails {
   @ApiProperty({ required: false })

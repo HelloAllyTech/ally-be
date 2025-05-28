@@ -25,10 +25,7 @@ import { CallDetails } from '../../common/entities/call.details.entity';
 import { RedisService } from '../../redis/service/redis.service';
 import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
-import {
-  CallInfo,
-  FlattenedSummaryNotePayloadCamelCase,
-} from '../../common/entities/type/call.details.type';
+import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
 import { StringUtil } from '../../common/util/string.util';
 import { TokenUser } from '../../auth/type/auth.types';
 import { UserRole } from '../../common/constants/user.constants';
@@ -39,6 +36,7 @@ import { TIME } from '../../common/constants/time.constants';
 import { ChatUtil } from '../util/chat.util';
 import { CommonUtil } from '../../common/util/common.util';
 import { CallInfoDto } from '../dto/chat.response.dto';
+import { CallInfo } from '../dto/call-log.response.dto';
 
 @Injectable()
 export class ChatService {

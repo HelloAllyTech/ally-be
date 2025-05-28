@@ -1,9 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
-import {
-  CallInfo,
-  FlattenedSummaryNotePayloadCamelCase,
-} from './type/call.details.type';
+import { FlattenedSummaryNotePayloadCamelCase } from './type/call.details.type';
+import { CallInfo } from '../../chat/dto/call-log.response.dto';
 
 @Entity('call_details')
 export class CallDetails extends BaseEntity {

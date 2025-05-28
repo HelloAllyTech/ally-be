@@ -1,13 +1,3 @@
-export type CallInfo = {
-  callId?: string;
-  clientTalkingPercentage?: number;
-  counselorTalkingPercentage?: number;
-  clientTalkingTime?: number;
-  counselorTalkingTime?: number;
-  summaryName?: string;
-  pauseNudge?: boolean;
-};
-
 export enum NewCallFollowUp {
   NEW_CALL = 'New Call',
   FOLLOW_UP = 'Follow-Up',
