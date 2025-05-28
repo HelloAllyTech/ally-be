@@ -851,6 +851,11 @@ export class ChatService {
     return this.aiService.getNudge(newMessage, messageRequests);
   }
 
+  async tagPositivityRatings(tags: string[]) {
+    const aiResponse = await this.aiService.generateTagPositivityRatings(tags);
+    return aiResponse.tags;
+  }
+
   async exportSummary(
     tokenUser: TokenUser,
     chatId: number,

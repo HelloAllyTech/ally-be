@@ -303,4 +303,25 @@ export class ChatController {
   ) {
     return this.service.updateCallInfo(chatId, body);
   }
+
+  @Post('/summary/tag-positivity-ratings')
+  @ApiOperation({ summary: 'Tag positivty ratings' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the tagged positivity ratings',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          tag: { type: 'string' },
+          positivity_rating: { type: 'number' },
+        },
+      },
+    },
+  })
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  async tagPositivityRatings(@Body() body: { tags: string[] }) {
+    return this.service.tagPositivityRatings(body.tags);
+  }
 }
