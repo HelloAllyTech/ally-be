@@ -11,10 +11,6 @@ export class PlaceService {
   ) {}
 
   async searchCities(query: string): Promise<Place[]> {
-    if (!query || query.trim().length === 0) {
-      throw new BadRequestException('Search query cannot be empty');
-    }
-
     return this.placeRepository
       .createQueryBuilder('place')
       .where('LOWER(place.city) LIKE LOWER(:query)', {
@@ -28,13 +24,6 @@ export class PlaceService {
     page: number = 1,
     limit: number = 10,
   ): Promise<{ data: Place[]; total: number }> {
-    if (page < 1) {
-      throw new BadRequestException('Page number must be greater than 0');
-    }
-    if (limit < 1 || limit > 100) {
-      throw new BadRequestException('Limit must be between 1 and 100');
-    }
-
     const [data, total] = await this.placeRepository.findAndCount({
       order: {
         city: 'ASC',
