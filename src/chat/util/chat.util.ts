@@ -21,48 +21,10 @@ export class ChatUtil {
       !isNil(summary.age) ||
       !isNil(summary.gender) ||
       !isNil(summary.location) ||
-      !isNil(summary.workingStatus) ||
-      !isNil(summary.anyFormalDiagnosis) ||
-      !isNil(summary.codeOfConcern)
-    );
-  }
-
-  static isSessionDetailsAvailable(
-    summary?: FlattenedSummaryNotePayloadCamelCase,
-  ) {
-    if (!this.isValidSummary(summary)) return false;
-    return (
-      !isNil(summary.dateOfSession) ||
-      !isNil(summary.newCallFollowUp) ||
-      !isNil(summary.sessionNumber)
-    );
-  }
-
-  static isCounselorImpressionsAvailable(
-    summary?: FlattenedSummaryNotePayloadCamelCase,
-  ) {
-    if (!this.isValidSummary(summary)) return false;
-    return (
-      !isNil(summary.clientAttitude) ||
-      !isNil(summary.emotionalStateStart) ||
-      !isNil(summary.emotionalStateChange) ||
-      !isNil(summary.problemAnalysis) ||
-      !isNil(summary.additionalInsights) ||
-      !isNil(summary.counselorFeelings)
-    );
-  }
-
-  static isSessionDocumentationAvailable(
-    summary?: FlattenedSummaryNotePayloadCamelCase,
-  ) {
-    if (!this.isValidSummary(summary)) return false;
-    return (
-      summary.keyConcerns?.length ||
-      summary.dominantFeelings?.length ||
-      summary.counselingProcessFlow?.length ||
-      summary.therapeuticInterventions?.length ||
-      summary.issuesWorkedOn?.length ||
-      summary.homework?.length
+      !isNil(summary.relationshipStatus) ||
+      !isNil(summary.profession) ||
+      !isNil(summary.codeOfConcern) ||
+      !isNil(summary.languages)
     );
   }
 
@@ -76,17 +38,6 @@ export class ChatUtil {
   ) {
     if (!this.isValidSummary(summary)) return false;
     return !isNil(summary.callQuality);
-  }
-
-  static isFollowUpPlanAvailable(
-    summary?: FlattenedSummaryNotePayloadCamelCase,
-  ) {
-    if (!this.isValidSummary(summary)) return false;
-    return (
-      !isNil(summary.followUpStatus) ||
-      !isNil(summary.followUpDate) ||
-      !isNil(summary.followUpGoals)
-    );
   }
   static getSummaryName(chat: Chat) {
     const startedAt = new Date(chat.startedAt ?? chat.createdAt);

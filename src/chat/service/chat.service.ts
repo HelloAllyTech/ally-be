@@ -37,6 +37,7 @@ import { ChatUtil } from '../util/chat.util';
 import { CommonUtil } from '../../common/util/common.util';
 import { CallInfoDto } from '../dto/chat.response.dto';
 import { CallInfo } from '../dto/call-log.response.dto';
+import { sum } from 'lodash';
 
 @Injectable()
 export class ChatService {
@@ -882,83 +883,147 @@ export class ChatService {
       callDetails?.summary || ({} as FlattenedSummaryNotePayloadCamelCase);
     const summaryName =
       callDetails?.callInfo?.summaryName || ChatUtil.getSummaryName(chat);
+    const counselor = await this.userService.get(chat.counselorId!);
 
     let summary = `Chat Summary\n`;
     summary += `============\n\n`;
-    summary += `Chat ID: ${chat.id}\n`;
-    summary += `Start Time: ${chat.createdAt}\n`;
-    summary += `End Time: ${chat.endedAt || 'Ongoing'}\n`;
-    summary += `Summary Name: ${summaryName}\n\n`;
+    summary += `Call ID: ${chat.id}\n`;
+    summary += `Call Date: ${new Date(chat.createdAt).toLocaleDateString()}\n`;
+    summary += `Call Time: ${new Date(chat.createdAt).toLocaleTimeString()}\n`;
+    summary += `Summary Name: ${summaryName}\n`;
+    summary += `Call Duration (seconds): ${callDetails?.callDuration ?? 'N/A'}\n`;
+    summary += `Tags:`;
+    summary += summaryInfo?.tags?.length ? '\n' : '';
+    summary += summaryInfo?.tags?.length
+      ? summaryInfo.tags
+          .map((tag) => `  - ${tag.tag} (Positivity: ${tag.positivity_rating})`)
+          .join('\n') + '\n'
+      : '  - N/A\n';
 
-    // Include tags
-    if (ChatUtil.isTagsAvailable(summaryInfo)) {
-      summary += `Tags\n`;
-      summary += `====\n`;
-      for (const tag of summaryInfo.tags) {
-        summary += `${tag.tag} - ${tag.positivity_rating}\n`;
-      }
-      summary += `\n`;
-    }
+    summary += `Client ID: ${chat.clientId ?? 'N/A'}\n`;
+    summary += `Counselor: ${counselor?.name ?? 'N/A'}\n`;
+    summary += `Call Type: ${summaryInfo.callType ?? 'N/A'}\n`;
+    summary += `Age: ${summaryInfo.age ?? 'N/A'}\n`;
+    summary += `Gender: ${summaryInfo.gender}\n`;
+    summary += `Profession: ${summaryInfo.profession ?? 'N/A'}\n`;
+    summary += `Relationship Status: ${summaryInfo.relationshipStatus ?? 'N/A'}\n`;
 
-    // Session details
-    if (ChatUtil.isSessionDetailsAvailable(summaryInfo)) {
-      summary += `Session Details\n`;
-      summary += `===============\n`;
-      summary += `Counselor Name: ${summaryInfo.counselorName || 'N/A'}\n`;
-      summary += `Session Number: ${summaryInfo.sessionNumber || 'N/A'}\n`;
-      summary += `Date of Session: ${summaryInfo.dateOfSession || 'N/A'}\n`;
-      summary += `New Call/Follow-up: ${summaryInfo.newCallFollowUp || 'N/A'}\n\n`;
-    }
+    summary += `Languages:\n`;
+    summary += summaryInfo?.languages?.length
+      ? summaryInfo.languages
+          .map(
+            (lang) =>
+              `  - ${lang.language} (${(lang.percentage * 100).toFixed(1)}%)`,
+          )
+          .join('\n') + '\n'
+      : '  - N/A\n';
+
+    summary += `Location: ${summaryInfo.location ?? 'N/A'}\n`;
+    summary += `Code of Concern: ${summaryInfo.codeOfConcern}\n`;
+
+    summary += `Session Summary: ${summaryInfo.sessionSummary}\n`;
+    summary += `Counseling Process Flow: ${summaryInfo.counselingProcessFlow ?? 'N/A'}\n`;
+    summary += `Key Concerns: ${summaryInfo.keyConcerns}\n`;
+    summary += `Subjective Observations: ${summaryInfo.subjectiveObservations}\n`;
+    summary += `Objective Observations: ${summaryInfo.objectiveObservations}\n`;
+    summary += `Assessment: ${summaryInfo.assessment}\n`;
+    summary += `Dominant Feelings: ${summaryInfo.dominantFeelings}\n`;
+    summary += `Issues Worked On: ${summaryInfo.issuesWorkedOn}\n`;
+    summary += `Key Therapeutic Techniques: ${summaryInfo.keyTherapeuticTechniques}\n`;
+
+    summary += `Referrals Provided: ${summaryInfo.referralsProvided ?? 'N/A'}\n`;
+    summary += `Homework: ${summaryInfo.homework}\n`;
+    summary += `Plan for Next Call: ${summaryInfo.planForNextCall}\n`;
+
+    summary += `Listening Share: ${callDetails?.callInfo?.clientTalkingTime ?? 'N/A'}\n`;
+    summary += `Reflective Questions Asked: ${summaryInfo.reflectiveQuestionsAsked}\n`;
+    summary += `Open-ended Questions Asked: ${summaryInfo.openEndedQuestionsAsked}\n`;
+    summary += `Emotional Lift: ${summaryInfo.emotionalLift || 'N/A'}\n`;
+    summary += `Call Quality: ${summaryInfo.callQuality || 'N/A'}\n`;
+    summary += `New Call Follow-up: ${summaryInfo.newCallFollowUp || 'N/A'}\n`;
+
+    // // Include tags
+    // if (ChatUtil.isTagsAvailable(summaryInfo)) {
+    //   summary += `Tags\n`;
+    //   summary += `====\n`;
+    //   for (const tag of summaryInfo.tags) {
+    //     summary += `${tag.tag} - ${tag.positivity_rating}\n`;
+    //   }
+    //   summary += `\n`;
+    // }
+
+    // // Session details
+    // if (ChatUtil.isSessionDetailsAvailable(summaryInfo)) {
+    //   summary += `Session Details\n`;
+    //   summary += `===============\n`;
+    //   summary += `Counselor Name: ${counselor?.name}\n`;
+    //   summary += `Session Number: ${chat.id}\n`;
+    //   summary += `Date of Session: ${new Date(chat.createdAt).toLocaleDateString() || 'N/A'}\n`;
+    //   summary += `New Call/Follow-up: ${summaryInfo.newCallFollowUp || 'N/A'}\n\n`;
+    // }
 
     // Demographic details
     if (ChatUtil.isDemographicDetailsAvailable(summaryInfo)) {
-      summary += `Demographic Details\n`;
+      summary += `\nDemographic Details\n`;
       summary += `===================\n`;
-      summary += `Client ID: ${summaryInfo.clientId || 'N/A'}\n`;
+      summary += `Client ID: ${'N/A'}\n`; // Check if this is needed in export
       summary += `Gender: ${summaryInfo.gender || 'N/A'}\n`;
       summary += `Age: ${summaryInfo.age || 'N/A'}\n`;
       summary += `Location: ${summaryInfo.location || 'N/A'}\n`;
-      summary += `Working Status: ${summaryInfo.workingStatus || 'N/A'}\n`;
-      summary += `Any Formal Diagnosis: ${summaryInfo.anyFormalDiagnosis || 'N/A'}\n`;
-      summary += `Code of Concern: ${summaryInfo.codeOfConcern || 'N/A'}\n\n`;
+      summary += `Profession: ${summaryInfo.profession || 'N/A'}\n`;
+      summary += `Relationship Status: ${summaryInfo.relationshipStatus || 'N/A'}\n`;
+      summary += `Languages: ${summaryInfo.languages?.map((language) => language.language).join(', ') || 'N/A'}\n`;
+      summary += `Code of Concern: ${summaryInfo.codeOfConcern || 'N/A'}\n`;
     }
 
-    // Counselor impressions
-    if (ChatUtil.isCounselorImpressionsAvailable(summaryInfo)) {
-      summary += `Counselor Impressions\n`;
-      summary += `======================\n`;
-      summary += `Client Attitude: ${summaryInfo.clientAttitude || 'N/A'}\n`;
-      summary += `Emotional State Start: ${summaryInfo.emotionalStateStart || 'N/A'}\n`;
-      summary += `Emotional State Change: ${summaryInfo.emotionalStateChange || 'N/A'}\n`;
-      summary += `Problem Analysis: ${summaryInfo.problemAnalysis || 'N/A'}\n`;
-      summary += `Additional Insights: ${summaryInfo.additionalInsights || 'N/A'}\n`;
-      summary += `Counselor Feelings: ${summaryInfo.counselorFeelings || 'N/A'}\n\n`;
-    }
+    //metrics
 
-    // Session documentation
-    if (ChatUtil.isSessionDocumentationAvailable(summaryInfo)) {
-      summary += `Session Documentation\n`;
-      summary += `======================\n`;
-      summary += `Key Concerns: ${summaryInfo.keyConcerns?.join(', ') || 'N/A'}\n`;
-      summary += `Dominant Feelings: ${summaryInfo.dominantFeelings?.join(', ') || 'N/A'}\n`;
-      summary += `Counseling Process Flow: ${summaryInfo.counselingProcessFlow?.join(', ') || 'N/A'}\n`;
-      summary += `Therapeutic Interventions: ${summaryInfo.therapeuticInterventions?.join(', ') || 'N/A'}\n`;
-      summary += `Issues Worked On: ${summaryInfo.issuesWorkedOn?.join(', ') || 'N/A'}\n`;
-      summary += `Homework: ${summaryInfo.homework?.join(', ') || 'N/A'}\n`;
-    }
+    summary += `\nMetrics\n`;
+    summary += `======\n`;
+    summary += `No of Reflictuve Questions: ${summaryInfo.reflectiveQuestionsAsked}\n`;
+    summary += `Emotions Lift: ${summaryInfo.emotionalLift}\n`;
+    summary += `Listening Share: ${callDetails?.callInfo?.clientTalkingTime ?? 'N/A'}\n`;
 
-    if (ChatUtil.isFollowUpPlanAvailable(summaryInfo)) {
-      summary += `Follow-up Plan\n`;
-      summary += `==============\n`;
-      summary += `Follow-up Status: ${summaryInfo.followUpStatus || 'N/A'}\n`;
-      summary += `Follow-up Date: ${summaryInfo.followUpDate || 'N/A'}\n`;
-      summary += `Follow-up Goals: ${summaryInfo.followUpGoals?.join(', ') || 'N/A'}\n`;
-    }
+    // // Counselor impressions
+    // if (ChatUtil.isCounselorImpressionsAvailable(summaryInfo)) {
+    //   summary += `Counselor Impressions\n`;
+    //   summary += `======================\n`;
+    //   summary += `Client Attitude: ${summaryInfo.clientAttitude || 'N/A'}\n`;
+    //   summary += `Emotional State Start: ${summaryInfo.emotionalStateStart || 'N/A'}\n`;
+    //   summary += `Emotional State Change: ${summaryInfo.emotionalStateChange || 'N/A'}\n`;
+    //   summary += `Problem Analysis: ${summaryInfo.problemAnalysis || 'N/A'}\n`;
+    //   summary += `Additional Insights: ${summaryInfo.additionalInsights || 'N/A'}\n`;
+    //   summary += `Counselor Feelings: ${summaryInfo.counselorFeelings || 'N/A'}\n\n`;
+    // }
 
-    if (ChatUtil.isCallQualityAvailable(summaryInfo)) {
-      summary += `\n`;
-      summary += `Call Quality: ${summaryInfo.callQuality}\n`;
-    }
+    // // Session documentation
+    // if (ChatUtil.isSessionDocumentationAvailable(summaryInfo)) {
+    //   summary += `Session Documentation\n`;
+    //   summary += `======================\n`;
+    //   summary += `Key Concerns: ${summaryInfo.keyConcerns || 'N/A'}\n`;
+    //   summary += `Dominant Feelings: ${summaryInfo.dominantFeelings || 'N/A'}\n`;
+    //   summary += `Counseling Process Flow: ${summaryInfo.counselingProcessFlow || 'N/A'}\n`;
+    //   summary += `Therapeutic Interventions: ${summaryInfo.keyTherapeuticTechniques || 'N/A'}\n`;
+    //   summary += `Objective Observations: ${summaryInfo.objectiveObservations || 'N/A'}\n`;
+    //   summary += `Subjective Observations: ${summaryInfo.subjectiveObservations || 'N/A'}\n`;
+    //   summary += `Assessment: ${summaryInfo.assessment || 'N/A'}\n`;
+    //   summary += `Referrals Provided: ${summaryInfo.referralsProvided || 'N/A'}\n`;
+    //   summary += `Issues Worked On: ${summaryInfo.issuesWorkedOn || 'N/A'}\n`;
+    //   summary += `Homework: ${summaryInfo.homework || 'N/A'}\n`;
+    // }
+
+    // if (ChatUtil.isFollowUpPlanAvailable(summaryInfo)) {
+    //   summary += `Follow-up Plan\n`;
+    //   summary += `==============\n`;
+    //   summary += `Follow-up Status: ${summaryInfo.followUpStatus || 'N/A'}\n`;
+    //   summary += `Follow-up Date: ${summaryInfo.followUpDate || 'N/A'}\n`;
+    //   summary += `Follow-up Goals: ${summaryInfo.followUpGoals?.join(', ') || 'N/A'}\n`;
+    // }
+
+    // if (ChatUtil.isCallQualityAvailable(summaryInfo)) {
+    //   summary += `\n`;
+    //   summary += `Call Quality: ${summaryInfo.callQuality}\n`;
+    // }
 
     return { summary, fileName: summaryName };
   }

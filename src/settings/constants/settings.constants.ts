@@ -33,44 +33,39 @@ export const SUMMARY_NOTE_CONSTANT_FIELDS_ARRAY =
 
 export const DEFAULT_AI_SUMMARY_FIELDS_ARRAY =
   defineAllFields<FlattenedSummaryNotePayloadCamelCase>()([
-    'dateOfSession',
-    'newCallFollowUp',
-    'sessionNumber',
-    'counselorName',
-
+    'callId',
+    'callDuration',
+    'callDate',
+    'callTime',
     'clientId',
-    'gender',
+    'counsellor',
+    'callType',
     'age',
+    'gender',
+    'profession',
+    'relationshipStatus',
+    'languages',
     'location',
-    'workingStatus',
-    'anyFormalDiagnosis',
     'codeOfConcern',
-
-    'keyConcerns',
-    'dominantFeelings',
-
+    'sessionSummary',
     'counselingProcessFlow',
-    'therapeuticInterventions',
+    'keyConcerns',
+    'subjectiveObservations',
+    'objectiveObservations',
+    'assessment',
+    'dominantFeelings',
     'issuesWorkedOn',
+    'keyTherapeuticTechniques',
+    'referralsProvided',
     'homework',
-
-    'followUpStatus',
-    'followUpDate',
-    'followUpGoals',
-
-    'clientAttitude',
-    'emotionalStateStart',
-    'emotionalStateChange',
-    'problemAnalysis',
-    'additionalInsights',
-    'counselorFeelings',
-
+    'planForNextCall',
     'tags',
-    'callQuality',
-
-    'emotionalLift',
-    'reflectiveQuestionsAsked',
     'listeningShare',
+    'reflectiveQuestionsAsked',
+    'openEndedQuestionsAsked',
+    'emotionalLift',
+    'callQuality',
+    'newCallFollowUp',
   ]);
 
 export const DEFAULT_SUMMARY_FIELDS_ARRAY = [
