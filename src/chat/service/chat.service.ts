@@ -627,8 +627,8 @@ export class ChatService {
 
       let noOfNudges = 0;
       let noOfStages = 0;
-      let clientMessages = 0;
-      let counselorMessages = 0;
+      let clientWordCount = 0;
+      let counselorWordCount = 0;
       //format transcript also get the client talking percentage
       let transcript = '';
       let currentStage = '';
@@ -648,20 +648,20 @@ export class ChatService {
           return;
         }
         if (message.senderId == chat.clientId) {
-          clientMessages += StringUtil.wordCount(message.content);
+          clientWordCount += StringUtil.wordCount(message.content);
           transcript += `Client: ${message.content}\n`;
         } else {
-          counselorMessages += StringUtil.wordCount(message.content);
+          counselorWordCount += StringUtil.wordCount(message.content);
           transcript += `Counselor: ${message.content}\n`;
         }
       });
       const clientTalkingPercentage =
-        clientMessages > 0
-          ? clientMessages / (clientMessages + counselorMessages)
+        clientWordCount > 0
+          ? clientWordCount / (clientWordCount + counselorWordCount)
           : 0;
       const counselorTalkingPercentage =
-        counselorMessages > 0
-          ? counselorMessages / (clientMessages + counselorMessages)
+        counselorWordCount > 0
+          ? counselorWordCount / (clientWordCount + counselorWordCount)
           : 0;
       const updates = {
         noOfNudges,
@@ -676,6 +676,8 @@ export class ChatService {
             counselorTalkingPercentage * callDurationInSeconds,
           summaryName: ChatUtil.getSummaryName(chat),
           wordCountByLanguage,
+          clientWordCount,
+          counselorWordCount,
         } as CallInfo,
         endTime: chat.endedAt,
         callDuration: callDurationInSeconds,

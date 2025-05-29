@@ -23,6 +23,12 @@ export class CallInfo {
   counselorTalkingPercentage?: number;
 
   @ApiProperty({ required: false })
+  counselorWordCount?: number;
+
+  @ApiProperty({ required: false })
+  clientWordCount?: number;
+
+  @ApiProperty({ required: false })
   provider?: 'WEBRTC' | 'EXOTEL';
 
   @ApiProperty({ required: false })
