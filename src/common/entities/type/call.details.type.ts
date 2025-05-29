@@ -69,82 +69,78 @@ export type Tag = {
   positivity_rating: number;
 };
 
+export type Language = {
+  language: string;
+  percentage: number;
+};
+
 export type FlattenedSummaryNotePayload = {
-  date_of_session: string | null;
-  new_call_follow_up: string | null; // Adjust to actual type if known (e.g., enum)
-  session_number: string | null;
-  counselor_name: string | null;
-
+  call_id: string | null;
+  call_duration: number | null;
+  call_date: string;
+  call_time: string | null;
   client_id: string | null;
-  gender: string | null; // Replace with `Gender` enum/type if available
+  counsellor: string | null;
+  call_type: string | null;
   age: number | null;
+  gender: string;
+  profession: string | null;
+  relationship_status: string | null;
+  languages: Language[];
   location: string | null;
-  working_status: string | null; // Replace with `WorkingStatus` if defined
-  any_formal_diagnosis: string | null;
-  code_of_concern: string | null;
-
-  key_concerns: string[] | null;
-  dominant_feelings: string[] | null;
-
-  counseling_process_flow: string[] | null;
-  therapeutic_interventions: string[] | null;
-  issues_worked_on: string[] | null;
-  homework: string[] | null;
-
-  follow_up_status: string | null; // Replace with `FollowUpStatus` if available
-  follow_up_date: string | null;
-  follow_up_goals: string[] | null;
-
-  client_attitude: string | null;
-  emotional_state_start: string | null;
-  emotional_state_change: string | null;
-  problem_analysis: string | null;
-  additional_insights: string | null;
-  counselor_feelings: string | null;
-
+  code_of_concern: string;
+  session_summary: string;
+  counseling_process_flow: string | null;
+  key_concerns: string;
+  subjective_observations: string;
+  objective_observations: string;
+  assessment: string;
+  dominant_feelings: string;
+  issues_worked_on: string;
+  key_therapeutic_techniques: string;
+  referrals_provided: string | null;
+  homework: string;
+  plan_for_next_call: string;
   tags: Tag[];
-  call_quality: number;
-  emotional_lift: number;
+  listening_share: number | null;
   reflective_questions_asked: number;
-  listening_share: number;
+  open_ended_questions_asked: number;
+  emotional_lift: string;
+  call_quality: number;
 };
 
 export type FlattenedSummaryNotePayloadCamelCase = {
-  dateOfSession: string | null;
-  newCallFollowUp: string | null; // Adjust to actual type if known (e.g., enum)
-  sessionNumber: string | null;
-  counselorName: string | null;
-
+  callId: string | null;
+  callDuration: number | null;
+  callDate: string;
+  callTime: string | null;
   clientId: string | null;
-  gender: string | null; // Replace with `Gender` enum/type if available
+  counsellor: string | null;
+  callType: string | null;
   age: number | null;
+  gender: string;
+  profession: string | null;
+  relationshipStatus: string | null;
+  languages: Language[];
   location: string | null;
-  workingStatus: string | null; // Replace with `WorkingStatus` if defined
-  anyFormalDiagnosis: string | null;
-  codeOfConcern: string | null;
-
-  keyConcerns: string[] | null;
-  dominantFeelings: string[];
-
-  counselingProcessFlow: string[] | null;
-  therapeuticInterventions: string[] | null;
-  issuesWorkedOn: string[] | null;
-  homework: string[] | null;
-
-  followUpStatus: string | null; // Replace with `FollowUpStatus` if available
-  followUpDate: string | null;
-  followUpGoals: string[] | null;
-
-  clientAttitude: string | null;
-  emotionalStateStart: string | null;
-  emotionalStateChange: string | null;
-  problemAnalysis: string | null;
-  additionalInsights: string | null;
-  counselorFeelings: string | null;
-
-  tags: Tag[]; // Assuming Tag is defined elsewhere
-  callQuality: number;
-  emotionalLift: number;
+  codeOfConcern: string;
+  sessionSummary: string;
+  counselingProcessFlow: string | null;
+  keyConcerns: string;
+  subjectiveObservations: string;
+  objectiveObservations: string;
+  assessment: string;
+  dominantFeelings: string;
+  issuesWorkedOn: string;
+  keyTherapeuticTechniques: string;
+  referralsProvided: string | null;
+  homework: string;
+  planForNextCall: string;
+  tags: Tag[];
+  listeningShare: number | null;
   reflectiveQuestionsAsked: number;
-  listeningShare: number;
+  openEndedQuestionsAsked: number;
+  emotionalLift: string;
+  callQuality: number;
+  newCallFollowUp: string;
 };
