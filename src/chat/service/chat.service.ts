@@ -609,7 +609,9 @@ export class ChatService {
   }
 
   async updateMessageStatistics(chat: Chat) {
-    this.logger.info(`updateMessageStatistics:Start - chatId:${chat.id}`);
+    this.logger.info(
+      `updateMessageStatistics:Start - chatId:${chat.id} | startedAt:${chat.startedAt} | endedAt:${chat.endedAt}`,
+    );
     try {
       const chatId = chat.id;
       const messages = await this.getMessageByChatId(chatId, {
@@ -680,7 +682,7 @@ export class ChatService {
           clientWordCount,
           counselorWordCount,
         } as CallInfo,
-        endTime: chat.endedAt,
+        endTime: endDate,
         callDuration: callDurationInSeconds,
       };
       this.logger.info(
