@@ -41,7 +41,7 @@ export class PlaceController {
 
   @Get()
   @ApiOperation({ summary: 'List all places' })
-  @ApiQuery({ name: 'offset', type: Number, required: false })
+  @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
   @ApiResponse({
     status: 200,
@@ -55,13 +55,11 @@ export class PlaceController {
     },
   })
   async listPlaces(
-    @Query('offset', new DefaultValuePipe(1), ParseIntPipe) offset: number,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
   ): Promise<{ data: Place[]; total: number }> {
-    if (offset < 0) {
-      throw new BadRequestException(
-        'Offset must be greater than or equal to 0',
-      );
+    if (page < 1) {
+      throw new BadRequestException('Page must be greater than or equal to 1');
     }
     if (limit < 1 || limit > 100) {
       throw new BadRequestException('Limit must be between 1 and 100');
