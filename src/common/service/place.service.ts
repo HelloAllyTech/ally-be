@@ -21,14 +21,14 @@ export class PlaceService {
   }
 
   async listPlaces(
-    page: number = 1,
+    offset: number = 1,
     limit: number = 10,
   ): Promise<{ data: Place[]; total: number }> {
     const [data, total] = await this.placeRepository.findAndCount({
       order: {
         city: 'ASC',
       },
-      skip: (page - 1) * limit,
+      skip: (offset - 1) * limit,
       take: limit,
     });
 
