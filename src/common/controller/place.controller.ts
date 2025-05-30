@@ -64,6 +64,6 @@ export class PlaceController {
     if (limit < 1 || limit > 100) {
       throw new BadRequestException('Limit must be between 1 and 100');
     }
-    return this.placeService.listPlaces(offset, limit);
+    return this.placeService.listPlaces(page, limit);
   }
 }
