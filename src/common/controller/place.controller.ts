@@ -58,8 +58,10 @@ export class PlaceController {
     @Query('offset', new DefaultValuePipe(1), ParseIntPipe) offset: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
   ): Promise<{ data: Place[]; total: number }> {
-    if (offset < 1) {
-      throw new BadRequestException('Page must be greater than 0');
+    if (offset < 0) {
+      throw new BadRequestException(
+        'Offset must be greater than or equal to 0',
+      );
     }
     if (limit < 1 || limit > 100) {
       throw new BadRequestException('Limit must be between 1 and 100');
