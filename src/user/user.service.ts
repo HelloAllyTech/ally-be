@@ -4,7 +4,7 @@ import { In, Repository } from 'typeorm';
 import { User } from '../common/entities/user.entity';
 import { QueueService } from '../queue/service/queue.service';
 import { Chat, ChatStatus } from '../common/entities/chat.entity';
-import { UserRole } from '../common/constants/user.constants';
+import { UserRole, UserStatus } from '../common/constants/user.constants';
 import { RedisService } from '../redis/service/redis.service';
 import { ExecutionManager } from '../common/execution/execution-manager';
 
@@ -22,6 +22,24 @@ export class UserService {
       where: { id, tenantId: ExecutionManager.getTenantId() },
     });
     return user || null;
+  }
+
+  async getUserByPhoneNumber(phoneNumber: string): Promise<User | null> {
+    const cachedUser = await this.cache.get(`user_${phoneNumber}`);
+    if (cachedUser) {
+      return JSON.parse(cachedUser);
+    }
+    const user = await this.userRepository.findOne({
+      where: {
+        phone: phoneNumber,
+        tenantId: ExecutionManager.getTenantId(),
+      },
+    });
+    if (user) {
+      await this.cache.set(`user_${phoneNumber}`, JSON.stringify(user));
+      return user;
+    }
+    return null;
   }
 
   async getUsersByPhoneNumbers(phoneNumbers: string[]): Promise<User[] | null> {
@@ -113,19 +131,27 @@ export class UserService {
     phoneNumber,
     name,
     email,
+    status,
+    username,
+    tenantId,
   }: {
     phoneNumber: string;
     role: UserRole;
     name?: string;
     email?: string;
+    status?: UserStatus;
+    username?: string;
+    tenantId?: string;
   }) {
     // TODO: Add phone number to the user table and update this query
     const user = this.userRepository.create({
       role,
       phone: phoneNumber,
       name: name || 'Anonymous user',
-      email: email || 'placeholder@placeholder.com',
-      tenantId: ExecutionManager.getTenantId(),
+      email: email || `${phoneNumber}@placeholder.com`,
+      status: status || UserStatus.ACTIVE,
+      username: username || `${phoneNumber}_user`,
+      tenantId: tenantId || 'anonyumous_tenant',
     });
     return this.userRepository.save(user);
   }

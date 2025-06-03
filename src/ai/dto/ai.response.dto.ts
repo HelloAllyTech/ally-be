@@ -9,6 +9,10 @@ export type EnhanceTextResponse = {
   enhanced_content: string;
 };
 
+export type IdentifySpeakersResponse = {
+  [key: string]: string;
+};
+
 export type TagPositivityRatingsResponse = {
   tags: Tag[];
 };

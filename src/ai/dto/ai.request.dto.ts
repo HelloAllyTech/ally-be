@@ -12,6 +12,15 @@ export type EnhanceTextRequest = {
   content: string;
 };
 
+export type Chat = {
+  role: string;
+  content: string;
+};
+
+export type IdentifySpeakersRequest = {
+  chat_history: Chat[];
+};
+
 export type TagPositivityRatingsRequest = {
   tags: string[];
 };

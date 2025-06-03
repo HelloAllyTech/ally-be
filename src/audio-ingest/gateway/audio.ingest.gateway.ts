@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as WebSocket from 'ws';
 import { LoggerService } from '../../logger/logger.service';
 import { OnGatewayConnection } from '@nestjs/websockets';
+import { AudioIngestService } from '../service/audio-ingest.service';
 
 @Injectable()
 export class AudioIngestGateway implements OnGatewayConnection {
@@ -9,10 +10,12 @@ export class AudioIngestGateway implements OnGatewayConnection {
 
   private readonly logger = LoggerService.getInstance(AudioIngestGateway.name);
 
-  constructor() {
+  constructor(private audioIngestService: AudioIngestService) {
     this.wss = new WebSocket.Server({ noServer: true });
     this.initialize();
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   handleConnection(client: any, ...args: any[]) {
     this.logger.info(
       '3rd-party WS client connected via NestJS gateway' + client.id,
@@ -26,19 +29,18 @@ export class AudioIngestGateway implements OnGatewayConnection {
   initialize(): void {
     this.logger.info('Initializing Audio Ingest Gateway');
 
-    this.wss.on('connection', (ws) => {
+    this.wss.on('connection', async (ws: WebSocket) => {
       let isAlive = true;
-
-      this.logger.info('3rd-party WS client connected');
-
-      ws.send('Hello from the server!');
 
       ws.on('pong', () => {
         isAlive = true;
       });
 
-      ws.on('message', (msg) => {
-        this.logger.info(`Received from 3rd-party: ${msg.toString()}`);
+      ws.on('message', async (msg: any) => {
+        this.logger.info(`Audio Ingest Gateway: Received message`);
+        const messageData = JSON.parse(msg.toString());
+        this.audioIngestService.handleConnectionAlive(ws, messageData);
+        await this.audioIngestService.handleStreamEvent(messageData, ws);
       });
 
       const pingInterval = setInterval(() => {
@@ -53,7 +55,8 @@ export class AudioIngestGateway implements OnGatewayConnection {
 
       ws.on('close', () => {
         clearInterval(pingInterval);
-        this.logger.info('3rd-party WS client disconnected');
+        this.logger.info(`Audio Ingest Gateway: Client disconnected`);
+        // TODO: handle close event
       });
     });
   }

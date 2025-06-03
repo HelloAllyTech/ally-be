@@ -3,7 +3,11 @@ import { MetabaseService } from '../analytics/service/metabase.service';
 import { AppConfigService } from '../config/config.service';
 import { SMSInterface } from '../notification/interface/sms.interface';
 import { Msg91Service } from '../notification/service/msg91.service';
-import { SMSIntegrationEnum } from './provider.enum';
+import {
+  AudioIngestIntegrationEnum,
+  SMSIntegrationEnum,
+} from './provider.enum';
+import { ExotelService } from '../audio-ingest/service/exotel.service';
 export class ProviderFactory {
   public static getSMSFactory() {
     return {
@@ -40,6 +44,25 @@ export class ProviderFactory {
         }
       },
       inject: [AppConfigService, MetabaseService],
+    };
+  }
+
+  public static getAudioIngestFactory() {
+    return {
+      provide: 'AudioIngestInterface',
+      useFactory: async (
+        configService: AppConfigService,
+        exotelService: ExotelService,
+      ) => {
+        const audioIngestIntegration = configService.audioIngest.integration;
+        switch (audioIngestIntegration) {
+          case AudioIngestIntegrationEnum.EXOTEL:
+            return exotelService;
+          default:
+            return exotelService;
+        }
+      },
+      inject: [AppConfigService, ExotelService],
     };
   }
 }

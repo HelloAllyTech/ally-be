@@ -96,6 +96,12 @@ export class AppConfigService {
     };
   }
 
+  get audioIngest() {
+    return {
+      integration: this.configService.get<string>('AUDIO_INGEST_INTEGRATION'),
+    };
+  }
+
   get otp() {
     return {
       ttl: this.configService.get<number>(

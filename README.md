@@ -128,6 +128,9 @@ MSG91_API_KEY=your_msg91_api_key_here
 MSG91_TEMPLATE_ID=your_msg91_template_id_here
 MSG91_API_URL=https://control.msg91.com/api/v5/flow
 
+# AUDIO_INGEST_INTEGRATION
+AUDIO_INGEST_INTEGRATION=EXOTEL
+
 # OTP
 OTP_TTL=300  #in seconds
 

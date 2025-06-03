@@ -37,7 +37,7 @@ import { ChatUtil } from '../util/chat.util';
 import { CommonUtil } from '../../common/util/common.util';
 import { CallInfoDto } from '../dto/chat.response.dto';
 import { CallInfo } from '../dto/call-log.response.dto';
-import { sum } from 'lodash';
+import { SettingsService } from '../../settings/service/settings.service';
 
 @Injectable()
 export class ChatService {
@@ -61,6 +61,7 @@ export class ChatService {
     private readonly cache: RedisService,
     private readonly messageBrokerService: MessageBrokerService,
     private dataSource: DataSource,
+    private settingsService: SettingsService,
 
     //  private kafkaProducerService: KafkaProducerService,
   ) {}
@@ -181,6 +182,94 @@ export class ChatService {
       tenantId: ExecutionManager.getTenantId(),
     });
     return chat;
+  }
+
+  async createChatWithClientAndCounselor(
+    clientId: number,
+    counselorId?: number,
+    tenantId?: string,
+    provider?: 'WEBRTC' | 'EXOTEL',
+  ) {
+    return this.dataSource.transaction(async (entityManager) => {
+      const chatRepo = entityManager.getRepository(Chat) || this.chatRepository;
+      const chatRoomRepo =
+        entityManager.getRepository(ChatRoom) || this.chatRoomRepository;
+
+      const newChatRoom = chatRoomRepo.create({
+        clientId,
+        counselorId,
+        tenantId: tenantId || ExecutionManager.getTenantId(),
+      });
+
+      await chatRoomRepo.save(newChatRoom);
+
+      const chat = chatRepo.create({
+        clientId,
+        counselorId,
+        roomId: newChatRoom.id,
+        status: ChatStatus.ACTIVE,
+        startedAt: new Date(),
+        tenantId: tenantId || ExecutionManager.getTenantId(),
+      });
+
+      await chatRepo.save(chat);
+
+      await this.callDetailsRepository.save({
+        chatId: chat.id,
+        tenantId: tenantId || ExecutionManager.getTenantId(),
+        startTime: new Date(),
+        callInfo: {
+          provider,
+        },
+      });
+
+      return chat;
+    });
+  }
+
+  async createChatForAnyonymousClient(
+    counselorPhone?: string,
+    provider?: 'WEBRTC' | 'EXOTEL',
+  ): Promise<{
+    chatId: number;
+    clientId: number;
+    counselorId: number;
+    tenantId: string;
+  } | null> {
+    if (!counselorPhone) {
+      return null;
+    }
+
+    const counselor =
+      await this.userService.getUserByPhoneNumber(counselorPhone);
+
+    if (!counselor) {
+      return null;
+    }
+
+    const timestamp = Date.now();
+    const clientUniqueId = `client-${timestamp}`;
+    const client = await this.userService.createUser({
+      phoneNumber: clientUniqueId,
+      role: UserRole.CLIENT,
+      email: `${clientUniqueId}@placeholder.com`,
+      username: clientUniqueId,
+      tenantId: counselor.tenantId,
+    });
+
+    const chat = await this.createChatWithClientAndCounselor(
+      client.id,
+      counselor.id,
+      counselor.tenantId,
+      provider,
+    );
+
+    return {
+      chatId: chat.id,
+      clientId: client.id,
+      counselorId: counselor.id,
+      tenantId: counselor.tenantId,
+    };
   }
 
   async getOrCreateChatRoom(userId: number, entityManager?: EntityManager) {
@@ -1083,6 +1172,46 @@ export class ChatService {
       );
     }
     return isPaused;
+  }
+
+  async triggerNudge(
+    newMessage: { content: string; chatId: number; id: number },
+    session: UserChatSessionData,
+    chatId: number,
+  ) {
+    const isNudgePaused = await this.isNudgePaused(chatId);
+    if (isNudgePaused) {
+      this.logger.info(`Nudge is paused for chatId ${chatId}`);
+      return;
+    }
+    const isNudgeEnabled = await this.settingsService.getNudgeStatus();
+    if (!isNudgeEnabled) {
+      this.logger.info(`Nudge is disabled for chatId ${chatId}`);
+      return;
+    }
+    const messages = await this.getChatHistoryForAIService(chatId, {
+      sortBy: 'createdAt',
+      order: 'DESC',
+      limit: 4,
+    });
+
+    const formattedNewMessage = `${session.role}: ${newMessage.content}`;
+
+    this.aiService
+      .getNudge(formattedNewMessage, messages)
+      .then((nudge) => {
+        this.logger.info(
+          `Nudge:${newMessage.content} | chatId :${chatId} | ${nudge?.nudge} | stage: ${nudge?.stage}`,
+        );
+        if (nudge) {
+          this.gateway.handleNudge(nudge, session, newMessage);
+        }
+      })
+      .catch((error) => {
+        this.logger.error(
+          `AI Nudge Error: ${error.message} | chatId : ${chatId} | userId : ${session.userId}`,
+        );
+      });
   }
 
   incrementWordCountByLanguage(

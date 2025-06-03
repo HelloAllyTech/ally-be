@@ -79,4 +79,8 @@ export type DeepgramTranscriptMetadata = {
   currentTranscriptCreatedAt: Date;
   isUtteranceEnd?: boolean;
   wordCountByLanguage?: Record<string, number>;
+  speakerSegments?: {
+    speaker: number;
+    word: string;
+  }[];
 };

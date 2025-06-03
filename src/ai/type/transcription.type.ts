@@ -1,3 +1,6 @@
+import { ConferenceCallSessionData } from '../../audio-ingest/type/audio-ingest.type';
+import { UserChatSessionData } from '../../chat/type/chat.type';
+
 export interface TranscriptionWord {
   word: string;
   start: number;
@@ -31,6 +34,7 @@ export type DeepgramTranscriptResult = {
         confidence: number;
         punctuated_word: string;
         language?: string;
+        speaker: number;
       }[];
     }[];
   };
@@ -56,4 +60,21 @@ export interface DeepgramTranscriptionOptions {
   endpointing?: number;
   utteranceEndMs?: number;
   language?: string;
+  diarize?: boolean;
+  encoding?: 'linear16' | 'mulaw' | 'alaw' | 'opus' | 'flac' | 'amr-wb';
+  sample_rate?: number;
 }
+
+export type TranscriptionSessionData =
+  | UserChatSessionData
+  | ConferenceCallSessionData;
+
+export type SpeakerSegment = {
+  speaker: number;
+  word: string;
+};
+
+export type CombinedSpeakerSegment = {
+  speaker: number;
+  content: string;
+};

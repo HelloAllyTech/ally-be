@@ -1,6 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ITranscriptionService } from '../interfaces/transcription.interface';
-import { UserChatSessionData } from '../../chat/type/chat.type';
+import {
+  DeepgramTranscriptionOptions,
+  TranscriptionSessionData,
+} from '../type/transcription.type';
 
 @Injectable()
 export class TranscriptionService {
@@ -9,31 +12,32 @@ export class TranscriptionService {
     private readonly transcriptionService: ITranscriptionService,
   ) {}
 
-  async startLiveTranscription(
-    session: UserChatSessionData,
+  async startLiveTranscription<T extends TranscriptionSessionData>(
+    session: T,
     chatId: number,
-    callback: (
-      session: UserChatSessionData,
-      chatId: number,
-      transcript: string,
-    ) => void,
+    callback: (session: T, chatId: number, transcript: string) => void,
+    options?: DeepgramTranscriptionOptions,
   ) {
-    await this.transcriptionService.startLiveTranscription(
+    await this.transcriptionService.startLiveTranscription<T>(
       session,
       chatId,
       callback,
+      options,
     );
   }
 
-  async stopLiveTranscription(session: UserChatSessionData) {
-    await this.transcriptionService.stopLiveTranscription(session);
+  async stopLiveTranscription<T extends TranscriptionSessionData>(session: T) {
+    await this.transcriptionService.stopLiveTranscription<T>(session);
   }
 
-  async sendAudio(session: UserChatSessionData, audio: Buffer) {
-    await this.transcriptionService.sendAudio(session, audio);
+  async sendAudio<T extends TranscriptionSessionData>(
+    session: T,
+    audio: Buffer,
+  ) {
+    await this.transcriptionService.sendAudio<T>(session, audio);
   }
 
-  async handleAudioChatMuted(session: UserChatSessionData) {
-    await this.transcriptionService.handleAudioChatMuted(session);
+  async handleAudioChatMuted<T extends TranscriptionSessionData>(session: T) {
+    await this.transcriptionService.handleAudioChatMuted<T>(session);
   }
 }

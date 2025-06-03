@@ -30,7 +30,6 @@ import {
   WithExecutionContext,
 } from '../../common/decorator/execution.context.decorator';
 import { ExecutionManager } from '../../common/execution/execution-manager';
-import { SettingsService } from '../../settings/service/settings.service';
 import { RedisService } from '../../redis/service/redis.service';
 
 @WebSocketGateway({
@@ -50,7 +49,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private transcriptionService: TranscriptionService,
     private config: AppConfigService,
     private publisher: MessageBrokerService,
-    private settingsService: SettingsService,
     private cacheService: RedisService,
   ) {}
 
@@ -194,7 +192,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.setAuthContext(session);
     const message = await this.persistAndBroadcastMessage(session, data);
     this.logger.info(`🔄 Triggering nudge for chatId: ${data.chatId}`);
-    this.triggerNudge(message, session, data.chatId);
+    this.chatService.triggerNudge(message, session, data.chatId);
   }
 
   private async prepareMessage(
@@ -454,46 +452,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(target).emit(event, data);
   }
 
-  private async triggerNudge(
-    newMessage: { content: string; chatId: number; id: number },
-    session: UserChatSessionData,
-    chatId: number,
-  ) {
-    const isNudgePaused = await this.chatService.isNudgePaused(chatId);
-    if (isNudgePaused) {
-      this.logger.info(`Nudge is paused for chatId ${chatId}`);
-      return;
-    }
-    const isNudgeEnabled = await this.settingsService.getNudgeStatus();
-    if (!isNudgeEnabled) {
-      this.logger.info(`Nudge is disabled for chatId ${chatId}`);
-      return;
-    }
-    const messages = await this.chatService.getChatHistoryForAIService(chatId, {
-      sortBy: 'createdAt',
-      order: 'DESC',
-      limit: 4,
-    });
-    const formattedNewMessage = `${session.role}: ${newMessage.content}`;
-
-    this.aiService
-      .getNudge(formattedNewMessage, messages)
-      .then((nudge) => {
-        this.logger.info(
-          `Nudge:${newMessage.content} | chatId :${chatId} | ${nudge?.nudge} | stage: ${nudge?.stage}`,
-        );
-        if (nudge) {
-          this.handleNudge(nudge, session, newMessage);
-        }
-      })
-      .catch((error) => {
-        this.logger.error(
-          `AI Nudge Error: ${error.message} | chatId : ${chatId} | userId : ${session.userId}`,
-        );
-      });
-  }
-
-  private async handleNudge(
+  async handleNudge(
     nudgeResponse: NudgeResponse,
     session: UserChatSessionData,
     parentMessage: { content: string; chatId: number; id: number },
@@ -628,10 +587,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           createdAt: metadata?.currentTranscriptCreatedAt,
         },
       );
-      this.triggerNudge(completedMessage, session, chatId);
+      this.chatService.triggerNudge(completedMessage, session, chatId);
     } else if (!this.config.ai.sentenceCompletionRequired) {
       const savedMessage = await this.chatService.save(message);
-      this.triggerNudge(savedMessage, session, chatId);
+      this.chatService.triggerNudge(savedMessage, session, chatId);
     }
   }
 
@@ -675,7 +634,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           createdAt: metadata?.currentTranscriptCreatedAt,
         },
       );
-      this.triggerNudge(completedMessage, session, chatId);
+      this.chatService.triggerNudge(completedMessage, session, chatId);
     }
   }
 

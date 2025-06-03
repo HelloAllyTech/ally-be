@@ -2,14 +2,17 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { AppConfigService } from '../../config/config.service';
 import {
+  Chat,
   EnhanceTextRequest,
   GenerateSummaryRequest,
+  IdentifySpeakersRequest,
   MessageRequest,
   TagPositivityRatingsRequest,
 } from '../dto/ai.request.dto';
 import {
   EnhanceTextResponse,
   GenerateSummaryResponse,
+  IdentifySpeakersResponse,
   TagPositivityRatingsResponse,
 } from '../dto/ai.response.dto';
 import { createClient, DeepgramClient } from '@deepgram/sdk';
@@ -78,6 +81,22 @@ export class AiService {
     } catch (error) {
       this.logger.error(`AI Service Error: ${error.message}`);
       throw new Error('AI nudge request failed');
+    }
+  }
+
+  async identifySpeakersFromConversation(chatHistory: Chat[]) {
+    try {
+      const request: IdentifySpeakersRequest = {
+        chat_history: chatHistory,
+      };
+      const response = await this.makeRequest<
+        IdentifySpeakersResponse,
+        IdentifySpeakersRequest
+      >(ENDPOINTS.IDENTIFY_SPEAKERS, request);
+      return response;
+    } catch (error) {
+      this.logger.error(`AI Service Error: ${error.message}`);
+      throw new Error('AI identify speakers request failed');
     }
   }
 
