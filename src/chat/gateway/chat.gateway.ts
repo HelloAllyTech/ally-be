@@ -313,9 +313,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client: Socket,
     { chatId, audioData }: { chatId: number; audioData: Buffer },
   ) {
-    const isNudgePaused = await this.chatService.isNudgePaused(chatId);
-    if (isNudgePaused) {
-      this.logger.info(`Nudge is paused for chatId ${chatId}`);
+    const isChatPaused = await this.chatService.isChatPaused(chatId);
+    if (isChatPaused) {
+      this.logger.info(`Chat is paused for chatId ${chatId}`);
       return;
     }
     try {
@@ -372,7 +372,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeMessage(ChatEvents.AUDIO_CHAT_NUDGE_PAUSED)
+  @SubscribeMessage(ChatEvents.AUDIO_CHAT_PAUSED)
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleAudioChatNudgePaused(
     client: Socket,
@@ -385,10 +385,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     this.setAuthContext(session);
-    await this.chatService.pauseOrResumeNudge(chatId, true);
+    await this.chatService.pauseOrResumeChat(chatId, true);
   }
 
-  @SubscribeMessage(ChatEvents.AUDIO_CHAT_NUDGE_RESUMED)
+  @SubscribeMessage(ChatEvents.AUDIO_CHAT_RESUMED)
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleAudioChatNudgeResumed(
     client: Socket,
@@ -401,7 +401,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     this.setAuthContext(session);
-    await this.chatService.pauseOrResumeNudge(chatId, false);
+    await this.chatService.pauseOrResumeChat(chatId, false);
   }
 
   @SubscribeMessage(ChatEvents.WEBRTC_OFFER)

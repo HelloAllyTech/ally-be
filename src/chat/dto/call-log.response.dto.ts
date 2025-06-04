@@ -44,7 +44,7 @@ export class CallInfo {
   summaryName?: string;
 
   @ApiProperty({ required: false })
-  pauseNudge?: boolean;
+  pauseChat?: boolean;
 }
 export class CallDetails {
   @ApiProperty({ required: false })

@@ -581,7 +581,16 @@ export class ChatService {
     if (!latestChat) {
       return [];
     }
-    return this.getChatResponse(latestChat);
+    const chatResponse = await this.getChatResponse(latestChat);
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: {
+        chatId: latestChat.id,
+      },
+    });
+    return {
+      ...chatResponse,
+      provider: callDetails?.callInfo?.provider,
+    };
   }
 
   async getChatResponse(chat: Chat, entityManager?: EntityManager) {
@@ -608,11 +617,17 @@ export class ChatService {
     return payload;
   }
 
+  async isChatEnded(chatId: number) {
+    const chat = await this.getChatById(chatId);
+    return chat?.status === ChatStatus.ENDED;
+  }
+
   async endChat(id: number, chatId: number) {
     await this.chatRepository.update(chatId, {
       status: ChatStatus.ENDED,
       endedAt: new Date(),
     });
+    this.cache.del(`chat:${chatId}`);
     const updatedChat = await this.getChatById(chatId);
     if (updatedChat) {
       this.gateway.broadcastChatEndedEvent(updatedChat);
@@ -630,7 +645,14 @@ export class ChatService {
     if (!chats?.length) {
       return [];
     }
-    return this.getChatResponse(chats[0]);
+    const chatResponse = await this.getChatResponse(chats[0]);
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId: chats[0].id, tenantId: ExecutionManager.getTenantId() },
+    });
+    return {
+      ...chatResponse,
+      provider: callDetails?.callInfo?.provider,
+    };
   }
 
   async getMessages(
@@ -1127,7 +1149,7 @@ export class ChatService {
     return { chat, callDetails };
   }
 
-  async pauseOrResumeNudge(chatId: number, pause: boolean) {
+  async pauseOrResumeChat(chatId: number, pause: boolean) {
     const callDetails = await this.callDetailsRepository.findOne({
       where: {
         chatId,
@@ -1141,7 +1163,7 @@ export class ChatService {
 
     const updatedCallInfo = {
       ...callDetails.callInfo,
-      pauseNudge: pause,
+      pauseChat: pause,
     };
 
     await this.callDetailsRepository.update(
@@ -1149,24 +1171,24 @@ export class ChatService {
       { callInfo: updatedCallInfo },
     );
     await this.cache.set(
-      `nudge-paused-${chatId}`,
+      `chat-paused-${chatId}`,
       String(pause),
       TIME.DAY_IN_SECONDS,
     );
   }
 
-  async isNudgePaused(chatId: number) {
-    const cachedValue = await this.cache.get(`nudge-paused-${chatId}`);
+  async isChatPaused(chatId: number) {
+    const cachedValue = await this.cache.get(`chat-paused-${chatId}`);
     if (cachedValue) {
       return cachedValue === 'true';
     }
     const callDetails = await this.callDetailsRepository.findOne({
       where: { chatId, tenantId: ExecutionManager.getTenantId() },
     });
-    const isPaused = callDetails?.callInfo?.pauseNudge;
+    const isPaused = callDetails?.callInfo?.pauseChat;
     if (isPaused !== undefined) {
       await this.cache.set(
-        `nudge-paused-${chatId}`,
+        `chat-paused-${chatId}`,
         String(isPaused),
         TIME.DAY_IN_SECONDS,
       );
@@ -1179,9 +1201,9 @@ export class ChatService {
     session: UserChatSessionData,
     chatId: number,
   ) {
-    const isNudgePaused = await this.isNudgePaused(chatId);
-    if (isNudgePaused) {
-      this.logger.info(`Nudge is paused for chatId ${chatId}`);
+    const isChatPaused = await this.isChatPaused(chatId);
+    if (isChatPaused) {
+      this.logger.info(`Chat is paused for chatId ${chatId}`);
       return;
     }
     const isNudgeEnabled = await this.settingsService.getNudgeStatus();

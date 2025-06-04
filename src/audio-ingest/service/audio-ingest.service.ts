@@ -18,8 +18,8 @@ export class AudioIngestService {
     return this.audioIngestInterface.startCall(msg, ws);
   }
 
-  handleAudioMessage(msg: any) {
-    return this.audioIngestInterface.handleAudioMessage(msg);
+  handleAudioMessage(msg: any, ws: WebSocket) {
+    return this.audioIngestInterface.handleAudioMessage(msg, ws);
   }
 
   endCall(clientId: string): Promise<void> {

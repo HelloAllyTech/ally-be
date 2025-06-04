@@ -323,7 +323,7 @@ export class ExotelService implements AudioIngestInterface {
     }
 
     if (messageData.event === ExotelStreamEvents.MEDIA) {
-      await this.handleAudioMessage(messageData);
+      await this.handleAudioMessage(messageData, ws);
     }
 
     if (messageData.event === ExotelStreamEvents.STOP) {
@@ -416,7 +416,7 @@ export class ExotelService implements AudioIngestInterface {
   }
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
-  async handleAudioMessage(msg: any) {
+  async handleAudioMessage(msg: any, ws: WebSocket) {
     const streamSid = msg.stream_sid;
 
     this.logger.info(
@@ -426,6 +426,19 @@ export class ExotelService implements AudioIngestInterface {
     const session = this.sessions[streamSid];
     if (!session) {
       this.logger.warn(`Exotel: No session found for stream_sid: ${streamSid}`);
+      return;
+    }
+
+    const isChatPaused = await this.chatService.isChatPaused(session.chatId);
+    if (isChatPaused) {
+      this.logger.info(`Exotel: Chat is paused for chatId: ${session.chatId}`);
+      return;
+    }
+
+    const isChatEnded = await this.chatService.isChatEnded(session.chatId);
+    if (isChatEnded) {
+      this.logger.info(`Exotel: Chat is ended for chatId: ${session.chatId}`);
+      ws.terminate();
       return;
     }
 

@@ -12,8 +12,8 @@ export type ConferenceCallSessionData = {
   };
 };
 
-export const ExotelStreamEvents = {
-  START: 'start',
-  MEDIA: 'media',
-  STOP: 'stop',
-};
+export enum ExotelStreamEvents {
+  START = 'start',
+  MEDIA = 'media',
+  STOP = 'stop',
+}
