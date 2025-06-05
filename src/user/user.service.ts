@@ -112,6 +112,7 @@ export class UserService {
       email: user.email,
       role: user.role,
       tenantId: user.tenantId,
+      phone: user.phone,
     };
   }
 
