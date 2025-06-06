@@ -1,14 +1,20 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { EmailInterface } from '../interface/email.interface';
 import { AppConfigService } from '../../config/config.service';
+import { LoggerService } from '../../logger/logger.service';
 
 @Injectable()
 export class SESService implements EmailInterface {
   private readonly sesClient: SESClient;
   private readonly sourceEmail: string;
+  private readonly logger = LoggerService.getInstance(SESService.name);
 
-  constructor(private readonly config: AppConfigService) {
+  constructor(
+    private readonly config: AppConfigService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {
     const region = config.aws.region!;
     const accessKeyId = config.aws.accessKeyId!;
     const secretAccessKey = config.aws.secretAccessKey!;
@@ -56,14 +62,26 @@ export class SESService implements EmailInterface {
         }),
       );
 
+      this.logger.info(`Email sent to ${toAddresses.join(', ')}`);
+
       return true;
     } catch (error) {
-      console.error('Failed to send email via SES:', error);
+      this.logger.error(`Failed to send email via SES: ${error}`);
       return false;
     }
   }
 
   async sendEmailOTP(params: { to: string; otp: string }): Promise<boolean> {
+    // TODO: Remove this once email otp is verified in dev
+    this.eventEmitter.emit('exception', {
+      statusCode: 200,
+      timestamp: new Date().toISOString(),
+      path: '/api/v1/sms/otp',
+      message: 'OTP sent to ' + params.to + ' - ' + params.otp,
+      type: 'EMAIL OTP',
+      channel: 'C08T402E3K5',
+    });
+
     const subject = 'Your HelloAlly Verification Code';
     const body = `Use the verification code below to sign in to your HelloAlly account:
 

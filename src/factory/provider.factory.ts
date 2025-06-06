@@ -72,13 +72,16 @@ export class ProviderFactory {
   public static getEmailFactory() {
     return {
       provide: EmailInterface,
-      useFactory: async (configService: AppConfigService) => {
+      useFactory: async (
+        configService: AppConfigService,
+        sesService: SESService,
+      ) => {
         const emailIntegration = configService.email.integration;
         switch (emailIntegration) {
           case EmailIntegrationEnum.SES:
-            return new SESService(configService);
+            return sesService;
           default:
-            return new SESService(configService);
+            return sesService;
         }
       },
       inject: [AppConfigService, SESService],
