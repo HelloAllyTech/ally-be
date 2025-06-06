@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class LoginDto {
@@ -26,8 +26,16 @@ export class GenerateOtpDto {
     example: '+1234567890',
   })
   @IsString()
-  @IsNotEmpty()
-  phone!: string;
+  @IsOptional()
+  phone?: string;
+
+  @ApiProperty({
+    description: 'Email for OTP generation',
+    example: 'john_doe@example.com',
+  })
+  @IsString()
+  @IsOptional()
+  email?: string;
 }
 
 export class VerifyOtpDto {
@@ -36,8 +44,8 @@ export class VerifyOtpDto {
     example: '+1234567890',
   })
   @IsString()
-  @IsNotEmpty()
-  phone!: string;
+  @IsOptional()
+  phone?: string;
 
   @ApiProperty({
     description: 'OTP for verification',
@@ -46,4 +54,12 @@ export class VerifyOtpDto {
   @IsString()
   @IsNotEmpty()
   otp!: string;
+
+  @ApiProperty({
+    description: 'Email for OTP verification',
+    example: 'john_doe@example.com',
+  })
+  @IsString()
+  @IsOptional()
+  email?: string;
 }

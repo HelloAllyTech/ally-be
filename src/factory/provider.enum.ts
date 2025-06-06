@@ -6,3 +6,7 @@ export enum SMSIntegrationEnum {
 export enum AudioIngestIntegrationEnum {
   EXOTEL = 'EXOTEL',
 }
+
+export enum EmailIntegrationEnum {
+  SES = 'SES',
+}

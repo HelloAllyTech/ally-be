@@ -66,6 +66,7 @@ export class AuthService {
     const user = await this.userRepository.findOneOrFail({
       where: { id: userId },
     });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...result } = user;
     return result;
   }
@@ -220,6 +221,7 @@ export class AuthService {
     });
 
     // Remove password from response
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...userWithoutPassword } = savedUser;
     return userWithoutPassword;
   }
@@ -299,54 +301,80 @@ export class AuthService {
     return [...permissions];
   }
 
-  async generateOtp(phone: string) {
+  async generateOtp(phone?: string, email?: string) {
+    if (!email && !phone) {
+      throw new BadRequestException('Email or phone is required');
+    }
     const user = await this.userRepository.findOne({
-      where: { phone: phone },
+      where: [{ phone: phone }, { email: email }],
     });
     if (!user) {
       this.logger.error(`User not found for phone ${phone}`);
       return true; // to prevent user enumeration
       //throw new BadRequestException('User not found');
     }
+
+    if (!user.email) {
+      this.logger.error(`User ${user.id} has no email`);
+      return true;
+    }
     const otp = AuthUtil.generateOtp();
-    await this.cache.set(this.getOtpKey(phone), otp, this.OTP_TTL);
+    await this.cache.set(this.getOtpKey(user.email), otp, this.OTP_TTL);
 
     // send otp to user
     this.eventEmitter.emit('otp.generated', {
-      phone,
+      email: user.email,
       otp,
     });
     return true;
   }
 
-  async verifyOtp(phone: string, otp: string) {
-    const cachedOtp = await this.cache.get(this.getOtpKey(phone));
+  async verifyOtp(otp: string, phone?: string, email?: string) {
+    if (!email && !phone) {
+      throw new BadRequestException('Email or phone is required');
+    }
+
+    let user;
+    if (!email) {
+      user = await this.userRepository.findOne({
+        where: { phone },
+      });
+      if (!user || !user.email) {
+        throw new BadRequestException('User not found');
+      }
+      email = user.email;
+    }
+
+    const cachedOtp = await this.cache.get(this.getOtpKey(email));
     if (cachedOtp !== otp) {
       throw new BadRequestException('Invalid OTP');
     }
-    await this.cache.del(this.getOtpKey(phone));
+    await this.cache.del(this.getOtpKey(email));
 
     if (cachedOtp === otp) {
       // generate token
-      const user = await this.userRepository.findOne({
-        where: { phone: phone },
-      });
+      if (!user) {
+        user = await this.userRepository.findOne({
+          where: { email },
+        });
+      }
       if (!user) {
         throw new BadRequestException('User not found');
       }
       const tokens = await this.generateTokens(user);
       return {
         user: {
-          id: user.id,
-          username: user.username,
-          role: user.role,
+          id: user!.id,
+          username: user!.username,
+          role: user!.role,
         },
         ...tokens,
         tokenType: 'bearer',
       };
     }
   }
-  private getOtpKey(phone: string) {
-    return `otp:${phone}`;
+
+  private getOtpKey(email: string) {
+    return `otp:${email}`;
   }
 }

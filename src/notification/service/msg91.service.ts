@@ -3,8 +3,8 @@ import { SMSInterface } from '../interface/sms.interface';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import axios from 'axios';
-import { MSG91_SMS_DTO } from '../dto/sms.dto';
-import { SlackService } from './slack.service';
+// import { MSG91_SMS_DTO } from '../dto/sms.dto';
+// import { SlackService } from './slack.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
