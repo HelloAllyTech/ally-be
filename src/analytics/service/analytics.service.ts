@@ -3,10 +3,16 @@ import { AnalyticsInterface } from '../interface/analytics.interface';
 import { DashboardDto } from '../type/analytics.type';
 import { In, Repository } from 'typeorm';
 import { Dashboard } from '../../common/entities/dashboard.entity';
+import { Chat } from '../../common/entities/chat.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { GroupService } from '../../user/group.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { AnalyticsUtil } from '../util/analytics.util';
+import {
+  CounselorStatsQueryDto,
+  CounselorStatsResponseDto,
+} from '../validation/analytics.validation';
+
 @Injectable()
 export class AnalyticsService {
   constructor(
@@ -14,6 +20,8 @@ export class AnalyticsService {
     private readonly analyticsInterface: AnalyticsInterface,
     @InjectRepository(Dashboard)
     private readonly dashboardRepository: Repository<Dashboard>,
+    @InjectRepository(Chat)
+    private readonly chatRepository: Repository<Chat>,
     private readonly groupService: GroupService,
   ) {}
   async refreshDashboardUrl(dashboardId: string) {
@@ -76,5 +84,59 @@ export class AnalyticsService {
         tenantId: ExecutionManager.getTenantId(),
       },
     });
+  }
+
+  async getCounselorStats(
+    queryParams: CounselorStatsQueryDto,
+    userId: string,
+  ): Promise<CounselorStatsResponseDto[]> {
+    const query = this.chatRepository
+      .createQueryBuilder('chat')
+      .innerJoin('users', 'user', 'user.id = chat.counselorId')
+      .innerJoin('call_details', 'callDetails', 'callDetails.chatId = chat.id')
+      .select('user.name', 'counselorName')
+      .addSelect(
+        `SUM(("callDetails"."callInfo" ->> 'clientTalkingTime')::float)`,
+        'counselorListeningDuration',
+      )
+      .addSelect(
+        `SUM(("callDetails"."callInfo" ->> 'counselorTalkingTime')::float)`,
+        'counselorSharingDuration',
+      )
+      .where(`callDetails.callInfo ->> 'clientTalkingTime' IS NOT NULL`)
+      .andWhere(`(callDetails.callInfo ->> 'clientTalkingTime')::float > 0`)
+      .andWhere(`callDetails.callInfo ->> 'counselorTalkingTime' IS NOT NULL`)
+      .andWhere(`(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`)
+      .groupBy('user.name')
+      .orderBy('user.name', 'ASC');
+
+    if (queryParams.startDate && queryParams.endDate) {
+      query.andWhere(
+        '"callDetails"."createdAt" BETWEEN :startDate AND :endDate',
+        {
+          startDate: queryParams.startDate,
+          endDate: queryParams.endDate,
+        },
+      );
+    } else if (queryParams.startDate) {
+      query.andWhere('"callDetails"."createdAt" >= :startDate', {
+        startDate: queryParams.startDate,
+      });
+    } else if (queryParams.endDate) {
+      query.andWhere('"callDetails"."createdAt" <= :endDate', {
+        endDate: queryParams.endDate,
+      });
+    }
+
+    query.andWhere('user.id = :userId', { userId: parseInt(userId) });
+
+    const result = await query.getRawMany();
+
+    return result.map((row: any) => ({
+      counselorName: row.counselorName,
+      counselorListeningDuration:
+        parseFloat(row.counselorListeningDuration) || 0,
+      counselorSharingDuration: parseFloat(row.counselorSharingDuration) || 0,
+    }));
   }
 }

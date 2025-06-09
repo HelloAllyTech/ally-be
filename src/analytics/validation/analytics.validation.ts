@@ -5,6 +5,7 @@ import {
   IsObject,
   IsNotEmpty,
   IsArray,
+  IsDateString,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
@@ -51,4 +52,22 @@ export class DashboardIdParamDto {
   @IsString()
   @IsNotEmpty()
   dashboardId!: string;
+}
+
+export class CounselorStatsQueryDto {
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+
+export class CounselorStatsResponseDto {
+  counselorName!: string;
+
+  counselorListeningDuration!: number;
+
+  counselorSharingDuration!: number;
 }

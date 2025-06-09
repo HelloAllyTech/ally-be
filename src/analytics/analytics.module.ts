@@ -7,9 +7,14 @@ import { ProviderFactory } from '../factory/provider.factory';
 import { UserModule } from '../user/user.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Dashboard } from '../common/entities/dashboard.entity';
+import { Chat } from '../common/entities/chat.entity';
 
 @Module({
-  imports: [AppConfigModule, UserModule, TypeOrmModule.forFeature([Dashboard])],
+  imports: [
+    AppConfigModule,
+    UserModule,
+    TypeOrmModule.forFeature([Dashboard, Chat]),
+  ],
   controllers: [AnalyticsController],
   providers: [
     AnalyticsService,
