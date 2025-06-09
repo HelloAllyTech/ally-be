@@ -172,15 +172,17 @@ export class AuthService {
   }
 
   async signup(userData: UserCreateDto): Promise<Omit<User, 'password'>> {
-    // TODO: Revisit this once we have a phone number in table & cofnirmation on how the flow works with admins
-    // Check if user with email already exists
+    // Check if user with email or phone already exists
     const existingUser = await this.userRepository.findOne({
-      where: { email: userData.email },
+      where: [{ email: userData.email }, { phone: userData.phone }],
+      select: ['email', 'phone'],
     });
 
-    // can cause user enumeration
     if (existingUser) {
-      throw new BadRequestException('Email already registered');
+      if (existingUser.email === userData.email) {
+        throw new BadRequestException('Email already registered');
+      }
+      throw new BadRequestException('Phone number already registered');
     }
 
     // Hash password
