@@ -63,7 +63,7 @@ export class AnalyticsController {
   async getCounselorStats(
     @Query() queryParams: CounselorStatsQueryDto,
     @Req() req: { user: { id: string } },
-  ): Promise<CounselorStatsResponseDto[]> {
+  ): Promise<CounselorStatsResponseDto> {
     return this.analyticsService.getCounselorStats(queryParams, req.user.id);
   }
 }

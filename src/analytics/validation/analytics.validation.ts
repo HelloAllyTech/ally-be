@@ -70,4 +70,6 @@ export class CounselorStatsResponseDto {
   counselorListeningDuration!: number;
 
   counselorSharingDuration!: number;
+
+  counselorSharingPercentage!: number;
 }

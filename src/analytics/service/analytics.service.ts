@@ -89,7 +89,7 @@ export class AnalyticsService {
   async getCounselorStats(
     queryParams: CounselorStatsQueryDto,
     userId: string,
-  ): Promise<CounselorStatsResponseDto[]> {
+  ): Promise<CounselorStatsResponseDto> {
     const query = this.chatRepository
       .createQueryBuilder('chat')
       .innerJoin('users', 'user', 'user.id = chat.counselorId')
@@ -130,13 +130,30 @@ export class AnalyticsService {
 
     query.andWhere('user.id = :userId', { userId: parseInt(userId) });
 
-    const result = await query.getRawMany();
+    const result = await query.getRawOne();
 
-    return result.map((row: any) => ({
-      counselorName: row.counselorName,
-      counselorListeningDuration:
-        parseFloat(row.counselorListeningDuration) || 0,
-      counselorSharingDuration: parseFloat(row.counselorSharingDuration) || 0,
-    }));
+    if (!result) {
+      throw new NotFoundException('Counselor stats not found');
+    }
+
+    const counselorListeningDuration =
+      parseFloat(result?.counselorListeningDuration) || 0;
+    const counselorSharingDuration =
+      parseFloat(result?.counselorSharingDuration) || 0;
+    const totalTalkingTime =
+      counselorListeningDuration + counselorSharingDuration;
+    const counselorSharingPercentage =
+      totalTalkingTime > 0
+        ? (counselorSharingDuration / totalTalkingTime) * 100
+        : 0;
+
+    return {
+      counselorName: result.counselorName,
+      counselorListeningDuration,
+      counselorSharingDuration,
+      counselorSharingPercentage: parseFloat(
+        counselorSharingPercentage.toFixed(2),
+      ),
+    };
   }
 }
