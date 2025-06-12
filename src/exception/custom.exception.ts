@@ -38,7 +38,7 @@ export class NotFoundException extends CustomException {
 }
 
 export class ForbiddenException extends CustomException {
-  constructor(message: string, error?: any) {
+  constructor(message: string) {
     super(message, HttpStatus.FORBIDDEN);
   }
 }

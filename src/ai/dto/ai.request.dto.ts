@@ -24,3 +24,25 @@ export type IdentifySpeakersRequest = {
 export type TagPositivityRatingsRequest = {
   tags: string[];
 };
+
+export interface AddReferenceDocumentRequest {
+  document_id: string;
+  heading: string;
+  content: string;
+  category: string;
+  tags?: string[];
+  tenant_id: string;
+}
+
+export interface SearchReferenceDocumentsRequest {
+  query: string;
+  limit?: number;
+  document_ids?: string[];
+  filters?: {
+    category?: string;
+    tags?: string[];
+    tenant_id?: string;
+  };
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+}

@@ -23,6 +23,7 @@ import { ExecutionContextMiddleware } from './common/execution/execution-context
 import { TenantModule } from './tenant/tenant.module';
 import { CommonModule } from './common/common.module';
 import { SettingsModule } from './settings/settings.module';
+import { ReferenceDocumentModule } from './reference-document/reference-document.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { SettingsModule } from './settings/settings.module';
     TenantModule,
     CommonModule,
     SettingsModule,
+    ReferenceDocumentModule,
   ],
   controllers: [],
   providers: [

@@ -16,3 +16,28 @@ export type IdentifySpeakersResponse = {
 export type TagPositivityRatingsResponse = {
   tags: Tag[];
 };
+
+export interface AddReferenceDocumentResponse {
+  id: string;
+  heading: string;
+  content: string;
+  category: string;
+  tags?: string[];
+  tenant_id: string;
+}
+
+export interface SearchReferenceDocumentResult {
+  id: string;
+  heading: string;
+  content: string;
+  category: string;
+  tags: string[];
+  tenant_id: string;
+  score: number;
+}
+
+export interface SearchReferenceDocumentsResponse {
+  documents: SearchReferenceDocumentResult[];
+  total: number;
+  limit: number;
+}

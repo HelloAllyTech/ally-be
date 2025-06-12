@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import { AppConfigService } from '../../config/config.service';
 import {
@@ -8,12 +8,16 @@ import {
   IdentifySpeakersRequest,
   MessageRequest,
   TagPositivityRatingsRequest,
+  AddReferenceDocumentRequest,
+  SearchReferenceDocumentsRequest,
 } from '../dto/ai.request.dto';
 import {
   EnhanceTextResponse,
   GenerateSummaryResponse,
   IdentifySpeakersResponse,
   TagPositivityRatingsResponse,
+  AddReferenceDocumentResponse,
+  SearchReferenceDocumentsResponse,
 } from '../dto/ai.response.dto';
 import { createClient, DeepgramClient } from '@deepgram/sdk';
 import { ENDPOINTS } from '../constants/endpoints.constants';
@@ -63,6 +67,7 @@ export class AiService {
   async getNudge(
     newMessage: string,
     chat_history: MessageRequest[],
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     requireNudge = false,
   ) {
     try {
@@ -126,6 +131,27 @@ export class AiService {
       TagPositivityRatingsResponse,
       TagPositivityRatingsRequest
     >(ENDPOINTS.TAG_POSITIVITY_RATINGS, request);
+    return response;
+  }
+
+  async addReferenceDocument(document: AddReferenceDocumentRequest) {
+    const request = {
+      ...document,
+    };
+    const response = await this.makeRequest<
+      AddReferenceDocumentResponse,
+      AddReferenceDocumentRequest
+    >(ENDPOINTS.ADD_REFERENCE_DOCUMENT, request, true);
+    return response;
+  }
+
+  async searchReferenceDocuments(
+    searchRequest: SearchReferenceDocumentsRequest,
+  ) {
+    const response = await this.makeRequest<
+      SearchReferenceDocumentsResponse,
+      SearchReferenceDocumentsRequest
+    >(ENDPOINTS.SEARCH_REFERENCE_DOCUMENTS, searchRequest, true);
     return response;
   }
 
