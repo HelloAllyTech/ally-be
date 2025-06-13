@@ -30,6 +30,9 @@ export class ReferenceDocument extends BaseWithoutTenantEntity {
   @Column({ default: false })
   isPublic!: boolean;
 
+  @Column({ nullable: true })
+  organizationId?: string;
+
   @Column({ default: false })
   isArchived!: boolean;
 

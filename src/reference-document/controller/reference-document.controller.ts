@@ -1,10 +1,11 @@
-import { Body, Controller, Post, Put, Param } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards, Param, Put } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiTags,
   ApiSecurity,
 } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ReferenceDocumentService } from '../service/reference-document.service';
 import {
   AddDocumentDto,
@@ -20,6 +21,7 @@ import { UserRole } from '../../common/constants/user.constants';
 @ApiBearerAuth()
 @ApiSecurity('access-token')
 @Controller('/v1/reference-document')
+@UseGuards(JwtAuthGuard)
 export class ReferenceDocumentController {
   constructor(private readonly documentService: ReferenceDocumentService) {}
 
@@ -34,9 +36,18 @@ export class ReferenceDocumentController {
   }
 
   @Post('search/public')
-  @ApiOperation({ summary: 'Search reference documents' })
-  async searchDocuments(@Body() searchDto: SearchDocumentsDto) {
+  @ApiOperation({ summary: 'Search public reference documents' })
+  async searchPublicDocuments(@Body() searchDto: SearchDocumentsDto) {
     return this.documentService.searchPublicDocuments(searchDto);
+  }
+
+  @Post('search')
+  @ApiOperation({
+    summary: 'Search organization reference documents ',
+  })
+  @AuthRoles(UserRole.COUNSELOR)
+  async searchTenantDocuments(@Body() searchDto: SearchDocumentsDto) {
+    return this.documentService.searchTenantDocuments(searchDto);
   }
 
   @Put(':id')

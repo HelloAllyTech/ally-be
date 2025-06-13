@@ -11,9 +11,14 @@ import {
   UpdateReferenceDocumentDto,
 } from '../dto/reference-document.dto';
 import { AiService } from '../../ai/service/ai.service';
+import {
+  SearchOperationFailedException,
+  DocumentUpdateFailedException,
+} from '../exception/reference-document.exception';
 import { ExecutionManager } from '../../common/execution/execution-manager';
-import { SearchOperationFailedException } from '../exception/reference-document.exception';
 import { LoggerService } from '../../logger/logger.service';
+import { AddReferenceDocumentRequest } from '../../ai/dto/ai.request.dto';
+import { OrganizationRequiredException } from '../../exception/custom.exception';
 
 @Injectable()
 export class ReferenceDocumentService {
@@ -28,41 +33,55 @@ export class ReferenceDocumentService {
   ) {}
 
   async addReferenceDocument(userId: number, dto: AddDocumentDto) {
+    const organizationId = ExecutionManager.getTenantId();
+
+    if (!dto.isPublic && !organizationId) {
+      throw new OrganizationRequiredException();
+    }
+
     const document = this.referenceDocumentRepository.create({
       ...dto,
       createdBy: userId,
       uploadStatus: DocumentUploadStatus.PENDING,
+      organizationId: dto.isPublic ? undefined : organizationId,
     });
 
     const savedDocument = await this.referenceDocumentRepository.save(document);
 
-    const request = {
+    const request: AddReferenceDocumentRequest = {
       document_id: savedDocument.id,
       heading: savedDocument.heading,
       content: savedDocument.content,
       category: savedDocument.category,
-      tags: savedDocument.tags,
-      tenant_id: ExecutionManager.getTenantId()!,
+      tags: savedDocument.tags || [],
+      tenant_id: organizationId || '',
     };
 
     try {
       const response = await this.aiService.addReferenceDocument(request);
       if (response.id) {
         savedDocument.uploadStatus = DocumentUploadStatus.SUCCESS;
-        await this.referenceDocumentRepository.update(savedDocument.id, {
-          uploadStatus: DocumentUploadStatus.SUCCESS,
-        });
+      } else {
+        savedDocument.uploadStatus = DocumentUploadStatus.FAILED;
       }
     } catch (error) {
       this.logger.error(
-        `Failed to add reference document to AI service for document ID: ${savedDocument.id}`,
+        `AI upload failed for document ID: ${savedDocument.id}`,
         error,
       );
-      // TODO: implement retry and handle the status
       savedDocument.uploadStatus = DocumentUploadStatus.FAILED;
+    }
+
+    try {
       await this.referenceDocumentRepository.update(savedDocument.id, {
-        uploadStatus: DocumentUploadStatus.FAILED,
+        uploadStatus: savedDocument.uploadStatus,
       });
+    } catch (error) {
+      this.logger.error(
+        `Failed to update document status for ID: ${savedDocument.id}`,
+        error,
+      );
+      throw new DocumentUpdateFailedException(savedDocument.id, error);
     }
 
     return {
@@ -72,46 +91,71 @@ export class ReferenceDocumentService {
   }
 
   async searchPublicDocuments(searchDto: SearchDocumentsDto) {
-    const publicDocuments = await this.referenceDocumentRepository.find({
+    const documents = await this.referenceDocumentRepository.find({
+      select: ['id'],
       where: {
         isPublic: true,
         uploadStatus: DocumentUploadStatus.SUCCESS,
       },
     });
 
-    if (publicDocuments.length === 0) {
+    return this.searchDocumentsByIds(
+      searchDto,
+      documents.map((d) => d.id),
+      'public',
+    );
+  }
+
+  async searchTenantDocuments(searchDto: SearchDocumentsDto) {
+    const organizationId = ExecutionManager.getTenantId();
+    if (!organizationId) {
+      throw new OrganizationRequiredException();
+    }
+
+    const documents = await this.referenceDocumentRepository.find({
+      select: ['id'],
+      where: [
+        { isPublic: true, uploadStatus: DocumentUploadStatus.SUCCESS },
+        {
+          organizationId,
+          uploadStatus: DocumentUploadStatus.SUCCESS,
+        },
+      ],
+    });
+
+    return this.searchDocumentsByIds(
+      searchDto,
+      documents.map((d) => d.id),
+      `organization ${organizationId}`,
+    );
+  }
+
+  private async searchDocumentsByIds(
+    searchDto: SearchDocumentsDto,
+    availableIds: string[],
+    contextLabel: string,
+  ) {
+    if (!availableIds.length) {
       this.logger.info(
-        `searchPublicDocuments: No public documents found for search query: ${searchDto.query}`,
+        `No ${contextLabel} documents found for query "${searchDto.query}"`,
       );
-      return {
-        documents: [],
-        total: 0,
-      };
+      return { documents: [], total: 0 };
     }
 
-    const publicDocumentIds = publicDocuments.map((doc) => doc.id);
+    const excludedIds = searchDto.excludedIds || [];
+    const documentIds = availableIds.filter((id) => !excludedIds.includes(id));
 
-    let documentIdsToSearch = publicDocumentIds;
-    if (searchDto.excludedIds) {
-      documentIdsToSearch = publicDocumentIds.filter(
-        (documentId) => !searchDto.excludedIds?.includes(documentId),
-      );
-    }
-
-    if (documentIdsToSearch.length === 0) {
+    if (!documentIds.length) {
       this.logger.info(
-        `searchPublicDocuments: No public documents found other than the ones in the excluded_ids for search query: ${searchDto.query}`,
+        `All ${contextLabel} documents excluded for query "${searchDto.query}"`,
       );
-      return {
-        documents: [],
-        total: 0,
-      };
+      return { documents: [], total: 0 };
     }
 
-    const searchRequest = {
+    const request = {
       query: searchDto.query,
       limit: Number(searchDto.limit) || 10,
-      document_ids: documentIdsToSearch,
+      document_ids: documentIds,
       ...(searchDto.filters && { filters: searchDto.filters }),
       ...(searchDto.sortBy && { sort_by: searchDto.sortBy }),
       ...(searchDto.sortOrder && { sort_order: searchDto.sortOrder }),
@@ -119,32 +163,24 @@ export class ReferenceDocumentService {
 
     try {
       this.logger.info(
-        `Performing search operation with query: "${searchDto.query}", limit: ${searchRequest.limit}`,
+        `Searching ${contextLabel} documents with query "${searchDto.query}"`,
       );
-
-      const response =
-        await this.aiService.searchReferenceDocuments(searchRequest);
-
-      const documents = response.documents.map(this.mapDocument);
-
+      const response = await this.aiService.searchReferenceDocuments(request);
       return {
-        documents,
+        documents: response.documents.map(this.mapDocument),
         total: response.total,
         limit: response.limit,
       };
     } catch (error) {
       this.logger.error(
-        `Search operation failed for query: "${searchDto.query}"`,
+        `Search failed for ${contextLabel} query "${searchDto.query}"`,
         {
-          searchRequest,
+          request,
           error: error.message || error,
           stack: error.stack,
         },
       );
-      throw new SearchOperationFailedException(
-        'Failed to search reference documents',
-        error,
-      );
+      throw new SearchOperationFailedException(contextLabel, error);
     }
   }
 
