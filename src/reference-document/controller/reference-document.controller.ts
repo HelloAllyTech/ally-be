@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, Put, Param } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -9,6 +9,7 @@ import { ReferenceDocumentService } from '../service/reference-document.service'
 import {
   AddDocumentDto,
   SearchDocumentsDto,
+  UpdateReferenceDocumentDto,
 } from '../dto/reference-document.dto';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
 import { TokenUser } from '../../auth/type/auth.types';
@@ -36,5 +37,15 @@ export class ReferenceDocumentController {
   @ApiOperation({ summary: 'Search reference documents' })
   async searchDocuments(@Body() searchDto: SearchDocumentsDto) {
     return this.documentService.searchPublicDocuments(searchDto);
+  }
+
+  @Put(':id')
+  @ApiOperation({ summary: 'Update an existing reference document' })
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  async updateDocument(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateReferenceDocumentDto,
+  ) {
+    return this.documentService.updateReferenceDocument(id, updateDto);
   }
 }

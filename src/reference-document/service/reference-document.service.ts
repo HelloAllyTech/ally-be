@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -8,9 +8,10 @@ import {
 import {
   AddDocumentDto,
   SearchDocumentsDto,
+  UpdateReferenceDocumentDto,
 } from '../dto/reference-document.dto';
 import { AiService } from '../../ai/service/ai.service';
-import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { ExecutionManager } from '../../common/execution/execution-manager';
 import { SearchOperationFailedException } from '../exception/reference-document.exception';
 import { LoggerService } from '../../logger/logger.service';
 
@@ -155,6 +156,42 @@ export class ReferenceDocumentService {
       category: doc.category,
       tags: doc.tags || [],
       ...(doc.score !== undefined && { score: doc.score }),
+    };
+  }
+
+  async updateReferenceDocument(id: string, dto: UpdateReferenceDocumentDto) {
+    const document = await this.referenceDocumentRepository.findOneBy({ id });
+
+    if (!document) {
+      this.logger.error(`Reference document with ID ${id} not found`);
+      throw new NotFoundException(`Reference document with ID ${id} not found`);
+    }
+
+    let uploadStatus = DocumentUploadStatus.PENDING;
+    await this.referenceDocumentRepository.update(id, {
+      ...dto,
+      uploadStatus,
+      updatedAt: new Date(),
+    });
+
+    try {
+      const response = await this.aiService.updateReferenceDocument(id, dto);
+      if (response.id) {
+        uploadStatus = DocumentUploadStatus.SUCCESS;
+        await this.referenceDocumentRepository.update(id, {
+          uploadStatus,
+        });
+      }
+    } catch (error) {
+      uploadStatus = DocumentUploadStatus.FAILED;
+      await this.referenceDocumentRepository.update(id, {
+        uploadStatus,
+      });
+    }
+
+    return {
+      id,
+      uploadStatus,
     };
   }
 }

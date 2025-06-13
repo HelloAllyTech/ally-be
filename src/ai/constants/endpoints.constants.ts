@@ -6,4 +6,5 @@ export const ENDPOINTS = {
   TAG_POSITIVITY_RATINGS: 'api/v1/summary/tag-positivity-ratings',
   ADD_REFERENCE_DOCUMENT: 'api/v1/reference-documents',
   SEARCH_REFERENCE_DOCUMENTS: 'api/v1/reference-documents/search',
+  UPDATE_REFERENCE_DOCUMENT: 'api/v1/reference-documents',
 };

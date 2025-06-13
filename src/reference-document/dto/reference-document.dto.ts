@@ -196,3 +196,25 @@ export class GetDocumentResponseDto {
   })
   tags?: string[];
 }
+
+export class UpdateReferenceDocumentDto {
+  @ApiProperty({
+    description: 'Document heading',
+  })
+  heading?: string;
+
+  @ApiProperty({
+    description: 'Document content',
+  })
+  content?: string;
+
+  @ApiProperty({
+    description: 'Document category',
+  })
+  category?: string;
+
+  @ApiProperty({
+    description: 'Document tags',
+  })
+  tags?: string[];
+}

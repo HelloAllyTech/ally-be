@@ -46,3 +46,10 @@ export interface SearchReferenceDocumentsRequest {
   sort_by?: string;
   sort_order?: 'asc' | 'desc';
 }
+
+export interface UpdateReferenceDocumentRequest {
+  heading?: string;
+  content?: string;
+  category?: string;
+  tags?: string[];
+}

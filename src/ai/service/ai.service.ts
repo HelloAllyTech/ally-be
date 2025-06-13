@@ -10,6 +10,7 @@ import {
   TagPositivityRatingsRequest,
   AddReferenceDocumentRequest,
   SearchReferenceDocumentsRequest,
+  UpdateReferenceDocumentRequest,
 } from '../dto/ai.request.dto';
 import {
   EnhanceTextResponse,
@@ -18,6 +19,7 @@ import {
   TagPositivityRatingsResponse,
   AddReferenceDocumentResponse,
   SearchReferenceDocumentsResponse,
+  UpdateReferenceDocumentResponse,
 } from '../dto/ai.response.dto';
 import { createClient, DeepgramClient } from '@deepgram/sdk';
 import { ENDPOINTS } from '../constants/endpoints.constants';
@@ -155,10 +157,25 @@ export class AiService {
     return response;
   }
 
+  async updateReferenceDocument(
+    id: string,
+    document: UpdateReferenceDocumentRequest,
+  ) {
+    const request = {
+      ...document,
+    };
+    const response = await this.makeRequest<
+      UpdateReferenceDocumentResponse,
+      UpdateReferenceDocumentRequest
+    >(`${ENDPOINTS.UPDATE_REFERENCE_DOCUMENT}/${id}`, request, true, 'put');
+    return response;
+  }
+
   private async makeRequest<R, T>(
     endpoint: string,
     data: T,
     throwError = false,
+    method: 'get' | 'post' | 'put' | 'delete' = 'post',
   ): Promise<R> {
     const execId = uuidv4();
     let timeoutId: NodeJS.Timeout | undefined;
@@ -178,11 +195,14 @@ export class AiService {
           type: 'AI Request Time Exceeded',
         } as NotificationErrorType);
       }, this.alertThresholdTimeout);
-      const response = await axios.post(url, data, {
+      const response = await axios({
         headers: {
           'Content-Type': 'application/json',
         },
         timeout: this.maxTimeout,
+        url,
+        method,
+        data,
       });
       this.logger.info(
         `Response from ${endpoint} | ${execId} | ${JSON.stringify(response.data)}`,

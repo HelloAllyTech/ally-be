@@ -41,3 +41,12 @@ export interface SearchReferenceDocumentsResponse {
   total: number;
   limit: number;
 }
+
+export interface UpdateReferenceDocumentResponse {
+  id: string;
+  heading: string;
+  content: string;
+  category: string;
+  tags?: string[];
+  tenant_id: string;
+}
