@@ -19,6 +19,7 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { LoggerService } from '../../logger/logger.service';
 import { AddReferenceDocumentRequest } from '../../ai/dto/ai.request.dto';
 import { OrganizationRequiredException } from '../../exception/custom.exception';
+import { parseCsvBuffer } from '../../common/util/csv.util';
 
 @Injectable()
 export class ReferenceDocumentService {
@@ -229,5 +230,51 @@ export class ReferenceDocumentService {
       id,
       uploadStatus,
     };
+  }
+
+  async bulkCreateFromCsv(userId: number, file: Express.Multer.File) {
+    if (!file?.buffer) {
+      throw new Error('No file uploaded or file is empty');
+    }
+
+    const records = parseCsvBuffer(file.buffer);
+
+    const results = await Promise.all(
+      records.map((row: Record<string, string>) =>
+        this.processCsvRow(userId, row),
+      ),
+    );
+
+    const successCount = results.filter((r) => r.success).length;
+
+    return {
+      total: results.length,
+      successCount,
+      errorCount: results.length - successCount,
+      results,
+    };
+  }
+
+  private async processCsvRow(userId: number, row: Record<string, string>) {
+    const dto: AddDocumentDto = {
+      heading: row['Heading'],
+      content: row['Description'],
+      category: row['Content Category'],
+      tags: row['Keywords']
+        ? row['Keywords'].split(',').map((tag) => tag.trim())
+        : [],
+      isPublic: true,
+    };
+
+    try {
+      const created = await this.addReferenceDocument(userId, dto);
+      return { success: true, id: created.id };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message ?? 'Unknown error',
+        row,
+      };
+    }
   }
 }
