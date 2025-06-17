@@ -1,4 +1,12 @@
-import { Body, Controller, Post, Param, Put } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  Param,
+  Put,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -16,6 +24,7 @@ import { TokenUser } from '../../auth/type/auth.types';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 import { Public } from '../../auth/decorators/auth.metadata';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('Reference Documents')
 @ApiBearerAuth()
@@ -58,5 +67,16 @@ export class ReferenceDocumentController {
     @Body() updateDto: UpdateReferenceDocumentDto,
   ) {
     return this.documentService.updateReferenceDocument(id, updateDto);
+  }
+
+  @Post('upload-csv')
+  @ApiOperation({ summary: 'Bulk upload reference documents via CSV' })
+  @AuthRoles(UserRole.COUNSELOR)
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadCsv(
+    @CurrentUser() tokenUser: TokenUser,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.documentService.bulkCreateFromCsv(tokenUser.id, file);
   }
 }
