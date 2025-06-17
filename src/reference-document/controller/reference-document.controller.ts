@@ -71,7 +71,7 @@ export class ReferenceDocumentController {
 
   @Post('upload-csv')
   @ApiOperation({ summary: 'Bulk upload reference documents via CSV' })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.SUPER_ADMIN)
   @UseInterceptors(FileInterceptor('file'))
   async uploadCsv(
     @CurrentUser() tokenUser: TokenUser,
