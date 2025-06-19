@@ -111,30 +111,30 @@ export class AnalyticsService {
       .orderBy('user.name', 'ASC');
 
     if (queryParams.startDate && queryParams.endDate) {
+      const startDateTime = `${queryParams.startDate} 00:00:00`;
+      const endDateTime = `${queryParams.endDate} 23:59:59`;
       query.andWhere(
         '"callDetails"."createdAt" BETWEEN :startDate AND :endDate',
         {
-          startDate: queryParams.startDate,
-          endDate: queryParams.endDate,
+          startDate: startDateTime,
+          endDate: endDateTime,
         },
       );
     } else if (queryParams.startDate) {
+      const startDateTime = `${queryParams.startDate} 00:00:00`;
       query.andWhere('"callDetails"."createdAt" >= :startDate', {
-        startDate: queryParams.startDate,
+        startDate: startDateTime,
       });
     } else if (queryParams.endDate) {
+      const endDateTime = `${queryParams.endDate} 23:59:59`;
       query.andWhere('"callDetails"."createdAt" <= :endDate', {
-        endDate: queryParams.endDate,
+        endDate: endDateTime,
       });
     }
 
     query.andWhere('user.id = :userId', { userId: parseInt(userId) });
 
     const result = await query.getRawOne();
-
-    if (!result) {
-      throw new NotFoundException('Counselor stats not found');
-    }
 
     const counselorListeningDuration =
       parseFloat(result?.counselorListeningDuration) || 0;
@@ -148,7 +148,7 @@ export class AnalyticsService {
         : 0;
 
     return {
-      counselorName: result.counselorName,
+      counselorName: result?.counselorName || '',
       counselorListeningDuration,
       counselorSharingDuration,
       counselorSharingPercentage: parseFloat(
