@@ -6,6 +6,8 @@ import {
   Put,
   UseInterceptors,
   UploadedFile,
+  Get,
+  Delete,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -78,5 +80,35 @@ export class ReferenceDocumentController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     return this.documentService.bulkCreateFromCsv(tokenUser.id, file);
+  }
+
+  @Get('categories')
+  @ApiOperation({ summary: 'Get all distinct categories in ascending order' })
+  @Public()
+  async getCategories() {
+    return this.documentService.getDistinctCategories();
+  }
+
+  @Get('public/:id')
+  @ApiOperation({ summary: 'Get a public reference document by ID' })
+  @Public()
+  async getDocument(@Param('id') id: string) {
+    return this.documentService.getPublicReferenceDocument(id);
+  }
+
+  @Get(':id')
+  @ApiOperation({
+    summary: 'Get a reference document by ID ',
+  })
+  @AuthRoles(UserRole.COUNSELOR)
+  async getPrivateDocument(@Param('id') id: string) {
+    return this.documentService.getPrivateReferenceDocument(id);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete a reference document' })
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  async deleteDocument(@Param('id') id: string) {
+    return this.documentService.deleteReferenceDocument(id);
   }
 }

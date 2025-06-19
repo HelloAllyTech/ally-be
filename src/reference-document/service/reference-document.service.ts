@@ -277,4 +277,109 @@ export class ReferenceDocumentService {
       };
     }
   }
+
+  async getDistinctCategories() {
+    const categories = await this.referenceDocumentRepository
+      .createQueryBuilder('document')
+      .select('document.category', 'category')
+      .addSelect('COUNT(document.category)', 'count')
+      .where('document.category IS NOT NULL')
+      .groupBy('document.category')
+      .orderBy('count', 'DESC')
+      .getRawMany();
+
+    return categories.map((cat) => cat.category);
+  }
+
+  async getReferenceDocument(id: string) {
+    try {
+      const aiDocument = await this.aiService.getReferenceDocument(id);
+      return aiDocument;
+    } catch (error) {
+      this.logger.error(`Failed to get document from AI service: ${id}`, error);
+      throw new NotFoundException(`Reference document with ID ${id} not found`);
+    }
+  }
+
+  async getPublicReferenceDocument(id: string) {
+    const document = await this.referenceDocumentRepository.findOneBy({
+      id,
+      isPublic: true,
+      uploadStatus: DocumentUploadStatus.SUCCESS,
+    });
+
+    if (!document) {
+      this.logger.error(`Public reference document with ID ${id} not found`);
+      throw new NotFoundException(
+        `Public reference document with ID ${id} not found`,
+      );
+    }
+
+    try {
+      const aiDocument = await this.aiService.getReferenceDocument(id);
+      return aiDocument;
+    } catch (error) {
+      this.logger.error(
+        `Failed to get public document from AI service: ${id}`,
+        error,
+      );
+      throw new NotFoundException(
+        `Public reference document with ID ${id} not found`,
+      );
+    }
+  }
+
+  async getPrivateReferenceDocument(id: string) {
+    const organizationId = ExecutionManager.getTenantId();
+    if (!organizationId) {
+      throw new OrganizationRequiredException();
+    }
+
+    const document = await this.referenceDocumentRepository.findOneBy({
+      id,
+      organizationId,
+      uploadStatus: DocumentUploadStatus.SUCCESS,
+    });
+
+    if (!document) {
+      this.logger.error(`Reference document with ID ${id} not found`);
+      throw new NotFoundException(`Reference document with ID ${id} not found`);
+    }
+
+    if (!document.isPublic && document.organizationId !== organizationId) {
+      this.logger.error(
+        `Access denied to reference document with ID ${id} for organization ${organizationId}`,
+      );
+      throw new NotFoundException(`Reference document with ID ${id} not found`);
+    }
+
+    try {
+      const aiDocument = await this.aiService.getReferenceDocument(id);
+      return aiDocument;
+    } catch (error) {
+      this.logger.error(
+        `Failed to get private document from AI service: ${id}`,
+        error,
+      );
+      throw new NotFoundException(`Reference document with ID ${id} not found`);
+    }
+  }
+
+  async deleteReferenceDocument(id: string) {
+    const document = await this.referenceDocumentRepository.findOneBy({ id });
+
+    if (!document) {
+      this.logger.error(`Reference document with ID ${id} not found`);
+      throw new NotFoundException(`Reference document with ID ${id} not found`);
+    }
+
+    try {
+      await this.aiService.deleteReferenceDocument(id);
+      await this.referenceDocumentRepository.delete(id);
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Failed to delete document: ${id}`, error);
+      throw new Error(`Failed to delete reference document with ID ${id}`);
+    }
+  }
 }

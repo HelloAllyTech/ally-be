@@ -11,6 +11,8 @@ import {
   AddReferenceDocumentRequest,
   SearchReferenceDocumentsRequest,
   UpdateReferenceDocumentRequest,
+  GetReferenceDocumentRequest,
+  DeleteReferenceDocumentRequest,
 } from '../dto/ai.request.dto';
 import {
   EnhanceTextResponse,
@@ -20,6 +22,8 @@ import {
   AddReferenceDocumentResponse,
   SearchReferenceDocumentsResponse,
   UpdateReferenceDocumentResponse,
+  GetReferenceDocumentResponse,
+  DeleteReferenceDocumentResponse,
 } from '../dto/ai.response.dto';
 import { createClient, DeepgramClient } from '@deepgram/sdk';
 import { ENDPOINTS } from '../constants/endpoints.constants';
@@ -168,6 +172,28 @@ export class AiService {
       UpdateReferenceDocumentResponse,
       UpdateReferenceDocumentRequest
     >(`${ENDPOINTS.UPDATE_REFERENCE_DOCUMENT}/${id}`, request, true, 'put');
+    return response;
+  }
+
+  async getReferenceDocument(id: string) {
+    const request: GetReferenceDocumentRequest = {
+      document_id: id,
+    };
+    const response = await this.makeRequest<
+      GetReferenceDocumentResponse,
+      GetReferenceDocumentRequest
+    >(`${ENDPOINTS.GET_REFERENCE_DOCUMENT}/${id}`, request, true, 'get');
+    return response;
+  }
+
+  async deleteReferenceDocument(id: string) {
+    const request: DeleteReferenceDocumentRequest = {
+      document_id: id,
+    };
+    const response = await this.makeRequest<
+      DeleteReferenceDocumentResponse,
+      DeleteReferenceDocumentRequest
+    >(`${ENDPOINTS.DELETE_REFERENCE_DOCUMENT}/${id}`, request, true, 'delete');
     return response;
   }
 

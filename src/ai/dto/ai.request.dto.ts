@@ -53,3 +53,11 @@ export interface UpdateReferenceDocumentRequest {
   category?: string;
   tags?: string[];
 }
+
+export interface GetReferenceDocumentRequest {
+  document_id: string;
+}
+
+export interface DeleteReferenceDocumentRequest {
+  document_id: string;
+}

@@ -7,4 +7,6 @@ export const ENDPOINTS = {
   ADD_REFERENCE_DOCUMENT: 'api/v1/reference-documents',
   SEARCH_REFERENCE_DOCUMENTS: 'api/v1/reference-documents/search',
   UPDATE_REFERENCE_DOCUMENT: 'api/v1/reference-documents',
-};
+  GET_REFERENCE_DOCUMENT: 'api/v1/reference-documents',
+  DELETE_REFERENCE_DOCUMENT: 'api/v1/reference-documents',
+} as const;

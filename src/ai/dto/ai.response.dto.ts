@@ -50,3 +50,16 @@ export interface UpdateReferenceDocumentResponse {
   tags?: string[];
   tenant_id: string;
 }
+
+export interface GetReferenceDocumentResponse {
+  id: string;
+  heading: string;
+  content: string;
+  category: string;
+  tags: string[];
+  tenant_id: string;
+}
+
+export interface DeleteReferenceDocumentResponse {
+  success: boolean;
+}
