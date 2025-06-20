@@ -48,6 +48,12 @@ export class AddDocumentDto {
   @IsOptional()
   @IsBoolean()
   isPublic?: boolean;
+
+  @ApiProperty({
+    description: 'Tenant id',
+  })
+  @IsOptional()
+  organisationId?: string;
 }
 
 export class SearchFiltersDto {

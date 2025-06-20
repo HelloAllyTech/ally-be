@@ -20,6 +20,7 @@ import { LoggerService } from '../../logger/logger.service';
 import { AddReferenceDocumentRequest } from '../../ai/dto/ai.request.dto';
 import { OrganizationRequiredException } from '../../exception/custom.exception';
 import { parseCsvBuffer } from '../../common/util/csv.util';
+import { UserRole } from '../../common/constants/user.constants';
 
 @Injectable()
 export class ReferenceDocumentService {
@@ -33,8 +34,15 @@ export class ReferenceDocumentService {
     private aiService: AiService,
   ) {}
 
-  async addReferenceDocument(userId: number, dto: AddDocumentDto) {
-    const organizationId = ExecutionManager.getTenantId();
+  async addReferenceDocument(
+    userId: number,
+    dto: AddDocumentDto,
+    role?: UserRole,
+  ) {
+    const organizationId =
+      role === UserRole.ADMIN
+        ? ExecutionManager.getTenantId()
+        : dto.organisationId;
 
     if (!dto.isPublic && !organizationId) {
       throw new OrganizationRequiredException();
@@ -55,7 +63,7 @@ export class ReferenceDocumentService {
       content: savedDocument.content,
       category: savedDocument.category,
       tags: savedDocument.tags || [],
-      tenant_id: organizationId || '',
+      tenant_id: dto.isPublic ? '' : organizationId || '',
     };
 
     try {

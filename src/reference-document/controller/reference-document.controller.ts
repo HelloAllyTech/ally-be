@@ -37,12 +37,16 @@ export class ReferenceDocumentController {
 
   @Post('')
   @ApiOperation({ summary: 'Add a new reference document' })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
   async addDocument(
     @CurrentUser() tokenUser: TokenUser,
     @Body() documentDto: AddDocumentDto,
   ) {
-    return this.documentService.addReferenceDocument(tokenUser.id, documentDto);
+    return this.documentService.addReferenceDocument(
+      tokenUser.id,
+      documentDto,
+      tokenUser.role,
+    );
   }
 
   @Public()
