@@ -20,3 +20,5 @@ export enum PreferenceRelatedEntity {
   ORGANIZATION = 'ORGANIZATION',
   COUNSELOR = 'COUNSELOR',
 }
+
+export const ANONYMOUS_CLIENT_ID = -1;

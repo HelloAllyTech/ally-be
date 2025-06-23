@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ChatStatus } from '../../common/entities/chat.entity';
 import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
+import { AudioChatProvider } from '../../common/constants/chat.constants';
 
 class UserInfo {
   @ApiProperty()
@@ -29,7 +30,7 @@ export class CallInfo {
   clientWordCount?: number;
 
   @ApiProperty({ required: false })
-  provider?: 'WEBRTC' | 'EXOTEL';
+  provider?: AudioChatProvider;
 
   @ApiProperty({ required: false })
   callId?: string;

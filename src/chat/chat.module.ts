@@ -15,6 +15,8 @@ import { CallDetails } from '../common/entities/call.details.entity';
 import { ChatEventConsumer } from './event/chat.event.consumer';
 import { BrokerModule } from '../message-broker/broker.module';
 import { SettingsModule } from '../settings/settings.module';
+import { MultiSpeakerAudioService } from './service/multi-speaker-audio.service';
+import { MicrophoneChatGateway } from './gateway/microphone-chat.gateway';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Message, Chat, ChatRoom, Feedback, CallDetails]),
@@ -25,12 +27,28 @@ import { SettingsModule } from '../settings/settings.module';
     forwardRef(() => BrokerModule),
   ],
   controllers: [ChatController],
-  providers: [ChatService, ChatGateway, FeedbackService, ChatEventConsumer],
-  exports: [ChatService, FeedbackService, ChatGateway],
+  providers: [
+    ChatService,
+    ChatGateway,
+    MicrophoneChatGateway,
+    FeedbackService,
+    ChatEventConsumer,
+    MultiSpeakerAudioService,
+  ],
+  exports: [
+    ChatService,
+    FeedbackService,
+    ChatGateway,
+    MultiSpeakerAudioService,
+  ],
 })
 export class ChatModule implements OnModuleInit {
-  constructor(private readonly chatGateway: ChatGateway) {}
+  constructor(
+    private readonly chatGateway: ChatGateway,
+    private readonly microphoneChatGateway: MicrophoneChatGateway,
+  ) {}
   onModuleInit() {
-    this.chatGateway.subscribeToChatMessages();
+    this.chatGateway.subscribeToWebRTCChatMessage();
+    this.microphoneChatGateway.subscribeToMicrophoneChatMessage();
   }
 }

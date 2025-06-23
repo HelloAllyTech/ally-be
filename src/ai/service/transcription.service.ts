@@ -1,9 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ITranscriptionService } from '../interfaces/transcription.interface';
-import {
-  DeepgramTranscriptionOptions,
-  TranscriptionSessionData,
-} from '../type/transcription.type';
+import { DeepgramTranscriptionOptions } from '../type/transcription.type';
+import { UserChatSessionData } from '../../chat/type/chat.type';
 
 @Injectable()
 export class TranscriptionService {
@@ -12,13 +10,17 @@ export class TranscriptionService {
     private readonly transcriptionService: ITranscriptionService,
   ) {}
 
-  async startLiveTranscription<T extends TranscriptionSessionData>(
-    session: T,
+  async startLiveTranscription(
+    session: UserChatSessionData,
     chatId: number,
-    callback: (session: T, chatId: number, transcript: string) => void,
+    callback: (
+      session: UserChatSessionData,
+      chatId: number,
+      transcript: string,
+    ) => void,
     options?: DeepgramTranscriptionOptions,
   ) {
-    await this.transcriptionService.startLiveTranscription<T>(
+    await this.transcriptionService.startLiveTranscription(
       session,
       chatId,
       callback,
@@ -26,18 +28,15 @@ export class TranscriptionService {
     );
   }
 
-  async stopLiveTranscription<T extends TranscriptionSessionData>(session: T) {
-    await this.transcriptionService.stopLiveTranscription<T>(session);
+  async stopLiveTranscription(session: UserChatSessionData) {
+    await this.transcriptionService.stopLiveTranscription(session);
   }
 
-  async sendAudio<T extends TranscriptionSessionData>(
-    session: T,
-    audio: Buffer,
-  ) {
-    await this.transcriptionService.sendAudio<T>(session, audio);
+  async sendAudio(session: UserChatSessionData, audio: Buffer) {
+    await this.transcriptionService.sendAudio(session, audio);
   }
 
-  async handleAudioChatMuted<T extends TranscriptionSessionData>(session: T) {
-    await this.transcriptionService.handleAudioChatMuted<T>(session);
+  async handleAudioChatMuted(session: UserChatSessionData) {
+    await this.transcriptionService.handleAudioChatMuted(session);
   }
 }

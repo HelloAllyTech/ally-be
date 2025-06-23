@@ -1,26 +1,21 @@
-import {
-  DeepgramTranscriptionOptions,
-  TranscriptionSessionData,
-} from '../type/transcription.type';
+import { UserChatSessionData } from '../../chat/type/chat.type';
+import { DeepgramTranscriptionOptions } from '../type/transcription.type';
 
 export interface ITranscriptionService {
-  handleAudioChatMuted<T extends TranscriptionSessionData>(
-    session: T,
-  ): Promise<void>;
+  handleAudioChatMuted(session: UserChatSessionData): Promise<void>;
 
-  startLiveTranscription<T extends TranscriptionSessionData>(
-    session: T,
+  startLiveTranscription(
+    session: UserChatSessionData,
     chatId: number,
-    callback: (session: T, chatId: number, transcript: string) => void,
+    callback: (
+      session: UserChatSessionData,
+      chatId: number,
+      transcript: string,
+    ) => void,
     options?: DeepgramTranscriptionOptions,
   ): Promise<void>;
 
-  stopLiveTranscription<T extends TranscriptionSessionData>(
-    session: T,
-  ): Promise<void>;
+  stopLiveTranscription(session: UserChatSessionData): Promise<void>;
 
-  sendAudio<T extends TranscriptionSessionData>(
-    session: T,
-    audio: Buffer,
-  ): Promise<void>;
+  sendAudio(session: UserChatSessionData, audio: Buffer): Promise<void>;
 }

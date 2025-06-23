@@ -6,7 +6,10 @@ import { Chat, ChatStatus } from '../../common/entities/chat.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { ChatRoom } from '../../common/entities/chat-room.entity';
 import { QueueService } from '../../queue/service/queue.service';
-import { QueueStatus } from '../../common/constants/chat.constants';
+import {
+  AudioChatProvider,
+  QueueStatus,
+} from '../../common/constants/chat.constants';
 import { ChatGateway } from '../gateway/chat.gateway';
 import { UserService } from '../../user/user.service';
 import { ChatEvents } from '../constants/chat.constants';
@@ -18,6 +21,8 @@ import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import {
   DeepgramTranscriptMetadata,
   MessageWithFeedback,
+  NudgeResponse,
+  SendMessageWebSocketData,
   UserChatSessionData,
 } from '../type/chat.type';
 import { Pagination } from '../../common/type/common.type';
@@ -28,7 +33,10 @@ import { MessageBrokerService } from '../../message-broker/service/message-broke
 import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
 import { StringUtil } from '../../common/util/string.util';
 import { TokenUser } from '../../auth/type/auth.types';
-import { UserRole } from '../../common/constants/user.constants';
+import {
+  ANONYMOUS_CLIENT_ID,
+  UserRole,
+} from '../../common/constants/user.constants';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { NotFoundException } from '@nestjs/common';
 import { ForbiddenException } from '../../exception/custom.exception';
@@ -38,6 +46,7 @@ import { CommonUtil } from '../../common/util/common.util';
 import { CallInfoDto } from '../dto/chat.response.dto';
 import { CallInfo } from '../dto/call-log.response.dto';
 import { SettingsService } from '../../settings/service/settings.service';
+import { MessageBrokerChannel } from 'src/common/constants/message-broker.constants';
 
 @Injectable()
 export class ChatService {
@@ -59,7 +68,7 @@ export class ChatService {
     private eventEmitter: EventEmitter2,
     private aiService: AiService,
     private readonly cache: RedisService,
-    private readonly messageBrokerService: MessageBrokerService,
+    private readonly publisher: MessageBrokerService,
     private dataSource: DataSource,
     private settingsService: SettingsService,
 
@@ -180,6 +189,9 @@ export class ChatService {
     await callDetailsRepo.save({
       chatId: chat.id,
       tenantId: ExecutionManager.getTenantId(),
+      callInfo: {
+        provider: AudioChatProvider.WEBRTC,
+      },
     });
     return chat;
   }
@@ -188,7 +200,7 @@ export class ChatService {
     clientId: number,
     counselorId?: number,
     tenantId?: string,
-    provider?: 'WEBRTC' | 'EXOTEL',
+    provider?: AudioChatProvider,
   ) {
     return this.dataSource.transaction(async (entityManager) => {
       const chatRepo = entityManager.getRepository(Chat) || this.chatRepository;
@@ -227,38 +239,40 @@ export class ChatService {
     });
   }
 
-  async createChatForAnyonymousClient(
-    counselorPhone?: string,
-    provider?: 'WEBRTC' | 'EXOTEL',
-  ): Promise<{
+  async createChatForAnyonymousClient({
+    counselorPhone,
+    counselorId,
+    provider,
+  }: {
+    counselorPhone?: string;
+    counselorId?: number;
+    provider?: AudioChatProvider;
+  }): Promise<{
     chatId: number;
     clientId: number;
     counselorId: number;
     tenantId: string;
   } | null> {
-    if (!counselorPhone) {
+    if (!counselorPhone && !counselorId) {
       return null;
     }
 
-    const counselor =
-      await this.userService.getUserByPhoneNumber(counselorPhone);
+    let counselor: User | null = null;
+
+    if (counselorPhone) {
+      counselor = await this.userService.getUserByPhoneNumber(counselorPhone);
+    } else if (counselorId) {
+      counselor = await this.userService.get(counselorId);
+    }
 
     if (!counselor) {
       return null;
     }
 
-    const timestamp = Date.now();
-    const clientUniqueId = `client-${timestamp}`;
-    const client = await this.userService.createUser({
-      phoneNumber: clientUniqueId,
-      role: UserRole.CLIENT,
-      email: `${clientUniqueId}@placeholder.com`,
-      username: clientUniqueId,
-      tenantId: counselor.tenantId,
-    });
+    const clientId = ANONYMOUS_CLIENT_ID;
 
     const chat = await this.createChatWithClientAndCounselor(
-      client.id,
+      clientId,
       counselor.id,
       counselor.tenantId,
       provider,
@@ -266,7 +280,7 @@ export class ChatService {
 
     return {
       chatId: chat.id,
-      clientId: client.id,
+      clientId: clientId,
       counselorId: counselor.id,
       tenantId: counselor.tenantId,
     };
@@ -542,6 +556,7 @@ export class ChatService {
       context?: string;
       messageType?: MessageType;
       createdAt?: Date;
+      parentMessageId?: number;
     },
   ) {
     const message = this.messageRepository.create({
@@ -551,6 +566,7 @@ export class ChatService {
       context: data.context,
       type: data.messageType || MessageType.TEXT,
       tenantId: ExecutionManager.getTenantId(),
+      parentMessageId: data.parentMessageId,
     });
     return this.messageRepository.save(message);
   }
@@ -872,7 +888,10 @@ export class ChatService {
     const messages = await query.getMany();
 
     const messageRequests: MessageRequest[] = messages.map((message: any) => ({
-      role: message.sender.role,
+      role:
+        message.senderId === ANONYMOUS_CLIENT_ID
+          ? 'CLIENT'
+          : message.sender?.role,
       content: message.content,
       timestamp: message.createdAt.toISOString(),
     }));
@@ -1200,6 +1219,7 @@ export class ChatService {
     newMessage: { content: string; chatId: number; id: number },
     session: UserChatSessionData,
     chatId: number,
+    channel: string,
   ) {
     const isChatPaused = await this.isChatPaused(chatId);
     if (isChatPaused) {
@@ -1226,7 +1246,7 @@ export class ChatService {
           `Nudge:${newMessage.content} | chatId :${chatId} | ${nudge?.nudge} | stage: ${nudge?.stage}`,
         );
         if (nudge) {
-          this.gateway.handleNudge(nudge, session, newMessage);
+          this.handleNudge(nudge, session, newMessage, channel);
         }
       })
       .catch((error) => {
@@ -1264,5 +1284,79 @@ export class ChatService {
 
   private getWordCountKey(chatId: number) {
     return `call:${chatId}:word-count`;
+  }
+
+  async handleNudge(
+    nudgeResponse: NudgeResponse,
+    session: UserChatSessionData,
+    parentMessage: { content: string; chatId: number; id: number },
+    channel: string,
+  ) {
+    this.logger.info(
+      `handleNudge - nudge :${nudgeResponse.nudge} | stage :${nudgeResponse.stage}`,
+    );
+    const { nudge, stage } = nudgeResponse;
+    if (nudge) {
+      await this.persistAndBroadcastMessage(
+        session,
+        {
+          chatId: parentMessage.chatId,
+          content: nudge,
+          messageType: MessageType.NUDGE,
+          parentMessageId: parentMessage.id,
+        },
+        {
+          event: ChatEvents.NUDGE,
+        },
+        channel,
+      );
+    }
+    if (stage) {
+      await this.persistAndBroadcastMessage(
+        session,
+        {
+          chatId: parentMessage.chatId,
+          content: stage,
+          messageType: MessageType.STAGE,
+          parentMessageId: parentMessage.id,
+        },
+        {
+          event: ChatEvents.STAGE,
+        },
+        channel,
+      );
+    }
+  }
+
+  async persistAndBroadcastMessage(
+    session: UserChatSessionData,
+    data: SendMessageWebSocketData,
+    broadCastOptions: {
+      event?: ChatEvents;
+    } = {
+      event: ChatEvents.MESSAGE_RECEIVED,
+    },
+    channel: string = MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
+  ) {
+    const chatId = data.chatId;
+    const senderId = session.userId;
+    const message = await this.saveMessage(chatId, senderId, data);
+    const chat = await this.getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
+    const participants = [chat?.counselorId!];
+    if (
+      broadCastOptions.event != ChatEvents.NUDGE &&
+      broadCastOptions.event != ChatEvents.STAGE
+    ) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
+      participants.push(chat?.clientId!);
+    }
+
+    this.publisher.publish(channel, {
+      participants,
+      message,
+      broadCastOptions,
+    });
+    return message;
   }
 }

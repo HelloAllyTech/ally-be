@@ -3,14 +3,12 @@ import {
   Get,
   Param,
   Post,
-  UseGuards,
   Body,
   Patch,
   Query,
   Res,
   Put,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
 import { TokenUser } from '../../auth/type/auth.types';
 import { ChatService } from '../service/chat.service';

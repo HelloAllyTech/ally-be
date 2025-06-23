@@ -1,3 +1,4 @@
+import { AudioChatProvider } from '../../common/constants/chat.constants';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { Message, MessageType } from '../../common/entities/message.entity';
@@ -12,6 +13,7 @@ export type UserChatSessionData = {
   room: string;
   chatId: number;
   tenantId: string;
+  provider?: AudioChatProvider;
 };
 
 export type ServiceSessionData = {

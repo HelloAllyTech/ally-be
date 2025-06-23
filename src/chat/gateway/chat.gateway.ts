@@ -11,7 +11,6 @@ import { UserService } from '../../user/user.service';
 import {
   DeepgramTranscriptMetadata,
   MessagePayload,
-  NudgeResponse,
   SendMessageWebSocketData,
   ServiceSessionData,
   UserChatSessionData,
@@ -31,9 +30,12 @@ import {
 } from '../../common/decorator/execution.context.decorator';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { RedisService } from '../../redis/service/redis.service';
+import { AudioChatProvider } from '../../common/constants/chat.constants';
+import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
 
 @WebSocketGateway({
   cors: { origin: '*' },
+  namespace: '/webrtc-audio-chat',
 })
 @Injectable()
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -123,6 +125,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       room,
       chatId: -99,
       tenantId: user.tenantId,
+      provider: AudioChatProvider.WEBRTC,
     };
 
     client.join(room);
@@ -160,12 +163,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.connectedUsers.delete(+session.userId);
     this.transcriptionService.stopLiveTranscription(session);
     const chatId = await this.chatService.getChatById(session.chatId);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
     const participants = [chatId?.counselorId!, chatId?.clientId!].filter(
       (id) => id !== session.userId,
     );
 
     if (chatId) {
-      this.publisher.publish('chat-message', {
+      this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
         participants,
         message: {
           content: 'User disconnected',
@@ -190,9 +194,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     //! Need to set the auth context before persisting and broadcasting the message
     this.setAuthContext(session);
-    const message = await this.persistAndBroadcastMessage(session, data);
+    const message = await this.chatService.persistAndBroadcastMessage(
+      session,
+      data,
+    );
     this.logger.info(`🔄 Triggering nudge for chatId: ${data.chatId}`);
-    this.chatService.triggerNudge(message, session, data.chatId);
+    this.chatService.triggerNudge(
+      message,
+      session,
+      data.chatId,
+      MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
+    );
   }
 
   private async prepareMessage(
@@ -214,11 +226,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Chat not found for chatId: ${chatId}`);
       return;
     }
+    // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
     const participants = [chat?.counselorId!];
     if (
       broadCastOptions.event != ChatEvents.NUDGE &&
       broadCastOptions.event != ChatEvents.STAGE
     ) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
       participants.push(chat?.clientId!);
     }
     return {
@@ -226,35 +240,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       message,
       broadCastOptions,
     };
-  }
-
-  private async persistAndBroadcastMessage(
-    session: UserChatSessionData,
-    data: SendMessageWebSocketData,
-    broadCastOptions: {
-      event?: ChatEvents;
-    } = {
-      event: ChatEvents.MESSAGE_RECEIVED,
-    },
-  ) {
-    const chatId = data.chatId;
-    const senderId = session.userId;
-    const message = await this.chatService.saveMessage(chatId, senderId, data);
-    const chat = await this.chatService.getChatById(chatId);
-    const participants = [chat?.counselorId!];
-    if (
-      broadCastOptions.event != ChatEvents.NUDGE &&
-      broadCastOptions.event != ChatEvents.STAGE
-    ) {
-      participants.push(chat?.clientId!);
-    }
-
-    this.publisher.publish('chat-message', {
-      participants,
-      message,
-      broadCastOptions,
-    });
-    return message;
   }
 
   @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
@@ -287,7 +272,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const participants = [chat.counselorId, chat.clientId].filter(
           (id) => id !== session.userId,
         );
-        this.publisher.publish('chat-message', {
+        this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
           participants,
           message: {
             userId: session.userId,
@@ -311,7 +296,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleAudioMessage(
     client: Socket,
-    { chatId, audioData }: { chatId: number; audioData: Buffer },
+    { chatId, audioData }: { chatId: number; audioData: string },
   ) {
     const isChatPaused = await this.chatService.isChatPaused(chatId);
     if (isChatPaused) {
@@ -326,14 +311,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
       //! Need to set the auth context before persisting and broadcasting the message
       this.setAuthContext(session);
-      this.transcriptionService.sendAudio(session, audioData).catch((error) => {
-        this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
-      });
+      const audioBuffer = Buffer.from(audioData, 'base64');
+      this.transcriptionService
+        .sendAudio(session, audioBuffer)
+        .catch((error) => {
+          this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
+        });
       //broadcast the audio message
       const chat = await this.chatService.getChatById(chatId);
       if (chat) {
         const participants = [chat.counselorId];
-        this.publisher.publish('chat-message', {
+        this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
           participants,
           message: {
             userId: session.userId,
@@ -374,10 +362,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(ChatEvents.AUDIO_CHAT_PAUSED)
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
-  async handleAudioChatNudgePaused(
-    client: Socket,
-    { chatId }: { chatId: number },
-  ) {
+  async handleAudioChatPaused(client: Socket, { chatId }: { chatId: number }) {
     this.logger.info(`Audio chat nudge paused for chatId ${chatId}`);
     const session = this.sessions[client.id];
     if (!session) {
@@ -390,10 +375,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(ChatEvents.AUDIO_CHAT_RESUMED)
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
-  async handleAudioChatNudgeResumed(
-    client: Socket,
-    { chatId }: { chatId: number },
-  ) {
+  async handleAudioChatResumed(client: Socket, { chatId }: { chatId: number }) {
     this.logger.info(`Audio chat Nudge resumed for chatId ${chatId}`);
     const session = this.sessions[client.id];
     if (!session) {
@@ -450,45 +432,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const counselorId = chat.counselorId;
     const target = `user-${senderId === clientId ? counselorId : clientId}`;
     this.server.to(target).emit(event, data);
-  }
-
-  async handleNudge(
-    nudgeResponse: NudgeResponse,
-    session: UserChatSessionData,
-    parentMessage: { content: string; chatId: number; id: number },
-  ) {
-    this.logger.info(
-      `handleNudge - nudge :${nudgeResponse.nudge} | stage :${nudgeResponse.stage}`,
-    );
-    const { nudge, stage } = nudgeResponse;
-    if (nudge) {
-      await this.persistAndBroadcastMessage(
-        session,
-        {
-          chatId: parentMessage.chatId,
-          content: nudge,
-          messageType: MessageType.NUDGE,
-          parentMessageId: parentMessage.id,
-        },
-        {
-          event: ChatEvents.NUDGE,
-        },
-      );
-    }
-    if (stage) {
-      await this.persistAndBroadcastMessage(
-        session,
-        {
-          chatId: parentMessage.chatId,
-          content: stage,
-          messageType: MessageType.STAGE,
-          parentMessageId: parentMessage.id,
-        },
-        {
-          event: ChatEvents.STAGE,
-        },
-      );
-    }
   }
 
   private async sendMessageToParticipant(
@@ -564,7 +507,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    this.publisher.publish('chat-message', {
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
       participants,
       message: {
         ...message,
@@ -587,10 +530,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           createdAt: metadata?.currentTranscriptCreatedAt,
         },
       );
-      this.chatService.triggerNudge(completedMessage, session, chatId);
+      this.chatService.triggerNudge(
+        completedMessage,
+        session,
+        chatId,
+        MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
+      );
     } else if (!this.config.ai.sentenceCompletionRequired) {
       const savedMessage = await this.chatService.save(message);
-      this.chatService.triggerNudge(savedMessage, session, chatId);
+      this.chatService.triggerNudge(
+        savedMessage,
+        session,
+        chatId,
+        MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
+      );
     }
   }
 
@@ -617,7 +570,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    this.publisher.publish('chat-message', {
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
       participants,
       message: {
         ...message,
@@ -634,7 +587,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           createdAt: metadata?.currentTranscriptCreatedAt,
         },
       );
-      this.chatService.triggerNudge(completedMessage, session, chatId);
+      this.chatService.triggerNudge(
+        completedMessage,
+        session,
+        chatId,
+        MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
+      );
     }
   }
 
@@ -646,14 +604,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(room).emit(event, payload);
   }
 
-  subscribeToChatMessages() {
-    this.publisher.subscribe('chat-message', (data) => {
-      this.sendMessageToParticipant(
-        data.participants,
-        data.message,
-        data.broadCastOptions,
-      );
-    });
+  subscribeToWebRTCChatMessage() {
+    this.publisher.subscribe(
+      MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
+      (data) => {
+        this.sendMessageToParticipant(
+          data.participants,
+          data.message,
+          data.broadCastOptions,
+        );
+      },
+    );
   }
 
   sendMessagesToRoomUsingPublish(
@@ -664,7 +625,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.info(
       `Sending message to participants: ${JSON.stringify(participantIds)} | event: ${JSON.stringify(event)}`,
     );
-    this.publisher.publish('chat-message', {
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
       participants: participantIds,
       message,
       broadCastOptions: {
@@ -681,7 +642,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       content: 'Chat ended',
       messageType: MessageType.SYSTEM,
     };
-    this.publisher.publish('chat-message', {
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
       participants,
       message,
       broadCastOptions: {

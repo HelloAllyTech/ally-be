@@ -14,11 +14,9 @@ import {
 import { ITranscriptionService } from '../interfaces/transcription.interface';
 import {
   DeepgramTranscriptionOptions,
-  TranscriptionSessionData,
   DeepgramTranscriptResult,
   SpeakerSegment,
 } from '../type/transcription.type';
-import { ConferenceCallSessionData } from '../../audio-ingest/type/audio-ingest.type';
 
 interface LiveClientSession {
   liveClient: LiveClient;
@@ -46,12 +44,8 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   constructor(private readonly config: AppConfigService) {
     this.deepgramClient = createClient(config.ai.deepgramApiKey);
   }
-  async handleAudioChatMuted<T extends TranscriptionSessionData>(
-    session: T,
-  ): Promise<void> {
-    this.logger.info(
-      `handleAudioChatMuted for ${this.getParticipantDetailsLog(session)}`,
-    );
+  async handleAudioChatMuted(session: UserChatSessionData): Promise<void> {
+    this.logger.info(`handleAudioChatMuted for userId: ${session.userId}`);
     const clientSession = this.liveClients.get(session.id);
     if (clientSession) {
       await clientSession.liveClient.finalize();
@@ -64,28 +58,21 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     await this.cleanupAllConnections();
   }
 
-  getParticipantDetailsLog(
-    session: UserChatSessionData | ConferenceCallSessionData,
-  ): string {
-    const userId = (session as UserChatSessionData).userId;
-    const clientId = (session as ConferenceCallSessionData).clientId;
-    const counselorId = (session as ConferenceCallSessionData).counselorId;
-    return `${userId ? `userId: ${userId}` : `clientId: ${clientId} | counselorId: ${counselorId}`}`;
-  }
-
-  async startLiveTranscription<T extends TranscriptionSessionData>(
-    session: T,
+  async startLiveTranscription(
+    session: UserChatSessionData,
     chatId: number,
-    callback: (session: T, chatId: number, transcript: string) => void,
+    callback: (
+      session: UserChatSessionData,
+      chatId: number,
+      transcript: string,
+    ) => void,
     options?: DeepgramTranscriptionOptions,
   ): Promise<void> {
-    this.logger.info(
-      `startLiveTranscription -  ${this.getParticipantDetailsLog(session)}`,
-    );
+    this.logger.info(`startLiveTranscription -  userId: ${session.userId}`);
 
     if (this.liveClients.has(session.id)) {
       this.logger.warn(
-        `startLiveTranscription - Live transcription already exists for ${this.getParticipantDetailsLog(session)}`,
+        `startLiveTranscription - Live transcription already exists for userId: ${session.userId}`,
       );
       return;
     }
@@ -113,7 +100,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       this.liveClients.set(session.id, clientSession);
     } catch (error) {
       this.logger.error(
-        `startLiveTranscription - Failed to start live transcription for ${this.getParticipantDetailsLog(session)}`,
+        `startLiveTranscription - Failed to start live transcription for userId: ${session.userId}`,
         error,
       );
       throw error;
@@ -148,10 +135,14 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     }, this.keepAliveInterval);
   }
 
-  private async setupTranscriptionListeners<T extends TranscriptionSessionData>(
-    session: T,
+  private async setupTranscriptionListeners(
+    session: UserChatSessionData,
     chatId: number,
-    callback: (session: T, chatId: number, transcript: string) => void,
+    callback: (
+      session: UserChatSessionData,
+      chatId: number,
+      transcript: string,
+    ) => void,
     liveClient: LiveClient,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -162,7 +153,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
 
       liveClient.on(LiveTranscriptionEvents.Error, (error) => {
         this.logger.error(
-          `Live transcription error for ${this.getParticipantDetailsLog(session)}`,
+          `Live transcription error for userId: ${session.userId}`,
           error,
         );
         reject(error);
@@ -184,11 +175,11 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     return speakerSegments;
   }
 
-  private setupTranscriptionEvents<T extends TranscriptionSessionData>(
-    session: T,
+  private setupTranscriptionEvents(
+    session: UserChatSessionData,
     chatId: number,
     callback: (
-      session: T,
+      session: UserChatSessionData,
       chatId: number,
       transcript: string,
       metadata: DeepgramTranscriptMetadata,
@@ -200,7 +191,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       (data: DeepgramTranscriptResult) => {
         const transcript = data.channel.alternatives[0].transcript?.trim();
         this.logger.debug(
-          `Transcript for ${this.getParticipantDetailsLog(session)} | transcript: ${transcript} | isFinal: ${data.is_final} | isSpeech:${data.speech_final}`,
+          `Transcript for userId: ${session.userId} | transcript: ${transcript} | isFinal: ${data.is_final} | isSpeech:${data.speech_final}`,
         );
         const clientSession = this.liveClients.get(session.id);
         if (transcript && clientSession) {
@@ -246,7 +237,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
 
     liveClient.on(LiveTranscriptionEvents.UtteranceEnd, (data) => {
       this.logger.info(
-        `Utterance end for ${this.getParticipantDetailsLog(session)} | data : ${JSON.stringify(
+        `Utterance end for userId: ${session.userId} | data : ${JSON.stringify(
           data,
         )}`,
       );
@@ -267,7 +258,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
 
     liveClient.on(LiveTranscriptionEvents.Close, () => {
       this.logger.info(
-        `Live transcription closed for ${this.getParticipantDetailsLog(session)}`,
+        `Live transcription closed for userId: ${session.userId}`,
       );
       const clientSession = this.liveClients.get(session.id);
       if (clientSession?.transcriptBuffer?.trim()) {
@@ -284,14 +275,14 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
 
     liveClient.on(LiveTranscriptionEvents.Error, (error) => {
       this.logger.error(
-        `Live transcription error for ${this.getParticipantDetailsLog(session)}`,
+        `Live transcription error for userId: ${session.userId}`,
         error,
       );
     });
 
     liveClient.on(LiveTranscriptionEvents.Unhandled, (data) => {
       this.logger.error(
-        `Live transcription unhandled event for ${this.getParticipantDetailsLog(session)}`,
+        `Live transcription unhandled event for userId: ${session.userId}`,
         data,
       );
     });
@@ -307,17 +298,12 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     return isEndOfSentence;
   }
 
-  async stopLiveTranscription(
-    session: TranscriptionSessionData,
-  ): Promise<void> {
+  async stopLiveTranscription(session: UserChatSessionData): Promise<void> {
     this.logger.info(`Stopping live transcription for userId: ${session.id}`);
     await this.cleanupConnection(session.id);
   }
 
-  async sendAudio(
-    session: TranscriptionSessionData,
-    audio: Buffer,
-  ): Promise<void> {
+  async sendAudio(session: UserChatSessionData, audio: Buffer): Promise<void> {
     const clientSession = this.liveClients.get(session.id);
 
     if (!clientSession) {
@@ -333,7 +319,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       clientSession.liveClient.send(audio);
     } catch (error) {
       this.logger.error(
-        `Failed to send audio for ${this.getParticipantDetailsLog(session)} | sessionId: ${session.id}`,
+        `Failed to send audio for userId: ${session.userId} | sessionId: ${session.id}`,
         error,
       );
       throw error;
@@ -341,7 +327,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   }
 
   private processPendingAudioQueue(
-    session: TranscriptionSessionData,
+    session: UserChatSessionData,
     clientSession: LiveClientSession,
   ): void {
     const audioQueue = this.pendingAudioQueue.get(session.id);

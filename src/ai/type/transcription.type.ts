@@ -1,6 +1,3 @@
-import { ConferenceCallSessionData } from '../../audio-ingest/type/audio-ingest.type';
-import { UserChatSessionData } from '../../chat/type/chat.type';
-
 export interface TranscriptionWord {
   word: string;
   start: number;
@@ -64,10 +61,6 @@ export interface DeepgramTranscriptionOptions {
   encoding?: 'linear16' | 'mulaw' | 'alaw' | 'opus' | 'flac' | 'amr-wb';
   sample_rate?: number;
 }
-
-export type TranscriptionSessionData =
-  | UserChatSessionData
-  | ConferenceCallSessionData;
 
 export type SpeakerSegment = {
   speaker: number;

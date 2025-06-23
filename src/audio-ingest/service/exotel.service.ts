@@ -5,19 +5,10 @@ import { LoggerService } from '../../logger/logger.service';
 import { ChatService } from '../../chat/service/chat.service';
 import { AudioIngestInterface } from '../interface/audio-ingest.interface';
 import { TranscriptionService } from '../../ai/service/transcription.service';
-import {
-  ConferenceCallSessionData,
-  ExotelStreamEvents,
-} from '../type/audio-ingest.type';
-import { DeepgramTranscriptMetadata } from '../../chat/type/chat.type';
+import { ExotelStreamEvents } from '../type/audio-ingest.type';
+import { UserChatSessionData } from '../../chat/type/chat.type';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { ChatEvents } from '../../chat/constants/chat.constants';
-import { AiService } from '../../ai/service/ai.service';
-import { AppConfigService } from '../../config/config.service';
-import {
-  CombinedSpeakerSegment,
-  SpeakerSegment,
-} from '../../ai/type/transcription.type';
 import { MessageType } from '../../common/entities/message.entity';
 import { NotificationErrorType } from '../../notification/type/notification.error.type';
 import { ExecutionManager } from '../../common/execution/execution-manager';
@@ -25,20 +16,17 @@ import {
   ExecutionContextPropagation,
   WithExecutionContext,
 } from '../../common/decorator/execution.context.decorator';
-import { processSequentially } from '../../common/util/async.util';
 import { TWENTY_FIVE_SECONDS_IN_MS } from '../../common/constants/time.constants';
+import { AudioChatProvider } from '../../common/constants/chat.constants';
+import { UserRole } from '../../common/constants/user.constants';
+import { MultiSpeakerAudioService } from '../../chat/service/multi-speaker-audio.service';
+import { MessageBrokerChannel } from 'src/common/constants/message-broker.constants';
 
 @Injectable()
 export class ExotelService implements AudioIngestInterface {
   private readonly logger = LoggerService.getInstance(ExotelService.name);
 
-  private sessions: { [key: string]: ConferenceCallSessionData } = {};
-  private chatBuffer: {
-    [key: string]: Array<{
-      speakerSegments: SpeakerSegment[];
-      createdAt: Date | undefined;
-    }>;
-  } = {};
+  private sessions: { [key: string]: UserChatSessionData } = {};
   private keepAliveData: {
     [key: string]: {
       interval: NodeJS.Timeout;
@@ -52,270 +40,10 @@ export class ExotelService implements AudioIngestInterface {
   constructor(
     private chatService: ChatService,
     private transcriptionService: TranscriptionService,
-    private aiService: AiService,
     private publisher: MessageBrokerService,
-    private config: AppConfigService,
     private eventEmitter: EventEmitter2,
+    private multiSpeakerAudioService: MultiSpeakerAudioService,
   ) {}
-
-  async addConversationSpeakers(session: ConferenceCallSessionData) {
-    const currentChatBuffer = this.chatBuffer[session.id];
-    const chatId = session.chatId;
-    const combinedSegments: CombinedSpeakerSegment[] = [];
-    currentChatBuffer.forEach((buffer) => {
-      const mergedChat = this.combineConsecutiveSpeakerSegments(
-        buffer.speakerSegments,
-      );
-      combinedSegments.push(...mergedChat);
-    });
-    const uniqueSpeakers: string[] = [];
-    const chatHistory = combinedSegments.map((segment) => {
-      const role = `speaker${segment.speaker}`;
-      if (!uniqueSpeakers.includes(role)) uniqueSpeakers.push(role);
-      return {
-        role,
-        content: segment.content,
-      };
-    });
-    if (chatHistory.length < 2 || uniqueSpeakers.length < 2) {
-      this.logger.info(
-        `🎤 Exotel: Waiting for more speaker segments for chatId: ${chatId}`,
-      );
-      return;
-    }
-    const speakers =
-      await this.aiService.identifySpeakersFromConversation(chatHistory);
-
-    if (!speakers || !speakers.speaker0 || !speakers.speaker1) {
-      this.logger.info(
-        `🎤 Exotel: No speaker details from ai service for chatId: ${chatId}`,
-      );
-      return;
-    }
-
-    const speakerMap = {
-      counselor: session.counselorId,
-      client: session.clientId,
-    };
-
-    // If both speakers are unknown, we can't proceed
-    if (speakers.speaker0 === 'unknown' && speakers.speaker1 === 'unknown') {
-      this.logger.info(
-        `🎤 Exotel: Both speakers are unknown for chatId: ${chatId}`,
-      );
-      return;
-    }
-
-    // If speaker0 is identified but speaker1 is unknown
-    if (speakers.speaker0 !== 'unknown' && speakers.speaker1 === 'unknown') {
-      speakers.speaker1 =
-        speakers.speaker0 === 'client' ? 'counselor' : 'client';
-      this.logger.info(
-        `🎤 Exotel: Assumed speaker1 is ${speakers.speaker1} for chatId: ${chatId}`,
-      );
-    }
-
-    // If speaker1 is identified but speaker0 is unknown
-    else if (
-      speakers.speaker0 === 'unknown' &&
-      speakers.speaker1 !== 'unknown'
-    ) {
-      speakers.speaker0 =
-        speakers.speaker1 === 'client' ? 'counselor' : 'client';
-      this.logger.info(
-        `🎤 Exotel: Assumed speaker0 is ${speakers.speaker0} for chatId: ${chatId}`,
-      );
-    }
-
-    session.speakers = {
-      speaker0: {
-        id: speakerMap[speakers.speaker0 as 'client' | 'counselor']!,
-        role: speakers.speaker0,
-      },
-      speaker1: {
-        id: speakerMap[speakers.speaker1 as 'client' | 'counselor']!,
-        role: speakers.speaker1,
-      },
-    };
-
-    this.logger.info(
-      `🎤 Exotel: Speakers identified: ${JSON.stringify(session.speakers)} for chatId: ${chatId}`,
-    );
-  }
-
-  combineConsecutiveSpeakerSegments(chat: SpeakerSegment[]) {
-    return chat.reduce((acc: CombinedSpeakerSegment[], curr) => {
-      const lastItem = acc[acc.length - 1];
-      if (lastItem && lastItem.speaker === curr.speaker) {
-        lastItem.content += ' ' + curr.word;
-      } else {
-        acc.push({ speaker: curr.speaker, content: curr.word });
-      }
-      return acc;
-    }, []);
-  }
-
-  async saveMessageAndTriggerNudge(
-    segment: CombinedSpeakerSegment,
-    session: ConferenceCallSessionData,
-    chatId: number,
-    createdAt: Date,
-  ) {
-    const sender = session.speakers![`speaker${segment.speaker}`];
-    this.setAuthContext({
-      userId: sender.id,
-      role: sender.role,
-      tenantId: session.tenantId!,
-    });
-    const completedMessage = await this.chatService.saveMessage(
-      chatId,
-      sender.id,
-      {
-        content: segment.content,
-        createdAt: createdAt,
-      },
-    );
-    const sessionData = {
-      id: session.id,
-      type: 'user' as const,
-      userId: sender.id,
-      user: null,
-      room: `user-${sender.id}`,
-      role: sender.role,
-      chatId,
-      tenantId: session.tenantId!,
-    };
-    await this.chatService.triggerNudge(completedMessage, sessionData, chatId);
-  }
-
-  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
-  async handleDeepgramTranscript(
-    session: ConferenceCallSessionData,
-    chatId: number,
-    transcript: string,
-    metadata?: DeepgramTranscriptMetadata,
-  ) {
-    const {
-      isSentenceComplete,
-      currentTranscriptCreatedAt,
-      isFinal,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      isUtteranceEnd,
-      speakerSegments: currentSpeakerSegments,
-    } = metadata || {};
-    this.logger.info(
-      `Exotel: Transcription: ${transcript} - ${new Date().toISOString()}`,
-    );
-
-    if (!currentSpeakerSegments || currentSpeakerSegments.length === 0) {
-      this.logger.error(
-        `Exotel: No speaker segments found for chatId: ${chatId}`,
-      );
-      return;
-    }
-
-    // if there are more than 2 speakers, we need to filter out the speaker segments
-    const speakerSegments = currentSpeakerSegments.filter(
-      (segment) => segment.speaker <= 1,
-    );
-
-    if (!speakerSegments || speakerSegments.length === 0) {
-      this.logger.info(
-        `Exotel: No speaker segments found after removing speaker > 1 for chatId: ${chatId}`,
-      );
-      return;
-    }
-
-    // TODO: handle utternaceEnd
-
-    // Temporarily store speaker segments to chatBuffer until speakers are identified
-    if (
-      isSentenceComplete &&
-      !session.speakers &&
-      speakerSegments &&
-      speakerSegments.length > 0
-    ) {
-      this.chatBuffer[session.id] = [
-        ...(this.chatBuffer[session.id] || []),
-        {
-          speakerSegments,
-          createdAt: currentTranscriptCreatedAt,
-        },
-      ];
-
-      // Find speakers of the conversation and add to session
-      await this.addConversationSpeakers(session);
-    }
-
-    // Immeaditely broadcast the message to the counselor
-    if (session.speakers && speakerSegments && speakerSegments.length > 0) {
-      const mergedChat =
-        this.combineConsecutiveSpeakerSegments(speakerSegments);
-      await processSequentially(mergedChat, async (segment) => {
-        const senderId = session.speakers![`speaker${segment.speaker}`]?.id;
-        const message = await this.chatService.getMessageObject(
-          chatId,
-          senderId,
-          {
-            content: segment.content,
-          },
-        );
-        const participants = [session.counselorId];
-        this.publisher.publish('chat-message', {
-          participants,
-          message: {
-            ...message,
-            isFinal,
-            isSentenceComplete,
-          },
-          broadCastOptions: {
-            event: ChatEvents.MESSAGE_RECEIVED,
-          },
-        });
-      });
-    }
-
-    // Save transcript to db
-    if (
-      this.config.ai.sentenceCompletionRequired &&
-      isSentenceComplete &&
-      session.speakers
-    ) {
-      const currentChatBuffer = this.chatBuffer[session.id];
-      if (currentChatBuffer) {
-        await processSequentially(currentChatBuffer, async (chat) => {
-          const mergedChat = this.combineConsecutiveSpeakerSegments(
-            chat.speakerSegments,
-          );
-          await processSequentially(mergedChat, async (segment) => {
-            await this.saveMessageAndTriggerNudge(
-              segment,
-              session,
-              chatId,
-              chat.createdAt!,
-            );
-          });
-        });
-
-        delete this.chatBuffer[session.id];
-
-        return;
-      }
-
-      if (speakerSegments && speakerSegments.length > 0) {
-        const mergedChat =
-          this.combineConsecutiveSpeakerSegments(speakerSegments);
-        await processSequentially(mergedChat, async (segment) => {
-          await this.saveMessageAndTriggerNudge(
-            segment,
-            session,
-            chatId,
-            currentTranscriptCreatedAt!,
-          );
-        });
-      }
-    }
-  }
 
   async handleStreamEvent(messageData: any, ws: WebSocket) {
     if (messageData.event === ExotelStreamEvents.START) {
@@ -341,6 +69,13 @@ export class ExotelService implements AudioIngestInterface {
     this.sessions[streamSid] = {
       id: streamSid,
       chatId: -99,
+      type: 'user',
+      userId: -1,
+      user: null,
+      role: UserRole.COUNSELOR,
+      room: `user-${-1}`,
+      tenantId: 'default',
+      provider: AudioChatProvider.EXOTEL,
     };
 
     let counselorPhone = messageData.start?.from;
@@ -369,10 +104,10 @@ export class ExotelService implements AudioIngestInterface {
       counselorPhone = `+91${counselorPhone}`; // Add +91 prefix
     }
 
-    const chatData = await this.chatService.createChatForAnyonymousClient(
+    const chatData = await this.chatService.createChatForAnyonymousClient({
       counselorPhone,
-      'EXOTEL',
-    );
+      provider: AudioChatProvider.EXOTEL,
+    });
 
     if (!chatData) {
       this.eventEmitter.emit('exception', {
@@ -388,12 +123,13 @@ export class ExotelService implements AudioIngestInterface {
       return;
     }
 
-    const { chatId, clientId, counselorId, tenantId } = chatData;
+    const { chatId, counselorId, tenantId } = chatData;
 
     const session = {
       chatId,
-      clientId,
-      counselorId,
+      userId: counselorId,
+      user: null,
+      room: `user-${counselorId}`,
       tenantId,
     };
 
@@ -404,9 +140,11 @@ export class ExotelService implements AudioIngestInterface {
     };
 
     this.transcriptionService.startLiveTranscription(
-      { id: streamSid, ...session },
+      { id: streamSid, ...session, type: 'user', role: UserRole.COUNSELOR },
       chatId,
-      this.handleDeepgramTranscript.bind(this),
+      this.multiSpeakerAudioService.handleDeepgramTranscript.bind(
+        this.multiSpeakerAudioService,
+      ),
       { diarize: true, encoding: 'linear16', sample_rate: 8000 },
     );
 
@@ -455,12 +193,13 @@ export class ExotelService implements AudioIngestInterface {
 
     this.transcriptionService.sendAudio(session, audioBuffer);
 
-    if (session.counselorId) {
-      const participants = [session.counselorId];
-      this.publisher.publish('chat-message', {
+    if (session.userId !== -1) {
+      const participants = [session.userId];
+      // for now handling the audio message for exotel using microphone channel
+      this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
         participants,
         message: {
-          userId: session.counselorId,
+          userId: session.userId,
           audioData,
           chatId: session.chatId,
           content: 'Audio message',
@@ -544,7 +283,7 @@ export class ExotelService implements AudioIngestInterface {
     }
 
     this.transcriptionService.stopLiveTranscription(session);
-    const participants = [session.counselorId];
+    const participants = [session.userId];
     this.publisher.publish('chat-message', {
       participants,
       message: {
@@ -557,16 +296,15 @@ export class ExotelService implements AudioIngestInterface {
     });
 
     this.setAuthContext({
-      userId: session.counselorId!,
-      role: 'counselor',
+      userId: session.userId!,
+      role: UserRole.COUNSELOR,
       tenantId: session.tenantId!,
     });
 
     await this.chatService.endChat(-99, session.chatId);
 
     this.clearKeepAliveData(streamSid);
-    delete this.sessions[streamSid];
-    delete this.chatBuffer[streamSid];
+    // delete this.sessions[streamSid];
 
     this.logger.info(
       `Exotel: WS client stop event completed with stream_sid: ${streamSid}`,
