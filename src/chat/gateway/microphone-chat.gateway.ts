@@ -170,8 +170,13 @@ export class MicrophoneChatGateway
 
   @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
-  async startAudioChat(client: Socket, data: any) {
-    this.logger.info(`Client ${client.id} sent message: ${data}`);
+  async startAudioChat(
+    client: Socket,
+    { isLinear16Encoded }: { isLinear16Encoded?: boolean },
+  ) {
+    this.logger.info(
+      `Client ${client.id} start audio chat with isLinear16Encoded: ${isLinear16Encoded}`,
+    );
 
     const session = this.sessions[client.id];
     if (!session) {
@@ -222,7 +227,13 @@ export class MicrophoneChatGateway
         this.multiSpeakerAudioService.handleDeepgramTranscript.bind(
           this.multiSpeakerAudioService,
         ),
-        { diarize: true },
+        {
+          diarize: true,
+          ...(isLinear16Encoded && {
+            encoding: 'linear16',
+            sample_rate: 16000,
+          }),
+        },
       )
       .catch((error) => {
         this.logger.error(
