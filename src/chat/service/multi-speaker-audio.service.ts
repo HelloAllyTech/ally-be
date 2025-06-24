@@ -63,7 +63,7 @@ export class MultiSpeakerAudioService {
     });
     if (chatHistory.length < 2 || uniqueSpeakers.length < 2) {
       this.logger.info(
-        `🎤 Exotel: Waiting for more speaker segments for chatId: ${chatId}`,
+        `🎤 Waiting for more speaker segments for chatId: ${chatId} and provider: ${session.provider}`,
       );
       return;
     }
@@ -72,7 +72,7 @@ export class MultiSpeakerAudioService {
 
     if (!speakers || !speakers.speaker0 || !speakers.speaker1) {
       this.logger.info(
-        `🎤 Exotel: No speaker details from ai service for chatId: ${chatId}`,
+        `🎤 No speaker details from ai service for chatId: ${chatId} and provider: ${session.provider}`,
       );
       return;
     }
@@ -80,7 +80,7 @@ export class MultiSpeakerAudioService {
     // If both speakers are unknown, we can't proceed
     if (speakers.speaker0 === 'unknown' && speakers.speaker1 === 'unknown') {
       this.logger.info(
-        `🎤 Exotel: Both speakers are unknown for chatId: ${chatId}`,
+        `🎤 Both speakers are unknown for chatId: ${chatId} and provider: ${session.provider}`,
       );
       return;
     }
@@ -90,7 +90,7 @@ export class MultiSpeakerAudioService {
       speakers.speaker1 =
         speakers.speaker0 === 'client' ? 'counselor' : 'client';
       this.logger.info(
-        `🎤 Exotel: Assumed speaker1 is ${speakers.speaker1} for chatId: ${chatId}`,
+        `🎤 Assumed speaker1 is ${speakers.speaker1} for chatId: ${chatId} and provider: ${session.provider}`,
       );
     }
 
@@ -102,7 +102,7 @@ export class MultiSpeakerAudioService {
       speakers.speaker0 =
         speakers.speaker1 === 'client' ? 'counselor' : 'client';
       this.logger.info(
-        `🎤 Exotel: Assumed speaker0 is ${speakers.speaker0} for chatId: ${chatId}`,
+        `🎤 Assumed speaker0 is ${speakers.speaker0} for chatId: ${chatId} and provider: ${session.provider}`,
       );
     }
 
@@ -123,7 +123,7 @@ export class MultiSpeakerAudioService {
     ];
 
     this.logger.info(
-      `🎤 Exotel: Speakers identified: ${JSON.stringify(this.speakers[session.id])} for chatId: ${chatId}`,
+      `🎤 Speakers identified: ${JSON.stringify(this.speakers[session.id])} for chatId: ${chatId} and provider: ${session.provider}`,
     );
   }
 
@@ -193,12 +193,12 @@ export class MultiSpeakerAudioService {
       speakerSegments: currentSpeakerSegments,
     } = metadata || {};
     this.logger.info(
-      `Exotel: Transcription: ${transcript} - ${new Date().toISOString()}`,
+      `🎤 Transcript: ${transcript} - ${new Date().toISOString()} - chatId: ${chatId} and provider: ${session.provider}`,
     );
 
     if (!currentSpeakerSegments || currentSpeakerSegments.length === 0) {
       this.logger.error(
-        `Exotel: No speaker segments found for chatId: ${chatId}`,
+        `🎤No speaker segments found for chatId: ${chatId} and provider: ${session.provider}`,
       );
       return;
     }
@@ -210,7 +210,7 @@ export class MultiSpeakerAudioService {
 
     if (!speakerSegments || speakerSegments.length === 0) {
       this.logger.info(
-        `Exotel: No speaker segments found after removing speaker > 1 for chatId: ${chatId}`,
+        `🎤 No speaker segments found after removing speaker > 1 for chatId: ${chatId} and provider: ${session.provider}`,
       );
       return;
     }

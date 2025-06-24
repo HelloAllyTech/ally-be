@@ -23,6 +23,8 @@ import { MultiSpeakerAudioService } from '../service/multi-speaker-audio.service
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
 import { Message, MessageType } from '../../common/entities/message.entity';
+import { UserService } from '../../user/user.service';
+import { ChatStatus } from '../../common/entities/chat.entity';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -44,6 +46,7 @@ export class MicrophoneChatGateway
     private transcriptionService: TranscriptionService,
     private multiSpeakerAudioService: MultiSpeakerAudioService,
     private publisher: MessageBrokerService,
+    private userService: UserService,
   ) {}
 
   @WebSocketServer() server!: Server;
@@ -134,6 +137,15 @@ export class MicrophoneChatGateway
       return;
     }
 
+    const user = await this.userService.get(+userId);
+    if (!user) {
+      this.logger.error(
+        `❌ User with id ${userId} not found for client ${client.id}`,
+      );
+      client.disconnect();
+      return;
+    }
+
     const room = `user-${userId}`;
     client.join(room);
 
@@ -146,7 +158,7 @@ export class MicrophoneChatGateway
       room,
       provider: AudioChatProvider.MICROPHONE,
       chatId: -99,
-      tenantId: 'default',
+      tenantId: user.tenantId,
     };
 
     this.connectedUsers.add(+userId);
@@ -167,6 +179,18 @@ export class MicrophoneChatGateway
       return;
     }
 
+    this.setAuthContext(session);
+    const activeChat = await this.chatService.getChatsByCouncilorId(
+      session.userId,
+      { status: ChatStatus.ACTIVE },
+    );
+
+    if (activeChat) {
+      this.logger.error(`❌ User ${session.userId} already has an active chat`);
+      client.disconnect();
+      return;
+    }
+
     const chat = await this.chatService.createChatForAnyonymousClient({
       counselorId: session.userId,
       provider: AudioChatProvider.MICROPHONE,
@@ -183,7 +207,6 @@ export class MicrophoneChatGateway
     const updatedSession = {
       ...session,
       chatId,
-      tenantId: chat.tenantId,
     };
 
     this.sessions[client.id] = updatedSession;
@@ -192,7 +215,6 @@ export class MicrophoneChatGateway
       `Chat create for user ${session.userId} with chatId ${chat.chatId}`,
     );
 
-    this.setAuthContext(updatedSession);
     await this.transcriptionService
       .startLiveTranscription(
         updatedSession,

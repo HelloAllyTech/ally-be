@@ -153,8 +153,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
 
       liveClient.on(LiveTranscriptionEvents.Error, (error) => {
         this.logger.error(
-          `Live transcription error for userId: ${session.userId}`,
-          error,
+          `Live transcription error for userId: ${session.userId} | error: ${error.message}`,
         );
         reject(error);
       });
@@ -275,8 +274,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
 
     liveClient.on(LiveTranscriptionEvents.Error, (error) => {
       this.logger.error(
-        `Live transcription error for userId: ${session.userId}`,
-        error,
+        `Live transcription error for userId: ${session.userId} | error: ${error.message}`,
       );
     });
 
