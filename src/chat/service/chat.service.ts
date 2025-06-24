@@ -529,6 +529,9 @@ export class ChatService {
     if (filter?.limit) {
       query.limit(filter.limit);
     }
+    if (filter?.offset) {
+      query.offset(filter.offset);
+    }
     query.andWhere('message.tenantId = :tenantId', {
       tenantId: ExecutionManager.getTenantId(),
     });
