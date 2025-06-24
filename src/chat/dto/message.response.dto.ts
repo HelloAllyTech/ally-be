@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { MessageType } from '../../common/entities/message.entity';
 import { Feedback } from '../../common/entities/feedback.entity';
 
-export class GetMessagesResponse {
+export class MessageResponse {
   @ApiProperty({ type: Number })
   messageId!: number;
 
@@ -26,4 +26,12 @@ export class GetMessagesResponse {
 
   @ApiProperty({ type: Feedback, required: false })
   feedback?: Feedback;
+}
+
+export class GetMessagesResponse {
+  @ApiProperty({ type: [MessageResponse] })
+  data!: MessageResponse[];
+
+  @ApiProperty({ type: Number })
+  count!: number;
 }

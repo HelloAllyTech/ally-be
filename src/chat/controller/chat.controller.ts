@@ -32,7 +32,6 @@ import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 import { CallStartDto } from '../dto/call-start.dto';
 import { Response } from 'express';
-import { MessageType } from '../../common/entities/message.entity';
 import { GetMessagesResponse } from '../dto/message.response.dto';
 
 @ApiTags('Chats')
@@ -135,7 +134,6 @@ export class ChatController {
     status: 200,
     description: 'Returns the list of messages',
     type: GetMessagesResponse,
-    isArray: true,
   })
   @ApiParam({
     name: 'id',
@@ -167,12 +165,6 @@ export class ChatController {
     enum: ['ASC', 'DESC'],
     description: 'Sort order (default: DESC)',
   })
-  @ApiQuery({
-    name: 'type',
-    required: false,
-    enum: Object.values(MessageType),
-    description: 'Filter messages by type (default: all)',
-  })
   @Get(':id/messages')
   async getMessages(
     @CurrentUser() tokenUser: TokenUser,
@@ -181,14 +173,12 @@ export class ChatController {
     @Query('offset') offset?: number,
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
-    @Query('type') type?: MessageType,
   ) {
     return this.service.getMessages(parseInt(id), tokenUser.id, {
       limit,
       offset,
       sortBy,
       sortOrder,
-      type,
     });
   }
 

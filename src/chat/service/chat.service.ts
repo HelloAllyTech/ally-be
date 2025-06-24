@@ -532,7 +532,11 @@ export class ChatService {
     query.andWhere('message.tenantId = :tenantId', {
       tenantId: ExecutionManager.getTenantId(),
     });
-    return query.getMany();
+    const [messages, count] = await query.getManyAndCount();
+    return {
+      messages,
+      count,
+    };
   }
 
   formatMessage(message: MessageWithFeedback) {
@@ -614,7 +618,7 @@ export class ChatService {
     const counselor = chat.counselorId
       ? await this.userService.get(chat.counselorId)
       : null;
-    const messages = await this.getMessageByChatId(
+    const { messages } = await this.getMessageByChatId(
       chat.id,
       undefined,
       entityManager,
@@ -679,7 +683,6 @@ export class ChatService {
       offset?: number;
       sortBy?: string;
       sortOrder?: 'ASC' | 'DESC';
-      type?: MessageType;
     },
   ) {
     const {
@@ -687,7 +690,6 @@ export class ChatService {
       offset = 0,
       sortBy = 'createdAt',
       sortOrder = 'DESC',
-      type,
     } = options;
 
     const chat = await this.chatRepository.findOne({
@@ -708,15 +710,18 @@ export class ChatService {
       );
     }
 
-    const messages = await this.getMessageByChatId(chatId, {
+    const { messages, count } = await this.getMessageByChatId(chatId, {
       limit,
       offset,
       sortBy,
       order: sortOrder,
-      type,
+      type: MessageType.TEXT,
     });
 
-    return messages.map((message) => this.formatMessage(message));
+    return {
+      data: messages.map((message) => this.formatMessage(message)),
+      count,
+    };
   }
 
   async handleChatEnded(chat: Chat) {
@@ -743,7 +748,7 @@ export class ChatService {
     );
     try {
       const chatId = chat.id;
-      const messages = await this.getMessageByChatId(chatId, {
+      const { messages } = await this.getMessageByChatId(chatId, {
         sortBy: 'createdAt',
         order: 'ASC',
       });
