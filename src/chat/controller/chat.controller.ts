@@ -21,6 +21,9 @@ import {
   ApiQuery,
   ApiTags,
   ApiBody,
+  ApiParam,
+  ApiBearerAuth,
+  ApiSecurity,
 } from '@nestjs/swagger';
 import { CallLogResponse } from '../dto/call-log.response.dto';
 import { CallInfoDto, ChatResponseDto } from '../dto/chat.response.dto';
@@ -29,8 +32,12 @@ import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 import { CallStartDto } from '../dto/call-start.dto';
 import { Response } from 'express';
+import { MessageType } from '../../common/entities/message.entity';
+import { GetMessagesResponse } from '../dto/message.response.dto';
 
 @ApiTags('Chats')
+@ApiBearerAuth()
+@ApiSecurity('access-token')
 @Controller('v1/chats')
 export class ChatController {
   constructor(
@@ -123,14 +130,66 @@ export class ChatController {
   }
 
   @AuthRoles(UserRole.COUNSELOR)
+  @ApiOperation({ summary: 'Get messages' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the list of messages',
+    type: GetMessagesResponse,
+    isArray: true,
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    type: Number,
+    description: 'Chat ID',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by (default: createdAt)',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    description: 'Sort order (default: DESC)',
+  })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    enum: Object.values(MessageType),
+    description: 'Filter messages by type (default: all)',
+  })
   @Get(':id/messages')
   async getMessages(
     @CurrentUser() tokenUser: TokenUser,
     @Param('id') id: string,
-    @Query('limit') limit: number,
-    @Query('offset') offset: number,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
+    @Query('type') type?: MessageType,
   ) {
-    return this.service.getMessages(parseInt(id), tokenUser.id, limit, offset);
+    return this.service.getMessages(parseInt(id), tokenUser.id, {
+      limit,
+      offset,
+      sortBy,
+      sortOrder,
+      type,
+    });
   }
 
   @AuthRoles(UserRole.COUNSELOR)

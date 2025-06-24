@@ -674,9 +674,22 @@ export class ChatService {
   async getMessages(
     chatId: number,
     userId: number,
-    limit: number = 50,
-    offset: number = 0,
+    options: {
+      limit?: number;
+      offset?: number;
+      sortBy?: string;
+      sortOrder?: 'ASC' | 'DESC';
+      type?: MessageType;
+    },
   ) {
+    const {
+      limit = 10,
+      offset = 0,
+      sortBy = 'createdAt',
+      sortOrder = 'DESC',
+      type,
+    } = options;
+
     const chat = await this.chatRepository.findOne({
       where: {
         id: chatId,
@@ -695,26 +708,15 @@ export class ChatService {
       );
     }
 
-    const query = this.messageRepository.createQueryBuilder('message');
-    query
-      .where('message.chatId = :chatId', { chatId })
-      .leftJoinAndMapOne(
-        'message.feedback',
-        Feedback,
-        'feedback',
-        'feedback.messageId = message.id',
-      )
-      .orderBy('message.createdAt', 'DESC');
-    if (limit) {
-      query.limit(limit);
-    }
-    if (offset) {
-      query.offset(offset);
-    }
-    query.andWhere('message.tenantId = :tenantId', {
-      tenantId: ExecutionManager.getTenantId(),
+    const messages = await this.getMessageByChatId(chatId, {
+      limit,
+      offset,
+      sortBy,
+      order: sortOrder,
+      type,
     });
-    return query.getMany();
+
+    return messages.map((message) => this.formatMessage(message));
   }
 
   async handleChatEnded(chat: Chat) {
