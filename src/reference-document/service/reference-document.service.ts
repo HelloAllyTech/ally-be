@@ -144,41 +144,36 @@ export class ReferenceDocumentService {
     availableIds: string[],
     contextLabel: string,
   ) {
-    if (!availableIds.length) {
-      this.logger.info(
-        `No ${contextLabel} documents found for query "${searchDto.query}"`,
-      );
-      return { documents: [], total: 0 };
+    const documentIds = this.filterExcludedIds(
+      availableIds,
+      searchDto.excludedIds || [],
+    );
+
+    if (
+      this.shouldSkipSearch(
+        availableIds,
+        documentIds,
+        searchDto.query,
+        contextLabel,
+      )
+    ) {
+      return { documents: [], total: 0, categories: {} };
     }
 
-    const excludedIds = searchDto.excludedIds || [];
-    const documentIds = availableIds.filter((id) => !excludedIds.includes(id));
+    const request = this.buildSearchRequest(searchDto, documentIds);
 
-    if (!documentIds.length) {
-      this.logger.info(
-        `All ${contextLabel} documents excluded for query "${searchDto.query}"`,
-      );
-      return { documents: [], total: 0 };
-    }
-
-    const request = {
-      query: searchDto.query,
-      limit: Number(searchDto.limit) || 10,
-      document_ids: documentIds,
-      ...(searchDto.filters && { filters: searchDto.filters }),
-      ...(searchDto.sortBy && { sort_by: searchDto.sortBy }),
-      ...(searchDto.sortOrder && { sort_order: searchDto.sortOrder }),
-    };
+    this.logger.info(
+      `Searching ${contextLabel} documents with query "${searchDto.query}"`,
+    );
 
     try {
-      this.logger.info(
-        `Searching ${contextLabel} documents with query "${searchDto.query}"`,
-      );
       const response = await this.aiService.searchReferenceDocuments(request);
+
       return {
         documents: response.documents.map(this.mapDocument),
         total: response.total,
         limit: response.limit,
+        categories: response.categories,
       };
     } catch (error) {
       this.logger.error(
@@ -191,6 +186,53 @@ export class ReferenceDocumentService {
       );
       throw new SearchOperationFailedException(contextLabel, error);
     }
+  }
+
+  private filterExcludedIds(
+    availableIds: string[],
+    excludedIds: string[],
+  ): string[] {
+    if (!excludedIds.length) return availableIds;
+
+    const excludedSet = new Set(excludedIds);
+    return availableIds.filter((id) => !excludedSet.has(id));
+  }
+
+  private shouldSkipSearch(
+    availableIds: string[],
+    documentIds: string[],
+    query: string,
+    contextLabel: string,
+  ): boolean {
+    if (!availableIds.length) {
+      this.logger.info(
+        `No ${contextLabel} documents found for query "${query}"`,
+      );
+      return true;
+    }
+
+    if (!documentIds.length) {
+      this.logger.info(
+        `All ${contextLabel} documents excluded for query "${query}"`,
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  private buildSearchRequest(
+    searchDto: SearchDocumentsDto,
+    documentIds: string[],
+  ) {
+    return {
+      query: searchDto.query,
+      limit: Number(searchDto.limit) || 10,
+      document_ids: documentIds,
+      ...(searchDto.filters && { filters: searchDto.filters }),
+      ...(searchDto.sortBy && { sort_by: searchDto.sortBy }),
+      ...(searchDto.sortOrder && { sort_order: searchDto.sortOrder }),
+    };
   }
 
   private mapDocument(doc: any) {

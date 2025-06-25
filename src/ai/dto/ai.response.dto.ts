@@ -40,6 +40,7 @@ export interface SearchReferenceDocumentsResponse {
   documents: SearchReferenceDocumentResult[];
   total: number;
   limit: number;
+  categories: Record<string, number>;
 }
 
 export interface UpdateReferenceDocumentResponse {

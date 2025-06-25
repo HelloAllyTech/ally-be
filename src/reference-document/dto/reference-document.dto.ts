@@ -174,6 +174,15 @@ export class SearchDocumentsResponseDto {
     description: 'Limit used for the search',
   })
   limit!: number;
+
+  @ApiProperty({
+    description: 'Category counts in the search results',
+    example: {
+      'financial-services': 1,
+      'legal-aid': 1,
+    },
+  })
+  categories!: Record<string, number>;
 }
 
 export class GetDocumentResponseDto {
