@@ -19,6 +19,8 @@ import { LoggerService } from '../../logger/logger.service';
 import { ApiBody } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
+import { UserRole } from '../../common/constants/user.constants';
+import { AuthRoles } from '../decorators/auth-roles.decorator';
 
 @Controller('v1/auth')
 export class AuthController {
@@ -61,6 +63,7 @@ export class AuthController {
 
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
+  @AuthRoles(UserRole.SUPER_ADMIN)
   async signup(@Body() userData: UserCreateDto) {
     try {
       const user = await this.authService.signup(userData);
