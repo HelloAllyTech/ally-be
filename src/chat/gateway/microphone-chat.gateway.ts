@@ -9,7 +9,10 @@ import { Server, Socket } from 'socket.io';
 import { LoggerService } from '../../logger/logger.service';
 import { Injectable } from '@nestjs/common';
 import { ChatService } from '../service/chat.service';
-import { AudioChatProvider } from '../../common/constants/chat.constants';
+import {
+  AudioChatPlatform,
+  AudioChatProvider,
+} from '../../common/constants/chat.constants';
 import { UserRole } from 'src/common/constants/user.constants';
 import { MessagePayload, UserChatSessionData } from '../type/chat.type';
 import { ChatEvents } from '../constants/chat.constants';
@@ -172,7 +175,10 @@ export class MicrophoneChatGateway
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async startAudioChat(
     client: Socket,
-    { isLinear16Encoded }: { isLinear16Encoded?: boolean },
+    {
+      isLinear16Encoded,
+      platform,
+    }: { isLinear16Encoded?: boolean; platform: AudioChatPlatform },
   ) {
     this.logger.info(
       `Client ${client.id} start audio chat with isLinear16Encoded: ${isLinear16Encoded}`,
@@ -199,6 +205,7 @@ export class MicrophoneChatGateway
     const chat = await this.chatService.createChatForAnyonymousClient({
       counselorId: session.userId,
       provider: AudioChatProvider.MICROPHONE,
+      platform,
     });
 
     if (!chat) {

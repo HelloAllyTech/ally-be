@@ -8,3 +8,8 @@ export enum AudioChatProvider {
   EXOTEL = 'EXOTEL',
   MICROPHONE = 'MICROPHONE',
 }
+
+export enum AudioChatPlatform {
+  WEB = 'WEB',
+  MOBILE = 'MOBILE',
+}

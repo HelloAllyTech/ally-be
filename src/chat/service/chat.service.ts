@@ -7,6 +7,7 @@ import { LoggerService } from '../../logger/logger.service';
 import { ChatRoom } from '../../common/entities/chat-room.entity';
 import { QueueService } from '../../queue/service/queue.service';
 import {
+  AudioChatPlatform,
   AudioChatProvider,
   QueueStatus,
 } from '../../common/constants/chat.constants';
@@ -196,12 +197,19 @@ export class ChatService {
     return chat;
   }
 
-  async createChatWithClientAndCounselor(
-    clientId: number,
-    counselorId?: number,
-    tenantId?: string,
-    provider?: AudioChatProvider,
-  ) {
+  async createChatWithClientAndCounselor({
+    clientId,
+    counselorId,
+    tenantId,
+    provider,
+    platform,
+  }: {
+    clientId: number;
+    counselorId?: number;
+    tenantId?: string;
+    provider?: AudioChatProvider;
+    platform?: AudioChatPlatform;
+  }) {
     return this.dataSource.transaction(async (entityManager) => {
       const chatRepo = entityManager.getRepository(Chat) || this.chatRepository;
       const chatRoomRepo =
@@ -232,6 +240,7 @@ export class ChatService {
         startTime: new Date(),
         callInfo: {
           provider,
+          platform,
         },
       });
 
@@ -243,10 +252,12 @@ export class ChatService {
     counselorPhone,
     counselorId,
     provider,
+    platform,
   }: {
     counselorPhone?: string;
     counselorId?: number;
     provider?: AudioChatProvider;
+    platform?: AudioChatPlatform;
   }): Promise<{
     chatId: number;
     clientId: number;
@@ -271,12 +282,13 @@ export class ChatService {
 
     const clientId = ANONYMOUS_CLIENT_ID;
 
-    const chat = await this.createChatWithClientAndCounselor(
+    const chat = await this.createChatWithClientAndCounselor({
       clientId,
-      counselor.id,
-      counselor.tenantId,
+      counselorId: counselor.id,
+      tenantId: counselor.tenantId,
       provider,
-    );
+      platform,
+    });
 
     return {
       chatId: chat.id,
@@ -613,6 +625,7 @@ export class ChatService {
     return {
       ...chatResponse,
       provider: callDetails?.callInfo?.provider,
+      platform: callDetails?.callInfo?.platform,
     };
   }
 
@@ -675,6 +688,7 @@ export class ChatService {
     return {
       ...chatResponse,
       provider: callDetails?.callInfo?.provider,
+      platform: callDetails?.callInfo?.platform,
     };
   }
 

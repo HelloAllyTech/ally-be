@@ -1,7 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ChatStatus } from '../../common/entities/chat.entity';
 import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
-import { AudioChatProvider } from '../../common/constants/chat.constants';
+import {
+  AudioChatPlatform,
+  AudioChatProvider,
+} from '../../common/constants/chat.constants';
 
 class UserInfo {
   @ApiProperty()
@@ -46,6 +49,10 @@ export class CallInfo {
 
   @ApiProperty({ required: false })
   pauseChat?: boolean;
+
+  // Call intiated platform
+  @ApiProperty({ required: false })
+  platform?: AudioChatPlatform;
 }
 export class CallDetails {
   @ApiProperty({ required: false })
