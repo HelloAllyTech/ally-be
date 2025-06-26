@@ -33,4 +33,10 @@ export class Message extends BaseEntity {
 
   @Column({ nullable: true })
   parentMessageId?: number;
+
+  @Column({ nullable: true })
+  startedAt?: Date;
+
+  @Column({ nullable: true })
+  endedAt?: Date;
 }

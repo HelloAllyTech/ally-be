@@ -255,10 +255,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       //! Need to set the auth context before persisting and broadcasting the message
       this.setAuthContext(session);
       session.chatId = chatId;
+      const chat = await this.chatService.getChatById(chatId);
       await this.transcriptionService
         .startLiveTranscription(
-          session,
-          chatId,
+          {
+            session,
+            chatId,
+            chatCreatedAt: chat?.createdAt,
+          },
           this.handleDeepgramTranscript.bind(this),
         )
         .catch((error) => {
@@ -267,7 +271,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             error,
           );
         });
-      const chat = await this.chatService.getChatById(chatId);
       if (chat) {
         const participants = [chat.counselorId, chat.clientId].filter(
           (id) => id !== session.userId,
@@ -528,6 +531,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         {
           content: currentTranscriptBuffer || transcript,
           createdAt: metadata?.currentTranscriptCreatedAt,
+          endedAt: metadata?.currentTranscriptEndedAt,
         },
       );
       this.chatService.triggerNudge(
@@ -585,6 +589,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         {
           content: currentTranscriptBuffer || transcript,
           createdAt: metadata?.currentTranscriptCreatedAt,
+          endedAt: metadata?.currentTranscriptEndedAt,
         },
       );
       this.chatService.triggerNudge(

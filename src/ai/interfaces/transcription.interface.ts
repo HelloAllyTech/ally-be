@@ -5,14 +5,22 @@ export interface ITranscriptionService {
   handleAudioChatMuted(session: UserChatSessionData): Promise<void>;
 
   startLiveTranscription(
-    session: UserChatSessionData,
-    chatId: number,
+    {
+      session,
+      chatId,
+      chatCreatedAt,
+      options,
+    }: {
+      session: UserChatSessionData;
+      chatId: number;
+      chatCreatedAt?: Date;
+      options?: DeepgramTranscriptionOptions;
+    },
     callback: (
       session: UserChatSessionData,
       chatId: number,
       transcript: string,
     ) => void,
-    options?: DeepgramTranscriptionOptions,
   ): Promise<void>;
 
   stopLiveTranscription(session: UserChatSessionData): Promise<void>;

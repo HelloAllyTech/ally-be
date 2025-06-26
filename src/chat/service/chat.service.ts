@@ -575,6 +575,7 @@ export class ChatService {
       context?: string;
       messageType?: MessageType;
       createdAt?: Date;
+      endedAt?: Date;
       parentMessageId?: number;
     },
   ) {
@@ -586,6 +587,8 @@ export class ChatService {
       type: data.messageType || MessageType.TEXT,
       tenantId: ExecutionManager.getTenantId(),
       parentMessageId: data.parentMessageId,
+      startedAt: data.createdAt,
+      endedAt: data.endedAt,
     });
     return this.messageRepository.save(message);
   }
@@ -917,7 +920,8 @@ export class ChatService {
           ? 'CLIENT'
           : message.sender?.role,
       content: message.content,
-      timestamp: message.createdAt.toISOString(),
+      start_time: message.createdAt.toISOString(),
+      end_time: message.endedAt?.toISOString(),
     }));
     return messageRequests;
   }

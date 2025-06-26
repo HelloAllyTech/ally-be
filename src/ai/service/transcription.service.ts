@@ -11,20 +11,31 @@ export class TranscriptionService {
   ) {}
 
   async startLiveTranscription(
-    session: UserChatSessionData,
-    chatId: number,
+    {
+      session,
+      chatId,
+      chatCreatedAt,
+      options,
+    }: {
+      session: UserChatSessionData;
+      chatId: number;
+      chatCreatedAt?: Date;
+      options?: DeepgramTranscriptionOptions;
+    },
     callback: (
       session: UserChatSessionData,
       chatId: number,
       transcript: string,
     ) => void,
-    options?: DeepgramTranscriptionOptions,
   ) {
     await this.transcriptionService.startLiveTranscription(
-      session,
-      chatId,
+      {
+        session,
+        chatId,
+        chatCreatedAt,
+        options,
+      },
       callback,
-      options,
     );
   }
 

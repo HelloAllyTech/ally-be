@@ -79,6 +79,7 @@ export type DeepgramTranscriptMetadata = {
   isSentenceComplete: boolean;
   currentTranscriptBuffer: string;
   currentTranscriptCreatedAt: Date;
+  currentTranscriptEndedAt?: Date;
   isUtteranceEnd?: boolean;
   wordCountByLanguage?: Record<string, number>;
   speakerSegments?: {

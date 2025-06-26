@@ -82,23 +82,19 @@ export class OzonetelService {
     // TODO handle deepgram transcription and sentence completion
     this.transcriptionService.startLiveTranscription(
       {
-        id: 'user-1',
-        type: 'user',
-        userId: 1,
-        user: {},
-        role: 'client',
-        room: 'user-1',
+        session: {
+          id: 'user-1',
+          type: 'user',
+          userId: 1,
+          user: {},
+          role: 'client',
+          room: 'user-1',
+          chatId: 3,
+          tenantId: '1',
+        },
         chatId: 3,
-        tenantId: '1',
       },
-      3,
-      async (session, chatId, transcript) => {
-        await this.chatGateway.handleDeepgramTranscript(
-          session,
-          chatId,
-          transcript,
-        );
-      },
+      this.chatGateway.handleDeepgramTranscript.bind(this.chatGateway),
     );
     return this.getStreamingXML();
   }

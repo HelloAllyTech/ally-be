@@ -229,18 +229,20 @@ export class MicrophoneChatGateway
 
     await this.transcriptionService
       .startLiveTranscription(
-        updatedSession,
-        chatId,
+        {
+          session: updatedSession,
+          chatId,
+          options: {
+            diarize: true,
+            ...(isLinear16Encoded && {
+              encoding: 'linear16',
+              sample_rate: 16000,
+            }),
+          },
+        },
         this.multiSpeakerAudioService.handleDeepgramTranscript.bind(
           this.multiSpeakerAudioService,
         ),
-        {
-          diarize: true,
-          ...(isLinear16Encoded && {
-            encoding: 'linear16',
-            sample_rate: 16000,
-          }),
-        },
       )
       .catch((error) => {
         this.logger.error(

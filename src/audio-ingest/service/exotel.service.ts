@@ -140,12 +140,19 @@ export class ExotelService implements AudioIngestInterface {
     };
 
     this.transcriptionService.startLiveTranscription(
-      { id: streamSid, ...session, type: 'user', role: UserRole.COUNSELOR },
-      chatId,
+      {
+        session: {
+          id: streamSid,
+          ...session,
+          type: 'user',
+          role: UserRole.COUNSELOR,
+        },
+        chatId,
+        options: { diarize: true, encoding: 'linear16', sample_rate: 8000 },
+      },
       this.multiSpeakerAudioService.handleDeepgramTranscript.bind(
         this.multiSpeakerAudioService,
       ),
-      { diarize: true, encoding: 'linear16', sample_rate: 8000 },
     );
 
     this.logger.info(
