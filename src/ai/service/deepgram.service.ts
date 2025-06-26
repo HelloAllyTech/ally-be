@@ -240,12 +240,13 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
             clientSession.currentTranscriptCreatedAt ||
             (chatCreatedAt
               ? new Date(
-                  chatCreatedAt.getTime() + transcriptWords[0].start * 1000,
+                  new Date(chatCreatedAt).getTime() +
+                    transcriptWords[0].start * 1000,
                 )
               : new Date());
           const currentTranscriptEndedAt = chatCreatedAt
             ? new Date(
-                chatCreatedAt.getTime() +
+                new Date(chatCreatedAt).getTime() +
                   transcriptWords[transcriptWords.length - 1].end * 1000,
               )
             : undefined;
@@ -288,6 +289,20 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       );
       const clientSession = this.liveClients.get(session.id);
       if (clientSession) {
+        const transcriptWords = data.channel.alternatives[0].words;
+        clientSession.currentTranscriptCreatedAt ||
+          (chatCreatedAt
+            ? new Date(
+                new Date(chatCreatedAt).getTime() +
+                  transcriptWords[0].start * 1000,
+              )
+            : new Date());
+        const currentTranscriptEndedAt = chatCreatedAt
+          ? new Date(
+              new Date(chatCreatedAt).getTime() +
+                transcriptWords[transcriptWords.length - 1].end * 1000,
+            )
+          : undefined;
         callback(session, chatId, '', {
           isFinal: data.is_final,
           currentTranscriptBuffer: clientSession?.transcriptBuffer || '',
@@ -295,6 +310,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
           isUtteranceEnd: true,
           currentTranscriptCreatedAt:
             clientSession?.currentTranscriptCreatedAt || new Date(),
+          currentTranscriptEndedAt,
         });
         clientSession.transcriptBuffer = '';
         clientSession.currentTranscriptCreatedAt = null;
