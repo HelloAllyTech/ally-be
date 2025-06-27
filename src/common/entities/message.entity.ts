@@ -34,9 +34,9 @@ export class Message extends BaseEntity {
   @Column({ nullable: true })
   parentMessageId?: number;
 
-  @Column({ nullable: true })
-  startedAt?: Date;
+  @Column({ type: 'float', nullable: true })
+  startSeconds?: number;
 
-  @Column({ nullable: true })
-  endedAt?: Date;
+  @Column({ type: 'float', nullable: true })
+  endSeconds?: number;
 }

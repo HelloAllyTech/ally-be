@@ -5,8 +5,8 @@ export type GenerateSummaryRequest = {
 export type MessageRequest = {
   role: string;
   content: string;
-  start_time?: string;
-  end_time?: string;
+  start_time?: number;
+  end_time?: number;
 };
 
 export type EnhanceTextRequest = {

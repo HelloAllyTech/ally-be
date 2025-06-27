@@ -25,7 +25,8 @@ interface LiveClientSession {
   currentBufferSize: number;
   transcriptBuffer: string;
   currentUtterance: number;
-  currentTranscriptCreatedAt: Date | null;
+  currentTranscriptStart?: number;
+  currentTranscriptEnd?: number;
   isDiarizationEnabled: boolean;
   speakerSegmentsBuffer: SpeakerSegment[];
 }
@@ -93,7 +94,8 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
         currentBufferSize: 0,
         transcriptBuffer: '',
         currentUtterance: 0,
-        currentTranscriptCreatedAt: null,
+        currentTranscriptStart: undefined,
+        currentTranscriptEnd: undefined,
         isDiarizationEnabled: options?.diarize ?? false,
         speakerSegmentsBuffer: [],
       };
@@ -236,20 +238,16 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
           }
           const finalTranscript = clientSession?.transcriptBuffer + transcript;
           const transcriptWords = data.channel.alternatives[0].words;
-          clientSession.currentTranscriptCreatedAt =
-            clientSession.currentTranscriptCreatedAt ||
-            (chatCreatedAt
-              ? new Date(
-                  new Date(chatCreatedAt).getTime() +
-                    transcriptWords[0].start * 1000,
-                )
-              : new Date());
-          const currentTranscriptEndedAt = chatCreatedAt
+          clientSession.currentTranscriptStart =
+            clientSession.currentTranscriptStart || transcriptWords[0].start;
+          const end = transcriptWords[transcriptWords.length - 1].end;
+          clientSession.currentTranscriptEnd = end;
+          const currentTranscriptCreatedAt = chatCreatedAt
             ? new Date(
                 new Date(chatCreatedAt).getTime() +
-                  transcriptWords[transcriptWords.length - 1].end * 1000,
+                  clientSession.currentTranscriptStart * 1000,
               )
-            : undefined;
+            : new Date();
           const isSentenceComplete =
             data.is_final &&
             this.isSentenceComplete(clientSession, finalTranscript);
@@ -260,9 +258,9 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
             isFinal: data.is_final,
             isSentenceComplete,
             currentTranscriptBuffer: finalTranscript,
-            currentTranscriptCreatedAt:
-              clientSession.currentTranscriptCreatedAt,
-            currentTranscriptEndedAt,
+            currentTranscriptCreatedAt,
+            currentTranscriptStart: clientSession.currentTranscriptStart,
+            currentTranscriptEnd: clientSession.currentTranscriptEnd,
             wordCountByLanguage: wordCount,
             speakerSegments: finalSpeakerSegments,
           });
@@ -270,7 +268,8 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
           // reset buffer if sentence is complete
           if (isSentenceComplete) {
             clientSession.transcriptBuffer = '';
-            clientSession.currentTranscriptCreatedAt = null;
+            clientSession.currentTranscriptStart = undefined;
+            clientSession.currentTranscriptEnd = undefined;
             clientSession.speakerSegmentsBuffer = [];
           } else if (data.is_final) {
             // add to buffer
@@ -290,30 +289,29 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       const clientSession = this.liveClients.get(session.id);
       if (clientSession) {
         const transcriptWords = data.channel.alternatives[0].words;
-        clientSession.currentTranscriptCreatedAt ||
-          (chatCreatedAt
+        clientSession.currentTranscriptStart =
+          clientSession.currentTranscriptStart || transcriptWords[0].start;
+        const end = transcriptWords[transcriptWords.length - 1].end;
+        clientSession.currentTranscriptEnd = end;
+        const currentTranscriptCreatedAt =
+          chatCreatedAt && clientSession.currentTranscriptStart
             ? new Date(
                 new Date(chatCreatedAt).getTime() +
-                  transcriptWords[0].start * 1000,
+                  clientSession.currentTranscriptStart * 1000,
               )
-            : new Date());
-        const currentTranscriptEndedAt = chatCreatedAt
-          ? new Date(
-              new Date(chatCreatedAt).getTime() +
-                transcriptWords[transcriptWords.length - 1].end * 1000,
-            )
-          : undefined;
+            : new Date();
         callback(session, chatId, '', {
           isFinal: data.is_final,
           currentTranscriptBuffer: clientSession?.transcriptBuffer || '',
           isSentenceComplete: true,
           isUtteranceEnd: true,
-          currentTranscriptCreatedAt:
-            clientSession?.currentTranscriptCreatedAt || new Date(),
-          currentTranscriptEndedAt,
+          currentTranscriptCreatedAt,
+          currentTranscriptStart: clientSession.currentTranscriptStart,
+          currentTranscriptEnd: clientSession.currentTranscriptEnd,
         });
         clientSession.transcriptBuffer = '';
-        clientSession.currentTranscriptCreatedAt = null;
+        clientSession.currentTranscriptStart = undefined;
+        clientSession.currentTranscriptEnd = undefined;
       }
     });
 
@@ -323,12 +321,20 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       );
       const clientSession = this.liveClients.get(session.id);
       if (clientSession?.transcriptBuffer?.trim()) {
+        const currentTranscriptCreatedAt =
+          clientSession.currentTranscriptStart && chatCreatedAt
+            ? new Date(
+                new Date(chatCreatedAt).getTime() +
+                  clientSession.currentTranscriptStart * 1000,
+              )
+            : new Date();
         callback(session, chatId, clientSession.transcriptBuffer, {
           isFinal: true,
           isSentenceComplete: true,
           currentTranscriptBuffer: clientSession.transcriptBuffer,
-          currentTranscriptCreatedAt:
-            clientSession.currentTranscriptCreatedAt || new Date(),
+          currentTranscriptCreatedAt,
+          currentTranscriptStart: clientSession.currentTranscriptStart,
+          currentTranscriptEnd: clientSession.currentTranscriptEnd,
         });
       }
       this.liveClients.delete(session.id);

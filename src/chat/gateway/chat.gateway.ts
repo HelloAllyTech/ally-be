@@ -531,7 +531,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         {
           content: currentTranscriptBuffer || transcript,
           createdAt: metadata?.currentTranscriptCreatedAt,
-          endedAt: metadata?.currentTranscriptEndedAt,
+          startSeconds: metadata?.currentTranscriptStart,
+          endSeconds: metadata?.currentTranscriptEnd,
         },
       );
       this.chatService.triggerNudge(
@@ -589,7 +590,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         {
           content: currentTranscriptBuffer || transcript,
           createdAt: metadata?.currentTranscriptCreatedAt,
-          endedAt: metadata?.currentTranscriptEndedAt,
+          startSeconds: metadata?.currentTranscriptStart,
+          endSeconds: metadata?.currentTranscriptEnd,
         },
       );
       this.chatService.triggerNudge(
