@@ -102,6 +102,9 @@ export class CallLogResponse {
   @ApiProperty({ type: UserInfo })
   client?: UserInfo;
 
+  @ApiProperty({ type: UserInfo })
+  counselor?: UserInfo;
+
   @ApiProperty({ type: CallDetails })
   details?: CallDetails;
 }

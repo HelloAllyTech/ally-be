@@ -968,6 +968,150 @@ export class ChatService {
     };
   }
 
+  async getAdminCallLogs(filters: {
+    limit?: number;
+    offset?: number;
+    sortBy?: string;
+    order?: 'ASC' | 'DESC';
+    counselorName?: string;
+    counselorIds?: string;
+    startDate?: string;
+    endDate?: string;
+    minDuration?: number;
+    maxDuration?: number;
+    minQualityScore?: number;
+    maxQualityScore?: number;
+    tags?: string;
+  }) {
+    const query = this.chatRepository
+      .createQueryBuilder('chat')
+      .leftJoinAndMapOne(
+        'chat.details',
+        CallDetails,
+        'details',
+        'details.chatId = chat.id',
+      )
+      .leftJoinAndMapOne(
+        'chat.client',
+        User,
+        'client',
+        'client.id = chat.clientId',
+      )
+      .leftJoinAndMapOne(
+        'chat.counselor',
+        User,
+        'counselor',
+        'counselor.id = chat.counselorId',
+      );
+
+    if (filters.counselorName) {
+      query.andWhere('counselor.name ILIKE :counselorName', {
+        counselorName: `%${filters.counselorName}%`,
+      });
+    }
+    if (filters.counselorIds) {
+      const counselorIds = filters.counselorIds
+        .split(',')
+        .map((id) => parseInt(id.trim()));
+      query.andWhere('chat.counselorId IN (:...counselorIds)', {
+        counselorIds,
+      });
+    }
+    if (filters.startDate) {
+      query.andWhere('chat.startedAt >= :startDate', {
+        startDate: new Date(filters.startDate),
+      });
+    }
+    if (filters.endDate) {
+      query.andWhere('chat.startedAt <= :endDate', {
+        endDate: new Date(filters.endDate),
+      });
+    }
+    if (filters.minDuration !== undefined) {
+      query.andWhere('details.callDuration >= :minDuration', {
+        minDuration: filters.minDuration,
+      });
+    }
+    if (filters.maxDuration !== undefined) {
+      query.andWhere('details.callDuration <= :maxDuration', {
+        maxDuration: filters.maxDuration,
+      });
+    }
+    if (filters.minQualityScore !== undefined) {
+      query.andWhere("details.summary->>'callQuality' >= :minQualityScore", {
+        minQualityScore: filters.minQualityScore.toString(),
+      });
+    }
+    if (filters.maxQualityScore !== undefined) {
+      query.andWhere("details.summary->>'callQuality' <= :maxQualityScore", {
+        maxQualityScore: filters.maxQualityScore.toString(),
+      });
+    }
+    if (filters.tags) {
+      const tagArray = filters.tags.split(',').map((tag) => tag.trim());
+      query.andWhere(
+        "EXISTS (SELECT 1 FROM jsonb_array_elements(details.summary->'tags') AS tag WHERE tag->>'tag' = ANY(:tags))",
+        { tags: tagArray },
+      );
+    }
+
+    if (filters.limit) {
+      query.limit(filters.limit);
+    }
+    if (filters.offset) {
+      query.offset(filters.offset);
+    }
+    if (filters.sortBy) {
+      this.applySorting(query, filters.sortBy, filters.order);
+    }
+
+    query.andWhere('chat.tenantId = :tenantId', {
+      tenantId: ExecutionManager.getTenantId(),
+    });
+
+    const [callLogs, count] = await query.getManyAndCount();
+    return {
+      data: callLogs,
+      count,
+    };
+  }
+
+  private applySorting(
+    query: any,
+    sortBy: string,
+    order: 'ASC' | 'DESC' = 'DESC',
+  ) {
+    const sortOrder = order as 'ASC' | 'DESC';
+
+    switch (sortBy) {
+      case 'id':
+        query.orderBy('chat.id', sortOrder);
+        break;
+      case 'counselorName':
+        query.orderBy('counselor.name', sortOrder);
+        break;
+      case 'clientId':
+        query.orderBy('chat.clientId', sortOrder);
+        break;
+      case 'callDuration':
+        query.orderBy('details.callDuration', sortOrder);
+        break;
+      case 'startDate':
+        query.orderBy('chat.startedAt', sortOrder);
+        break;
+      case 'qualityScore':
+        query.orderBy("details.summary->>'callQuality'", sortOrder);
+        break;
+      case 'tags':
+        query.orderBy("details.summary->'tags'->0->>'tag'", sortOrder);
+        break;
+      case 'createdAt':
+      default:
+        query.orderBy('chat.createdAt', sortOrder);
+        break;
+    }
+  }
+
   async enhance(summary: string) {
     return this.aiService.enhance(summary);
   }

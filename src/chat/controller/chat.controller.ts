@@ -97,8 +97,8 @@ export class ChatController {
   @Get('call-logs')
   async getCallLogs(
     @CurrentUser() tokenUser: TokenUser,
-    @Query('limit') limit: number,
-    @Query('offset') offset: number,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
     @Query('sortBy') sortBy: string = 'createdAt',
     @Query('order') order: 'ASC' | 'DESC' = 'DESC',
   ) {
@@ -107,6 +107,132 @@ export class ChatController {
       offset,
       sortBy,
       order,
+    });
+  }
+
+  @ApiOperation({ summary: 'Get admin call logs with filtering' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the list of call logs with admin filters',
+    type: CallLogResponse,
+    isArray: true,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by (default: createdAt)',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    description: 'Sort order (default: DESC)',
+  })
+  @ApiQuery({
+    name: 'counselorName',
+    required: false,
+    type: String,
+    description: 'Search by counselor name (partial match)',
+  })
+  @ApiQuery({
+    name: 'clientId',
+    required: false,
+    type: String,
+    description: 'Search by client ID',
+  })
+  @ApiQuery({
+    name: 'counselorId',
+    required: false,
+    type: String,
+    description: 'Filter by counselor IDs (comma-separated)',
+  })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    type: String,
+    description: 'Filter by start date (ISO string)',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    type: String,
+    description: 'Filter by end date (ISO string)',
+  })
+  @ApiQuery({
+    name: 'minDuration',
+    required: false,
+    type: Number,
+    description: 'Filter by minimum call duration in seconds',
+  })
+  @ApiQuery({
+    name: 'maxDuration',
+    required: false,
+    type: Number,
+    description: 'Filter by maximum call duration in seconds',
+  })
+  @ApiQuery({
+    name: 'minQualityScore',
+    required: false,
+    type: Number,
+    description: 'Filter by minimum quality score',
+  })
+  @ApiQuery({
+    name: 'maxQualityScore',
+    required: false,
+    type: Number,
+    description: 'Filter by maximum quality score',
+  })
+  @ApiQuery({
+    name: 'tags',
+    required: false,
+    type: String,
+    description: 'Filter by tags (comma-separated)',
+  })
+  @AuthRoles(UserRole.ADMIN)
+  @Get('call-logs-summary')
+  async getAdminCallLogs(
+    @CurrentUser() tokenUser: TokenUser,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order: 'ASC' | 'DESC' = 'DESC',
+    @Query('counselorName') counselorName?: string,
+    @Query('counselorIds') counselorIds?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('minDuration') minDuration?: number,
+    @Query('maxDuration') maxDuration?: number,
+    @Query('minQualityScore') minQualityScore?: number,
+    @Query('maxQualityScore') maxQualityScore?: number,
+    @Query('tags') tags?: string,
+  ) {
+    return this.service.getAdminCallLogs({
+      limit,
+      offset,
+      sortBy,
+      order,
+      counselorName,
+      counselorIds,
+      startDate,
+      endDate,
+      minDuration,
+      maxDuration,
+      minQualityScore,
+      maxQualityScore,
+      tags,
     });
   }
 
