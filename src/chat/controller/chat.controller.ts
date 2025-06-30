@@ -33,6 +33,7 @@ import { UserRole } from '../../common/constants/user.constants';
 import { CallStartDto } from '../dto/call-start.dto';
 import { Response } from 'express';
 import { GetMessagesResponse } from '../dto/message.response.dto';
+import { CallLogSortBy, SortOrder } from '../dto/call-log.request.dto';
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -84,13 +85,13 @@ export class ChatController {
   @ApiQuery({
     name: 'sortBy',
     required: false,
-    type: String,
+    enum: CallLogSortBy,
     description: 'Field to sort by (default: createdAt)',
   })
   @ApiQuery({
     name: 'order',
     required: false,
-    enum: ['ASC', 'DESC'],
+    enum: SortOrder,
     description: 'Sort order (default: DESC)',
   })
   @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
@@ -99,8 +100,8 @@ export class ChatController {
     @CurrentUser() tokenUser: TokenUser,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
-    @Query('sortBy') sortBy: string = 'createdAt',
-    @Query('order') order: 'ASC' | 'DESC' = 'DESC',
+    @Query('sortBy') sortBy: CallLogSortBy = CallLogSortBy.CREATED_AT,
+    @Query('order') order: SortOrder = SortOrder.DESC,
   ) {
     return this.service.getCallLogs(tokenUser, {
       limit,
@@ -132,13 +133,13 @@ export class ChatController {
   @ApiQuery({
     name: 'sortBy',
     required: false,
-    type: String,
+    enum: CallLogSortBy,
     description: 'Field to sort by (default: createdAt)',
   })
   @ApiQuery({
     name: 'order',
     required: false,
-    enum: ['ASC', 'DESC'],
+    enum: SortOrder,
     description: 'Sort order (default: DESC)',
   })
   @ApiQuery({
@@ -204,21 +205,29 @@ export class ChatController {
   @AuthRoles(UserRole.ADMIN)
   @Get('call-logs-summary')
   async getAdminCallLogs(
-    @CurrentUser() tokenUser: TokenUser,
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
-    @Query('sortBy') sortBy?: string,
-    @Query('order') order: 'ASC' | 'DESC' = 'DESC',
+    @Query('limit') limit: number,
+    @Query('offset') offset: number,
+    @Query('sortBy') sortBy?: CallLogSortBy,
+    @Query('order') order: SortOrder = SortOrder.DESC,
     @Query('counselorName') counselorName?: string,
     @Query('counselorIds') counselorIds?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
-    @Query('minDuration') minDuration?: number,
-    @Query('maxDuration') maxDuration?: number,
-    @Query('minQualityScore') minQualityScore?: number,
-    @Query('maxQualityScore') maxQualityScore?: number,
+    @Query('minDuration') minDuration?: string,
+    @Query('maxDuration') maxDuration?: string,
+    @Query('minQualityScore') minQualityScore?: string,
+    @Query('maxQualityScore') maxQualityScore?: string,
     @Query('tags') tags?: string,
   ) {
+    const parsedMinDuration = minDuration ? parseFloat(minDuration) : undefined;
+    const parsedMaxDuration = maxDuration ? parseFloat(maxDuration) : undefined;
+    const parsedMinQualityScore = minQualityScore
+      ? parseFloat(minQualityScore)
+      : undefined;
+    const parsedMaxQualityScore = maxQualityScore
+      ? parseFloat(maxQualityScore)
+      : undefined;
+
     return this.service.getAdminCallLogs({
       limit,
       offset,
@@ -228,10 +237,10 @@ export class ChatController {
       counselorIds,
       startDate,
       endDate,
-      minDuration,
-      maxDuration,
-      minQualityScore,
-      maxQualityScore,
+      minDuration: parsedMinDuration,
+      maxDuration: parsedMaxDuration,
+      minQualityScore: parsedMinQualityScore,
+      maxQualityScore: parsedMaxQualityScore,
       tags,
     });
   }

@@ -26,6 +26,22 @@ export enum SortOrder {
   DESC = 'DESC',
 }
 
+export interface CallLogFilters {
+  limit?: number;
+  offset?: number;
+  sortBy?: CallLogSortBy;
+  order?: SortOrder;
+  counselorName?: string;
+  counselorIds?: string;
+  startDate?: string;
+  endDate?: string;
+  minDuration?: number;
+  maxDuration?: number;
+  minQualityScore?: number;
+  maxQualityScore?: number;
+  tags?: string;
+}
+
 export class CallLogRequestDto {
   @ApiProperty({ required: false, description: 'Number of records to return' })
   @IsOptional()
@@ -152,4 +168,4 @@ export class CallLogRequestDto {
   @IsOptional()
   @IsString()
   tags?: string;
-} 
+}

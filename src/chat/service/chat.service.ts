@@ -1,6 +1,12 @@
 import { forwardRef, HttpException, Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  In,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { Chat, ChatStatus } from '../../common/entities/chat.entity';
 import { LoggerService } from '../../logger/logger.service';
@@ -48,6 +54,11 @@ import { CallInfoDto } from '../dto/chat.response.dto';
 import { CallInfo } from '../dto/call-log.response.dto';
 import { SettingsService } from '../../settings/service/settings.service';
 import { MessageBrokerChannel } from 'src/common/constants/message-broker.constants';
+import {
+  CallLogFilters,
+  CallLogSortBy,
+  SortOrder,
+} from '../dto/call-log.request.dto';
 
 @Injectable()
 export class ChatService {
@@ -967,22 +978,8 @@ export class ChatService {
       count,
     };
   }
-
-  async getAdminCallLogs(filters: {
-    limit?: number;
-    offset?: number;
-    sortBy?: string;
-    order?: 'ASC' | 'DESC';
-    counselorName?: string;
-    counselorIds?: string;
-    startDate?: string;
-    endDate?: string;
-    minDuration?: number;
-    maxDuration?: number;
-    minQualityScore?: number;
-    maxQualityScore?: number;
-    tags?: string;
-  }) {
+  async getAdminCallLogs(filters: CallLogFilters) {
+    console.log(filters);
     const query = this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndMapOne(
@@ -1004,19 +1001,63 @@ export class ChatService {
         'counselor.id = chat.counselorId',
       );
 
+    this.applyStringFilters(query, filters);
+    this.applyIdFilters(query, filters);
+    this.applyDateFilters(query, filters);
+    this.applyDurationFilters(query, filters);
+    this.applyQualityFilters(query, filters);
+    this.applyTagFilters(query, filters);
+
+    query.andWhere('chat.tenant_id = :tenantId', {
+      tenantId: ExecutionManager.getTenantId(),
+    });
+
+    if (filters.limit) query.limit(filters.limit);
+    if (filters.offset) query.offset(filters.offset);
+    if (filters.sortBy)
+      this.applySorting(
+        query,
+        filters.sortBy as CallLogSortBy,
+        filters.order as SortOrder,
+      );
+
+    const [callLogs, count] = await query.getManyAndCount();
+    return { data: callLogs, count };
+  }
+
+  private applyStringFilters(
+    query: SelectQueryBuilder<Chat>,
+    filters: CallLogFilters,
+  ) {
     if (filters.counselorName) {
       query.andWhere('counselor.name ILIKE :counselorName', {
         counselorName: `%${filters.counselorName}%`,
       });
     }
+  }
+
+  private applyIdFilters(
+    query: SelectQueryBuilder<Chat>,
+    filters: CallLogFilters,
+  ) {
     if (filters.counselorIds) {
-      const counselorIds = filters.counselorIds
+      const ids = filters.counselorIds
         .split(',')
-        .map((id) => parseInt(id.trim()));
-      query.andWhere('chat.counselorId IN (:...counselorIds)', {
-        counselorIds,
-      });
+        .map((id) => parseInt(id.trim()))
+        .filter((id) => !isNaN(id));
+
+      if (ids.length > 0) {
+        query.andWhere('chat.counselorId IN (:...counselorIds)', {
+          counselorIds: ids,
+        });
+      }
     }
+  }
+
+  private applyDateFilters(
+    query: SelectQueryBuilder<Chat>,
+    filters: CallLogFilters,
+  ) {
     if (filters.startDate) {
       query.andWhere('chat.startedAt >= :startDate', {
         startDate: new Date(filters.startDate),
@@ -1027,6 +1068,12 @@ export class ChatService {
         endDate: new Date(filters.endDate),
       });
     }
+  }
+
+  private applyDurationFilters(
+    query: SelectQueryBuilder<Chat>,
+    filters: CallLogFilters,
+  ) {
     if (filters.minDuration !== undefined) {
       query.andWhere('details.callDuration >= :minDuration', {
         minDuration: filters.minDuration,
@@ -1037,6 +1084,12 @@ export class ChatService {
         maxDuration: filters.maxDuration,
       });
     }
+  }
+
+  private applyQualityFilters(
+    query: SelectQueryBuilder<Chat>,
+    filters: CallLogFilters,
+  ) {
     if (filters.minQualityScore !== undefined) {
       query.andWhere("details.summary->>'callQuality' >= :minQualityScore", {
         minQualityScore: filters.minQualityScore.toString(),
@@ -1047,71 +1100,56 @@ export class ChatService {
         maxQualityScore: filters.maxQualityScore.toString(),
       });
     }
+  }
+
+  private applyTagFilters(
+    query: SelectQueryBuilder<Chat>,
+    filters: CallLogFilters,
+  ) {
     if (filters.tags) {
-      const tagArray = filters.tags.split(',').map((tag) => tag.trim());
+      const tags = filters.tags.split(',').map((tag) => tag.trim());
       query.andWhere(
         "EXISTS (SELECT 1 FROM jsonb_array_elements(details.summary->'tags') AS tag WHERE tag->>'tag' = ANY(:tags))",
-        { tags: tagArray },
+        { tags },
       );
     }
-
-    if (filters.limit) {
-      query.limit(filters.limit);
-    }
-    if (filters.offset) {
-      query.offset(filters.offset);
-    }
-    if (filters.sortBy) {
-      this.applySorting(query, filters.sortBy, filters.order);
-    }
-
-    query.andWhere('chat.tenantId = :tenantId', {
-      tenantId: ExecutionManager.getTenantId(),
-    });
-
-    const [callLogs, count] = await query.getManyAndCount();
-    return {
-      data: callLogs,
-      count,
-    };
   }
 
   private applySorting(
     query: any,
-    sortBy: string,
-    order: 'ASC' | 'DESC' = 'DESC',
+    sortBy: CallLogSortBy,
+    order: SortOrder = SortOrder.DESC,
   ) {
     const sortOrder = order as 'ASC' | 'DESC';
 
     switch (sortBy) {
-      case 'id':
+      case CallLogSortBy.ID:
         query.orderBy('chat.id', sortOrder);
         break;
-      case 'counselorName':
+      case CallLogSortBy.COUNSELOR_NAME:
         query.orderBy('counselor.name', sortOrder);
         break;
-      case 'clientId':
+      case CallLogSortBy.CLIENT_ID:
         query.orderBy('chat.clientId', sortOrder);
         break;
-      case 'callDuration':
+      case CallLogSortBy.CALL_DURATION:
         query.orderBy('details.callDuration', sortOrder);
         break;
-      case 'startDate':
+      case CallLogSortBy.START_DATE:
         query.orderBy('chat.startedAt', sortOrder);
         break;
-      case 'qualityScore':
+      case CallLogSortBy.QUALITY_SCORE:
         query.orderBy("details.summary->>'callQuality'", sortOrder);
         break;
-      case 'tags':
+      case CallLogSortBy.TAGS:
         query.orderBy("details.summary->'tags'->0->>'tag'", sortOrder);
         break;
-      case 'createdAt':
+      case CallLogSortBy.CREATED_AT:
       default:
         query.orderBy('chat.createdAt', sortOrder);
         break;
     }
   }
-
   async enhance(summary: string) {
     return this.aiService.enhance(summary);
   }
