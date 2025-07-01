@@ -5,6 +5,11 @@ export type Pagination = {
   order?: 'ASC' | 'DESC';
 };
 
+export class PaginatedResponse<T> {
+  data!: T[];
+  count!: number;
+}
+
 export type NudgePreferenceValue = {
   status: boolean;
 };
