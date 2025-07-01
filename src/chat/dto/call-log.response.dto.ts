@@ -19,6 +19,7 @@ class UserInfo {
   @ApiProperty()
   role?: string;
 }
+
 export class CallInfo {
   @ApiProperty({ required: false })
   clientTalkingPercentage?: number;
@@ -54,6 +55,7 @@ export class CallInfo {
   @ApiProperty({ required: false })
   platform?: AudioChatPlatform;
 }
+
 export class CallDetails {
   @ApiProperty({ required: false })
   transcript?: string;
@@ -107,4 +109,17 @@ export class CallLogResponse {
 
   @ApiProperty({ type: CallDetails })
   details?: CallDetails;
+}
+
+export class CounselorNameResponse {
+  @ApiProperty()
+  id!: number;
+
+  @ApiProperty()
+  name!: string;
+}
+
+export class TagsResponse {
+  @ApiProperty({ type: [String] })
+  tags!: string[];
 }

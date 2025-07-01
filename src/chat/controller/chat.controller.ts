@@ -34,6 +34,8 @@ import { CallStartDto } from '../dto/call-start.dto';
 import { Response } from 'express';
 import { GetMessagesResponse } from '../dto/message.response.dto';
 import { CallLogSortBy, SortOrder } from '../dto/call-log.request.dto';
+import { PaginatedResponse } from '../../common/type/common.type';
+import { CounselorNameResponse } from '../dto/call-log.response.dto';
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -243,6 +245,74 @@ export class ChatController {
       maxQualityScore: parsedMaxQualityScore,
       tags,
     });
+  }
+
+  @ApiOperation({ summary: 'Get all counselor names for admin' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the list of counselor names',
+    type: PaginatedResponse<CounselorNameResponse>,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Search counselor names (partial match)',
+  })
+  @AuthRoles(UserRole.ADMIN)
+  @Get('counselors')
+  async getCounselorNames(
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('search') search?: string,
+  ) {
+    return this.service.getCounselorNames(limit, offset, search);
+  }
+
+  @ApiOperation({ summary: 'Get all tags for admin' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the list of all tags',
+    type: PaginatedResponse<string>,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Search tag names (partial match)',
+  })
+  @AuthRoles(UserRole.ADMIN)
+  @Get('tags')
+  async getAllTags(
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('search') search?: string,
+  ) {
+    return this.service.getAllTags(limit, offset, search);
   }
 
   @AuthRoles(UserRole.COUNSELOR)

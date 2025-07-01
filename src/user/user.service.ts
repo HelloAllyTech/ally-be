@@ -156,4 +156,40 @@ export class UserService {
     });
     return this.userRepository.save(user);
   }
+
+  async getCounselorNames(limit?: number, offset?: number, search?: string) {
+    const query = this.userRepository
+      .createQueryBuilder('user')
+      .select('user.id', 'id')
+      .addSelect('user.name', 'name')
+      .where('user.role = :role', { role: UserRole.COUNSELOR })
+      .andWhere('user.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
+      })
+      .orderBy('user.id', 'ASC');
+
+    if (search && search.trim()) {
+      query.andWhere('user.name ILIKE :search', {
+        search: `%${search.trim()}%`,
+      });
+    }
+
+    if (limit) {
+      query.limit(limit);
+    }
+    if (offset) {
+      query.offset(offset);
+    }
+
+    const counselors = await query.getRawMany();
+    const count = await query.getCount();
+
+    return {
+      data: counselors.map((counselor: any) => ({
+        id: parseInt(counselor.id),
+        name: counselor.name,
+      })),
+      count,
+    };
+  }
 }

@@ -1571,4 +1571,48 @@ export class ChatService {
     });
     return message;
   }
+
+  async getCounselorNames(limit?: number, offset?: number, search?: string) {
+    return this.userService.getCounselorNames(limit, offset, search);
+  }
+
+  async getAllTags(limit?: number, offset?: number, search?: string) {
+    const query = this.callDetailsRepository
+      .createQueryBuilder('details')
+      .select(
+        "DISTINCT jsonb_array_elements(details.summary->'tags')->>'tag'",
+        'tag',
+      )
+      .where("details.summary->'tags' IS NOT NULL")
+      .andWhere('details.tenant_id = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
+      })
+      .orderBy('tag', 'ASC');
+
+    if (search && search.trim()) {
+      query.andWhere(
+        "jsonb_array_elements(details.summary->'tags')->>'tag' ILIKE :search",
+        {
+          search: `%${search.trim()}%`,
+        },
+      );
+    }
+
+    if (limit) {
+      query.limit(limit);
+    }
+    if (offset) {
+      query.offset(offset);
+    }
+
+    const tags = await query.getRawMany();
+    const count = await query.getCount();
+
+    return {
+      data: tags
+        .map((item) => item.tag)
+        .filter((tag) => tag && tag.trim() !== ''),
+      count,
+    };
+  }
 }
