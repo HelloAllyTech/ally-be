@@ -979,7 +979,6 @@ export class ChatService {
     };
   }
   async getAdminCallLogs(filters: CallLogFilters) {
-    console.log(filters);
     const query = this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndMapOne(
@@ -1091,14 +1090,20 @@ export class ChatService {
     filters: CallLogFilters,
   ) {
     if (filters.minQualityScore !== undefined) {
-      query.andWhere("details.summary->>'callQuality' >= :minQualityScore", {
-        minQualityScore: filters.minQualityScore.toString(),
-      });
+      query.andWhere(
+        "CAST(details.summary->>'callQuality' AS NUMERIC) >= :minQualityScore",
+        {
+          minQualityScore: filters.minQualityScore,
+        },
+      );
     }
     if (filters.maxQualityScore !== undefined) {
-      query.andWhere("details.summary->>'callQuality' <= :maxQualityScore", {
-        maxQualityScore: filters.maxQualityScore.toString(),
-      });
+      query.andWhere(
+        "CAST(details.summary->>'callQuality' AS NUMERIC) <= :maxQualityScore",
+        {
+          maxQualityScore: filters.maxQualityScore,
+        },
+      );
     }
   }
 
@@ -1139,7 +1144,10 @@ export class ChatService {
         query.orderBy('chat.startedAt', sortOrder);
         break;
       case CallLogSortBy.QUALITY_SCORE:
-        query.orderBy("details.summary->>'callQuality'", sortOrder);
+        query.orderBy(
+          "CAST(details.summary->>'callQuality' AS NUMERIC)",
+          sortOrder,
+        );
         break;
       case CallLogSortBy.TAGS:
         query.orderBy("details.summary->'tags'->0->>'tag'", sortOrder);
