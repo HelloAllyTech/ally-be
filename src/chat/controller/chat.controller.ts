@@ -333,7 +333,7 @@ export class ChatController {
     return this.service.endChat(tokenUser.id, parseInt(id));
   }
 
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Get messages' })
   @ApiResponse({
     status: 200,

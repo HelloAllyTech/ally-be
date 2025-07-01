@@ -72,15 +72,18 @@ export class SESService implements EmailInterface {
   }
 
   async sendEmailOTP(params: { to: string; otp: string }): Promise<boolean> {
-    // TODO: Remove this once email otp is verified in dev
-    this.eventEmitter.emit('exception', {
-      statusCode: 200,
-      timestamp: new Date().toISOString(),
-      path: '/api/v1/sms/otp',
-      message: 'OTP sent to ' + params.to + ' - ' + params.otp,
-      type: 'EMAIL OTP',
-      channel: 'C08T402E3K5',
-    });
+    if (this.config.isDevelopment) {
+      // TODO: Remove this once email otp is verified in dev
+      this.eventEmitter.emit('exception', {
+        statusCode: 200,
+        timestamp: new Date().toISOString(),
+        path: '/api/v1/sms/otp',
+        message: 'OTP sent to ' + params.to + ' - ' + params.otp,
+        type: 'EMAIL OTP',
+        channel: 'C08T402E3K5',
+      });
+      return true;
+    }
 
     const subject = 'Your HelloAlly Verification Code';
     const body = `Use the verification code below to sign in to your HelloAlly account:
