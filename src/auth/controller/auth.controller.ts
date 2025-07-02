@@ -18,7 +18,6 @@ import { JwtRefreshAuthGuard } from '../guards/jwt-refresh-auth.guard';
 import { LoggerService } from '../../logger/logger.service';
 import { ApiBody } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
-import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 import { AuthRoles } from '../decorators/auth-roles.decorator';
 
@@ -35,11 +34,6 @@ export class AuthController {
 
   @Post('generate-otp')
   @HttpCode(HttpStatus.OK)
-  @RateLimit({
-    name: 'otp',
-    key: 'ip',
-    errorMessage: 'Too many OTP requests. Please try again later.',
-  })
   async generateOtp(@Body() generateOtpDto: GenerateOtpDto) {
     return this.authService.generateOtp(
       generateOtpDto.phone,
@@ -48,11 +42,6 @@ export class AuthController {
   }
 
   @Post('verify-otp')
-  @RateLimit({
-    name: 'otp',
-    key: 'ip',
-    errorMessage: 'Too many OTP verification attempts. Please try again later.',
-  })
   async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
     return this.authService.verifyOtp(
       verifyOtpDto.otp,
