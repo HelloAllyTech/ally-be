@@ -82,7 +82,6 @@ export class SESService implements EmailInterface {
         type: 'EMAIL OTP',
         channel: 'C08T402E3K5',
       });
-      return true;
     }
 
     const subject = 'Your HelloAlly Verification Code';
