@@ -432,4 +432,62 @@ export class ReferenceDocumentService {
       throw new Error(`Failed to delete reference document with ID ${id}`);
     }
   }
+
+  async archiveReferenceDocument(id: string) {
+    const document = await this.referenceDocumentRepository.findOneBy({ id });
+
+    if (!document) {
+      this.logger.error(`Reference document with ID ${id} not found`);
+      throw new NotFoundException(`Reference document with ID ${id} not found`);
+    }
+
+    if (document.isArchived) {
+      this.logger.warn(`Reference document with ID ${id} is already archived`);
+      return { success: true, message: 'Document is already archived' };
+    }
+
+    try {
+      await this.referenceDocumentRepository.update(id, {
+        isArchived: true,
+        archivedAt: new Date(),
+      });
+
+      this.logger.info(
+        `Reference document with ID ${id} archived successfully`,
+      );
+      return { success: true, message: 'Document archived successfully' };
+    } catch (error) {
+      this.logger.error(`Failed to archive document: ${id}`, error);
+      throw new Error(`Failed to archive reference document with ID ${id}`);
+    }
+  }
+
+  async unarchiveReferenceDocument(id: string) {
+    const document = await this.referenceDocumentRepository.findOneBy({ id });
+
+    if (!document) {
+      this.logger.error(`Reference document with ID ${id} not found`);
+      throw new NotFoundException(`Reference document with ID ${id} not found`);
+    }
+
+    if (!document.isArchived) {
+      this.logger.warn(`Reference document with ID ${id} is not archived`);
+      return { success: true, message: 'Document is not archived' };
+    }
+
+    try {
+      await this.referenceDocumentRepository.update(id, {
+        isArchived: false,
+        archivedAt: undefined,
+      });
+
+      this.logger.info(
+        `Reference document with ID ${id} unarchived successfully`,
+      );
+      return { success: true, message: 'Document unarchived successfully' };
+    } catch (error) {
+      this.logger.error(`Failed to unarchive document: ${id}`, error);
+      throw new Error(`Failed to unarchive reference document with ID ${id}`);
+    }
+  }
 }
