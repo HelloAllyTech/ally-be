@@ -14,6 +14,8 @@ import { AiService } from '../../ai/service/ai.service';
 import {
   SearchOperationFailedException,
   DocumentUpdateFailedException,
+  DocumentArchiveFailedException,
+  DocumentUnarchiveFailedException,
 } from '../exception/reference-document.exception';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { LoggerService } from '../../logger/logger.service';
@@ -464,7 +466,7 @@ export class ReferenceDocumentService {
       return { success: true, message: 'Document archived successfully' };
     } catch (error) {
       this.logger.error(`Failed to archive document: ${id}`, error);
-      throw new Error(`Failed to archive reference document with ID ${id}`);
+      throw new DocumentArchiveFailedException(id, error);
     }
   }
 
@@ -493,7 +495,7 @@ export class ReferenceDocumentService {
       return { success: true, message: 'Document unarchived successfully' };
     } catch (error) {
       this.logger.error(`Failed to unarchive document: ${id}`, error);
-      throw new Error(`Failed to unarchive reference document with ID ${id}`);
+      throw new DocumentUnarchiveFailedException(id, error);
     }
   }
 }

@@ -31,3 +31,35 @@ export class DocumentUpdateFailedException extends HttpException {
     this.originalError = originalError;
   }
 }
+
+export class DocumentArchiveFailedException extends HttpException {
+  public originalError?: any;
+
+  constructor(documentId: string, originalError?: any) {
+    super(
+      {
+        message: `Failed to archive document with ID: ${documentId}`,
+        error: 'Document Archive Failed',
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+      },
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+    this.originalError = originalError;
+  }
+}
+
+export class DocumentUnarchiveFailedException extends HttpException {
+  public originalError?: any;
+
+  constructor(documentId: string, originalError?: any) {
+    super(
+      {
+        message: `Failed to unarchive document with ID: ${documentId}`,
+        error: 'Document Unarchive Failed',
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+      },
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+    this.originalError = originalError;
+  }
+}
