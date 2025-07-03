@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           BRANCH="${GITHUB_REF#refs/heads/}"
-          ENV=${{ github.event.inputs.environment }}
+          ENV=${{ github.event.inputs.Environment }}
           echo $BRANCH
           if [ -z "$ENV" ]
           then
@@ -78,7 +78,7 @@ jobs:
                 ;;
             esac
           fi
-          if [[ $ENV == 'prd' && $BRANCH == 'master' ]]
+          if [[ $ENV == 'prd' ]]
           then
             echo "AWS_ROLE=PRD_AWS_ROLE" >> $GITHUB_OUTPUT
             echo "AWS_REGION=PRD_AWS_REGION" >> $GITHUB_OUTPUT
