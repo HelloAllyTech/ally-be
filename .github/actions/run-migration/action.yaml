@@ -1,0 +1,130 @@
+name: "Run DB Migrate"
+description: "Run DB migration when code is pushed to backend"
+inputs:
+  aws-role:
+    required: true
+    description: "AWS ROLE"
+  aws-region:
+    required: true
+    description: "AWS REGION"
+  task-definition:
+    required: true
+    description: "TASK DEFINITION"
+  container-name:
+    required: true
+    description: "CONTAINER NAME"
+  ecs-cluster:
+    required: true
+    description: "ECS CLUSTER"
+  image:
+    required: true
+    description: "APP IMAGE"
+  subnets:
+    required: true
+    description: "SUBNET NAME"
+  security-groups:
+   required: true
+   description: "SECURITY GROUP"
+  
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Checkout repository on : ${{ github.REF }}"
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.aws-role }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Get latest task definition
+      shell: bash
+      run: |
+        aws ecs describe-task-definition --task-definition ${{ inputs.task-definition }} \
+        --query taskDefinition > task-definition.json
+
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: task-definition.json
+        container-name: ${{ inputs.container-name }}
+        image: ${{ inputs.image }}
+
+    - name: Remove unwanted fields from task definition
+      id: task_def_cleanup
+      shell: bash
+      run: |
+        jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' ${{ steps.task-def.outputs.task-definition }} > updated-task-definition.json
+
+
+
+
+    - name: Register ECS task definition
+      shell: bash
+      id: task-def-register
+      run: |
+        revision=$(aws ecs register-task-definition \
+          --region ${{ inputs.aws-region }} \
+          --family ${{ inputs.task-definition }} \
+          --cli-input-json file://updated-task-definition.json \
+          --query taskDefinition.revision)
+        echo "revision=$revision" >> $GITHUB_OUTPUT
+
+    - name: Run ECS task
+      shell: bash
+      id: run-task
+      env:
+        vpc_configuration: "{subnets=${{ inputs.subnets }},securityGroups=${{ inputs.security-groups }},assignPublicIp=ENABLED }"
+      run: |
+        task_arn=$(aws ecs run-task \
+          --region ${{ inputs.aws-region }} \
+          --launch-type FARGATE \
+          --cluster ${{ inputs.ecs-cluster }} \
+          --network-configuration 'awsvpcConfiguration=${{ env.vpc_configuration }}' \
+          --task-definition ${{ inputs.task-definition }}:${{ steps.task-def-register.outputs.revision }} \
+          --query tasks[0].taskArn --output text)
+
+          echo "task_arn=$task_arn" >> $GITHUB_OUTPUT
+          echo "task_id=${task_arn/*\//}" >> $GITHUB_OUTPUT
+
+    - name: Wait until a task stopped
+      shell: bash
+      run: |
+        aws ecs wait tasks-stopped \
+          --cluster ${{ inputs.ecs-cluster }} \
+          --tasks ${{ steps.run-task.outputs.task_arn }}
+
+    - name: Install ecs-cli
+      shell: bash
+      env:
+        ecs_cli_version: v1.21.0
+      run: |
+        sudo curl -Lo /usr/local/bin/ecs-cli https://amazon-ecs-cli.s3.amazonaws.com/ecs-cli-linux-amd64-${{ env.ecs_cli_version }}
+        sudo chmod +x /usr/local/bin/ecs-cli
+
+    - name: Retrieve container logs from CloudWatch logs
+      shell: bash
+      continue-on-error: true
+      id: logs
+      run: |
+        echo "::Retrieve container logs from CloudWatch logs"
+        ecs-cli logs --timestamps \
+          --cluster ${{ inputs.ecs-cluster }} \
+          --task-id ${{ steps.run-task.outputs.task_id }} \
+          --task-def ${{ inputs.task-definition}}:${{ steps.task-def-register.outputs.revision }}
+
+    - name: Check the error Status of migration jobs
+      shell: bash
+      run: |
+        # Get the exit code using AWS CLI and jq
+        EXIT_CODE=$(aws ecs describe-tasks --region ${{ inputs.aws-region }} --cluster ${{ inputs.ecs-cluster }} --tasks ${{ steps.run-task.outputs.task_arn }} | jq -r '.tasks[0].containers[0].exitCode')
+        # Check the exit code and take appropriate action
+        if [ $EXIT_CODE -ne 0 ]; then
+            echo "Error: Task failed with exit code $EXIT_CODE."
+            exit 1  # This will cause the GitHub job to fail
+        else
+            echo "Task completed successfully with exit code 0."
+        fi
