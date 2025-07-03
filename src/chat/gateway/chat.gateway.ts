@@ -1,9 +1,9 @@
 import {
-  SubscribeMessage,
   WebSocketGateway,
   OnGatewayConnection,
   OnGatewayDisconnect,
   WebSocketServer,
+  SubscribeMessage,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { LoggerService } from '../../logger/logger.service';
@@ -11,13 +11,12 @@ import { UserService } from '../../user/user.service';
 import {
   DeepgramTranscriptMetadata,
   MessagePayload,
-  NudgeResponse,
   SendMessageWebSocketData,
   ServiceSessionData,
   UserChatSessionData,
 } from '../type/chat.type';
 import { ChatEvents } from '../constants/chat.constants';
-import { ChatService } from '../services/chat.service';
+import { ChatService } from '../service/chat.service';
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { AiService } from '../../ai/service/ai.service';
 import { Message, MessageType } from '../../common/entities/message.entity';
@@ -25,9 +24,18 @@ import { AppConfigService } from '../../config/config.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { TranscriptionService } from '../../ai/service/transcription.service';
 import { Chat } from '../../common/entities/chat.entity';
+import {
+  ExecutionContextPropagation,
+  WithExecutionContext,
+} from '../../common/decorator/execution.context.decorator';
+import { ExecutionManager } from '../../common/execution/execution-manager';
+import { RedisService } from '../../redis/service/redis.service';
+import { AudioChatProvider } from '../../common/constants/chat.constants';
+import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
 
 @WebSocketGateway({
   cors: { origin: '*' },
+  namespace: '/webrtc-audio-chat',
 })
 @Injectable()
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -43,6 +51,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private transcriptionService: TranscriptionService,
     private config: AppConfigService,
     private publisher: MessageBrokerService,
+    private cacheService: RedisService,
   ) {}
 
   logger = LoggerService.getInstance(ChatGateway.name);
@@ -115,6 +124,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       role: user.role,
       room,
       chatId: -99,
+      tenantId: user.tenantId,
+      provider: AudioChatProvider.WEBRTC,
     };
 
     client.join(room);
@@ -152,12 +163,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.connectedUsers.delete(+session.userId);
     this.transcriptionService.stopLiveTranscription(session);
     const chatId = await this.chatService.getChatById(session.chatId);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
     const participants = [chatId?.counselorId!, chatId?.clientId!].filter(
       (id) => id !== session.userId,
     );
 
     if (chatId) {
-      this.publisher.publish('chat-message', {
+      this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
         participants,
         message: {
           content: 'User disconnected',
@@ -172,6 +184,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage(ChatEvents.SEND_MESSAGE)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleSendMessage(client: Socket, data: SendMessageWebSocketData) {
     const sid = client.id;
     const session = this.sessions[sid];
@@ -179,9 +192,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Session not found for client ${sid}`);
       return;
     }
-    const message = await this.persistAndBroadcastMessage(session, data);
+    //! Need to set the auth context before persisting and broadcasting the message
+    this.setAuthContext(session);
+    const message = await this.chatService.persistAndBroadcastMessage(
+      session,
+      data,
+    );
     this.logger.info(`🔄 Triggering nudge for chatId: ${data.chatId}`);
-    this.triggerNudge(message, session, data.chatId);
+    this.chatService.triggerNudge(
+      message,
+      session,
+      data.chatId,
+      MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
+    );
   }
 
   private async prepareMessage(
@@ -203,11 +226,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Chat not found for chatId: ${chatId}`);
       return;
     }
+    // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
     const participants = [chat?.counselorId!];
     if (
       broadCastOptions.event != ChatEvents.NUDGE &&
       broadCastOptions.event != ChatEvents.STAGE
     ) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
       participants.push(chat?.clientId!);
     }
     return {
@@ -217,49 +242,27 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     };
   }
 
-  private async persistAndBroadcastMessage(
-    session: UserChatSessionData,
-    data: SendMessageWebSocketData,
-    broadCastOptions: {
-      event?: ChatEvents;
-    } = {
-      event: ChatEvents.MESSAGE_RECEIVED,
-    },
-  ) {
-    const chatId = data.chatId;
-    const senderId = session.userId;
-    const message = await this.chatService.saveMessage(chatId, senderId, data);
-    const chat = await this.chatService.getChatById(chatId);
-    const participants = [chat?.counselorId!];
-    if (
-      broadCastOptions.event != ChatEvents.NUDGE &&
-      broadCastOptions.event != ChatEvents.STAGE
-    ) {
-      participants.push(chat?.clientId!);
-    }
-
-    this.publisher.publish('chat-message', {
-      participants,
-      message,
-      broadCastOptions,
-    });
-    return message;
-  }
-
-  // **Audio Chat Handling**
   @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async startAudioChat(client: Socket, { chatId }: { chatId: number }) {
     try {
       const session = this.sessions[client.id];
+      this.logger.info(`startAudioChat - chatId: ${chatId} from ${client.id}}`);
       if (!session) {
         this.logger.error(`Session not found for client ${client.id}`);
         return;
       }
+      //! Need to set the auth context before persisting and broadcasting the message
+      this.setAuthContext(session);
       session.chatId = chatId;
+      const chat = await this.chatService.getChatById(chatId);
       await this.transcriptionService
         .startLiveTranscription(
-          session,
-          chatId,
+          {
+            session,
+            chatId,
+            chatCreatedAt: chat?.createdAt,
+          },
           this.handleDeepgramTranscript.bind(this),
         )
         .catch((error) => {
@@ -268,12 +271,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             error,
           );
         });
-      const chat = await this.chatService.getChatById(chatId);
       if (chat) {
         const participants = [chat.counselorId, chat.clientId].filter(
           (id) => id !== session.userId,
         );
-        this.publisher.publish('chat-message', {
+        this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
           participants,
           message: {
             userId: session.userId,
@@ -293,28 +295,55 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // **Audio Chat Handling**
   @SubscribeMessage(ChatEvents.AUDIO_MESSAGE)
-  handleAudioMessage(
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
+  async handleAudioMessage(
     client: Socket,
-    { chatId, audioData }: { chatId: number; audioData: Buffer },
+    { chatId, audioData }: { chatId: number; audioData: string },
   ) {
+    const isChatPaused = await this.chatService.isChatPaused(chatId);
+    if (isChatPaused) {
+      this.logger.info(`Chat is paused for chatId ${chatId}`);
+      return;
+    }
     try {
       const session = this.sessions[client.id];
       if (!session) {
         this.logger.error(`Session not found for client ${client.id}`);
         return;
       }
-
-      this.transcriptionService.sendAudio(session, audioData).catch((error) => {
-        this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
-      });
+      //! Need to set the auth context before persisting and broadcasting the message
+      this.setAuthContext(session);
+      const audioBuffer = Buffer.from(audioData, 'base64');
+      this.transcriptionService
+        .sendAudio(session, audioBuffer)
+        .catch((error) => {
+          this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
+        });
+      //broadcast the audio message
+      const chat = await this.chatService.getChatById(chatId);
+      if (chat) {
+        const participants = [chat.counselorId];
+        this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
+          participants,
+          message: {
+            userId: session.userId,
+            audioData,
+            chatId,
+            content: 'Audio message',
+          },
+          broadCastOptions: {
+            event: ChatEvents.AUDIO_STREAM,
+          },
+        });
+      }
     } catch (error) {
       this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
     }
   }
 
   @SubscribeMessage(ChatEvents.AUDIO_CHAT_MUTED)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleAudioChatMuted(client: Socket, { chatId }: { chatId: number }) {
     try {
       this.logger.info(
@@ -325,6 +354,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.logger.error(`Session not found for client ${client.id}`);
         return;
       }
+      //! Need to set the auth context before persisting and broadcasting the message
+      this.setAuthContext(session);
 
       await this.transcriptionService.handleAudioChatMuted(session);
     } catch (error) {
@@ -332,19 +363,48 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage(ChatEvents.AUDIO_CHAT_PAUSED)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
+  async handleAudioChatPaused(client: Socket, { chatId }: { chatId: number }) {
+    this.logger.info(`Audio chat nudge paused for chatId ${chatId}`);
+    const session = this.sessions[client.id];
+    if (!session) {
+      this.logger.error(`Session not found for client ${client.id}`);
+      return;
+    }
+    this.setAuthContext(session);
+    await this.chatService.pauseOrResumeChat(chatId, true);
+  }
+
+  @SubscribeMessage(ChatEvents.AUDIO_CHAT_RESUMED)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
+  async handleAudioChatResumed(client: Socket, { chatId }: { chatId: number }) {
+    this.logger.info(`Audio chat Nudge resumed for chatId ${chatId}`);
+    const session = this.sessions[client.id];
+    if (!session) {
+      this.logger.error(`Session not found for client ${client.id}`);
+      return;
+    }
+    this.setAuthContext(session);
+    await this.chatService.pauseOrResumeChat(chatId, false);
+  }
+
   @SubscribeMessage(ChatEvents.WEBRTC_OFFER)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   handleOffer(client: Socket, data: any) {
     this.logger.info(`WebRTC Offer from ${client.id}`);
     return this.sendWebRTCMessage(client, data, ChatEvents.WEBRTC_OFFER);
   }
 
   @SubscribeMessage(ChatEvents.WEBRTC_ANSWER)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   handleAnswer(client: Socket, data: any) {
     this.logger.info(`WebRTC Answer from ${client.id} `);
     return this.sendWebRTCMessage(client, data, ChatEvents.WEBRTC_ANSWER);
   }
 
   @SubscribeMessage(ChatEvents.ICE_CANDIDATE)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   handleIceCandidate(client: Socket, data: any) {
     return this.sendWebRTCMessage(client, data, ChatEvents.ICE_CANDIDATE);
   }
@@ -360,6 +420,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(`Session not found for client ${sid}`);
       return;
     }
+    //! Need to set the auth context before persisting and broadcasting the message
+    this.setAuthContext(session);
 
     const chatId = data.chatId;
     const senderId = session.userId;
@@ -373,74 +435,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const counselorId = chat.counselorId;
     const target = `user-${senderId === clientId ? counselorId : clientId}`;
     this.server.to(target).emit(event, data);
-  }
-
-  private async triggerNudge(
-    newMessage: { content: string; chatId: number; id: number },
-    session: UserChatSessionData,
-    chatId: number,
-  ) {
-    const messages = await this.chatService.getChatHistoryForAIService(chatId, {
-      sortBy: 'createdAt',
-      order: 'DESC',
-      limit: 4,
-    });
-    const formattedNewMessage = `${session.role}: ${newMessage.content}`;
-
-    this.aiService
-      .getNudge(formattedNewMessage, messages)
-      .then((nudge) => {
-        this.logger.info(
-          `Nudge:${newMessage.content} | chatId :${chatId} | ${nudge?.nudge} | stage: ${nudge?.stage}`,
-        );
-        if (nudge) {
-          this.handleNudge(nudge, session, newMessage);
-        }
-      })
-      .catch((error) => {
-        this.logger.error(
-          `AI Nudge Error: ${error.message} | chatId : ${chatId} | userId : ${session.userId}`,
-        );
-      });
-  }
-
-  private async handleNudge(
-    nudgeResponse: NudgeResponse,
-    session: UserChatSessionData,
-    parentMessage: { content: string; chatId: number; id: number },
-  ) {
-    this.logger.info(
-      `handleNudge - nudge :${nudgeResponse.nudge} | stage :${nudgeResponse.stage}`,
-    );
-    const { nudge, stage } = nudgeResponse;
-    if (nudge) {
-      await this.persistAndBroadcastMessage(
-        session,
-        {
-          chatId: parentMessage.chatId,
-          content: nudge,
-          messageType: MessageType.NUDGE,
-          parentMessageId: parentMessage.id,
-        },
-        {
-          event: ChatEvents.NUDGE,
-        },
-      );
-    }
-    if (stage) {
-      await this.persistAndBroadcastMessage(
-        session,
-        {
-          chatId: parentMessage.chatId,
-          content: stage,
-          messageType: MessageType.STAGE,
-          parentMessageId: parentMessage.id,
-        },
-        {
-          event: ChatEvents.STAGE,
-        },
-      );
-    }
   }
 
   private async sendMessageToParticipant(
@@ -467,17 +461,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleDeepgramTranscript(
     session: UserChatSessionData,
     chatId: number,
     transcript: string,
     metadata?: DeepgramTranscriptMetadata,
   ): Promise<void> {
+    this.setAuthContext(session);
     const {
       isSentenceComplete,
       currentTranscriptBuffer,
       isFinal,
       isUtteranceEnd,
+      wordCountByLanguage,
     } = metadata || {};
     this.logger.info(
       `🎤 Transcription: ${transcript} - ${new Date().toISOString()}`,
@@ -495,6 +492,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
+    if (Object.keys(wordCountByLanguage || {}).length) {
+      Object.entries(wordCountByLanguage || {}).forEach(([language, count]) => {
+        this.chatService.incrementWordCountByLanguage(chatId, language, count);
+      });
+    }
+
     const messageData = { chatId, content: transcript, context: '' };
     const { participants, message, broadCastOptions } =
       (await this.prepareMessage(session, messageData, {
@@ -507,7 +510,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    this.publisher.publish('chat-message', {
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
       participants,
       message: {
         ...message,
@@ -528,12 +531,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         {
           content: currentTranscriptBuffer || transcript,
           createdAt: metadata?.currentTranscriptCreatedAt,
+          startSeconds: metadata?.currentTranscriptStart,
+          endSeconds: metadata?.currentTranscriptEnd,
         },
       );
-      this.triggerNudge(completedMessage, session, chatId);
+      this.chatService.triggerNudge(
+        completedMessage,
+        session,
+        chatId,
+        MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
+      );
     } else if (!this.config.ai.sentenceCompletionRequired) {
       const savedMessage = await this.chatService.save(message);
-      this.triggerNudge(savedMessage, session, chatId);
+      this.chatService.triggerNudge(
+        savedMessage,
+        session,
+        chatId,
+        MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
+      );
     }
   }
 
@@ -560,7 +575,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    this.publisher.publish('chat-message', {
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
       participants,
       message: {
         ...message,
@@ -575,9 +590,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         {
           content: currentTranscriptBuffer || transcript,
           createdAt: metadata?.currentTranscriptCreatedAt,
+          startSeconds: metadata?.currentTranscriptStart,
+          endSeconds: metadata?.currentTranscriptEnd,
         },
       );
-      this.triggerNudge(completedMessage, session, chatId);
+      this.chatService.triggerNudge(
+        completedMessage,
+        session,
+        chatId,
+        MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
+      );
     }
   }
 
@@ -589,14 +611,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(room).emit(event, payload);
   }
 
-  subscribeToChatMessages() {
-    this.publisher.subscribe('chat-message', (data) => {
-      this.sendMessageToParticipant(
-        data.participants,
-        data.message,
-        data.broadCastOptions,
-      );
-    });
+  subscribeToWebRTCChatMessage() {
+    this.publisher.subscribe(
+      MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
+      (data) => {
+        this.sendMessageToParticipant(
+          data.participants,
+          data.message,
+          data.broadCastOptions,
+        );
+      },
+    );
   }
 
   sendMessagesToRoomUsingPublish(
@@ -607,7 +632,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.info(
       `Sending message to participants: ${JSON.stringify(participantIds)} | event: ${JSON.stringify(event)}`,
     );
-    this.publisher.publish('chat-message', {
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
       participants: participantIds,
       message,
       broadCastOptions: {
@@ -624,12 +649,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       content: 'Chat ended',
       messageType: MessageType.SYSTEM,
     };
-    this.publisher.publish('chat-message', {
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
       participants,
       message,
       broadCastOptions: {
         event: ChatEvents.CHAT_ENDED,
       },
     });
+  }
+
+  setAuthContext(session: UserChatSessionData) {
+    ExecutionManager.setAuthContext(
+      session.userId.toString(),
+      session.role,
+      session.tenantId,
+    );
   }
 }

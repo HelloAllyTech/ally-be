@@ -3,6 +3,7 @@ import { AnalyticsInterface } from '../interface/analytics.interface';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import * as jwt from 'jsonwebtoken';
+import { CommonUtil } from '../../common/util/common.util';
 @Injectable()
 export class MetabaseService implements AnalyticsInterface {
   private logger = LoggerService.getInstance(MetabaseService.name);
@@ -22,16 +23,18 @@ export class MetabaseService implements AnalyticsInterface {
     this.logger.info(`Getting dashboard url for ${dashboardId} | ${params}`);
     const payload = {
       resource: { dashboard: +dashboardId },
-      params: {},
+      params: params || {},
       exp: Math.round(Date.now() / 1000) + 10 * 60, // 10 minute expiration
     };
     const token = jwt.sign(payload, this.metabaseApiKey);
+    const queryParams = CommonUtil.generateQueryParams(params || {});
 
     const iframeUrl =
       this.metabaseUrl +
       '/embed/dashboard/' +
       token +
-      '#bordered=true&titled=true';
+      '#bordered=true&titled=true&' +
+      queryParams;
     return Promise.resolve(iframeUrl);
   }
   refreshDashboardUrl(dashboardId: string): Promise<string> {

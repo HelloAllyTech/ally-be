@@ -4,4 +4,5 @@ export type TokenUser = {
   id: number;
   username: string;
   role: UserRole;
+  tenantId: string;
 };

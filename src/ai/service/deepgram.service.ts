@@ -12,7 +12,11 @@ import {
   UserChatSessionData,
 } from '../../chat/type/chat.type';
 import { ITranscriptionService } from '../interfaces/transcription.interface';
-import { DeepgramTranscriptionOptions } from '../type/transcription.type';
+import {
+  DeepgramTranscriptionOptions,
+  DeepgramTranscriptResult,
+  SpeakerSegment,
+} from '../type/transcription.type';
 
 interface LiveClientSession {
   liveClient: LiveClient;
@@ -21,7 +25,10 @@ interface LiveClientSession {
   currentBufferSize: number;
   transcriptBuffer: string;
   currentUtterance: number;
-  currentTranscriptCreatedAt: Date | null;
+  currentTranscriptStart?: number;
+  currentTranscriptEnd?: number;
+  isDiarizationEnabled: boolean;
+  speakerSegmentsBuffer: SpeakerSegment[];
 }
 
 @Injectable()
@@ -53,21 +60,28 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   }
 
   async startLiveTranscription(
-    session: UserChatSessionData,
-    chatId: number,
+    {
+      session,
+      chatId,
+      chatCreatedAt,
+      options,
+    }: {
+      session: UserChatSessionData;
+      chatId: number;
+      chatCreatedAt?: Date;
+      options?: DeepgramTranscriptionOptions;
+    },
     callback: (
       session: UserChatSessionData,
       chatId: number,
       transcript: string,
     ) => void,
-    options?: DeepgramTranscriptionOptions,
   ): Promise<void> {
-    const userId = session.userId;
-    this.logger.info(`startLiveTranscription -  userId: ${userId}`);
+    this.logger.info(`startLiveTranscription -  userId: ${session.userId}`);
 
     if (this.liveClients.has(session.id)) {
       this.logger.warn(
-        `startLiveTranscription - Live transcription already exists for userId: ${userId}`,
+        `startLiveTranscription - Live transcription already exists for userId: ${session.userId}`,
       );
       return;
     }
@@ -80,20 +94,26 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
         currentBufferSize: 0,
         transcriptBuffer: '',
         currentUtterance: 0,
-        currentTranscriptCreatedAt: null,
+        currentTranscriptStart: undefined,
+        currentTranscriptEnd: undefined,
+        isDiarizationEnabled: options?.diarize ?? false,
+        speakerSegmentsBuffer: [],
       };
       this.setupKeepAlive(clientSession, liveClient);
       await this.setupTranscriptionListeners(
-        session,
-        chatId,
-        callback,
+        {
+          session,
+          chatId,
+          chatCreatedAt,
+        },
         liveClient,
+        callback,
       );
       this.processPendingAudioQueue(session, clientSession);
       this.liveClients.set(session.id, clientSession);
     } catch (error) {
       this.logger.error(
-        `startLiveTranscription - Failed to start live transcription for userId: ${userId}`,
+        `startLiveTranscription - Failed to start live transcription for userId: ${session.userId}`,
         error,
       );
       throw error;
@@ -111,6 +131,9 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       endpointing: options?.endpointing ?? 300,
       utterance_end_ms: options?.utteranceEndMs ?? 2000,
       language: options?.language ?? 'multi',
+      diarize: options?.diarize ?? false,
+      ...(options?.encoding && { encoding: options.encoding }),
+      ...(options?.sample_rate && { sample_rate: options.sample_rate }),
     });
   }
 
@@ -126,72 +149,136 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   }
 
   private async setupTranscriptionListeners(
-    session: UserChatSessionData,
-    chatId: number,
+    {
+      session,
+      chatId,
+      chatCreatedAt,
+    }: {
+      session: UserChatSessionData;
+      chatId: number;
+      chatCreatedAt?: Date;
+    },
+    liveClient: LiveClient,
     callback: (
       session: UserChatSessionData,
       chatId: number,
       transcript: string,
     ) => void,
-    liveClient: LiveClient,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       liveClient.on(LiveTranscriptionEvents.Open, () => {
-        this.setupTranscriptionEvents(session, chatId, callback, liveClient);
+        this.setupTranscriptionEvents(
+          {
+            session,
+            chatId,
+            chatCreatedAt,
+          },
+          liveClient,
+          callback,
+        );
         resolve();
       });
 
       liveClient.on(LiveTranscriptionEvents.Error, (error) => {
         this.logger.error(
-          `Live transcription error for userId: ${session.userId}`,
-          error,
+          `Live transcription error for userId: ${session.userId} | error: ${error.message}`,
         );
         reject(error);
       });
     });
   }
 
+  private getTranscriptSpeakerSegments(
+    data: DeepgramTranscriptResult,
+  ): SpeakerSegment[] {
+    const words = data.channel.alternatives[0].words;
+    const speakerSegments = words.map((word) => {
+      return {
+        speaker: word.speaker,
+        word: word.word,
+      };
+    });
+
+    return speakerSegments;
+  }
+
   private setupTranscriptionEvents(
-    session: UserChatSessionData,
-    chatId: number,
+    {
+      session,
+      chatId,
+      chatCreatedAt,
+    }: {
+      session: UserChatSessionData;
+      chatId: number;
+      chatCreatedAt?: Date;
+    },
+    liveClient: LiveClient,
     callback: (
       session: UserChatSessionData,
       chatId: number,
       transcript: string,
       metadata: DeepgramTranscriptMetadata,
     ) => void,
-    liveClient: LiveClient,
   ): void {
-    liveClient.on(LiveTranscriptionEvents.Transcript, (data) => {
-      const transcript = data.channel.alternatives[0].transcript?.trim();
-      this.logger.debug(
-        `Transcript for userId: ${session.userId} | transcript: ${transcript} | isFinal: ${data.is_final} | isSpeech:${data.speech_final}`,
-      );
-      const clientSession = this.liveClients.get(session.id);
-      if (transcript && clientSession) {
-        const finalTranscript = clientSession?.transcriptBuffer + transcript;
-        clientSession.currentTranscriptCreatedAt =
-          clientSession.currentTranscriptCreatedAt || new Date();
-        const isSentenceComplete =
-          data.is_final &&
-          this.isSentenceComplete(clientSession, finalTranscript);
-        callback(session, chatId, transcript, {
-          isFinal: data.is_final,
-          isSentenceComplete,
-          currentTranscriptBuffer: finalTranscript,
-          currentTranscriptCreatedAt: clientSession.currentTranscriptCreatedAt,
-        });
+    liveClient.on(
+      LiveTranscriptionEvents.Transcript,
+      (data: DeepgramTranscriptResult) => {
+        const transcript = data.channel.alternatives[0].transcript?.trim();
+        this.logger.debug(
+          `Transcript for userId: ${session.userId} | transcript: ${transcript} | isFinal: ${data.is_final} | isSpeech:${data.speech_final}`,
+        );
+        const clientSession = this.liveClients.get(session.id);
+        if (transcript && clientSession) {
+          let speakerSegments;
+          let finalSpeakerSegments: SpeakerSegment[] = [];
+          if (clientSession.isDiarizationEnabled) {
+            speakerSegments = this.getTranscriptSpeakerSegments(data);
+            finalSpeakerSegments =
+              clientSession.speakerSegmentsBuffer.concat(speakerSegments);
+          }
+          const finalTranscript = clientSession?.transcriptBuffer + transcript;
+          const transcriptWords = data.channel.alternatives[0].words;
+          clientSession.currentTranscriptStart =
+            clientSession.currentTranscriptStart || transcriptWords[0].start;
+          const end = transcriptWords[transcriptWords.length - 1].end;
+          clientSession.currentTranscriptEnd = end;
+          const currentTranscriptCreatedAt = chatCreatedAt
+            ? new Date(
+                new Date(chatCreatedAt).getTime() +
+                  clientSession.currentTranscriptStart * 1000,
+              )
+            : new Date();
+          const isSentenceComplete =
+            data.is_final &&
+            this.isSentenceComplete(clientSession, finalTranscript);
+          const wordCount = data.is_final
+            ? this.getWordCountByLanguage(data)
+            : undefined;
+          callback(session, chatId, transcript, {
+            isFinal: data.is_final,
+            isSentenceComplete,
+            currentTranscriptBuffer: finalTranscript,
+            currentTranscriptCreatedAt,
+            currentTranscriptStart: clientSession.currentTranscriptStart,
+            currentTranscriptEnd: clientSession.currentTranscriptEnd,
+            wordCountByLanguage: wordCount,
+            speakerSegments: finalSpeakerSegments,
+          });
 
-        // reset buffer if sentence is complete
-        if (isSentenceComplete) {
-          clientSession.transcriptBuffer = '';
-          clientSession.currentTranscriptCreatedAt = null;
-        } else if (data.is_final) {
-          // add to buffer
-          clientSession.transcriptBuffer = finalTranscript;
+          // reset buffer if sentence is complete
+          if (isSentenceComplete) {
+            clientSession.transcriptBuffer = '';
+            clientSession.currentTranscriptStart = undefined;
+            clientSession.currentTranscriptEnd = undefined;
+            clientSession.speakerSegmentsBuffer = [];
+          } else if (data.is_final) {
+            // add to buffer
+            clientSession.transcriptBuffer = finalTranscript;
+            clientSession.speakerSegmentsBuffer = finalSpeakerSegments;
+          }
         }
-      }
-    });
+      },
+    );
 
     liveClient.on(LiveTranscriptionEvents.UtteranceEnd, (data) => {
       this.logger.info(
@@ -201,16 +288,30 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       );
       const clientSession = this.liveClients.get(session.id);
       if (clientSession) {
+        const transcriptWords = data.channel.alternatives[0].words;
+        clientSession.currentTranscriptStart =
+          clientSession.currentTranscriptStart || transcriptWords[0].start;
+        const end = transcriptWords[transcriptWords.length - 1].end;
+        clientSession.currentTranscriptEnd = end;
+        const currentTranscriptCreatedAt =
+          chatCreatedAt && clientSession.currentTranscriptStart
+            ? new Date(
+                new Date(chatCreatedAt).getTime() +
+                  clientSession.currentTranscriptStart * 1000,
+              )
+            : new Date();
         callback(session, chatId, '', {
           isFinal: data.is_final,
           currentTranscriptBuffer: clientSession?.transcriptBuffer || '',
           isSentenceComplete: true,
           isUtteranceEnd: true,
-          currentTranscriptCreatedAt:
-            clientSession?.currentTranscriptCreatedAt || new Date(),
+          currentTranscriptCreatedAt,
+          currentTranscriptStart: clientSession.currentTranscriptStart,
+          currentTranscriptEnd: clientSession.currentTranscriptEnd,
         });
         clientSession.transcriptBuffer = '';
-        clientSession.currentTranscriptCreatedAt = null;
+        clientSession.currentTranscriptStart = undefined;
+        clientSession.currentTranscriptEnd = undefined;
       }
     });
 
@@ -220,12 +321,20 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       );
       const clientSession = this.liveClients.get(session.id);
       if (clientSession?.transcriptBuffer?.trim()) {
+        const currentTranscriptCreatedAt =
+          clientSession.currentTranscriptStart && chatCreatedAt
+            ? new Date(
+                new Date(chatCreatedAt).getTime() +
+                  clientSession.currentTranscriptStart * 1000,
+              )
+            : new Date();
         callback(session, chatId, clientSession.transcriptBuffer, {
           isFinal: true,
           isSentenceComplete: true,
           currentTranscriptBuffer: clientSession.transcriptBuffer,
-          currentTranscriptCreatedAt:
-            clientSession.currentTranscriptCreatedAt || new Date(),
+          currentTranscriptCreatedAt,
+          currentTranscriptStart: clientSession.currentTranscriptStart,
+          currentTranscriptEnd: clientSession.currentTranscriptEnd,
         });
       }
       this.liveClients.delete(session.id);
@@ -233,8 +342,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
 
     liveClient.on(LiveTranscriptionEvents.Error, (error) => {
       this.logger.error(
-        `Live transcription error for userId: ${session.userId}`,
-        error,
+        `Live transcription error for userId: ${session.userId} | error: ${error.message}`,
       );
     });
 
@@ -262,7 +370,6 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   }
 
   async sendAudio(session: UserChatSessionData, audio: Buffer): Promise<void> {
-    const userId = session.userId.toString();
     const clientSession = this.liveClients.get(session.id);
 
     if (!clientSession) {
@@ -278,7 +385,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       clientSession.liveClient.send(audio);
     } catch (error) {
       this.logger.error(
-        `Failed to send audio for userId: ${userId} | sessionId: ${session.id}`,
+        `Failed to send audio for userId: ${session.userId} | sessionId: ${session.id}`,
         error,
       );
       throw error;
@@ -324,5 +431,21 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       this.cleanupConnection(sessionId),
     );
     await Promise.all(cleanup);
+  }
+
+  private getWordCountByLanguage(
+    data: DeepgramTranscriptResult,
+  ): Record<string, number> | undefined {
+    const wordList = data.channel.alternatives[0]?.words;
+
+    if (!wordList?.length) {
+      return undefined;
+    }
+
+    return wordList.reduce<Record<string, number>>((acc, word) => {
+      const language = word.language || 'unknown';
+      acc[language] = (acc[language] || 0) + 1;
+      return acc;
+    }, {});
   }
 }

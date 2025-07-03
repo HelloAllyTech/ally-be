@@ -3,7 +3,14 @@ import { MetabaseService } from '../analytics/service/metabase.service';
 import { AppConfigService } from '../config/config.service';
 import { SMSInterface } from '../notification/interface/sms.interface';
 import { Msg91Service } from '../notification/service/msg91.service';
-import { SMSIntegrationEnum } from './provider.enum';
+import {
+  AudioIngestIntegrationEnum,
+  EmailIntegrationEnum,
+  SMSIntegrationEnum,
+} from './provider.enum';
+import { ExotelService } from '../audio-ingest/service/exotel.service';
+import { EmailInterface } from '../notification/interface/email.interface';
+import { SESService } from '../notification/service/ses.service';
 export class ProviderFactory {
   public static getSMSFactory() {
     return {
@@ -40,6 +47,44 @@ export class ProviderFactory {
         }
       },
       inject: [AppConfigService, MetabaseService],
+    };
+  }
+
+  public static getAudioIngestFactory() {
+    return {
+      provide: 'AudioIngestInterface',
+      useFactory: async (
+        configService: AppConfigService,
+        exotelService: ExotelService,
+      ) => {
+        const audioIngestIntegration = configService.audioIngest.integration;
+        switch (audioIngestIntegration) {
+          case AudioIngestIntegrationEnum.EXOTEL:
+            return exotelService;
+          default:
+            return exotelService;
+        }
+      },
+      inject: [AppConfigService, ExotelService],
+    };
+  }
+
+  public static getEmailFactory() {
+    return {
+      provide: EmailInterface,
+      useFactory: async (
+        configService: AppConfigService,
+        sesService: SESService,
+      ) => {
+        const emailIntegration = configService.email.integration;
+        switch (emailIntegration) {
+          case EmailIntegrationEnum.SES:
+            return sesService;
+          default:
+            return sesService;
+        }
+      },
+      inject: [AppConfigService, SESService],
     };
   }
 }

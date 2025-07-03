@@ -1,6 +1,3 @@
-
-
-
 export const PERMISSIONS = {
   ViewNavBarCalls: 'view:navbar:calls',
   ViewNavBarCalendar: 'view:navbar:calendar',
@@ -8,4 +5,8 @@ export const PERMISSIONS = {
   ViewNavBarLearn: 'view:navbar:learn',
   ViewNavBarStressBuster: 'view:navbar:stress-buster',
   ViewNavBarSettings: 'view:navbar:settings',
-}
+
+  EditSummary: 'edit:summary',
+
+  ButtonStartCall: 'view:button:start-call',
+};

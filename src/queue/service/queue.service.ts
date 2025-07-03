@@ -3,7 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { QueueEntry } from '../../common/entities/queue.entity';
 import { EntityManager, Repository } from 'typeorm';
 import { QueueStatus } from '../../common/constants/chat.constants';
-import { ChatService } from '../../chat/services/chat.service';
+import { ChatService } from '../../chat/service/chat.service';
+import { ExecutionManager } from '../../common/execution/execution-manager';
 
 @Injectable()
 export class QueueService {
@@ -24,6 +25,7 @@ export class QueueService {
       chatId: data.chatId,
       priority: data.priority,
       waitStartTime: new Date(),
+      tenantId: ExecutionManager.getTenantId(),
     });
     return repo.save(queueEntry);
   }
@@ -37,6 +39,9 @@ export class QueueService {
     if (status) {
       query.where('queue.status = :status', { status });
     }
+    query.andWhere('queue.tenantId = :tenantId', {
+      tenantId: ExecutionManager.getTenantId(),
+    });
     const stats = await query.getMany();
     return stats.map((stat) => ({
       entryId: stat.entryId,
@@ -52,13 +57,16 @@ export class QueueService {
     return this.queueRepo.find({
       where: {
         status: QueueStatus.WAITING,
+        tenantId: ExecutionManager.getTenantId(),
       },
     });
   }
 
   getQueueByChatId(chatId: number, entityManager?: EntityManager) {
     const repo = entityManager?.getRepository(QueueEntry) || this.queueRepo;
-    return repo.findOne({ where: { chatId } });
+    return repo.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
   }
 
   updateQueueStatus(
@@ -67,6 +75,9 @@ export class QueueService {
     entityManager?: EntityManager,
   ) {
     const repo = entityManager?.getRepository(QueueEntry) || this.queueRepo;
-    return repo.update(id, { status });
+    return repo.update(
+      { entryId: id, tenantId: ExecutionManager.getTenantId() },
+      { status },
+    );
   }
 }

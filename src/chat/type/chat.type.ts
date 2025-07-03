@@ -1,3 +1,4 @@
+import { AudioChatProvider } from '../../common/constants/chat.constants';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { Message, MessageType } from '../../common/entities/message.entity';
@@ -11,6 +12,8 @@ export type UserChatSessionData = {
   role: string;
   room: string;
   chatId: number;
+  tenantId: string;
+  provider?: AudioChatProvider;
 };
 
 export type ServiceSessionData = {
@@ -76,5 +79,12 @@ export type DeepgramTranscriptMetadata = {
   isSentenceComplete: boolean;
   currentTranscriptBuffer: string;
   currentTranscriptCreatedAt: Date;
+  currentTranscriptStart?: number;
+  currentTranscriptEnd?: number;
   isUtteranceEnd?: boolean;
+  wordCountByLanguage?: Record<string, number>;
+  speakerSegments?: {
+    speaker: number;
+    word: string;
+  }[];
 };

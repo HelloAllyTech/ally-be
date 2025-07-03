@@ -11,10 +11,10 @@ export class SlackService {
     this.channel = config.slack.channel;
   }
 
-  async sendMessage(message: string) {
+  async sendMessage(message: string, channel?: string) {
     try {
       const data = {
-        channel: this.channel,
+        channel: channel || this.channel,
         text: message,
       };
       await axios.post(this.apiEndpoint, data, {

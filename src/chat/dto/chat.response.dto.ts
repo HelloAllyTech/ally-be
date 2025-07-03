@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { CallDetails } from './call-log.response.dto';
 import { ChatStatus } from '../../common/entities/chat.entity';
+import { IsNotEmpty, IsString } from 'class-validator';
 
 export class ChatDto {
   @ApiProperty({ example: 1, description: 'Unique identifier for the chat' })
@@ -50,4 +51,14 @@ export class ChatDto {
 export class ChatResponseDto extends ChatDto {
   @ApiProperty({ type: CallDetails, description: 'Chat details' })
   details?: CallDetails;
+}
+
+export class CallInfoDto {
+  @ApiProperty({
+    example: 'CALL-123-2025-03-14',
+    description: 'Summary name',
+  })
+  @IsString()
+  @IsNotEmpty()
+  summaryName!: string;
 }

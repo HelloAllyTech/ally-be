@@ -12,7 +12,7 @@ export class NotificationEventConsumer {
   }
 
   @OnEvent('otp.generated')
-  handleOtpGenerated(payload: { phone: string; otp: string }) {
-    this.notificationService.sendOTP(payload.phone, payload.otp);
+  handleOtpGenerated(payload: { email: string; otp: string }) {
+    this.notificationService.sendEmailOTP(payload.email, payload.otp);
   }
 }

@@ -128,6 +128,9 @@ MSG91_API_KEY=your_msg91_api_key_here
 MSG91_TEMPLATE_ID=your_msg91_template_id_here
 MSG91_API_URL=https://control.msg91.com/api/v5/flow
 
+# AUDIO_INGEST_INTEGRATION
+AUDIO_INGEST_INTEGRATION=EXOTEL
+
 # OTP
 OTP_TTL=300  #in seconds
 
@@ -135,6 +138,17 @@ OTP_TTL=300  #in seconds
 ANALYTICS_INTEGRATION=METABASE
 METABASE_URL=https://metabase.com
 METABASE_API_KEY=your_metabase_api_key_here
+
+# AWS
+AWS_REGION=aws-region
+AWS_ACCESS_KEY_ID=aws-access-key-id
+AWS_SECRET_ACCESS_KEY=aws-secret-access-key
+
+# EMAIL
+EMAIL_INTEGRATION=aws-ses
+
+# AWS-SES
+AWS_SES_SOURCE_EMAIL=aws-source-email
 
 ```
 

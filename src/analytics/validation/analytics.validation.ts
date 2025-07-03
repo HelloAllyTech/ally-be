@@ -4,6 +4,8 @@ import {
   IsNumber,
   IsObject,
   IsNotEmpty,
+  IsArray,
+  IsDateString,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
@@ -41,12 +43,33 @@ export class CreateDashboardDto {
   @IsNotEmpty()
   groupId!: string;
 
-  @IsString()
-  organizationId!: string;
+  @IsArray()
+  @IsOptional()
+  data?: string[];
 }
 
 export class DashboardIdParamDto {
   @IsString()
   @IsNotEmpty()
   dashboardId!: string;
+}
+
+export class CounselorStatsQueryDto {
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+
+export class CounselorStatsResponseDto {
+  counselorName!: string;
+
+  counselorListeningDuration!: number;
+
+  counselorSharingDuration!: number;
+
+  counselorSharingPercentage!: number;
 }

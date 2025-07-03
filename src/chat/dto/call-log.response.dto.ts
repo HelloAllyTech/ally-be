@@ -1,6 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ChatStatus } from '../../common/entities/chat.entity';
-import { SummaryDetails } from '../../common/entities/type/call.details.type';
+import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
+import {
+  AudioChatPlatform,
+  AudioChatProvider,
+} from '../../common/constants/chat.constants';
 
 class UserInfo {
   @ApiProperty()
@@ -15,13 +19,43 @@ class UserInfo {
   @ApiProperty()
   role?: string;
 }
-class CallInfo {
+
+export class CallInfo {
   @ApiProperty({ required: false })
   clientTalkingPercentage?: number;
 
   @ApiProperty({ required: false })
   counselorTalkingPercentage?: number;
+
+  @ApiProperty({ required: false })
+  counselorWordCount?: number;
+
+  @ApiProperty({ required: false })
+  clientWordCount?: number;
+
+  @ApiProperty({ required: false })
+  provider?: AudioChatProvider;
+
+  @ApiProperty({ required: false })
+  callId?: string;
+
+  @ApiProperty({ required: false })
+  clientTalkingTime?: number;
+
+  @ApiProperty({ required: false })
+  counselorTalkingTime?: number;
+
+  @ApiProperty({ required: false })
+  summaryName?: string;
+
+  @ApiProperty({ required: false })
+  pauseChat?: boolean;
+
+  // Call intiated platform
+  @ApiProperty({ required: false })
+  platform?: AudioChatPlatform;
 }
+
 export class CallDetails {
   @ApiProperty({ required: false })
   transcript?: string;
@@ -42,7 +76,7 @@ export class CallDetails {
   callDuration?: number;
 
   @ApiProperty({ required: false })
-  summary?: SummaryDetails;
+  summary?: FlattenedSummaryNotePayloadCamelCase;
 
   @ApiProperty({ type: CallInfo })
   callInfo?: CallInfo;
@@ -70,6 +104,22 @@ export class CallLogResponse {
   @ApiProperty({ type: UserInfo })
   client?: UserInfo;
 
+  @ApiProperty({ type: UserInfo })
+  counselor?: UserInfo;
+
   @ApiProperty({ type: CallDetails })
   details?: CallDetails;
+}
+
+export class CounselorNameResponse {
+  @ApiProperty()
+  id!: number;
+
+  @ApiProperty()
+  name!: string;
+}
+
+export class TagsResponse {
+  @ApiProperty({ type: [String] })
+  tags!: string[];
 }

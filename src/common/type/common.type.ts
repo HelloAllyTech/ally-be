@@ -4,3 +4,18 @@ export type Pagination = {
   sortBy?: string;
   order?: 'ASC' | 'DESC';
 };
+
+export class PaginatedResponse<T> {
+  data!: T[];
+  count!: number;
+}
+
+export type NudgePreferenceValue = {
+  status: boolean;
+};
+
+export type SummaryPreferenceValue = {
+  fields: Array<string>;
+};
+
+export type PreferenceValue = SummaryPreferenceValue | NudgePreferenceValue;

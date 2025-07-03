@@ -18,6 +18,9 @@ import { JwtRefreshAuthGuard } from '../guards/jwt-refresh-auth.guard';
 import { LoggerService } from '../../logger/logger.service';
 import { ApiBody } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
+import { UserRole } from '../../common/constants/user.constants';
+import { AuthRoles } from '../decorators/auth-roles.decorator';
+
 @Controller('v1/auth')
 export class AuthController {
   private logger = LoggerService.getInstance(AuthController.name);
@@ -32,16 +35,24 @@ export class AuthController {
   @Post('generate-otp')
   @HttpCode(HttpStatus.OK)
   async generateOtp(@Body() generateOtpDto: GenerateOtpDto) {
-    return this.authService.generateOtp(generateOtpDto.phone);
+    return this.authService.generateOtp(
+      generateOtpDto.phone,
+      generateOtpDto.email,
+    );
   }
 
   @Post('verify-otp')
   async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
-    return this.authService.verifyOtp(verifyOtpDto.phone, verifyOtpDto.otp);
+    return this.authService.verifyOtp(
+      verifyOtpDto.otp,
+      verifyOtpDto.phone,
+      verifyOtpDto.email,
+    );
   }
 
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
+  @AuthRoles(UserRole.SUPER_ADMIN)
   async signup(@Body() userData: UserCreateDto) {
     try {
       const user = await this.authService.signup(userData);

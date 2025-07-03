@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
-import { CallInfo, SummaryDetails } from './type/call.details.type';
+import { FlattenedSummaryNotePayloadCamelCase } from './type/call.details.type';
+import { CallInfo } from '../../chat/dto/call-log.response.dto';
 
 @Entity('call_details')
 export class CallDetails extends BaseEntity {
@@ -30,7 +31,7 @@ export class CallDetails extends BaseEntity {
   transcript?: string; // Transcript as a single text
 
   @Column({ type: 'jsonb', nullable: true })
-  summary?: SummaryDetails;
+  summary?: FlattenedSummaryNotePayloadCamelCase;
 
   @Column({ type: 'text', nullable: true })
   callOutcome?: string; // Outcome of thse call

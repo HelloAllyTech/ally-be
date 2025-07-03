@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { validationSchema } from './config/env.validation';
@@ -19,6 +19,12 @@ import { BrokerModule } from './message-broker/broker.module';
 import { NotificationModule } from './notification/notification.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { ExecutionContextMiddleware } from './common/execution/execution-context.middleware';
+import { TenantModule } from './tenant/tenant.module';
+import { CommonModule } from './common/common.module';
+import { SettingsModule } from './settings/settings.module';
+import { ReferenceDocumentModule } from './reference-document/reference-document.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -41,6 +47,10 @@ import { AnalyticsModule } from './analytics/analytics.module';
     NotificationModule,
     RateLimitModule,
     AnalyticsModule,
+    TenantModule,
+    CommonModule,
+    SettingsModule,
+    ReferenceDocumentModule,
   ],
   controllers: [],
   providers: [
@@ -50,4 +60,10 @@ import { AnalyticsModule } from './analytics/analytics.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(ExecutionContextMiddleware)
+      .forRoutes({ path: '*', method: RequestMethod.ALL });
+  }
+}

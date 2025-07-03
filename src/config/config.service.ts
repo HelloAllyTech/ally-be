@@ -96,6 +96,29 @@ export class AppConfigService {
     };
   }
 
+  get aws() {
+    return {
+      region: this.configService.get<string>('AWS_REGION'),
+      accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID'),
+      secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY'),
+    };
+  }
+
+  get email() {
+    return {
+      integration: this.configService.get<string>('EMAIL_INTEGRATION'),
+      ses: {
+        sourceEmail: this.configService.get<string>('AWS_SES_SOURCE_EMAIL'),
+      },
+    };
+  }
+
+  get audioIngest() {
+    return {
+      integration: this.configService.get<string>('AUDIO_INGEST_INTEGRATION'),
+    };
+  }
+
   get otp() {
     return {
       ttl: this.configService.get<number>(

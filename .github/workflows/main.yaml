@@ -11,7 +11,7 @@
 # DEV_AWS_ROLE
 # DEV_AWS_REGION
 
-name: Deploy lifeline-core
+name: Deploy ally-core
 
 permissions:
   id-token: write
@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           BRANCH="${GITHUB_REF#refs/heads/}"
-          ENV=${{ github.event.inputs.environment }}
+          ENV=${{ github.event.inputs.Environment }}
           echo $BRANCH
           if [ -z "$ENV" ]
           then
@@ -78,15 +78,15 @@ jobs:
                 ;;
             esac
           fi
-          if [[ $ENV == 'prd' && $BRANCH == 'master' ]]
+          if [[ $ENV == 'prd' ]]
           then
             echo "AWS_ROLE=PRD_AWS_ROLE" >> $GITHUB_OUTPUT
             echo "AWS_REGION=PRD_AWS_REGION" >> $GITHUB_OUTPUT
             echo "ECR_REPOSITORY=PRD_ECR_REPOSITORY" >> $GITHUB_OUTPUT
-            echo "PROJECT_PREFIX=life-prd" >> $GITHUB_OUTPUT
+            echo "PROJECT_PREFIX=ally-prd" >> $GITHUB_OUTPUT
             echo "PROJECT_REGION=mb" >> $GITHUB_OUTPUT
-            echo "SUBNETS=[\"subnet-0cce75b196f0b0f91\", \"subnet-0ecfab7ad6e9c808f\"]" >> $GITHUB_OUTPUT
-            echo "SECURITY_GROUPS=[\"sg-0a59d6cefa4776cd4\"]" >> $GITHUB_OUTPUT
+            echo "SUBNETS=[\"subnet-0803b15022d8454d1\", \"subnet-0a9aebefcd504a6eb\"]" >> $GITHUB_OUTPUT
+            echo "SECURITY_GROUPS=[\"sg-0802e74f0bf59122d\"]" >> $GITHUB_OUTPUT
           elif [ $ENV == 'stg' ]
           then
             echo "AWS_ROLE=STG_AWS_ROLE" >> $GITHUB_OUTPUT
@@ -101,10 +101,10 @@ jobs:
             echo "AWS_ROLE=DEV_AWS_ROLE" >> $GITHUB_OUTPUT
             echo "AWS_REGION=DEV_AWS_REGION" >> $GITHUB_OUTPUT
             echo "ECR_REPOSITORY=DEV_ECR_REPOSITORY" >> $GITHUB_OUTPUT
-            echo "PROJECT_PREFIX=life-dev" >> $GITHUB_OUTPUT
+            echo "PROJECT_PREFIX=ally-dev" >> $GITHUB_OUTPUT
             echo "PROJECT_REGION=sg" >> $GITHUB_OUTPUT
-            echo "SUBNETS=[\"subnet-0ec5761d885d00e27\", \"subnet-0f03d6917d235294c\", \"subnet-0230678c7b10a60b1\"]" >> $GITHUB_OUTPUT
-            echo "SECURITY_GROUPS=[\"sg-03ddac75c50904759\"]" >> $GITHUB_OUTPUT
+            echo "SUBNETS=[\"subnet-054f2c036aed7aef4\", \"subnet-0f845d1ddc4b6f471\", \"subnet-0b837159d4f98a0b9\"]" >> $GITHUB_OUTPUT
+            echo "SECURITY_GROUPS=[\"sg-05f0c1b5ae75e1320\"]" >> $GITHUB_OUTPUT
           else
             echo "Branch not configured!"
             exit 1
@@ -191,6 +191,7 @@ jobs:
     needs:
       - build
       - prepare-env
+      - run-db-migration
     runs-on: ubuntu-22.04
     env:
       AWS_ROLE: ${{ needs.prepare-env.outputs.AWS_ROLE }}

@@ -30,4 +30,13 @@ export class Message extends BaseEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
+
+  @Column({ nullable: true })
+  parentMessageId?: number;
+
+  @Column({ type: 'float', nullable: true })
+  startSeconds?: number;
+
+  @Column({ type: 'float', nullable: true })
+  endSeconds?: number;
 }

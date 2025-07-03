@@ -42,4 +42,41 @@ export class RedisService {
   private getFullKey(key: string) {
     return `${this.prefix}:${key}`;
   }
+
+  async getByPattern(pattern: string): Promise<string[]> {
+    const keys: string[] = [];
+    const stream = this.redis.scanStream({ match: pattern });
+
+    return new Promise((resolve, reject) => {
+      stream.on('data', (batch: string[]) => {
+        keys.push(...batch);
+      });
+      stream.on('end', () => resolve(keys));
+      stream.on('error', reject);
+    });
+  }
+
+  async deleteByPattern(pattern: string) {
+    const keys = await this.getByPattern(pattern);
+    if (keys.length > 0) {
+      await this.redis.del(keys);
+    }
+    return keys;
+  }
+
+  // Increment a field in a Redis hash
+  async hincrBy(
+    key: string,
+    field: string,
+    increment: number,
+  ): Promise<number> {
+    const fullKey = this.getFullKey(key);
+    return this.redis.hincrby(fullKey, field, increment);
+  }
+
+  // Get all fields from a Redis hash
+  async hgetAll(key: string): Promise<Record<string, string>> {
+    const fullKey = this.getFullKey(key);
+    return this.redis.hgetall(fullKey);
+  }
 }

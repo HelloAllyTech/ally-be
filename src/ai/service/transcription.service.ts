@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ITranscriptionService } from '../interfaces/transcription.interface';
+import { DeepgramTranscriptionOptions } from '../type/transcription.type';
 import { UserChatSessionData } from '../../chat/type/chat.type';
 
 @Injectable()
@@ -10,8 +11,17 @@ export class TranscriptionService {
   ) {}
 
   async startLiveTranscription(
-    session: UserChatSessionData,
-    chatId: number,
+    {
+      session,
+      chatId,
+      chatCreatedAt,
+      options,
+    }: {
+      session: UserChatSessionData;
+      chatId: number;
+      chatCreatedAt?: Date;
+      options?: DeepgramTranscriptionOptions;
+    },
     callback: (
       session: UserChatSessionData,
       chatId: number,
@@ -19,8 +29,12 @@ export class TranscriptionService {
     ) => void,
   ) {
     await this.transcriptionService.startLiveTranscription(
-      session,
-      chatId,
+      {
+        session,
+        chatId,
+        chatCreatedAt,
+        options,
+      },
       callback,
     );
   }

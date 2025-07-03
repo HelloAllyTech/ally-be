@@ -66,6 +66,7 @@ export class AuthService {
     const user = await this.userRepository.findOneOrFail({
       where: { id: userId },
     });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...result } = user;
     return result;
   }
@@ -75,6 +76,7 @@ export class AuthService {
       sub: user.id,
       username: user.username,
       role: user.role,
+      tenantId: user.tenantId,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -135,10 +137,14 @@ export class AuthService {
   async login(username: string, password: string) {
     const user = await this.userRepository.findOne({
       where: { username },
-      select: ['id', 'username', 'password', 'role'],
+      select: ['id', 'username', 'password', 'role', 'tenantId'],
     });
 
     if (!user) {
+      throw new UnauthorizedException('Invalid username or password');
+    }
+
+    if (!user.password) {
       throw new UnauthorizedException('Invalid username or password');
     }
 
@@ -166,15 +172,17 @@ export class AuthService {
   }
 
   async signup(userData: UserCreateDto): Promise<Omit<User, 'password'>> {
-    // TODO: Revisit this once we have a phone number in table & cofnirmation on how the flow works with admins
-    // Check if user with email already exists
+    // Check if user with email or phone already exists
     const existingUser = await this.userRepository.findOne({
-      where: { email: userData.email },
+      where: [{ email: userData.email }, { phone: userData.phone }],
+      select: ['email', 'phone'],
     });
 
-    // can cause user enumeration
     if (existingUser) {
-      throw new BadRequestException('Email already registered');
+      if (existingUser.email === userData.email) {
+        throw new BadRequestException('Email already registered');
+      }
+      throw new BadRequestException('Phone number already registered');
     }
 
     // Hash password
@@ -190,6 +198,7 @@ export class AuthService {
       metadata: {},
       username: userData.email,
       phone: userData.phone,
+      tenantId: userData.tenantId,
     });
 
     // Save user
@@ -214,19 +223,13 @@ export class AuthService {
     });
 
     // Remove password from response
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...userWithoutPassword } = savedUser;
     return userWithoutPassword;
   }
 
-  async register(email: string, password: string, username: string) {
-    return this.signup({
-      email,
-      password,
-      name: username, // Using username as name, you might want to separate these
-    });
-  }
-
   async getUserPermissions(id: number): Promise<string[]> {
+    this.logger.info(`Getting user permissions for user ${id}`);
     // Get user's groups from cache or DB
     const cachedUserGroups = await this.cache.get(`user:groups:${id}`);
     let userGroups;
@@ -300,45 +303,80 @@ export class AuthService {
     return [...permissions];
   }
 
-  async generateOtp(phone: string) {
+  async generateOtp(phone?: string, email?: string) {
+    if (!email && !phone) {
+      throw new BadRequestException('Email or phone is required');
+    }
     const user = await this.userRepository.findOne({
-      where: { phone: phone },
+      where: [{ phone: phone }, { email: email }],
     });
     if (!user) {
       this.logger.error(`User not found for phone ${phone}`);
       return true; // to prevent user enumeration
       //throw new BadRequestException('User not found');
     }
+
+    if (!user.email) {
+      this.logger.error(`User ${user.id} has no email`);
+      return true;
+    }
     const otp = AuthUtil.generateOtp();
-    await this.cache.set(this.getOtpKey(phone), otp, this.OTP_TTL);
+    await this.cache.set(this.getOtpKey(user.email), otp, this.OTP_TTL);
 
     // send otp to user
     this.eventEmitter.emit('otp.generated', {
-      phone,
+      email: user.email,
       otp,
     });
     return true;
   }
 
-  async verifyOtp(phone: string, otp: string) {
-    const cachedOtp = await this.cache.get(this.getOtpKey(phone));
+  async verifyOtp(otp: string, phone?: string, email?: string) {
+    if (!email && !phone) {
+      throw new BadRequestException('Email or phone is required');
+    }
+
+    let user;
+    if (!email) {
+      user = await this.userRepository.findOne({
+        where: { phone },
+      });
+      if (!user || !user.email) {
+        throw new BadRequestException('User not found');
+      }
+      email = user.email;
+    }
+
+    const cachedOtp = await this.cache.get(this.getOtpKey(email));
     if (cachedOtp !== otp) {
       throw new BadRequestException('Invalid OTP');
     }
-    await this.cache.del(this.getOtpKey(phone));
+    await this.cache.del(this.getOtpKey(email));
 
     if (cachedOtp === otp) {
       // generate token
-      const user = await this.userRepository.findOne({
-        where: { phone: phone },
-      });
+      if (!user) {
+        user = await this.userRepository.findOne({
+          where: { email },
+        });
+      }
       if (!user) {
         throw new BadRequestException('User not found');
       }
-      return this.generateTokens(user);
+      const tokens = await this.generateTokens(user);
+      return {
+        user: {
+          id: user!.id,
+          username: user!.username,
+          role: user!.role,
+        },
+        ...tokens,
+        tokenType: 'bearer',
+      };
     }
   }
-  private getOtpKey(phone: string) {
-    return `otp:${phone}`;
+
+  private getOtpKey(email: string) {
+    return `otp:${email}`;
   }
 }

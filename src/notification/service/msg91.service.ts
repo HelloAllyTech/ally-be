@@ -3,8 +3,8 @@ import { SMSInterface } from '../interface/sms.interface';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import axios from 'axios';
-import { MSG91_SMS_DTO } from '../dto/sms.dto';
-import { SlackService } from './slack.service';
+// import { MSG91_SMS_DTO } from '../dto/sms.dto';
+// import { SlackService } from './slack.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
@@ -37,6 +37,7 @@ export class Msg91Service implements SMSInterface {
       path: '/api/v1/sms/otp',
       message: 'OTP sent to ' + to + ' - ' + otp,
       type: 'SMS OTP',
+      channel: 'C08T402E3K5',
     });
     return;
   }
