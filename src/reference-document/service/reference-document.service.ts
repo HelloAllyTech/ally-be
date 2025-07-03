@@ -104,6 +104,7 @@ export class ReferenceDocumentService {
       select: ['id'],
       where: {
         isPublic: true,
+        isArchived: false,
         uploadStatus: DocumentUploadStatus.SUCCESS,
       },
     });
@@ -124,10 +125,15 @@ export class ReferenceDocumentService {
     const documents = await this.referenceDocumentRepository.find({
       select: ['id'],
       where: [
-        { isPublic: true, uploadStatus: DocumentUploadStatus.SUCCESS },
+        {
+          isPublic: true,
+          uploadStatus: DocumentUploadStatus.SUCCESS,
+          isArchived: false,
+        },
         {
           organizationId,
           uploadStatus: DocumentUploadStatus.SUCCESS,
+          isArchived: false,
         },
       ],
     });
