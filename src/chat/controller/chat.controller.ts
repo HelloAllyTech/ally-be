@@ -334,7 +334,7 @@ export class ChatController {
   }
 
   @AuthRoles(UserRole.CLIENT)
-  @Post(':id/cancel-call')
+  @Post(':id/cancel')
   async cancelCallByClient(
     @CurrentUser() tokenUser: TokenUser,
     @Param('id') id: string,
