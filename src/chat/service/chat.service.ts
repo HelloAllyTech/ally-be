@@ -1026,7 +1026,7 @@ export class ChatService {
 
     this.applySorting(
       query,
-      (filters.sortBy as CallLogSortBy) || CallLogSortBy.CREATED_AT,
+      (filters.sortBy as CallLogSortBy) || CallLogSortBy.START_DATE,
       (filters.order as SortOrder) || SortOrder.DESC,
     );
 
