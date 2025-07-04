@@ -736,11 +736,14 @@ export class ChatService {
       throw new HttpException('Chat not found', 404);
     }
 
-    if (chat.clientId !== userId && chat.counselorId !== userId) {
-      throw new HttpException(
-        'You are not authorized to access this chat',
-        403,
-      );
+    const role = ExecutionManager.getRole();
+    if (role !== UserRole.ADMIN) {
+      if (chat.clientId !== userId && chat.counselorId !== userId) {
+        throw new HttpException(
+          'You are not authorized to access this chat',
+          403,
+        );
+      }
     }
 
     const { messages, count } = await this.getMessageByChatId(chatId, {
@@ -1219,8 +1222,9 @@ export class ChatService {
     }
 
     if (
-      tokenUser.role != UserRole.SUPER_ADMIN &&
-      tokenUser.id != chat.counselorId
+      tokenUser.role !== UserRole.SUPER_ADMIN &&
+      tokenUser.role !== UserRole.ADMIN &&
+      tokenUser.id !== chat.counselorId
     ) {
       throw new ForbiddenException(
         'You are not authorized to export this chat summary',

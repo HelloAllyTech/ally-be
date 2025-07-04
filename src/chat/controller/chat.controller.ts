@@ -454,7 +454,7 @@ export class ChatController {
       required: ['content'],
     },
   })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @Post('enhance')
   async enhance(@Body() body: { content: string }) {
     return this.service.enhance(body.content);
@@ -523,7 +523,7 @@ export class ChatController {
     },
   })
   @ApiResponse({ status: 404, description: 'Chat not found' })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN)
+  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
   async exportSummary(
     @Param('chatId', ParseIntPipe) chatId: number,
     @CurrentUser() tokenUser: TokenUser,
