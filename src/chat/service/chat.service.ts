@@ -675,8 +675,18 @@ export class ChatService {
   }
 
   async endChat(id: number, chatId: number) {
+    const chat = await this.getChatById(chatId);
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
+    }
+
+    let status = ChatStatus.ENDED;
+    if (chat.status !== ChatStatus.ACTIVE) {
+      status = ChatStatus.CANCELLED;
+    }
+
     await this.chatRepository.update(chatId, {
-      status: ChatStatus.ENDED,
+      status,
       endedAt: new Date(),
     });
     this.cache.del(`chat:${chatId}`);
@@ -790,10 +800,17 @@ export class ChatService {
       });
       const startDate = chat.startedAt || new Date();
       const endDate = chat.endedAt || new Date();
-      // duration in seconds as integer
-      const callDurationInSeconds = Math.floor(
-        (new Date(endDate).getTime() - new Date(startDate).getTime()) / 1000,
-      );
+
+      const callDurationInSeconds =
+        chat.startedAt && chat.endedAt
+          ? Math.max(
+              0,
+              Math.floor(
+                (new Date(endDate).getTime() - new Date(startDate).getTime()) /
+                  1000,
+              ),
+            )
+          : 0;
 
       // get word count by language
       const wordCountByLanguage = await this.getWordCountByLanguage(chat.id);
@@ -1009,6 +1026,9 @@ export class ChatService {
         'counselor',
         'counselor.id = chat.counselorId',
       );
+
+    // Only show ENDED calls for admin call logs
+    query.andWhere('chat.status = :status', { status: ChatStatus.ENDED });
 
     this.applyStringFilters(query, filters);
     this.applyIdFilters(query, filters);
@@ -1638,5 +1658,61 @@ export class ChatService {
         .filter((tag) => tag && tag.trim() !== ''),
       count,
     };
+  }
+
+  async cancelCallByClient(userId: number, chatId: number) {
+    const chat = await this.chatRepository.findOne({
+      where: { id: chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
+    }
+    if (chat.clientId !== userId) {
+      throw new HttpException(
+        'You are not authorized to cancel this call',
+        403,
+      );
+    }
+
+    if (chat.status === ChatStatus.ENDED) {
+      throw new HttpException('Call is already ended', 400);
+    }
+
+    if (chat.status === ChatStatus.ACTIVE) {
+      throw new HttpException(
+        'Call is currently active and cannot be cancelled by client',
+        400,
+      );
+    }
+
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+    if (!callDetails) {
+      throw new HttpException('Call details not found', 404);
+    }
+
+    const endTime = new Date();
+    const callDuration = callDetails.startTime
+      ? Math.max(
+          0,
+          Math.floor(
+            (endTime.getTime() - new Date(callDetails.startTime).getTime()) /
+              1000,
+          ),
+        )
+      : undefined;
+
+    await this.callDetailsRepository.update(
+      { chatId, tenantId: ExecutionManager.getTenantId() },
+      { endTime, callDuration },
+    );
+
+    const status = ChatStatus.CANCELLED;
+
+    if (![ChatStatus.ENDED, ChatStatus.CANCELLED].includes(chat.status)) {
+      await this.chatRepository.update(chatId, { status, endedAt: endTime });
+    }
+    return { success: true };
   }
 }

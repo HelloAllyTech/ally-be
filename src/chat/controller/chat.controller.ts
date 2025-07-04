@@ -45,7 +45,7 @@ export class ChatController {
   constructor(
     private service: ChatService,
     private readonly feedbackService: FeedbackService,
-  ) {}
+  ) { }
 
   @AuthRoles(UserRole.CLIENT, UserRole.COUNSELOR)
   @Get('my-chat')
@@ -136,7 +136,7 @@ export class ChatController {
     name: 'sortBy',
     required: false,
     enum: CallLogSortBy,
-    description: 'Field to sort by (default: createdAt)',
+    description: 'Field to sort by (default: startedAt)',
   })
   @ApiQuery({
     name: 'order',
@@ -331,6 +331,15 @@ export class ChatController {
   @Post(':id/end')
   async endChat(@CurrentUser() tokenUser: TokenUser, @Param('id') id: string) {
     return this.service.endChat(tokenUser.id, parseInt(id));
+  }
+
+  @AuthRoles(UserRole.CLIENT)
+  @Post(':id/cancel-call')
+  async cancelCallByClient(
+    @CurrentUser() tokenUser: TokenUser,
+    @Param('id') id: string,
+  ) {
+    return this.service.cancelCallByClient(tokenUser.id, parseInt(id));
   }
 
   @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
