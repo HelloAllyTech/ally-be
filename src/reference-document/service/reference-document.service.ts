@@ -14,6 +14,8 @@ import { AiService } from '../../ai/service/ai.service';
 import {
   SearchOperationFailedException,
   DocumentUpdateFailedException,
+  DocumentArchiveFailedException,
+  DocumentUnarchiveFailedException,
 } from '../exception/reference-document.exception';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { LoggerService } from '../../logger/logger.service';
@@ -104,6 +106,7 @@ export class ReferenceDocumentService {
       select: ['id'],
       where: {
         isPublic: true,
+        isArchived: false,
         uploadStatus: DocumentUploadStatus.SUCCESS,
       },
     });
@@ -124,10 +127,15 @@ export class ReferenceDocumentService {
     const documents = await this.referenceDocumentRepository.find({
       select: ['id'],
       where: [
-        { isPublic: true, uploadStatus: DocumentUploadStatus.SUCCESS },
+        {
+          isPublic: true,
+          uploadStatus: DocumentUploadStatus.SUCCESS,
+          isArchived: false,
+        },
         {
           organizationId,
           uploadStatus: DocumentUploadStatus.SUCCESS,
+          isArchived: false,
         },
       ],
     });
@@ -430,6 +438,64 @@ export class ReferenceDocumentService {
     } catch (error) {
       this.logger.error(`Failed to delete document: ${id}`, error);
       throw new Error(`Failed to delete reference document with ID ${id}`);
+    }
+  }
+
+  async archiveReferenceDocument(id: string) {
+    const document = await this.referenceDocumentRepository.findOneBy({ id });
+
+    if (!document) {
+      this.logger.error(`Reference document with ID ${id} not found`);
+      throw new NotFoundException(`Reference document with ID ${id} not found`);
+    }
+
+    if (document.isArchived) {
+      this.logger.warn(`Reference document with ID ${id} is already archived`);
+      return { success: true, message: 'Document is already archived' };
+    }
+
+    try {
+      await this.referenceDocumentRepository.update(id, {
+        isArchived: true,
+        archivedAt: new Date(),
+      });
+
+      this.logger.info(
+        `Reference document with ID ${id} archived successfully`,
+      );
+      return { success: true, message: 'Document archived successfully' };
+    } catch (error) {
+      this.logger.error(`Failed to archive document: ${id}`, error);
+      throw new DocumentArchiveFailedException(id, error);
+    }
+  }
+
+  async unarchiveReferenceDocument(id: string) {
+    const document = await this.referenceDocumentRepository.findOneBy({ id });
+
+    if (!document) {
+      this.logger.error(`Reference document with ID ${id} not found`);
+      throw new NotFoundException(`Reference document with ID ${id} not found`);
+    }
+
+    if (!document.isArchived) {
+      this.logger.warn(`Reference document with ID ${id} is not archived`);
+      return { success: true, message: 'Document is not archived' };
+    }
+
+    try {
+      await this.referenceDocumentRepository.update(id, {
+        isArchived: false,
+        archivedAt: undefined,
+      });
+
+      this.logger.info(
+        `Reference document with ID ${id} unarchived successfully`,
+      );
+      return { success: true, message: 'Document unarchived successfully' };
+    } catch (error) {
+      this.logger.error(`Failed to unarchive document: ${id}`, error);
+      throw new DocumentUnarchiveFailedException(id, error);
     }
   }
 }
