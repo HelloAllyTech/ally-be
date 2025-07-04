@@ -836,11 +836,18 @@ export class ChatService {
         counselorWordCount > 0
           ? counselorWordCount / (clientWordCount + counselorWordCount)
           : 0;
+
+      const callDetails = await this.callDetailsRepository.findOne({
+        where: { chatId, tenantId: ExecutionManager.getTenantId() },
+      });
+      const existingCallInfo = callDetails?.callInfo || {};
+
       const updates = {
         noOfNudges,
         noOfStages,
         transcript,
         callInfo: {
+          ...existingCallInfo,
           clientTalkingPercentage: clientTalkingPercentage?.toFixed(3) || 0,
           counselorTalkingPercentage:
             counselorTalkingPercentage?.toFixed(3) || 0,
@@ -1016,12 +1023,12 @@ export class ChatService {
 
     if (filters.limit) query.limit(filters.limit);
     if (filters.offset) query.offset(filters.offset);
-    if (filters.sortBy)
-      this.applySorting(
-        query,
-        filters.sortBy as CallLogSortBy,
-        filters.order as SortOrder,
-      );
+
+    this.applySorting(
+      query,
+      (filters.sortBy as CallLogSortBy) || CallLogSortBy.CREATED_AT,
+      (filters.order as SortOrder) || SortOrder.DESC,
+    );
 
     const [callLogs, count] = await query.getManyAndCount();
     return { data: callLogs, count };
@@ -1114,6 +1121,10 @@ export class ChatService {
     query: SelectQueryBuilder<Chat>,
     filters: CallLogFilters,
   ) {
+    query.andWhere(
+      "(details.summary->'tags' IS NULL OR jsonb_typeof(details.summary->'tags') = 'array')",
+    );
+
     if (filters.tags) {
       const tags = filters.tags.split(',').map((tag) => tag.trim());
       query.andWhere(
@@ -1596,6 +1607,7 @@ export class ChatService {
         'tag',
       )
       .where("details.summary->'tags' IS NOT NULL")
+      .andWhere("jsonb_typeof(details.summary->'tags') = 'array'")
       .andWhere('details.tenant_id = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
       })
