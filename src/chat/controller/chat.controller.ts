@@ -45,7 +45,7 @@ export class ChatController {
   constructor(
     private service: ChatService,
     private readonly feedbackService: FeedbackService,
-  ) { }
+  ) {}
 
   @AuthRoles(UserRole.CLIENT, UserRole.COUNSELOR)
   @Get('my-chat')

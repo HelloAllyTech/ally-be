@@ -680,13 +680,12 @@ export class ChatService {
       throw new HttpException('Chat not found', 404);
     }
 
-    let status = ChatStatus.ENDED;
     if (chat.status !== ChatStatus.ACTIVE) {
-      status = ChatStatus.CANCELLED;
+      throw new HttpException('Chat is not active', 400);
     }
 
     await this.chatRepository.update(chatId, {
-      status,
+      status: ChatStatus.ENDED,
       endedAt: new Date(),
     });
     this.cache.del(`chat:${chatId}`);
@@ -1692,27 +1691,18 @@ export class ChatService {
       throw new HttpException('Call details not found', 404);
     }
 
-    const endTime = new Date();
-    const callDuration = callDetails.startTime
-      ? Math.max(
-          0,
-          Math.floor(
-            (endTime.getTime() - new Date(callDetails.startTime).getTime()) /
-              1000,
-          ),
-        )
-      : undefined;
+    const currentTime = new Date();
 
     await this.callDetailsRepository.update(
       { chatId, tenantId: ExecutionManager.getTenantId() },
-      { endTime, callDuration },
+      { startTime: currentTime, endTime: currentTime, callDuration: 0 },
     );
 
-    const status = ChatStatus.CANCELLED;
-
-    if (![ChatStatus.ENDED, ChatStatus.CANCELLED].includes(chat.status)) {
-      await this.chatRepository.update(chatId, { status, endedAt: endTime });
-    }
+    await this.chatRepository.update(chatId, {
+      status: ChatStatus.CANCELLED,
+      startedAt: currentTime,
+      endedAt: currentTime,
+    });
     return { success: true };
   }
 }
