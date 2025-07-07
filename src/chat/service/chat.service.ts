@@ -19,7 +19,7 @@ import {
 } from '../../common/constants/chat.constants';
 import { ChatGateway } from '../gateway/chat.gateway';
 import { UserService } from '../../user/user.service';
-import { ChatEvents } from '../constants/chat.constants';
+import { ChatEvents, LANGUAGE_MAP } from '../constants/chat.constants';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { User } from '../../common/entities/user.entity';
@@ -1299,7 +1299,7 @@ export class ChatService {
       ? summaryInfo.languages
           .map(
             (lang) =>
-              `  - ${lang.language} (${(lang.percentage * 100).toFixed(1)}%)`,
+              `  - ${LANGUAGE_MAP[lang.language as keyof typeof LANGUAGE_MAP] || lang.language} (${(lang.percentage * 100).toFixed(1)}%)`,
           )
           .join('\n') + '\n'
       : '  - N/A\n';
@@ -1321,7 +1321,6 @@ export class ChatService {
     summary += `Homework: ${summaryInfo.homework}\n`;
     summary += `Plan for Next Call: ${summaryInfo.planForNextCall}\n`;
 
-    summary += `Listening Share: ${callDetails?.callInfo?.clientTalkingTime ?? 'N/A'}\n`;
     summary += `Reflective Questions Asked: ${summaryInfo.reflectiveQuestionsAsked}\n`;
     summary += `Open-ended Questions Asked: ${summaryInfo.openEndedQuestionsAsked}\n`;
     summary += `Emotional Lift: ${summaryInfo.emotionalLift || 'N/A'}\n`;
@@ -1366,7 +1365,7 @@ export class ChatService {
 
     summary += `\nMetrics\n`;
     summary += `======\n`;
-    summary += `No of Reflictuve Questions: ${summaryInfo.reflectiveQuestionsAsked}\n`;
+    summary += `No of Reflective Questions: ${summaryInfo.reflectiveQuestionsAsked}\n`;
     summary += `Emotions Lift: ${summaryInfo.emotionalLift}\n`;
     summary += `Listening Share: ${callDetails?.callInfo?.clientTalkingTime ?? 'N/A'}\n`;
 
@@ -1703,6 +1702,7 @@ export class ChatService {
       startedAt: currentTime,
       endedAt: currentTime,
     });
+    this.cache.del(`chat:${chatId}`);
     return { success: true };
   }
 }

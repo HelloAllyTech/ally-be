@@ -31,3 +31,15 @@ export enum ChatEvents {
   AUDIO_CHAT_PAUSED = 'AUDIO_CHAT_PAUSED',
   AUDIO_CHAT_RESUMED = 'AUDIO_CHAT_RESUMED',
 }
+
+export const LANGUAGE_MAP = {
+  bn: 'Bengali',
+  pa: 'Gurmukhi',
+  gu: 'Gujarati',
+  or: 'Oriya',
+  ta: 'Tamil',
+  te: 'Telugu',
+  kn: 'Kannada',
+  ml: 'Malayalam',
+  en: 'English',
+};
