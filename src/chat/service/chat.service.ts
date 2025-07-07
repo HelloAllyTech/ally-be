@@ -1357,7 +1357,7 @@ export class ChatService {
       summary += `Location: ${summaryInfo.location || 'N/A'}\n`;
       summary += `Profession: ${summaryInfo.profession || 'N/A'}\n`;
       summary += `Relationship Status: ${summaryInfo.relationshipStatus || 'N/A'}\n`;
-      summary += `Languages: ${summaryInfo.languages?.map((language) => language.language).join(', ') || 'N/A'}\n`;
+      summary += `Languages: ${summaryInfo.languages?.map((language) => LANGUAGE_MAP[language.language as keyof typeof LANGUAGE_MAP] || language.language).join(', ') || 'N/A'}\n`;
       summary += `Code of Concern: ${summaryInfo.codeOfConcern || 'N/A'}\n`;
     }
 
