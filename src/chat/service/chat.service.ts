@@ -846,11 +846,21 @@ export class ChatService {
       });
       const clientTalkingPercentage =
         clientWordCount > 0
-          ? clientWordCount / (clientWordCount + counselorWordCount)
+          ? parseFloat(
+              (
+                clientWordCount /
+                (clientWordCount + counselorWordCount)
+              ).toFixed(3),
+            )
           : 0;
       const counselorTalkingPercentage =
         counselorWordCount > 0
-          ? counselorWordCount / (clientWordCount + counselorWordCount)
+          ? parseFloat(
+              (
+                counselorWordCount /
+                (clientWordCount + counselorWordCount)
+              ).toFixed(3),
+            )
           : 0;
 
       const callDetails = await this.callDetailsRepository.findOne({
@@ -864,9 +874,8 @@ export class ChatService {
         transcript,
         callInfo: {
           ...existingCallInfo,
-          clientTalkingPercentage: clientTalkingPercentage?.toFixed(3) || 0,
-          counselorTalkingPercentage:
-            counselorTalkingPercentage?.toFixed(3) || 0,
+          clientTalkingPercentage: clientTalkingPercentage,
+          counselorTalkingPercentage: counselorTalkingPercentage,
           clientTalkingTime: clientTalkingPercentage * callDurationInSeconds,
           counselorTalkingTime:
             counselorTalkingPercentage * callDurationInSeconds,
@@ -1297,10 +1306,11 @@ export class ChatService {
     summary += `Languages:\n`;
     summary += summaryInfo?.languages?.length
       ? summaryInfo.languages
-          .map(
-            (lang) =>
-              `  - ${LANGUAGE_MAP[lang.language as keyof typeof LANGUAGE_MAP] || lang.language} (${(lang.percentage * 100).toFixed(1)}%)`,
-          )
+          .map(({ language, percentage }) => {
+            const label =
+              LANGUAGE_MAP[language as keyof typeof LANGUAGE_MAP] || language;
+            return `  - ${label} (${percentage.toFixed(1)}%)`;
+          })
           .join('\n') + '\n'
       : '  - N/A\n';
 
@@ -1367,7 +1377,13 @@ export class ChatService {
     summary += `======\n`;
     summary += `No of Reflective Questions: ${summaryInfo.reflectiveQuestionsAsked}\n`;
     summary += `Emotions Lift: ${summaryInfo.emotionalLift}\n`;
-    summary += `Listening Share: ${callDetails?.callInfo?.clientTalkingTime ?? 'N/A'}\n`;
+    const clientTalkingPercentage =
+      callDetails?.callInfo?.clientTalkingPercentage;
+    const listeningShare =
+      clientTalkingPercentage !== undefined && clientTalkingPercentage !== null
+        ? clientTalkingPercentage * 100
+        : 'N/A';
+    summary += `Listening Share: ${listeningShare}%\n`;
 
     // // Counselor impressions
     // if (ChatUtil.isCounselorImpressionsAvailable(summaryInfo)) {
