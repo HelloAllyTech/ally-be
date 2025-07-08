@@ -291,7 +291,7 @@ export class ExotelService implements AudioIngestInterface {
 
     this.transcriptionService.stopLiveTranscription(session);
     const participants = [session.userId];
-    this.publisher.publish('chat-message', {
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
       participants,
       message: {
         content: 'User disconnected',
