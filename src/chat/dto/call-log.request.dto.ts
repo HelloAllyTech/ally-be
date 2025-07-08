@@ -62,11 +62,11 @@ export class CallLogRequestDto {
     required: false,
     enum: CallLogSortBy,
     description: 'Field to sort by',
-    default: CallLogSortBy.CREATED_AT,
+    default: CallLogSortBy.START_DATE,
   })
   @IsOptional()
   @IsEnum(CallLogSortBy)
-  sortBy?: CallLogSortBy = CallLogSortBy.CREATED_AT;
+  sortBy?: CallLogSortBy = CallLogSortBy.START_DATE;
 
   @ApiProperty({
     required: false,

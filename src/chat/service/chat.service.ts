@@ -19,7 +19,7 @@ import {
 } from '../../common/constants/chat.constants';
 import { ChatGateway } from '../gateway/chat.gateway';
 import { UserService } from '../../user/user.service';
-import { ChatEvents } from '../constants/chat.constants';
+import { ChatEvents, LANGUAGE_MAP } from '../constants/chat.constants';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { User } from '../../common/entities/user.entity';
@@ -675,6 +675,15 @@ export class ChatService {
   }
 
   async endChat(id: number, chatId: number) {
+    const chat = await this.getChatById(chatId);
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
+    }
+
+    if (chat.status !== ChatStatus.ACTIVE) {
+      throw new HttpException('Chat is not active', 400);
+    }
+
     await this.chatRepository.update(chatId, {
       status: ChatStatus.ENDED,
       endedAt: new Date(),
@@ -736,11 +745,14 @@ export class ChatService {
       throw new HttpException('Chat not found', 404);
     }
 
-    if (chat.clientId !== userId && chat.counselorId !== userId) {
-      throw new HttpException(
-        'You are not authorized to access this chat',
-        403,
-      );
+    const role = ExecutionManager.getRole();
+    if (role !== UserRole.ADMIN) {
+      if (chat.clientId !== userId && chat.counselorId !== userId) {
+        throw new HttpException(
+          'You are not authorized to access this chat',
+          403,
+        );
+      }
     }
 
     const { messages, count } = await this.getMessageByChatId(chatId, {
@@ -787,10 +799,17 @@ export class ChatService {
       });
       const startDate = chat.startedAt || new Date();
       const endDate = chat.endedAt || new Date();
-      // duration in seconds as integer
-      const callDurationInSeconds = Math.floor(
-        (new Date(endDate).getTime() - new Date(startDate).getTime()) / 1000,
-      );
+
+      const callDurationInSeconds =
+        chat.startedAt && chat.endedAt
+          ? Math.max(
+              0,
+              Math.floor(
+                (new Date(endDate).getTime() - new Date(startDate).getTime()) /
+                  1000,
+              ),
+            )
+          : 0;
 
       // get word count by language
       const wordCountByLanguage = await this.getWordCountByLanguage(chat.id);
@@ -827,20 +846,36 @@ export class ChatService {
       });
       const clientTalkingPercentage =
         clientWordCount > 0
-          ? clientWordCount / (clientWordCount + counselorWordCount)
+          ? parseFloat(
+              (
+                clientWordCount /
+                (clientWordCount + counselorWordCount)
+              ).toFixed(3),
+            )
           : 0;
       const counselorTalkingPercentage =
         counselorWordCount > 0
-          ? counselorWordCount / (clientWordCount + counselorWordCount)
+          ? parseFloat(
+              (
+                counselorWordCount /
+                (clientWordCount + counselorWordCount)
+              ).toFixed(3),
+            )
           : 0;
+
+      const callDetails = await this.callDetailsRepository.findOne({
+        where: { chatId, tenantId: ExecutionManager.getTenantId() },
+      });
+      const existingCallInfo = callDetails?.callInfo || {};
+
       const updates = {
         noOfNudges,
         noOfStages,
         transcript,
         callInfo: {
-          clientTalkingPercentage: clientTalkingPercentage?.toFixed(3) || 0,
-          counselorTalkingPercentage:
-            counselorTalkingPercentage?.toFixed(3) || 0,
+          ...existingCallInfo,
+          clientTalkingPercentage: clientTalkingPercentage,
+          counselorTalkingPercentage: counselorTalkingPercentage,
           clientTalkingTime: clientTalkingPercentage * callDurationInSeconds,
           counselorTalkingTime:
             counselorTalkingPercentage * callDurationInSeconds,
@@ -1000,6 +1035,9 @@ export class ChatService {
         'counselor.id = chat.counselorId',
       );
 
+    // Only show ENDED calls for admin call logs
+    query.andWhere('chat.status = :status', { status: ChatStatus.ENDED });
+
     this.applyStringFilters(query, filters);
     this.applyIdFilters(query, filters);
     this.applyDateFilters(query, filters);
@@ -1013,12 +1051,12 @@ export class ChatService {
 
     if (filters.limit) query.limit(filters.limit);
     if (filters.offset) query.offset(filters.offset);
-    if (filters.sortBy)
-      this.applySorting(
-        query,
-        filters.sortBy as CallLogSortBy,
-        filters.order as SortOrder,
-      );
+
+    this.applySorting(
+      query,
+      (filters.sortBy as CallLogSortBy) || CallLogSortBy.START_DATE,
+      (filters.order as SortOrder) || SortOrder.DESC,
+    );
 
     const [callLogs, count] = await query.getManyAndCount();
     return { data: callLogs, count };
@@ -1111,6 +1149,10 @@ export class ChatService {
     query: SelectQueryBuilder<Chat>,
     filters: CallLogFilters,
   ) {
+    query.andWhere(
+      "(details.summary->'tags' IS NULL OR jsonb_typeof(details.summary->'tags') = 'array')",
+    );
+
     if (filters.tags) {
       const tags = filters.tags.split(',').map((tag) => tag.trim());
       query.andWhere(
@@ -1219,8 +1261,9 @@ export class ChatService {
     }
 
     if (
-      tokenUser.role != UserRole.SUPER_ADMIN &&
-      tokenUser.id != chat.counselorId
+      tokenUser.role !== UserRole.SUPER_ADMIN &&
+      tokenUser.role !== UserRole.ADMIN &&
+      tokenUser.id !== chat.counselorId
     ) {
       throw new ForbiddenException(
         'You are not authorized to export this chat summary',
@@ -1263,10 +1306,11 @@ export class ChatService {
     summary += `Languages:\n`;
     summary += summaryInfo?.languages?.length
       ? summaryInfo.languages
-          .map(
-            (lang) =>
-              `  - ${lang.language} (${(lang.percentage * 100).toFixed(1)}%)`,
-          )
+          .map(({ language, percentage }) => {
+            const label =
+              LANGUAGE_MAP[language as keyof typeof LANGUAGE_MAP] || language;
+            return `  - ${label} (${percentage.toFixed(1)}%)`;
+          })
           .join('\n') + '\n'
       : '  - N/A\n';
 
@@ -1287,7 +1331,6 @@ export class ChatService {
     summary += `Homework: ${summaryInfo.homework}\n`;
     summary += `Plan for Next Call: ${summaryInfo.planForNextCall}\n`;
 
-    summary += `Listening Share: ${callDetails?.callInfo?.clientTalkingTime ?? 'N/A'}\n`;
     summary += `Reflective Questions Asked: ${summaryInfo.reflectiveQuestionsAsked}\n`;
     summary += `Open-ended Questions Asked: ${summaryInfo.openEndedQuestionsAsked}\n`;
     summary += `Emotional Lift: ${summaryInfo.emotionalLift || 'N/A'}\n`;
@@ -1324,7 +1367,7 @@ export class ChatService {
       summary += `Location: ${summaryInfo.location || 'N/A'}\n`;
       summary += `Profession: ${summaryInfo.profession || 'N/A'}\n`;
       summary += `Relationship Status: ${summaryInfo.relationshipStatus || 'N/A'}\n`;
-      summary += `Languages: ${summaryInfo.languages?.map((language) => language.language).join(', ') || 'N/A'}\n`;
+      summary += `Languages: ${summaryInfo.languages?.map((language) => LANGUAGE_MAP[language.language as keyof typeof LANGUAGE_MAP] || language.language).join(', ') || 'N/A'}\n`;
       summary += `Code of Concern: ${summaryInfo.codeOfConcern || 'N/A'}\n`;
     }
 
@@ -1332,9 +1375,15 @@ export class ChatService {
 
     summary += `\nMetrics\n`;
     summary += `======\n`;
-    summary += `No of Reflictuve Questions: ${summaryInfo.reflectiveQuestionsAsked}\n`;
+    summary += `No of Reflective Questions: ${summaryInfo.reflectiveQuestionsAsked}\n`;
     summary += `Emotions Lift: ${summaryInfo.emotionalLift}\n`;
-    summary += `Listening Share: ${callDetails?.callInfo?.clientTalkingTime ?? 'N/A'}\n`;
+    const clientTalkingPercentage =
+      callDetails?.callInfo?.clientTalkingPercentage;
+    const listeningShare =
+      clientTalkingPercentage !== undefined && clientTalkingPercentage !== null
+        ? clientTalkingPercentage * 100
+        : 'N/A';
+    summary += `Listening Share: ${listeningShare}%\n`;
 
     // // Counselor impressions
     // if (ChatUtil.isCounselorImpressionsAvailable(summaryInfo)) {
@@ -1592,6 +1641,7 @@ export class ChatService {
         'tag',
       )
       .where("details.summary->'tags' IS NOT NULL")
+      .andWhere("jsonb_typeof(details.summary->'tags') = 'array'")
       .andWhere('details.tenant_id = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
       })
@@ -1622,5 +1672,53 @@ export class ChatService {
         .filter((tag) => tag && tag.trim() !== ''),
       count,
     };
+  }
+
+  async cancelCallByClient(userId: number, chatId: number) {
+    const chat = await this.chatRepository.findOne({
+      where: { id: chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
+    }
+    if (chat.clientId !== userId) {
+      throw new HttpException(
+        'You are not authorized to cancel this call',
+        403,
+      );
+    }
+
+    if (chat.status === ChatStatus.ENDED) {
+      throw new HttpException('Call is already ended', 400);
+    }
+
+    if (chat.status === ChatStatus.ACTIVE) {
+      throw new HttpException(
+        'Call is currently active and cannot be cancelled by client',
+        400,
+      );
+    }
+
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+    if (!callDetails) {
+      throw new HttpException('Call details not found', 404);
+    }
+
+    const currentTime = new Date();
+
+    await this.callDetailsRepository.update(
+      { chatId, tenantId: ExecutionManager.getTenantId() },
+      { startTime: currentTime, endTime: currentTime, callDuration: 0 },
+    );
+
+    await this.chatRepository.update(chatId, {
+      status: ChatStatus.CANCELLED,
+      startedAt: currentTime,
+      endedAt: currentTime,
+    });
+    this.cache.del(`chat:${chatId}`);
+    return { success: true };
   }
 }
