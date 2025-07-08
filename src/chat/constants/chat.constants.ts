@@ -30,4 +30,17 @@ export enum ChatEvents {
   AUDIO_STREAM = 'AUDIO_STREAM',
   AUDIO_CHAT_PAUSED = 'AUDIO_CHAT_PAUSED',
   AUDIO_CHAT_RESUMED = 'AUDIO_CHAT_RESUMED',
+  SESSION_CREATED = 'SESSION_CREATED',
 }
+
+export const LANGUAGE_MAP = {
+  bn: 'Bengali',
+  pa: 'Gurmukhi',
+  gu: 'Gujarati',
+  or: 'Oriya',
+  ta: 'Tamil',
+  te: 'Telugu',
+  kn: 'Kannada',
+  ml: 'Malayalam',
+  en: 'English',
+};

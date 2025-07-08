@@ -6,6 +6,7 @@ export enum ChatStatus {
   ACTIVE = 'ACTIVE',
   ENDED = 'ENDED',
   PAUSED = 'PAUSED',
+  CANCELLED = 'CANCELLED',
   // Add other chat statuses as needed
 }
 

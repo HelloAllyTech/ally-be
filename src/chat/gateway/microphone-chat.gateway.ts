@@ -166,6 +166,18 @@ export class MicrophoneChatGateway
 
     this.connectedUsers.add(+userId);
 
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
+      participants: [+userId],
+      message: {
+        userId: +userId,
+        content: 'User session created',
+        messageType: MessageType.SYSTEM,
+      },
+      broadCastOptions: {
+        event: ChatEvents.SESSION_CREATED,
+      },
+    });
+
     this.logger.info(
       `Client ${client.id} authenticated and joined room ${room}`,
     );

@@ -136,7 +136,7 @@ export class ChatController {
     name: 'sortBy',
     required: false,
     enum: CallLogSortBy,
-    description: 'Field to sort by (default: createdAt)',
+    description: 'Field to sort by (default: startedAt)',
   })
   @ApiQuery({
     name: 'order',
@@ -333,6 +333,15 @@ export class ChatController {
     return this.service.endChat(tokenUser.id, parseInt(id));
   }
 
+  @AuthRoles(UserRole.CLIENT)
+  @Post(':id/cancel')
+  async cancelCallByClient(
+    @CurrentUser() tokenUser: TokenUser,
+    @Param('id') id: string,
+  ) {
+    return this.service.cancelCallByClient(tokenUser.id, parseInt(id));
+  }
+
   @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Get messages' })
   @ApiResponse({
@@ -454,7 +463,7 @@ export class ChatController {
       required: ['content'],
     },
   })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @Post('enhance')
   async enhance(@Body() body: { content: string }) {
     return this.service.enhance(body.content);
@@ -523,7 +532,7 @@ export class ChatController {
     },
   })
   @ApiResponse({ status: 404, description: 'Chat not found' })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN)
+  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
   async exportSummary(
     @Param('chatId', ParseIntPipe) chatId: number,
     @CurrentUser() tokenUser: TokenUser,

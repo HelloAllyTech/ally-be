@@ -115,4 +115,18 @@ export class ReferenceDocumentController {
   async deleteDocument(@Param('id') id: string) {
     return this.documentService.deleteReferenceDocument(id);
   }
+
+  @Post(':id/archive')
+  @ApiOperation({ summary: 'Archive a reference document' })
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  async archiveDocument(@Param('id') id: string) {
+    return this.documentService.archiveReferenceDocument(id);
+  }
+
+  @Post(':id/unarchive')
+  @ApiOperation({ summary: 'Unarchive a reference document' })
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  async unarchiveDocument(@Param('id') id: string) {
+    return this.documentService.unarchiveReferenceDocument(id);
+  }
 }

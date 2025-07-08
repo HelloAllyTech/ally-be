@@ -20,6 +20,7 @@ import { ApiBody } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
 import { UserRole } from '../../common/constants/user.constants';
 import { AuthRoles } from '../decorators/auth-roles.decorator';
+import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 
 @Controller('v1/auth')
 export class AuthController {
@@ -34,6 +35,11 @@ export class AuthController {
 
   @Post('generate-otp')
   @HttpCode(HttpStatus.OK)
+  @RateLimit({
+    name: 'otp',
+    key: 'ip',
+    errorMessage: 'Too many OTP requests. Please try again later.',
+  })
   async generateOtp(@Body() generateOtpDto: GenerateOtpDto) {
     return this.authService.generateOtp(
       generateOtpDto.phone,
@@ -41,6 +47,11 @@ export class AuthController {
     );
   }
 
+  @RateLimit({
+    name: 'otp',
+    key: 'ip',
+    errorMessage: 'Too many OTP verification attempts. Please try again later.',
+  })
   @Post('verify-otp')
   async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
     return this.authService.verifyOtp(
