@@ -17,6 +17,7 @@ import { BrokerModule } from '../message-broker/broker.module';
 import { SettingsModule } from '../settings/settings.module';
 import { MultiSpeakerAudioService } from './service/multi-speaker-audio.service';
 import { MicrophoneChatGateway } from './gateway/microphone-chat.gateway';
+import { JwtService } from '@nestjs/jwt';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Message, Chat, ChatRoom, Feedback, CallDetails]),
@@ -34,6 +35,7 @@ import { MicrophoneChatGateway } from './gateway/microphone-chat.gateway';
     FeedbackService,
     ChatEventConsumer,
     MultiSpeakerAudioService,
+    JwtService,
   ],
   exports: [
     ChatService,
