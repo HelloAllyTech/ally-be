@@ -28,6 +28,8 @@ import { MessageBrokerChannel } from '../../common/constants/message-broker.cons
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { UserService } from '../../user/user.service';
 import { ChatStatus } from '../../common/entities/chat.entity';
+import { JwtService } from '@nestjs/jwt';
+import { AppConfigService } from '../../config/config.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -50,6 +52,8 @@ export class MicrophoneChatGateway
     private multiSpeakerAudioService: MultiSpeakerAudioService,
     private publisher: MessageBrokerService,
     private userService: UserService,
+    private jwtService: JwtService,
+    private configService: AppConfigService,
   ) {}
 
   @WebSocketServer() server!: Server;
@@ -133,54 +137,65 @@ export class MicrophoneChatGateway
   }
 
   private async authenticateClient(client: Socket) {
-    const { userId } = client.handshake.auth?.user || {};
-    if (!userId) {
-      this.logger.error(`❌ No userId provided for client ${client.id}`);
+    const token = client.handshake.auth?.token;
+    if (!token) {
+      this.logger.error(`No JWT token provided for client ${client.id}`);
       client.disconnect();
       return;
     }
 
-    const user = await this.userService.get(+userId);
-    if (!user) {
+    try {
+      const payload = await this.jwtService.verifyAsync(token, {
+        secret: this.configService.jwt.accessToken.secret,
+      });
+      const userId = parseInt(payload.sub);
+
+      const user = {
+        id: userId,
+        username: payload.username,
+        role: payload.role,
+        tenantId: payload.tenantId,
+      };
+
+      const room = `user-${userId}`;
+      client.join(room);
+
+      this.sessions[client.id] = {
+        id: client.id,
+        userId: +userId,
+        user: null,
+        type: 'user',
+        role: UserRole.COUNSELOR,
+        room,
+        provider: AudioChatProvider.MICROPHONE,
+        chatId: -99,
+        tenantId: user.tenantId,
+      };
+
+      this.connectedUsers.add(+userId);
+
+      this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
+        participants: [+userId],
+        message: {
+          userId: +userId,
+          content: 'User session created',
+          messageType: MessageType.SYSTEM,
+        },
+        broadCastOptions: {
+          event: ChatEvents.SESSION_CREATED,
+        },
+      });
+
+      this.logger.info(
+        `Client ${client.id} authenticated and joined room ${room}`,
+      );
+    } catch (error) {
       this.logger.error(
-        `❌ User with id ${userId} not found for client ${client.id}`,
+        `JWT verification failed for client ${client.id}:`,
+        error,
       );
       client.disconnect();
-      return;
     }
-
-    const room = `user-${userId}`;
-    client.join(room);
-
-    this.sessions[client.id] = {
-      id: client.id,
-      userId: +userId,
-      user: null,
-      type: 'user',
-      role: UserRole.COUNSELOR,
-      room,
-      provider: AudioChatProvider.MICROPHONE,
-      chatId: -99,
-      tenantId: user.tenantId,
-    };
-
-    this.connectedUsers.add(+userId);
-
-    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
-      participants: [+userId],
-      message: {
-        userId: +userId,
-        content: 'User session created',
-        messageType: MessageType.SYSTEM,
-      },
-      broadCastOptions: {
-        event: ChatEvents.SESSION_CREATED,
-      },
-    });
-
-    this.logger.info(
-      `Client ${client.id} authenticated and joined room ${room}`,
-    );
   }
 
   @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
