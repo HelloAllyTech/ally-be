@@ -484,7 +484,7 @@ export class ChatController {
       },
     },
   })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @Put(':id/call-details')
   async updateCallDetails(
     @Param('id', ParseIntPipe) id: number,

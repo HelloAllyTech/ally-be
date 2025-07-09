@@ -7,18 +7,15 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { LoggerService } from '../../logger/logger.service';
-import { UserService } from '../../user/user.service';
 import {
   DeepgramTranscriptMetadata,
   MessagePayload,
   SendMessageWebSocketData,
-  ServiceSessionData,
   UserChatSessionData,
 } from '../type/chat.type';
 import { ChatEvents } from '../constants/chat.constants';
 import { ChatService } from '../service/chat.service';
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { AiService } from '../../ai/service/ai.service';
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { AppConfigService } from '../../config/config.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
@@ -29,9 +26,9 @@ import {
   WithExecutionContext,
 } from '../../common/decorator/execution.context.decorator';
 import { ExecutionManager } from '../../common/execution/execution-manager';
-import { RedisService } from '../../redis/service/redis.service';
 import { AudioChatProvider } from '../../common/constants/chat.constants';
 import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
+import { JwtService } from '@nestjs/jwt';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -40,18 +37,15 @@ import { MessageBrokerChannel } from '../../common/constants/message-broker.cons
 @Injectable()
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private sessions: { [key: string]: UserChatSessionData } = {};
-  private serverSessions: { [key: string]: ServiceSessionData } = {};
   private connectedUsers = new Set<number>();
 
   constructor(
-    private userService: UserService,
     @Inject(forwardRef(() => ChatService))
     private chatService: ChatService,
-    private aiService: AiService,
     private transcriptionService: TranscriptionService,
     private config: AppConfigService,
     private publisher: MessageBrokerService,
-    private cacheService: RedisService,
+    private jwtService: JwtService,
   ) {}
 
   logger = LoggerService.getInstance(ChatGateway.name);
@@ -66,71 +60,53 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    if (auth.type === 'service') {
-      this.authenticateService(client, auth);
-    } else {
-      await this.authenticateUser(client, auth);
-    }
-  }
-
-  private authenticateService(client: Socket, auth: any) {
-    const serviceId = auth.serviceId;
-    if (!serviceId) {
-      this.logger.error(`Missing serviceId for client ${client.id}`);
-      client.disconnect();
-      return;
-    }
-
-    const service = {
-      id: serviceId,
-      name: auth.serviceName,
-      role: auth.role,
-    };
-
-    const room = `service-${service.id}`;
-    this.serverSessions[service.id] = {
-      id: service.id,
-      serviceId,
-      service,
-      room,
-      type: 'service',
-    };
-
-    client.join(room);
-    this.logger.info(`Service ${serviceId} joined room: ${room}`);
+    await this.authenticateUser(client, auth);
   }
 
   private async authenticateUser(client: Socket, auth: any) {
-    const userId = auth?.user?.userId;
-    if (!userId) {
-      this.logger.error(` Missing userId for client ${client.id}`);
+    const token = auth?.token;
+    if (!token) {
+      this.logger.error(`No JWT token provided for client ${client.id}`);
       client.disconnect();
       return;
     }
 
-    const user = await this.userService.get(userId);
-    if (!user) {
-      this.logger.error(`User not found for client ${client.id}`);
+    try {
+      const payload = await this.jwtService.verifyAsync(token, {
+        secret: this.config.jwt.accessToken.secret,
+      });
+      const userId = parseInt(payload.sub);
+
+      const user = {
+        id: userId,
+        username: payload.username,
+        role: payload.role,
+        tenantId: payload.tenantId,
+      };
+
+      const room = `user-${userId || client.id}`;
+      this.sessions[client.id] = {
+        id: client.id,
+        userId: user.id,
+        user,
+        type: 'user',
+        role: user.role,
+        room,
+        chatId: -99,
+        tenantId: user.tenantId,
+        provider: AudioChatProvider.WEBRTC,
+      };
+
+      client.join(room);
+      this.connectedUsers.add(+userId);
+      this.logger.info(`User ${userId} joined room: ${room}`);
+    } catch (error) {
+      this.logger.error(
+        `JWT verification failed for client ${client.id}:`,
+        error,
+      );
       client.disconnect();
-      return;
     }
-
-    const room = `user-${userId || client.id}`;
-    this.sessions[client.id] = {
-      id: client.id,
-      userId: user.id,
-      user,
-      type: 'user',
-      role: user.role,
-      room,
-      chatId: -99,
-      tenantId: user.tenantId,
-      provider: AudioChatProvider.WEBRTC,
-    };
-
-    client.join(room);
-    this.connectedUsers.add(+userId);
-    this.logger.info(`✅ User ${userId} joined room: ${room}`);
   }
 
   async handleConnection(client: Socket) {
