@@ -32,6 +32,7 @@ export class AnalyticsController {
   }
 
   @Post('dashboard/:dashboardId/refresh')
+  @UseGuards(JwtAuthGuard)
   refreshDashboardUrl(@Param() { dashboardId }: DashboardIdParamDto) {
     return this.analyticsService.refreshDashboardUrl(dashboardId);
   }
