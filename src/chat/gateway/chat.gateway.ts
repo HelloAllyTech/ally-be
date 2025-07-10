@@ -427,7 +427,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     participants.forEach((participant) => {
-      if (this.connectedUsers.has(participant)) {
+      // adding USER_DISCONNECTED to the condition because we have already cleared connectedUsers list when user disconnects
+      if (
+        this.connectedUsers.has(participant) ||
+        ChatEvents.USER_DISCONNECTED
+      ) {
         const room = `user-${participant}`;
         this.sendMessagesToRoom(room, {
           type: broadCastOptions?.event || ChatEvents.MESSAGE_RECEIVED,
