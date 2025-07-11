@@ -139,6 +139,11 @@ ANALYTICS_INTEGRATION=METABASE
 METABASE_URL=https://metabase.com
 METABASE_API_KEY=your_metabase_api_key_here
 
+# AWS_SMTP
+SMTP_REGION=smtp-region
+SMTP_ACCESS_KEY_ID=smtp-access-key-id
+SMTP_SECRET_ACCESS_KEY=smtp-secret-access-key
+
 # AWS
 AWS_REGION=aws-region
 AWS_ACCESS_KEY_ID=aws-access-key-id
@@ -148,7 +153,7 @@ AWS_SECRET_ACCESS_KEY=aws-secret-access-key
 EMAIL_INTEGRATION=aws-ses
 
 # AWS-SES
-AWS_SES_SOURCE_EMAIL=aws-source-email
+SES_SOURCE_EMAIL=ses-source-email
 
 # Audio upload
 AUDIO_STORAGE_S3_BUCKET=audio-storage-s3-bucket

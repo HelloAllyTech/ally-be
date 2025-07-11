@@ -27,14 +27,14 @@ export class S3Service {
   private readonly s3: S3Client;
 
   constructor(private readonly config: AppConfigService) {
-    const isLocal = config.nodeEnv === 'local';
+    const { region, accessKeyId, secretAccessKey } = config.aws;
     const s3Config: S3ClientConfig = {
-      region: config.aws.region!,
+      region,
     };
-    if (isLocal) {
+    if (accessKeyId && secretAccessKey) {
       s3Config.credentials = {
-        accessKeyId: config.aws.accessKeyId!,
-        secretAccessKey: config.aws.secretAccessKey!,
+        accessKeyId,
+        secretAccessKey,
       };
     }
     this.s3 = new S3Client(s3Config);

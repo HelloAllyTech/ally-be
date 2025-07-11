@@ -109,7 +109,12 @@ export class AppConfigService {
     return {
       integration: this.configService.get<string>('EMAIL_INTEGRATION'),
       ses: {
-        sourceEmail: this.configService.get<string>('AWS_SES_SOURCE_EMAIL'),
+        region: this.configService.get<string>('SMTP_REGION'),
+        sourceEmail: this.configService.get<string>('SES_SOURCE_EMAIL'),
+        accessKeyId: this.configService.get<string>('SMTP_ACCESS_KEY_ID'),
+        secretAccessKey: this.configService.get<string>(
+          'SMTP_SECRET_ACCESS_KEY',
+        ),
       },
     };
   }

@@ -15,9 +15,9 @@ export class SESService implements EmailInterface {
     private readonly config: AppConfigService,
     private readonly eventEmitter: EventEmitter2,
   ) {
-    const region = config.aws.region!;
-    const accessKeyId = config.aws.accessKeyId!;
-    const secretAccessKey = config.aws.secretAccessKey!;
+    const region = config.email.ses.region!;
+    const accessKeyId = config.email.ses.accessKeyId!;
+    const secretAccessKey = config.email.ses.secretAccessKey!;
     const sourceEmail = config.email.ses.sourceEmail!;
 
     this.sesClient = new SESClient({
