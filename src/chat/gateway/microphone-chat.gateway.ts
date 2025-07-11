@@ -341,6 +341,7 @@ export class MicrophoneChatGateway
       return;
     }
     this.setAuthContext(session);
+    await this.chatService.endChat(session.userId, session.chatId);
     this.streamFileProcessorService.endCallStream(session);
   }
 

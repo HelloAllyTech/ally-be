@@ -54,6 +54,7 @@ export class ExotelService implements AudioIngestInterface {
     }
   }
 
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async startCall(messageData: any, ws: WebSocket) {
     const streamSid = messageData.stream_sid;
 
@@ -122,7 +123,6 @@ export class ExotelService implements AudioIngestInterface {
       userId: counselor.id,
       room: `user-${counselor.id}`,
       tenantId: counselor.tenantId,
-      role: UserRole.COUNSELOR,
     };
 
     const updatedSession = {
@@ -132,6 +132,8 @@ export class ExotelService implements AudioIngestInterface {
 
     // Store session data
     this.sessions[streamSid] = updatedSession;
+
+    this.setAuthContext(updatedSession);
 
     // Start call stream with chat creation in transaction
     try {
@@ -283,15 +285,11 @@ export class ExotelService implements AudioIngestInterface {
       return;
     }
 
-    this.streamFileProcessorService.endCallStream(session);
-
-    this.setAuthContext({
-      userId: session.userId!,
-      role: UserRole.COUNSELOR,
-      tenantId: session.tenantId!,
-    });
+    this.setAuthContext(session);
 
     await this.chatService.endChat(-99, session.chatId);
+
+    this.streamFileProcessorService.endCallStream(session);
 
     this.clearKeepAliveData(streamSid);
     delete this.sessions[streamSid];
@@ -301,7 +299,7 @@ export class ExotelService implements AudioIngestInterface {
     );
   }
 
-  setAuthContext(session: { userId: number; role: string; tenantId: string }) {
+  setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
       session.role,

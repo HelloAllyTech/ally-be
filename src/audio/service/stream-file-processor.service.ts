@@ -230,7 +230,7 @@ export class StreamFileProcessorService {
         {
           participants: [session.userId],
           userId: session.userId,
-          chatId: session.chatId,
+          chatId,
         },
       );
       this.logger.info(
@@ -422,7 +422,6 @@ export class StreamFileProcessorService {
     const currentFile = activeCallStream.files[currentFileIndex];
 
     try {
-      await this.chatService.endChat(session.userId, session.chatId);
       // Check if we have any parts (multipart upload) or just small files
       if (activeCallStream.parts.length > 0) {
         if (currentFile.bufferSize > 0) {

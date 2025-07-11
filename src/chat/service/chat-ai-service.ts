@@ -11,6 +11,7 @@ import { Message, MessageType } from '../../common/entities/message.entity';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { UserRole } from '../../common/constants/user.constants';
 import { InjectRepository } from '@nestjs/typeorm';
+import { LoggerService } from '../../logger/logger.service';
 
 @Injectable()
 export class ChatAiService {
@@ -22,10 +23,13 @@ export class ChatAiService {
     private readonly chatService: ChatService,
   ) {}
 
+  private readonly logger = LoggerService.getInstance(ChatAiService.name);
+
   async addSummary(chatId: number, summary: FlattenedSummaryNotePayload) {
     const convertedResponse = CommonUtil.convertToCamelCase(
       summary,
     ) as FlattenedSummaryNotePayloadCamelCase;
+    this.logger.info(`Adding summary for chatId: ${chatId} from ai service`);
     await this.callDetailsRepository.update(
       { chatId },
       {
@@ -36,6 +40,7 @@ export class ChatAiService {
   }
 
   async addTranscript(chatId: number, messages: MessageRequest[]) {
+    this.logger.info(`Adding transcript for chatId: ${chatId} from ai service`);
     const chat = await this.chatService.getChatById(chatId);
     if (!chat) {
       throw new NotFoundException('Chat not found');
