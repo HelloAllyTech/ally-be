@@ -62,3 +62,8 @@ export interface GetReferenceDocumentRequest {
 export interface DeleteReferenceDocumentRequest {
   document_id: string;
 }
+
+export interface TranscribeAudioRequest {
+  s3_pressigned_url: string;
+  chat_id: number;
+}

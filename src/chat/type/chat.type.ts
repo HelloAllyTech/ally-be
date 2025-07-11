@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { AudioChatProvider } from '../../common/constants/chat.constants';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { Feedback } from '../../common/entities/feedback.entity';
@@ -86,5 +87,21 @@ export type DeepgramTranscriptMetadata = {
   speakerSegments?: {
     speaker: number;
     word: string;
+  }[];
+};
+
+export type ActiveCallStream = {
+  parts: Array<{
+    ETag: string;
+    PartNumber: number;
+  }>;
+  uploadId: string;
+  key: string;
+  partNumber: number;
+  currentFileIndex: number;
+  files: {
+    fileWriteStream: fs.WriteStream;
+    tempFilePath: string;
+    bufferSize: number;
   }[];
 };

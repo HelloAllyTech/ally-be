@@ -13,6 +13,7 @@ import {
   UpdateReferenceDocumentRequest,
   GetReferenceDocumentRequest,
   DeleteReferenceDocumentRequest,
+  TranscribeAudioRequest,
 } from '../dto/ai.request.dto';
 import {
   EnhanceTextResponse,
@@ -24,6 +25,7 @@ import {
   UpdateReferenceDocumentResponse,
   GetReferenceDocumentResponse,
   DeleteReferenceDocumentResponse,
+  TranscribeAudioResponse,
 } from '../dto/ai.response.dto';
 import { createClient, DeepgramClient } from '@deepgram/sdk';
 import { ENDPOINTS } from '../constants/endpoints.constants';
@@ -52,7 +54,7 @@ export class AiService {
   //   live.
   // }
 
-  async transcribeAudio(audioBuffer: Buffer): Promise<string> {
+  async transcribeAudioFromBuffer(audioBuffer: Buffer): Promise<string> {
     try {
       const response = await axios.post(
         `${this.config.ai.apiUrl}/transcribe`,
@@ -194,6 +196,15 @@ export class AiService {
       DeleteReferenceDocumentResponse,
       DeleteReferenceDocumentRequest
     >(`${ENDPOINTS.DELETE_REFERENCE_DOCUMENT}/${id}`, request, true, 'delete');
+    return response;
+  }
+
+  @RetryOnFail(3, 1000)
+  async transcribeAudioAndSummarize(request: TranscribeAudioRequest) {
+    const response = await this.makeRequest<
+      TranscribeAudioResponse,
+      TranscribeAudioRequest
+    >(ENDPOINTS.TRANSCRIBE_AND_SUMMARIZE, request);
     return response;
   }
 

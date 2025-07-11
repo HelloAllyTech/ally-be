@@ -693,7 +693,15 @@ export class ChatService {
     if (updatedChat) {
       this.gateway.broadcastChatEndedEvent(updatedChat);
     }
-    this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId },
+    });
+    if (callDetails) {
+      const provider = callDetails.callInfo?.provider;
+      if (provider === AudioChatProvider.WEBRTC) {
+        this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
+      }
+    }
 
     return updatedChat;
   }

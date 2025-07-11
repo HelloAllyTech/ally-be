@@ -26,7 +26,9 @@
     "migration:show": "npm run typeorm -- migration:show -d src/database/data-source.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.839.0",
     "@aws-sdk/client-ses": "^3.823.0",
+    "@aws-sdk/s3-request-presigner": "^3.839.0",
     "@deepgram/sdk": "^3.11.1",
     "@liaoliaots/nestjs-redis": "^10.0.0",
     "@nest-lab/throttler-storage-redis": "^1.1.0",

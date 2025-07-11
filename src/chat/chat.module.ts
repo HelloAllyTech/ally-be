@@ -17,17 +17,30 @@ import { BrokerModule } from '../message-broker/broker.module';
 import { SettingsModule } from '../settings/settings.module';
 import { MultiSpeakerAudioService } from './service/multi-speaker-audio.service';
 import { MicrophoneChatGateway } from './gateway/microphone-chat.gateway';
+import { ChatAudioUploadsService } from './service/chat-audio-uploads.service';
+import { ChatAudioUploads } from 'src/common/entities/chat-audio-uploads.entity';
+import { AwsModule } from '../aws/aws.module';
+import { ChatAiController } from './controller/chat-ai.controller';
+import { ChatAiService } from './service/chat-ai-service';
 import { JwtService } from '@nestjs/jwt';
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Message, Chat, ChatRoom, Feedback, CallDetails]),
+    TypeOrmModule.forFeature([
+      Message,
+      Chat,
+      ChatRoom,
+      Feedback,
+      CallDetails,
+      ChatAudioUploads,
+    ]),
     UserModule,
     QueueModule,
     AiModule,
     SettingsModule,
     forwardRef(() => BrokerModule),
+    AwsModule,
   ],
-  controllers: [ChatController],
+  controllers: [ChatController, ChatAiController],
   providers: [
     ChatService,
     ChatGateway,
@@ -35,6 +48,8 @@ import { JwtService } from '@nestjs/jwt';
     FeedbackService,
     ChatEventConsumer,
     MultiSpeakerAudioService,
+    ChatAudioUploadsService,
+    ChatAiService,
     JwtService,
   ],
   exports: [
