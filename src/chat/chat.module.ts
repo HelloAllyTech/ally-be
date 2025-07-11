@@ -15,30 +15,20 @@ import { CallDetails } from '../common/entities/call.details.entity';
 import { ChatEventConsumer } from './event/chat.event.consumer';
 import { BrokerModule } from '../message-broker/broker.module';
 import { SettingsModule } from '../settings/settings.module';
-import { MultiSpeakerAudioService } from './service/multi-speaker-audio.service';
 import { MicrophoneChatGateway } from './gateway/microphone-chat.gateway';
-import { ChatAudioUploadsService } from './service/chat-audio-uploads.service';
-import { ChatAudioUploads } from 'src/common/entities/chat-audio-uploads.entity';
-import { AwsModule } from '../aws/aws.module';
 import { ChatAiController } from './controller/chat-ai.controller';
 import { ChatAiService } from './service/chat-ai-service';
 import { JwtService } from '@nestjs/jwt';
+import { AudioModule } from '../audio/audio.module';
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      Message,
-      Chat,
-      ChatRoom,
-      Feedback,
-      CallDetails,
-      ChatAudioUploads,
-    ]),
+    TypeOrmModule.forFeature([Message, Chat, ChatRoom, Feedback, CallDetails]),
     UserModule,
     QueueModule,
     AiModule,
     SettingsModule,
     forwardRef(() => BrokerModule),
-    AwsModule,
+    forwardRef(() => AudioModule),
   ],
   controllers: [ChatController, ChatAiController],
   providers: [
@@ -47,17 +37,10 @@ import { JwtService } from '@nestjs/jwt';
     MicrophoneChatGateway,
     FeedbackService,
     ChatEventConsumer,
-    MultiSpeakerAudioService,
-    ChatAudioUploadsService,
     ChatAiService,
     JwtService,
   ],
-  exports: [
-    ChatService,
-    FeedbackService,
-    ChatGateway,
-    MultiSpeakerAudioService,
-  ],
+  exports: [ChatService, FeedbackService, ChatGateway],
 })
 export class ChatModule implements OnModuleInit {
   constructor(

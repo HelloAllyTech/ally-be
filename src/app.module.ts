@@ -24,6 +24,7 @@ import { TenantModule } from './tenant/tenant.module';
 import { CommonModule } from './common/common.module';
 import { SettingsModule } from './settings/settings.module';
 import { ReferenceDocumentModule } from './reference-document/reference-document.module';
+import { AudioModule } from './audio/audio.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { ReferenceDocumentModule } from './reference-document/reference-document
     CommonModule,
     SettingsModule,
     ReferenceDocumentModule,
+    AudioModule,
   ],
   controllers: [],
   providers: [

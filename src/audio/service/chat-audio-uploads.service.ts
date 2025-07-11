@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 import {
   ChatAudioUploads,
   ChatAudioUploadStatus,
@@ -19,21 +19,26 @@ export class ChatAudioUploadsService {
     private chatAudioUploadRepository: Repository<ChatAudioUploads>,
   ) {}
 
-  async createAudioUpload(data: {
-    chatId: number;
-    storageKey: string;
-    status?: ChatAudioUploadStatus;
-  }): Promise<ChatAudioUploads> {
+  async createAudioUpload(
+    data: {
+      chatId: number;
+      storageKey: string;
+      status?: ChatAudioUploadStatus;
+    },
+    entityManager?: EntityManager,
+  ): Promise<ChatAudioUploads> {
     try {
-      const audioUpload = this.chatAudioUploadRepository.create({
+      const repo =
+        entityManager?.getRepository(ChatAudioUploads) ||
+        this.chatAudioUploadRepository;
+      const audioUpload = repo.create({
         chatId: data.chatId,
         storageKey: data.storageKey,
         status: data.status || ChatAudioUploadStatus.PENDING,
         tenantId: ExecutionManager.getTenantId(),
       });
 
-      const savedUpload =
-        await this.chatAudioUploadRepository.save(audioUpload);
+      const savedUpload = await repo.save(audioUpload);
 
       this.logger.info(
         `Audio upload created | ChatId: ${data.chatId} | Status: ${savedUpload.status} | storageKey: ${data.storageKey}`,

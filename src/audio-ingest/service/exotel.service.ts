@@ -4,10 +4,8 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { LoggerService } from '../../logger/logger.service';
 import { ChatService } from '../../chat/service/chat.service';
 import { AudioIngestInterface } from '../interface/audio-ingest.interface';
-import { TranscriptionService } from '../../ai/service/transcription.service';
 import { ExotelStreamEvents } from '../type/audio-ingest.type';
 import { UserChatSessionData } from '../../chat/type/chat.type';
-import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { NotificationErrorType } from '../../notification/type/notification.error.type';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import {
@@ -17,7 +15,8 @@ import {
 import { TWENTY_FIVE_SECONDS_IN_MS } from '../../common/constants/time.constants';
 import { AudioChatProvider } from '../../common/constants/chat.constants';
 import { UserRole } from '../../common/constants/user.constants';
-import { MultiSpeakerAudioService } from '../../chat/service/multi-speaker-audio.service';
+import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
+import { UserService } from 'src/user/user.service';
 
 @Injectable()
 export class ExotelService implements AudioIngestInterface {
@@ -36,10 +35,9 @@ export class ExotelService implements AudioIngestInterface {
 
   constructor(
     private chatService: ChatService,
-    private transcriptionService: TranscriptionService,
-    private publisher: MessageBrokerService,
+    private userService: UserService,
     private eventEmitter: EventEmitter2,
-    private multiSpeakerAudioService: MultiSpeakerAudioService,
+    private streamFileProcessorService: StreamFileProcessorService,
   ) {}
 
   async handleStreamEvent(messageData: any, ws: WebSocket) {
@@ -88,7 +86,7 @@ export class ExotelService implements AudioIngestInterface {
 
       ws.terminate();
       delete this.sessions[streamSid];
-      this.multiSpeakerAudioService.clearPendingAudioQueue(streamSid);
+      this.streamFileProcessorService.clearPendingAudioQueue(streamSid);
       return;
     }
 
@@ -102,12 +100,10 @@ export class ExotelService implements AudioIngestInterface {
       counselorPhone = `+91${counselorPhone}`; // Add +91 prefix
     }
 
-    const chatData = await this.chatService.createChatForAnyonymousClient({
-      counselorPhone,
-      provider: AudioChatProvider.EXOTEL,
-    });
+    const counselor =
+      await this.userService.getUserByPhoneNumber(counselorPhone);
 
-    if (!chatData) {
+    if (!counselor) {
       this.eventEmitter.emit('exception', {
         statusCode: 404,
         timestamp: new Date().toISOString(),
@@ -118,18 +114,15 @@ export class ExotelService implements AudioIngestInterface {
 
       ws.terminate();
       delete this.sessions[streamSid];
-      this.multiSpeakerAudioService.clearPendingAudioQueue(streamSid);
+      this.streamFileProcessorService.clearPendingAudioQueue(streamSid);
       return;
     }
 
-    const { chatId, counselorId, tenantId } = chatData;
-
     const session = {
-      chatId,
-      userId: counselorId,
-      user: null,
-      room: `user-${counselorId}`,
-      tenantId,
+      userId: counselor.id,
+      room: `user-${counselor.id}`,
+      tenantId: counselor.tenantId,
+      role: UserRole.COUNSELOR,
     };
 
     const updatedSession = {
@@ -140,7 +133,35 @@ export class ExotelService implements AudioIngestInterface {
     // Store session data
     this.sessions[streamSid] = updatedSession;
 
-    this.multiSpeakerAudioService.startCallStream(this.sessions[streamSid]);
+    // Start call stream with chat creation in transaction
+    try {
+      await this.streamFileProcessorService.startCallStream(
+        updatedSession,
+        {
+          counselorId: session.userId,
+          provider: AudioChatProvider.EXOTEL,
+        },
+        (chatId: number) => {
+          // Update session with chatId
+          this.sessions[streamSid] = {
+            ...this.sessions[streamSid],
+            chatId,
+          };
+
+          this.logger.info(
+            `Chat created for user ${session.userId} with chatId ${chatId}`,
+          );
+        },
+      );
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to start call stream for client ${streamSid}:`,
+        error,
+      );
+      ws.terminate();
+      delete this.sessions[streamSid];
+      return;
+    }
 
     this.logger.info(
       `Exotel: WS client start event completed with stream_sid: ${streamSid}`,
@@ -188,7 +209,7 @@ export class ExotelService implements AudioIngestInterface {
       return;
     }
 
-    this.multiSpeakerAudioService.saveAudio(session, audioData, true);
+    this.streamFileProcessorService.saveAudio(session, audioData, true);
   }
 
   private createEmptyPCMAudioPacket(): string {
@@ -262,7 +283,7 @@ export class ExotelService implements AudioIngestInterface {
       return;
     }
 
-    this.multiSpeakerAudioService.endCallStream(session);
+    this.streamFileProcessorService.endCallStream(session);
 
     this.setAuthContext({
       userId: session.userId!,
@@ -273,7 +294,7 @@ export class ExotelService implements AudioIngestInterface {
     await this.chatService.endChat(-99, session.chatId);
 
     this.clearKeepAliveData(streamSid);
-    // delete this.sessions[streamSid];
+    delete this.sessions[streamSid];
 
     this.logger.info(
       `Exotel: WS client stop event completed with stream_sid: ${streamSid}`,
