@@ -447,11 +447,11 @@ export class StreamFileProcessorService {
             UploadId: activeCallStream.uploadId,
           });
           this.logger.debug(
-            `Aborted multipart upload for regular upload | Key: ${activeCallStream.key} | ChatId: ${session.chatId}`,
+            `Aborted multipart upload for regular upload | Key: ${activeCallStream.key} | ChatId: ${session.chatId} | Provider: ${session.provider}`,
           );
         } catch (abortErr) {
           this.logger.warn(
-            `Failed to abort multipart upload | Key: ${activeCallStream.key} | Error: ${abortErr.message}`,
+            `Failed to abort multipart upload | Key: ${activeCallStream.key} | Error: ${abortErr.message} | ChatId: ${session.chatId} | Provider: ${session.provider}`,
           );
         }
 
@@ -490,7 +490,7 @@ export class StreamFileProcessorService {
 
       this.aiService
         .transcribeAudioAndSummarize({
-          s3_pressigned_url: presignedUrl,
+          presigned_url: presignedUrl,
           chat_id: session.chatId,
         })
         .catch((err) => {

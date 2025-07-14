@@ -64,6 +64,6 @@ export interface DeleteReferenceDocumentRequest {
 }
 
 export interface TranscribeAudioRequest {
-  s3_pressigned_url: string;
+  presigned_url: string;
   chat_id: number;
 }

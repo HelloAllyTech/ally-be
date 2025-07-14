@@ -41,7 +41,11 @@ export class S3Service {
   }
 
   uploadStream(params: PutObjectCommandInput): Promise<PutObjectCommandOutput> {
-    return this.s3.send(new PutObjectCommand(params));
+    try {
+      return this.s3.send(new PutObjectCommand(params));
+    } catch (error) {
+      throw new Error(`Failed to upload stream: ${error.message}`);
+    }
   }
 
   async generatePresignedUrl(params: {
