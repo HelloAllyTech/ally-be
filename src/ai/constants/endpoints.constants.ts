@@ -9,5 +9,5 @@ export const ENDPOINTS = {
   UPDATE_REFERENCE_DOCUMENT: 'api/v1/reference-documents',
   GET_REFERENCE_DOCUMENT: 'api/v1/reference-documents',
   DELETE_REFERENCE_DOCUMENT: 'api/v1/reference-documents',
-  TRANSCRIBE_AND_SUMMARIZE: 'api/v1/transcribe-and-summarize',
+  TRANSCRIBE_AND_SUMMARIZE: 'api/v1/transcription/transcribe-and-summarize',
 } as const;
