@@ -66,4 +66,5 @@ export interface DeleteReferenceDocumentRequest {
 export interface TranscribeAudioRequest {
   presigned_url: string;
   chat_id: number;
+  sample_rate: number;
 }

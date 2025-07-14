@@ -488,10 +488,21 @@ export class StreamFileProcessorService {
         session.chatId,
       );
 
+      const { callDetails } = await this.chatService.getChatWithCallDetails(
+        session.chatId,
+      );
+
+      //TODO: get provider from session
+      const sampleRate =
+        callDetails?.callInfo?.provider === AudioChatProvider.MICROPHONE
+          ? 16000
+          : 8000;
+
       this.aiService
         .transcribeAudioAndSummarize({
           presigned_url: presignedUrl,
           chat_id: session.chatId,
+          sample_rate: sampleRate,
         })
         .catch((err) => {
           this.logger.error(
