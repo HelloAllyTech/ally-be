@@ -211,7 +211,9 @@ export class MicrophoneChatGateway
 
     const session = this.sessions[client.id];
     if (!session) {
-      this.logger.error(`❌ Session not found for client ${client.id}`);
+      this.logger.error(
+        `Audio chat start event received but session not found for client ${client.id}`,
+      );
       return;
     }
 
@@ -291,7 +293,9 @@ export class MicrophoneChatGateway
   ) {
     const session = this.sessions[client.id];
     if (!session) {
-      this.logger.error(`Session not found for client ${client.id}`);
+      this.logger.error(
+        `Audio message event received but session not found for client ${client.id}`,
+      );
       return;
     }
     const chatId = session.chatId;
@@ -312,7 +316,9 @@ export class MicrophoneChatGateway
     this.logger.info(`Audio chat nudge paused for chatId ${chatId}`);
     const session = this.sessions[client.id];
     if (!session) {
-      this.logger.error(`Session not found for client ${client.id}`);
+      this.logger.error(
+        `Audio chat paused event received but session not found for client ${client.id}`,
+      );
       return;
     }
     this.setAuthContext(session);
@@ -325,7 +331,9 @@ export class MicrophoneChatGateway
     this.logger.info(`Audio chat Nudge resumed for chatId ${chatId}`);
     const session = this.sessions[client.id];
     if (!session) {
-      this.logger.error(`Session not found for client ${client.id}`);
+      this.logger.error(
+        `Audio chat resumed event received but session not found for client ${client.id}`,
+      );
       return;
     }
     this.setAuthContext(session);
@@ -336,10 +344,17 @@ export class MicrophoneChatGateway
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleAudioChatEnded(client: Socket) {
     const session = this.sessions[client.id];
+    this.logger.info(
+      `End event received for client ${client.id} | chatId: ${session.chatId}`,
+    );
+
     if (!session) {
-      this.logger.error(`Session not found for client ${client.id}`);
+      this.logger.error(
+        `Audio chat ended event received but session not found for client ${client.id}`,
+      );
       return;
     }
+    client.disconnect();
     this.setAuthContext(session);
     await this.chatService.endChat(session.userId, session.chatId);
     this.streamFileProcessorService.endCallStream(session);
