@@ -353,6 +353,17 @@ export class ChatService {
     return chat;
   }
 
+  // Used only for service level integration
+  async getChatByIdForServiceCall(chatId: number) {
+    const chat = await this.chatRepository.findOne({
+      where: { id: chatId },
+    });
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
+    }
+    return chat;
+  }
+
   async getChatsByCouncilorId(
     counselorId: number,
     options?: { status?: ChatStatus },

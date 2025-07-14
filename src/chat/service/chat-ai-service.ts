@@ -12,6 +12,12 @@ import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { UserRole } from '../../common/constants/user.constants';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LoggerService } from '../../logger/logger.service';
+import { ValidationException } from '../../exception/custom.exception';
+import {
+  ExecutionContextPropagation,
+  WithExecutionContext,
+} from '../../common/decorator/execution.context.decorator';
+import { ExecutionManager } from '../../common/execution/execution-manager';
 
 @Injectable()
 export class ChatAiService {
@@ -26,37 +32,84 @@ export class ChatAiService {
   private readonly logger = LoggerService.getInstance(ChatAiService.name);
 
   async addSummary(chatId: number, summary: FlattenedSummaryNotePayload) {
-    const convertedResponse = CommonUtil.convertToCamelCase(
-      summary,
-    ) as FlattenedSummaryNotePayloadCamelCase;
-    this.logger.info(`Adding summary for chatId: ${chatId} from ai service`);
-    await this.callDetailsRepository.update(
-      { chatId },
-      {
-        summary: convertedResponse,
-      },
-    );
-    return true;
+    try {
+      this.logger.info(`Adding summary for chatId: ${chatId} from ai service`);
+      const chat = await this.chatService.getChatByIdForServiceCall(chatId);
+      if (!chat) {
+        throw new NotFoundException('Chat not found');
+      }
+      const convertedResponse = CommonUtil.convertToCamelCase(
+        summary,
+      ) as FlattenedSummaryNotePayloadCamelCase;
+      await this.callDetailsRepository.update(
+        { chatId },
+        {
+          summary: convertedResponse,
+        },
+      );
+      this.logger.info(`Summary added for chatId: ${chatId} from ai service`);
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Error adding summary for chatId: ${chatId} from ai service`,
+        error,
+      );
+      throw new ValidationException('Error adding summary');
+    }
   }
 
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async addTranscript(chatId: number, messages: MessageRequest[]) {
-    this.logger.info(`Adding transcript for chatId: ${chatId} from ai service`);
-    const chat = await this.chatService.getChatById(chatId);
-    if (!chat) {
-      throw new NotFoundException('Chat not found');
+    try {
+      this.logger.info(
+        `Adding transcript for chatId: ${chatId} from ai service`,
+      );
+      const chat = await this.chatService.getChatByIdForServiceCall(chatId);
+      if (!chat) {
+        throw new NotFoundException('Chat not found');
+      }
+      this.setAuthContext({
+        userId: chat.counselorId!,
+        role: UserRole.COUNSELOR,
+        tenantId: chat.tenantId,
+      });
+      const formattedMessages = messages.map((message) =>
+        this.messageRepository.create({
+          chatId,
+          senderId:
+            message.role === UserRole.CLIENT ? chat.clientId : chat.counselorId,
+          type: MessageType.TEXT,
+          content: message.content,
+          startSeconds: message.start_time,
+          endSeconds: message.end_time,
+          tenantId: ExecutionManager.getTenantId(),
+        }),
+      );
+      await this.messageRepository.save(formattedMessages);
+      // update message statistics
+      this.chatService.updateMessageStatistics(chat);
+      this.logger.info(
+        `Transcript added for chatId: ${chatId} from ai service`,
+      );
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Error adding transcript for chatId: ${chatId} from ai service`,
+        error,
+      );
+      throw new ValidationException('Error adding transcript');
     }
-    const formattedMessages = messages.map((message) => ({
-      chatId,
-      senderId:
-        message.role === UserRole.CLIENT ? chat.clientId : chat.counselorId,
-      type: MessageType.TEXT,
-      content: message.content,
-      startSeconds: message.start_time,
-      endSeconds: message.end_time,
-    }));
-    await this.messageRepository.save(formattedMessages);
-    // update message statistics
-    this.chatService.updateMessageStatistics(chat);
-    return true;
+  }
+
+  setAuthContext(context: {
+    userId: number;
+    role: UserRole;
+    tenantId: string;
+  }) {
+    ExecutionManager.setAuthContext(
+      context.userId.toString(),
+      context.role,
+      context.tenantId,
+    );
   }
 }
