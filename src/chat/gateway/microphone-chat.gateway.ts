@@ -235,6 +235,11 @@ export class MicrophoneChatGateway
         return;
       }
 
+      this.sessions[client.id] = {
+        ...this.sessions[client.id],
+        chatId: activeChatId,
+      };
+
       // already started call stream for this chat, so we need to update the call stream id
       this.streamFileProcessorService.updateCallStreamId(
         activeChatId,
@@ -354,7 +359,6 @@ export class MicrophoneChatGateway
       );
       return;
     }
-    client.disconnect();
     this.setAuthContext(session);
     await this.chatService.endChat(session.userId, session.chatId);
     this.streamFileProcessorService.endCallStream(session);
