@@ -1,5 +1,4 @@
-import { Controller, Get, Body, UseGuards, Patch, Put } from '@nestjs/common';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { Controller, Get, Body, Put, Post, Delete } from '@nestjs/common';
 import { SettingsService } from '../service/settings.service';
 import {
   ApiTags,
@@ -10,7 +9,10 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
+import {
+  UserRole,
+  HiddenChatType,
+} from '../../common/constants/user.constants';
 
 @ApiTags('Settings')
 @ApiBearerAuth()
@@ -78,5 +80,58 @@ export class SettingsController {
   @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   updateNudgeStatus(@Body() body: { status: boolean }) {
     return this.service.updateNudgeStatus(body.status);
+  }
+
+  @Get('hidden-chat-types')
+  @ApiOperation({ summary: 'Get hidden chat types' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the hidden chat types',
+  })
+  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  getHiddenChatTypes() {
+    return this.service.getHiddenChatTypes();
+  }
+
+  @Post('hidden-chat-types')
+  @ApiOperation({ summary: 'Add hidden chat types' })
+  @ApiBody({
+    schema: {
+      type: 'array',
+      items: {
+        type: 'string',
+        enum: Object.values(HiddenChatType),
+      },
+      example: ['string'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Chat types hidden successfully',
+  })
+  @AuthRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  addHiddenChatTypes(@Body() chatTypes: string[]) {
+    return this.service.addHiddenChatTypes(chatTypes);
+  }
+
+  @Delete('hidden-chat-types')
+  @ApiOperation({ summary: 'Remove hidden chat types' })
+  @ApiBody({
+    schema: {
+      type: 'array',
+      items: {
+        type: 'string',
+        enum: Object.values(HiddenChatType),
+      },
+      example: ['string'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Chat types shown successfully',
+  })
+  @AuthRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  removeHiddenChatTypes(@Body() chatTypes: string[]) {
+    return this.service.removeHiddenChatTypes(chatTypes);
   }
 }
