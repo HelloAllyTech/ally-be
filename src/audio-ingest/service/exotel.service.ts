@@ -14,7 +14,10 @@ import {
 } from '../../common/decorator/execution.context.decorator';
 import { TWENTY_FIVE_SECONDS_IN_MS } from '../../common/constants/time.constants';
 import { AudioChatProvider } from '../../common/constants/chat.constants';
-import { UserRole } from '../../common/constants/user.constants';
+import {
+  PLACEHOLDER_CHAT_ID,
+  UserRole,
+} from '../../common/constants/user.constants';
 import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
 import { UserService } from 'src/user/user.service';
 import { EXOTEL_SAMPLE_RATE } from '../constants/audio-ingest.constants';
@@ -65,7 +68,7 @@ export class ExotelService implements AudioIngestInterface {
 
     this.sessions[streamSid] = {
       id: streamSid,
-      chatId: -99,
+      chatId: PLACEHOLDER_CHAT_ID,
       type: 'user',
       userId: -1,
       user: null,
@@ -186,7 +189,7 @@ export class ExotelService implements AudioIngestInterface {
       return;
     }
 
-    const isChatCreated = session.chatId !== -99;
+    const isChatCreated = session.chatId !== PLACEHOLDER_CHAT_ID;
     if (isChatCreated) {
       const isChatPaused = await this.chatService.isChatPaused(session.chatId);
       if (isChatPaused) {
@@ -289,7 +292,7 @@ export class ExotelService implements AudioIngestInterface {
 
     this.setAuthContext(session);
 
-    await this.chatService.endChat(-99, session.chatId);
+    await this.chatService.endChat(-1, session.chatId);
 
     this.streamFileProcessorService.endCallStream(session);
 

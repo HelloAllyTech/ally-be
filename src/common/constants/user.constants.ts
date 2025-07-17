@@ -30,3 +30,5 @@ export enum HiddenChatType {
 }
 
 export const ANONYMOUS_CLIENT_ID = -1;
+
+export const PLACEHOLDER_CHAT_ID = -99;

@@ -13,7 +13,10 @@ import {
   AudioChatPlatform,
   AudioChatProvider,
 } from '../../common/constants/chat.constants';
-import { UserRole } from 'src/common/constants/user.constants';
+import {
+  PLACEHOLDER_CHAT_ID,
+  UserRole,
+} from '../../common/constants/user.constants';
 import { MessagePayload, UserChatSessionData } from '../type/chat.type';
 import { ChatEvents } from '../constants/chat.constants';
 import {
@@ -161,7 +164,7 @@ export class MicrophoneChatGateway
         role: UserRole.COUNSELOR,
         room,
         provider: AudioChatProvider.MICROPHONE,
-        chatId: -99,
+        chatId: PLACEHOLDER_CHAT_ID,
         tenantId: user.tenantId,
       };
 
@@ -308,7 +311,7 @@ export class MicrophoneChatGateway
     }
     const chatId = session.chatId;
     const isChatPaused =
-      session.chatId === -99 // chat is not yet created so we are just saving the audio
+      session.chatId === PLACEHOLDER_CHAT_ID
         ? false
         : await this.chatService.isChatPaused(chatId);
     if (isChatPaused) {
@@ -350,7 +353,7 @@ export class MicrophoneChatGateway
 
   @SubscribeMessage(ChatEvents.AUDIO_CHAT_ENDED)
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
-  async handleAudioChatEnded(client: Socket) {
+  async handleAudioChatEnded(client: Socket, { chatId }: { chatId: number }) {
     const session = this.sessions[client.id];
     this.logger.info(
       `End event received for client ${client.id} | chatId: ${session.chatId}`,
@@ -361,6 +364,21 @@ export class MicrophoneChatGateway
         `Audio chat ended event received but session not found for client ${client.id}`,
       );
       return;
+    }
+
+    if (session.chatId === PLACEHOLDER_CHAT_ID) {
+      if (chatId) {
+        this.sessions[client.id] = {
+          ...this.sessions[client.id],
+          chatId,
+        };
+        session.chatId = chatId;
+      } else {
+        this.logger.error(
+          `Ending chat for client ${client.id} as there is no chatId provided`,
+        );
+        return;
+      }
     }
     this.setAuthContext(session);
     await this.chatService.endChat(session.userId, session.chatId);
