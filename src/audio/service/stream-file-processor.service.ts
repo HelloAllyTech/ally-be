@@ -422,6 +422,20 @@ export class StreamFileProcessorService {
     await Promise.allSettled(deletePromises);
   }
 
+  private handleEmptyFile(activeCallStream: ActiveCallStream, chatId: number) {
+    this.chatAudioUploadsService.updateAudioUploadStatus(
+      chatId,
+      ChatAudioUploadStatus.FAILED,
+    );
+
+    this.cleanUpTemporaryFiles(
+      activeCallStream.files?.map((file) => file.tempFilePath) || [],
+      chatId,
+    );
+
+    this.chatService.updateCallMetadata(chatId);
+  }
+
   async endCallStream(session: UserChatSessionData) {
     const callId = session.id;
     const activeCallStream = this.activeCallStreams[callId];
@@ -467,6 +481,16 @@ export class StreamFileProcessorService {
           );
         }
 
+        if (activeCallStream.files[0].bufferSize === 0) {
+          this.logger.info(
+            `No audio data in file 0 | Key: ${activeCallStream.key} | ChatId: ${session.chatId} | Provider: ${session.provider}`,
+          );
+
+          this.handleEmptyFile(activeCallStream, session.chatId);
+
+          return;
+        }
+
         // Use regular upload for small files - only file 0 has data
         const audioBuffer = fs.readFileSync(
           activeCallStream.files[0].tempFilePath,
@@ -484,16 +508,10 @@ export class StreamFileProcessorService {
         `Call stream upload completed | Key: ${activeCallStream.key} | ChatId: ${session.chatId} | Provider: ${session.provider}`,
       );
 
-      await this.chatAudioUploadsService.updateAudioUploadStatus(
+      this.chatAudioUploadsService.updateAudioUploadStatus(
         session.chatId,
         ChatAudioUploadStatus.SUCCESS,
       );
-
-      const presignedUrl = await this.s3Service.generatePresignedUrl({
-        bucket: this.config.s3.audioBucket!,
-        key: activeCallStream.key,
-        operation: 'get',
-      });
 
       this.cleanUpTemporaryFiles(
         activeCallStream.files?.map((file) => file.tempFilePath) || [],
@@ -501,6 +519,12 @@ export class StreamFileProcessorService {
       );
 
       this.chatService.updateCallMetadata(session.chatId);
+
+      const presignedUrl = await this.s3Service.generatePresignedUrl({
+        bucket: this.config.s3.audioBucket!,
+        key: activeCallStream.key,
+        operation: 'get',
+      });
 
       this.aiService
         .transcribeAudioAndSummarize({

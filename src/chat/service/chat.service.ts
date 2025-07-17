@@ -830,10 +830,10 @@ export class ChatService {
         const updates = {
           callInfo: {
             ...existingCallInfo,
-            callDuration: callDurationInSeconds,
             summaryName: ChatUtil.getSummaryName(chat),
-            endTime: endDate,
           },
+          endTime: endDate,
+          callDuration: callDurationInSeconds,
         };
         await this.callDetailsRepository.update({ chatId }, updates);
       }
