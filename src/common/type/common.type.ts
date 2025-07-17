@@ -18,7 +18,7 @@ export type SummaryPreferenceValue = {
   fields: Array<string>;
 };
 
-export type HiddenChatTypesPreferenceValue = string[];
+export type HiddenChatTypesPreferenceValue = Array<string>;
 
 export type PreferenceValue =
   | SummaryPreferenceValue

@@ -22,13 +22,6 @@ export enum PreferenceRelatedEntity {
   COUNSELOR = 'COUNSELOR',
 }
 
-// Chat types that can be hidden via preferences
-export enum HiddenChatType {
-  WEBRTC_CHAT = 'WEBRTC_CHAT',
-  MICROPHONE_CHAT = 'MICROPHONE_CHAT',
-  EXOTEL_CONFERENCE_CHAT = 'EXOTEL_CONFERENCE_CHAT',
-}
-
 export const ANONYMOUS_CLIENT_ID = -1;
 
 export const PLACEHOLDER_CHAT_ID = -99;

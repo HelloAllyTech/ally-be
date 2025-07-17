@@ -1,3 +1,4 @@
+import { ChatTypes } from '../../common/constants/chat.constants';
 import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
 function defineAllFields<T>() {
   return <K extends (keyof T)[]>(
@@ -74,3 +75,5 @@ export const DEFAULT_SUMMARY_FIELDS_ARRAY = [
 ];
 
 export const DEFAULT_SUMMARY_FIELDS_SET = new Set(DEFAULT_SUMMARY_FIELDS_ARRAY);
+
+export const DEFAULT_CHAT_TYPES = Object.values(ChatTypes);
