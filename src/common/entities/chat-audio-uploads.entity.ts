@@ -24,4 +24,10 @@ export class ChatAudioUploads extends BaseEntity {
     default: ChatAudioUploadStatus.PENDING,
   })
   status!: ChatAudioUploadStatus;
+
+  @Column({ type: 'integer', nullable: true })
+  sampleRate?: number;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  format?: string;
 }

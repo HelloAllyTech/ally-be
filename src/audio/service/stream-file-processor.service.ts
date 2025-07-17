@@ -59,6 +59,7 @@ export class StreamFileProcessorService {
       }[];
       chatId: number;
       id: string;
+      sampleRate: number;
     };
   } = {};
 
@@ -106,6 +107,7 @@ export class StreamFileProcessorService {
       counselorId: number;
       provider: AudioChatProvider;
       platform?: AudioChatPlatform;
+      sampleRate?: number;
     },
     onChatCreated: (chatId: number) => void,
   ) {
@@ -133,11 +135,12 @@ export class StreamFileProcessorService {
         chatId = chat.chatId;
 
         // Setup call stream using entityManager
-        const { uploadId, files, key } = await this.setupCallStream(
+        const { uploadId, files, key } = await this.setupCallStream({
           session,
-          chatId!,
+          chatId: chatId!,
           entityManager,
-        );
+          sampleRate: chatData.sampleRate!,
+        });
         s3UploadId = uploadId;
         tempFiles = files;
         s3key = key;
@@ -163,11 +166,17 @@ export class StreamFileProcessorService {
     }
   }
 
-  private async setupCallStream(
-    session: UserChatSessionData,
-    chatId: number,
-    entityManager: EntityManager,
-  ): Promise<{ uploadId: string; files: string[]; key: string }> {
+  private async setupCallStream({
+    session,
+    chatId,
+    entityManager,
+    sampleRate,
+  }: {
+    session: UserChatSessionData;
+    chatId: number;
+    entityManager: EntityManager;
+    sampleRate: number;
+  }): Promise<{ uploadId: string; files: string[]; key: string }> {
     const callId = session.id;
     const key = this.generateStorageKey(chatId);
     const tempFiles: string[] = [];
@@ -199,6 +208,8 @@ export class StreamFileProcessorService {
           chatId: chatId,
           storageKey: key,
           status: ChatAudioUploadStatus.PENDING,
+          sampleRate,
+          format: 'raw',
         },
         entityManager,
       );
@@ -223,6 +234,7 @@ export class StreamFileProcessorService {
         ],
         chatId,
         id: callId,
+        sampleRate,
       };
 
       this.broadcastMessageService.broadcastUserJoinedMessage(
@@ -488,21 +500,11 @@ export class StreamFileProcessorService {
         session.chatId,
       );
 
-      const { callDetails } = await this.chatService.getChatWithCallDetails(
-        session.chatId,
-      );
-
-      //TODO: get provider from session
-      const sampleRate =
-        callDetails?.callInfo?.provider === AudioChatProvider.MICROPHONE
-          ? 16000
-          : 8000;
-
       this.aiService
         .transcribeAudioAndSummarize({
           presigned_url: presignedUrl,
           chat_id: session.chatId,
-          sample_rate: sampleRate,
+          sample_rate: activeCallStream.sampleRate,
         })
         .catch((err) => {
           this.logger.error(

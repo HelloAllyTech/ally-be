@@ -199,10 +199,12 @@ export class MicrophoneChatGateway
       isLinear16Encoded,
       platform,
       activeChatId,
+      sampleRate,
     }: {
       isLinear16Encoded?: boolean;
       platform: AudioChatPlatform;
       activeChatId?: number;
+      sampleRate?: number;
     },
   ) {
     this.logger.info(
@@ -267,6 +269,7 @@ export class MicrophoneChatGateway
           counselorId: session.userId,
           provider: AudioChatProvider.MICROPHONE,
           platform,
+          sampleRate,
         },
         (chatId: number) => {
           // Update session with chatId

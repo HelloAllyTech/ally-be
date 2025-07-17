@@ -17,6 +17,7 @@ import { AudioChatProvider } from '../../common/constants/chat.constants';
 import { UserRole } from '../../common/constants/user.constants';
 import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
 import { UserService } from 'src/user/user.service';
+import { EXOTEL_SAMPLE_RATE } from '../constants/audio-ingest.constants';
 
 @Injectable()
 export class ExotelService implements AudioIngestInterface {
@@ -142,6 +143,7 @@ export class ExotelService implements AudioIngestInterface {
         {
           counselorId: session.userId,
           provider: AudioChatProvider.EXOTEL,
+          sampleRate: EXOTEL_SAMPLE_RATE,
         },
         (chatId: number) => {
           // Update session with chatId

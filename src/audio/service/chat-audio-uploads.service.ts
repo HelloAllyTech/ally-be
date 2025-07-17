@@ -24,6 +24,8 @@ export class ChatAudioUploadsService {
       chatId: number;
       storageKey: string;
       status?: ChatAudioUploadStatus;
+      sampleRate?: number;
+      format?: string;
     },
     entityManager?: EntityManager,
   ): Promise<ChatAudioUploads> {
@@ -32,8 +34,7 @@ export class ChatAudioUploadsService {
         entityManager?.getRepository(ChatAudioUploads) ||
         this.chatAudioUploadRepository;
       const audioUpload = repo.create({
-        chatId: data.chatId,
-        storageKey: data.storageKey,
+        ...data,
         status: data.status || ChatAudioUploadStatus.PENDING,
         tenantId: ExecutionManager.getTenantId(),
       });
