@@ -4,12 +4,19 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AudioIngestGateway } from './audio-ingest/gateway/audio.ingest.gateway';
+import * as express from 'express';
+
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   try {
     const app = await NestFactory.create(AppModule, {
       bufferLogs: true,
     });
+
+    // Add body parser configuration for larger payloads
+    app.use(express.json({ limit: '1mb' }));
+    app.use(express.urlencoded({ limit: '1mb', extended: true }));
+
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ transform: true }));
     app.use(helmet());
