@@ -211,7 +211,7 @@ export class MicrophoneChatGateway
     },
   ) {
     this.logger.info(
-      `Client ${client.id} start audio chat with isLinear16Encoded: ${isLinear16Encoded}`,
+      `Client ${client.id} start audio chat with activeChatId: ${activeChatId} | isLinear16Encoded: ${isLinear16Encoded} | platform: ${platform} | sampleRate: ${sampleRate}`,
     );
 
     const session = this.sessions[client.id];
@@ -356,7 +356,7 @@ export class MicrophoneChatGateway
   async handleAudioChatEnded(client: Socket, { chatId }: { chatId: number }) {
     const session = this.sessions[client.id];
     this.logger.info(
-      `End event received for client ${client.id} | chatId: ${session.chatId}`,
+      `End event received for client ${client.id} | session chatId: ${session.chatId} | chatId: ${chatId}`,
     );
 
     if (!session) {

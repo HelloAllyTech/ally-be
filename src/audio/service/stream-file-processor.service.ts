@@ -500,6 +500,8 @@ export class StreamFileProcessorService {
         session.chatId,
       );
 
+      this.chatService.updateCallMetadata(session.chatId);
+
       this.aiService
         .transcribeAudioAndSummarize({
           presigned_url: presignedUrl,

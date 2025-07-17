@@ -802,6 +802,46 @@ export class ChatService {
     );
   }
 
+  async updateCallMetadata(chatId: number) {
+    this.logger.info(`updateCallDetails:Start - chatId:${chatId}`);
+    try {
+      const chat = await this.getChatById(chatId);
+      if (!chat) {
+        this.logger.error(
+          `updateCallMetadata - chatId:${chatId} - chat not found`,
+        );
+        return;
+      }
+
+      const callDetails = await this.callDetailsRepository.findOne({
+        where: { chatId, tenantId: ExecutionManager.getTenantId() },
+      });
+
+      const startDate = chat.startedAt || new Date();
+      const endDate = chat.endedAt || new Date();
+
+      const callDurationInSeconds = ChatUtil.getCallDurationInSeconds(
+        startDate,
+        endDate,
+      );
+
+      if (callDetails) {
+        const existingCallInfo = callDetails.callInfo || {};
+        const updates = {
+          callInfo: {
+            ...existingCallInfo,
+            callDuration: callDurationInSeconds,
+            summaryName: ChatUtil.getSummaryName(chat),
+            endTime: endDate,
+          },
+        };
+        await this.callDetailsRepository.update({ chatId }, updates);
+      }
+    } catch (err) {
+      this.logger.error(`updateCallMetadata - chatId:${chatId} - error:${err}`);
+    }
+  }
+
   async updateMessageStatistics(chat: Chat) {
     this.logger.info(
       `updateMessageStatistics:Start - chatId:${chat.id} | startedAt:${chat.startedAt} | endedAt:${chat.endedAt}`,
@@ -815,16 +855,10 @@ export class ChatService {
       const startDate = chat.startedAt || new Date();
       const endDate = chat.endedAt || new Date();
 
-      const callDurationInSeconds =
-        chat.startedAt && chat.endedAt
-          ? Math.max(
-              0,
-              Math.floor(
-                (new Date(endDate).getTime() - new Date(startDate).getTime()) /
-                  1000,
-              ),
-            )
-          : 0;
+      const callDurationInSeconds = ChatUtil.getCallDurationInSeconds(
+        startDate,
+        endDate,
+      );
 
       // get word count by language
       const wordCountByLanguage = await this.getWordCountByLanguage(chat.id);

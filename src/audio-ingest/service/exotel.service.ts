@@ -179,10 +179,6 @@ export class ExotelService implements AudioIngestInterface {
   async handleAudioMessage(msg: any, ws: WebSocket) {
     const streamSid = msg.stream_sid;
 
-    this.logger.info(
-      `Exotel: WS client audio event triggered with stream_sid: ${streamSid}`,
-    );
-
     const session = this.sessions[streamSid];
     if (!session) {
       this.logger.warn(`Exotel: No session found for stream_sid: ${streamSid}`);

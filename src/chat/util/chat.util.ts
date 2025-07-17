@@ -44,4 +44,15 @@ export class ChatUtil {
     const date = startedAt.toISOString().split('T')[0];
     return `CALL-${chat.id}-${date}`;
   }
+  static getCallDurationInSeconds(startDate: Date, endDate: Date) {
+    return startDate && endDate
+      ? Math.max(
+          0,
+          Math.floor(
+            (new Date(endDate).getTime() - new Date(startDate).getTime()) /
+              1000,
+          ),
+        )
+      : 0;
+  }
 }
