@@ -18,4 +18,9 @@ export type SummaryPreferenceValue = {
   fields: Array<string>;
 };
 
-export type PreferenceValue = SummaryPreferenceValue | NudgePreferenceValue;
+export type HiddenChatTypesPreferenceValue = Array<string>;
+
+export type PreferenceValue =
+  | SummaryPreferenceValue
+  | NudgePreferenceValue
+  | HiddenChatTypesPreferenceValue;

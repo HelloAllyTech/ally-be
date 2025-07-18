@@ -9,9 +9,16 @@ import { UserModule } from '../user/user.module';
 import { AudioIngestGateway } from './gateway/audio.ingest.gateway';
 import { ProviderFactory } from '../factory/provider.factory';
 import { BrokerModule } from '../message-broker/broker.module';
+import { AudioModule } from 'src/audio/audio.module';
 
 @Module({
-  imports: [AiModule, ChatModule, UserModule, forwardRef(() => BrokerModule)],
+  imports: [
+    AiModule,
+    ChatModule,
+    UserModule,
+    forwardRef(() => BrokerModule),
+    AudioModule,
+  ],
   providers: [
     AudioIngestService,
     OzonetelService,

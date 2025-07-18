@@ -20,7 +20,6 @@ import { Message, MessageType } from '../../common/entities/message.entity';
 import { AppConfigService } from '../../config/config.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { TranscriptionService } from '../../ai/service/transcription.service';
-import { Chat } from '../../common/entities/chat.entity';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,
@@ -617,23 +616,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       message,
       broadCastOptions: {
         event,
-      },
-    });
-  }
-
-  broadcastChatEndedEvent(chat: Chat) {
-    const chatId = chat.id;
-    const participants = [chat.counselorId, chat.clientId];
-    const message = {
-      chatId,
-      content: 'Chat ended',
-      messageType: MessageType.SYSTEM,
-    };
-    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_WEBRTC, {
-      participants,
-      message,
-      broadCastOptions: {
-        event: ChatEvents.CHAT_ENDED,
       },
     });
   }

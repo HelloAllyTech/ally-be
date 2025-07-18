@@ -3,13 +3,13 @@ import { LoggerService } from '../../logger/logger.service';
 import {
   DeepgramTranscriptMetadata,
   UserChatSessionData,
-} from '../type/chat.type';
+} from '../../chat/type/chat.type';
 import {
   CombinedSpeakerSegment,
   SpeakerSegment,
 } from '../../ai/type/transcription.type';
 import { AiService } from '../../ai/service/ai.service';
-import { ChatService } from './chat.service';
+import { ChatService } from '../../chat/service/chat.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { AppConfigService } from '../../config/config.service';
 import {
@@ -17,15 +17,17 @@ import {
   WithExecutionContext,
 } from '../../common/decorator/execution.context.decorator';
 import { processSequentially } from 'src/common/util/async.util';
-import { ChatEvents } from '../constants/chat.constants';
-import { ExecutionManager } from '../../common/execution/execution-manager';
+import { ChatEvents } from '../../chat/constants/chat.constants';
 import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
 import { ANONYMOUS_CLIENT_ID } from '../../common/constants/user.constants';
+import { TranscriptionService } from '../../ai/service/transcription.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { BroadcastMessageService } from './broadcast-message.service';
 
 @Injectable()
-export class MultiSpeakerAudioService {
+export class StreamTranscriptionService {
   private readonly logger = LoggerService.getInstance(
-    MultiSpeakerAudioService.name,
+    StreamTranscriptionService.name,
   );
 
   private speakers: { [key: string]: Array<{ id: number; role: string }> } = {};
@@ -41,6 +43,8 @@ export class MultiSpeakerAudioService {
     private chatService: ChatService,
     private publisher: MessageBrokerService,
     private config: AppConfigService,
+    private transcriptionService: TranscriptionService,
+    private broadcastMessageService: BroadcastMessageService,
   ) {}
   async addConversationSpeakers(session: UserChatSessionData) {
     const currentChatBuffer = this.chatBuffer[session.id];
@@ -309,6 +313,65 @@ export class MultiSpeakerAudioService {
         });
       }
     }
+  }
+
+  async startLiveTranscription(session: UserChatSessionData, options: any) {
+    await this.transcriptionService
+      .startLiveTranscription(
+        {
+          session,
+          chatId: session.chatId,
+          // { encoding: 'linear16', sample_rate: 8000 } is used for exotel call and microphone mobile chat
+          options: { diarize: true, ...options },
+        },
+        this.handleDeepgramTranscript.bind(this),
+      )
+      .catch((error) => {
+        this.logger.error(
+          `Error starting live transcription for chatId ${session.chatId}:`,
+          error,
+        );
+      });
+    this.broadcastMessageService.broadcastUserJoinedMessage(
+      MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
+      {
+        participants: [session.userId],
+        userId: session.userId,
+        chatId: session.chatId,
+      },
+    );
+  }
+
+  transcribeAudioData(
+    session: UserChatSessionData,
+    audioData: string,
+    shouldBroadcastAudioMessage: boolean,
+  ) {
+    const audioBuffer = Buffer.from(audioData, 'base64');
+
+    this.transcriptionService.sendAudio(session, audioBuffer);
+
+    if (session.userId !== -1 && shouldBroadcastAudioMessage) {
+      this.broadcastMessageService.broadcastAudioStreamMessage(
+        MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
+        {
+          participants: [session.userId],
+          userId: session.userId,
+          audioData: audioBuffer,
+          chatId: session.chatId,
+        },
+      );
+    }
+  }
+
+  endLiveTranscription(session: UserChatSessionData) {
+    this.transcriptionService.stopLiveTranscription(session);
+    this.broadcastMessageService.broadcastUserDisconnectedMessage(
+      MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
+      {
+        participants: [session.userId],
+      },
+    );
   }
 
   setAuthContext(session: UserChatSessionData) {

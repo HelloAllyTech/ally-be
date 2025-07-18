@@ -15,9 +15,11 @@ import { CallDetails } from '../common/entities/call.details.entity';
 import { ChatEventConsumer } from './event/chat.event.consumer';
 import { BrokerModule } from '../message-broker/broker.module';
 import { SettingsModule } from '../settings/settings.module';
-import { MultiSpeakerAudioService } from './service/multi-speaker-audio.service';
 import { MicrophoneChatGateway } from './gateway/microphone-chat.gateway';
+import { ChatAiController } from './controller/chat-ai.controller';
+import { ChatAiService } from './service/chat-ai-service';
 import { JwtService } from '@nestjs/jwt';
+import { AudioModule } from '../audio/audio.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Message, Chat, ChatRoom, Feedback, CallDetails]),
@@ -26,23 +28,19 @@ import { JwtService } from '@nestjs/jwt';
     AiModule,
     SettingsModule,
     forwardRef(() => BrokerModule),
+    forwardRef(() => AudioModule),
   ],
-  controllers: [ChatController],
+  controllers: [ChatController, ChatAiController],
   providers: [
     ChatService,
     ChatGateway,
     MicrophoneChatGateway,
     FeedbackService,
     ChatEventConsumer,
-    MultiSpeakerAudioService,
+    ChatAiService,
     JwtService,
   ],
-  exports: [
-    ChatService,
-    FeedbackService,
-    ChatGateway,
-    MultiSpeakerAudioService,
-  ],
+  exports: [ChatService, FeedbackService, ChatGateway],
 })
 export class ChatModule implements OnModuleInit {
   constructor(

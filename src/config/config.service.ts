@@ -36,6 +36,7 @@ export class AppConfigService {
       sentenceCompletionRequired:
         this.configService.get<string>('SENTENCE_COMPLETION_REQUIRED') ===
         'true',
+      apiKey: this.configService.get<string>('AI_SERVICE_API_KEY'),
     };
   }
 
@@ -108,7 +109,12 @@ export class AppConfigService {
     return {
       integration: this.configService.get<string>('EMAIL_INTEGRATION'),
       ses: {
-        sourceEmail: this.configService.get<string>('AWS_SES_SOURCE_EMAIL'),
+        region: this.configService.get<string>('SMTP_REGION'),
+        sourceEmail: this.configService.get<string>('SES_SOURCE_EMAIL'),
+        accessKeyId: this.configService.get<string>('SMTP_ACCESS_KEY_ID'),
+        secretAccessKey: this.configService.get<string>(
+          'SMTP_SECRET_ACCESS_KEY',
+        ),
       },
     };
   }
@@ -135,6 +141,18 @@ export class AppConfigService {
         url: this.configService.get<string>('METABASE_URL')!,
         apiKey: this.configService.get<string>('METABASE_API_KEY')!,
       },
+    };
+  }
+
+  get s3() {
+    return {
+      audioBucket: this.configService.get<string>('AUDIO_STORAGE_S3_BUCKET'),
+    };
+  }
+
+  get audioStorage() {
+    return {
+      dir: this.configService.get<string>('AUDIO_STORAGE_DIR'),
     };
   }
 }

@@ -30,10 +30,7 @@ export class UserService {
       return JSON.parse(cachedUser);
     }
     const user = await this.userRepository.findOne({
-      where: {
-        phone: phoneNumber,
-        tenantId: ExecutionManager.getTenantId(),
-      },
+      where: { phone: phoneNumber },
     });
     if (user) {
       await this.cache.set(`user_${phoneNumber}`, JSON.stringify(user));

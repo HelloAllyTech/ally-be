@@ -59,6 +59,7 @@ import {
   CallLogSortBy,
   SortOrder,
 } from '../dto/call-log.request.dto';
+import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 
 @Injectable()
 export class ChatService {
@@ -83,6 +84,7 @@ export class ChatService {
     private readonly publisher: MessageBrokerService,
     private dataSource: DataSource,
     private settingsService: SettingsService,
+    private broadcastMessageService: BroadcastMessageService,
 
     //  private kafkaProducerService: KafkaProducerService,
   ) {}
@@ -214,98 +216,82 @@ export class ChatService {
     tenantId,
     provider,
     platform,
+    entityManager,
   }: {
     clientId: number;
     counselorId?: number;
     tenantId?: string;
     provider?: AudioChatProvider;
     platform?: AudioChatPlatform;
+    entityManager?: EntityManager;
   }) {
-    return this.dataSource.transaction(async (entityManager) => {
-      const chatRepo = entityManager.getRepository(Chat) || this.chatRepository;
-      const chatRoomRepo =
-        entityManager.getRepository(ChatRoom) || this.chatRoomRepository;
+    const chatRepo = entityManager?.getRepository(Chat) || this.chatRepository;
+    const chatRoomRepo =
+      entityManager?.getRepository(ChatRoom) || this.chatRoomRepository;
+    const callDetailsRepo =
+      entityManager?.getRepository(CallDetails) || this.callDetailsRepository;
 
-      const newChatRoom = chatRoomRepo.create({
-        clientId,
-        counselorId,
-        tenantId: tenantId || ExecutionManager.getTenantId(),
-      });
-
-      await chatRoomRepo.save(newChatRoom);
-
-      const chat = chatRepo.create({
-        clientId,
-        counselorId,
-        roomId: newChatRoom.id,
-        status: ChatStatus.ACTIVE,
-        startedAt: new Date(),
-        tenantId: tenantId || ExecutionManager.getTenantId(),
-      });
-
-      await chatRepo.save(chat);
-
-      await this.callDetailsRepository.save({
-        chatId: chat.id,
-        tenantId: tenantId || ExecutionManager.getTenantId(),
-        startTime: new Date(),
-        callInfo: {
-          provider,
-          platform,
-        },
-      });
-
-      return chat;
+    const newChatRoom = chatRoomRepo.create({
+      clientId,
+      counselorId,
+      tenantId: tenantId || ExecutionManager.getTenantId(),
     });
+
+    await chatRoomRepo.save(newChatRoom);
+
+    const chat = chatRepo.create({
+      clientId,
+      counselorId,
+      roomId: newChatRoom.id,
+      status: ChatStatus.ACTIVE,
+      startedAt: new Date(),
+      tenantId: tenantId || ExecutionManager.getTenantId(),
+    });
+
+    await chatRepo.save(chat);
+
+    await callDetailsRepo.save({
+      chatId: chat.id,
+      tenantId: tenantId || ExecutionManager.getTenantId(),
+      startTime: new Date(),
+      callInfo: {
+        provider,
+        platform,
+      },
+    });
+
+    return chat;
   }
 
   async createChatForAnyonymousClient({
-    counselorPhone,
     counselorId,
     provider,
     platform,
+    entityManager,
   }: {
-    counselorPhone?: string;
-    counselorId?: number;
+    counselorId: number;
     provider?: AudioChatProvider;
     platform?: AudioChatPlatform;
+    entityManager?: EntityManager;
   }): Promise<{
     chatId: number;
     clientId: number;
     counselorId: number;
-    tenantId: string;
   } | null> {
-    if (!counselorPhone && !counselorId) {
-      return null;
-    }
-
-    let counselor: User | null = null;
-
-    if (counselorPhone) {
-      counselor = await this.userService.getUserByPhoneNumber(counselorPhone);
-    } else if (counselorId) {
-      counselor = await this.userService.get(counselorId);
-    }
-
-    if (!counselor) {
-      return null;
-    }
-
     const clientId = ANONYMOUS_CLIENT_ID;
 
     const chat = await this.createChatWithClientAndCounselor({
       clientId,
-      counselorId: counselor.id,
-      tenantId: counselor.tenantId,
+      counselorId,
       provider,
       platform,
+      entityManager,
     });
 
     return {
       chatId: chat.id,
       clientId: clientId,
-      counselorId: counselor.id,
-      tenantId: counselor.tenantId,
+      counselorId,
     };
   }
 
@@ -363,6 +349,17 @@ export class ChatService {
     });
     if (chat) {
       await this.cache.set(`chat:${chatId}`, JSON.stringify(chat));
+    }
+    return chat;
+  }
+
+  // Used only for service level integration
+  async getChatByIdForServiceCall(chatId: number) {
+    const chat = await this.chatRepository.findOne({
+      where: { id: chatId },
+    });
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
     }
     return chat;
   }
@@ -690,10 +687,28 @@ export class ChatService {
     });
     this.cache.del(`chat:${chatId}`);
     const updatedChat = await this.getChatById(chatId);
-    if (updatedChat) {
-      this.gateway.broadcastChatEndedEvent(updatedChat);
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId },
+    });
+    if (callDetails && updatedChat) {
+      const provider = callDetails.callInfo?.provider;
+      let channel;
+      let participants;
+      if (provider === AudioChatProvider.WEBRTC) {
+        channel = MessageBrokerChannel.CHAT_MESSAGE_WEBRTC;
+        participants = [updatedChat.counselorId!, updatedChat.clientId];
+
+        // This will generate summary and call info for webrtc chat
+        this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
+      } else {
+        channel = MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE;
+        participants = [updatedChat.counselorId!];
+      }
+      this.broadcastMessageService.broadcastChatEndedEvent(channel, {
+        participants,
+        chatId,
+      });
     }
-    this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
 
     return updatedChat;
   }
@@ -787,6 +802,46 @@ export class ChatService {
     );
   }
 
+  async updateCallMetadata(chatId: number) {
+    this.logger.info(`updateCallDetails:Start - chatId:${chatId}`);
+    try {
+      const chat = await this.getChatById(chatId);
+      if (!chat) {
+        this.logger.error(
+          `updateCallMetadata - chatId:${chatId} - chat not found`,
+        );
+        return;
+      }
+
+      const callDetails = await this.callDetailsRepository.findOne({
+        where: { chatId, tenantId: ExecutionManager.getTenantId() },
+      });
+
+      const startDate = chat.startedAt || new Date();
+      const endDate = chat.endedAt || new Date();
+
+      const callDurationInSeconds = ChatUtil.getCallDurationInSeconds(
+        startDate,
+        endDate,
+      );
+
+      if (callDetails) {
+        const existingCallInfo = callDetails.callInfo || {};
+        const updates = {
+          callInfo: {
+            ...existingCallInfo,
+            summaryName: ChatUtil.getSummaryName(chat),
+          },
+          endTime: endDate,
+          callDuration: callDurationInSeconds,
+        };
+        await this.callDetailsRepository.update({ chatId }, updates);
+      }
+    } catch (err) {
+      this.logger.error(`updateCallMetadata - chatId:${chatId} - error:${err}`);
+    }
+  }
+
   async updateMessageStatistics(chat: Chat) {
     this.logger.info(
       `updateMessageStatistics:Start - chatId:${chat.id} | startedAt:${chat.startedAt} | endedAt:${chat.endedAt}`,
@@ -800,16 +855,10 @@ export class ChatService {
       const startDate = chat.startedAt || new Date();
       const endDate = chat.endedAt || new Date();
 
-      const callDurationInSeconds =
-        chat.startedAt && chat.endedAt
-          ? Math.max(
-              0,
-              Math.floor(
-                (new Date(endDate).getTime() - new Date(startDate).getTime()) /
-                  1000,
-              ),
-            )
-          : 0;
+      const callDurationInSeconds = ChatUtil.getCallDurationInSeconds(
+        startDate,
+        endDate,
+      );
 
       // get word count by language
       const wordCountByLanguage = await this.getWordCountByLanguage(chat.id);

@@ -12,7 +12,9 @@ import {
   UserRole,
 } from '../../common/constants/user.constants';
 import { SummaryPreferenceValue } from '../../common/type/common.type';
+import { DEFAULT_CHAT_TYPES } from '../constants/settings.constants';
 import * as _ from 'lodash';
+import { ChatTypes } from '../../common/constants/chat.constants';
 
 @Injectable()
 export class SettingsService {
@@ -153,6 +155,76 @@ export class SettingsService {
       relatedId,
       relatedEntity,
       value: { status },
+      tenantId: ExecutionManager.getTenantId(),
+    });
+  }
+
+  async getChatTypes(): Promise<string[]> {
+    const tenantId = ExecutionManager.getTenantId();
+
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+
+    const hiddenChatTypes = await this.getHiddenChatTypesForEntity(
+      tenantId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+
+    const visibleChatTypes = DEFAULT_CHAT_TYPES.filter(
+      (type) => !hiddenChatTypes.includes(type),
+    );
+    return visibleChatTypes;
+  }
+
+  async getHiddenChatTypesForEntity(
+    relatedId: string,
+    relatedEntity: string,
+  ): Promise<string[]> {
+    const preference = await this.preferenceService.getPreference(
+      PreferenceName.HIDDEN_CHAT_TYPES,
+      relatedId,
+      relatedEntity,
+    );
+
+    if (!preference?.value) {
+      return [];
+    }
+
+    const hiddenChatTypes = preference.value as string[];
+    return Array.isArray(hiddenChatTypes) ? hiddenChatTypes : [];
+  }
+
+  async updateChatTypes(chatTypes: string[]) {
+    const invalidChatTypes = chatTypes.filter(
+      (type) => !DEFAULT_CHAT_TYPES.includes(type as ChatTypes),
+    );
+    if (invalidChatTypes.length > 0) {
+      throw new BadRequestException(
+        `Invalid chat types - ${invalidChatTypes.join(', ')}`,
+      );
+    }
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+    const existingPreference = await this.preferenceService.getPreference(
+      PreferenceName.HIDDEN_CHAT_TYPES,
+      tenantId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+    if (existingPreference) {
+      return await this.preferenceService.updatePreference(
+        existingPreference.id,
+        chatTypes,
+      );
+    }
+
+    return await this.preferenceService.createPreference({
+      name: PreferenceName.HIDDEN_CHAT_TYPES,
+      relatedId: tenantId,
+      relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+      value: chatTypes,
       tenantId: ExecutionManager.getTenantId(),
     });
   }

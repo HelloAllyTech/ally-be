@@ -1,5 +1,4 @@
-import { Controller, Get, Body, UseGuards, Patch, Put } from '@nestjs/common';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { Controller, Get, Body, Put } from '@nestjs/common';
 import { SettingsService } from '../service/settings.service';
 import {
   ApiTags,
@@ -78,5 +77,35 @@ export class SettingsController {
   @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   updateNudgeStatus(@Body() body: { status: boolean }) {
     return this.service.updateNudgeStatus(body.status);
+  }
+
+  @Get('chat-types')
+  @ApiOperation({ summary: 'Get hidden chat types' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the hidden chat types',
+  })
+  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  getChatTypes() {
+    return this.service.getChatTypes();
+  }
+
+  @Put('chat-types')
+  @ApiOperation({ summary: 'Update hidden chat types' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        hiddenChatTypes: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Hidden chat types updated successfully',
+  })
+  @AuthRoles(UserRole.ADMIN)
+  updateHiddenChatTypes(@Body() body: { hiddenChatTypes: string[] }) {
+    return this.service.updateChatTypes(body.hiddenChatTypes);
   }
 }

@@ -2,6 +2,10 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+RUN mkdir -p /tmp/audio_storage
+
+RUN mkdir -p /mnt/audio_storage
+
 COPY package*.json ./
 
 RUN npm install --legacy-peer-deps
