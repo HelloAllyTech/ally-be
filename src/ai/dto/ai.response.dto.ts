@@ -64,3 +64,5 @@ export interface GetReferenceDocumentResponse {
 export interface DeleteReferenceDocumentResponse {
   success: boolean;
 }
+
+export type TranscribeAudioResponse = boolean;

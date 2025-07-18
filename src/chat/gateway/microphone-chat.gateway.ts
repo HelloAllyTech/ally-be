@@ -13,23 +13,25 @@ import {
   AudioChatPlatform,
   AudioChatProvider,
 } from '../../common/constants/chat.constants';
-import { UserRole } from 'src/common/constants/user.constants';
+import {
+  PLACEHOLDER_CHAT_ID,
+  UserRole,
+} from '../../common/constants/user.constants';
 import { MessagePayload, UserChatSessionData } from '../type/chat.type';
 import { ChatEvents } from '../constants/chat.constants';
-import { TranscriptionService } from '../../ai/service/transcription.service';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,
 } from '../../common/decorator/execution.context.decorator';
 import { ExecutionManager } from '../../common/execution/execution-manager';
-import { MultiSpeakerAudioService } from '../service/multi-speaker-audio.service';
+import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
 import { Message, MessageType } from '../../common/entities/message.entity';
-import { UserService } from '../../user/user.service';
 import { ChatStatus } from '../../common/entities/chat.entity';
 import { JwtService } from '@nestjs/jwt';
 import { AppConfigService } from '../../config/config.service';
+import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -48,12 +50,11 @@ export class MicrophoneChatGateway
 
   constructor(
     private chatService: ChatService,
-    private transcriptionService: TranscriptionService,
-    private multiSpeakerAudioService: MultiSpeakerAudioService,
+    private streamFileProcessorService: StreamFileProcessorService,
     private publisher: MessageBrokerService,
-    private userService: UserService,
     private jwtService: JwtService,
     private configService: AppConfigService,
+    private broadcastMessageService: BroadcastMessageService,
   ) {}
 
   @WebSocketServer() server!: Server;
@@ -86,22 +87,14 @@ export class MicrophoneChatGateway
       this.logger.error(`Session not found for client ${sid}`);
       return;
     }
-    this.connectedUsers.delete(+session.userId);
-    this.transcriptionService.stopLiveTranscription(session);
-
-    if (session.chatId) {
-      this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
+    this.broadcastMessageService.broadcastUserDisconnectedMessage(
+      MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
+      {
         participants: [session.userId],
-        message: {
-          content: 'User disconnected',
-          messageType: MessageType.SYSTEM,
-          userId: session.userId,
-        },
-        broadCastOptions: {
-          event: ChatEvents.USER_DISCONNECTED,
-        },
-      });
-    }
+      },
+    );
+    this.connectedUsers.delete(+session.userId);
+    delete this.sessions[sid];
   }
 
   sendMessagesToRoom(room: string, payload: MessagePayload) {
@@ -126,7 +119,10 @@ export class MicrophoneChatGateway
       return;
     }
     participants.forEach((participant) => {
-      if (this.connectedUsers.has(participant)) {
+      if (
+        this.connectedUsers.has(participant) ||
+        broadCastOptions?.event === ChatEvents.USER_DISCONNECTED
+      ) {
         const room = `user-${participant}`;
         this.sendMessagesToRoom(room, {
           type: broadCastOptions?.event || ChatEvents.MESSAGE_RECEIVED,
@@ -168,7 +164,7 @@ export class MicrophoneChatGateway
         role: UserRole.COUNSELOR,
         room,
         provider: AudioChatProvider.MICROPHONE,
-        chatId: -99,
+        chatId: PLACEHOLDER_CHAT_ID,
         tenantId: user.tenantId,
       };
 
@@ -205,19 +201,58 @@ export class MicrophoneChatGateway
     {
       isLinear16Encoded,
       platform,
-    }: { isLinear16Encoded?: boolean; platform: AudioChatPlatform },
+      activeChatId,
+      sampleRate,
+    }: {
+      isLinear16Encoded?: boolean;
+      platform: AudioChatPlatform;
+      activeChatId?: number;
+      sampleRate?: number;
+    },
   ) {
     this.logger.info(
-      `Client ${client.id} start audio chat with isLinear16Encoded: ${isLinear16Encoded}`,
+      `Client ${client.id} start audio chat with activeChatId: ${activeChatId} | isLinear16Encoded: ${isLinear16Encoded} | platform: ${platform} | sampleRate: ${sampleRate}`,
     );
 
     const session = this.sessions[client.id];
     if (!session) {
-      this.logger.error(`❌ Session not found for client ${client.id}`);
+      this.logger.error(
+        `Audio chat start event received but session not found for client ${client.id}`,
+      );
       return;
     }
 
     this.setAuthContext(session);
+
+    // if activeChatId is provided, we are resuming an existing chat
+    if (activeChatId) {
+      const { chat, callDetails } =
+        await this.chatService.getChatWithCallDetails(activeChatId);
+      if (
+        chat?.status !== ChatStatus.ACTIVE ||
+        callDetails?.callInfo?.provider !== AudioChatProvider.MICROPHONE
+      ) {
+        this.logger.info(
+          `Chat ${activeChatId} is not active or provider is not microphone, disconnecting client`,
+        );
+        this.streamFileProcessorService.clearPendingAudioQueue(client.id);
+        client.disconnect();
+        return;
+      }
+
+      this.sessions[client.id] = {
+        ...this.sessions[client.id],
+        chatId: activeChatId,
+      };
+
+      // already started call stream for this chat, so we need to update the call stream id
+      this.streamFileProcessorService.updateCallStreamId(
+        activeChatId,
+        client.id,
+      );
+      return;
+    }
+
     const activeChat = await this.chatService.getChatsByCouncilorId(
       session.userId,
       { status: ChatStatus.ACTIVE },
@@ -229,97 +264,61 @@ export class MicrophoneChatGateway
       return;
     }
 
-    const chat = await this.chatService.createChatForAnyonymousClient({
-      counselorId: session.userId,
-      provider: AudioChatProvider.MICROPHONE,
-      platform,
-    });
+    // Start call stream with chat creation in transaction
+    try {
+      await this.streamFileProcessorService.startCallStream(
+        session,
+        {
+          counselorId: session.userId,
+          provider: AudioChatProvider.MICROPHONE,
+          platform,
+          sampleRate,
+        },
+        (chatId: number) => {
+          // Update session with chatId
+          this.sessions[client.id] = {
+            ...this.sessions[client.id],
+            chatId,
+          };
 
-    if (!chat) {
-      this.logger.error(`❌ Failed to create chat for client ${client.id}`);
+          this.logger.info(
+            `Chat created for user ${session.userId} with chatId ${chatId}`,
+          );
+        },
+      );
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to start call stream for client ${client.id}:`,
+        error,
+      );
       client.disconnect();
       return;
     }
-
-    const chatId = chat.chatId;
-
-    const updatedSession = {
-      ...session,
-      chatId,
-    };
-
-    this.sessions[client.id] = updatedSession;
-
-    this.logger.info(
-      `Chat create for user ${session.userId} with chatId ${chat.chatId}`,
-    );
-
-    await this.transcriptionService
-      .startLiveTranscription(
-        {
-          session: updatedSession,
-          chatId,
-          options: {
-            diarize: true,
-            ...(isLinear16Encoded && {
-              encoding: 'linear16',
-              sample_rate: 16000,
-            }),
-          },
-        },
-        this.multiSpeakerAudioService.handleDeepgramTranscript.bind(
-          this.multiSpeakerAudioService,
-        ),
-      )
-      .catch((error) => {
-        this.logger.error(
-          `Error starting live transcription for chatId ${chatId}:`,
-          error,
-        );
-      });
-
-    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
-      participants: [updatedSession.userId],
-      message: {
-        userId: updatedSession.userId,
-        chatId,
-        content: 'User joined audio chat',
-        messageType: MessageType.SYSTEM,
-      },
-      broadCastOptions: {
-        event: ChatEvents.USER_JOINED,
-      },
-    });
   }
 
   @SubscribeMessage(ChatEvents.AUDIO_MESSAGE)
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleAudioMessage(
     client: Socket,
-    { chatId, audioData }: { chatId: number; audioData: string },
+    { audioData }: { audioData: string },
   ) {
-    const isChatPaused = await this.chatService.isChatPaused(chatId);
+    const session = this.sessions[client.id];
+    if (!session) {
+      this.logger.error(
+        `Audio message event received but session not found for client ${client.id}`,
+      );
+      return;
+    }
+    const chatId = session.chatId;
+    const isChatPaused =
+      session.chatId === PLACEHOLDER_CHAT_ID
+        ? false
+        : await this.chatService.isChatPaused(chatId);
     if (isChatPaused) {
       this.logger.info(`Chat is paused for chatId ${chatId}`);
       return;
     }
-    try {
-      const session = this.sessions[client.id];
-      if (!session) {
-        this.logger.error(`Session not found for client ${client.id}`);
-        return;
-      }
-      //! Need to set the auth context before persisting and broadcasting the message
-      this.setAuthContext(session);
-      const audioDataBuffer = Buffer.from(audioData, 'base64');
-      this.transcriptionService
-        .sendAudio(session, audioDataBuffer)
-        .catch((error) => {
-          this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
-        });
-    } catch (error) {
-      this.logger.error(`Error sending audio to chatId ${chatId}:`, error);
-    }
+    this.streamFileProcessorService.saveAudio(session, audioData);
   }
 
   @SubscribeMessage(ChatEvents.AUDIO_CHAT_PAUSED)
@@ -328,7 +327,9 @@ export class MicrophoneChatGateway
     this.logger.info(`Audio chat nudge paused for chatId ${chatId}`);
     const session = this.sessions[client.id];
     if (!session) {
-      this.logger.error(`Session not found for client ${client.id}`);
+      this.logger.error(
+        `Audio chat paused event received but session not found for client ${client.id}`,
+      );
       return;
     }
     this.setAuthContext(session);
@@ -341,11 +342,47 @@ export class MicrophoneChatGateway
     this.logger.info(`Audio chat Nudge resumed for chatId ${chatId}`);
     const session = this.sessions[client.id];
     if (!session) {
-      this.logger.error(`Session not found for client ${client.id}`);
+      this.logger.error(
+        `Audio chat resumed event received but session not found for client ${client.id}`,
+      );
       return;
     }
     this.setAuthContext(session);
     await this.chatService.pauseOrResumeChat(chatId, false);
+  }
+
+  @SubscribeMessage(ChatEvents.AUDIO_CHAT_ENDED)
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
+  async handleAudioChatEnded(client: Socket, { chatId }: { chatId: number }) {
+    const session = this.sessions[client.id];
+    this.logger.info(
+      `End event received for client ${client.id} | session chatId: ${session.chatId} | chatId: ${chatId}`,
+    );
+
+    if (!session) {
+      this.logger.error(
+        `Audio chat ended event received but session not found for client ${client.id}`,
+      );
+      return;
+    }
+
+    if (session.chatId === PLACEHOLDER_CHAT_ID) {
+      if (chatId) {
+        this.sessions[client.id] = {
+          ...this.sessions[client.id],
+          chatId,
+        };
+        session.chatId = chatId;
+      } else {
+        this.logger.error(
+          `Ending chat for client ${client.id} as there is no chatId provided`,
+        );
+        return;
+      }
+    }
+    this.setAuthContext(session);
+    await this.chatService.endChat(session.userId, session.chatId);
+    this.streamFileProcessorService.endCallStream(session);
   }
 
   subscribeToMicrophoneChatMessage() {
