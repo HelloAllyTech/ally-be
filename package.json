@@ -4,7 +4,7 @@
   "description": "Lifeline Chat Backend",
   "author": "antony.v@keyvalue.systems",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",

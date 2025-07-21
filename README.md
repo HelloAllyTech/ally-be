@@ -1,6 +1,8 @@
 
 # 📞 Helpline Counseling Platform
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A real-time mental health counseling platform built with NestJS that connects patients with counselors through voice communication. Now upgraded with AI-powered call transcription, live nudges, summaries, and analytics.
 
 ---
