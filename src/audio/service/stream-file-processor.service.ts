@@ -96,7 +96,10 @@ export class StreamFileProcessorService {
     const activeCalls = Object.values(this.activeCallStreams);
     const activeCall = activeCalls.find((call) => call.chatId === chatId);
     if (activeCall) {
-      this.activeCallStreams[callId] = activeCall;
+      this.activeCallStreams[callId] = {
+        ...activeCall,
+        id: callId,
+      };
       delete this.activeCallStreams[activeCall.id];
     }
   }
