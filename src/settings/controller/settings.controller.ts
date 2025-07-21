@@ -80,10 +80,10 @@ export class SettingsController {
   }
 
   @Get('chat-types')
-  @ApiOperation({ summary: 'Get hidden chat types' })
+  @ApiOperation({ summary: 'Get enabled chat types' })
   @ApiResponse({
     status: 200,
-    description: 'Returns the hidden chat types',
+    description: 'Returns the enabled chat types',
   })
   @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
   getChatTypes() {
