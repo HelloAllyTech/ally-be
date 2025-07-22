@@ -117,10 +117,10 @@ jobs:
           PROJECT_PREFIX=${{ steps.vars.outputs.PROJECT_PREFIX }}
           PROJECT_REGION=${{  steps.vars.outputs.PROJECT_REGION  }}
           echo "ECS_CLUSTER=$PROJECT_PREFIX-$PROJECT_REGION-ecs-cluster"  >> $GITHUB_OUTPUT
-          echo "ECS_SERVICE=$PROJECT_PREFIX-svc-corev2" >> $GITHUB_OUTPUT
-          echo "ECR_IMAGE=$PROJECT_PREFIX-ecr-corev2" >> $GITHUB_OUTPUT
-          echo "TASK_DEFINITION=$PROJECT_PREFIX-td-corev2" >> $GITHUB_OUTPUT
-          echo "CONTAINER_NAME=$PROJECT_PREFIX-cntr-corev2" >> $GITHUB_OUTPUT
+          echo "ECS_SERVICE=$PROJECT_PREFIX-svc-core" >> $GITHUB_OUTPUT
+          echo "ECR_IMAGE=$PROJECT_PREFIX-ecr-core" >> $GITHUB_OUTPUT
+          echo "TASK_DEFINITION=$PROJECT_PREFIX-td-core" >> $GITHUB_OUTPUT
+          echo "CONTAINER_NAME=$PROJECT_PREFIX-cntr-core" >> $GITHUB_OUTPUT
           echo "ENVIRONMENT_BUCKET=$PROJECT_PREFIX-s3-environment"  >> $GITHUB_OUTPUT
           echo ":seedling: Branch:${GITHUB_REF#refs/heads/}" >> $GITHUB_STEP_SUMMARY
   build:
@@ -180,8 +180,8 @@ jobs:
         with:
           aws-region: ${{ vars[env.AWS_REGION] }}
           aws-role: ${{ vars[env.AWS_ROLE] }}
-          task-definition: "ally-dev-td-core-dbmigrate"
-          container-name: "ally-dev-cntr-core-dbmigrate"
+          task-definition: "${{ needs.prepare-env.outputs.TASK_DEFINITION }}-dbmigrate"
+          container-name: "${{ needs.prepare-env.outputs.CONTAINER_NAME }}-dbmigrate"
           ecs-cluster: ${{ needs.prepare-env.outputs.ECS_CLUSTER }}
           image: ${{ needs.build.outputs.APP_IMAGE }}
           subnets: ${{ needs.prepare-env.outputs.SUBNETS }}
