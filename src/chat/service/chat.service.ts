@@ -572,6 +572,8 @@ export class ChatService {
       context: message.context,
       createdAt: message.createdAt.toISOString(),
       feedback: message.feedback,
+      startSeconds: message.startSeconds,
+      endSeconds: message.endSeconds,
     };
   }
 
