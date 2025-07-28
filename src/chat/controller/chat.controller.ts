@@ -329,8 +329,8 @@ export class ChatController {
 
   @AuthRoles(UserRole.COUNSELOR, UserRole.CLIENT)
   @Post(':id/end')
-  async endChat(@CurrentUser() tokenUser: TokenUser, @Param('id') id: string) {
-    return this.service.endChat(tokenUser.id, parseInt(id));
+  async endChat(@Param('id') id: string) {
+    return this.service.endChat(parseInt(id));
   }
 
   @AuthRoles(UserRole.CLIENT)

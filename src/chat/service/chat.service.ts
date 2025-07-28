@@ -60,6 +60,8 @@ import {
   SortOrder,
 } from '../dto/call-log.request.dto';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
+import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
+import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
 
 @Injectable()
 export class ChatService {
@@ -85,8 +87,7 @@ export class ChatService {
     private dataSource: DataSource,
     private settingsService: SettingsService,
     private broadcastMessageService: BroadcastMessageService,
-
-    //  private kafkaProducerService: KafkaProducerService,
+    private streamFileProcessorService: StreamFileProcessorService,
   ) {}
 
   async getChat(id: number) {
@@ -673,7 +674,7 @@ export class ChatService {
     return chat?.status === ChatStatus.ENDED;
   }
 
-  async endChat(id: number, chatId: number) {
+  async endChat(chatId: number) {
     const chat = await this.getChatById(chatId);
     if (!chat) {
       throw new HttpException('Chat not found', 404);
@@ -689,27 +690,9 @@ export class ChatService {
     });
     this.cache.del(`chat:${chatId}`);
     const updatedChat = await this.getChatById(chatId);
-    const callDetails = await this.callDetailsRepository.findOne({
-      where: { chatId },
-    });
-    if (callDetails && updatedChat) {
-      const provider = callDetails.callInfo?.provider;
-      let channel;
-      let participants;
-      if (provider === AudioChatProvider.WEBRTC) {
-        channel = MessageBrokerChannel.CHAT_MESSAGE_WEBRTC;
-        participants = [updatedChat.counselorId!, updatedChat.clientId];
-
-        // This will generate summary and call info for webrtc chat
-        this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
-      } else {
-        channel = MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE;
-        participants = [updatedChat.counselorId!];
-      }
-      this.broadcastMessageService.broadcastChatEndedEvent(channel, {
-        participants,
-        chatId,
-      });
+    if (updatedChat) {
+      this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
+      this.logger.info(`chat ended event emitted - chat:${chatId}`);
     }
 
     return updatedChat;
@@ -788,10 +771,37 @@ export class ChatService {
 
   async handleChatEnded(chat: Chat) {
     this.logger.info(`handleChatEnded - chat:${chat.id}`);
-    await Promise.allSettled([
-      this.updateSummaryAndTags(chat),
-      this.updateMessageStatistics(chat),
-    ]);
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId: chat.id, tenantId: ExecutionManager.getTenantId() },
+    });
+    const provider = callDetails?.callInfo?.provider;
+
+    const channel = findMessageBrokerChannelUsingProvider(provider!);
+    let participants;
+
+    if (provider === AudioChatProvider.WEBRTC) {
+      participants = [chat.counselorId!, chat.clientId];
+      await Promise.allSettled([
+        this.updateSummaryAndTags(chat),
+        this.updateMessageStatistics(chat, callDetails),
+      ]);
+    } else if (
+      provider === AudioChatProvider.MICROPHONE ||
+      provider === AudioChatProvider.EXOTEL_CONFERENCE_CALL
+    ) {
+      participants = [chat.counselorId!];
+      await this.streamFileProcessorService.endCallStream({
+        chatId: chat.id,
+        provider,
+      });
+
+      if (channel) {
+        this.broadcastMessageService.broadcastChatEndedEvent(channel, {
+          participants,
+          chatId: chat.id,
+        });
+      }
+    }
   }
 
   async updateSummaryAndTags(chat: Chat) {
@@ -844,7 +854,7 @@ export class ChatService {
     }
   }
 
-  async updateMessageStatistics(chat: Chat) {
+  async updateMessageStatistics(chat: Chat, callDetails?: CallDetails | null) {
     this.logger.info(
       `updateMessageStatistics:Start - chatId:${chat.id} | startedAt:${chat.startedAt} | endedAt:${chat.endedAt}`,
     );
@@ -914,9 +924,12 @@ export class ChatService {
             )
           : 0;
 
-      const callDetails = await this.callDetailsRepository.findOne({
-        where: { chatId, tenantId: ExecutionManager.getTenantId() },
-      });
+      if (!callDetails) {
+        callDetails = await this.callDetailsRepository.findOne({
+          where: { chatId, tenantId: ExecutionManager.getTenantId() },
+        });
+      }
+
       const existingCallInfo = callDetails?.callInfo || {};
 
       const updates = {

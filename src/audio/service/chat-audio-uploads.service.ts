@@ -55,12 +55,19 @@ export class ChatAudioUploadsService {
     }
   }
 
-  async updateAudioUploadStatus(
+  async updateAudioUpload(
     chatId: number,
-    status: ChatAudioUploadStatus,
+    data: {
+      status?: ChatAudioUploadStatus;
+      sampleRate?: number;
+    },
   ): Promise<ChatAudioUploads> {
+    const { status, sampleRate } = data || {};
     try {
-      await this.chatAudioUploadRepository.update({ chatId }, { status });
+      await this.chatAudioUploadRepository.update(
+        { chatId },
+        { status, sampleRate },
+      );
 
       const updatedUpload = await this.chatAudioUploadRepository.findOne({
         where: { chatId },

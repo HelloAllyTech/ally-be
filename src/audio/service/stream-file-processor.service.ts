@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import { LoggerService } from '../../logger/logger.service';
@@ -20,7 +20,8 @@ import { BroadcastMessageService } from './broadcast-message.service';
 import { AppConfigService } from '../../config/config.service';
 import { ChatService } from '../../chat/service/chat.service';
 import { AiService } from '../../ai/service/ai.service';
-import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
+import { PLACEHOLDER_CHAT_ID } from '../../common/constants/user.constants';
+import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
 
 @Injectable()
 export class StreamFileProcessorService {
@@ -29,6 +30,7 @@ export class StreamFileProcessorService {
     private chatAudioUploadsService: ChatAudioUploadsService,
     private dataSource: DataSource,
     private broadcastMessageService: BroadcastMessageService,
+    @Inject(forwardRef(() => ChatService))
     private chatService: ChatService,
     private config: AppConfigService,
     private aiService: AiService,
@@ -57,9 +59,8 @@ export class StreamFileProcessorService {
         tempFilePath: string;
         bufferSize: number;
       }[];
+      callId: string;
       chatId: number;
-      id: string;
-      sampleRate: number;
     };
   } = {};
 
@@ -90,18 +91,6 @@ export class StreamFileProcessorService {
     const day = String(now.getDate()).padStart(2, '0');
     const timestamp = now.getTime();
     return `${year}/${month}/${day}/chat-${chatId}-${timestamp}.raw`;
-  }
-
-  async updateCallStreamId(chatId: number, callId: string) {
-    const activeCalls = Object.values(this.activeCallStreams);
-    const activeCall = activeCalls.find((call) => call.chatId === chatId);
-    if (activeCall) {
-      this.activeCallStreams[callId] = {
-        ...activeCall,
-        id: callId,
-      };
-      delete this.activeCallStreams[activeCall.id];
-    }
   }
 
   async startCallStream(
@@ -217,7 +206,7 @@ export class StreamFileProcessorService {
         entityManager,
       );
 
-      this.activeCallStreams[callId] = {
+      this.activeCallStreams[chatId] = {
         parts: [],
         uploadId: UploadId!,
         key,
@@ -236,18 +225,15 @@ export class StreamFileProcessorService {
           },
         ],
         chatId,
-        id: callId,
-        sampleRate,
+        callId,
       };
 
-      this.broadcastMessageService.broadcastUserJoinedMessage(
-        MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
-        {
-          participants: [session.userId],
-          userId: session.userId,
-          chatId,
-        },
-      );
+      const channel = findMessageBrokerChannelUsingProvider(session.provider!);
+      this.broadcastMessageService.broadcastUserJoinedMessage(channel!, {
+        participants: [session.userId],
+        userId: session.userId,
+        chatId,
+      });
       this.logger.info(
         `Call stream started with dual files | Key: ${key} | ChatId: ${chatId} | Provider: ${session.provider}`,
       );
@@ -319,11 +305,17 @@ export class StreamFileProcessorService {
     }
   }
 
-  private async flushFileAsPart(
-    session: UserChatSessionData,
-    activeCallStream: ActiveCallStream,
-    fileToFlushIndex: number,
-  ) {
+  private async flushFileAsPart({
+    chatId,
+    activeCallStream,
+    fileToFlushIndex,
+    provider,
+  }: {
+    chatId: number;
+    activeCallStream: ActiveCallStream;
+    fileToFlushIndex: number;
+    provider?: AudioChatProvider;
+  }) {
     // Get the file to flush (the one that's not currently active)
     const fileToFlush = activeCallStream.files[fileToFlushIndex];
 
@@ -341,7 +333,7 @@ export class StreamFileProcessorService {
     });
 
     this.logger.info(
-      `Flushed file ${fileToFlushIndex} as part | ETag: ${ETag} | PartNumber: ${activeCallStream.partNumber} | Key: ${activeCallStream.key} | ChatId: ${session.chatId} | Provider: ${session.provider}`,
+      `Flushed file ${fileToFlushIndex} as part | ETag: ${ETag} | PartNumber: ${activeCallStream.partNumber} | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
     );
 
     activeCallStream.parts.push({
@@ -352,7 +344,7 @@ export class StreamFileProcessorService {
     // Reset the flushed file for next use
     const newTempFilePath = path.join(
       this.config.audioStorage.dir!,
-      `chat-${session.chatId}-${fileToFlushIndex}.part`,
+      `chat-${chatId}-${fileToFlushIndex}.part`,
     );
     fileToFlush.tempFilePath = newTempFilePath;
     fileToFlush.fileWriteStream = fs.createWriteStream(newTempFilePath);
@@ -363,21 +355,34 @@ export class StreamFileProcessorService {
 
   saveAudio(
     session: UserChatSessionData,
-    audioBase64: string,
-    shouldBroadcastAudioMessage?: boolean,
+    {
+      chatId,
+      audioBase64,
+      shouldBroadcastAudioMessage,
+    }: {
+      chatId: number;
+      audioBase64: string;
+      shouldBroadcastAudioMessage?: boolean;
+    },
   ) {
-    const callId = session.id;
-    const activeCallStream = this.activeCallStreams[callId];
     const audioData = Buffer.from(audioBase64, 'base64');
-    if (!activeCallStream) {
-      this.logger.error(
-        `No active stream for call: ${callId} and chatId: ${session.chatId}`,
-      );
-      this.addToPendingAudioQueue(callId, audioData);
+
+    if (chatId === PLACEHOLDER_CHAT_ID) {
+      this.addToPendingAudioQueue(session.id, audioData);
       return;
     }
 
-    const audioBuffer = this.processPendingAudioQueue(callId, audioData);
+    const activeCallStream = this.activeCallStreams[chatId];
+
+    if (!activeCallStream) {
+      this.logger.error(`No active stream for chatId: ${chatId}`);
+      return;
+    }
+
+    const audioBuffer = this.processPendingAudioQueue(
+      activeCallStream.callId,
+      audioData,
+    );
 
     // Write to current active file
     const currentFileIndex = activeCallStream.currentFileIndex;
@@ -388,19 +393,22 @@ export class StreamFileProcessorService {
     // Check if we need to flush the current file
     if (currentFile.bufferSize >= this.MIN_PART_SIZE) {
       activeCallStream.currentFileIndex = currentFileIndex === 0 ? 1 : 0;
-      this.flushFileAsPart(session, activeCallStream, currentFileIndex);
+      this.flushFileAsPart({
+        chatId,
+        activeCallStream,
+        fileToFlushIndex: currentFileIndex,
+        provider: session.provider!,
+      });
     }
 
     if (shouldBroadcastAudioMessage) {
-      this.broadcastMessageService.broadcastAudioStreamMessage(
-        MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
-        {
-          participants: [session.userId],
-          userId: session.userId,
-          audioData: audioBuffer,
-          chatId: session.chatId,
-        },
-      );
+      const channel = findMessageBrokerChannelUsingProvider(session.provider!);
+      this.broadcastMessageService.broadcastAudioStreamMessage(channel!, {
+        participants: [session.userId],
+        userId: session.userId,
+        audioData: audioBuffer,
+        chatId: chatId,
+      });
     }
   }
 
@@ -426,39 +434,42 @@ export class StreamFileProcessorService {
   }
 
   private handleEmptyFile(activeCallStream: ActiveCallStream, chatId: number) {
-    this.chatAudioUploadsService.updateAudioUploadStatus(
-      chatId,
-      ChatAudioUploadStatus.FAILED,
-    );
+    this.chatAudioUploadsService.updateAudioUpload(chatId, {
+      status: ChatAudioUploadStatus.FAILED,
+    });
 
     this.cleanUpTemporaryFiles(
       activeCallStream.files?.map((file) => file.tempFilePath) || [],
       chatId,
     );
-
-    this.chatService.updateCallMetadata(chatId);
   }
 
-  async endCallStream(session: UserChatSessionData) {
-    const callId = session.id;
-    const activeCallStream = this.activeCallStreams[callId];
+  async endCallStream({
+    chatId,
+    provider,
+  }: {
+    chatId: number;
+    provider?: AudioChatProvider;
+  }) {
+    const activeCallStream = this.activeCallStreams[chatId];
     if (!activeCallStream) return;
 
-    delete this.activeCallStreams[callId];
-    delete this.pendingAudioQueue[callId];
+    delete this.activeCallStreams[chatId];
 
     const currentFileIndex = activeCallStream.currentFileIndex;
     const currentFile = activeCallStream.files[currentFileIndex];
+    this.chatService.updateCallMetadata(chatId);
 
     try {
       // Check if we have any parts (multipart upload) or just small files
       if (activeCallStream.parts.length > 0) {
         if (currentFile.bufferSize > 0) {
-          await this.flushFileAsPart(
-            session,
+          await this.flushFileAsPart({
+            chatId,
             activeCallStream,
-            currentFileIndex,
-          );
+            fileToFlushIndex: currentFileIndex,
+            provider,
+          });
         }
         // Use multipart upload for large files
         await this.s3Service.completeMultipartUploadWithParts({
@@ -476,20 +487,20 @@ export class StreamFileProcessorService {
             UploadId: activeCallStream.uploadId,
           });
           this.logger.debug(
-            `Aborted multipart upload for regular upload | Key: ${activeCallStream.key} | ChatId: ${session.chatId} | Provider: ${session.provider}`,
+            `Aborted multipart upload for regular upload | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
           );
         } catch (abortErr) {
           this.logger.warn(
-            `Failed to abort multipart upload | Key: ${activeCallStream.key} | Error: ${abortErr.message} | ChatId: ${session.chatId} | Provider: ${session.provider}`,
+            `Failed to abort multipart upload | Key: ${activeCallStream.key} | Error: ${abortErr.message} | ChatId: ${chatId} | Provider: ${provider}`,
           );
         }
 
         if (activeCallStream.files[0].bufferSize === 0) {
           this.logger.info(
-            `No audio data in file 0 | Key: ${activeCallStream.key} | ChatId: ${session.chatId} | Provider: ${session.provider}`,
+            `No audio data in file 0 | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
           );
 
-          this.handleEmptyFile(activeCallStream, session.chatId);
+          this.handleEmptyFile(activeCallStream, chatId);
 
           return;
         }
@@ -508,20 +519,22 @@ export class StreamFileProcessorService {
       }
 
       this.logger.info(
-        `Call stream upload completed | Key: ${activeCallStream.key} | ChatId: ${session.chatId} | Provider: ${session.provider}`,
+        `Call stream upload completed | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
       );
 
-      this.chatAudioUploadsService.updateAudioUploadStatus(
-        session.chatId,
-        ChatAudioUploadStatus.SUCCESS,
+      const audioUpload = await this.chatAudioUploadsService.updateAudioUpload(
+        chatId,
+        {
+          status: ChatAudioUploadStatus.SUCCESS,
+        },
       );
+
+      const sampleRate = audioUpload.sampleRate;
 
       this.cleanUpTemporaryFiles(
         activeCallStream.files?.map((file) => file.tempFilePath) || [],
-        session.chatId,
+        chatId,
       );
-
-      this.chatService.updateCallMetadata(session.chatId);
 
       const presignedUrl = await this.s3Service.generatePresignedUrl({
         bucket: this.config.s3.audioBucket!,
@@ -532,22 +545,22 @@ export class StreamFileProcessorService {
       this.aiService
         .transcribeAudioAndSummarize({
           presigned_url: presignedUrl,
-          chat_id: session.chatId,
-          sample_rate: activeCallStream.sampleRate,
+          chat_id: chatId,
+          sample_rate: sampleRate!,
         })
         .catch((err) => {
           this.logger.error(
-            `Error transcribing audio for chatId ${session.chatId}:`,
+            `Error transcribing audio for chatId ${chatId}:`,
             err,
           );
         });
 
       this.logger.info(
-        `Call stream end completed | Key: ${activeCallStream.key} | ChatId: ${session.chatId} | Provider: ${session.provider}`,
+        `Call stream end completed | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
       );
     } catch (err) {
       this.logger.error(
-        `Call stream end failed with error: ${err.message} | Key: ${activeCallStream.key} | ChatId: ${session.chatId} | Provider: ${session.provider}`,
+        `Call stream end failed with error: ${err.message} | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
         err,
       );
     }
