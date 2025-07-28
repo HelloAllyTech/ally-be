@@ -62,6 +62,7 @@ import {
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
+import { AddNoteDto } from '../dto/notes.dto';
 
 @Injectable()
 export class ChatService {
@@ -1453,6 +1454,12 @@ export class ChatService {
         : 'N/A';
     summary += `Listening Share: ${listeningShare}%\n`;
 
+    if (callDetails?.callInfo?.notes) {
+      summary += `\nNotes\n`;
+      summary += `=====\n`;
+      summary += `${callDetails.callInfo.notes}\n`;
+    }
+
     // // Counselor impressions
     // if (ChatUtil.isCounselorImpressionsAvailable(summaryInfo)) {
     //   summary += `Counselor Impressions\n`;
@@ -1788,5 +1795,31 @@ export class ChatService {
     });
     this.cache.del(`chat:${chatId}`);
     return { success: true };
+  }
+
+  async addNoteToSession(
+    chatId: number,
+    createNoteDto: AddNoteDto,
+  ): Promise<string> {
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+
+    if (!callDetails) {
+      throw new NotFoundException(`Call details not found for chat ${chatId}`);
+    }
+
+    const existingCallInfo = callDetails.callInfo || {};
+    const updatedCallInfo = {
+      ...existingCallInfo,
+      notes: createNoteDto.content,
+    };
+
+    await this.callDetailsRepository.update(
+      { chatId, tenantId: ExecutionManager.getTenantId() },
+      { callInfo: updatedCallInfo },
+    );
+
+    return createNoteDto.content;
   }
 }

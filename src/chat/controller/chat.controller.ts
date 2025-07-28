@@ -36,6 +36,7 @@ import { GetMessagesResponse } from '../dto/message.response.dto';
 import { CallLogSortBy, SortOrder } from '../dto/call-log.request.dto';
 import { PaginatedResponse } from '../../common/type/common.type';
 import { CounselorNameResponse } from '../dto/call-log.response.dto';
+import { AddNoteDto } from '../dto/notes.dto';
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -584,5 +585,26 @@ export class ChatController {
   @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   async tagPositivityRatings(@Body() body: { tags: string[] }) {
     return this.service.tagPositivityRatings(body.tags);
+  }
+
+  @Post(':id/notes')
+  @ApiOperation({ summary: 'Add a note to a session' })
+  @ApiResponse({
+    status: 201,
+    description: 'Note added successfully',
+    type: String,
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    type: Number,
+    description: 'Chat ID',
+  })
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  async addNoteToChat(
+    @Param('id') chatId: number,
+    @Body() createNoteDto: AddNoteDto,
+  ): Promise<string> {
+    return this.service.addNoteToSession(chatId, createNoteDto);
   }
 }
