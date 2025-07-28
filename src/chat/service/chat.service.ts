@@ -779,6 +779,10 @@ export class ChatService {
     const channel = findMessageBrokerChannelUsingProvider(provider!);
     let participants;
 
+    this.logger.info(
+      `handleChatEnded - chat:${chat.id} | provider:${provider}`,
+    );
+
     if (provider === AudioChatProvider.WEBRTC) {
       participants = [chat.counselorId!, chat.clientId];
       await Promise.allSettled([

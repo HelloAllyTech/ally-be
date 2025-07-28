@@ -452,7 +452,12 @@ export class StreamFileProcessorService {
     provider?: AudioChatProvider;
   }) {
     const activeCallStream = this.activeCallStreams[chatId];
-    if (!activeCallStream) return;
+    if (!activeCallStream) {
+      this.logger.error(
+        `End call stream failed: No active stream for chatId: ${chatId} | Provider: ${provider}`,
+      );
+      return;
+    }
 
     delete this.activeCallStreams[chatId];
 
