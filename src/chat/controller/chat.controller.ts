@@ -37,6 +37,7 @@ import { CallLogSortBy, SortOrder } from '../dto/call-log.request.dto';
 import { PaginatedResponse } from '../../common/type/common.type';
 import { CounselorNameResponse } from '../dto/call-log.response.dto';
 import { AddNoteDto } from '../dto/notes.dto';
+import { ChatSummaryService } from '../service/chat-summary.service';
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -46,6 +47,7 @@ export class ChatController {
   constructor(
     private service: ChatService,
     private readonly feedbackService: FeedbackService,
+    private readonly chatSummaryService: ChatSummaryService,
   ) {}
 
   @AuthRoles(UserRole.CLIENT, UserRole.COUNSELOR)
@@ -539,7 +541,7 @@ export class ChatController {
     @CurrentUser() tokenUser: TokenUser,
     @Res() res: Response,
   ): Promise<void> {
-    const { summary, fileName } = await this.service.exportSummary(
+    const { summary, fileName } = await this.chatSummaryService.exportSummary(
       tokenUser,
       chatId,
     );

@@ -44,3 +44,48 @@ export const LANGUAGE_MAP = {
   ml: 'Malayalam',
   en: 'English',
 };
+
+export const SESSION_FIELDS = [
+  'sessionSummary',
+  'counselingProcessFlow',
+  'keyConcerns',
+  'subjectiveObservations',
+  'objectiveObservations',
+  'assessment',
+  'dominantFeelings',
+  'issuesWorkedOn',
+  'keyTherapeuticTechniques',
+  'referralsProvided',
+  'homework',
+  'planForNextCall',
+];
+
+export const METRIC_FIELDS = [
+  'reflectiveQuestionsAsked',
+  'openEndedQuestionsAsked',
+  'emotionalLift',
+  'listeningShare',
+];
+
+export const OTHER_FIELDS = [
+  'callId',
+  'callDuration',
+  'callDate',
+  'callTime',
+  'clientId',
+  'counsellor',
+  'callType',
+  'tags',
+  'callQuality',
+  'newCallFollowUp',
+];
+
+export const DEMOGRAPHIC_FIELDS = [
+  'age',
+  'gender',
+  'location',
+  'profession',
+  'relationshipStatus',
+  'languages',
+  'codeOfConcern',
+];

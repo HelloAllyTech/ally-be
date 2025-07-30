@@ -4,6 +4,7 @@ import { Chat } from '../common/entities/chat.entity';
 import { ChatRoom } from '../common/entities/chat-room.entity';
 import { Message } from '../common/entities/message.entity';
 import { ChatService } from './service/chat.service';
+import { ChatSummaryService } from './service/chat-summary.service';
 import { QueueModule } from '../queue/queue.module';
 import { ChatController } from './controller/chat.controller';
 import { ChatGateway } from './gateway/chat.gateway';
@@ -33,6 +34,7 @@ import { AudioModule } from '../audio/audio.module';
   controllers: [ChatController, ChatAiController],
   providers: [
     ChatService,
+    ChatSummaryService,
     ChatGateway,
     MicrophoneChatGateway,
     FeedbackService,
