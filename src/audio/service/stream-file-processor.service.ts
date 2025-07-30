@@ -235,13 +235,13 @@ export class StreamFileProcessorService {
         chatId,
       });
       this.logger.info(
-        `Call stream started with dual files | Key: ${key} | ChatId: ${chatId} | Provider: ${session.provider}`,
+        `Call stream started with dual files | ChatId: ${chatId} | Provider: ${session.provider}`,
       );
 
       return { uploadId: UploadId!, files: tempFiles, key };
     } catch (err) {
       this.logger.error(
-        `Call stream start failed with error: ${err.message} | Key: ${key} | ChatId: ${chatId} | Provider: ${session.provider}`,
+        `Call stream start failed with error: ${err.message} | ChatId: ${chatId} | Provider: ${session.provider}`,
         err,
       );
       throw err;
@@ -333,7 +333,7 @@ export class StreamFileProcessorService {
     });
 
     this.logger.info(
-      `Flushed file ${fileToFlushIndex} as part | ETag: ${ETag} | PartNumber: ${activeCallStream.partNumber} | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
+      `Flushed file ${fileToFlushIndex} as part | ETag: ${ETag} | PartNumber: ${activeCallStream.partNumber} | ChatId: ${chatId} | Provider: ${provider}`,
     );
 
     activeCallStream.parts.push({
@@ -492,17 +492,17 @@ export class StreamFileProcessorService {
             UploadId: activeCallStream.uploadId,
           });
           this.logger.debug(
-            `Aborted multipart upload for regular upload | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
+            `Aborted multipart upload for regular upload | ChatId: ${chatId} | Provider: ${provider}`,
           );
         } catch (abortErr) {
           this.logger.warn(
-            `Failed to abort multipart upload | Key: ${activeCallStream.key} | Error: ${abortErr.message} | ChatId: ${chatId} | Provider: ${provider}`,
+            `Failed to abort multipart upload | Error: ${abortErr.message} | ChatId: ${chatId} | Provider: ${provider}`,
           );
         }
 
         if (activeCallStream.files[0].bufferSize === 0) {
           this.logger.info(
-            `No audio data in file 0 | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
+            `No audio data in file 0 | ChatId: ${chatId} | Provider: ${provider}`,
           );
 
           this.handleEmptyFile(activeCallStream, chatId);
@@ -524,7 +524,7 @@ export class StreamFileProcessorService {
       }
 
       this.logger.info(
-        `Call stream upload completed | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
+        `Call stream upload completed | ChatId: ${chatId} | Provider: ${provider}`,
       );
 
       const audioUpload = await this.chatAudioUploadsService.updateAudioUpload(
@@ -561,11 +561,11 @@ export class StreamFileProcessorService {
         });
 
       this.logger.info(
-        `Call stream end completed | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
+        `Call stream end completed | ChatId: ${chatId} | Provider: ${provider}`,
       );
     } catch (err) {
       this.logger.error(
-        `Call stream end failed with error: ${err.message} | Key: ${activeCallStream.key} | ChatId: ${chatId} | Provider: ${provider}`,
+        `Call stream end failed with error: ${err.message} | ChatId: ${chatId} | Provider: ${provider}`,
         err,
       );
     }

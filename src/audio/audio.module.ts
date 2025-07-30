@@ -28,6 +28,7 @@ import { ChatAudioUploads } from '../common/entities/chat-audio-uploads.entity';
     StreamFileProcessorService,
     StreamTranscriptionService,
     BroadcastMessageService,
+    ChatAudioUploadsService,
   ],
 })
 export class AudioModule {}

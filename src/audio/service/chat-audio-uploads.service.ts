@@ -59,14 +59,16 @@ export class ChatAudioUploadsService {
     chatId: number,
     data: {
       status?: ChatAudioUploadStatus;
-      sampleRate?: number;
+      sampleRate?: number | null;
+      storageKey?: string | null;
+      format?: string | null;
     },
   ): Promise<ChatAudioUploads> {
-    const { status, sampleRate } = data || {};
+    const { status, sampleRate, storageKey } = data || {};
     try {
       await this.chatAudioUploadRepository.update(
         { chatId },
-        { status, sampleRate },
+        { status, sampleRate, storageKey },
       );
 
       const updatedUpload = await this.chatAudioUploadRepository.findOne({
@@ -89,5 +91,17 @@ export class ChatAudioUploadsService {
       );
       throw error;
     }
+  }
+
+  async getAudioUpload(chatId: number): Promise<ChatAudioUploads> {
+    const audioUpload = await this.chatAudioUploadRepository.findOne({
+      where: { chatId },
+    });
+
+    if (!audioUpload) {
+      throw new Error(`Audio upload not found for chatId: ${chatId}`);
+    }
+
+    return audioUpload;
   }
 }

@@ -21,6 +21,7 @@ import { ChatAiController } from './controller/chat-ai.controller';
 import { ChatAiService } from './service/chat-ai-service';
 import { JwtService } from '@nestjs/jwt';
 import { AudioModule } from '../audio/audio.module';
+import { AwsModule } from 'src/aws/aws.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Message, Chat, ChatRoom, Feedback, CallDetails]),
@@ -30,6 +31,7 @@ import { AudioModule } from '../audio/audio.module';
     SettingsModule,
     forwardRef(() => BrokerModule),
     forwardRef(() => AudioModule),
+    AwsModule,
   ],
   controllers: [ChatController, ChatAiController],
   providers: [

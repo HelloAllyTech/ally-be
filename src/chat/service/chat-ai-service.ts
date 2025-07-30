@@ -18,6 +18,9 @@ import {
   WithExecutionContext,
 } from '../../common/decorator/execution.context.decorator';
 import { ExecutionManager } from '../../common/execution/execution-manager';
+import { S3Service } from '../../aws/service/s3.service';
+import { AppConfigService } from '../../config/config.service';
+import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
 
 @Injectable()
 export class ChatAiService {
@@ -27,6 +30,9 @@ export class ChatAiService {
     @InjectRepository(Message)
     private readonly messageRepository: Repository<Message>,
     private readonly chatService: ChatService,
+    private readonly s3Service: S3Service,
+    private readonly config: AppConfigService,
+    private readonly chatAudioUploadsService: ChatAudioUploadsService,
   ) {}
 
   private readonly logger = LoggerService.getInstance(ChatAiService.name);
@@ -91,6 +97,23 @@ export class ChatAiService {
       this.logger.info(
         `Transcript added for chatId: ${chatId} from ai service`,
       );
+      const uploadedAudioFile =
+        await this.chatAudioUploadsService.getAudioUpload(chatId);
+      if (
+        !this.config.isDevelopment &&
+        uploadedAudioFile &&
+        uploadedAudioFile.storageKey
+      ) {
+        await this.s3Service.deleteObject({
+          bucket: this.config.s3.audioBucket!,
+          key: uploadedAudioFile.storageKey,
+        });
+        await this.chatAudioUploadsService.updateAudioUpload(chatId, {
+          storageKey: null,
+          sampleRate: null,
+          format: null,
+        });
+      }
       return true;
     } catch (error) {
       this.logger.error(
