@@ -99,11 +99,10 @@ export class ChatAiService {
       );
       const uploadedAudioFile =
         await this.chatAudioUploadsService.getAudioUpload(chatId);
-      if (
-        !this.config.isDevelopment &&
-        uploadedAudioFile &&
-        uploadedAudioFile.storageKey
-      ) {
+      if (uploadedAudioFile && uploadedAudioFile.storageKey) {
+        this.logger.info(
+          `Deleting audio file for chatId: ${chatId} from ai service`,
+        );
         await this.s3Service.deleteObject({
           bucket: this.config.s3.audioBucket!,
           key: uploadedAudioFile.storageKey,
