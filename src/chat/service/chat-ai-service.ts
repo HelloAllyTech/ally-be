@@ -99,7 +99,11 @@ export class ChatAiService {
       );
       const uploadedAudioFile =
         await this.chatAudioUploadsService.getAudioUpload(chatId);
-      if (uploadedAudioFile && uploadedAudioFile.storageKey) {
+      if (
+        !this.config.isDevelopment &&
+        uploadedAudioFile &&
+        uploadedAudioFile.storageKey
+      ) {
         this.logger.info(
           `Deleting audio file for chatId: ${chatId} from ai service`,
         );

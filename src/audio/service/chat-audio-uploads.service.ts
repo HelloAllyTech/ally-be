@@ -64,11 +64,11 @@ export class ChatAudioUploadsService {
       format?: string | null;
     },
   ): Promise<ChatAudioUploads> {
-    const { status, sampleRate, storageKey } = data || {};
+    const { status, sampleRate, storageKey, format } = data || {};
     try {
       await this.chatAudioUploadRepository.update(
         { chatId },
-        { status, sampleRate, storageKey },
+        { status, sampleRate, storageKey, format },
       );
 
       const updatedUpload = await this.chatAudioUploadRepository.findOne({
