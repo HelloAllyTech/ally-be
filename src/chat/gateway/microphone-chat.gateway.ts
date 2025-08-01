@@ -93,7 +93,17 @@ export class MicrophoneChatGateway
       session.chatId !== null ||
       session.chatId !== PLACEHOLDER_CHAT_ID
     ) {
-      this.chatService.endChat(session.chatId);
+      const chat = await this.chatService.getChatById(session.chatId);
+      if (chat?.status === ChatStatus.ACTIVE) {
+        await this.chatService.endChat(session.chatId);
+        this.logger.info(
+          `Session disconnect: Chat ended for client ${clientId} | session chatId: ${session.chatId} | chatId: ${chat?.id}`,
+        );
+      } else {
+        this.logger.error(
+          `Session disconnect: Chat is not active for client ${clientId} | session chatId: ${session.chatId} | chatId: ${chat?.id} | chat status: ${chat?.status}`,
+        );
+      }
     }
     this.broadcastMessageService.broadcastUserDisconnectedMessage(
       MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
