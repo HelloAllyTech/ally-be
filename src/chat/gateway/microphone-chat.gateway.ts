@@ -93,15 +93,11 @@ export class MicrophoneChatGateway
       session.chatId !== null ||
       session.chatId !== PLACEHOLDER_CHAT_ID
     ) {
-      const chat = await this.chatService.getChatById(session.chatId);
-      if (chat?.status === ChatStatus.ACTIVE) {
+      try {
         await this.chatService.endChat(session.chatId);
-        this.logger.info(
-          `Session disconnect: Chat ended for client ${clientId} | session chatId: ${session.chatId} | chatId: ${chat?.id}`,
-        );
-      } else {
+      } catch (error) {
         this.logger.error(
-          `Session disconnect: Chat is not active for client ${clientId} | session chatId: ${session.chatId} | chatId: ${chat?.id} | chat status: ${chat?.status}`,
+          `❌ Failed to end chat for client ${clientId} | session chatId: ${session.chatId} | error: ${error.message}`,
         );
       }
     }
