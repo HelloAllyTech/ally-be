@@ -86,6 +86,15 @@ export class MicrophoneChatGateway
       this.logger.error(`Session not found for client ${clientId}`);
       return;
     }
+    // only chat will be ended if valid chatId is provided
+    // this will be triggered only from the platform where the chat is started
+    if (
+      session.chatId !== undefined ||
+      session.chatId !== null ||
+      session.chatId !== PLACEHOLDER_CHAT_ID
+    ) {
+      this.chatService.endChat(session.chatId);
+    }
     this.broadcastMessageService.broadcastUserDisconnectedMessage(
       MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
       {
@@ -270,8 +279,7 @@ export class MicrophoneChatGateway
     client: Socket,
     { audioData, chatId }: { audioData: string; chatId: number },
   ) {
-    const session = this.sessions[client.id];
-    if (!session) {
+    if (!this.sessions[client.id]) {
       this.logger.error(
         `Audio message event received but session not found for client ${client.id} | chatId: ${chatId}`,
       );
@@ -290,6 +298,11 @@ export class MicrophoneChatGateway
       );
       return;
     }
+    this.sessions[client.id] = {
+      ...this.sessions[client.id],
+      chatId,
+    };
+    const session = this.sessions[client.id];
     const isChatEnded = await this.chatService.isChatEnded(chatId);
     if (isChatEnded) {
       this.logger.error(
