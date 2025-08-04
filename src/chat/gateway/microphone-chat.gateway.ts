@@ -89,8 +89,8 @@ export class MicrophoneChatGateway
     // only chat will be ended if valid chatId is provided
     // this will be triggered only from the platform where the chat is started
     if (
-      session.chatId !== undefined ||
-      session.chatId !== null ||
+      session.chatId !== undefined &&
+      session.chatId !== null &&
       session.chatId !== PLACEHOLDER_CHAT_ID
     ) {
       try {
