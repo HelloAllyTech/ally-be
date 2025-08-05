@@ -34,7 +34,7 @@ export class CallDetails extends BaseEntity {
   summary?: FlattenedSummaryNotePayloadCamelCase;
 
   @Column({ type: 'text', nullable: true })
-  callOutcome?: string; // Outcome of thse call
+  callOutcome?: string; // Outcome of the call
 
   @Column({ type: 'jsonb', nullable: true })
   callInfo?: CallInfo; // Additional information about the call

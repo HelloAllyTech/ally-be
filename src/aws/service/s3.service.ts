@@ -17,6 +17,9 @@ import {
   AbortMultipartUploadCommand,
   AbortMultipartUploadCommandInput,
   AbortMultipartUploadCommandOutput,
+  DeleteObjectCommand,
+  DeleteObjectCommandInput,
+  DeleteObjectCommandOutput,
   S3ClientConfig,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -133,5 +136,26 @@ export class S3Service {
         Parts: sortedParts,
       },
     });
+  }
+
+  async deleteObject(params: {
+    bucket: string;
+    key: string;
+  }): Promise<DeleteObjectCommandOutput> {
+    const { bucket, key } = params;
+
+    const deleteParams: DeleteObjectCommandInput = {
+      Bucket: bucket,
+      Key: key,
+    };
+
+    try {
+      const result = await this.s3.send(new DeleteObjectCommand(deleteParams));
+      return result;
+    } catch (error) {
+      throw new Error(
+        `Failed to delete object ${key} from bucket ${bucket}: ${error.message}`,
+      );
+    }
   }
 }

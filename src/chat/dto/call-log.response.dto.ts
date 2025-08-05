@@ -51,9 +51,12 @@ export class CallInfo {
   @ApiProperty({ required: false })
   pauseChat?: boolean;
 
-  // Call intiated platform
+  // Call initiated platform
   @ApiProperty({ required: false })
   platform?: AudioChatPlatform;
+
+  @ApiProperty({ required: false })
+  notes?: string;
 }
 
 export class CallDetails {

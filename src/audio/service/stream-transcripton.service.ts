@@ -18,11 +18,11 @@ import {
 } from '../../common/decorator/execution.context.decorator';
 import { processSequentially } from 'src/common/util/async.util';
 import { ChatEvents } from '../../chat/constants/chat.constants';
-import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
 import { ANONYMOUS_CLIENT_ID } from '../../common/constants/user.constants';
 import { TranscriptionService } from '../../ai/service/transcription.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { BroadcastMessageService } from './broadcast-message.service';
+import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
 
 @Injectable()
 export class StreamTranscriptionService {
@@ -172,11 +172,12 @@ export class StreamTranscriptionService {
     };
 
     if (sender.role === 'counselor') {
+      const channel = findMessageBrokerChannelUsingProvider(session.provider!);
       await this.chatService.triggerNudge(
         completedMessage,
         sessionData,
         chatId,
-        MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
+        channel!,
       );
     }
   }
@@ -258,8 +259,11 @@ export class StreamTranscriptionService {
           },
         );
         const participants = [session.userId];
+        const channel = findMessageBrokerChannelUsingProvider(
+          session.provider!,
+        );
         // for now handling both microphone and exotel messages in the same channel
-        this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
+        this.publisher.publish(channel!, {
           participants,
           message: {
             ...message,
@@ -332,14 +336,12 @@ export class StreamTranscriptionService {
           error,
         );
       });
-    this.broadcastMessageService.broadcastUserJoinedMessage(
-      MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
-      {
-        participants: [session.userId],
-        userId: session.userId,
-        chatId: session.chatId,
-      },
-    );
+    const channel = findMessageBrokerChannelUsingProvider(session.provider!);
+    this.broadcastMessageService.broadcastUserJoinedMessage(channel!, {
+      participants: [session.userId],
+      userId: session.userId,
+      chatId: session.chatId,
+    });
   }
 
   transcribeAudioData(
@@ -352,26 +354,23 @@ export class StreamTranscriptionService {
     this.transcriptionService.sendAudio(session, audioBuffer);
 
     if (session.userId !== -1 && shouldBroadcastAudioMessage) {
-      this.broadcastMessageService.broadcastAudioStreamMessage(
-        MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
-        {
-          participants: [session.userId],
-          userId: session.userId,
-          audioData: audioBuffer,
-          chatId: session.chatId,
-        },
-      );
+      const channel = findMessageBrokerChannelUsingProvider(session.provider!);
+      this.broadcastMessageService.broadcastAudioStreamMessage(channel!, {
+        participants: [session.userId],
+        userId: session.userId,
+        audioData: audioBuffer,
+        chatId: session.chatId,
+      });
     }
   }
 
   endLiveTranscription(session: UserChatSessionData) {
     this.transcriptionService.stopLiveTranscription(session);
-    this.broadcastMessageService.broadcastUserDisconnectedMessage(
-      MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
-      {
-        participants: [session.userId],
-      },
-    );
+    const channel = findMessageBrokerChannelUsingProvider(session.provider!);
+    this.broadcastMessageService.broadcastUserDisconnectedMessage(channel!, {
+      participants: [session.userId],
+      userId: session.userId,
+    });
   }
 
   setAuthContext(session: UserChatSessionData) {

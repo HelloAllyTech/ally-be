@@ -15,8 +15,8 @@ export class ChatAudioUploads extends BaseEntity {
   @Column({ type: 'integer' })
   chatId!: number;
 
-  @Column({ type: 'varchar', length: 500 })
-  storageKey!: string;
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  storageKey?: string | null;
 
   @Column({
     type: 'varchar',
@@ -26,8 +26,8 @@ export class ChatAudioUploads extends BaseEntity {
   status!: ChatAudioUploadStatus;
 
   @Column({ type: 'integer', nullable: true })
-  sampleRate?: number;
+  sampleRate?: number | null;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
-  format?: string;
+  format?: string | null;
 }

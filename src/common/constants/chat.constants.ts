@@ -5,7 +5,7 @@ export enum QueueStatus {
 
 export enum AudioChatProvider {
   WEBRTC = 'WEBRTC',
-  EXOTEL = 'EXOTEL',
+  EXOTEL_CONFERENCE_CALL = 'EXOTEL_CONFERENCE_CALL',
   MICROPHONE = 'MICROPHONE',
 }
 
