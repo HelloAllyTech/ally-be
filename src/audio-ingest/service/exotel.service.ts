@@ -73,9 +73,9 @@ export class ExotelService implements AudioIngestInterface {
       userId: -1,
       user: null,
       role: UserRole.COUNSELOR,
-      room: `user-${-1}`,
+      room: 'placeholder-room',
       tenantId: 'default',
-      provider: AudioChatProvider.EXOTEL,
+      provider: AudioChatProvider.EXOTEL_CONFERENCE_CALL,
     };
 
     let counselorPhone = messageData.start?.from;
@@ -145,7 +145,7 @@ export class ExotelService implements AudioIngestInterface {
         updatedSession,
         {
           counselorId: session.userId,
-          provider: AudioChatProvider.EXOTEL,
+          provider: AudioChatProvider.EXOTEL_CONFERENCE_CALL,
           sampleRate: EXOTEL_SAMPLE_RATE,
         },
         (chatId: number) => {
@@ -212,7 +212,11 @@ export class ExotelService implements AudioIngestInterface {
       return;
     }
 
-    this.streamFileProcessorService.saveAudio(session, audioData, true);
+    this.streamFileProcessorService.saveAudio(session, {
+      chatId: session.chatId,
+      audioBase64: audioData,
+      shouldBroadcastAudioMessage: true,
+    });
   }
 
   private createEmptyPCMAudioPacket(): string {
@@ -288,9 +292,7 @@ export class ExotelService implements AudioIngestInterface {
 
     this.setAuthContext(session);
 
-    await this.chatService.endChat(-1, session.chatId);
-
-    this.streamFileProcessorService.endCallStream(session);
+    this.chatService.endChat(session.chatId);
 
     this.clearKeepAliveData(streamSid);
     delete this.sessions[streamSid];

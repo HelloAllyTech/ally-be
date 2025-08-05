@@ -4,6 +4,7 @@ import { Chat } from '../common/entities/chat.entity';
 import { ChatRoom } from '../common/entities/chat-room.entity';
 import { Message } from '../common/entities/message.entity';
 import { ChatService } from './service/chat.service';
+import { ChatSummaryService } from './service/chat-summary.service';
 import { QueueModule } from '../queue/queue.module';
 import { ChatController } from './controller/chat.controller';
 import { ChatGateway } from './gateway/chat.gateway';
@@ -20,6 +21,7 @@ import { ChatAiController } from './controller/chat-ai.controller';
 import { ChatAiService } from './service/chat-ai-service';
 import { JwtService } from '@nestjs/jwt';
 import { AudioModule } from '../audio/audio.module';
+import { AwsModule } from 'src/aws/aws.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Message, Chat, ChatRoom, Feedback, CallDetails]),
@@ -29,10 +31,12 @@ import { AudioModule } from '../audio/audio.module';
     SettingsModule,
     forwardRef(() => BrokerModule),
     forwardRef(() => AudioModule),
+    AwsModule,
   ],
   controllers: [ChatController, ChatAiController],
   providers: [
     ChatService,
+    ChatSummaryService,
     ChatGateway,
     MicrophoneChatGateway,
     FeedbackService,

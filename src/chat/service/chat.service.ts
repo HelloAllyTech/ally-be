@@ -19,7 +19,7 @@ import {
 } from '../../common/constants/chat.constants';
 import { ChatGateway } from '../gateway/chat.gateway';
 import { UserService } from '../../user/user.service';
-import { ChatEvents, LANGUAGE_MAP } from '../constants/chat.constants';
+import { ChatEvents } from '../constants/chat.constants';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { User } from '../../common/entities/user.entity';
@@ -60,6 +60,9 @@ import {
   SortOrder,
 } from '../dto/call-log.request.dto';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
+import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
+import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
+import { AddNoteDto } from '../dto/notes.dto';
 
 @Injectable()
 export class ChatService {
@@ -85,8 +88,7 @@ export class ChatService {
     private dataSource: DataSource,
     private settingsService: SettingsService,
     private broadcastMessageService: BroadcastMessageService,
-
-    //  private kafkaProducerService: KafkaProducerService,
+    private streamFileProcessorService: StreamFileProcessorService,
   ) {}
 
   async getChat(id: number) {
@@ -572,6 +574,8 @@ export class ChatService {
       context: message.context,
       createdAt: message.createdAt.toISOString(),
       feedback: message.feedback,
+      startSeconds: message.startSeconds,
+      endSeconds: message.endSeconds,
     };
   }
 
@@ -671,7 +675,7 @@ export class ChatService {
     return chat?.status === ChatStatus.ENDED;
   }
 
-  async endChat(id: number, chatId: number) {
+  async endChat(chatId: number) {
     const chat = await this.getChatById(chatId);
     if (!chat) {
       throw new HttpException('Chat not found', 404);
@@ -687,27 +691,9 @@ export class ChatService {
     });
     this.cache.del(`chat:${chatId}`);
     const updatedChat = await this.getChatById(chatId);
-    const callDetails = await this.callDetailsRepository.findOne({
-      where: { chatId },
-    });
-    if (callDetails && updatedChat) {
-      const provider = callDetails.callInfo?.provider;
-      let channel;
-      let participants;
-      if (provider === AudioChatProvider.WEBRTC) {
-        channel = MessageBrokerChannel.CHAT_MESSAGE_WEBRTC;
-        participants = [updatedChat.counselorId!, updatedChat.clientId];
-
-        // This will generate summary and call info for webrtc chat
-        this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
-      } else {
-        channel = MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE;
-        participants = [updatedChat.counselorId!];
-      }
-      this.broadcastMessageService.broadcastChatEndedEvent(channel, {
-        participants,
-        chatId,
-      });
+    if (updatedChat) {
+      this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
+      this.logger.info(`chat ended event emitted - chat:${chatId}`);
     }
 
     return updatedChat;
@@ -786,10 +772,41 @@ export class ChatService {
 
   async handleChatEnded(chat: Chat) {
     this.logger.info(`handleChatEnded - chat:${chat.id}`);
-    await Promise.allSettled([
-      this.updateSummaryAndTags(chat),
-      this.updateMessageStatistics(chat),
-    ]);
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId: chat.id, tenantId: ExecutionManager.getTenantId() },
+    });
+    const provider = callDetails?.callInfo?.provider;
+
+    const channel = findMessageBrokerChannelUsingProvider(provider!);
+    let participants;
+
+    this.logger.info(
+      `handleChatEnded - chat:${chat.id} | provider:${provider}`,
+    );
+
+    if (provider === AudioChatProvider.WEBRTC) {
+      participants = [chat.counselorId!, chat.clientId];
+      await Promise.allSettled([
+        this.updateSummaryAndTags(chat),
+        this.updateMessageStatistics(chat, callDetails),
+      ]);
+    } else if (
+      provider === AudioChatProvider.MICROPHONE ||
+      provider === AudioChatProvider.EXOTEL_CONFERENCE_CALL
+    ) {
+      participants = [chat.counselorId!];
+      await this.streamFileProcessorService.endCallStream({
+        chatId: chat.id,
+        provider,
+      });
+
+      if (channel) {
+        this.broadcastMessageService.broadcastChatEndedEvent(channel, {
+          participants,
+          chatId: chat.id,
+        });
+      }
+    }
   }
 
   async updateSummaryAndTags(chat: Chat) {
@@ -842,7 +859,7 @@ export class ChatService {
     }
   }
 
-  async updateMessageStatistics(chat: Chat) {
+  async updateMessageStatistics(chat: Chat, callDetails?: CallDetails | null) {
     this.logger.info(
       `updateMessageStatistics:Start - chatId:${chat.id} | startedAt:${chat.startedAt} | endedAt:${chat.endedAt}`,
     );
@@ -912,9 +929,12 @@ export class ChatService {
             )
           : 0;
 
-      const callDetails = await this.callDetailsRepository.findOne({
-        where: { chatId, tenantId: ExecutionManager.getTenantId() },
-      });
+      if (!callDetails) {
+        callDetails = await this.callDetailsRepository.findOne({
+          where: { chatId, tenantId: ExecutionManager.getTenantId() },
+        });
+      }
+
       const existingCallInfo = callDetails?.callInfo || {};
 
       const updates = {
@@ -1300,184 +1320,6 @@ export class ChatService {
     return aiResponse.tags;
   }
 
-  async exportSummary(
-    tokenUser: TokenUser,
-    chatId: number,
-  ): Promise<{ summary: string; fileName: string }> {
-    const { chat, callDetails } = await this.getChatWithCallDetails(chatId);
-    if (!chat) {
-      throw new NotFoundException(`Chat with ID ${chatId} not found`);
-    }
-
-    if (
-      tokenUser.role !== UserRole.SUPER_ADMIN &&
-      tokenUser.role !== UserRole.ADMIN &&
-      tokenUser.id !== chat.counselorId
-    ) {
-      throw new ForbiddenException(
-        'You are not authorized to export this chat summary',
-      );
-    }
-
-    // const client = await this.userService.get(chat.clientId);
-    // const counselor = await this.userService.get(chat.counselorId!);
-
-    // Assuming callDetails.summaryNote is available
-    const summaryInfo =
-      callDetails?.summary || ({} as FlattenedSummaryNotePayloadCamelCase);
-    const summaryName =
-      callDetails?.callInfo?.summaryName || ChatUtil.getSummaryName(chat);
-    const counselor = await this.userService.get(chat.counselorId!);
-
-    let summary = `Chat Summary\n`;
-    summary += `============\n\n`;
-    summary += `Call ID: ${chat.id}\n`;
-    summary += `Call Date: ${new Date(chat.createdAt).toLocaleDateString()}\n`;
-    summary += `Call Time: ${new Date(chat.createdAt).toLocaleTimeString()}\n`;
-    summary += `Summary Name: ${summaryName}\n`;
-    summary += `Call Duration (seconds): ${callDetails?.callDuration ?? 'N/A'}\n`;
-    summary += `Tags:`;
-    summary += summaryInfo?.tags?.length ? '\n' : '';
-    summary += summaryInfo?.tags?.length
-      ? summaryInfo.tags
-          .map((tag) => `  - ${tag.tag} (Positivity: ${tag.positivity_rating})`)
-          .join('\n') + '\n'
-      : '  - N/A\n';
-
-    summary += `Client ID: ${chat.clientId ?? 'N/A'}\n`;
-    summary += `Counselor: ${counselor?.name ?? 'N/A'}\n`;
-    summary += `Call Type: ${summaryInfo.callType ?? 'N/A'}\n`;
-    summary += `Age: ${summaryInfo.age ?? 'N/A'}\n`;
-    summary += `Gender: ${summaryInfo.gender}\n`;
-    summary += `Profession: ${summaryInfo.profession ?? 'N/A'}\n`;
-    summary += `Relationship Status: ${summaryInfo.relationshipStatus ?? 'N/A'}\n`;
-
-    summary += `Languages:\n`;
-    summary += summaryInfo?.languages?.length
-      ? summaryInfo.languages
-          .map(({ language, percentage }) => {
-            const label =
-              LANGUAGE_MAP[language as keyof typeof LANGUAGE_MAP] || language;
-            return `  - ${label} (${percentage.toFixed(1)}%)`;
-          })
-          .join('\n') + '\n'
-      : '  - N/A\n';
-
-    summary += `Location: ${summaryInfo.location ?? 'N/A'}\n`;
-    summary += `Code of Concern: ${summaryInfo.codeOfConcern}\n`;
-
-    summary += `Session Summary: ${summaryInfo.sessionSummary}\n`;
-    summary += `Counseling Process Flow: ${summaryInfo.counselingProcessFlow ?? 'N/A'}\n`;
-    summary += `Key Concerns: ${summaryInfo.keyConcerns}\n`;
-    summary += `Subjective Observations: ${summaryInfo.subjectiveObservations}\n`;
-    summary += `Objective Observations: ${summaryInfo.objectiveObservations}\n`;
-    summary += `Assessment: ${summaryInfo.assessment}\n`;
-    summary += `Dominant Feelings: ${summaryInfo.dominantFeelings}\n`;
-    summary += `Issues Worked On: ${summaryInfo.issuesWorkedOn}\n`;
-    summary += `Key Therapeutic Techniques: ${summaryInfo.keyTherapeuticTechniques}\n`;
-
-    summary += `Referrals Provided: ${summaryInfo.referralsProvided ?? 'N/A'}\n`;
-    summary += `Homework: ${summaryInfo.homework}\n`;
-    summary += `Plan for Next Call: ${summaryInfo.planForNextCall}\n`;
-
-    summary += `Reflective Questions Asked: ${summaryInfo.reflectiveQuestionsAsked}\n`;
-    summary += `Open-ended Questions Asked: ${summaryInfo.openEndedQuestionsAsked}\n`;
-    summary += `Emotional Lift: ${summaryInfo.emotionalLift || 'N/A'}\n`;
-    summary += `Call Quality: ${summaryInfo.callQuality || 'N/A'}\n`;
-    summary += `New Call Follow-up: ${summaryInfo.newCallFollowUp || 'N/A'}\n`;
-
-    // // Include tags
-    // if (ChatUtil.isTagsAvailable(summaryInfo)) {
-    //   summary += `Tags\n`;
-    //   summary += `====\n`;
-    //   for (const tag of summaryInfo.tags) {
-    //     summary += `${tag.tag} - ${tag.positivity_rating}\n`;
-    //   }
-    //   summary += `\n`;
-    // }
-
-    // // Session details
-    // if (ChatUtil.isSessionDetailsAvailable(summaryInfo)) {
-    //   summary += `Session Details\n`;
-    //   summary += `===============\n`;
-    //   summary += `Counselor Name: ${counselor?.name}\n`;
-    //   summary += `Session Number: ${chat.id}\n`;
-    //   summary += `Date of Session: ${new Date(chat.createdAt).toLocaleDateString() || 'N/A'}\n`;
-    //   summary += `New Call/Follow-up: ${summaryInfo.newCallFollowUp || 'N/A'}\n\n`;
-    // }
-
-    // Demographic details
-    if (ChatUtil.isDemographicDetailsAvailable(summaryInfo)) {
-      summary += `\nDemographic Details\n`;
-      summary += `===================\n`;
-      summary += `Client ID: ${'N/A'}\n`; // Check if this is needed in export
-      summary += `Gender: ${summaryInfo.gender || 'N/A'}\n`;
-      summary += `Age: ${summaryInfo.age || 'N/A'}\n`;
-      summary += `Location: ${summaryInfo.location || 'N/A'}\n`;
-      summary += `Profession: ${summaryInfo.profession || 'N/A'}\n`;
-      summary += `Relationship Status: ${summaryInfo.relationshipStatus || 'N/A'}\n`;
-      summary += `Languages: ${summaryInfo.languages?.map((language) => LANGUAGE_MAP[language.language as keyof typeof LANGUAGE_MAP] || language.language).join(', ') || 'N/A'}\n`;
-      summary += `Code of Concern: ${summaryInfo.codeOfConcern || 'N/A'}\n`;
-    }
-
-    //metrics
-
-    summary += `\nMetrics\n`;
-    summary += `======\n`;
-    summary += `No of Reflective Questions: ${summaryInfo.reflectiveQuestionsAsked}\n`;
-    summary += `Emotions Lift: ${summaryInfo.emotionalLift}\n`;
-    const clientTalkingPercentage =
-      callDetails?.callInfo?.clientTalkingPercentage;
-    const listeningShare =
-      clientTalkingPercentage !== undefined && clientTalkingPercentage !== null
-        ? clientTalkingPercentage * 100
-        : 'N/A';
-    summary += `Listening Share: ${listeningShare}%\n`;
-
-    // // Counselor impressions
-    // if (ChatUtil.isCounselorImpressionsAvailable(summaryInfo)) {
-    //   summary += `Counselor Impressions\n`;
-    //   summary += `======================\n`;
-    //   summary += `Client Attitude: ${summaryInfo.clientAttitude || 'N/A'}\n`;
-    //   summary += `Emotional State Start: ${summaryInfo.emotionalStateStart || 'N/A'}\n`;
-    //   summary += `Emotional State Change: ${summaryInfo.emotionalStateChange || 'N/A'}\n`;
-    //   summary += `Problem Analysis: ${summaryInfo.problemAnalysis || 'N/A'}\n`;
-    //   summary += `Additional Insights: ${summaryInfo.additionalInsights || 'N/A'}\n`;
-    //   summary += `Counselor Feelings: ${summaryInfo.counselorFeelings || 'N/A'}\n\n`;
-    // }
-
-    // // Session documentation
-    // if (ChatUtil.isSessionDocumentationAvailable(summaryInfo)) {
-    //   summary += `Session Documentation\n`;
-    //   summary += `======================\n`;
-    //   summary += `Key Concerns: ${summaryInfo.keyConcerns || 'N/A'}\n`;
-    //   summary += `Dominant Feelings: ${summaryInfo.dominantFeelings || 'N/A'}\n`;
-    //   summary += `Counseling Process Flow: ${summaryInfo.counselingProcessFlow || 'N/A'}\n`;
-    //   summary += `Therapeutic Interventions: ${summaryInfo.keyTherapeuticTechniques || 'N/A'}\n`;
-    //   summary += `Objective Observations: ${summaryInfo.objectiveObservations || 'N/A'}\n`;
-    //   summary += `Subjective Observations: ${summaryInfo.subjectiveObservations || 'N/A'}\n`;
-    //   summary += `Assessment: ${summaryInfo.assessment || 'N/A'}\n`;
-    //   summary += `Referrals Provided: ${summaryInfo.referralsProvided || 'N/A'}\n`;
-    //   summary += `Issues Worked On: ${summaryInfo.issuesWorkedOn || 'N/A'}\n`;
-    //   summary += `Homework: ${summaryInfo.homework || 'N/A'}\n`;
-    // }
-
-    // if (ChatUtil.isFollowUpPlanAvailable(summaryInfo)) {
-    //   summary += `Follow-up Plan\n`;
-    //   summary += `==============\n`;
-    //   summary += `Follow-up Status: ${summaryInfo.followUpStatus || 'N/A'}\n`;
-    //   summary += `Follow-up Date: ${summaryInfo.followUpDate || 'N/A'}\n`;
-    //   summary += `Follow-up Goals: ${summaryInfo.followUpGoals?.join(', ') || 'N/A'}\n`;
-    // }
-
-    // if (ChatUtil.isCallQualityAvailable(summaryInfo)) {
-    //   summary += `\n`;
-    //   summary += `Call Quality: ${summaryInfo.callQuality}\n`;
-    // }
-
-    return { summary, fileName: summaryName };
-  }
-
   async getChatWithCallDetails(chatId: number) {
     const chat = await this.getChatById(chatId);
     const callDetails = await this.callDetailsRepository.findOne({
@@ -1769,5 +1611,31 @@ export class ChatService {
     });
     this.cache.del(`chat:${chatId}`);
     return { success: true };
+  }
+
+  async addNoteToSession(
+    chatId: number,
+    createNoteDto: AddNoteDto,
+  ): Promise<string> {
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+
+    if (!callDetails) {
+      throw new NotFoundException(`Call details not found for chat ${chatId}`);
+    }
+
+    const existingCallInfo = callDetails.callInfo || {};
+    const updatedCallInfo = {
+      ...existingCallInfo,
+      notes: createNoteDto.content,
+    };
+
+    await this.callDetailsRepository.update(
+      { chatId, tenantId: ExecutionManager.getTenantId() },
+      { callInfo: updatedCallInfo },
+    );
+
+    return createNoteDto.content;
   }
 }

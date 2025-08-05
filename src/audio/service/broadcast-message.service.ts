@@ -10,11 +10,12 @@ export class BroadcastMessageService {
 
   broadcastUserDisconnectedMessage(
     channel: MessageBrokerChannel,
-    { participants }: { participants: number[] },
+    { participants, userId }: { participants: number[]; userId: number },
   ) {
     this.publisher.publish(channel, {
       participants,
       message: {
+        userId,
         content: 'User disconnected',
         messageType: MessageType.SYSTEM,
       },
