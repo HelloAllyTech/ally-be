@@ -22,6 +22,7 @@ import { ChatAiService } from './service/chat-ai-service';
 import { JwtService } from '@nestjs/jwt';
 import { AudioModule } from '../audio/audio.module';
 import { AwsModule } from 'src/aws/aws.module';
+import { WebSocketAuthMiddleware } from 'src/auth/middlewares/ws-auth.middleware';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Message, Chat, ChatRoom, Feedback, CallDetails]),
@@ -35,6 +36,7 @@ import { AwsModule } from 'src/aws/aws.module';
   ],
   controllers: [ChatController, ChatAiController],
   providers: [
+    WebSocketAuthMiddleware,
     ChatService,
     ChatSummaryService,
     ChatGateway,

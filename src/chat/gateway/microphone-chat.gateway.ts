@@ -4,10 +4,11 @@ import {
   OnGatewayDisconnect,
   WebSocketServer,
   SubscribeMessage,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { LoggerService } from '../../logger/logger.service';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ChatService } from '../service/chat.service';
 import {
   AudioChatPlatform,
@@ -29,17 +30,15 @@ import { MessageBrokerService } from '../../message-broker/service/message-broke
 import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { ChatStatus } from '../../common/entities/chat.entity';
-import { JwtService } from '@nestjs/jwt';
-import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
-
+import { WebSocketAuthMiddleware } from 'src/auth/middlewares/ws-auth.middleware';
 @WebSocketGateway({
   cors: { origin: '*' },
   namespace: '/microphone-chat',
 })
 @Injectable()
 export class MicrophoneChatGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   private readonly logger = LoggerService.getInstance(
     MicrophoneChatGateway.name,
@@ -51,21 +50,75 @@ export class MicrophoneChatGateway
     private chatService: ChatService,
     private streamFileProcessorService: StreamFileProcessorService,
     private publisher: MessageBrokerService,
-    private jwtService: JwtService,
-    private configService: AppConfigService,
     private broadcastMessageService: BroadcastMessageService,
+    private webSocketAuthMiddleware: WebSocketAuthMiddleware,
   ) {}
 
   @WebSocketServer() server!: Server;
 
+  afterInit(server: Server) {
+    this.logger.info(
+      'WebSocket server initialized, setting up authentication middleware',
+    );
+
+    server.use(
+      this.webSocketAuthMiddleware.createAuthMiddleware(UserRole.COUNSELOR),
+    );
+  }
+
   async handleConnection(client: Socket) {
     this.logger.info(`Client connected to microphone chat: ${client.id}`);
 
-    this.authenticateClient(client);
+    const user = WebSocketAuthMiddleware.getAuthenticatedUser(client);
+
+    if (!user) {
+      this.logger.error(
+        `No user data found for authenticated client ${client.id}`,
+      );
+      client.disconnect();
+      return;
+    }
+
+    const room = `user-${user.id}`;
+    await client.join(room);
+
+    this.sessions[client.id] = {
+      id: client.id,
+      userId: user.id,
+      user: null,
+      type: 'user',
+      role: user.role,
+      room,
+      provider: AudioChatProvider.MICROPHONE,
+      chatId: PLACEHOLDER_CHAT_ID,
+      tenantId: user.tenantId,
+    };
+
+    ExecutionManager.setAuthContext(
+      user.id.toString(),
+      user.role,
+      user.tenantId,
+    );
+
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
+      participants: [user.id],
+      message: {
+        userId: user.id,
+        content: 'User session created',
+        messageType: MessageType.SYSTEM,
+      },
+      broadCastOptions: {
+        event: ChatEvents.SESSION_CREATED,
+      },
+    });
+
+    this.logger.info(
+      `Client ${client.id} authenticated and joined room ${room}`,
+    );
 
     client.on('connect_error', (err) => {
       this.logger.error(
-        `❌ Connection error for client co ${client.id}:`,
+        `❌ Connection error for client ${client.id}:`,
         err.message,
       );
     });
@@ -95,12 +148,16 @@ export class MicrophoneChatGateway
     ) {
       try {
         await this.chatService.endChat(session.chatId);
+        this.logger.info(
+          `Chat ${session.chatId} ended for disconnected client ${clientId}`,
+        );
       } catch (error) {
         this.logger.error(
           `❌ Failed to end chat for client ${clientId} | session chatId: ${session.chatId} | error: ${error.message}`,
         );
       }
     }
+  // Broadcast disconnection
     this.broadcastMessageService.broadcastUserDisconnectedMessage(
       MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
       {
@@ -141,73 +198,6 @@ export class MicrophoneChatGateway
     });
   }
 
-  private async authenticateClient(client: Socket) {
-    const token = client.handshake.auth?.token;
-    if (!token) {
-      this.logger.error(`No JWT token provided for client ${client.id}`);
-      client.disconnect();
-      return;
-    }
-
-    try {
-      const payload = await this.jwtService.verifyAsync(token, {
-        secret: this.configService.jwt.accessToken.secret,
-      });
-
-      if (payload.role !== UserRole.COUNSELOR) {
-        throw new UnauthorizedException(
-          `User ${payload.sub} is not a counselor`,
-        );
-      }
-
-      const userId = parseInt(payload.sub);
-
-      const user = {
-        id: userId,
-        username: payload.username,
-        role: payload.role,
-        tenantId: payload.tenantId,
-      };
-
-      const room = `user-${userId}`;
-      client.join(room);
-
-      this.sessions[client.id] = {
-        id: client.id,
-        userId: +userId,
-        user: null,
-        type: 'user',
-        role: UserRole.COUNSELOR,
-        room,
-        provider: AudioChatProvider.MICROPHONE,
-        chatId: PLACEHOLDER_CHAT_ID,
-        tenantId: user.tenantId,
-      };
-
-      this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
-        participants: [+userId],
-        message: {
-          userId: +userId,
-          content: 'User session created',
-          messageType: MessageType.SYSTEM,
-        },
-        broadCastOptions: {
-          event: ChatEvents.SESSION_CREATED,
-        },
-      });
-
-      this.logger.info(
-        `Client ${client.id} authenticated and joined room ${room}`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `JWT verification failed for client ${client.id}:`,
-        error,
-      );
-      client.disconnect();
-    }
-  }
-
   @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async startAudioChat(
@@ -246,7 +236,6 @@ export class MicrophoneChatGateway
       client.disconnect();
       return;
     }
-
     // Start call stream with chat creation in transaction
     try {
       await this.streamFileProcessorService.startCallStream(
