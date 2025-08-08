@@ -5,13 +5,6 @@ import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { UserRole } from '../../common/constants/user.constants';
 
-export interface AuthenticatedUser {
-  id: number;
-  username: string;
-  role: UserRole;
-  tenantId: string;
-}
-
 @Injectable()
 export class WebSocketAuthMiddleware {
   private readonly logger = LoggerService.getInstance(
@@ -42,7 +35,6 @@ export class WebSocketAuthMiddleware {
         const payload = await this.jwtService.verifyAsync(token, {
           secret: this.configService.jwt.accessToken.secret,
         });
-        console.log('JWT payload:', payload);
 
         // Role-based authorization
         if (requiredRole && payload.role !== requiredRole) {
@@ -68,7 +60,7 @@ export class WebSocketAuthMiddleware {
           username: payload.username,
           role: payload.role,
           tenantId: payload.tenantId,
-        } as AuthenticatedUser;
+        };
 
         this.logger.info(
           `Socket ${socket.id} authenticated successfully for user ${userId} with role ${payload.role}`,
@@ -98,9 +90,5 @@ export class WebSocketAuthMiddleware {
       return null;
     }
     return authorization.substring(7);
-  }
-
-  static getAuthenticatedUser(socket: Socket): AuthenticatedUser | null {
-    return socket.data.user || null;
   }
 }

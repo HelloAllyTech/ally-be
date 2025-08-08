@@ -68,9 +68,7 @@ export class MicrophoneChatGateway
 
   async handleConnection(client: Socket) {
     this.logger.info(`Client connected to microphone chat: ${client.id}`);
-
-    const user = WebSocketAuthMiddleware.getAuthenticatedUser(client);
-
+    const user = client.data.user;
     if (!user) {
       this.logger.error(
         `No user data found for authenticated client ${client.id}`,
@@ -78,27 +76,19 @@ export class MicrophoneChatGateway
       client.disconnect();
       return;
     }
-
     const room = `user-${user.id}`;
     await client.join(room);
-
     this.sessions[client.id] = {
       id: client.id,
       userId: user.id,
       user: null,
       type: 'user',
-      role: user.role,
+      role: UserRole.COUNSELOR,
       room,
       provider: AudioChatProvider.MICROPHONE,
       chatId: PLACEHOLDER_CHAT_ID,
       tenantId: user.tenantId,
     };
-
-    ExecutionManager.setAuthContext(
-      user.id.toString(),
-      user.role,
-      user.tenantId,
-    );
 
     this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
       participants: [user.id],
@@ -157,7 +147,7 @@ export class MicrophoneChatGateway
         );
       }
     }
-  // Broadcast disconnection
+    // Broadcast disconnection
     this.broadcastMessageService.broadcastUserDisconnectedMessage(
       MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
       {
