@@ -144,6 +144,25 @@ export class AppConfigService {
     };
   }
 
+  get sqs() {
+    return {
+      region: this.configService.get<string>('AWS_REGION', 'us-east-1'),
+      transcription: {
+        requestQueueUrl: this.configService.get<string>(
+          'SQS_TRANSCRIPTION_REQUEST_QUEUE_URL',
+        ),
+        requestDlqUrl: this.configService.get<string>(
+          'SQS_TRANSCRIPTION_REQUEST_DLQ_URL',
+        ),
+        responseQueueUrl: this.configService.get<string>(
+          'SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL',
+        ),
+        responseDlqUrl: this.configService.get<string>(
+          'SQS_TRANSCRIPTION_RESPONSE_DLQ_URL',
+        ),
+      },
+    };
+  }
   get s3() {
     return {
       audioBucket: this.configService.get<string>('AUDIO_STORAGE_S3_BUCKET'),

@@ -4,6 +4,7 @@ import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { ChatEvents } from '../constants/chat.constants';
+import { ChatSummaryStatus } from 'src/common/entities/chat.entity';
 
 export type UserChatSessionData = {
   id: string;
@@ -105,3 +106,8 @@ export type ActiveCallStream = {
     bufferSize: number;
   }[];
 };
+
+export interface UpdateChatInput {
+  summaryStatus?: ChatSummaryStatus;
+  metadata?: Record<string, any>;
+}

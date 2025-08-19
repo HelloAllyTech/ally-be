@@ -30,6 +30,7 @@ import {
   MessageWithFeedback,
   NudgeResponse,
   SendMessageWebSocketData,
+  UpdateChatInput,
   UserChatSessionData,
 } from '../type/chat.type';
 import { Pagination } from '../../common/type/common.type';
@@ -63,6 +64,7 @@ import { BroadcastMessageService } from '../../audio/service/broadcast-message.s
 import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
 import { AddNoteDto } from '../dto/notes.dto';
+import { ChatRepository } from '../repository/chat.repository';
 
 @Injectable()
 export class ChatService {
@@ -70,8 +72,7 @@ export class ChatService {
   constructor(
     @InjectRepository(Message)
     private messageRepository: Repository<Message>,
-    @InjectRepository(Chat)
-    private chatRepository: Repository<Chat>,
+    private chatRepository: ChatRepository,
 
     @InjectRepository(ChatRoom)
     private chatRoomRepository: Repository<ChatRoom>,
@@ -1637,5 +1638,9 @@ export class ChatService {
     );
 
     return createNoteDto.content;
+  }
+
+  async updateChat(chatId: number, input: UpdateChatInput) {
+    await this.chatRepository.updateChat(chatId, input);
   }
 }
