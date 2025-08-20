@@ -7,6 +7,7 @@ import { TranscribeAndSummarizeResponseMessage } from '../dto/transcribe-and-sum
 import { ChatService } from 'src/chat/service/chat.service';
 import { ChatSummaryStatus } from 'src/common/entities/chat.entity';
 import { FailedDependencyException } from 'src/exception/custom.exception';
+import { AppConfigService } from 'src/config/config.service';
 
 @Injectable()
 export class TranscribeResultProcessor extends BaseEventProcessor {
@@ -17,6 +18,7 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
   constructor(
     private readonly chatAiService: ChatAiService,
     private readonly chatService: ChatService,
+    private readonly config: AppConfigService,
   ) {
     super();
   }
@@ -60,7 +62,7 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
         await this.chatAiService.addSummary(chat_id, s3Result.summary);
       }
 
-      if (delete_presigned_url) {
+      if (!this.config.isDevelopment && delete_presigned_url) {
         // Delete the result from S3
         await this.deleteFromS3(delete_presigned_url);
       }
