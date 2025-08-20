@@ -1,3 +1,5 @@
+import { LoggerService } from 'src/logger/logger.service';
+
 export interface IEventProcessor {
   process(data: any): Promise<void>;
   getEventType(): string;
@@ -8,10 +10,10 @@ export abstract class BaseEventProcessor implements IEventProcessor {
   abstract getEventType(): string;
 
   protected logInfo(message: string): void {
-    console.log(`[${this.getEventType()}] ${message}`);
+    LoggerService.getInstance(this.getEventType()).info(message);
   }
 
   protected logError(message: string, error?: any): void {
-    console.error(`[${this.getEventType()}] ERROR: ${message}`, error);
+    LoggerService.getInstance(this.getEventType()).error(message, error);
   }
 }

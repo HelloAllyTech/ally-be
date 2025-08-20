@@ -4,7 +4,6 @@ import {
   IsString,
   MinLength,
   IsOptional,
-  IsPhoneNumber,
 } from 'class-validator';
 import { UserRole } from '../../common/constants/user.constants';
 import { PASSWORD_VALIDATION } from '../../common/constants/validation.constants';

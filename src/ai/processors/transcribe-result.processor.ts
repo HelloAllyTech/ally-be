@@ -33,31 +33,36 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
     this.logger.debug(`S3 Result Path: ${download_presigned_url}`);
 
     try {
+      const chat = await this.chatService.getChatByIdForServiceCall(chat_id);
+      if (!chat) {
+        this.logInfo(`Chat not found: ${chat_id}`);
+        return;
+      }
+
+      if (chat.summaryStatus === ChatSummaryStatus.SUCCESS) {
+        this.logInfo(`Chat already has a summary: ${chat_id}`);
+        return;
+      }
+
       if (error) {
         this.logInfo(`Error from AI service: ${error}`);
         throw new FailedDependencyException(data);
       }
 
       if (download_presigned_url) {
-        this.logInfo(`Downloading results from S3: ${download_presigned_url}`);
+        // Download the result from S3
         const s3Result = await this.downloadFromS3(download_presigned_url);
 
-        this.logInfo(`Parsing JSON results for chat: ${chat_id}`);
-        const { transcription, summary } = this.parseS3Result(s3Result);
+        // Add the transcription to the chat
+        await this.chatAiService.addTranscript(chat, s3Result.transcription);
 
-        this.logInfo(`Adding transcription for chat: ${chat_id}`);
-        await this.chatAiService.addTranscript(chat_id, transcription);
-
-        this.logInfo(`Adding summary for chat: ${chat_id}`);
-        await this.chatAiService.addSummary(chat_id, summary);
-
-        this.logInfo(`Transcription and summary added to chat: ${chat_id}`);
+        // Add the summary to the chat
+        await this.chatAiService.addSummary(chat_id, s3Result.summary);
       }
 
       if (delete_presigned_url) {
-        this.logInfo(`Cleaning up S3 file for chat: ${chat_id}`);
+        // Delete the result from S3
         await this.deleteFromS3(delete_presigned_url);
-        this.logInfo(`S3 file cleaned up for chat: ${chat_id}`);
       }
 
       await this.chatService.updateChat(chat_id, {
@@ -80,6 +85,7 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
     try {
       this.logger.debug(`Downloading from S3: ${s3Path}`);
       const response = await axios.get(s3Path);
+      this.logger.info(`Downloaded from S3: ${s3Path}`);
       return response.data;
     } catch (error) {
       this.logger.error(`Failed to download from S3: ${s3Path}`, error);
@@ -91,32 +97,9 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
     try {
       this.logger.debug(`Deleting from S3: ${deleteUrl}`);
       await axios.delete(deleteUrl);
-      this.logger.debug(`Successfully deleted S3 file: ${deleteUrl}`);
+      this.logger.info(`Successfully deleted S3 file: ${deleteUrl}`);
     } catch (error) {
       this.logger.error(`Failed to delete from S3: ${deleteUrl}`, error);
-      this.logger.warn(`S3 deletion failed but continuing: ${error.message}`);
-    }
-  }
-
-  private parseS3Result(s3Result: any): { transcription: any; summary: any } {
-    try {
-      const transcription = s3Result.transcription || [];
-      const summary = s3Result.summary || {};
-
-      this.logger.debug(
-        `Parsed transcription with ${transcription.length || 0} messages`,
-      );
-      this.logger.debug(
-        `Parsed summary: ${summary.session_summary || 'No summary'}`,
-      );
-
-      return {
-        transcription,
-        summary,
-      };
-    } catch (error) {
-      this.logger.error('Failed to parse S3 result', error);
-      throw new Error(`JSON parsing failed: ${error.message}`);
     }
   }
 }

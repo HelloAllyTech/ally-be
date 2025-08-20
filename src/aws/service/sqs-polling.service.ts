@@ -168,7 +168,7 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
     // Try each handler for this queue
     for (const handler of poller.handlers) {
       try {
-        this.logger.debug(
+        this.logger.info(
           `Processing message ${message.MessageId} with handler ${handler.target.constructor.name}.${handler.methodName}`,
         );
 
