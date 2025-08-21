@@ -25,6 +25,7 @@ import { CommonModule } from './common/common.module';
 import { SettingsModule } from './settings/settings.module';
 import { ReferenceDocumentModule } from './reference-document/reference-document.module';
 import { AudioModule } from './audio/audio.module';
+import { SqsModule } from './sqs/sqs.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { AudioModule } from './audio/audio.module';
     SettingsModule,
     ReferenceDocumentModule,
     AudioModule,
+    SqsModule,
   ],
   controllers: [],
   providers: [

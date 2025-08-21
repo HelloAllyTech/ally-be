@@ -16,6 +16,10 @@ services:
       - JWT_SECRET=your-secret-key
       - JWT_REFRESH_SECRET=your-refresh-secret-key
       - KAFKA_BROKERS=kafka:9092
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - SQS_ENDPOINT=http://localstack:4566
     depends_on:
       - postgres
       - kafka
@@ -79,10 +83,27 @@ services:
     image: redis:latest
     ports:
       - "6379:6379"
+    networks:
+      - app-network
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - '4566:4566'
+    environment:
+      - SERVICES=sqs
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+    volumes:
+      - './localstack:/tmp/localstack'
+      - '/var/run/docker.sock:/var/run/docker.sock'
+    networks:
+      - app-network
 
 networks:
   app-network:
     driver: bridge
 
 volumes:
-  postgres-data: 
+  postgres-data:
