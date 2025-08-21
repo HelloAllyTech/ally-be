@@ -28,8 +28,6 @@ until curl -s http://localhost:${LOCALSTACK_PORT}/_localstack/health | jq -r '.s
   sleep 2
 done
 echo "LocalStack SQS is available!"
-
-
 # Function to create a queue if it doesn’t exist
 create_queue() {
   QUEUE_NAME=$1
@@ -48,4 +46,26 @@ create_queue "sqs-ai-transcription-response-queue"
 create_queue "sqs-ai-transcription-request-dlq"
 create_queue "sqs-ai-transcription-response-dlq"
 
-echo "All queues are ready!"
+# Function to attach DLQ
+attach_dlq() {
+  MAIN_QUEUE=$1
+  DLQ_QUEUE=$2
+  echo "🔗 Attaching DLQ $DLQ_QUEUE to $MAIN_QUEUE ..."
+
+  MAIN_URL=$(aws --endpoint-url=http://localhost:${LOCALSTACK_PORT} sqs get-queue-url --queue-name $MAIN_QUEUE --query 'QueueUrl' --output text)
+  DLQ_URL=$(aws --endpoint-url=http://localhost:${LOCALSTACK_PORT} sqs get-queue-url --queue-name $DLQ_QUEUE --query 'QueueUrl' --output text)
+  DLQ_ARN=$(aws --endpoint-url=http://localhost:${LOCALSTACK_PORT} sqs get-queue-attributes --queue-url $DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+aws --endpoint-url=http://localhost:${LOCALSTACK_PORT} sqs set-queue-attributes \
+  --queue-url $MAIN_URL \
+  --attributes '{"RedrivePolicy":"{\"deadLetterTargetArn\":\"'"$DLQ_ARN"'\",\"maxReceiveCount\":\"5\"}"}'
+
+
+  echo "Attached $DLQ_QUEUE as DLQ for $MAIN_QUEUE (maxReceiveCount=5)"
+}
+
+# Attach DLQs
+attach_dlq "sqs-ai-transcription-request-queue" "sqs-ai-transcription-request-dlq"
+attach_dlq "sqs-ai-transcription-response-queue" "sqs-ai-transcription-response-dlq"
+
+echo "All queues and DLQs are ready!"
