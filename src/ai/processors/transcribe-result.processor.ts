@@ -77,7 +77,7 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
       );
       await this.chatService.updateChat(chat_id, {
         summaryStatus: ChatSummaryStatus.FAILED,
-        metadata: { message: error },
+        metadata: { error },
       });
       throw error;
     }

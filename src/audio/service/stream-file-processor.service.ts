@@ -442,6 +442,13 @@ export class StreamFileProcessorService {
       activeCallStream.files?.map((file) => file.tempFilePath) || [],
       chatId,
     );
+
+    this.chatService.updateChat(chatId, {
+      summaryStatus: ChatSummaryStatus.FAILED,
+      metadata: {
+        error: 'Empty audio file',
+      },
+    });
   }
 
   async endCallStream({
@@ -565,6 +572,9 @@ export class StreamFileProcessorService {
       );
       await this.chatService.updateChat(chatId, {
         summaryStatus: ChatSummaryStatus.FAILED,
+        metadata: {
+          error: err.message,
+        },
       });
     }
   }
