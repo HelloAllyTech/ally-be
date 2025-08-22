@@ -1077,6 +1077,7 @@ export class ChatService {
     query.andWhere('chat.tenantId = :tenantId', {
       tenantId: ExecutionManager.getTenantId(),
     });
+    query.andWhere('chat.status = :status', { status: ChatStatus.ENDED });
     const [callLogs, count] = await query.getManyAndCount();
     return {
       data: callLogs,
