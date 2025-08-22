@@ -444,10 +444,7 @@ export class StreamFileProcessorService {
     );
 
     this.chatService.updateChat(chatId, {
-      summaryStatus: ChatSummaryStatus.FAILED,
-      metadata: {
-        error: 'Empty audio file',
-      },
+      summaryStatus: ChatSummaryStatus.NO_AUDIO,
     });
   }
 
