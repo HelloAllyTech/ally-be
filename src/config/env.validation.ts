@@ -24,4 +24,11 @@ export const validationSchema = Joi.object({
   // AI
   AI_SERVICE_API_URL: Joi.string().required(),
   DEEPGRAM_API_KEY: Joi.string().required(),
+
+  // SQS
+  AWS_REGION: Joi.string().default('us-east-1'),
+  SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: Joi.string().optional(),
+  SQS_TRANSCRIPTION_REQUEST_DLQ_URL: Joi.string().optional(),
+  SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL: Joi.string().optional(),
+  SQS_TRANSCRIPTION_RESPONSE_DLQ_URL: Joi.string().optional(),
 });

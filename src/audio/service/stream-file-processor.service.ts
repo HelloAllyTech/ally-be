@@ -1,27 +1,27 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
-import { LoggerService } from '../../logger/logger.service';
-import {
-  ActiveCallStream,
-  UserChatSessionData,
-} from '../../chat/type/chat.type';
-import { ExecutionManager } from '../../common/execution/execution-manager';
+import { DataSource, EntityManager } from 'typeorm';
 import { S3Service } from '../../aws/service/s3.service';
-import { ChatAudioUploadStatus } from '../../common/entities/chat-audio-uploads.entity';
 import { ChatAudioUploadsService } from './chat-audio-uploads.service';
-
-import { EntityManager, DataSource } from 'typeorm';
+import { AiEventService } from '../../ai/service/ai-event.service';
+import { LoggerService } from '../../logger/logger.service';
+import { ExecutionManager } from '../../common/execution/execution-manager';
+import { ChatAudioUploadStatus } from '../../common/entities/chat-audio-uploads.entity';
 import {
   AudioChatProvider,
   AudioChatPlatform,
 } from '../../common/constants/chat.constants';
+import {
+  ActiveCallStream,
+  UserChatSessionData,
+} from '../../chat/type/chat.type';
 import { BroadcastMessageService } from './broadcast-message.service';
 import { AppConfigService } from '../../config/config.service';
 import { ChatService } from '../../chat/service/chat.service';
-import { AiService } from '../../ai/service/ai.service';
 import { PLACEHOLDER_CHAT_ID } from '../../common/constants/user.constants';
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
+import { ChatSummaryStatus } from 'src/common/entities/chat.entity';
 
 @Injectable()
 export class StreamFileProcessorService {
@@ -33,7 +33,7 @@ export class StreamFileProcessorService {
     @Inject(forwardRef(() => ChatService))
     private chatService: ChatService,
     private config: AppConfigService,
-    private aiService: AiService,
+    private aiEventService: AiEventService,
   ) {}
 
   private readonly logger = LoggerService.getInstance(
@@ -442,6 +442,10 @@ export class StreamFileProcessorService {
       activeCallStream.files?.map((file) => file.tempFilePath) || [],
       chatId,
     );
+
+    this.chatService.updateChat(chatId, {
+      summaryStatus: ChatSummaryStatus.NO_AUDIO,
+    });
   }
 
   async endCallStream({
@@ -541,24 +545,19 @@ export class StreamFileProcessorService {
         chatId,
       );
 
-      const presignedUrl = await this.s3Service.generatePresignedUrl({
+      const audioUrl = await this.s3Service.generatePresignedUrl({
         bucket: this.config.s3.audioBucket!,
         key: activeCallStream.key,
         operation: 'get',
       });
 
-      this.aiService
-        .transcribeAudioAndSummarize({
-          presigned_url: presignedUrl,
-          chat_id: chatId,
-          sample_rate: sampleRate!,
-        })
-        .catch((err) => {
-          this.logger.error(
-            `Error transcribing audio for chatId ${chatId}:`,
-            err,
-          );
-        });
+      this.aiEventService.publishTranscribeAudioEvent({
+        message_type: 'transcribe_and_summarize_request',
+        timestamp: Date.now(),
+        audio_url: audioUrl,
+        chat_id: chatId,
+        sample_rate: sampleRate!,
+      });
 
       this.logger.info(
         `Call stream end completed | ChatId: ${chatId} | Provider: ${provider}`,
@@ -568,6 +567,12 @@ export class StreamFileProcessorService {
         `Call stream end failed with error: ${err.message} | ChatId: ${chatId} | Provider: ${provider}`,
         err,
       );
+      await this.chatService.updateChat(chatId, {
+        summaryStatus: ChatSummaryStatus.FAILED,
+        metadata: {
+          error: err.message,
+        },
+      });
     }
   }
 

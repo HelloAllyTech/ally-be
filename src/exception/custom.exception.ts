@@ -55,3 +55,9 @@ export class OrganizationRequiredException extends HttpException {
     );
   }
 }
+
+export class FailedDependencyException extends HttpException {
+  constructor(message: any) {
+    super(message, HttpStatus.FAILED_DEPENDENCY);
+  }
+}

@@ -435,7 +435,7 @@ export class ChatController {
     description: 'Returns the chat details',
     type: ChatResponseDto,
   })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @Get(':id')
   async getChat(@Param('id', ParseIntPipe) id: number) {
     return this.service.getChat(id);

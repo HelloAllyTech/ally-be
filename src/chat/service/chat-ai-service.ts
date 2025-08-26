@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { CallDetails } from '../../common/entities/call.details.entity';
 import {
@@ -21,6 +21,7 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { S3Service } from '../../aws/service/s3.service';
 import { AppConfigService } from '../../config/config.service';
 import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
+import { Chat } from 'src/common/entities/chat.entity';
 
 @Injectable()
 export class ChatAiService {
@@ -40,10 +41,7 @@ export class ChatAiService {
   async addSummary(chatId: number, summary: FlattenedSummaryNotePayload) {
     try {
       this.logger.info(`Adding summary for chatId: ${chatId} from ai service`);
-      const chat = await this.chatService.getChatByIdForServiceCall(chatId);
-      if (!chat) {
-        throw new NotFoundException('Chat not found');
-      }
+
       const convertedResponse = CommonUtil.convertToCamelCase(
         summary,
       ) as FlattenedSummaryNotePayloadCamelCase;
@@ -65,15 +63,12 @@ export class ChatAiService {
   }
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
-  async addTranscript(chatId: number, messages: MessageRequest[]) {
+  async addTranscript(chat: Chat, messages: MessageRequest[]) {
     try {
-      this.logger.info(
-        `Adding transcript for chatId: ${chatId} from ai service`,
+      this.logger.debug(
+        `Adding transcript for chatId: ${chat.id} from ai service`,
       );
-      const chat = await this.chatService.getChatByIdForServiceCall(chatId);
-      if (!chat) {
-        throw new NotFoundException('Chat not found');
-      }
+
       this.setAuthContext({
         userId: chat.counselorId!,
         role: UserRole.COUNSELOR,
@@ -81,7 +76,7 @@ export class ChatAiService {
       });
       const formattedMessages = messages.map((message) =>
         this.messageRepository.create({
-          chatId,
+          chatId: chat.id,
           senderId:
             message.role === UserRole.CLIENT ? chat.clientId : chat.counselorId,
           type: MessageType.TEXT,
@@ -95,23 +90,23 @@ export class ChatAiService {
       // update message statistics
       this.chatService.updateMessageStatistics(chat);
       this.logger.info(
-        `Transcript added for chatId: ${chatId} from ai service`,
+        `Transcript added for chatId: ${chat.id} from ai service`,
       );
       const uploadedAudioFile =
-        await this.chatAudioUploadsService.getAudioUpload(chatId);
+        await this.chatAudioUploadsService.getAudioUpload(chat.id);
       if (
         !this.config.isDevelopment &&
         uploadedAudioFile &&
         uploadedAudioFile.storageKey
       ) {
         this.logger.info(
-          `Deleting audio file for chatId: ${chatId} from ai service`,
+          `Deleting audio file for chatId: ${chat.id} from ai service`,
         );
         await this.s3Service.deleteObject({
           bucket: this.config.s3.audioBucket!,
           key: uploadedAudioFile.storageKey,
         });
-        await this.chatAudioUploadsService.updateAudioUpload(chatId, {
+        await this.chatAudioUploadsService.updateAudioUpload(chat.id, {
           storageKey: null,
           sampleRate: null,
           format: null,
@@ -120,7 +115,7 @@ export class ChatAiService {
       return true;
     } catch (error) {
       this.logger.error(
-        `Error adding transcript for chatId: ${chatId} from ai service`,
+        `Error adding transcript for chatId: ${chat.id} from ai service`,
         error,
       );
       throw new ValidationException('Error adding transcript');
