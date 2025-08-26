@@ -10,6 +10,16 @@ export enum ChatStatus {
   // Add other chat statuses as needed
 }
 
+export enum ChatSummaryStatus {
+  PENDING = 'PENDING',
+  IN_PROGRESS = 'IN_PROGRESS',
+  SUCCESS = 'SUCCESS',
+  FAILED = 'FAILED',
+  NO_AUDIO = 'NO_AUDIO',
+}
+
+// TODO: Consider rename table to generic name
+// Currently used to store calls
 @Entity('chats')
 export class Chat extends BaseEntity {
   @PrimaryGeneratedColumn()
@@ -32,4 +42,10 @@ export class Chat extends BaseEntity {
 
   @Column({ type: 'timestamp', nullable: true })
   endedAt?: Date;
+
+  @Column({ default: ChatSummaryStatus.PENDING })
+  summaryStatus!: ChatSummaryStatus;
+
+  @Column({ type: 'jsonb', nullable: true })
+  metadata?: Record<string, any>;
 }

@@ -84,16 +84,13 @@ export class SESService implements EmailInterface {
       });
     }
 
-    const subject = 'Your HelloAlly Verification Code';
-    const body = `Use the verification code below to sign in to your HelloAlly account:
-
+    const subject = 'Your Ally Verification Code';
+    const body = `Your Ally Verification Code is:
 ${params.otp}
 
-This code is valid for 2 minutes. Please do not share it with anyone.
-
-If you did not request this code, you can safely ignore this email.
-
-— The HelloAlly Team
+⏱️ This security code is valid for the next 2 minutes.
+🚫 Do not share this code with anyone.
+❌ If you did not request this code, you can safely ignore this email.
 `;
 
     return this.sendEmail({
