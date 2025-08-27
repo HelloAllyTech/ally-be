@@ -21,7 +21,7 @@ export class TranscriptionResponseDlqConsumer {
       const responseMessage = JSON.parse(message.Body);
 
       this.logger.info(
-        `Processing transcription response DLQ message: ${responseMessage.message_type}`,
+        `Processing transcription response DLQ message: ${responseMessage.message_type} for chat ${responseMessage.chat_id}`,
       );
 
       await this.chatService.updateChat(responseMessage.chat_id, {

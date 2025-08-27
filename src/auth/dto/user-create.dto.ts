@@ -18,14 +18,16 @@ export class UserCreateDto {
   email!: string;
 
   @ApiProperty({
-    description: 'User password',
+    description: 'User password (optional)',
     example: 'password123',
     minLength: 6,
+    required: false,
   })
+  @IsOptional()
   @IsString()
   @MinLength(PASSWORD_VALIDATION.MIN_LENGTH)
   //@Matches(PASSWORD_VALIDATION.REGEX)
-  password!: string;
+  password?: string;
 
   @ApiProperty({
     description: 'User name',
@@ -60,4 +62,12 @@ export class UserCreateDto {
   })
   @IsString()
   tenantId!: string;
+
+  @ApiProperty({
+    description: 'External ID',
+    example: 'external-123',
+  })
+  @IsOptional()
+  @IsString()
+  externalId?: string;
 }

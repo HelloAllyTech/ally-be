@@ -193,7 +193,6 @@ export class OzonetelService {
           timestamp: Date.now(),
           audio_url: AudioFile,
           chat_id: chatId,
-          sample_rate: 8000, // TODO: need to change this
         });
 
         this.logger.info(
@@ -202,7 +201,7 @@ export class OzonetelService {
       } else {
         await this.chatService.updateChat(chatId, {
           summaryStatus: ChatSummaryStatus.FAILED,
-          metadata: { message: 'Audio file was missing' },
+          metadata: { error: 'Audio file was missing' },
         });
         throw new Error(
           `Audio file is required for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chatId}`,

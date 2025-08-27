@@ -1,8 +1,12 @@
 import { UserRole, UserStatus } from '../constants/user.constants';
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 
 @Entity('users')
+@Index(['tenantId', 'externalId'], {
+  unique: true,
+  where: '"externalId" IS NOT NULL',
+})
 export class User extends BaseEntity {
   @PrimaryGeneratedColumn()
   id!: number;
