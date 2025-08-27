@@ -30,4 +30,7 @@ export class User extends BaseEntity {
 
   @Column({ type: 'text', nullable: true, unique: true })
   phone?: string;
+
+  @Column({ type: 'text', nullable: true })
+  externalId?: string;
 }

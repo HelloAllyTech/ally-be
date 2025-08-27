@@ -219,6 +219,9 @@ export class ChatService {
     tenantId,
     provider,
     platform,
+    externalId,
+    status,
+    startedAt,
     entityManager,
   }: {
     clientId: number;
@@ -226,6 +229,9 @@ export class ChatService {
     tenantId?: string;
     provider?: AudioChatProvider;
     platform?: AudioChatPlatform;
+    externalId?: string;
+    status?: ChatStatus;
+    startedAt?: Date;
     entityManager?: EntityManager;
   }) {
     const chatRepo = entityManager?.getRepository(Chat) || this.chatRepository;
@@ -246,8 +252,9 @@ export class ChatService {
       clientId,
       counselorId,
       roomId: newChatRoom.id,
-      status: ChatStatus.ACTIVE,
-      startedAt: new Date(),
+      status: status || ChatStatus.ACTIVE,
+      startedAt: startedAt || new Date(),
+      externalId,
       tenantId: tenantId || ExecutionManager.getTenantId(),
     });
 
@@ -270,11 +277,17 @@ export class ChatService {
     counselorId,
     provider,
     platform,
+    externalId,
+    status,
+    startedAt,
     entityManager,
   }: {
     counselorId: number;
     provider?: AudioChatProvider;
     platform?: AudioChatPlatform;
+    externalId?: string;
+    status?: ChatStatus;
+    startedAt?: Date;
     entityManager?: EntityManager;
   }): Promise<{
     chatId: number;
@@ -289,6 +302,9 @@ export class ChatService {
       provider,
       platform,
       entityManager,
+      status,
+      externalId,
+      startedAt,
     });
 
     return {
@@ -676,7 +692,7 @@ export class ChatService {
     return chat?.status === ChatStatus.ENDED;
   }
 
-  async endChat(chatId: number) {
+  async endChat(chatId: number, endedAt?: Date) {
     const chat = await this.getChatById(chatId);
     if (!chat) {
       throw new HttpException('Chat not found', 404);
@@ -688,7 +704,7 @@ export class ChatService {
 
     await this.chatRepository.update(chatId, {
       status: ChatStatus.ENDED,
-      endedAt: new Date(),
+      endedAt: endedAt || new Date(),
     });
     this.cache.del(`chat:${chatId}`);
     const updatedChat = await this.getChatById(chatId);
@@ -772,7 +788,7 @@ export class ChatService {
   }
 
   async handleChatEnded(chat: Chat) {
-    this.logger.info(`handleChatEnded - chat:${chat.id}`);
+    this.logger.info(`handleChatEnded - chatId: ${chat.id}`);
     const callDetails = await this.callDetailsRepository.findOne({
       where: { chatId: chat.id, tenantId: ExecutionManager.getTenantId() },
     });
@@ -782,7 +798,7 @@ export class ChatService {
     let participants;
 
     this.logger.info(
-      `handleChatEnded - chat:${chat.id} | provider:${provider}`,
+      `handleChatEnded - chatId: ${chat.id} | provider: ${provider}`,
     );
 
     if (provider === AudioChatProvider.WEBRTC) {
@@ -800,13 +816,12 @@ export class ChatService {
         chatId: chat.id,
         provider,
       });
-
-      if (channel) {
-        this.broadcastMessageService.broadcastChatEndedEvent(channel, {
-          participants,
-          chatId: chat.id,
-        });
-      }
+    }
+    if (channel && participants) {
+      this.broadcastMessageService.broadcastChatEndedEvent(channel, {
+        participants,
+        chatId: chat.id,
+      });
     }
   }
 
@@ -820,7 +835,7 @@ export class ChatService {
     );
   }
 
-  async updateCallMetadata(chatId: number) {
+  async updateCallMetadata(chatId: number, duration?: number) {
     this.logger.info(`updateCallDetails:Start - chatId:${chatId}`);
     try {
       const chat = await this.getChatById(chatId);
@@ -835,13 +850,19 @@ export class ChatService {
         where: { chatId, tenantId: ExecutionManager.getTenantId() },
       });
 
-      const startDate = chat.startedAt || new Date();
+      let callDurationInSeconds;
       const endDate = chat.endedAt || new Date();
 
-      const callDurationInSeconds = ChatUtil.getCallDurationInSeconds(
-        startDate,
-        endDate,
-      );
+      if (duration) {
+        callDurationInSeconds = duration;
+      } else {
+        const startDate = chat.startedAt || new Date();
+
+        callDurationInSeconds = ChatUtil.getCallDurationInSeconds(
+          startDate,
+          endDate,
+        );
+      }
 
       if (callDetails) {
         const existingCallInfo = callDetails.callInfo || {};
@@ -1639,6 +1660,13 @@ export class ChatService {
     );
 
     return createNoteDto.content;
+  }
+
+  async getChatByExternalId(externalId: string) {
+    const chat = await this.chatRepository.findOne({
+      where: { externalId, tenantId: ExecutionManager.getTenantId() },
+    });
+    return chat;
   }
 
   async updateChat(chatId: number, input: UpdateChatInput) {

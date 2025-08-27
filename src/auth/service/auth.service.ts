@@ -311,9 +311,8 @@ export class AuthService {
       where: [{ phone: phone }, { email: email }],
     });
     if (!user) {
-      this.logger.error(`User not found for phone ${phone}`);
+      this.logger.error(`User not found for phone ${phone} or email ${email}`);
       return true; // to prevent user enumeration
-      //throw new BadRequestException('User not found');
     }
 
     if (!user.email) {
