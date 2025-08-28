@@ -60,7 +60,11 @@ export class SqsService {
 
       this.logger.log('Message sent to SQS successfully');
     } catch (error) {
-      this.logger.error('Failed to send message to SQS queue:', error);
+      this.logger.error(
+        `Failed to send message to SQS queue: ${queueUrl} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
       throw error;
     }
   }
@@ -81,7 +85,11 @@ export class SqsService {
       const response = await this.sqsClient.send(command);
       return response.Messages || [];
     } catch (error) {
-      this.logger.error('Failed to send response message to SQS queue:', error);
+      this.logger.error(
+        `Failed to send response message to SQS queue: ${queueUrl} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
       throw error;
     }
   }
@@ -98,7 +106,11 @@ export class SqsService {
       await this.sqsClient.send(command);
       this.logger.log(`Deleted message ${message.MessageId}`);
     } catch (err) {
-      this.logger.error(`Failed to delete message ${message.MessageId}:`, err);
+      this.logger.error(
+        `Failed to delete message ${message.MessageId} with error ${JSON.stringify(
+          err,
+        )}`,
+      );
     }
   }
 }

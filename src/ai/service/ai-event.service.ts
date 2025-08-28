@@ -34,8 +34,9 @@ export class AiEventService {
       );
     } catch (error) {
       this.logger.error(
-        `Failed to publish transcribe and summarize request for chat ${event.chat_id}:`,
-        error,
+        `Failed to publish transcribe and summarize request for chat ${event.chat_id} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw error;
     }

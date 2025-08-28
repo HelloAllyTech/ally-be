@@ -55,8 +55,9 @@ export class ChatAiService {
       return true;
     } catch (error) {
       this.logger.error(
-        `Error adding summary for chatId: ${chatId} from ai service`,
-        error,
+        `Error adding summary for chatId: ${chatId} from ai service with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw new ValidationException('Error adding summary');
     }
@@ -65,7 +66,7 @@ export class ChatAiService {
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async addTranscript(chat: Chat, messages: MessageRequest[]) {
     try {
-      this.logger.debug(
+      this.logger.info(
         `Adding transcript for chatId: ${chat.id} from ai service`,
       );
 
@@ -115,8 +116,9 @@ export class ChatAiService {
       return true;
     } catch (error) {
       this.logger.error(
-        `Error adding transcript for chatId: ${chat.id} from ai service`,
-        error,
+        `Error adding transcript for chatId: ${chat.id} from ai service with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw new ValidationException('Error adding transcript');
     }

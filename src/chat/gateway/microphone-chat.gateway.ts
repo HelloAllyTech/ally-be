@@ -65,8 +65,7 @@ export class MicrophoneChatGateway
 
     client.on('connect_error', (err) => {
       this.logger.error(
-        `❌ Connection error for client co ${client.id}:`,
-        err.message,
+        `❌ Connection error for client co ${client.id} with error ${err.message}`,
       );
     });
 

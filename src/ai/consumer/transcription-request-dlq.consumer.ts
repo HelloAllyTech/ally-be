@@ -32,7 +32,11 @@ export class TranscriptionRequestDlqConsumer {
         },
       });
     } catch (err) {
-      this.logger.error(`Failed to process message ${message.MessageId}:`, err);
+      this.logger.error(
+        `Failed to process message ${message.MessageId}: with error ${JSON.stringify(
+          err,
+        )}`,
+      );
       throw err; // Re-throw to prevent message deletion
     }
   }

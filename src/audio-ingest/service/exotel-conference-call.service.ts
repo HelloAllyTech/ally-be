@@ -164,8 +164,9 @@ export class ExotelConferenceCallService implements AudioIngestInterface {
       );
     } catch (error) {
       this.logger.error(
-        `❌ Failed to start call stream for client ${streamSid}:`,
-        error,
+        `❌ Failed to start call stream for client ${streamSid}: with error ${JSON.stringify(
+          error,
+        )}`,
       );
       ws.terminate();
       delete this.sessions[streamSid];

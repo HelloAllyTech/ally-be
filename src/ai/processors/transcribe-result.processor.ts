@@ -90,7 +90,11 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
       this.logger.info(`Downloaded from S3: ${s3Path}`);
       return response.data;
     } catch (error) {
-      this.logger.error(`Failed to download from S3: ${s3Path}`, error);
+      this.logger.error(
+        `Failed to download from S3: ${s3Path} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
       throw new Error(`S3 download failed: ${error.message}`);
     }
   }
@@ -101,7 +105,11 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
       await axios.delete(deleteUrl);
       this.logger.info(`Successfully deleted S3 file: ${deleteUrl}`);
     } catch (error) {
-      this.logger.error(`Failed to delete from S3: ${deleteUrl}`, error);
+      this.logger.error(
+        `Failed to delete from S3: ${deleteUrl} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
     }
   }
 }
