@@ -818,6 +818,8 @@ export class ChatService {
         chatId: chat.id,
         provider,
       });
+    } else if (provider === AudioChatProvider.OZONETEL) {
+      participants = [chat.counselorId!];
     }
     if (channel && participants) {
       this.broadcastMessageService.broadcastChatEndedEvent(channel, {
