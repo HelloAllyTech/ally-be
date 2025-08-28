@@ -79,7 +79,7 @@ services:
     image: redis:latest
     ports:
       - "6379:6379"
-      
+
   localstack:
     image: localstack/localstack:latest
     container_name: localstack
@@ -92,7 +92,6 @@ services:
       DEFAULT_REGION: us-east-1
     volumes:
       - ./scripts/run-local-sqs.sh:/etc/localstack/init/ready.d/run-local-sqs.sh
-
     networks:
       - app-network
 networks:
