@@ -163,6 +163,15 @@ AI_SERVICE_API_KEY=ai-service-api-key
 
 # Audio storage directiry
 AUDIO_STORAGE_DIR=audio-storage
+
+# Cloud telephony credentials encryption key
+CLOUD_TELEPHONY_CREDENTIALS_ENCRYPTION_KEY=cloud-teleophony-credentials-encryption-key
+
+# Ozonetel API URL
+OZONETEL_API_URL=ozonetel-api-url
+
+# API base URL
+API_BASE_URL=api-base-url
 ```
 
 ---

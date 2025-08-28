@@ -174,4 +174,24 @@ export class AppConfigService {
       dir: this.configService.get<string>('AUDIO_STORAGE_DIR'),
     };
   }
+
+  get cloudTelephony() {
+    return {
+      credentialsEncryptionKey: this.configService.get<string>(
+        'CLOUD_TELEPHONY_CREDENTIALS_ENCRYPTION_KEY',
+      ),
+    };
+  }
+
+  get ozonetel() {
+    return {
+      apiUrl: this.configService.get<string>('OZONETEL_API_URL'),
+    };
+  }
+
+  get api() {
+    return {
+      baseUrl: this.configService.get<string>('API_BASE_URL'),
+    };
+  }
 }

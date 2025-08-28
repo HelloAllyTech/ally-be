@@ -3,5 +3,5 @@ export interface TranscribeAndSummarizeRequestMessage {
   timestamp: number;
   chat_id: number;
   audio_url: string;
-  sample_rate: number;
+  sample_rate?: number;
 }

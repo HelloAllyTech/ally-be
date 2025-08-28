@@ -3,10 +3,15 @@ export enum QueueStatus {
   MATCHED = 'MATCHED',
 }
 
+export enum CloudTelephonyProvider {
+  OZONETEL = 'OZONETEL',
+}
+
 export enum AudioChatProvider {
   WEBRTC = 'WEBRTC',
   EXOTEL_CONFERENCE_CALL = 'EXOTEL_CONFERENCE_CALL',
   MICROPHONE = 'MICROPHONE',
+  OZONETEL = CloudTelephonyProvider.OZONETEL,
 }
 
 export enum AudioChatPlatform {

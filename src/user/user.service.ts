@@ -189,4 +189,10 @@ export class UserService {
       count,
     };
   }
+
+  async getUserByExternalId(externalId: string): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { externalId, tenantId: ExecutionManager.getTenantId() },
+    });
+  }
 }

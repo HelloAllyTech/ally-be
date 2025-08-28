@@ -186,7 +186,9 @@ export class AuthService {
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(userData.password, 10);
+    const hashedPassword = userData.password
+      ? await bcrypt.hash(userData.password, 10)
+      : undefined;
 
     // Create new user
     const newUser = this.userRepository.create({
@@ -196,9 +198,10 @@ export class AuthService {
       role: userData.role || UserRole.CLIENT, // Default role
       status: UserStatus.ACTIVE,
       metadata: {},
-      username: userData.email,
+      username: userData.username || userData.email,
       phone: userData.phone,
       tenantId: userData.tenantId,
+      externalId: userData.externalId,
     });
 
     // Save user
@@ -311,9 +314,8 @@ export class AuthService {
       where: [{ phone: phone }, { email: email }],
     });
     if (!user) {
-      this.logger.error(`User not found for phone ${phone}`);
+      this.logger.error(`User not found for phone ${phone} or email ${email}`);
       return true; // to prevent user enumeration
-      //throw new BadRequestException('User not found');
     }
 
     if (!user.email) {

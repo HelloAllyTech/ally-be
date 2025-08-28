@@ -1,18 +1,12 @@
 import * as WebSocket from 'ws';
-import { Inject, Injectable, Query } from '@nestjs/common';
-import { OzonetelService } from './ozonetel.service';
+import { Inject, Injectable } from '@nestjs/common';
 import { AudioIngestInterface } from '../interface/audio-ingest.interface';
 @Injectable()
 export class AudioIngestService {
   constructor(
-    private readonly ozonetelService: OzonetelService,
     @Inject('AudioIngestInterface')
     private readonly audioIngestInterface: AudioIngestInterface,
   ) {}
-
-  initiateOzonetel(@Query() query: any) {
-    return this.ozonetelService.initiateOzonetel(query);
-  }
 
   startCall(msg: any, ws: WebSocket): Promise<void> {
     return this.audioIngestInterface.startCall(msg, ws);

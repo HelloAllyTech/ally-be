@@ -25,7 +25,6 @@ create_queue() {
   fi
 }
 
-
 #  Create required queues
 create_queue "sqs-ai-transcription-request-queue"
 create_queue "sqs-ai-transcription-response-queue"
