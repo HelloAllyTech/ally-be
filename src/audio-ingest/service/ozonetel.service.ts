@@ -17,6 +17,7 @@ import { UserService } from '../../user/user.service';
 import { UserRole } from '../../common/constants/user.constants';
 import { AudioChatProvider } from '../../common/constants/chat.constants';
 import {
+  Chat,
   ChatStatus,
   ChatSummaryStatus,
 } from '../../common/entities/chat.entity';
@@ -128,8 +129,7 @@ export class OzonetelService {
         counselor.tenantId,
       );
 
-      let chat;
-      let chatId;
+      let chat: Chat | null = null;
 
       if (monitorUCID) {
         chat = await this.chatService.getChatByExternalId(monitorUCID);
@@ -138,13 +138,12 @@ export class OzonetelService {
             `Chat does not exist for AgentId: ${AgentID} | monitorUCID: ${monitorUCID}`,
           );
         }
-        chatId = chat?.id;
       }
 
       // if chat was not created (using call events webhook) and audio file is not present, throw an error
-      if (!chat && !AudioFile) {
+      if (!AudioFile) {
         throw new Error(
-          `There is no chat and audio file for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chatId}`,
+          `There is no audio file for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat?.id}`,
         );
       }
 
@@ -153,38 +152,42 @@ export class OzonetelService {
         chat.summaryStatus !== ChatSummaryStatus.PENDING
       ) {
         throw new Error(
-          `Summary generation has already been processed for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chatId}`,
+          `Summary generation has already been processed for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat?.id}`,
         );
       }
 
-      // If chat was not created using the Ozonetel subscribe event (if webhook was not received or any other cases),
+      // If chat was not created using the Ozonetel call events webhook (if webhook was not received or any other cases),
       // create a new chat
       if (!chat) {
         const startedAt = StartTime
           ? this.addDurationToStartTime(StartTime, durationInSeconds)
           : new Date();
-        chat = await this.chatService.createChatForAnyonymousClient({
-          counselorId: counselor.id,
-          provider: AudioChatProvider.OZONETEL,
-          startedAt,
-          externalId: monitorUCID,
-          status: ChatStatus.ACTIVE,
-        });
-        this.logger.info(
-          `Chat created for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat?.chatId}`,
+        const chatResult = await this.chatService.createChatForAnyonymousClient(
+          {
+            counselorId: counselor.id,
+            provider: AudioChatProvider.OZONETEL,
+            startedAt,
+            externalId: monitorUCID,
+            status: ChatStatus.ACTIVE,
+          },
         );
-        chatId = chat?.chatId;
+        chat = chatResult?.chat || null;
+        this.logger.info(
+          `Chat created for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat?.id}`,
+        );
       }
 
-      const endedAt = EndTime ? new Date(EndTime) : new Date();
-
-      if (chatId !== undefined) {
-        await this.chatService.endChat(chatId, endedAt);
-        this.chatService.updateCallMetadata(chatId, durationInSeconds);
-      } else {
+      if (!chat) {
         throw new Error(
           `Chat was not created for AgentId: ${AgentID} | monitorUCID: ${monitorUCID}`,
         );
+      }
+
+      // if chat is not ended using call events webhook, end the chat
+      if (chat.status !== ChatStatus.ENDED) {
+        const endedAt = EndTime ? new Date(EndTime) : new Date();
+        await this.chatService.endChat(chat.id, endedAt);
+        this.chatService.updateCallMetadata(chat.id, durationInSeconds);
       }
 
       if (AudioFile) {
@@ -192,19 +195,19 @@ export class OzonetelService {
           message_type: 'transcribe_and_summarize_request',
           timestamp: Date.now(),
           audio_url: AudioFile,
-          chat_id: chatId,
+          chat_id: chat.id,
         });
 
         this.logger.info(
-          `Audio file processed successfully for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chatId}`,
+          `Audio file processed successfully for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat.id}`,
         );
       } else {
-        await this.chatService.updateChat(chatId, {
-          summaryStatus: ChatSummaryStatus.FAILED,
+        await this.chatService.updateChat(chat.id, {
+          summaryStatus: ChatSummaryStatus.NO_AUDIO,
           metadata: { error: 'Audio file was missing' },
         });
         throw new Error(
-          `Audio file is required for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chatId}`,
+          `Audio file is required for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat.id}`,
         );
       }
     } catch (error) {
@@ -249,25 +252,44 @@ export class OzonetelService {
         );
       }
 
-      if (
-        eventType !== OzonetelEventTypes.Call ||
-        data?.action !== OzonetelCallAction.Answered
-      ) {
+      if (eventType !== OzonetelEventTypes.Call || !data?.action) {
         this.logger.info(
-          `Invalid event type or action for AgentId: ${agent_id} | monitorUCID: ${monitor_ucid} | eventType: ${eventType} | action: ${data?.action}`,
+          `Invalid event type and action for AgentId: ${agent_id} | monitorUCID: ${monitor_ucid} | eventType: ${eventType} | action: ${data?.action}`,
         );
         return;
       }
-
-      this.logger.info(
-        `Processing Ozonetel call events for agent with phone ${agent_id} | monitorUCID: ${monitor_ucid}`,
-      );
 
       ExecutionManager.setAuthContext(
         '',
         UserRole.COUNSELOR,
         cloudTelephonyIntegration.tenantId,
       );
+
+      if (data.action === OzonetelCallAction.Disconnect && monitor_ucid) {
+        const chat = await this.chatService.getChatByExternalId(monitor_ucid);
+        if (chat) {
+          this.logger.info(
+            `Ending chat for AgentId: ${agent_id} | monitorUCID: ${monitor_ucid} | chatId: ${chat.id} using call events disconnect action`,
+          );
+          await this.chatService.endChat(
+            chat.id,
+            event_time ? new Date(event_time) : new Date(),
+          );
+          this.chatService.updateCallMetadata(chat.id);
+        }
+        return;
+      }
+
+      if (data.action !== OzonetelCallAction.Answered) {
+        throw new Error(
+          `Invalid action for AgentId: ${agent_id} | monitorUCID: ${monitor_ucid} | action: ${data?.action}`,
+        );
+      }
+
+      this.logger.info(
+        `Processing Ozonetel call events for agent with phone ${agent_id} | monitorUCID: ${monitor_ucid}`,
+      );
+
       const counselor = await this.userService.getUserByExternalId(agent_id);
 
       if (!counselor || counselor.role !== UserRole.COUNSELOR) {

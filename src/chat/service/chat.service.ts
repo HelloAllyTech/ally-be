@@ -293,6 +293,7 @@ export class ChatService {
     chatId: number;
     clientId: number;
     counselorId: number;
+    chat: Chat;
   } | null> {
     const clientId = ANONYMOUS_CLIENT_ID;
 
@@ -311,6 +312,7 @@ export class ChatService {
       chatId: chat.id,
       clientId: clientId,
       counselorId,
+      chat,
     };
   }
 
@@ -1662,7 +1664,7 @@ export class ChatService {
     return createNoteDto.content;
   }
 
-  async getChatByExternalId(externalId: string) {
+  async getChatByExternalId(externalId: string): Promise<Chat | null> {
     const chat = await this.chatRepository.findOne({
       where: { externalId, tenantId: ExecutionManager.getTenantId() },
     });
