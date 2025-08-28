@@ -71,9 +71,10 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
         summaryStatus: ChatSummaryStatus.SUCCESS,
       });
     } catch (error) {
-      this.logError(
-        `Failed to process transcription result for chat ${chat_id}`,
-        error,
+      this.logger.error(
+        `Failed to process transcription result for chat ${chat_id} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       await this.chatService.updateChat(chat_id, {
         summaryStatus: ChatSummaryStatus.FAILED,
