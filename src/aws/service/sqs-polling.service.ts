@@ -67,8 +67,9 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
         handlersByQueue.get(handler.queueUrl)!.push(boundHandler);
       } catch (error) {
         this.logger.error(
-          `Failed to resolve handler instance for ${handler.targetConstructor?.name}.${handler.methodName}:`,
-          error,
+          `Failed to resolve handler instance for ${handler.targetConstructor?.name}.${handler.methodName} with error ${JSON.stringify(
+            error,
+          )}`,
         );
       }
     }
@@ -120,8 +121,9 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
         await this.pollMessages(poller);
       } catch (error) {
         this.logger.error(
-          `Error during polling for queue ${poller.queueUrl}:`,
-          error,
+          `Error during polling for queue ${poller.queueUrl} with error ${JSON.stringify(
+            error,
+          )}`,
         );
       }
 
@@ -146,8 +148,9 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
       }
     } catch (error) {
       this.logger.error(
-        `Error receiving messages from queue ${poller.queueUrl}:`,
-        error,
+        `Error receiving messages from queue ${poller.queueUrl} with error ${JSON.stringify(
+          error,
+        )}`,
       );
     }
   }
@@ -183,8 +186,9 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
         break;
       } catch (error) {
         this.logger.error(
-          `Handler ${handler.target.constructor.name}.${handler.methodName} failed to process message ${message.MessageId}:`,
-          error,
+          `Handler ${handler.target.constructor.name}.${handler.methodName} failed to process message ${message.MessageId} with error ${JSON.stringify(
+            error,
+          )}`,
         );
         // Continue to next handler (if any)
       }
@@ -199,8 +203,9 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
         );
       } catch (error) {
         this.logger.error(
-          `Failed to delete message ${message.MessageId} from queue ${poller.queueUrl}:`,
-          error,
+          `Failed to delete message ${message.MessageId} from queue ${poller.queueUrl} with error ${JSON.stringify(
+            error,
+          )}`,
         );
       }
     } else {

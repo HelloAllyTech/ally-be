@@ -36,8 +36,9 @@ export class TranscriptionResponseDlqConsumer {
       );
     } catch (error) {
       this.logger.error(
-        `Failed to process message ${message.MessageId}:`,
-        error,
+        `Failed to process message ${message.MessageId}: with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw error; // Re-throw to prevent message deletion
     }

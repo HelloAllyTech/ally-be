@@ -77,8 +77,9 @@ export class ReferenceDocumentService {
       }
     } catch (error) {
       this.logger.error(
-        `AI upload failed for document ID: ${savedDocument.id}`,
-        error,
+        `AI upload failed for document ID: ${savedDocument.id} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       savedDocument.uploadStatus = DocumentUploadStatus.FAILED;
     }
@@ -89,8 +90,9 @@ export class ReferenceDocumentService {
       });
     } catch (error) {
       this.logger.error(
-        `Failed to update document status for ID: ${savedDocument.id}`,
-        error,
+        `Failed to update document status for ID: ${savedDocument.id} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw new DocumentUpdateFailedException(savedDocument.id, error);
     }
@@ -185,12 +187,9 @@ export class ReferenceDocumentService {
       };
     } catch (error) {
       this.logger.error(
-        `Search failed for ${contextLabel} query "${searchDto.query}"`,
-        {
-          request,
-          error: error.message || error,
-          stack: error.stack,
-        },
+        `Search failed for ${contextLabel} query "${searchDto.query}" with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw new SearchOperationFailedException(contextLabel, error);
     }
@@ -354,7 +353,11 @@ export class ReferenceDocumentService {
       const aiDocument = await this.aiService.getReferenceDocument(id);
       return aiDocument;
     } catch (error) {
-      this.logger.error(`Failed to get document from AI service: ${id}`, error);
+      this.logger.error(
+        `Failed to get document from AI service: ${id} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
       throw new NotFoundException(`Reference document with ID ${id} not found`);
     }
   }
@@ -378,8 +381,9 @@ export class ReferenceDocumentService {
       return aiDocument;
     } catch (error) {
       this.logger.error(
-        `Failed to get public document from AI service: ${id}`,
-        error,
+        `Failed to get public document from AI service: ${id} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw new NotFoundException(
         `Public reference document with ID ${id} not found`,
@@ -416,8 +420,9 @@ export class ReferenceDocumentService {
       return aiDocument;
     } catch (error) {
       this.logger.error(
-        `Failed to get private document from AI service: ${id}`,
-        error,
+        `Failed to get private document from AI service: ${id} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw new NotFoundException(`Reference document with ID ${id} not found`);
     }
@@ -436,7 +441,9 @@ export class ReferenceDocumentService {
       await this.referenceDocumentRepository.delete(id);
       return { success: true };
     } catch (error) {
-      this.logger.error(`Failed to delete document: ${id}`, error);
+      this.logger.error(
+        `Failed to delete document: ${id} with error ${JSON.stringify(error)}`,
+      );
       throw new Error(`Failed to delete reference document with ID ${id}`);
     }
   }
@@ -465,7 +472,9 @@ export class ReferenceDocumentService {
       );
       return { success: true, message: 'Document archived successfully' };
     } catch (error) {
-      this.logger.error(`Failed to archive document: ${id}`, error);
+      this.logger.error(
+        `Failed to archive document: ${id} with error ${JSON.stringify(error)}`,
+      );
       throw new DocumentArchiveFailedException(id, error);
     }
   }
@@ -494,7 +503,9 @@ export class ReferenceDocumentService {
       );
       return { success: true, message: 'Document unarchived successfully' };
     } catch (error) {
-      this.logger.error(`Failed to unarchive document: ${id}`, error);
+      this.logger.error(
+        `Failed to unarchive document: ${id} with error ${JSON.stringify(error)}`,
+      );
       throw new DocumentUnarchiveFailedException(id, error);
     }
   }

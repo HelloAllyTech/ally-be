@@ -41,7 +41,9 @@ export class OzonetelWebhookController {
       this.ozonetelService.processOzonetelCallDetail(parsedData, code);
       return { success: true, message: 'Webhook processed successfully' };
     } catch (error) {
-      this.logger.error('Error processing Ozonetel webhook', error);
+      this.logger.error(
+        `Error processing Ozonetel webhook with error ${JSON.stringify(error)}`,
+      );
       throw new BadRequestException('Failed to process webhook');
     }
   }
@@ -66,7 +68,11 @@ export class OzonetelWebhookController {
         message: 'Events subscription processed successfully',
       };
     } catch (error) {
-      this.logger.error('Error processing Ozonetel events subscription', error);
+      this.logger.error(
+        `Error processing Ozonetel events subscription with error ${JSON.stringify(
+          error,
+        )}`,
+      );
       throw new BadRequestException('Failed to process events subscription');
     }
   }

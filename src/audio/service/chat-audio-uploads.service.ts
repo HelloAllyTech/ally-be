@@ -48,8 +48,9 @@ export class ChatAudioUploadsService {
       return savedUpload;
     } catch (error) {
       this.logger.error(
-        `Failed to create audio upload for chatId: ${data.chatId}`,
-        error,
+        `Failed to create audio upload for chatId: ${data.chatId} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw error;
     }
@@ -86,8 +87,9 @@ export class ChatAudioUploadsService {
       return updatedUpload;
     } catch (error) {
       this.logger.error(
-        `Failed to update audio upload status for ChatId: ${chatId}`,
-        error,
+        `Failed to update audio upload status for ChatId: ${chatId} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw error;
     }

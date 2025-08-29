@@ -71,9 +71,10 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
         summaryStatus: ChatSummaryStatus.SUCCESS,
       });
     } catch (error) {
-      this.logError(
-        `Failed to process transcription result for chat ${chat_id}`,
-        error,
+      this.logger.error(
+        `Failed to process transcription result for chat ${chat_id} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       await this.chatService.updateChat(chat_id, {
         summaryStatus: ChatSummaryStatus.FAILED,
@@ -90,7 +91,11 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
       this.logger.info(`Downloaded from S3: ${s3Path}`);
       return response.data;
     } catch (error) {
-      this.logger.error(`Failed to download from S3: ${s3Path}`, error);
+      this.logger.error(
+        `Failed to download from S3: ${s3Path} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
       throw new Error(`S3 download failed: ${error.message}`);
     }
   }
@@ -101,7 +106,11 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
       await axios.delete(deleteUrl);
       this.logger.info(`Successfully deleted S3 file: ${deleteUrl}`);
     } catch (error) {
-      this.logger.error(`Failed to delete from S3: ${deleteUrl}`, error);
+      this.logger.error(
+        `Failed to delete from S3: ${deleteUrl} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
     }
   }
 }

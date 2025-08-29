@@ -142,8 +142,9 @@ export class StreamFileProcessorService {
       if (chatId !== undefined && onChatCreated) onChatCreated(chatId);
     } catch (error) {
       this.logger.error(
-        `Failed to create chat and start call stream for client ${callId}:`,
-        error,
+        `Failed to create chat and start call stream for client ${callId}: with error ${JSON.stringify(
+          error,
+        )}`,
       );
 
       // Rollback external operations
@@ -241,8 +242,7 @@ export class StreamFileProcessorService {
       return { uploadId: UploadId!, files: tempFiles, key };
     } catch (err) {
       this.logger.error(
-        `Call stream start failed with error: ${err.message} | ChatId: ${chatId} | Provider: ${session.provider}`,
-        err,
+        `Call stream start failed with error: ${err.message} | ChatId: ${chatId} | Provider: ${session.provider} with error ${JSON.stringify(err)}`,
       );
       throw err;
     }
@@ -299,8 +299,9 @@ export class StreamFileProcessorService {
       );
     } catch (error) {
       this.logger.error(
-        `Failed to rollback external operations for call ${callId}:`,
-        error,
+        `Failed to rollback external operations for call ${callId}: with error ${JSON.stringify(
+          error,
+        )}`,
       );
     }
   }
@@ -422,8 +423,9 @@ export class StreamFileProcessorService {
         fs.promises.unlink(file).catch((error) => {
           if (error.code !== 'ENOENT') {
             this.logger.error(
-              `Error deleting temporary file: ${file} | ChatId: ${chatId}`,
-              error,
+              `Error deleting temporary file: ${file} | ChatId: ${chatId} with error ${JSON.stringify(
+                error,
+              )}`,
             );
           }
         }),
@@ -564,8 +566,9 @@ export class StreamFileProcessorService {
       );
     } catch (err) {
       this.logger.error(
-        `Call stream end failed with error: ${err.message} | ChatId: ${chatId} | Provider: ${provider}`,
-        err,
+        `Call stream end failed with error: ${err.message} | ChatId: ${chatId} | Provider: ${provider} with error ${JSON.stringify(
+          err,
+        )}`,
       );
       await this.chatService.updateChat(chatId, {
         summaryStatus: ChatSummaryStatus.FAILED,
