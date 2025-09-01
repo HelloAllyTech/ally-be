@@ -174,4 +174,8 @@ export class AppConfigService {
       dir: this.configService.get<string>('AUDIO_STORAGE_DIR'),
     };
   }
+
+  get testAccounts() {
+    return this.configService.get<string>('TEST_ACCOUNTS');
+  }
 }
