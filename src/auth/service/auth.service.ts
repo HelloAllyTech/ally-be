@@ -322,6 +322,20 @@ export class AuthService {
       this.logger.error(`User ${user.id} has no email`);
       return true;
     }
+
+    let testAccounts: Record<string, string> = {};
+    try {
+      testAccounts = JSON.parse(this.configService.testAccounts || '{}');
+    } catch (error) {
+      this.logger.error('Invalid TEST_ACCOUNTS JSON format');
+    }
+    if (testAccounts[user.email]) {
+      const otp = testAccounts[user.email];
+      await this.cache.set(this.getOtpKey(user.email), otp, this.OTP_TTL);
+      this.logger.info(`OTP for test account ${user.email} generated`);
+      return true;
+    }
+
     const otp = AuthUtil.generateOtp();
     await this.cache.set(this.getOtpKey(user.email), otp, this.OTP_TTL);
 
