@@ -194,4 +194,8 @@ export class AppConfigService {
       baseUrl: this.configService.get<string>('API_BASE_URL'),
     };
   }
+
+  get testAccounts() {
+    return this.configService.get<string>('TEST_ACCOUNTS');
+  }
 }

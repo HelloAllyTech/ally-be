@@ -172,6 +172,14 @@ OZONETEL_API_URL=ozonetel-api-url
 
 # API base URL
 API_BASE_URL=api-base-url
+# AWS-SQS
+SQS_TRANSCRIPTION_REQUEST_QUEUE_URL=sqs-ai-transcription-request-queue
+SQS_TRANSCRIPTION_REQUEST_DLQ_URL=sqs-ai-transcription-request-dlq
+SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL=sqs-ai-transcription-response-queue
+SQS_TRANSCRIPTION_RESPONSE_DLQ_URL=sqs-ai-transcription-response-dlq
+
+# TEST ACCOUNTS
+TEST_ACCOUNTS=test-accounts
 ```
 
 ---
