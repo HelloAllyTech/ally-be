@@ -38,6 +38,7 @@ import { PaginatedResponse } from '../../common/type/common.type';
 import { CounselorNameResponse } from '../dto/call-log.response.dto';
 import { AddNoteDto } from '../dto/notes.dto';
 import { ChatSummaryService } from '../service/chat-summary.service';
+import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -608,5 +609,26 @@ export class ChatController {
     @Body() createNoteDto: AddNoteDto,
   ): Promise<string> {
     return this.service.addNoteToSession(chatId, createNoteDto);
+  }
+
+  @Post(':id/summary-feedback')
+  @ApiOperation({ summary: 'Add a feedback to summary generated' })
+  @ApiResponse({
+    status: 201,
+    description: 'Feedback added successfully',
+    type: String,
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    type: Number,
+    description: 'Chat ID',
+  })
+  @AuthRoles(UserRole.COUNSELOR)
+  async addFeedbackToChat(
+    @Param('id') chatId: number,
+    @Body() summaryFeedbackDto: SummaryFeedbackDto,
+  ): Promise<string> {
+    return this.service.addFeedbackToChat(chatId, summaryFeedbackDto);
   }
 }

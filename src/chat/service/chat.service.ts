@@ -35,6 +35,7 @@ import {
 } from '../type/chat.type';
 import { Pagination } from '../../common/type/common.type';
 import { CallDetails } from '../../common/entities/call.details.entity';
+
 import { RedisService } from '../../redis/service/redis.service';
 import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
@@ -65,6 +66,8 @@ import { StreamFileProcessorService } from '../../audio/service/stream-file-proc
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
 import { AddNoteDto } from '../dto/notes.dto';
 import { ChatRepository } from '../repository/chat.repository';
+import { SummaryFeedbackRepository } from '../repository/summary-feedback.repository';
+import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 
 @Injectable()
 export class ChatService {
@@ -78,6 +81,7 @@ export class ChatService {
     private chatRoomRepository: Repository<ChatRoom>,
     @InjectRepository(CallDetails)
     private callDetailsRepository: Repository<CallDetails>,
+    private summaryFeedbackRepository: SummaryFeedbackRepository,
     @Inject(forwardRef(() => QueueService))
     private queueService: QueueService,
     private gateway: ChatGateway,
@@ -1664,6 +1668,44 @@ export class ChatService {
     );
 
     return createNoteDto.content;
+  }
+
+  async addFeedbackToChat(
+    chatId: number,
+    summaryFeedbackDto: SummaryFeedbackDto,
+  ): Promise<string> {
+    return this.dataSource.transaction(async (entityManager) => {
+      const callDetailsRepo =
+        entityManager.getRepository(CallDetails) || this.callDetailsRepository;
+      const summaryFeedbackRepo = this.summaryFeedbackRepository;
+      const callDetails = await callDetailsRepo.findOne({
+        where: { chatId, tenantId: ExecutionManager.getTenantId() },
+      });
+      if (!callDetails) {
+        this.logger.error(`Call details not found for chat ${chatId}`);
+        throw new NotFoundException(
+          `Call details not found for chat ${chatId}`,
+        );
+      }
+      const existingCallInfo = callDetails.callInfo || {};
+      const updatedCallInfo = {
+        ...existingCallInfo,
+        isSummaryFeedbackAdded: true,
+      };
+
+      await summaryFeedbackRepo.createSummaryFeedback(
+        chatId,
+        summaryFeedbackDto.rating,
+        summaryFeedbackDto.feedback,
+        entityManager,
+      );
+
+      await callDetailsRepo.update(
+        { chatId, tenantId: ExecutionManager.getTenantId() },
+        { callInfo: updatedCallInfo },
+      );
+      return 'Feedback added successfully';
+    });
   }
 
   async getChatByExternalId(externalId: string): Promise<Chat | null> {

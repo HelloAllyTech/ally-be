@@ -57,6 +57,9 @@ export class CallInfo {
 
   @ApiProperty({ required: false })
   notes?: string;
+
+  @ApiProperty({ required: false })
+  isSummaryFeedbackAdded?: boolean;
 }
 
 export class CallDetails {

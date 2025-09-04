@@ -23,9 +23,18 @@ import { AiModule } from '../ai/ai.module';
 
 import { AwsModule } from 'src/aws/aws.module';
 import { ChatRepository } from './repository/chat.repository';
+import { SummaryFeedback } from './entity/summary-feedback.entity';
+import { SummaryFeedbackRepository } from './repository/summary-feedback.repository';
+
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Message, ChatRoom, Feedback, CallDetails]),
+    TypeOrmModule.forFeature([
+      Message,
+      ChatRoom,
+      Feedback,
+      CallDetails,
+      SummaryFeedback,
+    ]),
     TypeOrmModule.forFeature([Chat, ChatRepository]),
     UserModule,
     QueueModule,
@@ -46,6 +55,7 @@ import { ChatRepository } from './repository/chat.repository';
     ChatAiService,
     JwtService,
     ChatRepository,
+    SummaryFeedbackRepository,
   ],
   exports: [ChatService, FeedbackService, ChatGateway, ChatAiService],
 })
