@@ -4,6 +4,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import axios from 'axios';
+import {
+  addDurationToDate,
+  convertIstStringToUtc,
+  subtractDurationFromDate,
+} from '../../common/util/date.util';
 import { LoggerService } from '../../logger/logger.service';
 import {
   OzonetelCallAction,
@@ -60,6 +65,7 @@ export class OzonetelService {
         EndTime,
         Apikey,
         Status,
+        TimeToAnswer,
       } = callDetail || {};
       if (!code || code.trim() === '') {
         throw new Error(
@@ -96,7 +102,7 @@ export class OzonetelService {
       }
 
       const durationInSeconds = Duration
-        ? this.getDurationInSeconds(Duration)
+        ? this.parseTimeToSeconds(Duration)
         : 0;
 
       if (Status !== OzonetelCallStatus.Answered || durationInSeconds === 0) {
@@ -159,18 +165,22 @@ export class OzonetelService {
       // If chat was not created using the Ozonetel call events webhook (if webhook was not received or any other cases),
       // create a new chat
       if (!chat) {
-        const startedAt = StartTime
-          ? this.addDurationToStartTime(StartTime, durationInSeconds)
-          : new Date();
-        const chatResult = await this.chatService.createChatForAnyonymousClient(
-          {
-            counselorId: counselor.id,
-            provider: AudioChatProvider.OZONETEL,
-            startedAt,
-            externalId: monitorUCID,
-            status: ChatStatus.ACTIVE,
-          },
-        );
+        const timeToAnswer = TimeToAnswer
+          ? this.parseTimeToSeconds(TimeToAnswer)
+          : 0;
+        const startedAt = this.getConversationStartTime({
+          startTime: StartTime,
+          durationInSeconds,
+          timeToAnswer,
+          endTime: EndTime,
+        });
+        const chatResult = await this.chatService.createChatForAnonymousClient({
+          counselorId: counselor.id,
+          provider: AudioChatProvider.OZONETEL,
+          startedAt,
+          externalId: monitorUCID,
+          status: ChatStatus.ACTIVE,
+        });
         chat = chatResult?.chat || null;
         this.logger.info(
           `Chat created for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat?.id}`,
@@ -185,7 +195,7 @@ export class OzonetelService {
 
       // if chat is not ended using call events webhook, end the chat
       if (chat.status !== ChatStatus.ENDED) {
-        const endedAt = EndTime ? new Date(EndTime) : new Date();
+        const endedAt = EndTime ? convertIstStringToUtc(EndTime) : new Date();
         await this.chatService.endChat(chat.id, endedAt);
         this.chatService.updateCallMetadata(chat.id, durationInSeconds);
       }
@@ -273,7 +283,7 @@ export class OzonetelService {
           );
           await this.chatService.endChat(
             chat.id,
-            event_time ? new Date(event_time) : new Date(),
+            event_time ? convertIstStringToUtc(event_time) : new Date(),
           );
           this.chatService.updateCallMetadata(chat.id);
         }
@@ -303,12 +313,12 @@ export class OzonetelService {
         counselor.role,
         cloudTelephonyIntegration.tenantId,
       );
-      const chat = await this.chatService.createChatForAnyonymousClient({
+      const chat = await this.chatService.createChatForAnonymousClient({
         counselorId: counselor.id,
         provider: AudioChatProvider.OZONETEL,
         externalId: monitor_ucid,
         status: ChatStatus.ACTIVE,
-        startedAt: event_time ? new Date(event_time) : new Date(),
+        startedAt: event_time ? convertIstStringToUtc(event_time) : new Date(),
       });
 
       if (chat) {
@@ -454,16 +464,43 @@ export class OzonetelService {
     }
   }
 
-  getDurationInSeconds(duration: string): number {
+  parseTimeToSeconds(duration: string): number {
     const [hours, minutes, seconds] = duration.split(':').map(Number);
     return hours * 3600 + minutes * 60 + seconds;
   }
 
-  addDurationToStartTime(startTime: string, durationInSeconds: number): Date {
-    const startDate = new Date(startTime);
-    if (durationInSeconds === 0) {
-      return startDate;
+  getConversationStartTime({
+    startTime,
+    durationInSeconds,
+    endTime,
+    timeToAnswer,
+  }: {
+    startTime?: string;
+    durationInSeconds: number;
+    endTime?: string;
+    timeToAnswer: number;
+  }): Date {
+    this.logger.info(
+      `Getting conversation start time. startTime: ${startTime} | durationInSeconds: ${durationInSeconds} | endTime: ${endTime} | timeToAnswer: ${timeToAnswer}`,
+    );
+    if (startTime && timeToAnswer > 0) {
+      const startTimeInUtc = convertIstStringToUtc(startTime);
+      return addDurationToDate({
+        date: startTimeInUtc,
+        duration: timeToAnswer,
+        unit: 'second',
+      });
+    } else if (endTime && durationInSeconds > 0) {
+      const endTimeInUtc = convertIstStringToUtc(endTime);
+      return subtractDurationFromDate({
+        date: endTimeInUtc,
+        duration: durationInSeconds,
+        unit: 'second',
+      });
     }
-    return new Date(startDate.getTime() + durationInSeconds * 1000);
+    this.logger.info(
+      `Failed to get conversation start time, using current time. startTime: ${startTime} | durationInSeconds: ${durationInSeconds} | endTime: ${endTime} | timeToAnswer: ${timeToAnswer}`,
+    );
+    return new Date();
   }
 }

@@ -277,7 +277,7 @@ export class ChatService {
     return chat;
   }
 
-  async createChatForAnyonymousClient({
+  async createChatForAnonymousClient({
     counselorId,
     provider,
     platform,

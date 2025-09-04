@@ -113,7 +113,7 @@ export class StreamFileProcessorService {
     try {
       await this.dataSource.transaction(async (entityManager) => {
         // Create chat using entityManager
-        chat = await this.chatService.createChatForAnyonymousClient({
+        chat = await this.chatService.createChatForAnonymousClient({
           counselorId: chatData.counselorId,
           provider: chatData.provider,
           platform: chatData.platform,
