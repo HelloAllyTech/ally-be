@@ -80,9 +80,59 @@ services:
     ports:
       - "6379:6379"
 
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - '4566:4566'
+    environment:
+      - SERVICES=sqs
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - DEBUG=1
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sqs-setup:
+    image: amazon/aws-cli:latest
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    networks:
+      - app-network
+    entrypoint: >
+      sh -c "
+        echo '🚀 Waiting for LocalStack...' &&
+        sleep 5 &&
+        echo '📦 Creating SQS queues...' &&
+        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-request-queue &&
+        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-response-queue &&
+        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-request-dlq &&
+        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-response-dlq &&
+        echo '🔗 Setting up Dead Letter Queues...' &&
+        MAIN_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-ai-transcription-request-queue --query 'QueueUrl' --output text) &&
+        DLQ_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-ai-transcription-request-dlq --query 'QueueUrl' --output text) &&
+        DLQ_ARN=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-attributes --queue-url $$DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) &&
+        aws --endpoint-url=http://localstack:4566 sqs set-queue-attributes --queue-url $$MAIN_URL --attributes '{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"'$$DLQ_ARN'\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}' &&
+        MAIN_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-ai-transcription-response-queue --query 'QueueUrl' --output text) &&
+        DLQ_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-ai-transcription-response-dlq --query 'QueueUrl' --output text) &&
+        DLQ_ARN=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-attributes --queue-url $$DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) &&
+        aws --endpoint-url=http://localstack:4566 sqs set-queue-attributes --queue-url $$MAIN_URL --attributes '{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"'$$DLQ_ARN'\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}' &&
+        echo '🎉 All SQS queues and DLQs are ready!'
+      "
 networks:
   app-network:
     driver: bridge
 
 volumes:
-  postgres-data: 
+  postgres-data:
