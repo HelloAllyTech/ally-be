@@ -48,20 +48,15 @@ export class ParticipantJoinedHandler {
       const roomName = event.room.name;
 
       let metadata: any = {};
-      let participantIdentity = 'Agent';
+      const participantIdentity = 'Agent';
 
       if (event.room.metadata && event.room.metadata.trim() !== '') {
         metadata = JSON.parse(event.room.metadata);
         this.logger.log(`Parsed metadata: ${JSON.stringify(metadata)}`);
-
-        if (metadata.scenario && metadata.scenario.title) {
-          participantIdentity = `Agent ${metadata.scenario.title}`;
-        }
       } else {
         this.logger.log('Room metadata is empty or null, using default values');
       }
 
-      // Call agentDispatch from LiveKit service
       await this.liveKitService.agentDispatch(
         roomName,
         participantIdentity,

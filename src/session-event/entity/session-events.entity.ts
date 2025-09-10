@@ -1,9 +1,9 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, PrimaryColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from '../../common/entities/base-without-tenant.entity';
 
 @Entity('session_events')
 export class SessionEvents extends BaseWithoutTenantEntity {
-  @PrimaryGeneratedColumn()
+  @PrimaryColumn({ type: 'varchar' })
   id!: string;
 
   @Column()
