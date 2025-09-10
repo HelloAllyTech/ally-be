@@ -108,7 +108,7 @@ export class ScenarioSessionService {
 
     if (activeScenarioSessions.length > 0) {
       throw new BadRequestException(
-        'You already have an active scenario session',
+        `You already have an active scenario session ${activeScenarioSessions[0].id}`,
       );
     }
   }
@@ -185,6 +185,7 @@ export class ScenarioSessionService {
         scenarioSessionId,
         rating: addFeedbackToScenarioSessionDto.rating,
         feedback: addFeedbackToScenarioSessionDto.feedback,
+        tenantId: ExecutionManager.getTenantId(),
       });
 
     return this.scenarioSessionFeedbacksRepository.save(

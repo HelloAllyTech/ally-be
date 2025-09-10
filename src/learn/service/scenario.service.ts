@@ -4,6 +4,7 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ScenarioResponse } from '../dto/scenario-response.dto';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
+import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 
 @Injectable()
 export class ScenarioService {
@@ -52,5 +53,21 @@ export class ScenarioService {
       createScenariosDto.scenarios as DeepPartial<Scenarios>[],
     );
     return this.scenarioRepository.save(scenarios);
+  }
+
+  async updateScenario(
+    id: number,
+    updateScenarioDto: UpdateScenarioDto,
+  ): Promise<boolean> {
+    const scenario = await this.scenarioRepository.findOne({ where: { id } });
+    if (!scenario) {
+      throw new NotFoundException('Scenario not found');
+    }
+
+    const updated = await this.scenarioRepository.update(
+      id,
+      updateScenarioDto as DeepPartial<Scenarios>,
+    );
+    return updated.affected !== 0;
   }
 }

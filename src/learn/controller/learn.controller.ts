@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Query, Body } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, Body, Put } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -22,6 +22,7 @@ import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-re
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { Scenarios } from '../entity/scenarios.entity';
+import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -54,6 +55,16 @@ export class LearnController {
     @Body() createScenariosDto: CreateScenariosDto,
   ): Promise<Scenarios[]> {
     return this.scenarioService.createScenarios(createScenariosDto);
+  }
+
+  @ApiOperation({ summary: 'Update a scenario by id' })
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @Put('scenarios/:id')
+  async updateScenario(
+    @Param('id') id: number,
+    @Body() updateScenarioDto: UpdateScenarioDto,
+  ): Promise<boolean> {
+    return this.scenarioService.updateScenario(id, updateScenarioDto);
   }
 
   @ApiOperation({ summary: 'Get all scenario sessions for user' })
