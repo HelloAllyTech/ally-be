@@ -34,4 +34,9 @@ export const validationSchema = Joi.object({
 
   // TEST ACCOUNTS
   TEST_ACCOUNTS: Joi.string().optional(),
+
+  // LiveKit
+  LIVEKIT_API_KEY: Joi.string().required(),
+  LIVEKIT_API_SECRET: Joi.string().required(),
+  LIVEKIT_SERVER_URL: Joi.string().required(),
 });

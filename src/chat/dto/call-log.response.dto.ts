@@ -6,7 +6,7 @@ import {
   AudioChatProvider,
 } from '../../common/constants/chat.constants';
 
-class UserInfo {
+export class UserInfo {
   @ApiProperty()
   id?: number;
 

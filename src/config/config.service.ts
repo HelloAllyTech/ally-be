@@ -198,4 +198,12 @@ export class AppConfigService {
   get testAccounts() {
     return this.configService.get<string>('TEST_ACCOUNTS');
   }
+
+  get livekit() {
+    return {
+      apiKey: this.configService.get<string>('LIVEKIT_API_KEY'),
+      apiSecret: this.configService.get<string>('LIVEKIT_API_SECRET'),
+      serverUrl: this.configService.get<string>('LIVEKIT_SERVER_URL'),
+    };
+  }
 }
