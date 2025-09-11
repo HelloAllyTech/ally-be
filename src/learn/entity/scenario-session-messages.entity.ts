@@ -24,4 +24,10 @@ export class ScenarioSessionMessages extends BaseEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
+
+  @Column({ type: 'float', nullable: true })
+  startSeconds?: number;
+
+  @Column({ type: 'float', nullable: true })
+  endSeconds?: number;
 }

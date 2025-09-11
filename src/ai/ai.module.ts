@@ -11,9 +11,10 @@ import { TranscribeResultProcessor } from './processors/transcribe-result.proces
 import { UnknownEventProcessor } from './processors/unknown-event.processor';
 import { TranscriptionRequestDlqConsumer } from './consumer/transcription-request-dlq.consumer';
 import { TranscriptionResponseDlqConsumer } from './consumer/transcription-response-dlq.consumer';
+import { LearnModule } from 'src/learn/learn.module';
 
 @Module({
-  imports: [forwardRef(() => ChatModule)],
+  imports: [forwardRef(() => ChatModule), forwardRef(() => LearnModule)],
   providers: [
     AiService,
     AiEventService,
@@ -27,6 +28,6 @@ import { TranscriptionResponseDlqConsumer } from './consumer/transcription-respo
     TranscriptionRequestDlqConsumer,
     TranscriptionResponseDlqConsumer,
   ],
-  exports: [AiService, AiEventService, TranscriptionService],
+  exports: [AiService, AiEventService, TranscriptionService, ProcessorRegistry],
 })
 export class AiModule {}

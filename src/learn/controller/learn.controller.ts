@@ -23,6 +23,7 @@ import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-s
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { Scenarios } from '../entity/scenarios.entity';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
+import { Public } from 'src/auth/decorators/auth.metadata';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -34,15 +35,16 @@ export class LearnController {
     private readonly scenarioSessionService: ScenarioSessionService,
   ) {}
 
+  @Public()
   @ApiOperation({ summary: 'Get all scenarios' })
-  @AuthRoles(UserRole.COUNSELOR)
   @Get('scenarios')
   async getScenarios(): Promise<ScenarioResponse[]> {
     return this.scenarioService.getScenarios();
   }
 
+  // TODO: Remove swagger lock
+  @Public()
   @ApiOperation({ summary: 'Get a scenario by id' })
-  @AuthRoles(UserRole.COUNSELOR)
   @Get('scenarios/:id')
   async getScenario(@Param('id') id: number): Promise<ScenarioResponse> {
     return this.scenarioService.getScenario(id);
@@ -111,7 +113,8 @@ export class LearnController {
     @Query('statuses') statuses?: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
-    @Query('sortBy') sortBy?: ScenarioSessionSortBy,
+    @Query('sortBy')
+    sortBy: ScenarioSessionSortBy = ScenarioSessionSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<ScenarioSessions[]> {
     return this.scenarioSessionService.getScenarioSessions(
@@ -173,7 +176,7 @@ export class LearnController {
   async getScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
     @Param('id') id: string,
-  ): Promise<ScenarioSessions> {
+  ) {
     return this.scenarioSessionService.getScenarioSession(id, tokenUser.id);
   }
 
@@ -216,6 +219,51 @@ export class LearnController {
       scenarioSessionId,
       tokenUser.id,
       addFeedbackToScenarioSessionDto,
+    );
+  }
+
+  @ApiOperation({ summary: 'Get messages for a scenario session' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of messages to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of messages to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by (default: createdAt)',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order (default: DESC)',
+  })
+  @AuthRoles(UserRole.COUNSELOR)
+  @Get('scenario-session/:scenarioSessionId/messages')
+  async getMessagesByScenarioSessionId(
+    @Param('scenarioSessionId') scenarioSessionId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order: SortOrder = SortOrder.ASC,
+  ) {
+    return this.scenarioSessionService.getMessagesByScenarioSessionId(
+      scenarioSessionId,
+      {
+        limit,
+        offset,
+        sortBy,
+        order,
+      },
     );
   }
 }

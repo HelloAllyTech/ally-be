@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
+import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
 import { ScenarioService } from './scenario.service';
 import { ScenarioSessionStatus } from '../enum/scenario-session-status.enum';
@@ -8,21 +9,33 @@ import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
+import { ScenarioSessionMessages } from '../entity/scenario-session-messages.entity';
+import { ScenarioSessionMessageType } from '../enum/scenario-session-message.type.enum';
+import { AiService } from 'src/ai/service/ai.service';
+import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
+import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
+import { MessageRequest } from 'src/ai/dto/ai.request.dto';
+import { LearnEventData } from '../interface/learn-message.interface';
 
 @Injectable()
 export class ScenarioSessionService {
   private readonly logger: LoggerService;
   constructor(
     private scenarioSessionRepository: ScenarioSessionRepository,
+    private scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
     private scenarioService: ScenarioService,
     private livekitService: LiveKitService,
     private sessionEventService: SessionEventService,
     @InjectRepository(ScenarioSessionFeedbacks)
     private scenarioSessionFeedbacksRepository: Repository<ScenarioSessionFeedbacks>,
+    private dataSource: DataSource,
+    private aiService: AiService,
+    @InjectRepository(ScenarioSessionEvents)
+    private scenarioSessionEventsRepository: Repository<ScenarioSessionEvents>,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -44,13 +57,11 @@ export class ScenarioSessionService {
   }
 
   async getScenarioSession(scenarioSessionId: string, counselorId: number) {
-    const scenarioSession = await this.scenarioSessionRepository.findOne({
-      where: {
-        id: scenarioSessionId,
+    const scenarioSession =
+      await this.scenarioSessionRepository.getScenarioSession(
+        scenarioSessionId,
         counselorId,
-        tenantId: ExecutionManager.getTenantId(),
-      },
-    });
+      );
 
     if (!scenarioSession) {
       throw new BadRequestException('Scenario session not found');
@@ -130,12 +141,22 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario session is not active');
     }
 
-    // Update scenario session status to ENDED
+    const endedAt = new Date();
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
-      endedAt: new Date(),
+      endedAt,
     });
 
+    let callDuration;
+    if (scenarioSession.startedAt) {
+      callDuration = endedAt.getTime() - scenarioSession.startedAt.getTime();
+    }
+
+    await this.getScenarioSessionSummaryFromAI(
+      scenarioSessionId,
+      scenarioSession.scenarioId,
+      callDuration,
+    );
     try {
       await this.livekitService.deleteRoom(scenarioSession.roomId);
     } catch (error) {
@@ -145,6 +166,60 @@ export class ScenarioSessionService {
     }
 
     return { message: 'Scenario session ended successfully' };
+  }
+
+  async getScenarioSessionSummaryFromAI(
+    scenarioSessionId: string,
+    scenarioId: number,
+    callDuration?: number,
+  ) {
+    await this.dataSource.transaction(async (entityManager) => {
+      const scenarioSessionMessagesRepo = entityManager.getRepository(
+        ScenarioSessionMessages,
+      );
+      const scenarioSessionMessages = await scenarioSessionMessagesRepo.find({
+        where: {
+          scenarioSessionId,
+          messageType: ScenarioSessionMessageType.TEXT,
+          tenantId: ExecutionManager.getTenantId(),
+        },
+      });
+
+      if (scenarioSessionMessages.length === 0) {
+        this.logger.warn(
+          `No scenario session messages found for scenario session ${scenarioSessionId}`,
+        );
+        return;
+      }
+
+      const messages = scenarioSessionMessages.map((message) => ({
+        role: message.senderId > 0 ? 'COUNSELLOR' : 'CLIENT',
+        content: message.content,
+        start_time: message.startSeconds,
+        end_time: message.endSeconds,
+      }));
+
+      const scenario = await this.scenarioService.getScenario(
+        scenarioId,
+        entityManager,
+      );
+
+      const summary = await this.aiService.getScenarioSessionSummary(
+        messages,
+        scenario.description,
+      );
+
+      const scenarioSessionDetailsRepo = entityManager.getRepository(
+        ScenarioSessionDetails,
+      );
+      const scenarioSessionDetails = scenarioSessionDetailsRepo.create({
+        scenarioSessionId,
+        callDuration,
+        summary: { feedback: summary },
+        tenantId: ExecutionManager.getTenantId(),
+      });
+      await scenarioSessionDetailsRepo.save(scenarioSessionDetails);
+    });
   }
 
   async generateScenarioSessionToken(roomId: string, counselorId: number) {
@@ -191,5 +266,57 @@ export class ScenarioSessionService {
     return this.scenarioSessionFeedbacksRepository.save(
       scenarioSessionFeedback,
     );
+  }
+
+  async getScenarioSessionByRoomId(roomId: string) {
+    return this.scenarioSessionRepository.findOne({
+      where: { roomId, tenantId: ExecutionManager.getTenantId() },
+    });
+  }
+
+  async addScenarioSessionMessage(
+    scenarioSessionId: string,
+    senderId: number,
+    chatMessage: MessageRequest,
+    tenantId: string,
+  ) {
+    const scenarioSessionMessage =
+      this.scenarioSessionMessagesRepository.create({
+        scenarioSessionId,
+        senderId: chatMessage.role === 'CLIENT' ? -1 : senderId,
+        content: chatMessage.content,
+        messageType: ScenarioSessionMessageType.TEXT,
+        startSeconds: chatMessage.start_time,
+        endSeconds: chatMessage.end_time,
+        tenantId,
+      });
+    return this.scenarioSessionMessagesRepository.save(scenarioSessionMessage);
+  }
+
+  async getMessagesByScenarioSessionId(
+    scenarioSessionId: string,
+    pagination: Pagination,
+  ) {
+    const messages =
+      await this.scenarioSessionMessagesRepository.getMessagesByScenarioSessionId(
+        scenarioSessionId,
+        pagination,
+      );
+
+    return { messages };
+  }
+
+  async addScenarioSessionEvent(
+    scenarioSessionId: string,
+    event: LearnEventData,
+    tenantId: string,
+  ) {
+    const scenarioSessionEvent = this.scenarioSessionEventsRepository.create({
+      scenarioSessionId,
+      eventId: event.event_id,
+      occurredAt: event.timestamp,
+      tenantId,
+    });
+    return this.scenarioSessionEventsRepository.save(scenarioSessionEvent);
   }
 }

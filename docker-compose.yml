@@ -119,6 +119,8 @@ services:
         aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-response-queue &&
         aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-request-dlq &&
         aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-response-dlq &&
+        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-learn-message-and-event-queue &&
+
         echo '🔗 Setting up Dead Letter Queues...' &&
         MAIN_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-ai-transcription-request-queue --query 'QueueUrl' --output text) &&
         DLQ_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-ai-transcription-request-dlq --query 'QueueUrl' --output text) &&

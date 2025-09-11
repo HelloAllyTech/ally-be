@@ -3,6 +3,8 @@ import { IEventProcessor } from './base-processor.interface';
 import { TranscribeResultProcessor } from './transcribe-result.processor';
 import { UnknownEventProcessor } from './unknown-event.processor';
 import { LoggerService } from '../../logger/logger.service';
+import { LearnMessageProcessor } from '../../learn/processor/learn-message.processor';
+import { LearnEventProcessor } from '../../learn/processor/learn-event.processor';
 
 @Injectable()
 export class ProcessorRegistry {
@@ -11,6 +13,8 @@ export class ProcessorRegistry {
 
   constructor(
     private readonly transcribeResultProcessor: TranscribeResultProcessor,
+    private readonly learnMessageProcessor: LearnMessageProcessor,
+    private readonly learnEventProcessor: LearnEventProcessor,
     private readonly unknownEventProcessor: UnknownEventProcessor,
   ) {
     this.registerProcessors();
@@ -18,6 +22,8 @@ export class ProcessorRegistry {
 
   private registerProcessors(): void {
     this.registerProcessor(this.transcribeResultProcessor);
+    this.registerProcessor(this.learnMessageProcessor);
+    this.registerProcessor(this.learnEventProcessor);
 
     this.logger.info(`Registered ${this.processors.size} event processors`);
   }

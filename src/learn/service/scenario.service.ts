@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { DeepPartial, Repository } from 'typeorm';
+import { DeepPartial, EntityManager, Repository } from 'typeorm';
 import { Scenarios } from '../entity/scenarios.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ScenarioResponse } from '../dto/scenario-response.dto';
@@ -23,12 +23,14 @@ export class ScenarioService {
         'coverImageUrl',
         'status',
       ],
-      order: { createdAt: 'DESC' },
+      order: { createdAt: 'DESC', id: 'DESC' },
     });
   }
 
-  async getScenario(id: number): Promise<ScenarioResponse> {
-    const scenario = await this.scenarioRepository.findOne({
+  async getScenario(id: number, em?: EntityManager): Promise<ScenarioResponse> {
+    const scenarioRepo =
+      em?.getRepository(Scenarios) || this.scenarioRepository;
+    const scenario = await scenarioRepo.findOne({
       select: [
         'id',
         'title',

@@ -7,6 +7,9 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { User } from 'src/common/entities/user.entity';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
 import { v4 as uuidv4 } from 'uuid';
+import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
+import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
+import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 
 @Injectable()
 export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
@@ -114,5 +117,34 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     });
 
     return this.save(scenarioSession);
+  }
+
+  async getScenarioSession(scenarioSessionId: string, counselorId: number) {
+    const query = this.createQueryBuilder('scenarioSession')
+      .leftJoinAndMapOne(
+        'scenarioSession.details',
+        ScenarioSessionDetails,
+        'scenarioSessionDetails',
+        '"scenarioSessionDetails"."scenarioSessionId"::uuid = scenarioSession.id',
+      )
+      .leftJoinAndMapMany(
+        'scenarioSession.events',
+        ScenarioSessionEvents,
+        'scenarioSessionEvent',
+        '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id',
+      )
+      .leftJoinAndMapOne(
+        'scenarioSessionEvent.events',
+        SessionEvents,
+        'events',
+        'events.id = scenarioSessionEvent.eventId',
+      )
+      .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
+      .andWhere('scenarioSession.counselorId = :counselorId', { counselorId })
+      .andWhere('scenarioSession.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
+      });
+
+    return query.getOne();
   }
 }

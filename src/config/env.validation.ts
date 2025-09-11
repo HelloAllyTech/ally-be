@@ -27,10 +27,10 @@ export const validationSchema = Joi.object({
 
   // SQS
   AWS_REGION: Joi.string().default('us-east-1'),
-  SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: Joi.string().optional(),
-  SQS_TRANSCRIPTION_REQUEST_DLQ_URL: Joi.string().optional(),
-  SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL: Joi.string().optional(),
-  SQS_TRANSCRIPTION_RESPONSE_DLQ_URL: Joi.string().optional(),
+  SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: Joi.string().required(),
+  SQS_TRANSCRIPTION_REQUEST_DLQ_URL: Joi.string().required(),
+  SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL: Joi.string().required(),
+  SQS_TRANSCRIPTION_RESPONSE_DLQ_URL: Joi.string().required(),
 
   // TEST ACCOUNTS
   TEST_ACCOUNTS: Joi.string().optional(),
@@ -39,4 +39,6 @@ export const validationSchema = Joi.object({
   LIVEKIT_API_KEY: Joi.string().required(),
   LIVEKIT_API_SECRET: Joi.string().required(),
   LIVEKIT_SERVER_URL: Joi.string().required(),
+
+  SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: Joi.string().required(),
 });
