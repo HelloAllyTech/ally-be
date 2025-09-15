@@ -53,7 +53,10 @@ import { TIME } from '../../common/constants/time.constants';
 import { ChatUtil } from '../util/chat.util';
 import { CommonUtil } from '../../common/util/common.util';
 import { CallInfoDto } from '../dto/chat.response.dto';
-import { CallInfo } from '../dto/call-log.response.dto';
+import {
+  CallInfo,
+  SummaryFeedbackResponse,
+} from '../dto/call-log.response.dto';
 import { SettingsService } from '../../settings/service/settings.service';
 import { MessageBrokerChannel } from 'src/common/constants/message-broker.constants';
 import {
@@ -64,7 +67,7 @@ import {
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
-import { AddNoteDto } from '../dto/notes.dto';
+import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { ChatRepository } from '../repository/chat.repository';
 import { SummaryFeedbackRepository } from '../repository/summary-feedback.repository';
 import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
@@ -1647,7 +1650,7 @@ export class ChatService {
   async addNoteToSession(
     chatId: number,
     createNoteDto: AddNoteDto,
-  ): Promise<string> {
+  ): Promise<AddNotesResponse> {
     const callDetails = await this.callDetailsRepository.findOne({
       where: { chatId, tenantId: ExecutionManager.getTenantId() },
     });
@@ -1667,13 +1670,13 @@ export class ChatService {
       { callInfo: updatedCallInfo },
     );
 
-    return createNoteDto.content;
+    return { notes: createNoteDto.content };
   }
 
   async addFeedbackToChat(
     chatId: number,
     summaryFeedbackDto: SummaryFeedbackDto,
-  ): Promise<string> {
+  ): Promise<SummaryFeedbackResponse> {
     return this.dataSource.transaction(async (entityManager) => {
       const callDetailsRepo =
         entityManager.getRepository(CallDetails) || this.callDetailsRepository;
@@ -1693,7 +1696,7 @@ export class ChatService {
         isSummaryFeedbackAdded: true,
       };
 
-      await summaryFeedbackRepo.createSummaryFeedback(
+      const feedback = await summaryFeedbackRepo.createSummaryFeedback(
         chatId,
         summaryFeedbackDto.rating,
         summaryFeedbackDto.feedback,
@@ -1704,7 +1707,7 @@ export class ChatService {
         { chatId, tenantId: ExecutionManager.getTenantId() },
         { callInfo: updatedCallInfo },
       );
-      return 'Feedback added successfully';
+      return { message: 'Feedback added successfully', feedback };
     });
   }
 

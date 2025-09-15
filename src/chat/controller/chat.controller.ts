@@ -25,7 +25,10 @@ import {
   ApiBearerAuth,
   ApiSecurity,
 } from '@nestjs/swagger';
-import { CallLogResponse } from '../dto/call-log.response.dto';
+import {
+  CallLogResponse,
+  SummaryFeedbackResponse,
+} from '../dto/call-log.response.dto';
 import { CallInfoDto, ChatResponseDto } from '../dto/chat.response.dto';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
@@ -36,7 +39,7 @@ import { GetMessagesResponse } from '../dto/message.response.dto';
 import { CallLogSortBy, SortOrder } from '../dto/call-log.request.dto';
 import { PaginatedResponse } from '../../common/type/common.type';
 import { CounselorNameResponse } from '../dto/call-log.response.dto';
-import { AddNoteDto } from '../dto/notes.dto';
+import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { ChatSummaryService } from '../service/chat-summary.service';
 import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 
@@ -607,7 +610,7 @@ export class ChatController {
   async addNoteToChat(
     @Param('id') chatId: number,
     @Body() createNoteDto: AddNoteDto,
-  ): Promise<string> {
+  ): Promise<AddNotesResponse> {
     return this.service.addNoteToSession(chatId, createNoteDto);
   }
 
@@ -616,7 +619,7 @@ export class ChatController {
   @ApiResponse({
     status: 201,
     description: 'Feedback added successfully',
-    type: String,
+    type: SummaryFeedbackResponse,
   })
   @ApiParam({
     name: 'id',
@@ -628,7 +631,7 @@ export class ChatController {
   async addFeedbackToChat(
     @Param('id') chatId: number,
     @Body() summaryFeedbackDto: SummaryFeedbackDto,
-  ): Promise<string> {
+  ): Promise<SummaryFeedbackResponse> {
     return this.service.addFeedbackToChat(chatId, summaryFeedbackDto);
   }
 }

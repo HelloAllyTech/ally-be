@@ -5,6 +5,7 @@ import {
   AudioChatPlatform,
   AudioChatProvider,
 } from '../../common/constants/chat.constants';
+import { SummaryFeedback } from '../entity/summary-feedback.entity';
 
 export class UserInfo {
   @ApiProperty()
@@ -128,4 +129,12 @@ export class CounselorNameResponse {
 export class TagsResponse {
   @ApiProperty({ type: [String] })
   tags!: string[];
+}
+
+export class SummaryFeedbackResponse {
+  @ApiProperty()
+  message!: string;
+
+  @ApiProperty()
+  feedback?: SummaryFeedback;
 }
