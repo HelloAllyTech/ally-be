@@ -24,6 +24,7 @@ import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { Scenarios } from '../entity/scenarios.entity';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { Public } from 'src/auth/decorators/auth.metadata';
+import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -180,6 +181,18 @@ export class LearnController {
     return this.scenarioSessionService.getScenarioSession(id, tokenUser.id);
   }
 
+  @ApiOperation({ summary: 'Map events to scenario' })
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @Post('scenarios/map-events')
+  async mapEventsToScenario(
+    @Body() createScenarioEventsDto: CreateScenarioEventsDto,
+  ): Promise<boolean> {
+    console.log(createScenarioEventsDto);
+    return this.scenarioSessionService.mapEventsToScenario(
+      createScenarioEventsDto,
+    );
+  }
+  
   @ApiOperation({ summary: 'Start a scenario session' })
   @AuthRoles(UserRole.COUNSELOR)
   @Post('scenario-session-start')
