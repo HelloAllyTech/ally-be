@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { LiveKitService } from '../../service/livekit.service';
+import { LoggerService } from 'src/logger/logger.service';
 
 export interface ParticipantJoinedEvent {
   event: 'participant_joined';
@@ -35,13 +36,13 @@ export interface ParticipantJoinedEvent {
 
 @Injectable()
 export class ParticipantJoinedHandler {
-  private readonly logger = new Logger(ParticipantJoinedHandler.name);
+  private readonly logger = new LoggerService(ParticipantJoinedHandler.name);
 
   constructor(private readonly liveKitService: LiveKitService) {}
 
   async handle(event: ParticipantJoinedEvent): Promise<void> {
     try {
-      this.logger.log(
+      this.logger.info(
         `Processing participant_joined event ${JSON.stringify(event)} for ${event.participant.identity} in room ${event.room.name}`,
       );
 
@@ -52,9 +53,11 @@ export class ParticipantJoinedHandler {
 
       if (event.room.metadata && event.room.metadata.trim() !== '') {
         metadata = JSON.parse(event.room.metadata);
-        this.logger.log(`Parsed metadata: ${JSON.stringify(metadata)}`);
+        this.logger.info(`Parsed metadata: ${JSON.stringify(metadata)}`);
       } else {
-        this.logger.log('Room metadata is empty or null, using default values');
+        this.logger.info(
+          'Room metadata is empty or null, using default values',
+        );
       }
 
       await this.liveKitService.agentDispatch(
@@ -63,7 +66,7 @@ export class ParticipantJoinedHandler {
         JSON.stringify(metadata),
       );
 
-      this.logger.log(
+      this.logger.info(
         `Successfully dispatched agent for participant ${participantIdentity} in room ${roomName}`,
       );
     } catch (error) {

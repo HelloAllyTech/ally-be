@@ -21,6 +21,8 @@ import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity'
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../interface/learn-message.interface';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
+import { ScenarioSessions } from '../entity/scenario-sessions.entity';
+
 
 @Injectable()
 export class ScenarioSessionService {
@@ -68,7 +70,13 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario session not found');
     }
 
-    return scenarioSession;
+    const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
+      where: { scenarioSessionId },
+    });
+
+    const hasFeedback = !!feedback;
+
+    return { ...scenarioSession, hasFeedback };
   }
 
   async startScenarioSession(
@@ -189,7 +197,7 @@ export class ScenarioSessionService {
       callDuration = endedAt.getTime() - scenarioSession.startedAt.getTime();
     }
 
-    await this.getScenarioSessionSummaryFromAI(
+    this.getScenarioSessionSummaryFromAI(
       scenarioSessionId,
       scenarioSession.scenarioId,
       callDuration,
@@ -292,6 +300,16 @@ export class ScenarioSessionService {
       );
     }
 
+    const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
+      where: { scenarioSessionId },
+    });
+
+    if (feedback) {
+      throw new BadRequestException(
+        'Feedback already exists for this scenario session',
+      );
+    }
+
     const scenarioSessionFeedback =
       this.scenarioSessionFeedbacksRepository.create({
         scenarioSessionId,
@@ -306,9 +324,15 @@ export class ScenarioSessionService {
   }
 
   async getScenarioSessionByRoomId(roomId: string) {
-    return this.scenarioSessionRepository.findOne({
+    const scenarioSession = await this.scenarioSessionRepository.findOne({
       where: { roomId, tenantId: ExecutionManager.getTenantId() },
     });
+
+    if (!scenarioSession) {
+      throw new BadRequestException('Scenario session not found');
+    }
+
+    return scenarioSession;
   }
 
   async addScenarioSessionMessage(

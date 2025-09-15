@@ -119,8 +119,9 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     return this.save(scenarioSession);
   }
 
+  // TODO: Change total score to db column
   async getScenarioSession(scenarioSessionId: string, counselorId: number) {
-    const query = this.createQueryBuilder('scenarioSession')
+    const scenarioSession = await this.createQueryBuilder('scenarioSession')
       .leftJoinAndMapOne(
         'scenarioSession.details',
         ScenarioSessionDetails,
@@ -143,8 +144,38 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       .andWhere('scenarioSession.counselorId = :counselorId', { counselorId })
       .andWhere('scenarioSession.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
-      });
+      })
+      .orderBy('scenarioSessionEvent.occurredAt', 'ASC')
+      .getOne();
 
-    return query.getOne();
+    if (!scenarioSession) {
+      return null;
+    }
+
+    // Separately calculate the total score using a simple aggregation query
+    const totalScoreResult = await this.createQueryBuilder('scenarioSession')
+      .leftJoin(
+        ScenarioSessionEvents,
+        'scenarioSessionEvent',
+        '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id',
+      )
+      .leftJoin(
+        SessionEvents,
+        'events',
+        'events.id = scenarioSessionEvent.eventId',
+      )
+      .select('COALESCE(SUM(events.score), 0)', 'totalScore')
+      .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
+      .andWhere('scenarioSession.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
+      })
+      .getRawOne();
+
+    const totalScore = parseFloat(totalScoreResult?.totalScore) || 0;
+
+    return {
+      ...scenarioSession,
+      totalScore,
+    };
   }
 }

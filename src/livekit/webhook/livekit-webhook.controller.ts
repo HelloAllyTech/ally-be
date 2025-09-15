@@ -3,7 +3,6 @@ import {
   Post,
   Req,
   Res,
-  Logger,
   HttpStatus,
   HttpCode,
 } from '@nestjs/common';
@@ -12,16 +11,19 @@ import { WebhookReceiver } from 'livekit-server-sdk';
 import { AppConfigService } from 'src/config/config.service';
 import { ParticipantJoinedHandler } from './handlers/participant-joined.handler';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RoomFinishedHandler } from './handlers/room-finished.handler';
+import { LoggerService } from 'src/logger/logger.service';
 
 @ApiTags('LiveKit Webhook')
 @Controller('v1/webhook/livekit')
 export class LivekitWebhookController {
-  private readonly logger = new Logger(LivekitWebhookController.name);
+  private readonly logger = new LoggerService(LivekitWebhookController.name);
   private webhookReceiver?: WebhookReceiver;
 
   constructor(
     private readonly configService: AppConfigService,
     private readonly participantJoinedHandler: ParticipantJoinedHandler,
+    private readonly roomFinishedHandler: RoomFinishedHandler,
   ) {
     this.initializeWebhookReceiver();
   }
@@ -36,7 +38,7 @@ export class LivekitWebhookController {
     }
 
     this.webhookReceiver = new WebhookReceiver(apiKey, apiSecret);
-    this.logger.log('LiveKit webhook receiver initialized');
+    this.logger.info('LiveKit webhook receiver initialized');
   }
 
   @Post('call-events')
@@ -61,7 +63,7 @@ export class LivekitWebhookController {
       const rawBody = await this.getRawBody(req);
       const event = await this.webhookReceiver.receive(rawBody, authHeader);
 
-      this.logger.log(`Received LiveKit webhook event: ${event.event}`);
+      this.logger.info(`Received LiveKit webhook event: ${event.event}`);
 
       // Process the event based on its type
       await this.processWebhookEvent(event);
@@ -89,6 +91,9 @@ export class LivekitWebhookController {
         case 'participant_joined':
           await this.handleParticipantJoined(event);
           break;
+        case 'room_finished':
+          await this.handleRoomFinished(event);
+          break;
       }
     } catch (error) {
       this.logger.error(`Error processing event ${event.event}:`, error);
@@ -96,7 +101,7 @@ export class LivekitWebhookController {
   }
 
   private async handleParticipantJoined(event: any) {
-    this.logger.log(
+    this.logger.info(
       `Participant joined: ${event.participant?.identity} in room ${event.room?.name}`,
     );
 
@@ -107,6 +112,16 @@ export class LivekitWebhookController {
         `Error in participant_joined handler: ${error.message}`,
         error.stack,
       );
+    }
+  }
+
+  private async handleRoomFinished(event: any) {
+    this.logger.info(`Room finished: ${event.room?.name}`);
+
+    try {
+      await this.roomFinishedHandler.handle(event);
+    } catch (error) {
+      this.logger.error(`Error in room_finished handler: ${error.message}`);
     }
   }
 }
