@@ -20,7 +20,9 @@ import { ScenarioSessionDetails } from '../entity/scenario-session-details.entit
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../interface/learn-message.interface';
+import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
+
 
 @Injectable()
 export class ScenarioSessionService {
@@ -114,6 +116,42 @@ export class ScenarioSessionService {
     return { scenarioSession, accessToken };
   }
 
+  async mapEventsToScenario(createScenarioEventsDto: CreateScenarioEventsDto) {
+    const { scenarioId, eventIds } = createScenarioEventsDto;
+
+    if (eventIds.length === 0) {
+      throw new BadRequestException('Event IDs array cannot be empty');
+    }
+
+    await this.scenarioService.getScenario(scenarioId);
+    // Validate events exist
+    const validEvents = await this.sessionEventService.findByIds(eventIds);
+    const validEventIds = validEvents.map((e) => e.id);
+    const invalidEventIds = eventIds.filter(
+      (id) => !validEventIds.includes(id),
+    );
+
+    if (invalidEventIds.length > 0) {
+      throw new BadRequestException(
+        `Invalid event IDs: ${invalidEventIds.join(', ')}`,
+      );
+    }
+    // Create an array of ScenarioEvents entities to be saved
+    const scenarioEvents = eventIds.map((id) => ({
+      scenarioId: scenarioId,
+      eventId: id,
+      tenantId: ExecutionManager.getTenantId(),
+    }));
+
+    // Save the scenario events to the database
+    await this.dataSource.transaction(async (entityManager) => {
+      const scenarioEventsRepo = entityManager.getRepository('ScenarioEvents');
+      await scenarioEventsRepo.save(scenarioEvents);
+    });
+
+    return true;
+  }
+  
   private async validateStartScenarioSession(counselorId: number) {
     const activeScenarioSessions = await this.getScenarioSessions(
       counselorId,

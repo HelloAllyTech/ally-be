@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Param, Patch, Post, Put } from '@nestjs/common';
 import { SessionEventService } from '../service/session-event.service';
 import {
   ApiBearerAuth,
@@ -11,6 +11,7 @@ import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 import { SessionEvents } from '../entity/session-events.entity';
 import { CreateSessionEventsDto } from '../dto/create-session-events.dto';
+import { UpdateSessionEventDto } from '../dto/update-session-event.dto';
 
 @ApiTags('SessionEvents')
 @ApiBearerAuth()
@@ -27,5 +28,16 @@ export class SessionEventController {
     @Body() createEventsDto: CreateSessionEventsDto,
   ): Promise<SessionEvents[]> {
     return this.sessionEventService.createSessionEvents(createEventsDto.events);
+  }
+  
+  @ApiOperation({ summary: 'Update Session Event by id' })
+  @ApiBody({ type: UpdateSessionEventDto })
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @Put('events/:id')
+  updateSessionEvents(
+    @Param('id') id: string,
+    @Body() updateEventsDto: UpdateSessionEventDto,
+  ): Promise<Boolean> {
+    return this.sessionEventService.updateSessionEvent(id, updateEventsDto);
   }
 }
