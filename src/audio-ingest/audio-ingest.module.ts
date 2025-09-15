@@ -19,6 +19,10 @@ import { CloudTelephonyRepository } from './repository/cloud-telephony.repositor
 import { OzonetelController } from './controller/ozonetel.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CloudTelephonyIntegration } from '../common/entities/cloud-telephony-integration.entity';
+import { AudioRetryProducer } from './producer/audio-retry.producer';
+import { AudioRetryConsumer } from './consumer/audio-retry.consumer';
+import { AudioRetryDlqConsumer } from './consumer/audio-retry-dlq.consumer';
+import { AwsModule } from '../aws/aws.module';
 
 @Module({
   imports: [
@@ -29,6 +33,7 @@ import { CloudTelephonyIntegration } from '../common/entities/cloud-telephony-in
     AudioModule,
     CommonModule,
     TypeOrmModule.forFeature([CloudTelephonyIntegration]),
+    AwsModule,
   ],
   providers: [
     AudioIngestService,
@@ -40,6 +45,9 @@ import { CloudTelephonyIntegration } from '../common/entities/cloud-telephony-in
     CloudTelephonyService,
     CloudTelephonyRepository,
     OzonetelService,
+    AudioRetryProducer,
+    AudioRetryConsumer,
+    AudioRetryDlqConsumer,
   ],
   controllers: [
     OzonetelWebhookController,

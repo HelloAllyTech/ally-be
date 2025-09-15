@@ -6,6 +6,7 @@ import {
   SQSClient,
   SQSClientConfig,
   SendMessageCommand,
+  SendMessageCommandInput,
 } from '@aws-sdk/client-sqs';
 import { AppConfigService } from '../../config/config.service';
 
@@ -44,7 +45,7 @@ export class SqsService {
   async sendMessage(
     queueUrl: string,
     message: any,
-    messageAttributes?: Record<string, any>,
+    options?: Omit<SendMessageCommandInput, 'QueueUrl' | 'MessageBody'>,
   ): Promise<void> {
     try {
       if (!queueUrl) {
@@ -54,7 +55,7 @@ export class SqsService {
       const command = new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: JSON.stringify(message),
-        MessageAttributes: messageAttributes,
+        ...options,
       });
       await this.sqsClient.send(command);
 
@@ -86,7 +87,7 @@ export class SqsService {
       return response.Messages || [];
     } catch (error) {
       this.logger.error(
-        `Failed to send response message to SQS queue: ${queueUrl} with error ${JSON.stringify(
+        `Failed to receive response message from SQS queue: ${queueUrl} with error ${JSON.stringify(
           error,
         )}`,
       );

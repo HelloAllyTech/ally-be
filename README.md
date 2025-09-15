@@ -177,6 +177,8 @@ SQS_TRANSCRIPTION_REQUEST_QUEUE_URL=sqs-ai-transcription-request-queue
 SQS_TRANSCRIPTION_REQUEST_DLQ_URL=sqs-ai-transcription-request-dlq
 SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL=sqs-ai-transcription-response-queue
 SQS_TRANSCRIPTION_RESPONSE_DLQ_URL=sqs-ai-transcription-response-dlq
+SQS_AUDIO_FILE_RETRY_QUEUE_URL=sqs-audio-file-retry-queue
+SQS_AUDIO_FILE_RETRY_DLQ_URL=sqs-audio-file-retry-dlq
 
 # TEST ACCOUNTS
 TEST_ACCOUNTS=test-accounts

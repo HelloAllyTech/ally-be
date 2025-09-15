@@ -37,6 +37,8 @@ import { AppConfigService } from '../../config/config.service';
 import { AiEventService } from '../../ai/service/ai-event.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
+import { checkAudioFileReady } from '../../common/util/audio.util';
+import { AudioRetryProducer } from '../producer/audio-retry.producer';
 
 @Injectable()
 export class OzonetelService {
@@ -48,6 +50,7 @@ export class OzonetelService {
     private config: AppConfigService,
     private aiEventService: AiEventService,
     private broadcastMessageService: BroadcastMessageService,
+    private audioRetryProducer: AudioRetryProducer,
   ) {}
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
@@ -201,16 +204,25 @@ export class OzonetelService {
       }
 
       if (AudioFile) {
-        this.aiEventService.publishTranscribeAudioEvent({
-          message_type: 'transcribe_and_summarize_request',
-          timestamp: Date.now(),
-          audio_url: AudioFile,
-          chat_id: chat.id,
-        });
+        const isReady = await checkAudioFileReady(AudioFile);
+        if (isReady) {
+          this.aiEventService.publishTranscribeAudioEvent({
+            message_type: 'transcribe_and_summarize_request',
+            timestamp: Date.now(),
+            audio_url: AudioFile,
+            chat_id: chat.id,
+          });
 
-        this.logger.info(
-          `Audio file processed successfully for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat.id}`,
-        );
+          this.logger.info(
+            `Audio file processed successfully for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat.id}`,
+          );
+        } else {
+          this.audioRetryProducer.sendAudioFileRetryMessage({
+            audioUrl: AudioFile,
+            chatId: chat.id,
+            retryCount: 0,
+          });
+        }
       } else {
         await this.chatService.updateChat(chat.id, {
           summaryStatus: ChatSummaryStatus.NO_AUDIO,
