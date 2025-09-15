@@ -95,14 +95,10 @@ export class ChatAudioUploadsService {
     }
   }
 
-  async getAudioUpload(chatId: number): Promise<ChatAudioUploads> {
+  async getAudioUpload(chatId: number): Promise<ChatAudioUploads | null> {
     const audioUpload = await this.chatAudioUploadRepository.findOne({
       where: { chatId },
     });
-
-    if (!audioUpload) {
-      throw new Error(`Audio upload not found for chatId: ${chatId}`);
-    }
 
     return audioUpload;
   }

@@ -206,16 +206,15 @@ export class OzonetelService {
       if (AudioFile) {
         const isReady = await checkAudioFileReady(AudioFile);
         if (isReady) {
+          this.logger.info(
+            `Audio file is ready for processing for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat.id}`,
+          );
           this.aiEventService.publishTranscribeAudioEvent({
             message_type: 'transcribe_and_summarize_request',
             timestamp: Date.now(),
             audio_url: AudioFile,
             chat_id: chat.id,
           });
-
-          this.logger.info(
-            `Audio file processed successfully for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat.id}`,
-          );
         } else {
           this.audioRetryProducer.sendAudioFileRetryMessage({
             audioUrl: AudioFile,

@@ -29,7 +29,7 @@ export class OzonetelWebhookController {
   @ApiOperation({ summary: 'Handle Ozonetel call details webhook' })
   @ApiResponse({
     status: 200,
-    description: 'Ozontel call details processed successfully',
+    description: 'Ozonetel call details processed successfully',
   })
   async handleOzonetelCallDetails(
     @Query('code') code: string,
