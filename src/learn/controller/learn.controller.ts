@@ -107,7 +107,7 @@ export class LearnController {
     enum: SortOrder,
     description: 'Sort order',
   })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.LEARNER)
   @Get('scenario-sessions')
   async getScenarioSessions(
     @CurrentUser() tokenUser: TokenUser,
@@ -172,7 +172,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'Get a scenario session by id' })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.LEARNER)
   @Get('scenario-session/:id')
   async getScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -194,7 +194,7 @@ export class LearnController {
   }
   
   @ApiOperation({ summary: 'Start a scenario session' })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.LEARNER)
   @Post('scenario-session-start')
   async startScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -207,7 +207,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'End a scenario session' })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.LEARNER)
   @Post('scenario-session/:scenarioSessionId/end')
   async endScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -220,7 +220,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'Add a feedback to a scenario session' })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.LEARNER)
   @Post('scenario-session/:scenarioSessionId/feedback')
   async addFeedbackToScenarioSession(
     @CurrentUser() tokenUser: TokenUser,

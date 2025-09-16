@@ -4,6 +4,8 @@ import {
   IsString,
   MinLength,
   IsOptional,
+  IsArray,
+  ArrayNotEmpty,
 } from 'class-validator';
 import { UserRole } from '../../common/constants/user.constants';
 import { PASSWORD_VALIDATION } from '../../common/constants/validation.constants';
@@ -37,12 +39,16 @@ export class UserCreateDto {
   name!: string;
 
   @ApiProperty({
-    description: 'User role',
-    example: UserRole.CLIENT,
+    description: 'User roles (array of roles)',
+    example: [UserRole.CLIENT, UserRole.COUNSELOR],
+    type: [String],
+    enum: UserRole,
+    isArray: true,
   })
-  @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
+  @IsArray()
+  @IsEnum(UserRole, { each: true })
+  @ArrayNotEmpty()
+  roles!: UserRole[];
 
   @ApiProperty({
     description: 'Phone number',

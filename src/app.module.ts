@@ -28,6 +28,7 @@ import { AudioModule } from './audio/audio.module';
 import { LiveKitModule } from './livekit/livekit.module';
 import { LearnModule } from './learn/learn.module';
 import { SessionEventModule } from './session-event/session-event.module';
+import { AuthorizationModule } from './authorization/authorization.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { SessionEventModule } from './session-event/session-event.module';
     LearnModule,
     LiveKitModule,
     SessionEventModule,
+    AuthorizationModule,
   ],
   controllers: [],
   providers: [
