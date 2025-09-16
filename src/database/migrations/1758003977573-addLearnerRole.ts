@@ -12,7 +12,7 @@ export class AddLearnerRole1758003977573 implements MigrationInterface {
 
     // Add new scenario session permissions
     await queryRunner.query(`
-            INSERT INTO permissions ("name") VALUES 
+            INSERT INTO "permissions" ("name") VALUES 
             ('view:scenario-session'),
             ('view:admin:scenario-session'),
             ('view:scenario-session:summary')
@@ -20,22 +20,23 @@ export class AddLearnerRole1758003977573 implements MigrationInterface {
 
     // Create LEARNER role
     await queryRunner.query(`
-            INSERT INTO groups ("name") VALUES ('LEARNER')
+            INSERT INTO "groups" ("name") VALUES ('LEARNER')
         `);
 
     // Assign permissions to LEARNER role
     await queryRunner.query(`
             WITH group_details AS (
                 SELECT id 
-                FROM groups 
+                FROM "groups" 
                 WHERE name = 'LEARNER'
             )
             INSERT INTO group_permissions ("groupId", "permissionId")
             SELECT 
                 group_details.id,
                 permissions.id 
-            FROM group_details, permissions 
+            FROM group_details, "permissions" 
             WHERE permissions.name IN (
+                'view:navbar:learn',
                 'view:scenario-session',
                 'view:admin:scenario-session',
                 'view:scenario-session:summary'
@@ -48,17 +49,17 @@ export class AddLearnerRole1758003977573 implements MigrationInterface {
     await queryRunner.query(`
             DELETE FROM group_permissions 
             WHERE "groupId" = (
-                SELECT id FROM groups WHERE name = 'LEARNER'
+                SELECT id FROM "groups" WHERE name = 'LEARNER'
             )
         `);
 
     await queryRunner.query(`
-            DELETE FROM groups WHERE name = 'LEARNER'
+            DELETE FROM "groups" WHERE name = 'LEARNER'
         `);
 
     // Remove the new scenario session permissions
     await queryRunner.query(`
-            DELETE FROM permissions 
+            DELETE FROM "permissions" 
             WHERE name IN (
                 'view:scenario-session',
                 'view:admin:scenario-session',
@@ -70,40 +71,40 @@ export class AddLearnerRole1758003977573 implements MigrationInterface {
     await queryRunner.query(`
             WITH group_details AS (
                 SELECT id 
-                FROM groups 
+                FROM "groups" 
                 WHERE name = 'ADMIN'
             )
             INSERT INTO group_permissions ("groupId", "permissionId")
             SELECT 
                 group_details.id,
                 permissions.id 
-            FROM group_details, permissions 
+            FROM group_details, "permissions" 
             WHERE permissions.name = 'view:navbar:learn'
         `);
     await queryRunner.query(`
             WITH group_details AS (
                 SELECT id 
-                FROM groups 
+                FROM "groups" 
                 WHERE name = 'COUNSELOR'
             )
             INSERT INTO group_permissions ("groupId", "permissionId")
             SELECT 
                 group_details.id,
                 permissions.id 
-            FROM group_details, permissions 
+            FROM group_details, "permissions" 
             WHERE permissions.name = 'view:navbar:learn'
         `);
     await queryRunner.query(`
             WITH group_details AS (
                 SELECT id 
-                FROM groups 
+                FROM "groups" 
                 WHERE name = 'SUPER_ADMIN'
             )
             INSERT INTO group_permissions ("groupId", "permissionId")
             SELECT 
                 group_details.id,
                 permissions.id 
-            FROM group_details, permissions 
+            FROM group_details, "permissions" 
             WHERE permissions.name = 'view:navbar:learn'
         `);
   }
