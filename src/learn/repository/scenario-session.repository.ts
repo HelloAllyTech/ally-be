@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
+import { ScenarioSessionStatus } from '../enum/scenario-session-status.enum';
 
 @Injectable()
 export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
@@ -70,15 +71,12 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     query: SelectQueryBuilder<ScenarioSessions>,
     options: Pagination,
   ) {
-    if (options.sortBy) {
-      query.orderBy(
-        `scenarioSession.${options.sortBy}`,
-        options.order as 'ASC' | 'DESC',
-      );
+    if (options.sortBy && options.order) {
+      query.orderBy(`"scenarioSession"."${options.sortBy}"`, options.order);
     }
   }
 
-  async getAdminScenarioSessions(options: Pagination) {
+  async getAdminScenarioSessions(options: Pagination, statuses?: string) {
     const query = this.createQueryBuilder('scenarioSession')
       .leftJoinAndMapOne(
         'scenarioSession.scenario',
@@ -96,6 +94,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         tenantId: ExecutionManager.getTenantId(),
       });
 
+    this.applyStatusFilters(query, statuses || '');
     this.applyPagination(query, options);
     this.applySorting(query, options);
     return query.getMany();
@@ -122,6 +121,12 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
   // TODO: Change total score to db column
   async getScenarioSession(scenarioSessionId: string, counselorId: number) {
     const scenarioSession = await this.createQueryBuilder('scenarioSession')
+      .leftJoinAndMapOne(
+        'scenarioSession.scenario',
+        Scenarios,
+        'scenario',
+        'scenario.id = scenarioSession.scenarioId',
+      )
       .leftJoinAndMapOne(
         'scenarioSession.details',
         ScenarioSessionDetails,

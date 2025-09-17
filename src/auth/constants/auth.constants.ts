@@ -4,6 +4,8 @@ export const PERMISSIONS = {
   ViewNavBarAnalytics: 'view:navbar:analytics',
   ViewNavBarStressBuster: 'view:navbar:stress-buster',
   ViewNavBarSettings: 'view:navbar:settings',
+  ViewNavBarSearch: 'view:navbar:search',
+  ViewNavBarCommunity: 'view:navbar:community',
 
   EditSummary: 'edit:summary',
 

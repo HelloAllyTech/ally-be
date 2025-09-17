@@ -22,7 +22,7 @@ import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../interface/learn-message.interface';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
-
+import { EntityOperationException } from 'src/exception/custom.exception';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -48,15 +48,24 @@ export class ScenarioSessionService {
     options: Pagination,
     statuses?: string,
   ) {
-    return this.scenarioSessionRepository.getScenarioSessions(
-      counselorId,
-      options,
-      statuses,
-    );
+    const scenarioSessions: ScenarioSessions[] =
+      await this.scenarioSessionRepository.getScenarioSessions(
+        counselorId,
+        options,
+        statuses ?? 'ENDED,CANCELLED',
+      );
+
+    return { data: scenarioSessions };
   }
 
   async getAdminScenarioSessions(options: Pagination) {
-    return this.scenarioSessionRepository.getAdminScenarioSessions(options);
+    const scenarioSessions: ScenarioSessions[] =
+      await this.scenarioSessionRepository.getAdminScenarioSessions(
+        options,
+        'ENDED,CANCELLED',
+      );
+
+    return { data: scenarioSessions };
   }
 
   async getScenarioSession(scenarioSessionId: string, counselorId: number) {
@@ -151,7 +160,7 @@ export class ScenarioSessionService {
 
     return true;
   }
-  
+
   private async validateStartScenarioSession(counselorId: number) {
     const activeScenarioSessions = await this.getScenarioSessions(
       counselorId,
@@ -162,9 +171,10 @@ export class ScenarioSessionService {
       ScenarioSessionStatus.ACTIVE,
     );
 
-    if (activeScenarioSessions.length > 0) {
-      throw new BadRequestException(
-        `You already have an active scenario session ${activeScenarioSessions[0].id}`,
+    if (activeScenarioSessions.data.length > 0) {
+      throw new EntityOperationException(
+        `You already have an active scenario session ${activeScenarioSessions.data[0].id}`,
+        activeScenarioSessions.data[0].id,
       );
     }
   }

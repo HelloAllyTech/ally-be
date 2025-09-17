@@ -61,3 +61,17 @@ export class FailedDependencyException extends HttpException {
     super(message, HttpStatus.FAILED_DEPENDENCY);
   }
 }
+
+export class EntityOperationException extends HttpException {
+  constructor(message: string, entityId: string) {
+    super(
+      {
+        message,
+        entityId,
+        error: 'Entity Operation Error',
+        status: HttpStatus.BAD_REQUEST,
+      },
+      HttpStatus.BAD_REQUEST,
+    );
+  }
+}

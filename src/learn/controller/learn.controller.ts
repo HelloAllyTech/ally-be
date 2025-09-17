@@ -117,7 +117,7 @@ export class LearnController {
     @Query('sortBy')
     sortBy: ScenarioSessionSortBy = ScenarioSessionSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
-  ): Promise<ScenarioSessions[]> {
+  ) {
     return this.scenarioSessionService.getScenarioSessions(
       tokenUser.id,
       {
@@ -160,9 +160,10 @@ export class LearnController {
   async getAdminScenarioSessions(
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
-    @Query('sortBy') sortBy?: ScenarioSessionSortBy,
+    @Query('sortBy')
+    sortBy: ScenarioSessionSortBy = ScenarioSessionSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
-  ): Promise<ScenarioSessions[]> {
+  ) {
     return this.scenarioSessionService.getAdminScenarioSessions({
       limit,
       offset,
@@ -172,7 +173,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'Get a scenario session by id' })
-  @AuthRoles(UserRole.LEARNER)
+  @AuthRoles(UserRole.LEARNER, UserRole.ADMIN)
   @Get('scenario-session/:id')
   async getScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -192,7 +193,7 @@ export class LearnController {
       createScenarioEventsDto,
     );
   }
-  
+
   @ApiOperation({ summary: 'Start a scenario session' })
   @AuthRoles(UserRole.LEARNER)
   @Post('scenario-session-start')
