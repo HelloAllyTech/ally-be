@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Patch, Post, Put } from '@nestjs/common';
+import { Body, Controller, Param, Post, Put } from '@nestjs/common';
 import { SessionEventService } from '../service/session-event.service';
 import {
   ApiBearerAuth,
@@ -29,7 +29,7 @@ export class SessionEventController {
   ): Promise<SessionEvents[]> {
     return this.sessionEventService.createSessionEvents(createEventsDto.events);
   }
-  
+
   @ApiOperation({ summary: 'Update Session Event by id' })
   @ApiBody({ type: UpdateSessionEventDto })
   @AuthRoles(UserRole.SUPER_ADMIN)
@@ -37,7 +37,7 @@ export class SessionEventController {
   updateSessionEvents(
     @Param('id') id: string,
     @Body() updateEventsDto: UpdateSessionEventDto,
-  ): Promise<Boolean> {
+  ): Promise<boolean> {
     return this.sessionEventService.updateSessionEvent(id, updateEventsDto);
   }
 }

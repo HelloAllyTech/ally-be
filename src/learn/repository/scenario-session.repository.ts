@@ -10,7 +10,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
-import { ScenarioSessionStatus } from '../enum/scenario-session-status.enum';
 
 @Injectable()
 export class ScenarioSessionRepository extends Repository<ScenarioSessions> {

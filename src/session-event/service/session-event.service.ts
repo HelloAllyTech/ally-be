@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateSessionEventDto } from '../dto/create-session-event.dto';
-import { DeepPartial, In, Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SessionEvents } from '../entity/session-events.entity';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';

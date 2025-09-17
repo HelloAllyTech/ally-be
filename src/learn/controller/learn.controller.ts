@@ -12,7 +12,6 @@ import { UserRole } from 'src/common/constants/user.constants';
 import { ScenarioService } from '../service/scenario.service';
 import { ScenarioResponse } from '../dto/scenario-response.dto';
 import { ScenarioSessionService } from '../service/scenario-session.service';
-import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
