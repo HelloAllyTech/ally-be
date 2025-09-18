@@ -15,7 +15,7 @@ export class GroupRepository {
     return this.groupRepository.findOne({ where });
   }
 
-  async findUserRoleByUserId(userId: string): Promise<Group[]> {
+  async findUserRoleByUserId(userId: number): Promise<Group[]> {
     return this.groupRepository
       .createQueryBuilder('group')
       .leftJoin(UserGroup, 'ug', 'ug.groupId = group.id')

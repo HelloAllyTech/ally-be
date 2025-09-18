@@ -23,6 +23,8 @@ import { LearnEventData } from '../interface/learn-message.interface';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
+import { UserRole } from 'src/common/constants/user.constants';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -39,6 +41,7 @@ export class ScenarioSessionService {
     private aiService: AiService,
     @InjectRepository(ScenarioSessionEvents)
     private scenarioSessionEventsRepository: Repository<ScenarioSessionEvents>,
+    private permissionsService: PermissionsService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -52,7 +55,7 @@ export class ScenarioSessionService {
       await this.scenarioSessionRepository.getScenarioSessions(
         counselorId,
         options,
-        statuses ?? 'ENDED,CANCELLED',
+        statuses ?? `${ScenarioSessionStatus.ENDED}`,
       );
 
     return { data: scenarioSessions };
@@ -62,17 +65,19 @@ export class ScenarioSessionService {
     const scenarioSessions: ScenarioSessions[] =
       await this.scenarioSessionRepository.getAdminScenarioSessions(
         options,
-        'ENDED,CANCELLED',
+        `${ScenarioSessionStatus.ENDED}`,
       );
 
     return { data: scenarioSessions };
   }
 
   async getScenarioSession(scenarioSessionId: string, counselorId: number) {
+    const userRoles = await this.permissionsService.getUserRoles(counselorId);
     const scenarioSession =
       await this.scenarioSessionRepository.getScenarioSession(
         scenarioSessionId,
         counselorId,
+        userRoles.includes(UserRole.ADMIN),
       );
 
     if (!scenarioSession) {
@@ -197,14 +202,18 @@ export class ScenarioSessionService {
     }
 
     const endedAt = new Date();
+    const score = await this.calculateScenarioSessionScore(scenarioSessionId);
+
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
       endedAt,
+      score,
     });
 
-    let callDuration;
-    if (scenarioSession.startedAt) {
-      callDuration = endedAt.getTime() - scenarioSession.startedAt.getTime();
+    let callDuration = 0;
+    if (scenarioSession.startedAt && scenarioSession.endedAt) {
+      callDuration =
+        endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
     }
 
     this.getScenarioSessionSummaryFromAI(
@@ -212,6 +221,7 @@ export class ScenarioSessionService {
       scenarioSession.scenarioId,
       callDuration,
     );
+
     try {
       await this.livekitService.deleteRoom(scenarioSession.roomId);
     } catch (error) {
@@ -223,7 +233,13 @@ export class ScenarioSessionService {
     return { message: 'Scenario session ended successfully' };
   }
 
-  async getScenarioSessionSummaryFromAI(
+  private async calculateScenarioSessionScore(scenarioSessionId: string) {
+    return this.scenarioSessionRepository.getScenarioSessionScore(
+      scenarioSessionId,
+    );
+  }
+
+  private async getScenarioSessionSummaryFromAI(
     scenarioSessionId: string,
     scenarioId: number,
     callDuration?: number,

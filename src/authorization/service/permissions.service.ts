@@ -9,7 +9,7 @@ export class PermissionsService {
     private readonly cache: RedisService,
   ) {}
 
-  async getUserRoles(userId: string): Promise<string[]> {
+  async getUserRoles(userId: number): Promise<string[]> {
     const cachedUserRoles = await this.cache.get(`user:roles:${userId}`);
 
     if (cachedUserRoles) {

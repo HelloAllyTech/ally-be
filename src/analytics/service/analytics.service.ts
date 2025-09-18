@@ -75,7 +75,7 @@ export class AnalyticsService {
     return this.dashboardRepository.save(dashboardEntity);
   }
 
-  async getDashboards(userId: string) {
+  async getDashboards(userId: number) {
     const userGroups = await this.groupService.getUserGroups(userId);
     if (!userGroups.length) return;
     return this.dashboardRepository.find({

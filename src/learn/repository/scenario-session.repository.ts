@@ -118,8 +118,12 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
   }
 
   // TODO: Change total score to db column
-  async getScenarioSession(scenarioSessionId: string, counselorId: number) {
-    const scenarioSession = await this.createQueryBuilder('scenarioSession')
+  async getScenarioSession(
+    scenarioSessionId: string,
+    counselorId: number,
+    isAdmin: boolean = false,
+  ) {
+    const query = this.createQueryBuilder('scenarioSession')
       .leftJoinAndMapOne(
         'scenarioSession.scenario',
         Scenarios,
@@ -144,19 +148,23 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'events',
         'events.id = scenarioSessionEvent.eventId',
       )
-      .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
-      .andWhere('scenarioSession.counselorId = :counselorId', { counselorId })
+      .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId });
+
+    if (!isAdmin) {
+      query.andWhere('scenarioSession.counselorId = :counselorId', {
+        counselorId,
+      });
+    }
+
+    return query
       .andWhere('scenarioSession.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
       })
       .orderBy('scenarioSessionEvent.occurredAt', 'ASC')
       .getOne();
+  }
 
-    if (!scenarioSession) {
-      return null;
-    }
-
-    // Separately calculate the total score using a simple aggregation query
+  async getScenarioSessionScore(scenarioSessionId: string) {
     const totalScoreResult = await this.createQueryBuilder('scenarioSession')
       .leftJoin(
         ScenarioSessionEvents,
@@ -177,9 +185,6 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
 
     const totalScore = parseFloat(totalScoreResult?.totalScore) || 0;
 
-    return {
-      ...scenarioSession,
-      totalScore,
-    };
+    return totalScore;
   }
 }

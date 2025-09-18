@@ -45,7 +45,7 @@ export class AnalyticsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('dashboard')
-  getDashboards(@Req() req: { user: { id: string } }) {
+  getDashboards(@Req() req: { user: { id: number } }) {
     return this.analyticsService.getDashboards(req.user.id);
   }
 

@@ -19,7 +19,7 @@ export class GroupService {
     private readonly userGroupRepository: UserGroupRepository,
   ) {}
 
-  async getUserGroups(userId: string): Promise<number[]> {
+  async getUserGroups(userId: number): Promise<number[]> {
     const cachedUserGroups = await this.cache.get(`user:groups:${userId}`);
     if (cachedUserGroups) {
       return JSON.parse(cachedUserGroups);
@@ -93,7 +93,7 @@ export class GroupService {
     return true;
   }
 
-  async getUserRolesByUserId(userId: string): Promise<Group[]> {
+  async getUserRolesByUserId(userId: number): Promise<Group[]> {
     return this.groupRepository.findUserRoleByUserId(userId);
   }
 }

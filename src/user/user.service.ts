@@ -113,17 +113,6 @@ export class UserService {
     };
   }
 
-  async getUserRole(id: number): Promise<UserRole | undefined> {
-    const cachedUserRole = await this.cache.get(`user_role_${id}`);
-    if (cachedUserRole) return cachedUserRole as UserRole;
-    const user = await this.userRepository.findOne({
-      where: { id, tenantId: ExecutionManager.getTenantId() },
-    });
-    const userRole = user?.role;
-    if (userRole) await this.cache.set(`user_role_${id}`, userRole);
-    return userRole;
-  }
-
   async createUser({
     role,
     phoneNumber,
