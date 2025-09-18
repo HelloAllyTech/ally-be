@@ -10,10 +10,13 @@ import { QueryFailedError } from 'typeorm';
 import { LoggerService } from '../logger/logger.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationErrorType } from '../notification/type/notification.error.type';
+import { EntityOperationException } from './custom.exception';
 @Catch()
 export class CustomExceptionFilter implements ExceptionFilter {
   constructor(private eventEmitter: EventEmitter2) {}
   private logger = LoggerService.getInstance(CustomExceptionFilter.name);
+
+  // TODO: Add a way to handle entityId in the response generically
   catch(exception: unknown, host: ArgumentsHost) {
     this.logger.error(exception);
     const ctx = host.switchToHttp();
@@ -40,13 +43,25 @@ export class CustomExceptionFilter implements ExceptionFilter {
       error = exception.name;
     }
 
-    response.status(status).json({
-      statusCode: status,
-      timestamp: new Date().toISOString(),
-      path: ctx.getRequest().url,
-      message,
-      error,
-    });
+    if (exception instanceof EntityOperationException) {
+      response.status(status).json({
+        statusCode: status,
+        timestamp: new Date().toISOString(),
+        path: ctx.getRequest().url,
+        message,
+        error,
+        entityId: (exception.getResponse() as any).entityId,
+      });
+    } else {
+      response.status(status).json({
+        statusCode: status,
+        timestamp: new Date().toISOString(),
+        path: ctx.getRequest().url,
+        message,
+        error,
+      });
+    }
+
     this.eventEmitter.emit('exception', {
       statusCode: status,
       timestamp: new Date().toISOString(),

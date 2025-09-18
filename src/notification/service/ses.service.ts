@@ -66,7 +66,9 @@ export class SESService implements EmailInterface {
 
       return true;
     } catch (error) {
-      this.logger.error(`Failed to send email via SES: ${error}`);
+      this.logger.error(
+        `Failed to send email via SES with error ${JSON.stringify(error)}`,
+      );
       return false;
     }
   }

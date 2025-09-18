@@ -23,8 +23,10 @@ import { UserService } from 'src/user/user.service';
 import { EXOTEL_SAMPLE_RATE } from '../constants/audio-ingest.constants';
 
 @Injectable()
-export class ExotelService implements AudioIngestInterface {
-  private readonly logger = LoggerService.getInstance(ExotelService.name);
+export class ExotelConferenceCallService implements AudioIngestInterface {
+  private readonly logger = LoggerService.getInstance(
+    ExotelConferenceCallService.name,
+  );
 
   private sessions: { [key: string]: UserChatSessionData } = {};
   private keepAliveData: {
@@ -162,8 +164,9 @@ export class ExotelService implements AudioIngestInterface {
       );
     } catch (error) {
       this.logger.error(
-        `❌ Failed to start call stream for client ${streamSid}:`,
-        error,
+        `❌ Failed to start call stream for client ${streamSid}: with error ${JSON.stringify(
+          error,
+        )}`,
       );
       ws.terminate();
       delete this.sessions[streamSid];

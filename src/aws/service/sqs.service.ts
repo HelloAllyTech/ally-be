@@ -6,6 +6,7 @@ import {
   SQSClient,
   SQSClientConfig,
   SendMessageCommand,
+  SendMessageCommandInput,
 } from '@aws-sdk/client-sqs';
 import { AppConfigService } from '../../config/config.service';
 
@@ -44,7 +45,7 @@ export class SqsService {
   async sendMessage(
     queueUrl: string,
     message: any,
-    messageAttributes?: Record<string, any>,
+    options?: Omit<SendMessageCommandInput, 'QueueUrl' | 'MessageBody'>,
   ): Promise<void> {
     try {
       if (!queueUrl) {
@@ -54,13 +55,17 @@ export class SqsService {
       const command = new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: JSON.stringify(message),
-        MessageAttributes: messageAttributes,
+        ...options,
       });
       await this.sqsClient.send(command);
 
       this.logger.log('Message sent to SQS successfully');
     } catch (error) {
-      this.logger.error('Failed to send message to SQS queue:', error);
+      this.logger.error(
+        `Failed to send message to SQS queue: ${queueUrl} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
       throw error;
     }
   }
@@ -81,7 +86,11 @@ export class SqsService {
       const response = await this.sqsClient.send(command);
       return response.Messages || [];
     } catch (error) {
-      this.logger.error('Failed to send response message to SQS queue:', error);
+      this.logger.error(
+        `Failed to receive response message from SQS queue: ${queueUrl} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
       throw error;
     }
   }
@@ -98,7 +107,11 @@ export class SqsService {
       await this.sqsClient.send(command);
       this.logger.log(`Deleted message ${message.MessageId}`);
     } catch (err) {
-      this.logger.error(`Failed to delete message ${message.MessageId}:`, err);
+      this.logger.error(
+        `Failed to delete message ${message.MessageId} with error ${JSON.stringify(
+          err,
+        )}`,
+      );
     }
   }
 }

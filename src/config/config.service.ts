@@ -161,6 +161,19 @@ export class AppConfigService {
           'SQS_TRANSCRIPTION_RESPONSE_DLQ_URL',
         ),
       },
+      audioFile: {
+        retryQueueUrl: this.configService.get<string>(
+          'SQS_AUDIO_FILE_RETRY_QUEUE_URL',
+        ),
+        retryDlqUrl: this.configService.get<string>(
+          'SQS_AUDIO_FILE_RETRY_DLQ_URL',
+        ),
+      },
+      learn: {
+        messageAndEventQueueUrl: this.configService.get<string>(
+          'SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL',
+        ),
+      },
     };
   }
   get s3() {
@@ -175,7 +188,35 @@ export class AppConfigService {
     };
   }
 
+  get cloudTelephony() {
+    return {
+      credentialsEncryptionKey: this.configService.get<string>(
+        'CLOUD_TELEPHONY_CREDENTIALS_ENCRYPTION_KEY',
+      ),
+    };
+  }
+
+  get ozonetel() {
+    return {
+      apiUrl: this.configService.get<string>('OZONETEL_API_URL'),
+    };
+  }
+
+  get api() {
+    return {
+      baseUrl: this.configService.get<string>('API_BASE_URL'),
+    };
+  }
+
   get testAccounts() {
     return this.configService.get<string>('TEST_ACCOUNTS');
+  }
+
+  get livekit() {
+    return {
+      apiKey: this.configService.get<string>('LIVEKIT_API_KEY'),
+      apiSecret: this.configService.get<string>('LIVEKIT_API_SECRET'),
+      serverUrl: this.configService.get<string>('LIVEKIT_URL'),
+    };
   }
 }
