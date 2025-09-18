@@ -260,7 +260,7 @@ export class LearnController {
     enum: SortOrder,
     description: 'Sort order (default: DESC)',
   })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.LEARNER, UserRole.ADMIN)
   @Get('scenario-session/:scenarioSessionId/messages')
   async getMessagesByScenarioSessionId(
     @Param('scenarioSessionId') scenarioSessionId: string,

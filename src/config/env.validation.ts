@@ -40,7 +40,7 @@ export const validationSchema = Joi.object({
   // LiveKit
   LIVEKIT_API_KEY: Joi.string().required(),
   LIVEKIT_API_SECRET: Joi.string().required(),
-  LIVEKIT_SERVER_URL: Joi.string().required(),
+  LIVEKIT_URL: Joi.string().required(),
 
   SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: Joi.string().required(),
 });
