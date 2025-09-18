@@ -22,7 +22,7 @@ export class TranscriptionRequestDlqConsumer {
       const responseMessage = JSON.parse(message.Body);
 
       this.logger.info(
-        `Processing transcription DLQ request: ${responseMessage.message_type}`,
+        `Processing transcription request DLQ message: ${responseMessage.message_type} for chat ${responseMessage.chat_id}`,
       );
 
       await this.chatService.updateChat(responseMessage.chat_id, {
@@ -32,7 +32,11 @@ export class TranscriptionRequestDlqConsumer {
         },
       });
     } catch (err) {
-      this.logger.error(`Failed to process message ${message.MessageId}:`, err);
+      this.logger.error(
+        `Failed to process message ${message.MessageId}: with error ${JSON.stringify(
+          err,
+        )}`,
+      );
       throw err; // Re-throw to prevent message deletion
     }
   }

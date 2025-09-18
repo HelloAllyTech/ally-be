@@ -277,4 +277,26 @@ export class AiService {
     >(ENDPOINTS.ENHANCE, request);
     return response;
   }
+
+  async getScenarioSessionSummary(
+    messages: MessageRequest[],
+    description: string,
+  ) {
+    try {
+      const response = await axios.post(
+        `${this.config.ai.apiUrl}/api/v1/summary/scenario/feedback`,
+        {
+          chat_history: messages,
+          goal: description,
+        },
+      );
+      this.logger.info(
+        `Scenario session summary received: ${JSON.stringify(response.data)}`,
+      );
+      return response.data;
+    } catch (error) {
+      this.logger.error(`AI Service Error: ${error.message}`);
+      throw new Error('AI scenario session summary request failed');
+    }
+  }
 }

@@ -6,3 +6,9 @@ export class AddNoteDto {
   @IsString()
   content!: string;
 }
+
+export class AddNotesResponse {
+  @ApiProperty({ description: 'Note content' })
+  @IsString()
+  notes!: string;
+}

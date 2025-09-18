@@ -164,11 +164,21 @@ AI_SERVICE_API_KEY=ai-service-api-key
 # Audio storage directiry
 AUDIO_STORAGE_DIR=audio-storage
 
+# Cloud telephony credentials encryption key
+CLOUD_TELEPHONY_CREDENTIALS_ENCRYPTION_KEY=cloud-teleophony-credentials-encryption-key
+
+# Ozonetel API URL
+OZONETEL_API_URL=ozonetel-api-url
+
+# API base URL
+API_BASE_URL=api-base-url
 # AWS-SQS
 SQS_TRANSCRIPTION_REQUEST_QUEUE_URL=sqs-ai-transcription-request-queue
 SQS_TRANSCRIPTION_REQUEST_DLQ_URL=sqs-ai-transcription-request-dlq
 SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL=sqs-ai-transcription-response-queue
 SQS_TRANSCRIPTION_RESPONSE_DLQ_URL=sqs-ai-transcription-response-dlq
+SQS_AUDIO_FILE_RETRY_QUEUE_URL=sqs-audio-file-retry-queue
+SQS_AUDIO_FILE_RETRY_DLQ_URL=sqs-audio-file-retry-dlq
 
 # TEST ACCOUNTS
 TEST_ACCOUNTS=test-accounts

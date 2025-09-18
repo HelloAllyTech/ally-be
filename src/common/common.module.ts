@@ -6,12 +6,13 @@ import { RedisModule } from '../redis/redis.module';
 import { Place } from './entities/place.entity';
 import { PlaceService } from './service/place.service';
 import { PlaceController } from './controller/place.controller';
+import { CryptoService } from './service/crypto.service';
 
 @Global()
 @Module({
   imports: [TypeOrmModule.forFeature([Preference, Place]), RedisModule],
-  providers: [PreferenceService, PlaceService],
+  providers: [PreferenceService, PlaceService, CryptoService],
   controllers: [PlaceController],
-  exports: [PreferenceService, PlaceService],
+  exports: [PreferenceService, PlaceService, CryptoService],
 })
 export class CommonModule {}

@@ -16,7 +16,7 @@ import { GenerateOtpDto, LoginDto, VerifyOtpDto } from '../dto';
 import { UserCreateDto } from '../dto/user-create.dto';
 import { JwtRefreshAuthGuard } from '../guards/jwt-refresh-auth.guard';
 import { LoggerService } from '../../logger/logger.service';
-import { ApiBody } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiSecurity } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
 import { UserRole } from '../../common/constants/user.constants';
 import { AuthRoles } from '../decorators/auth-roles.decorator';
@@ -64,6 +64,8 @@ export class AuthController {
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
   @AuthRoles(UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiSecurity('access-token')
   async signup(@Body() userData: UserCreateDto) {
     try {
       const user = await this.authService.signup(userData);

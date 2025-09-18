@@ -25,6 +25,10 @@ import { CommonModule } from './common/common.module';
 import { SettingsModule } from './settings/settings.module';
 import { ReferenceDocumentModule } from './reference-document/reference-document.module';
 import { AudioModule } from './audio/audio.module';
+import { LiveKitModule } from './livekit/livekit.module';
+import { LearnModule } from './learn/learn.module';
+import { SessionEventModule } from './session-event/session-event.module';
+import { AuthorizationModule } from './authorization/authorization.module';
 
 @Module({
   imports: [
@@ -53,6 +57,10 @@ import { AudioModule } from './audio/audio.module';
     SettingsModule,
     ReferenceDocumentModule,
     AudioModule,
+    LearnModule,
+    LiveKitModule,
+    SessionEventModule,
+    AuthorizationModule,
   ],
   controllers: [],
   providers: [

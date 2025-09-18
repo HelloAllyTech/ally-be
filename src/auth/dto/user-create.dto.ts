@@ -4,6 +4,8 @@ import {
   IsString,
   MinLength,
   IsOptional,
+  IsArray,
+  ArrayNotEmpty,
 } from 'class-validator';
 import { UserRole } from '../../common/constants/user.constants';
 import { PASSWORD_VALIDATION } from '../../common/constants/validation.constants';
@@ -18,14 +20,16 @@ export class UserCreateDto {
   email!: string;
 
   @ApiProperty({
-    description: 'User password',
+    description: 'User password (optional)',
     example: 'password123',
     minLength: 6,
+    required: false,
   })
+  @IsOptional()
   @IsString()
   @MinLength(PASSWORD_VALIDATION.MIN_LENGTH)
   //@Matches(PASSWORD_VALIDATION.REGEX)
-  password!: string;
+  password?: string;
 
   @ApiProperty({
     description: 'User name',
@@ -35,12 +39,16 @@ export class UserCreateDto {
   name!: string;
 
   @ApiProperty({
-    description: 'User role',
-    example: UserRole.CLIENT,
+    description: 'User roles (array of roles)',
+    example: [UserRole.CLIENT, UserRole.COUNSELOR],
+    type: [String],
+    enum: UserRole,
+    isArray: true,
   })
-  @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
+  @IsArray()
+  @IsEnum(UserRole, { each: true })
+  @ArrayNotEmpty()
+  roles!: UserRole[];
 
   @ApiProperty({
     description: 'Phone number',
@@ -60,4 +68,12 @@ export class UserCreateDto {
   })
   @IsString()
   tenantId!: string;
+
+  @ApiProperty({
+    description: 'External ID',
+    example: 'external-123',
+  })
+  @IsOptional()
+  @IsString()
+  externalId?: string;
 }

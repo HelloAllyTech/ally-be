@@ -5,7 +5,7 @@ import { In, Repository } from 'typeorm';
 import { Dashboard } from '../../common/entities/dashboard.entity';
 import { Chat } from '../../common/entities/chat.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { GroupService } from '../../user/group.service';
+import { GroupService } from 'src/authorization/service/group.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { AnalyticsUtil } from '../util/analytics.util';
 import {
@@ -75,7 +75,7 @@ export class AnalyticsService {
     return this.dashboardRepository.save(dashboardEntity);
   }
 
-  async getDashboards(userId: string) {
+  async getDashboards(userId: number) {
     const userGroups = await this.groupService.getUserGroups(userId);
     if (!userGroups.length) return;
     return this.dashboardRepository.find({

@@ -58,8 +58,7 @@ export class CloudTelephonyGateway
 
     client.on('connect_error', (err) => {
       this.logger.error(
-        `❌ Connection error for client co ${client.id}:`,
-        err.message,
+        `❌ Connection error for client ${client.id}: with error ${err.message}`,
       );
     });
 

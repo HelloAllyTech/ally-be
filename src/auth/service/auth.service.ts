@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { DataSource, Repository, MoreThan } from 'typeorm';
+import { DataSource, Repository, MoreThan, In } from 'typeorm';
 import { User } from '../../common/entities/user.entity';
 import { UserGroup } from '../../common/entities/user-group.entity';
 import { Group } from '../../common/entities/group.entity';
@@ -12,7 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { RefreshToken } from '../../common/entities/refresh-token.entity';
 import { AppConfigService } from '../../config/config.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { UserRole, UserStatus } from '../../common/constants/user.constants';
+import { UserStatus } from '../../common/constants/user.constants';
 import { UserCreateDto } from '../dto/user-create.dto';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GroupPermission } from 'src/common/entities/group-permission.entity';
@@ -186,35 +186,43 @@ export class AuthService {
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(userData.password, 10);
+    const hashedPassword = userData.password
+      ? await bcrypt.hash(userData.password, 10)
+      : undefined;
+
+    // TODO: Temporary fix adding for role
+    const role = userData.roles[0];
 
     // Create new user
     const newUser = this.userRepository.create({
       email: userData.email,
       password: hashedPassword,
       name: userData.name,
-      role: userData.role || UserRole.CLIENT, // Default role
+      role,
       status: UserStatus.ACTIVE,
       metadata: {},
-      username: userData.email,
+      username: userData.username || userData.email,
       phone: userData.phone,
       tenantId: userData.tenantId,
+      externalId: userData.externalId,
     });
 
     // Save user
     const savedUser = await this.userRepository.save(newUser);
 
-    // find group id using role
-    const group = await this.groupRepository.findOne({
-      where: { name: userData.role || UserRole.CLIENT },
+    const groups = await this.groupRepository.find({
+      where: { name: In(userData.roles) },
     });
 
-    if (group) {
+    if (groups.length > 0) {
       // Add user to default group
-      await this.userGroupRepository.save({
-        userId: savedUser.id,
-        groupId: group.id,
-      });
+      const groupsData = groups.map((group) =>
+        this.userGroupRepository.create({
+          userId: savedUser.id,
+          groupId: group.id,
+        }),
+      );
+      await this.userGroupRepository.save(groupsData);
     }
 
     // Emit user created event
@@ -311,9 +319,8 @@ export class AuthService {
       where: [{ phone: phone }, { email: email }],
     });
     if (!user) {
-      this.logger.error(`User not found for phone ${phone}`);
+      this.logger.error(`User not found for phone ${phone} or email ${email}`);
       return true; // to prevent user enumeration
-      //throw new BadRequestException('User not found');
     }
 
     if (!user.email) {

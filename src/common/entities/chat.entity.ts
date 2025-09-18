@@ -43,6 +43,9 @@ export class Chat extends BaseEntity {
   @Column({ type: 'timestamp', nullable: true })
   endedAt?: Date;
 
+  @Column({ nullable: true })
+  externalId?: string;
+
   @Column({ default: ChatSummaryStatus.PENDING })
   summaryStatus!: ChatSummaryStatus;
 
