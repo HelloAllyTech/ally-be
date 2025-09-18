@@ -8,6 +8,7 @@ import {
   Query,
   Res,
   Put,
+  Delete,
 } from '@nestjs/common';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
 import { TokenUser } from '../../auth/type/auth.types';
@@ -633,5 +634,13 @@ export class ChatController {
     @Body() summaryFeedbackDto: SummaryFeedbackDto,
   ): Promise<SummaryFeedbackResponse> {
     return this.service.addFeedbackToChat(chatId, summaryFeedbackDto);
+  }
+
+  @Delete(':id')
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Delete chat' })
+  @ApiResponse({ status: 200, description: 'Chat deleted successfully' })
+  async deleteChat(@Param('id') id: string) {
+    return this.service.deleteChat(parseInt(id));
   }
 }

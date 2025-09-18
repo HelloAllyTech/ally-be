@@ -18,10 +18,11 @@ import {
 } from '../../chat/type/chat.type';
 import { BroadcastMessageService } from './broadcast-message.service';
 import { AppConfigService } from '../../config/config.service';
+import { generateAudioStorageKey } from '../../common/util/audio.util';
 import { ChatService } from '../../chat/service/chat.service';
 import { PLACEHOLDER_CHAT_ID } from '../../common/constants/user.constants';
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
-import { ChatSummaryStatus } from 'src/common/entities/chat.entity';
+import { Chat, ChatSummaryStatus } from 'src/common/entities/chat.entity';
 
 @Injectable()
 export class StreamFileProcessorService {
@@ -84,15 +85,6 @@ export class StreamFileProcessorService {
     }
   }
 
-  private generateStorageKey(chatId: number) {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const timestamp = now.getTime();
-    return `${year}/${month}/${day}/chat-${chatId}-${timestamp}.raw`;
-  }
-
   async startCallStream(
     session: UserChatSessionData,
     chatData: {
@@ -105,7 +97,7 @@ export class StreamFileProcessorService {
   ) {
     const callId = session.id;
     let chatId: number | undefined;
-    let chat: any = null;
+    let chat: Chat | null = null;
     let s3UploadId: string | null = null;
     let tempFiles: string[] = [];
     let s3key: string = '';
@@ -124,7 +116,7 @@ export class StreamFileProcessorService {
           throw new Error('Failed to create chat');
         }
 
-        chatId = chat.chatId;
+        chatId = chat.id;
 
         // Setup call stream using entityManager
         const { uploadId, files, key } = await this.setupCallStream({
@@ -171,7 +163,7 @@ export class StreamFileProcessorService {
     sampleRate: number;
   }): Promise<{ uploadId: string; files: string[]; key: string }> {
     const callId = session.id;
-    const key = this.generateStorageKey(chatId);
+    const key = generateAudioStorageKey({ chatId, extension: 'raw' });
     const tempFiles: string[] = [];
 
     try {

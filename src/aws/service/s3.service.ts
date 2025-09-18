@@ -21,6 +21,7 @@ import {
   DeleteObjectCommandInput,
   DeleteObjectCommandOutput,
   S3ClientConfig,
+  HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AppConfigService } from '../../config/config.service';
@@ -56,13 +57,18 @@ export class S3Service {
     key: string;
     operation: 'get' | 'put';
     expiresIn?: number; // seconds, default 3600 (1 hour)
+    contentType?: string;
   }): Promise<string> {
-    const { bucket, key, operation, expiresIn = 3600 } = params;
+    const { bucket, key, operation, expiresIn = 3600, contentType } = params;
 
     const command =
       operation === 'get'
         ? new GetObjectCommand({ Bucket: bucket, Key: key })
-        : new PutObjectCommand({ Bucket: bucket, Key: key });
+        : new PutObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            ...(contentType && { ContentType: contentType }),
+          });
 
     try {
       const presignedUrl = await getSignedUrl(this.s3, command, {
@@ -156,6 +162,23 @@ export class S3Service {
       throw new Error(
         `Failed to delete object ${key} from bucket ${bucket}: ${error.message}`,
       );
+    }
+  }
+
+  async checkFileExists(params: {
+    bucket: string;
+    key: string;
+  }): Promise<boolean> {
+    try {
+      await this.s3.send(
+        new HeadObjectCommand({
+          Bucket: params.bucket,
+          Key: params.key,
+        }),
+      );
+      return true;
+    } catch (error) {
+      return false;
     }
   }
 }

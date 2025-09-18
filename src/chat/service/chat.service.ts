@@ -1,4 +1,11 @@
-import { forwardRef, HttpException, Injectable, Inject } from '@nestjs/common';
+import {
+  forwardRef,
+  HttpException,
+  Injectable,
+  Inject,
+  HttpStatus,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   DataSource,
@@ -71,19 +78,20 @@ import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { ChatRepository } from '../repository/chat.repository';
 import { SummaryFeedbackRepository } from '../repository/summary-feedback.repository';
 import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
+import { CallDetailsRepository } from '../repository/call-details.repository';
+import { MessageRepository } from '../repository/message.repository';
 
 @Injectable()
 export class ChatService {
   logger = LoggerService.getInstance(ChatService.name);
   constructor(
-    @InjectRepository(Message)
-    private messageRepository: Repository<Message>,
+    private messageRepository: MessageRepository,
     private chatRepository: ChatRepository,
 
     @InjectRepository(ChatRoom)
     private chatRoomRepository: Repository<ChatRoom>,
     @InjectRepository(CallDetails)
-    private callDetailsRepository: Repository<CallDetails>,
+    private callDetailsRepository: CallDetailsRepository,
     private summaryFeedbackRepository: SummaryFeedbackRepository,
     @Inject(forwardRef(() => QueueService))
     private queueService: QueueService,
@@ -296,12 +304,7 @@ export class ChatService {
     status?: ChatStatus;
     startedAt?: Date;
     entityManager?: EntityManager;
-  }): Promise<{
-    chatId: number;
-    clientId: number;
-    counselorId: number;
-    chat: Chat;
-  } | null> {
+  }): Promise<Chat | null> {
     const clientId = ANONYMOUS_CLIENT_ID;
 
     const chat = await this.createChatWithClientAndCounselor({
@@ -315,12 +318,7 @@ export class ChatService {
       startedAt,
     });
 
-    return {
-      chatId: chat.id,
-      clientId: clientId,
-      counselorId,
-      chat,
-    };
+    return chat;
   }
 
   async getOrCreateChatRoom(userId: number, entityManager?: EntityManager) {
@@ -1720,5 +1718,33 @@ export class ChatService {
 
   async updateChat(chatId: number, input: UpdateChatInput) {
     await this.chatRepository.updateChat(chatId, input);
+  }
+
+  async deleteChat(chatId: number) {
+    const { chat, callDetails } = await this.getChatWithCallDetails(chatId);
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
+    }
+    if (callDetails?.callInfo?.provider !== AudioChatProvider.AUDIO_UPLOAD) {
+      throw new BadRequestException('Deletion is nor supported for this chat');
+    }
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        await this.messageRepository.deleteMessage(chatId, manager);
+        await this.callDetailsRepository.deleteCallDetails(chatId, manager);
+        await this.summaryFeedbackRepository.deleteSummaryFeedback(
+          chatId,
+          manager,
+        );
+        await this.chatRepository.deleteChat(chatId, manager);
+      });
+      await this.cache.del(`chat:${chatId}`);
+    } catch (error) {
+      this.logger.error(`Failed to delete chat ${chatId}: ${error}`);
+      throw new HttpException(
+        `Failed to delete chat ${chatId}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }

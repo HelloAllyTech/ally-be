@@ -41,4 +41,13 @@ export class ChatRepository extends Repository<Chat> {
 
     return updatedResult.affected !== 0;
   }
+
+  async deleteChat(chatId: number, em?: EntityManager): Promise<boolean> {
+    const chatRepo = em
+      ? em.getRepository(Chat)
+      : this.dataSource.getRepository(Chat);
+
+    const result = await chatRepo.delete(chatId);
+    return result.affected !== 0;
+  }
 }
