@@ -33,6 +33,8 @@ export const validationSchema = Joi.object({
   SQS_TRANSCRIPTION_RESPONSE_DLQ_URL: Joi.string().required(),
   SQS_AUDIO_FILE_RETRY_QUEUE_URL: Joi.string().required(),
   SQS_AUDIO_FILE_RETRY_DLQ_URL: Joi.string().required(),
+  SQS_AUDIO_UPLOAD_QUEUE_URL: Joi.string().required(),
+  SQS_AUDIO_UPLOAD_DLQ_URL: Joi.string().required(),
 
   // TEST ACCOUNTS
   TEST_ACCOUNTS: Joi.string().optional(),

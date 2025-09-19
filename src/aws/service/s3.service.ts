@@ -22,6 +22,7 @@ import {
   DeleteObjectCommandOutput,
   S3ClientConfig,
   HeadObjectCommand,
+  HeadObjectCommandOutput,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AppConfigService } from '../../config/config.service';
@@ -58,8 +59,16 @@ export class S3Service {
     operation: 'get' | 'put';
     expiresIn?: number; // seconds, default 3600 (1 hour)
     contentType?: string;
+    metadata?: Record<string, string>;
   }): Promise<string> {
-    const { bucket, key, operation, expiresIn = 3600, contentType } = params;
+    const {
+      bucket,
+      key,
+      operation,
+      expiresIn = 3600,
+      contentType,
+      metadata,
+    } = params;
 
     const command =
       operation === 'get'
@@ -68,6 +77,7 @@ export class S3Service {
             Bucket: bucket,
             Key: key,
             ...(contentType && { ContentType: contentType }),
+            ...(metadata && { Metadata: metadata }),
           });
 
     try {
@@ -165,20 +175,19 @@ export class S3Service {
     }
   }
 
-  async checkFileExists(params: {
+  async getHeadObject(params: {
     bucket: string;
     key: string;
-  }): Promise<boolean> {
+  }): Promise<HeadObjectCommandOutput> {
     try {
-      await this.s3.send(
+      return await this.s3.send(
         new HeadObjectCommand({
           Bucket: params.bucket,
           Key: params.key,
         }),
       );
-      return true;
     } catch (error) {
-      return false;
+      throw new Error(`Failed to get head object: ${error.message}`);
     }
   }
 }

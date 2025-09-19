@@ -1,6 +1,13 @@
-import { IsString, IsNotEmpty, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsDate,
+  MaxDate,
+  IsEnum,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Chat } from '../../common/entities/chat.entity';
+import { AudioChatPlatform } from 'src/common/constants/chat.constants';
 
 export class AudioUploadRequestDto {
   @ApiProperty({
@@ -12,12 +19,49 @@ export class AudioUploadRequestDto {
   fileName!: string;
 
   @ApiProperty({
+    description: 'File size in bytes',
+    example: 1024,
+  })
+  @IsNumber()
+  @IsNotEmpty()
+  fileSize!: number;
+
+  @ApiProperty({
     description: 'MIME type of the audio file',
     example: 'audio/wav',
   })
   @IsString()
   @IsNotEmpty()
   contentType!: string;
+
+  @ApiProperty({
+    description: 'Counselor ID',
+  })
+  @IsNumber()
+  @IsNotEmpty()
+  counselorId!: number;
+
+  @ApiProperty({
+    description: 'Started At',
+  })
+  @IsDate()
+  @IsNotEmpty()
+  @MaxDate(new Date(), { message: 'Start date must be before current date' })
+  startedAt!: number;
+
+  @ApiProperty({
+    description: 'Platform',
+  })
+  @IsEnum(AudioChatPlatform)
+  @IsNotEmpty()
+  platform!: AudioChatPlatform;
+
+  @ApiProperty({
+    description: 'Duration of the audio file',
+  })
+  @IsNumber()
+  @IsNotEmpty()
+  duration!: number;
 }
 
 export class AudioUploadResponseDto {
@@ -27,27 +71,18 @@ export class AudioUploadResponseDto {
   presignedUrl!: string;
 
   @ApiProperty({
-    description: 'S3 key of the uploaded file',
+    description: 'Chat ID',
   })
-  @IsString()
+  @IsNumber()
   @IsNotEmpty()
-  s3Key!: string;
+  chatId!: number;
 }
 
-export class ConfirmUploadDto {
+export class CancelUploadRequestDto {
   @ApiProperty({
-    description: 'S3 key of the uploaded file',
+    description: 'Chat ID',
   })
-  @IsString()
+  @IsNumber()
   @IsNotEmpty()
-  s3Key!: string;
-}
-
-export class ConfirmUploadResponseDto {
-  @ApiProperty({
-    description: 'Chat Object',
-  })
-  @IsObject()
-  @IsNotEmpty()
-  chat!: Chat;
+  chatId!: number;
 }

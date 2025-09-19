@@ -29,6 +29,8 @@ import { SummaryFeedback } from './entity/summary-feedback.entity';
 import { SummaryFeedbackRepository } from './repository/summary-feedback.repository';
 import { MessageRepository } from './repository/message.repository';
 import { CallDetailsRepository } from './repository/call-details.repository';
+import { AudioUploadConsumer } from './consumer/audio-upload.consumer';
+import { AudioUploadDlqConsumer } from './consumer/audio-upload-dlq.consumer';
 
 @Module({
   imports: [
@@ -63,6 +65,8 @@ import { CallDetailsRepository } from './repository/call-details.repository';
     SummaryFeedbackRepository,
     MessageRepository,
     CallDetailsRepository,
+    AudioUploadConsumer,
+    AudioUploadDlqConsumer,
   ],
   exports: [
     ChatService,

@@ -105,12 +105,14 @@ export class StreamFileProcessorService {
     try {
       await this.dataSource.transaction(async (entityManager) => {
         // Create chat using entityManager
-        chat = await this.chatService.createChatForAnonymousClient({
-          counselorId: chatData.counselorId,
-          provider: chatData.provider,
-          platform: chatData.platform,
+        chat = await this.chatService.createChatForAnonymousClient(
+          {
+            counselorId: chatData.counselorId,
+            provider: chatData.provider,
+            platform: chatData.platform,
+          },
           entityManager,
-        });
+        );
 
         if (!chat) {
           throw new Error('Failed to create chat');
@@ -163,7 +165,11 @@ export class StreamFileProcessorService {
     sampleRate: number;
   }): Promise<{ uploadId: string; files: string[]; key: string }> {
     const callId = session.id;
-    const key = generateAudioStorageKey({ chatId, extension: 'raw' });
+    const key = generateAudioStorageKey({
+      chatId,
+      extension: 'raw',
+      prefix: 'microphone-chat',
+    });
     const tempFiles: string[] = [];
 
     try {

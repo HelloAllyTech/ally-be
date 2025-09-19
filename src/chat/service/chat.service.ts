@@ -228,27 +228,33 @@ export class ChatService {
     return chat;
   }
 
-  async createChatWithClientAndCounselor({
-    clientId,
-    counselorId,
-    tenantId,
-    provider,
-    platform,
-    externalId,
-    status,
-    startedAt,
-    entityManager,
-  }: {
-    clientId: number;
-    counselorId?: number;
-    tenantId?: string;
-    provider?: AudioChatProvider;
-    platform?: AudioChatPlatform;
-    externalId?: string;
-    status?: ChatStatus;
-    startedAt?: Date;
-    entityManager?: EntityManager;
-  }) {
+  async createChatWithClientAndCounselor(
+    params: {
+      clientId: number;
+      counselorId?: number;
+      tenantId?: string;
+      provider?: AudioChatProvider;
+      platform?: AudioChatPlatform;
+      externalId?: string;
+      status?: ChatStatus;
+      startedAt?: Date;
+      endedAt?: Date;
+      duration?: number;
+    },
+    entityManager?: EntityManager,
+  ) {
+    const {
+      clientId,
+      counselorId,
+      tenantId,
+      provider,
+      platform,
+      externalId,
+      status,
+      startedAt,
+      endedAt,
+      duration,
+    } = params;
     const chatRepo = entityManager?.getRepository(Chat) || this.chatRepository;
     const chatRoomRepo =
       entityManager?.getRepository(ChatRoom) || this.chatRoomRepository;
@@ -269,54 +275,52 @@ export class ChatService {
       roomId: newChatRoom.id,
       status: status || ChatStatus.ACTIVE,
       startedAt: startedAt || new Date(),
+      ...(endedAt ? { endedAt } : {}),
       externalId,
       tenantId: tenantId || ExecutionManager.getTenantId(),
     });
 
     await chatRepo.save(chat);
 
-    await callDetailsRepo.save({
+    const callDetails = callDetailsRepo.create({
       chatId: chat.id,
       tenantId: tenantId || ExecutionManager.getTenantId(),
       startTime: new Date(),
+      callDuration: duration,
       callInfo: {
         provider,
         platform,
+        summaryName: ChatUtil.getSummaryName(chat),
       },
     });
+
+    await callDetailsRepo.save(callDetails);
 
     return chat;
   }
 
-  async createChatForAnonymousClient({
-    counselorId,
-    provider,
-    platform,
-    externalId,
-    status,
-    startedAt,
-    entityManager,
-  }: {
-    counselorId: number;
-    provider?: AudioChatProvider;
-    platform?: AudioChatPlatform;
-    externalId?: string;
-    status?: ChatStatus;
-    startedAt?: Date;
-    entityManager?: EntityManager;
-  }): Promise<Chat | null> {
+  async createChatForAnonymousClient(
+    params: {
+      counselorId: number;
+      provider?: AudioChatProvider;
+      platform?: AudioChatPlatform;
+      externalId?: string;
+      status?: ChatStatus;
+      startedAt?: Date;
+      endedAt?: Date;
+      duration?: number;
+    },
+    entityManager?: EntityManager,
+  ): Promise<Chat | null> {
     const clientId = ANONYMOUS_CLIENT_ID;
 
-    const chat = await this.createChatWithClientAndCounselor({
-      clientId,
-      counselorId,
-      provider,
-      platform,
+    const chat = await this.createChatWithClientAndCounselor(
+      {
+        clientId,
+        ...params,
+      },
       entityManager,
-      status,
-      externalId,
-      startedAt,
-    });
+    );
 
     return chat;
   }
@@ -874,12 +878,7 @@ export class ChatService {
       }
 
       if (callDetails) {
-        const existingCallInfo = callDetails.callInfo || {};
         const updates = {
-          callInfo: {
-            ...existingCallInfo,
-            summaryName: ChatUtil.getSummaryName(chat),
-          },
           endTime: endDate,
           callDuration: callDurationInSeconds,
         };
@@ -979,7 +978,9 @@ export class ChatService {
           clientTalkingTime: clientTalkingPercentage * callDurationInSeconds,
           counselorTalkingTime:
             counselorTalkingPercentage * callDurationInSeconds,
-          summaryName: ChatUtil.getSummaryName(chat),
+          ...(!existingCallInfo.summaryName
+            ? { summaryName: ChatUtil.getSummaryName(chat) }
+            : {}),
           wordCountByLanguage,
           clientWordCount,
           counselorWordCount,

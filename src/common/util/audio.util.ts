@@ -19,8 +19,9 @@ export function generateAudioStorageKey(params: {
   chatId?: number;
   key?: string;
   extension?: string;
+  prefix?: string;
 }): string {
-  const { chatId, key, extension } = params;
+  const { chatId, key, extension, prefix } = params;
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -28,7 +29,7 @@ export function generateAudioStorageKey(params: {
   const timestamp = now.getTime();
   const defaultKey = `chat-${chatId}-${timestamp}`;
   const finalKey = key || defaultKey;
-  return `${year}/${month}/${day}/${finalKey}${
+  return `${prefix ? `${prefix}/` : ''}${year}/${month}/${day}/${finalKey}${
     extension ? `.${extension}` : ''
   }`;
 }

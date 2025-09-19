@@ -168,6 +168,12 @@ export class AppConfigService {
         retryDlqUrl: this.configService.get<string>(
           'SQS_AUDIO_FILE_RETRY_DLQ_URL',
         ),
+        uploadQueueUrl: this.configService.get<string>(
+          'SQS_AUDIO_UPLOAD_QUEUE_URL',
+        ),
+        uploadDlqUrl: this.configService.get<string>(
+          'SQS_AUDIO_UPLOAD_DLQ_URL',
+        ),
       },
       learn: {
         messageAndEventQueueUrl: this.configService.get<string>(

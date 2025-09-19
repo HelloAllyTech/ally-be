@@ -13,9 +13,8 @@ import { UserRole } from '../../common/constants/user.constants';
 import { AudioUploadService } from '../service/audio-upload.service';
 import {
   AudioUploadRequestDto,
-  ConfirmUploadDto,
   AudioUploadResponseDto,
-  ConfirmUploadResponseDto,
+  CancelUploadRequestDto,
 } from '../dto/audio-upload.dto';
 
 @ApiTags('Chat Audio Upload')
@@ -26,7 +25,7 @@ export class AudioUploadController {
   constructor(private readonly audioUploadService: AudioUploadService) {}
 
   @Post('upload-url')
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthRoles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Get presigned URL for audio upload' })
   @ApiResponse({
     status: 201,
@@ -44,25 +43,11 @@ export class AudioUploadController {
     );
   }
 
-  @Post('confirm-upload')
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
-  @ApiOperation({ summary: 'Confirm upload and start audio processing' })
-  @ApiResponse({
-    status: 200,
-    description: 'Upload confirmed and processing started',
-    type: ConfirmUploadResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'File not found or invalid request',
-  })
-  async confirmUpload(
-    @Body() confirmUploadDto: ConfirmUploadDto,
-    @CurrentUser() tokenUser: TokenUser,
-  ) {
-    return this.audioUploadService.confirmUploadAndStartProcessing(
-      confirmUploadDto,
-      tokenUser.id,
-    );
+  @Post('cancel-upload')
+  @AuthRoles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Cancel audio upload' })
+  @ApiResponse({ status: 200, description: 'Audio upload cancelled' })
+  async cancelUpload(@Body() cancelUploadRequestDto: CancelUploadRequestDto) {
+    return this.audioUploadService.cancelUpload(cancelUploadRequestDto);
   }
 }
