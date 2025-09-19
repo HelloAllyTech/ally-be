@@ -1,6 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 import { Group } from '../../common/entities/group.entity';
-import { PERMISSIONS } from '../../auth/constants/auth.constants';
+import { PERMISSIONS } from '../../authorization/constants/auth.constants';
 import { Permission } from '../../common/entities/permission.entity';
 import { UserRole } from '../../common/constants/user.constants';
 
@@ -32,7 +32,7 @@ export class AddInitialGroupPermissionData1745474081224
       const superAdminGroupId = superAdminGroup?.id;
 
       const counselorPermissions = allPermissions.filter(
-        (permission) => permission.name != PERMISSIONS.ViewNavBarAnalytics,
+        (permission) => permission.name != PERMISSIONS.VIEW_NAVBAR_ANALYTICS,
       );
 
       // Insert group permissions for COUNSELOR group

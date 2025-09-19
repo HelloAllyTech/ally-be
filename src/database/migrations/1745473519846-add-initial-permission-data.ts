@@ -1,5 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
-import { PERMISSIONS } from '../../auth/constants/auth.constants';
+import { PERMISSIONS } from '../../authorization/constants/auth.constants';
 
 export class AddInitialPermissionData1745473519846
   implements MigrationInterface
