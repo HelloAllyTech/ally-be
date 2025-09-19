@@ -1,25 +1,3 @@
-export const old = {
-  // Basic VIEW/EDIT permissions for core entities
-  VIEW_USER: 'view:user',
-  EDIT_USER: 'edit:user',
-  VIEW_GROUP: 'view:group',
-  EDIT_GROUP: 'edit:group',
-  VIEW_PERMISSION: 'view:permission',
-  EDIT_PERMISSION: 'edit:permission',
-  VIEW_SESSION: 'view:session',
-  EDIT_SESSION: 'edit:session',
-  VIEW_CALL: 'view:call',
-  EDIT_CALL: 'edit:call',
-  VIEW_CHAT: 'view:chat',
-  EDIT_CHAT: 'edit:chat',
-  VIEW_SUMMARY: 'view:summary',
-  EDIT_SUMMARY: 'edit:summary',
-  VIEW_ANALYTICS: 'view:analytics',
-  EDIT_ANALYTICS: 'edit:analytics',
-  VIEW_SETTINGS: 'view:settings',
-  EDIT_SETTINGS: 'edit:settings',
-};
-
 const PERMISSIONS = {
   CREATE_USER: 'create:user',
   VIEW_USER_WAITING_LIST: 'view:user:waiting-list',
