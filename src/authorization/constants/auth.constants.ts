@@ -1,4 +1,4 @@
-const PERMISSIONS = {
+const PERMISSIONS: Record<string, string> = {
   // === USER MANAGEMENT ===
   EDIT_USER: 'edit:user',
   VIEW_USER_WAITING_LIST: 'view:user:waiting-list',

@@ -7,5 +7,5 @@ export const PERMISSIONS_KEY = 'permissions';
  * @param permissions - List of permission strings required to access the endpoint
  * @example @RequirePermissions(PERMISSIONS.ReadUser, PERMISSIONS.WriteUser)
  */
-export const RequirePermissions = (...permissions: string[]) =>
+export const RequirePermissions = (permissions: string[]) =>
   SetMetadata(PERMISSIONS_KEY, permissions);
