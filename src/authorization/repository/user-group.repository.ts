@@ -28,7 +28,12 @@ export class UserGroupRepository {
   async count(where: FindOptionsWhere<UserGroup>): Promise<number> {
     return this.userGroupRepository.count({ where });
   }
+
   async remove(userGroup: UserGroup): Promise<void> {
     await this.userGroupRepository.remove(userGroup);
+  }
+
+  async findMany(where: FindOptionsWhere<UserGroup>): Promise<UserGroup[]> {
+    return this.userGroupRepository.find({ where });
   }
 }
