@@ -30,7 +30,11 @@ import {
   CallLogResponse,
   SummaryFeedbackResponse,
 } from '../dto/call-log.response.dto';
-import { CallInfoDto, ChatResponseDto } from '../dto/chat.response.dto';
+import {
+  CallInfoDto,
+  ChatResponseDto,
+  DeleteChatResponseDto,
+} from '../dto/chat.response.dto';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
@@ -640,7 +644,7 @@ export class ChatController {
   @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Delete chat' })
   @ApiResponse({ status: 200, description: 'Chat deleted successfully' })
-  async deleteChat(@Param('id') id: string) {
+  async deleteChat(@Param('id') id: string): Promise<DeleteChatResponseDto> {
     return this.service.deleteChat(parseInt(id));
   }
 }

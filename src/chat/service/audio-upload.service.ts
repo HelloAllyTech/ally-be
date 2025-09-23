@@ -21,7 +21,10 @@ import { generateAudioStorageKey } from 'src/common/util/audio.util';
 import { AudioChatProvider } from 'src/common/constants/chat.constants';
 import { UserService } from 'src/user/user.service';
 import { addDurationToDate } from 'src/common/util/date.util';
-import { UPLOADED_AUDIO_FILE_SIZE_LIMIT } from '../constants/chat.constants';
+import {
+  SUPPORTED_AUDIO_FILE_TYPES,
+  UPLOADED_AUDIO_FILE_SIZE_LIMIT,
+} from '../constants/chat.constants';
 import { ChatAudioUploadStatus } from 'src/common/entities/chat-audio-uploads.entity';
 
 @Injectable()
@@ -54,8 +57,8 @@ export class AudioUploadService {
       `Getting presigned URL for user ${userId}, file: ${fileName}`,
     );
 
-    if (!contentType.startsWith('audio/')) {
-      throw new BadRequestException('Only audio files are allowed');
+    if (!SUPPORTED_AUDIO_FILE_TYPES.includes(contentType)) {
+      throw new BadRequestException('Invalid file type');
     }
 
     if (fileSize > UPLOADED_AUDIO_FILE_SIZE_LIMIT) {

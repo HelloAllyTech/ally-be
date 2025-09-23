@@ -57,7 +57,7 @@ export class AudioUploadRequestDto {
   platform!: AudioChatPlatform;
 
   @ApiProperty({
-    description: 'Duration of the audio file',
+    description: 'Duration of the audio file in seconds',
   })
   @IsNumber()
   @IsNotEmpty()

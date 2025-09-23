@@ -72,7 +72,7 @@ import {
   CallInfo,
   SummaryFeedbackResponse,
 } from '../dto/call-log.response.dto';
-import { CallInfoDto } from '../dto/chat.response.dto';
+import { CallInfoDto, DeleteChatResponseDto } from '../dto/chat.response.dto';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 import { ChatRepository } from '../repository/chat.repository';
@@ -1721,7 +1721,7 @@ export class ChatService {
     await this.chatRepository.updateChat(chatId, input);
   }
 
-  async deleteChat(chatId: number) {
+  async deleteChat(chatId: number): Promise<DeleteChatResponseDto> {
     const { chat, callDetails } = await this.getChatWithCallDetails(chatId);
     if (!chat) {
       throw new HttpException('Chat not found', 404);
@@ -1740,6 +1740,7 @@ export class ChatService {
         await this.chatRepository.deleteChat(chatId, manager);
       });
       await this.cache.del(`chat:${chatId}`);
+      return { success: true };
     } catch (error) {
       this.logger.error(`Failed to delete chat ${chatId}: ${error}`);
       throw new HttpException(
