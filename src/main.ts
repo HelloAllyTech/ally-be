@@ -1,10 +1,10 @@
+import { Logger, LogLevel, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import helmet from 'helmet';
-import { AudioIngestGateway } from './audio-ingest/gateway/audio.ingest.gateway';
 import * as express from 'express';
+import helmet from 'helmet';
+import { AppModule } from './app.module';
+import { AudioIngestGateway } from './audio-ingest/gateway/audio.ingest.gateway';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -12,6 +12,17 @@ async function bootstrap() {
     const app = await NestFactory.create(AppModule, {
       bufferLogs: true,
     });
+
+    // Env-configurable Nest logger levels
+    const logLevel = (process.env.LOG_LEVEL || '').toLowerCase();
+    const nestLevelsByLevel: Record<string, LogLevel[]> = {
+      error: ['error'],
+      warn: ['warn', 'error'],
+      info: ['log', 'warn', 'error'],
+      debug: ['log', 'warn', 'error', 'debug'],
+    };
+    const defaultLevel = process.env.NODE_ENV === 'production' ? 'warn' : 'debug';
+    app.useLogger(nestLevelsByLevel[logLevel] || nestLevelsByLevel[defaultLevel]);
 
     // Add body parser configuration for larger payloads
     app.use(express.json({ limit: '1mb' }));
@@ -53,7 +64,7 @@ async function bootstrap() {
       if (url?.startsWith('/ws')) {
         audioIngestGateway
           .getWss()
-          .handleUpgrade(request, socket, head, (ws) => {
+          .handleUpgrade(request, socket, head, (ws: any) => {
             audioIngestGateway.getWss().emit('connection', ws, request);
           });
       }

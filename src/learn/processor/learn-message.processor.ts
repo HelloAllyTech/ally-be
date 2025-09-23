@@ -19,7 +19,7 @@ export class LearnMessageProcessor extends BaseEventProcessor {
   }
 
   async process(data: LearnMessageAndEventMessage): Promise<void> {
-    this.logger.info(`Processing learn message: ${JSON.stringify(data)}`);
+    this.logger.debug(`Processing learn message: ${JSON.stringify(data)}`);
 
     const { room_id, data: learnMessageData } = data;
     const { chat_message } = learnMessageData;
@@ -45,7 +45,7 @@ export class LearnMessageProcessor extends BaseEventProcessor {
         scenarioSession.tenantId,
       );
 
-      this.logger.info(`Scenario session message added: ${scenarioSession.id}`);
+      this.logger.debug(`Scenario session message added: ${scenarioSession.id}`);
     } catch (error) {
       this.logger.error(
         `Failed to process learn message: ${JSON.stringify(error.message)}`,

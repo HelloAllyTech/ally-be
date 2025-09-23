@@ -17,12 +17,19 @@ export class LoggerService {
   }
 
   private static createWinstonLogger() {
+    const envLevel = (process.env.LOG_LEVEL || '').toLowerCase();
+    const normalizedLevel = ['error', 'warn', 'info', 'debug'].includes(envLevel)
+      ? envLevel
+      : process.env.NODE_ENV === 'production'
+        ? 'warn'
+        : 'debug';
     const logFormat = format.printf(
       // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       (info) => `${info.level}: [${info.timestamp}]${info.message}`,
     );
     const transportList = [
       new transports.Console({
+        level: normalizedLevel,
         format: format.combine(
           format.timestamp(),
           format.colorize(),
@@ -31,6 +38,7 @@ export class LoggerService {
       }),
     ];
     return createLogger({
+      level: normalizedLevel,
       transports: transportList,
       exitOnError: false,
     });

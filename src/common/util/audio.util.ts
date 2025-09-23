@@ -1,4 +1,7 @@
 import axios from 'axios';
+import { LoggerService } from '../../logger/logger.service';
+
+const logger = LoggerService.getInstance('AudioUtil');
 
 export function checkAudioFileReady(audioUrl: string): Promise<boolean> {
   return axios
@@ -10,7 +13,7 @@ export function checkAudioFileReady(audioUrl: string): Promise<boolean> {
       return false;
     })
     .catch((error) => {
-      console.error(`Error checking audio file ready: ${error}`);
+      logger.error(`Error checking audio file ready: ${error}`);
       return false;
     });
 }
