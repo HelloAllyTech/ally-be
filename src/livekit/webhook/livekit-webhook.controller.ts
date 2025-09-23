@@ -17,7 +17,7 @@ import { RoomFinishedHandler } from './handlers/room-finished.handler';
 @ApiTags('LiveKit Webhook')
 @Controller('v1/webhook/livekit')
 export class LivekitWebhookController {
-  private readonly logger = new LoggerService(LivekitWebhookController.name);
+  private readonly logger = LoggerService.getInstance(LivekitWebhookController.name);
   private webhookReceiver?: WebhookReceiver;
 
   constructor(
