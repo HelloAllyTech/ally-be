@@ -21,11 +21,15 @@ import { RefreshTokenDto } from '../dto/refresh.dto';
 import { UserRole } from '../../common/constants/user.constants';
 import { AuthRoles } from '../decorators/auth-roles.decorator';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
 
 @Controller('v1/auth')
 export class AuthController {
   private logger = LoggerService.getInstance(AuthController.name);
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private permissionsService: PermissionsService,
+  ) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -108,9 +112,12 @@ export class AuthController {
     return { message: 'Logged out successfully' };
   }
 
+  // TO Do: Move to permissions controller
   @UseGuards(JwtAuthGuard)
   @Get('permissions')
   async getPermissions(@Req() req: { user: { id: string } }) {
-    return await this.authService.getUserPermissions(parseInt(req.user.id));
+    return await this.permissionsService.getUserPermissions(
+      parseInt(req.user.id),
+    );
   }
 }

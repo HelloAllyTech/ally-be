@@ -1,13 +1,13 @@
 import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
-import { AuthService } from '../service/auth.service';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
-    private authService: AuthService,
+    private permissionsService: PermissionsService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -25,7 +25,9 @@ export class PermissionsGuard implements CanActivate {
       return false;
     }
 
-    const userPermissions = await this.authService.getUserPermissions(user.id);
+    const userPermissions = await this.permissionsService.getUserPermissions(
+      user.id,
+    );
 
     // Check if user has all required permissions
     return requiredPermissions.every((permission) =>

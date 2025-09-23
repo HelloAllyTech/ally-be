@@ -7,7 +7,12 @@ export class GroupPermissionsService {
     private readonly groupPermissionsRepository: GroupPermissionsRepository,
   ) {}
 
-  async getGroupPermissions(groupIds: number[]): Promise<string[]> {
-    return this.groupPermissionsRepository.findPermissionsByGroupId(groupIds);
+  async getGroupPermissions(
+    groupIds: number[],
+  ): Promise<{ groupId: number; permission: string }[]> {
+    const permissions =
+      await this.groupPermissionsRepository.findPermissionsByGroupId(groupIds);
+
+    return permissions;
   }
 }

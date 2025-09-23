@@ -25,22 +25,75 @@ export class PermissionsService {
     return roleNames;
   }
 
-  async getUserPermissions(userId: number): Promise<string[]> {
-    const cachedUserPermissions = await this.cache.get(
-      `user:permissions:${userId}`,
-    );
-    if (cachedUserPermissions) {
-      return JSON.parse(cachedUserPermissions);
+  async getUserPermissions(id: number): Promise<string[]> {
+    // Get user's groups from cache or DB
+    const cachedUserGroups = await this.cache.get(`user:groups:${id}`);
+    let userGroups;
+
+    if (cachedUserGroups) {
+      userGroups = JSON.parse(cachedUserGroups);
+    } else {
+      const groups = await this.userGroupService.getUserGroups(id);
+      userGroups = groups.map((group) => group.groupId);
+
+      await this.cache.set(
+        `user:groups:${id}`,
+        JSON.stringify(userGroups),
+        1800, // 30 minutes
+      );
     }
-    const groups = await this.userGroupService.getUserGroups(userId);
-    const groupIds = groups.map((group) => group.groupId);
-    const permissions =
-      await this.groupPermissionsService.getGroupPermissions(groupIds);
-    await this.cache.set(
-      `user:permissions:${userId}`,
-      JSON.stringify(permissions),
-      1800, // 30 minutes
-    );
-    return permissions;
+
+    if (!userGroups.length) return [];
+
+    // Get permissions for each group from cache or DB
+    const permissions = new Set<string>();
+    const missingGroupIds = new Set<number>();
+
+    // First check cache for all groups
+    for (const groupId of userGroups) {
+      const cachedGroupPermissions = await this.cache.get(
+        `group:permissions:${groupId}`,
+      );
+      if (cachedGroupPermissions) {
+        const groupPermissions = JSON.parse(cachedGroupPermissions);
+        groupPermissions.forEach((p: string) => permissions.add(p));
+      } else {
+        missingGroupIds.add(groupId);
+      }
+    }
+
+    // If any permissions are missing from cache, fetch them all at once
+    if (missingGroupIds.size > 0) {
+      const missingPermissions =
+        await this.groupPermissionsService.getGroupPermissions([
+          ...missingGroupIds,
+        ]);
+
+      // Group permissions by groupId
+      const groupedPermissions = missingPermissions.reduce(
+        (acc, curr) => {
+          if (!acc[curr.groupId]) {
+            acc[curr.groupId] = [];
+          }
+          acc[curr.groupId].push(curr.permission);
+          permissions.add(curr.permission);
+          return acc;
+        },
+        {} as Record<number, string[]>,
+      );
+
+      // Cache each group's permissions
+      await Promise.all(
+        Object.entries(groupedPermissions).map(([groupId, perms]) =>
+          this.cache.set(
+            `group:permissions:${groupId}`,
+            JSON.stringify(perms),
+            1800,
+          ),
+        ),
+      );
+    }
+
+    return [...permissions];
   }
 }
