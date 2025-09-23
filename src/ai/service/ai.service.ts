@@ -286,7 +286,10 @@ export class AiService {
     description: string,
   ) {
     try {
-      const response = await this.makeRequest<any, { chat_history: MessageRequest[]; goal: string }>(
+      const response = await this.makeRequest<
+        any,
+        { chat_history: MessageRequest[]; goal: string }
+      >(
         'api/v1/summary/scenario/feedback',
         {
           chat_history: messages,
