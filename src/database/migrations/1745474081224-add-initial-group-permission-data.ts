@@ -1,6 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 import { Group } from '../../common/entities/group.entity';
-import { PERMISSIONS } from '../../authorization/constants/auth.constants';
+import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 import { Permission } from '../../common/entities/permission.entity';
 import { UserRole } from '../../common/constants/user.constants';
 
