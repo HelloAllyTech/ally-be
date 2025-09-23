@@ -184,6 +184,9 @@ SQS_AUDIO_UPLOAD_DLQ_URL=sqs-audio-upload-dlq-url
 
 # TEST ACCOUNTS
 TEST_ACCOUNTS=test-accounts
+
+#CORS ORIGINS
+ALLOWED_ORIGINS=allowed-origins
 ```
 
 ---
