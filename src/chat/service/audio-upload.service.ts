@@ -118,7 +118,7 @@ export class AudioUploadService {
     try {
       file = await this.s3Service.getHeadObject({
         bucket: process.env.AUDIO_STORAGE_S3_BUCKET!,
-        key: '',
+        key: s3Key,
       });
     } catch (error) {
       this.logger.error(`Failed to get head object: ${error.message}`);
