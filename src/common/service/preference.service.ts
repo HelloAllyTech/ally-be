@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Preference } from '../entities/preference.entity';
 import { Repository } from 'typeorm';
+import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
 import { PreferenceName } from '../constants/user.constants';
+import { Preference } from '../entities/preference.entity';
 import { PreferenceValue } from '../type/common.type';
 
 @Injectable()
@@ -13,6 +14,8 @@ export class PreferenceService {
     private readonly preferenceRepository: Repository<Preference>,
     private readonly preferenceCache: RedisService,
   ) {}
+
+  private readonly logger = LoggerService.getInstance(PreferenceService.name);
 
   async createPreference(preference: Partial<Preference>): Promise<Preference> {
     return this.preferenceRepository.save(preference);
@@ -68,7 +71,7 @@ export class PreferenceService {
         await this.preferenceCache.del(cacheKey);
       } catch (error) {
         // Log cache deletion error but don't fail the operation
-        console.error('Failed to delete cache entry:', error);
+        this.logger.error('Failed to delete cache entry:', error);
       }
     }
     return preference;

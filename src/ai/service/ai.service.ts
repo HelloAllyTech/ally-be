@@ -64,7 +64,7 @@ export class AiService {
         { 'Content-Type': 'audio/webm' },
       );
 
-      this.logger.info(`Transcription received: ${response.text}`);
+      this.logger.debug(`Transcription received: ${response.text}`);
       return response.text; // Assuming API returns `{ text: "..." }`
     } catch (error) {
       this.logger.error(`AI Service Error: ${error.message}`);
@@ -220,7 +220,7 @@ export class AiService {
     const startTime = new Date().toISOString();
     try {
       const url = `${this.config.ai.apiUrl}/${endpoint}`;
-      this.logger.info(
+      this.logger.debug(
         `Making request to ${endpoint} | ${execId} | ${JSON.stringify(data)}`,
       );
       // set timeout for alert threshold
@@ -244,7 +244,7 @@ export class AiService {
         method,
         data,
       });
-      this.logger.info(
+      this.logger.debug(
         `Response from ${endpoint} | ${execId} | ${JSON.stringify(response.data)}`,
       );
       return response.data;
@@ -298,7 +298,7 @@ export class AiService {
         true,
         'post',
       );
-      this.logger.info(
+      this.logger.debug(
         `Scenario session summary received: ${JSON.stringify(response)}`,
       );
       return response;

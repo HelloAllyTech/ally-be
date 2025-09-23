@@ -1,9 +1,13 @@
 import { Logger, QueryRunner } from 'typeorm';
+import { LoggerService } from '../logger/logger.service';
 
 export class DBLogger implements Logger {
+  private readonly logger = LoggerService.getInstance(DBLogger.name);
   logQuery(query: string, parameters?: any[], queryRunner?: QueryRunner) {
-    console.log('QUERY:', query);
-    console.log('PARAMETERS:', parameters);
+    this.logger.debug(`QUERY: ${query}`);
+    if (parameters && parameters.length > 0) {
+      this.logger.debug(`PARAMETERS: ${JSON.stringify(parameters)}`);
+    }
   }
 
   logQueryError(
@@ -17,7 +21,7 @@ export class DBLogger implements Logger {
       const whereIndex = query.indexOf('where');
       const tenantIdIndex = query.indexOf('tenantId');
       if (tenantIdIndex > whereIndex) {
-        console.log('QUERY:', query);
+        this.logger.error(`QUERY ERROR: ${query}`);
       }
     }
   }
@@ -28,18 +32,16 @@ export class DBLogger implements Logger {
     parameters?: any[],
     queryRunner?: QueryRunner,
   ) {
-    console.warn('SLOW QUERY:', time, query);
+    this.logger.warn(`SLOW QUERY: ${time}ms | ${query}`);
   }
 
-  logSchemaBuild(message: string, queryRunner?: QueryRunner) {
-    // console.log('SCHEMA BUILD:', message);
-  }
+  logSchemaBuild(message: string, queryRunner?: QueryRunner) {}
 
-  logMigration(message: string, queryRunner?: QueryRunner) {
-    // console.log('MIGRATION:', message);
-  }
+  logMigration(message: string, queryRunner?: QueryRunner) {}
 
-  log(level: 'log' | 'info' | 'warn', message: any, queryRunner?: QueryRunner) {
-    //console[level](message);
-  }
+  log(
+    level: 'log' | 'info' | 'warn',
+    message: any,
+    queryRunner?: QueryRunner,
+  ) {}
 }

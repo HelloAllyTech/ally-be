@@ -1,4 +1,3 @@
-import { Injectable, Logger } from '@nestjs/common';
 import {
   DeleteMessageCommand,
   Message,
@@ -8,11 +7,13 @@ import {
   SendMessageCommand,
   SendMessageCommandInput,
 } from '@aws-sdk/client-sqs';
+import { Injectable } from '@nestjs/common';
 import { AppConfigService } from '../../config/config.service';
+import { LoggerService } from '../../logger/logger.service';
 
 @Injectable()
 export class SqsService {
-  private readonly logger = new Logger(SqsService.name);
+  private readonly logger = LoggerService.getInstance(SqsService.name);
   private sqsClient!: SQSClient;
 
   constructor(private readonly configService: AppConfigService) {
@@ -59,7 +60,7 @@ export class SqsService {
       });
       await this.sqsClient.send(command);
 
-      this.logger.log('Message sent to SQS successfully');
+      this.logger.debug('Message sent to SQS successfully');
     } catch (error) {
       this.logger.error(
         `Failed to send message to SQS queue: ${queueUrl} with error ${JSON.stringify(
@@ -105,7 +106,7 @@ export class SqsService {
       });
 
       await this.sqsClient.send(command);
-      this.logger.log(`Deleted message ${message.MessageId}`);
+      this.logger.debug(`Deleted message ${message.MessageId}`);
     } catch (err) {
       this.logger.error(
         `Failed to delete message ${message.MessageId} with error ${JSON.stringify(

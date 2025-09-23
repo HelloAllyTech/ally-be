@@ -5,12 +5,12 @@ import {
   LiveTranscriptionEvents,
 } from '@deepgram/sdk';
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { AppConfigService } from '../../config/config.service';
-import { LoggerService } from '../../logger/logger.service';
 import {
   DeepgramTranscriptMetadata,
   UserChatSessionData,
 } from '../../chat/type/chat.type';
+import { AppConfigService } from '../../config/config.service';
+import { LoggerService } from '../../logger/logger.service';
 import { ITranscriptionService } from '../interfaces/transcription.interface';
 import {
   DeepgramTranscriptionOptions,
@@ -46,7 +46,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     this.deepgramClient = createClient(config.ai.deepgramApiKey);
   }
   async handleAudioChatMuted(session: UserChatSessionData): Promise<void> {
-    this.logger.info(`handleAudioChatMuted for userId: ${session.userId}`);
+    this.logger.debug(`handleAudioChatMuted for userId: ${session.userId}`);
     const clientSession = this.liveClients.get(session.id);
     if (clientSession) {
       await clientSession.liveClient.finalize();
@@ -77,7 +77,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       transcript: string,
     ) => void,
   ): Promise<void> {
-    this.logger.info(`startLiveTranscription -  userId: ${session.userId}`);
+    this.logger.debug(`startLiveTranscription -  userId: ${session.userId}`);
 
     if (this.liveClients.has(session.id)) {
       this.logger.warn(
@@ -281,7 +281,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     );
 
     liveClient.on(LiveTranscriptionEvents.UtteranceEnd, (data) => {
-      this.logger.info(
+      this.logger.debug(
         `Utterance end for userId: ${session.userId} | data : ${JSON.stringify(
           data,
         )}`,
@@ -316,7 +316,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     });
 
     liveClient.on(LiveTranscriptionEvents.Close, () => {
-      this.logger.info(
+      this.logger.debug(
         `Live transcription closed for userId: ${session.userId}`,
       );
       const clientSession = this.liveClients.get(session.id);
@@ -365,7 +365,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   }
 
   async stopLiveTranscription(session: UserChatSessionData): Promise<void> {
-    this.logger.info(`Stopping live transcription for userId: ${session.id}`);
+    this.logger.debug(`Stopping live transcription for userId: ${session.id}`);
     await this.cleanupConnection(session.id);
   }
 
@@ -406,7 +406,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   }
 
   private async cleanupConnection(sessionId: string): Promise<void> {
-    this.logger.info(`Cleaning up connection for sessionId: ${sessionId}`);
+    this.logger.debug(`Cleaning up connection for sessionId: ${sessionId}`);
     const clientSession = this.liveClients.get(sessionId);
     if (!clientSession) return;
 
@@ -426,7 +426,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
   }
 
   private async cleanupAllConnections(): Promise<void> {
-    this.logger.info('Cleaning up all connections');
+    this.logger.debug('Cleaning up all connections');
     const cleanup = Array.from(this.liveClients.keys()).map((sessionId) =>
       this.cleanupConnection(sessionId),
     );
