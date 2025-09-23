@@ -1,40 +1,40 @@
+import { createClient, DeepgramClient } from '@deepgram/sdk';
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
+import { NudgeRequest, NudgeResponse } from '../../chat/type/chat.type';
+import { RetryOnFail } from '../../common/decorator/retry.decorator';
 import { AppConfigService } from '../../config/config.service';
+import { LoggerService } from '../../logger/logger.service';
+import { NotificationErrorType } from '../../notification/type/notification.error.type';
+import { ENDPOINTS } from '../constants/endpoints.constants';
 import {
+  AddReferenceDocumentRequest,
   Chat,
+  DeleteReferenceDocumentRequest,
   EnhanceTextRequest,
   GenerateSummaryRequest,
+  GetReferenceDocumentRequest,
   IdentifySpeakersRequest,
   MessageRequest,
-  TagPositivityRatingsRequest,
-  AddReferenceDocumentRequest,
   SearchReferenceDocumentsRequest,
-  UpdateReferenceDocumentRequest,
-  GetReferenceDocumentRequest,
-  DeleteReferenceDocumentRequest,
+  TagPositivityRatingsRequest,
   TranscribeAudioRequest,
+  UpdateReferenceDocumentRequest,
 } from '../dto/ai.request.dto';
 import {
+  AddReferenceDocumentResponse,
+  DeleteReferenceDocumentResponse,
   EnhanceTextResponse,
   GenerateSummaryResponse,
-  IdentifySpeakersResponse,
-  TagPositivityRatingsResponse,
-  AddReferenceDocumentResponse,
-  SearchReferenceDocumentsResponse,
-  UpdateReferenceDocumentResponse,
   GetReferenceDocumentResponse,
-  DeleteReferenceDocumentResponse,
+  IdentifySpeakersResponse,
+  SearchReferenceDocumentsResponse,
+  TagPositivityRatingsResponse,
   TranscribeAudioResponse,
+  UpdateReferenceDocumentResponse,
 } from '../dto/ai.response.dto';
-import { createClient, DeepgramClient } from '@deepgram/sdk';
-import { ENDPOINTS } from '../constants/endpoints.constants';
-import { NudgeRequest, NudgeResponse } from '../../chat/type/chat.type';
-import { v4 as uuidv4 } from 'uuid';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { NotificationErrorType } from '../../notification/type/notification.error.type';
-import { RetryOnFail } from '../../common/decorator/retry.decorator';
-import { LoggerService } from '../../logger/logger.service';
 
 @Injectable()
 export class AiService {
@@ -56,16 +56,16 @@ export class AiService {
 
   async transcribeAudioFromBuffer(audioBuffer: Buffer): Promise<string> {
     try {
-      const response = await axios.post(
-        `${this.config.ai.apiUrl}/transcribe`,
+      const response = await this.makeRequest<{ text: string }, Buffer>(
+        'transcribe',
         audioBuffer,
-        {
-          headers: { 'Content-Type': 'audio/webm' },
-        },
+        true,
+        'post',
+        { 'Content-Type': 'audio/webm' },
       );
 
-      this.logger.info(`Transcription received: ${response.data.text}`);
-      return response.data.text; // Assuming API returns `{ text: "..." }`
+      this.logger.info(`Transcription received: ${response.text}`);
+      return response.text; // Assuming API returns `{ text: "..." }`
     } catch (error) {
       this.logger.error(`AI Service Error: ${error.message}`);
       throw new Error('AI transcription failed');
@@ -213,6 +213,7 @@ export class AiService {
     data: T,
     throwError = false,
     method: 'get' | 'post' | 'put' | 'delete' = 'post',
+    headers?: Record<string, string>,
   ): Promise<R> {
     const execId = uuidv4();
     let timeoutId: NodeJS.Timeout | undefined;
@@ -235,6 +236,8 @@ export class AiService {
       const response = await axios({
         headers: {
           'Content-Type': 'application/json',
+          'x-api-key': this.config.ai.outboundApiKey,
+          ...(headers || {}),
         },
         timeout: this.maxTimeout,
         url,
@@ -283,17 +286,19 @@ export class AiService {
     description: string,
   ) {
     try {
-      const response = await axios.post(
-        `${this.config.ai.apiUrl}/api/v1/summary/scenario/feedback`,
+      const response = await this.makeRequest<any, { chat_history: MessageRequest[]; goal: string }>(
+        'api/v1/summary/scenario/feedback',
         {
           chat_history: messages,
           goal: description,
         },
+        true,
+        'post',
       );
       this.logger.info(
-        `Scenario session summary received: ${JSON.stringify(response.data)}`,
+        `Scenario session summary received: ${JSON.stringify(response)}`,
       );
-      return response.data;
+      return response;
     } catch (error) {
       this.logger.error(`AI Service Error: ${error.message}`);
       throw new Error('AI scenario session summary request failed');
