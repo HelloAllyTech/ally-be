@@ -182,6 +182,9 @@ SQS_AUDIO_FILE_RETRY_DLQ_URL=sqs-audio-file-retry-dlq
 
 # TEST ACCOUNTS
 TEST_ACCOUNTS=test-accounts
+
+#CORS ORIGINS
+ALLOWED_ORIGINS=allowed-origins
 ```
 
 ---

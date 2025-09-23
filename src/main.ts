@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AudioIngestGateway } from './audio-ingest/gateway/audio.ingest.gateway';
 import * as express from 'express';
+import { AppConfigService } from './config/config.service';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -12,7 +13,20 @@ async function bootstrap() {
     const app = await NestFactory.create(AppModule, {
       bufferLogs: true,
     });
-
+    const appConfigService = app.get(AppConfigService);
+    app.enableCors({
+      origin: (origin, callback) => {
+        const allowedOrigins = appConfigService.cors.allowedOrigins;
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          Logger.warn(`Blocked CORS request from origin: ${origin}`, 'CORS');
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
+      credentials: true,
+      exposedHeaders: ['Content-Disposition'],
+    });
     // Add body parser configuration for larger payloads
     app.use(express.json({ limit: '1mb' }));
     app.use(express.urlencoded({ limit: '1mb', extended: true }));
@@ -20,9 +34,6 @@ async function bootstrap() {
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ transform: true }));
     app.use(helmet());
-    app.enableCors({
-      exposedHeaders: ['Content-Disposition'],
-    });
     // remove x-powered-by header
     app.getHttpAdapter().getInstance().disable('x-powered-by');
 
