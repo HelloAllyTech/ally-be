@@ -6,6 +6,7 @@ import {
   HttpStatus,
   BadRequestException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   DataSource,
@@ -14,24 +15,25 @@ import {
   Repository,
   SelectQueryBuilder,
 } from 'typeorm';
-import { Message, MessageType } from '../../common/entities/message.entity';
-import { Chat, ChatStatus } from '../../common/entities/chat.entity';
-import { LoggerService } from '../../logger/logger.service';
-import { ChatRoom } from '../../common/entities/chat-room.entity';
-import { QueueService } from '../../queue/service/queue.service';
+import { MessageRequest } from '../../ai/dto/ai.request.dto';
+import { AiService } from '../../ai/service/ai.service';
 import {
   AudioChatPlatform,
   AudioChatProvider,
   QueueStatus,
 } from '../../common/constants/chat.constants';
-import { ChatGateway } from '../gateway/chat.gateway';
+import { CallDetails } from '../../common/entities/call.details.entity';
+import { ChatRoom } from '../../common/entities/chat-room.entity';
+import { Chat, ChatStatus } from '../../common/entities/chat.entity';
+import { Feedback } from '../../common/entities/feedback.entity';
+import { Message, MessageType } from '../../common/entities/message.entity';
+import { User } from '../../common/entities/user.entity';
+import { Pagination } from '../../common/type/common.type';
+import { LoggerService } from '../../logger/logger.service';
+import { QueueService } from '../../queue/service/queue.service';
 import { UserService } from '../../user/user.service';
 import { ChatEvents } from '../constants/chat.constants';
-import { Feedback } from '../../common/entities/feedback.entity';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { User } from '../../common/entities/user.entity';
-import { AiService } from '../../ai/service/ai.service';
-import { MessageRequest } from '../../ai/dto/ai.request.dto';
+import { ChatGateway } from '../gateway/chat.gateway';
 import {
   DeepgramTranscriptMetadata,
   MessageWithFeedback,
@@ -40,46 +42,44 @@ import {
   UpdateChatInput,
   UserChatSessionData,
 } from '../type/chat.type';
-import { Pagination } from '../../common/type/common.type';
-import { CallDetails } from '../../common/entities/call.details.entity';
 
-import { RedisService } from '../../redis/service/redis.service';
+import { NotFoundException } from '@nestjs/common';
+import { MessageBrokerChannel } from 'src/common/constants/message-broker.constants';
 import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
-import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
-import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
-import { StringUtil } from '../../common/util/string.util';
+import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
+import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
 import { TokenUser } from '../../auth/type/auth.types';
+import { TIME } from '../../common/constants/time.constants';
 import {
   ANONYMOUS_CLIENT_ID,
   UserRole,
 } from '../../common/constants/user.constants';
+import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
 import { ExecutionManager } from '../../common/execution/execution-manager';
-import { NotFoundException } from '@nestjs/common';
-import { ForbiddenException } from '../../exception/custom.exception';
-import { TIME } from '../../common/constants/time.constants';
-import { ChatUtil } from '../util/chat.util';
+import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
 import { CommonUtil } from '../../common/util/common.util';
-import { CallInfoDto } from '../dto/chat.response.dto';
-import {
-  CallInfo,
-  SummaryFeedbackResponse,
-} from '../dto/call-log.response.dto';
+import { StringUtil } from '../../common/util/string.util';
+import { ForbiddenException } from '../../exception/custom.exception';
+import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
+import { RedisService } from '../../redis/service/redis.service';
 import { SettingsService } from '../../settings/service/settings.service';
-import { MessageBrokerChannel } from 'src/common/constants/message-broker.constants';
 import {
   CallLogFilters,
   CallLogSortBy,
   SortOrder,
 } from '../dto/call-log.request.dto';
-import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
-import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
-import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
+import {
+  CallInfo,
+  SummaryFeedbackResponse,
+} from '../dto/call-log.response.dto';
+import { CallInfoDto } from '../dto/chat.response.dto';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
+import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 import { ChatRepository } from '../repository/chat.repository';
 import { SummaryFeedbackRepository } from '../repository/summary-feedback.repository';
-import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 import { CallDetailsRepository } from '../repository/call-details.repository';
 import { MessageRepository } from '../repository/message.repository';
+import { ChatUtil } from '../util/chat.util';
 
 @Injectable()
 export class ChatService {
@@ -128,7 +128,7 @@ export class ChatService {
   }
 
   async requestChat(userId: number) {
-    this.logger.info(`requestChat - userId:${userId}`);
+    this.logger.debug(`requestChat - userId:${userId}`);
     return this.dataSource.transaction(async (entityManager) => {
       const repo = entityManager.getRepository(Chat) || this.chatRepository;
       const activeChats = await repo.findOne({
@@ -140,7 +140,7 @@ export class ChatService {
       });
 
       if (activeChats) {
-        this.logger.info(`requestChat - activeChats:${activeChats.id}`);
+        this.logger.debug(`requestChat - activeChats:${activeChats.id}`);
         throw new HttpException(
           'You already have an active or waiting chat session',
           400,
@@ -177,7 +177,7 @@ export class ChatService {
       });
 
       if (activeChats) {
-        this.logger.info(`requestChat - activeChats:${activeChats.id}`);
+        this.logger.debug(`requestChat - activeChats:${activeChats.id}`);
         throw new HttpException(
           'You already have an active or waiting chat session',
           400,
@@ -721,7 +721,7 @@ export class ChatService {
     const updatedChat = await this.getChatById(chatId);
     if (updatedChat) {
       this.eventEmitter.emit(ChatEvents.CHAT_ENDED, updatedChat);
-      this.logger.info(`chat ended event emitted - chat:${chatId}`);
+      this.logger.debug(`chat ended event emitted - chat:${chatId}`);
     }
 
     return updatedChat;
@@ -799,7 +799,7 @@ export class ChatService {
   }
 
   async handleChatEnded(chat: Chat) {
-    this.logger.info(`handleChatEnded - chatId: ${chat.id}`);
+    this.logger.debug(`handleChatEnded - chatId: ${chat.id}`);
     const callDetails = await this.callDetailsRepository.findOne({
       where: { chatId: chat.id, tenantId: ExecutionManager.getTenantId() },
     });
@@ -808,7 +808,7 @@ export class ChatService {
     const channel = findMessageBrokerChannelUsingProvider(provider!);
     let participants;
 
-    this.logger.info(
+    this.logger.debug(
       `handleChatEnded - chatId: ${chat.id} | provider: ${provider}`,
     );
 
@@ -849,7 +849,7 @@ export class ChatService {
   }
 
   async updateCallMetadata(chatId: number, duration?: number) {
-    this.logger.info(`updateCallDetails:Start - chatId:${chatId}`);
+    this.logger.debug(`updateCallDetails:Start - chatId:${chatId}`);
     try {
       const chat = await this.getChatById(chatId);
       if (!chat) {
@@ -890,7 +890,7 @@ export class ChatService {
   }
 
   async updateMessageStatistics(chat: Chat, callDetails?: CallDetails | null) {
-    this.logger.info(
+    this.logger.debug(
       `updateMessageStatistics:Start - chatId:${chat.id} | startedAt:${chat.startedAt} | endedAt:${chat.endedAt}`,
     );
     try {
@@ -988,7 +988,7 @@ export class ChatService {
         endTime: endDate,
         callDuration: callDurationInSeconds,
       };
-      this.logger.info(
+      this.logger.debug(
         `updateMessageStatistics:updates:${JSON.stringify(updates)}`,
       );
       const details = await this.callDetailsRepository.update(
@@ -997,7 +997,7 @@ export class ChatService {
       );
       // delete the word count from cache
       await this.deleteWordCountByLanguage(chat.id);
-      this.logger.info(`updateMessageStatistics:End - chatId:${chat.id}`);
+      this.logger.debug(`updateMessageStatistics:End - chatId:${chat.id}`);
       return details;
     } catch (err) {
       this.logger.error(
@@ -1009,7 +1009,7 @@ export class ChatService {
   async generateSummary(
     chatId: number,
   ): Promise<FlattenedSummaryNotePayloadCamelCase | undefined> {
-    this.logger.info(`generateSummary - chatId:${chatId}`);
+    this.logger.debug(`generateSummary - chatId:${chatId}`);
     const messageRequests: MessageRequest[] =
       await this.getChatHistoryForAIService(chatId, {
         sortBy: 'createdAt',
@@ -1416,12 +1416,12 @@ export class ChatService {
   ) {
     const isChatPaused = await this.isChatPaused(chatId);
     if (isChatPaused) {
-      this.logger.info(`Chat is paused for chatId ${chatId}`);
+      this.logger.debug(`Chat is paused for chatId ${chatId}`);
       return;
     }
     const isNudgeEnabled = await this.settingsService.getNudgeStatus();
     if (!isNudgeEnabled) {
-      this.logger.info(`Nudge is disabled for chatId ${chatId}`);
+      this.logger.debug(`Nudge is disabled for chatId ${chatId}`);
       return;
     }
     const messages = await this.getChatHistoryForAIService(chatId, {
@@ -1435,7 +1435,7 @@ export class ChatService {
     this.aiService
       .getNudge(formattedNewMessage, messages)
       .then((nudge) => {
-        this.logger.info(
+        this.logger.debug(
           `Nudge:${newMessage.content} | chatId :${chatId} | ${nudge?.nudge} | stage: ${nudge?.stage}`,
         );
         if (nudge) {
@@ -1485,7 +1485,7 @@ export class ChatService {
     parentMessage: { content: string; chatId: number; id: number },
     channel: string,
   ) {
-    this.logger.info(
+    this.logger.debug(
       `handleNudge - nudge :${nudgeResponse.nudge} | stage :${nudgeResponse.stage}`,
     );
     const { nudge, stage } = nudgeResponse;
