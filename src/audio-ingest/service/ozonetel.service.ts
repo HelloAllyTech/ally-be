@@ -7,7 +7,10 @@ import axios from 'axios';
 import { AiEventService } from '../../ai/service/ai-event.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { ChatService } from '../../chat/service/chat.service';
-import { AudioChatProvider, CloudTelephonyProvider } from '../../common/constants/chat.constants';
+import {
+  AudioChatProvider,
+  CloudTelephonyProvider,
+} from '../../common/constants/chat.constants';
 import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
 import { UserRole } from '../../common/constants/user.constants';
 import {

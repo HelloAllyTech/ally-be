@@ -215,12 +215,12 @@ export class AppConfigService {
   get testAccounts() {
     return this.configService.get<string>('TEST_ACCOUNTS');
   }
-  
+
   get cors() {
     const origins = this.configService.get('ALLOWED_ORIGINS', '');
     return {
-      allowedOrigins: origins ? origins.split(',') : []
-    }
+      allowedOrigins: origins ? origins.split(',') : [],
+    };
   }
 
   get livekit() {

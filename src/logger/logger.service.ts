@@ -18,7 +18,9 @@ export class LoggerService {
 
   private static createWinstonLogger() {
     const envLevel = (process.env.LOG_LEVEL || '').toLowerCase();
-    const normalizedLevel = ['error', 'warn', 'info', 'debug'].includes(envLevel)
+    const normalizedLevel = ['error', 'warn', 'info', 'debug'].includes(
+      envLevel,
+    )
       ? envLevel
       : process.env.NODE_ENV === 'production'
         ? 'warn'

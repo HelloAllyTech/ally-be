@@ -37,7 +37,9 @@ async function bootstrap() {
       debug: ['log', 'warn', 'error', 'debug'],
     };
     const defaultLevel = appConfigService.isDevelopment ? 'debug' : 'warn';
-    app.useLogger(nestLevelsByLevel[logLevel] || nestLevelsByLevel[defaultLevel]);
+    app.useLogger(
+      nestLevelsByLevel[logLevel] || nestLevelsByLevel[defaultLevel],
+    );
 
     // Add body parser configuration for larger payloads
     app.use(express.json({ limit: '1mb' }));

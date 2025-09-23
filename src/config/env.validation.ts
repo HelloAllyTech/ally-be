@@ -46,7 +46,7 @@ export const validationSchema = Joi.object({
   LIVEKIT_URL: Joi.string().required(),
 
   SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: Joi.string().required(),
-  
+
   // CORS ORIGINS
   ALLOWED_ORIGINS: Joi.string().required(),
 });

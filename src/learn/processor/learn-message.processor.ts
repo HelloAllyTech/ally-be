@@ -45,7 +45,9 @@ export class LearnMessageProcessor extends BaseEventProcessor {
         scenarioSession.tenantId,
       );
 
-      this.logger.debug(`Scenario session message added: ${scenarioSession.id}`);
+      this.logger.debug(
+        `Scenario session message added: ${scenarioSession.id}`,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to process learn message: ${JSON.stringify(error.message)}`,
