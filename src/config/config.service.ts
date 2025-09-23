@@ -13,6 +13,10 @@ export class AppConfigService {
     return this.configService.get<string>('NODE_ENV', 'development');
   }
 
+  get logLevel(): string {
+    return this.configService.get<string>('LOG_LEVEL', 'warn');
+  }
+
   get isDevelopment(): boolean {
     return this.nodeEnv === 'development';
   }

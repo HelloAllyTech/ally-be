@@ -27,16 +27,16 @@ async function bootstrap() {
       credentials: true,
       exposedHeaders: ['Content-Disposition'],
     });
-    
+
     // Env-configurable Nest logger levels
-    const logLevel = (process.env.LOG_LEVEL || '').toLowerCase();
+    const logLevel = appConfigService.logLevel.toLowerCase();
     const nestLevelsByLevel: Record<string, LogLevel[]> = {
       error: ['error'],
       warn: ['warn', 'error'],
       info: ['log', 'warn', 'error'],
       debug: ['log', 'warn', 'error', 'debug'],
     };
-    const defaultLevel = process.env.NODE_ENV === 'production' ? 'warn' : 'debug';
+    const defaultLevel = appConfigService.isDevelopment ? 'debug' : 'warn';
     app.useLogger(nestLevelsByLevel[logLevel] || nestLevelsByLevel[defaultLevel]);
 
     // Add body parser configuration for larger payloads
@@ -49,7 +49,7 @@ async function bootstrap() {
     // remove x-powered-by header
     app.getHttpAdapter().getInstance().disable('x-powered-by');
 
-    const port = process.env.PORT || 3000;
+    const port = appConfigService.port;
 
     const config = new DocumentBuilder()
       .setTitle('Lifeline API')

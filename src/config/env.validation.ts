@@ -6,6 +6,9 @@ export const validationSchema = Joi.object({
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test', 'local')
     .default('development'),
+  LOG_LEVEL: Joi.string()
+    .valid('error', 'warn', 'info', 'debug')
+    .default('warn'),
 
   // JWT
   JWT_ACCESS_SECRET: Joi.string().required(),
