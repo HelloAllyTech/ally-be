@@ -23,7 +23,7 @@ export class AudioUploadController {
   constructor(private readonly audioUploadService: AudioUploadService) {}
 
   @Post('upload-url')
-  @AuthRoles(UserRole.ADMIN)
+  @AuthRoles(UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Get presigned URL for audio upload' })
   @ApiResponse({
     status: 201,
@@ -38,7 +38,7 @@ export class AudioUploadController {
   }
 
   @Post('cancel-upload')
-  @AuthRoles(UserRole.ADMIN)
+  @AuthRoles(UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Cancel audio upload' })
   @ApiResponse({ status: 200, description: 'Audio upload cancelled' })
   async cancelUpload(@Body() cancelUploadRequestDto: CancelUploadRequestDto) {

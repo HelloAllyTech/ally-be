@@ -4,7 +4,7 @@ import {
   IsNumber,
   MaxDate,
   IsEnum,
-  IsDateString,
+  IsDate,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -46,10 +46,10 @@ export class AudioUploadRequestDto {
     description: 'Started At (ISO string)',
     example: '2025-01-01T00:00:00.000Z',
   })
-  @IsDateString()
   @Transform(({ value }) => new Date(value))
+  @IsDate()
   @MaxDate(new Date(), { message: 'Start date must be before current date' })
-  startedAt!: string;
+  startedAt!: Date;
 
   @ApiProperty({
     description: 'Platform',
