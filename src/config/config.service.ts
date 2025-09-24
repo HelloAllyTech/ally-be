@@ -13,6 +13,10 @@ export class AppConfigService {
     return this.configService.get<string>('NODE_ENV', 'development');
   }
 
+  get logLevel(): string {
+    return this.configService.get<string>('LOG_LEVEL', 'warn');
+  }
+
   get isDevelopment(): boolean {
     return this.nodeEnv === 'development';
   }
@@ -210,6 +214,13 @@ export class AppConfigService {
 
   get testAccounts() {
     return this.configService.get<string>('TEST_ACCOUNTS');
+  }
+
+  get cors() {
+    const origins = this.configService.get('ALLOWED_ORIGINS', '');
+    return {
+      allowedOrigins: origins ? origins.split(',') : [],
+    };
   }
 
   get livekit() {

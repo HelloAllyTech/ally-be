@@ -99,6 +99,7 @@ Create a `.env` file in the root directory with the following:
 # Server
 PORT=3000
 NODE_ENV=development
+LOG_LEVEL=warn
 
 # JWT Configuration
 JWT_ACCESS_SECRET=your_access_secret_here
@@ -182,6 +183,9 @@ SQS_AUDIO_FILE_RETRY_DLQ_URL=sqs-audio-file-retry-dlq
 
 # TEST ACCOUNTS
 TEST_ACCOUNTS=test-accounts
+
+#CORS ORIGINS
+ALLOWED_ORIGINS=allowed-origins
 ```
 
 ---
