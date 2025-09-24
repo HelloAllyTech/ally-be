@@ -85,12 +85,13 @@ export class SESService implements EmailInterface {
         channel: 'C08T402E3K5',
       });
     }
+    const minutes = Math.floor(this.config.otp.ttl / 60);
 
     const subject = 'Your Ally Verification Code';
     const body = `Your Ally Verification Code is:
 ${params.otp}
 
-⏱️ This security code is valid for the next 2 minutes.
+⏱️ This security code is valid for the next ${minutes} minutes.
 🚫 Do not share this code with anyone.
 ❌ If you did not request this code, you can safely ignore this email.
 `;
