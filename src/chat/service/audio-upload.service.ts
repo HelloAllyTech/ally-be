@@ -98,7 +98,7 @@ export class AudioUploadService {
       key: s3Key,
       operation: 'put',
       expiresIn: 3600, // 1 hour
-      contentType: contentType,
+      contentType,
       metadata: {
         chatId: chat.id.toString(),
         provider: AudioChatProvider.AUDIO_UPLOAD,
