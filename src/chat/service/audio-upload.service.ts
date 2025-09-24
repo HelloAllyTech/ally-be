@@ -40,7 +40,6 @@ export class AudioUploadService {
   ) {}
 
   async getPresignedUploadUrl(
-    userId: number,
     audioUploadRequestDto: AudioUploadRequestDto,
   ): Promise<AudioUploadResponseDto> {
     const {
@@ -53,9 +52,7 @@ export class AudioUploadService {
       fileSize,
     } = audioUploadRequestDto;
 
-    this.logger.info(
-      `Getting presigned URL for user ${userId}, file: ${fileName}`,
-    );
+    this.logger.info(`Getting presigned URL for file: ${fileName}`);
 
     if (!SUPPORTED_AUDIO_FILE_TYPES.includes(contentType)) {
       throw new BadRequestException('Invalid file type');

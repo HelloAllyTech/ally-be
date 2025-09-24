@@ -6,8 +6,6 @@ import {
   ApiBearerAuth,
   ApiSecurity,
 } from '@nestjs/swagger';
-import { CurrentUser } from '../../auth/decorators/user.decorator';
-import { TokenUser } from '../../auth/type/auth.types';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 import { AudioUploadService } from '../service/audio-upload.service';
@@ -34,13 +32,9 @@ export class AudioUploadController {
   })
   @ApiResponse({ status: 400, description: 'Invalid file type' })
   async getPresignedUploadUrl(
-    @CurrentUser() user: TokenUser,
     @Body() audioUploadRequestDto: AudioUploadRequestDto,
   ): Promise<AudioUploadResponseDto> {
-    return this.audioUploadService.getPresignedUploadUrl(
-      user.id,
-      audioUploadRequestDto,
-    );
+    return this.audioUploadService.getPresignedUploadUrl(audioUploadRequestDto);
   }
 
   @Post('cancel-upload')
