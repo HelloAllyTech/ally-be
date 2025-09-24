@@ -2,10 +2,11 @@ import {
   IsString,
   IsNotEmpty,
   IsNumber,
-  IsDate,
   MaxDate,
   IsEnum,
+  IsDateString,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { AudioChatPlatform } from 'src/common/constants/chat.constants';
 
@@ -42,12 +43,13 @@ export class AudioUploadRequestDto {
   counselorId!: number;
 
   @ApiProperty({
-    description: 'Started At',
+    description: 'Started At (ISO string)',
+    example: '2025-01-01T00:00:00.000Z',
   })
-  @IsDate()
-  @IsNotEmpty()
+  @IsDateString()
+  @Transform(({ value }) => new Date(value))
   @MaxDate(new Date(), { message: 'Start date must be before current date' })
-  startedAt!: number;
+  startedAt!: string;
 
   @ApiProperty({
     description: 'Platform',
