@@ -7,11 +7,11 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
 import { SessionEvents } from '../entity/session-events.entity';
 import { CreateSessionEventsDto } from '../dto/create-session-events.dto';
 import { UpdateSessionEventDto } from '../dto/update-session-event.dto';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 
 @ApiTags('SessionEvents')
 @ApiBearerAuth()
@@ -22,7 +22,7 @@ export class SessionEventController {
 
   @ApiOperation({ summary: 'Create session events' })
   @ApiBody({ type: CreateSessionEventsDto })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
   @Post()
   createSessionEvents(
     @Body() createEventsDto: CreateSessionEventsDto,
@@ -32,7 +32,7 @@ export class SessionEventController {
 
   @ApiOperation({ summary: 'Update Session Event by id' })
   @ApiBody({ type: UpdateSessionEventDto })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
   @Put('events/:id')
   updateSessionEvents(
     @Param('id') id: string,
