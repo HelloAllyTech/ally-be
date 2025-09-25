@@ -8,8 +8,6 @@ import {
   ApiSecurity,
   ApiBody,
 } from '@nestjs/swagger';
-import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 

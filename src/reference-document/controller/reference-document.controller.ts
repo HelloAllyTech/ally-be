@@ -23,8 +23,6 @@ import {
 } from '../dto/reference-document.dto';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
 import { TokenUser } from '../../auth/type/auth.types';
-import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
 import { Public } from '../../auth/decorators/auth.metadata';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';

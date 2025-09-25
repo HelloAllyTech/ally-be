@@ -7,8 +7,6 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
-import { UserRole } from 'src/common/constants/user.constants';
 import { ScenarioService } from '../service/scenario.service';
 import { ScenarioResponse } from '../dto/scenario-response.dto';
 import { ScenarioSessionService } from '../service/scenario-session.service';
