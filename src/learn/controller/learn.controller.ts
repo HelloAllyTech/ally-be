@@ -24,6 +24,8 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { Public } from 'src/auth/decorators/auth.metadata';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -51,7 +53,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'Create multiple scenarios' })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
   @Post('scenarios')
   async createScenario(
     @Body() createScenariosDto: CreateScenariosDto,
@@ -60,7 +62,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'Update a scenario by id' })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
   @Put('scenarios/:id')
   async updateScenario(
     @Param('id') id: number,
@@ -106,7 +108,7 @@ export class LearnController {
     enum: SortOrder,
     description: 'Sort order',
   })
-  @AuthRoles(UserRole.LEARNER)
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_SESSION])
   @Get('scenario-sessions')
   async getScenarioSessions(
     @CurrentUser() tokenUser: TokenUser,
@@ -154,7 +156,7 @@ export class LearnController {
     enum: SortOrder,
     description: 'Sort order',
   })
-  @AuthRoles(UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_SESSION])
   @Get('admin-scenario-sessions')
   async getAdminScenarioSessions(
     @Query('limit') limit?: number,
@@ -172,7 +174,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'Get a scenario session by id' })
-  @AuthRoles(UserRole.LEARNER, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_SESSION_DETAILS])
   @Get('scenario-session/:id')
   async getScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -182,7 +184,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'Map events to scenario' })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_MAP_EVENTS])
   @Post('scenarios/map-events')
   async mapEventsToScenario(
     @Body() createScenarioEventsDto: CreateScenarioEventsDto,
@@ -194,7 +196,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'Start a scenario session' })
-  @AuthRoles(UserRole.LEARNER)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_SESSION])
   @Post('scenario-session-start')
   async startScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -207,7 +209,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'End a scenario session' })
-  @AuthRoles(UserRole.LEARNER)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_SESSION])
   @Post('scenario-session/:scenarioSessionId/end')
   async endScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -220,7 +222,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'Add a feedback to a scenario session' })
-  @AuthRoles(UserRole.LEARNER)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_SESSION])
   @Post('scenario-session/:scenarioSessionId/feedback')
   async addFeedbackToScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -260,7 +262,7 @@ export class LearnController {
     enum: SortOrder,
     description: 'Sort order (default: DESC)',
   })
-  @AuthRoles(UserRole.LEARNER, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_SESSION_SCENARIO_MESSAGES])
   @Get('scenario-session/:scenarioSessionId/messages')
   async getMessagesByScenarioSessionId(
     @Param('scenarioSessionId') scenarioSessionId: string,
