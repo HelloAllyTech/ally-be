@@ -5,8 +5,8 @@ import {
   CloudTelephonyIntegrationResponseDto,
   CreateCloudTelephonyIntegrationDto,
 } from '../dto/cloud-telephony.dto';
-import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 
 @ApiBearerAuth()
 @ApiSecurity('access-token')
@@ -16,7 +16,7 @@ export class CloudTelephonyController {
   constructor(private readonly cloudTelephonyService: CloudTelephonyService) {}
 
   @Post()
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_CLOUD_TELEPHONY])
   async createCloudTelephonyIntegration(
     @Body()
     createCloudTelephonyIntegrationDto: CreateCloudTelephonyIntegrationDto,
