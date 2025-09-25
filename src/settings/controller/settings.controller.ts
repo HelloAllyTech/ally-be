@@ -10,6 +10,8 @@ import {
 } from '@nestjs/swagger';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 
 @ApiTags('Settings')
 @ApiBearerAuth()
@@ -25,7 +27,7 @@ export class SettingsController {
     description: 'Returns the summary fields configuration',
     type: [String],
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_SUMMARY_FIELDS])
   getSummaryFields() {
     return this.service.getSummaryFieldsConfig();
   }
@@ -44,7 +46,7 @@ export class SettingsController {
     status: 200,
     description: 'Summary fields updated successfully',
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_SUMMARY_FIELDS])
   updateSummaryFields(@Body() body: { hiddenFields: string[] }) {
     return this.service.updateSummaryFields(body.hiddenFields);
   }
@@ -55,7 +57,7 @@ export class SettingsController {
     status: 200,
     description: 'Returns the nudge status',
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_NUDGE_STATUS])
   getNudgeStatus() {
     return this.service.getNudgeStatus();
   }
@@ -74,7 +76,7 @@ export class SettingsController {
     status: 200,
     description: 'Nudge status updated successfully',
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_NUDGE_STATUS])
   updateNudgeStatus(@Body() body: { status: boolean }) {
     return this.service.updateNudgeStatus(body.status);
   }
@@ -85,7 +87,7 @@ export class SettingsController {
     status: 200,
     description: 'Returns the enabled chat types',
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_CHAT_TYPES])
   getChatTypes() {
     return this.service.getChatTypes();
   }
@@ -104,7 +106,7 @@ export class SettingsController {
     status: 200,
     description: 'Hidden chat types updated successfully',
   })
-  @AuthRoles(UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_CHAT_TYPES])
   updateHiddenChatTypes(@Body() body: { hiddenChatTypes: string[] }) {
     return this.service.updateChatTypes(body.hiddenChatTypes);
   }
