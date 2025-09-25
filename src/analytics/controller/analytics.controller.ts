@@ -16,9 +16,9 @@ import {
   CounselorStatsQueryDto,
   CounselorStatsResponseDto,
 } from '../validation/analytics.validation';
-import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 
 @ApiTags('Analytics')
 @Controller('v1/analytics')
@@ -38,7 +38,7 @@ export class AnalyticsController {
   }
 
   @Post('dashboard')
-  @AuthRoles(UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
   createDashboard(@Body() dashboard: CreateDashboardDto) {
     return this.analyticsService.createDashboard(dashboard);
   }
