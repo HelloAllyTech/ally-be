@@ -7,14 +7,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USERNAME=postgres
-      - DB_PASSWORD=password
-      - DB_NAME=lifeline_chat
-      - JWT_SECRET=your-secret-key
-      - JWT_REFRESH_SECRET=your-refresh-secret-key
+    env_file:
+      - docker.env
     depends_on:
       - postgres
     networks:
@@ -24,10 +18,8 @@ services:
     image: postgres:14-alpine
     ports:
       - "5477:5432"
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=lifeline_chat
+    env_file:
+      - docker.env
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
@@ -43,11 +35,10 @@ services:
     container_name: localstack
     ports:
       - '4566:4566'
+    env_file:
+      - docker.env
     environment:
       - SERVICES=sqs
-      - AWS_ACCESS_KEY_ID=test
-      - AWS_SECRET_ACCESS_KEY=test
-      - AWS_DEFAULT_REGION=us-east-1
       - DEBUG=1
     networks:
       - app-network
@@ -62,10 +53,8 @@ services:
     depends_on:
       localstack:
         condition: service_healthy
-    environment:
-      - AWS_ACCESS_KEY_ID=test
-      - AWS_SECRET_ACCESS_KEY=test
-      - AWS_DEFAULT_REGION=us-east-1
+    env_file:
+      - docker.env
     networks:
       - app-network
     entrypoint: >
