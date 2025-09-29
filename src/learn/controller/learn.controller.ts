@@ -34,8 +34,6 @@ import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
-import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
-import { UserRole } from 'src/common/constants/user.constants';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
