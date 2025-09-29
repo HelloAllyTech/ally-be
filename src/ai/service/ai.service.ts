@@ -1,40 +1,40 @@
+import { createClient, DeepgramClient } from '@deepgram/sdk';
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
+import { NudgeRequest, NudgeResponse } from '../../chat/type/chat.type';
+import { RetryOnFail } from '../../common/decorator/retry.decorator';
 import { AppConfigService } from '../../config/config.service';
+import { LoggerService } from '../../logger/logger.service';
+import { NotificationErrorType } from '../../notification/type/notification.error.type';
+import { ENDPOINTS } from '../constants/endpoints.constants';
 import {
+  AddReferenceDocumentRequest,
   Chat,
+  DeleteReferenceDocumentRequest,
   EnhanceTextRequest,
   GenerateSummaryRequest,
+  GetReferenceDocumentRequest,
   IdentifySpeakersRequest,
   MessageRequest,
-  TagPositivityRatingsRequest,
-  AddReferenceDocumentRequest,
   SearchReferenceDocumentsRequest,
-  UpdateReferenceDocumentRequest,
-  GetReferenceDocumentRequest,
-  DeleteReferenceDocumentRequest,
+  TagPositivityRatingsRequest,
   TranscribeAudioRequest,
+  UpdateReferenceDocumentRequest,
 } from '../dto/ai.request.dto';
 import {
+  AddReferenceDocumentResponse,
+  DeleteReferenceDocumentResponse,
   EnhanceTextResponse,
   GenerateSummaryResponse,
-  IdentifySpeakersResponse,
-  TagPositivityRatingsResponse,
-  AddReferenceDocumentResponse,
-  SearchReferenceDocumentsResponse,
-  UpdateReferenceDocumentResponse,
   GetReferenceDocumentResponse,
-  DeleteReferenceDocumentResponse,
+  IdentifySpeakersResponse,
+  SearchReferenceDocumentsResponse,
+  TagPositivityRatingsResponse,
   TranscribeAudioResponse,
+  UpdateReferenceDocumentResponse,
 } from '../dto/ai.response.dto';
-import { createClient, DeepgramClient } from '@deepgram/sdk';
-import { ENDPOINTS } from '../constants/endpoints.constants';
-import { NudgeRequest, NudgeResponse } from '../../chat/type/chat.type';
-import { v4 as uuidv4 } from 'uuid';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { NotificationErrorType } from '../../notification/type/notification.error.type';
-import { RetryOnFail } from '../../common/decorator/retry.decorator';
-import { LoggerService } from '../../logger/logger.service';
 
 @Injectable()
 export class AiService {
@@ -64,7 +64,7 @@ export class AiService {
         },
       );
 
-      this.logger.info(`Transcription received: ${response.data.text}`);
+      this.logger.debug(`Transcription received: ${response.data.text}`);
       return response.data.text; // Assuming API returns `{ text: "..." }`
     } catch (error) {
       this.logger.error(`AI Service Error: ${error.message}`);
@@ -219,7 +219,7 @@ export class AiService {
     const startTime = new Date().toISOString();
     try {
       const url = `${this.config.ai.apiUrl}/${endpoint}`;
-      this.logger.info(
+      this.logger.debug(
         `Making request to ${endpoint} | ${execId} | ${JSON.stringify(data)}`,
       );
       // set timeout for alert threshold
@@ -241,7 +241,7 @@ export class AiService {
         method,
         data,
       });
-      this.logger.info(
+      this.logger.debug(
         `Response from ${endpoint} | ${execId} | ${JSON.stringify(response.data)}`,
       );
       return response.data;
@@ -290,7 +290,7 @@ export class AiService {
           goal: description,
         },
       );
-      this.logger.info(
+      this.logger.debug(
         `Scenario session summary received: ${JSON.stringify(response.data)}`,
       );
       return response.data;

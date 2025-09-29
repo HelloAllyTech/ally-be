@@ -1,10 +1,11 @@
+import { Logger, LogLevel, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import helmet from 'helmet';
-import { AudioIngestGateway } from './audio-ingest/gateway/audio.ingest.gateway';
 import * as express from 'express';
+import helmet from 'helmet';
+import { AppModule } from './app.module';
+import { AudioIngestGateway } from './audio-ingest/gateway/audio.ingest.gateway';
+import { AppConfigService } from './config/config.service';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -12,6 +13,33 @@ async function bootstrap() {
     const app = await NestFactory.create(AppModule, {
       bufferLogs: true,
     });
+    const appConfigService = app.get(AppConfigService);
+    app.enableCors({
+      origin: (origin, callback) => {
+        const allowedOrigins = appConfigService.cors.allowedOrigins;
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          Logger.warn(`Blocked CORS request from origin: ${origin}`, 'CORS');
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
+      credentials: true,
+      exposedHeaders: ['Content-Disposition'],
+    });
+
+    // Env-configurable Nest logger levels
+    const logLevel = appConfigService.logLevel.toLowerCase();
+    const nestLevelsByLevel: Record<string, LogLevel[]> = {
+      error: ['error'],
+      warn: ['warn', 'error'],
+      info: ['log', 'warn', 'error'],
+      debug: ['log', 'warn', 'error', 'debug'],
+    };
+    const defaultLevel = appConfigService.isDevelopment ? 'debug' : 'warn';
+    app.useLogger(
+      nestLevelsByLevel[logLevel] || nestLevelsByLevel[defaultLevel],
+    );
 
     // Add body parser configuration for larger payloads
     app.use(express.json({ limit: '1mb' }));
@@ -20,13 +48,10 @@ async function bootstrap() {
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ transform: true }));
     app.use(helmet());
-    app.enableCors({
-      exposedHeaders: ['Content-Disposition'],
-    });
     // remove x-powered-by header
     app.getHttpAdapter().getInstance().disable('x-powered-by');
 
-    const port = process.env.PORT || 3000;
+    const port = appConfigService.port;
 
     const config = new DocumentBuilder()
       .setTitle('Lifeline API')
@@ -53,7 +78,7 @@ async function bootstrap() {
       if (url?.startsWith('/ws')) {
         audioIngestGateway
           .getWss()
-          .handleUpgrade(request, socket, head, (ws) => {
+          .handleUpgrade(request, socket, head, (ws: any) => {
             audioIngestGateway.getWss().emit('connection', ws, request);
           });
       }

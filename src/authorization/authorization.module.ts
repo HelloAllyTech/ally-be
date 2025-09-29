@@ -4,6 +4,7 @@ import { PermissionsService } from './service/permissions.service';
 import { GroupService } from './service/group.service';
 import { GroupPermissionsService } from './service/group-permissions.service';
 import { UserGroupService } from './service/user-group.service';
+import { AuthorizationController } from './controller/authorization.controller';
 import { Group } from '../common/entities/group.entity';
 import { UserGroup } from '../common/entities/user-group.entity';
 import { GroupPermission } from '../common/entities/group-permission.entity';
@@ -19,6 +20,7 @@ import { RedisModule } from '../redis/redis.module';
     TypeOrmModule.forFeature([Group, UserGroup, GroupPermission, Permission]),
     RedisModule,
   ],
+  controllers: [AuthorizationController],
   providers: [
     PermissionsService,
     GroupService,

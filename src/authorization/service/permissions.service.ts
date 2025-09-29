@@ -26,7 +26,6 @@ export class PermissionsService {
   }
 
   async getUserPermissions(id: number): Promise<string[]> {
-    // Get user's groups from cache or DB
     const cachedUserGroups = await this.cache.get(`user:groups:${id}`);
     let userGroups;
 
@@ -45,11 +44,9 @@ export class PermissionsService {
 
     if (!userGroups.length) return [];
 
-    // Get permissions for each group from cache or DB
     const permissions = new Set<string>();
     const missingGroupIds = new Set<number>();
 
-    // First check cache for all groups
     for (const groupId of userGroups) {
       const cachedGroupPermissions = await this.cache.get(
         `group:permissions:${groupId}`,

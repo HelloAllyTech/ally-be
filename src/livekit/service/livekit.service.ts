@@ -1,17 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import {
-  RoomServiceClient,
   AccessToken,
   AgentDispatchClient,
+  RoomServiceClient,
 } from 'livekit-server-sdk';
-import { CreateRoomDto } from '../dto/create-room.dto';
 import { AppConfigService } from 'src/config/config.service';
+import { LoggerService } from 'src/logger/logger.service';
 import {
   DEFAULT_ROOM_TTL,
   MAX_PARTICIPANTS,
 } from '../constants/livekit.constants';
+import { CreateRoomDto } from '../dto/create-room.dto';
 import { JoinRoomDto } from '../dto/join-room.dto';
-import { LoggerService } from 'src/logger/logger.service';
 
 @Injectable()
 export class LiveKitService {
@@ -34,7 +34,7 @@ export class LiveKitService {
     }
 
     this.roomService = new RoomServiceClient(serverUrl, apiKey, apiSecret);
-    this.logger.info('LiveKit room service initialized');
+    this.logger.debug('LiveKit room service initialized');
   }
 
   initializeAgentService() {
@@ -46,7 +46,7 @@ export class LiveKitService {
       return;
     }
     this.agentService = new AgentDispatchClient(serverUrl, apiKey, apiSecret);
-    this.logger.info('LiveKit agent service initialized');
+    this.logger.debug('LiveKit agent service initialized');
   }
 
   async createRoom(createRoomDto: CreateRoomDto) {
@@ -62,7 +62,7 @@ export class LiveKitService {
           : undefined,
       });
 
-      this.logger.info(`Room created: ${room.name}`);
+      this.logger.debug(`Room created: ${room.name}`);
       return room;
     } catch (error) {
       this.logger.error(
@@ -76,7 +76,7 @@ export class LiveKitService {
     try {
       const fullRoomName = `${roomName}`;
       await this.roomService.deleteRoom(fullRoomName);
-      this.logger.info(`Room deleted: ${fullRoomName}`);
+      this.logger.debug(`Room deleted: ${fullRoomName}`);
     } catch (error) {
       this.logger.error(
         `Failed to delete room: ${JSON.stringify(error.message)}`,
@@ -139,7 +139,7 @@ export class LiveKitService {
       const fullRoomName = `${roomName}`;
       const participants =
         await this.roomService.listParticipants(fullRoomName);
-      this.logger.info(`Listed participants for room: ${fullRoomName}`);
+      this.logger.debug(`Listed participants for room: ${fullRoomName}`);
       return participants;
     } catch (error) {
       this.logger.error(
@@ -156,7 +156,7 @@ export class LiveKitService {
         fullRoomName,
         participantIdentity,
       );
-      this.logger.info(
+      this.logger.debug(
         `Removed participant ${participantIdentity} from room: ${fullRoomName}`,
       );
       return { message: 'Participant removed successfully' };
@@ -177,7 +177,7 @@ export class LiveKitService {
       await this.agentService.createDispatch(roomName, participantIdentity, {
         metadata,
       });
-      this.logger.info(`Agent dispatched to room: ${roomName}`);
+      this.logger.debug(`Agent dispatched to room: ${roomName}`);
     } catch (error) {
       this.logger.error(
         `Failed to dispatch agent to room ${roomName}: ${error.message}`,

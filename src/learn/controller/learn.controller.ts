@@ -1,4 +1,13 @@
-import { Controller, Get, Param, Post, Query, Body, Put } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Body,
+  Put,
+  Delete,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -24,6 +33,9 @@ import { Public } from 'src/auth/decorators/auth.metadata';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
+import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
+import { UserRole } from 'src/common/constants/user.constants';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -186,11 +198,22 @@ export class LearnController {
   @Post('scenarios/map-events')
   async mapEventsToScenario(
     @Body() createScenarioEventsDto: CreateScenarioEventsDto,
-  ): Promise<boolean> {
-    console.log(createScenarioEventsDto);
+  ) {
     return this.scenarioSessionService.mapEventsToScenario(
       createScenarioEventsDto,
     );
+  }
+
+  @ApiOperation({ summary: 'Delete scenario events' })
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @Delete('scenarios/events')
+  async deleteScenarioEvents(
+    @Body() DeleteScenarioEventsDto: DeleteScenarioEventsDto,
+  ) {
+    const rowsAffected = await this.scenarioSessionService.deleteScenarioEvents(
+      DeleteScenarioEventsDto,
+    );
+    return rowsAffected != null && rowsAffected > 0;
   }
 
   @ApiOperation({ summary: 'Start a scenario session' })

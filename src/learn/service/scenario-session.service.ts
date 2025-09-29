@@ -9,7 +9,7 @@ import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
@@ -22,6 +22,8 @@ import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../interface/learn-message.interface';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
+import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
+import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
 import { UserRole } from 'src/common/constants/user.constants';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
@@ -41,6 +43,8 @@ export class ScenarioSessionService {
     private aiService: AiService,
     @InjectRepository(ScenarioSessionEvents)
     private scenarioSessionEventsRepository: Repository<ScenarioSessionEvents>,
+    @InjectRepository(ScenarioEvents)
+    private scenarioEventsRepository: Repository<ScenarioEvents>,
     private permissionsService: PermissionsService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
@@ -140,15 +144,10 @@ export class ScenarioSessionService {
     await this.scenarioService.getScenario(scenarioId);
     // Validate events exist
     const validEvents = await this.sessionEventService.findByIds(eventIds);
-    const validEventIds = validEvents.map((e) => e.id);
-    const invalidEventIds = eventIds.filter(
-      (id) => !validEventIds.includes(id),
-    );
-
+    const validIdsSet = new Set(validEvents.map((e) => e.id));
+    const invalidEventIds = eventIds.filter((id) => !validIdsSet.has(id));
     if (invalidEventIds.length > 0) {
-      throw new BadRequestException(
-        `Invalid event IDs: ${invalidEventIds.join(', ')}`,
-      );
+      throw new BadRequestException(`Invalid event IDs: ${invalidEventIds}`);
     }
     // Create an array of ScenarioEvents entities to be saved
     const scenarioEvents = eventIds.map((id) => ({
@@ -158,12 +157,26 @@ export class ScenarioSessionService {
     }));
 
     // Save the scenario events to the database
-    await this.dataSource.transaction(async (entityManager) => {
-      const scenarioEventsRepo = entityManager.getRepository('ScenarioEvents');
-      await scenarioEventsRepo.save(scenarioEvents);
-    });
+    await this.scenarioEventsRepository.save(scenarioEvents);
+    return scenarioEvents;
+  }
 
-    return true;
+  async deleteScenarioEvents(scenarioEvents: DeleteScenarioEventsDto) {
+    const { scenarioId, eventIds } = scenarioEvents;
+    if (eventIds.length === 0) {
+      throw new BadRequestException('Event IDs array cannot be empty');
+    }
+
+    await this.scenarioService.getScenario(scenarioId);
+
+    const result = await this.scenarioEventsRepository.delete({
+      eventId: In(eventIds),
+      scenarioId,
+    });
+    if (result.affected === 0) {
+      throw new BadRequestException('No scenario events found to delete');
+    }
+    return result.affected;
   }
 
   private async validateStartScenarioSession(counselorId: number) {

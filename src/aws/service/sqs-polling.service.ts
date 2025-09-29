@@ -1,12 +1,12 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
 import { Message } from '@aws-sdk/client-sqs';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { LoggerService } from '../../logger/logger.service';
-import { SqsService } from './sqs.service';
 import {
-  sqsHandlerRegistry,
   SqsHandler,
+  sqsHandlerRegistry,
 } from '../registry/sqs-handler.registry';
+import { SqsService } from './sqs.service';
 
 interface QueuePoller {
   queueUrl: string;
@@ -83,7 +83,7 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
         pollInterval: this.defaultPollInterval,
       });
 
-      this.logger.info(
+      this.logger.debug(
         `Initialized poller for queue: ${queueUrl} with ${queueHandlers.length} handler(s)`,
       );
     }
@@ -95,20 +95,20 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
     );
 
     await Promise.all(pollerPromises);
-    this.logger.info(`Started polling for ${this.queuePollers.size} queue(s)`);
+    this.logger.debug(`Started polling for ${this.queuePollers.size} queue(s)`);
   }
 
   private async stopAllPollers(): Promise<void> {
     for (const poller of this.queuePollers.values()) {
       poller.isPolling = false;
     }
-    this.logger.info('Stopped all queue pollers');
+    this.logger.debug('Stopped all queue pollers');
   }
 
   private async startPoller(poller: QueuePoller): Promise<void> {
     if (poller.isPolling) return;
 
-    this.logger.info(`Starting polling for queue: ${poller.queueUrl}`);
+    this.logger.debug(`Starting polling for queue: ${poller.queueUrl}`);
     poller.isPolling = true;
 
     // Run polling in background
@@ -137,7 +137,7 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
       const messages = await this.sqsService.receiveMessage(poller.queueUrl);
 
       if (messages.length > 0) {
-        this.logger.info(
+        this.logger.debug(
           `Received ${messages.length} message(s) from queue: ${poller.queueUrl}`,
         );
 
@@ -171,14 +171,14 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
     // Try each handler for this queue
     for (const handler of poller.handlers) {
       try {
-        this.logger.info(
+        this.logger.debug(
           `Processing message ${message.MessageId} with handler ${handler.target.constructor.name}.${handler.methodName}`,
         );
 
         await handler.handler(message);
         messageProcessedSuccessfully = true;
 
-        this.logger.info(
+        this.logger.debug(
           `Successfully processed message ${message.MessageId} with handler ${handler.target.constructor.name}.${handler.methodName}`,
         );
 

@@ -1,23 +1,25 @@
 import {
   Controller,
+  HttpCode,
+  HttpStatus,
   Post,
   Req,
   Res,
-  HttpStatus,
-  HttpCode,
 } from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { WebhookReceiver } from 'livekit-server-sdk';
 import { AppConfigService } from 'src/config/config.service';
-import { ParticipantJoinedHandler } from './handlers/participant-joined.handler';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RoomFinishedHandler } from './handlers/room-finished.handler';
 import { LoggerService } from 'src/logger/logger.service';
+import { ParticipantJoinedHandler } from './handlers/participant-joined.handler';
+import { RoomFinishedHandler } from './handlers/room-finished.handler';
 
 @ApiTags('LiveKit Webhook')
 @Controller('v1/webhook/livekit')
 export class LivekitWebhookController {
-  private readonly logger = new LoggerService(LivekitWebhookController.name);
+  private readonly logger = LoggerService.getInstance(
+    LivekitWebhookController.name,
+  );
   private webhookReceiver?: WebhookReceiver;
 
   constructor(
@@ -38,7 +40,7 @@ export class LivekitWebhookController {
     }
 
     this.webhookReceiver = new WebhookReceiver(apiKey, apiSecret);
-    this.logger.info('LiveKit webhook receiver initialized');
+    this.logger.debug('LiveKit webhook receiver initialized');
   }
 
   @Post('call-events')
@@ -63,7 +65,7 @@ export class LivekitWebhookController {
       const rawBody = await this.getRawBody(req);
       const event = await this.webhookReceiver.receive(rawBody, authHeader);
 
-      this.logger.info(`Received LiveKit webhook event: ${event.event}`);
+      this.logger.debug(`Received LiveKit webhook event: ${event.event}`);
 
       // Process the event based on its type
       await this.processWebhookEvent(event);
@@ -101,7 +103,7 @@ export class LivekitWebhookController {
   }
 
   private async handleParticipantJoined(event: any) {
-    this.logger.info(
+    this.logger.debug(
       `Participant joined: ${event.participant?.identity} in room ${event.room?.name}`,
     );
 
@@ -116,7 +118,7 @@ export class LivekitWebhookController {
   }
 
   private async handleRoomFinished(event: any) {
-    this.logger.info(`Room finished: ${event.room?.name}`);
+    this.logger.debug(`Room finished: ${event.room?.name}`);
 
     try {
       await this.roomFinishedHandler.handle(event);

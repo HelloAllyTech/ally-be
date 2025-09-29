@@ -1,27 +1,27 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import { ChatSummaryStatus } from 'src/common/entities/chat.entity';
 import { DataSource, EntityManager } from 'typeorm';
-import { S3Service } from '../../aws/service/s3.service';
-import { ChatAudioUploadsService } from './chat-audio-uploads.service';
 import { AiEventService } from '../../ai/service/ai-event.service';
-import { LoggerService } from '../../logger/logger.service';
-import { ExecutionManager } from '../../common/execution/execution-manager';
-import { ChatAudioUploadStatus } from '../../common/entities/chat-audio-uploads.entity';
-import {
-  AudioChatProvider,
-  AudioChatPlatform,
-} from '../../common/constants/chat.constants';
+import { S3Service } from '../../aws/service/s3.service';
+import { ChatService } from '../../chat/service/chat.service';
 import {
   ActiveCallStream,
   UserChatSessionData,
 } from '../../chat/type/chat.type';
-import { BroadcastMessageService } from './broadcast-message.service';
-import { AppConfigService } from '../../config/config.service';
-import { ChatService } from '../../chat/service/chat.service';
+import {
+  AudioChatPlatform,
+  AudioChatProvider,
+} from '../../common/constants/chat.constants';
 import { PLACEHOLDER_CHAT_ID } from '../../common/constants/user.constants';
+import { ChatAudioUploadStatus } from '../../common/entities/chat-audio-uploads.entity';
+import { ExecutionManager } from '../../common/execution/execution-manager';
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
-import { ChatSummaryStatus } from 'src/common/entities/chat.entity';
+import { AppConfigService } from '../../config/config.service';
+import { LoggerService } from '../../logger/logger.service';
+import { BroadcastMessageService } from './broadcast-message.service';
+import { ChatAudioUploadsService } from './chat-audio-uploads.service';
 
 @Injectable()
 export class StreamFileProcessorService {
@@ -235,7 +235,7 @@ export class StreamFileProcessorService {
         userId: session.userId,
         chatId,
       });
-      this.logger.info(
+      this.logger.debug(
         `Call stream started with dual files | ChatId: ${chatId} | Provider: ${session.provider}`,
       );
 
@@ -265,7 +265,7 @@ export class StreamFileProcessorService {
     chatId?: number;
   }) {
     try {
-      this.logger.info(`Rolling back external operations for call ${callId}`);
+      this.logger.debug(`Rolling back external operations for call ${callId}`);
 
       // Abort S3 multipart upload if it exists
       if (s3UploadId && s3key) {
@@ -275,7 +275,7 @@ export class StreamFileProcessorService {
             Key: s3key,
             UploadId: s3UploadId,
           });
-          this.logger.info(`Aborted S3 multipart upload for key: ${s3key}`);
+          this.logger.debug(`Aborted S3 multipart upload for key: ${s3key}`);
         } catch (abortError) {
           this.logger.warn(
             `Failed to abort S3 multipart upload: ${abortError.message}`,
@@ -294,7 +294,7 @@ export class StreamFileProcessorService {
       // Clear pending audio queue
       this.clearPendingAudioQueue(callId);
 
-      this.logger.info(
+      this.logger.debug(
         `Successfully rolled back external operations for call ${callId}`,
       );
     } catch (error) {
@@ -333,7 +333,7 @@ export class StreamFileProcessorService {
       Body: fileBuffer,
     });
 
-    this.logger.info(
+    this.logger.debug(
       `Flushed file ${fileToFlushIndex} as part | ETag: ${ETag} | PartNumber: ${activeCallStream.partNumber} | ChatId: ${chatId} | Provider: ${provider}`,
     );
 
@@ -507,7 +507,7 @@ export class StreamFileProcessorService {
         }
 
         if (activeCallStream.files[0].bufferSize === 0) {
-          this.logger.info(
+          this.logger.debug(
             `No audio data in file 0 | ChatId: ${chatId} | Provider: ${provider}`,
           );
 
@@ -529,7 +529,7 @@ export class StreamFileProcessorService {
         });
       }
 
-      this.logger.info(
+      this.logger.debug(
         `Call stream upload completed | ChatId: ${chatId} | Provider: ${provider}`,
       );
 
@@ -561,7 +561,7 @@ export class StreamFileProcessorService {
         sample_rate: sampleRate!,
       });
 
-      this.logger.info(
+      this.logger.debug(
         `Call stream end completed | ChatId: ${chatId} | Provider: ${provider}`,
       );
     } catch (err) {

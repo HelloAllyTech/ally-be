@@ -4,12 +4,36 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import axios from 'axios';
+import { AiEventService } from '../../ai/service/ai-event.service';
+import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
+import { ChatService } from '../../chat/service/chat.service';
+import {
+  AudioChatProvider,
+  CloudTelephonyProvider,
+} from '../../common/constants/chat.constants';
+import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
+import { UserRole } from '../../common/constants/user.constants';
+import {
+  ExecutionContextPropagation,
+  WithExecutionContext,
+} from '../../common/decorator/execution.context.decorator';
+import {
+  Chat,
+  ChatStatus,
+  ChatSummaryStatus,
+} from '../../common/entities/chat.entity';
+import { ExecutionManager } from '../../common/execution/execution-manager';
+import { checkAudioFileReady } from '../../common/util/audio.util';
 import {
   addDurationToDate,
   convertIstStringToUtc,
   subtractDurationFromDate,
 } from '../../common/util/date.util';
+import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
+import { UserService } from '../../user/user.service';
+import { AudioRetryProducer } from '../producer/audio-retry.producer';
+import { CloudTelephonyService } from '../service/cloud-telephony.service';
 import {
   OzonetelCallAction,
   OzonetelCallDetails,
@@ -17,28 +41,6 @@ import {
   OzonetelCallStatus,
   OzonetelEventTypes,
 } from '../type/ozonetel.type';
-import { ChatService } from '../../chat/service/chat.service';
-import { UserService } from '../../user/user.service';
-import { UserRole } from '../../common/constants/user.constants';
-import { AudioChatProvider } from '../../common/constants/chat.constants';
-import {
-  Chat,
-  ChatStatus,
-  ChatSummaryStatus,
-} from '../../common/entities/chat.entity';
-import { CloudTelephonyService } from '../service/cloud-telephony.service';
-import { CloudTelephonyProvider } from '../../common/constants/chat.constants';
-import { ExecutionManager } from '../../common/execution/execution-manager';
-import {
-  ExecutionContextPropagation,
-  WithExecutionContext,
-} from '../../common/decorator/execution.context.decorator';
-import { AppConfigService } from '../../config/config.service';
-import { AiEventService } from '../../ai/service/ai-event.service';
-import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
-import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
-import { checkAudioFileReady } from '../../common/util/audio.util';
-import { AudioRetryProducer } from '../producer/audio-retry.producer';
 
 @Injectable()
 export class OzonetelService {
@@ -114,7 +116,7 @@ export class OzonetelService {
         );
       }
 
-      this.logger.info(
+      this.logger.debug(
         `Processing Ozonetel call detail for agent with phone ${AgentID} | monitorUCID: ${monitorUCID}`,
       );
 
@@ -143,7 +145,7 @@ export class OzonetelService {
       if (monitorUCID) {
         chat = await this.chatService.getChatByExternalId(monitorUCID);
         if (!chat) {
-          this.logger.info(
+          this.logger.debug(
             `Chat does not exist for AgentId: ${AgentID} | monitorUCID: ${monitorUCID}`,
           );
         }
@@ -206,7 +208,7 @@ export class OzonetelService {
       if (AudioFile) {
         const isReady = await checkAudioFileReady(AudioFile);
         if (isReady) {
-          this.logger.info(
+          this.logger.debug(
             `Audio file is ready for processing for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat.id}`,
           );
           this.aiEventService.publishTranscribeAudioEvent({
@@ -274,7 +276,7 @@ export class OzonetelService {
       }
 
       if (eventType !== OzonetelEventTypes.Call || !data?.action) {
-        this.logger.info(
+        this.logger.debug(
           `Invalid event type and action for AgentId: ${agent_id} | monitorUCID: ${monitor_ucid} | eventType: ${eventType} | action: ${data?.action}`,
         );
         return;
@@ -289,7 +291,7 @@ export class OzonetelService {
       if (data.action === OzonetelCallAction.Disconnect && monitor_ucid) {
         const chat = await this.chatService.getChatByExternalId(monitor_ucid);
         if (chat) {
-          this.logger.info(
+          this.logger.debug(
             `Ending chat for AgentId: ${agent_id} | monitorUCID: ${monitor_ucid} | chatId: ${chat.id} using call events disconnect action`,
           );
           await this.chatService.endChat(
@@ -307,7 +309,7 @@ export class OzonetelService {
         );
       }
 
-      this.logger.info(
+      this.logger.debug(
         `Processing Ozonetel call events for agent with phone ${agent_id} | monitorUCID: ${monitor_ucid}`,
       );
 
@@ -342,7 +344,7 @@ export class OzonetelService {
           },
         );
       }
-      this.logger.info(
+      this.logger.debug(
         `Ozonetel call events webhook processed successfully for AgentId: ${agent_id} | monitorUCID: ${monitor_ucid}`,
       );
     } catch (error) {
@@ -362,7 +364,7 @@ export class OzonetelService {
     headers?: Record<string, string>;
   }) {
     const url = `${this.config.ozonetel.apiUrl}/${endpoint}`;
-    this.logger.info(`Making ozonetel request to ${url} | ${method}}`);
+    this.logger.debug(`Making ozonetel request to ${url} | ${method}}`);
     this.logger.debug(
       `Making ozonetel request with data: ${JSON.stringify(data)}`,
     );
@@ -377,7 +379,7 @@ export class OzonetelService {
           ...(headers || {}),
         },
       });
-      this.logger.info(
+      this.logger.debug(
         `Ozonetel request successful with status: ${response.status}`,
       );
       return response.data;
@@ -400,7 +402,7 @@ export class OzonetelService {
       );
       throw new NotFoundException('Cloud telephony integration not found');
     }
-    this.logger.info(`Subscribing to ozonetel events for tenant ${tenantId}`);
+    this.logger.debug(`Subscribing to ozonetel events for tenant ${tenantId}`);
     try {
       await this.makeRequest({
         endpoint: `events/subscribe`,
@@ -414,7 +416,7 @@ export class OzonetelService {
           username: cloudTelephonyIntegration.credentials.username,
         },
       });
-      this.logger.info(`Subscribed ozonetel events for tenant ${tenantId}`);
+      this.logger.debug(`Subscribed ozonetel events for tenant ${tenantId}`);
       await this.cloudTelephonyService.updateCloudTelephonyIntegration(
         cloudTelephonyIntegration.id,
         {
@@ -456,7 +458,7 @@ export class OzonetelService {
           username: cloudTelephonyIntegration.credentials.username,
         },
       });
-      this.logger.info(`Unsubscribed ozonetel events for tenant ${tenantId}`);
+      this.logger.debug(`Unsubscribed ozonetel events for tenant ${tenantId}`);
       await this.cloudTelephonyService.updateCloudTelephonyIntegration(
         cloudTelephonyIntegration.id,
         {
@@ -491,7 +493,7 @@ export class OzonetelService {
     endTime?: string;
     timeToAnswer: number;
   }): Date {
-    this.logger.info(
+    this.logger.debug(
       `Getting conversation start time. startTime: ${startTime} | durationInSeconds: ${durationInSeconds} | endTime: ${endTime} | timeToAnswer: ${timeToAnswer}`,
     );
     if (startTime && timeToAnswer > 0) {
@@ -509,7 +511,7 @@ export class OzonetelService {
         unit: 'second',
       });
     }
-    this.logger.info(
+    this.logger.debug(
       `Failed to get conversation start time, using current time. startTime: ${startTime} | durationInSeconds: ${durationInSeconds} | endTime: ${endTime} | timeToAnswer: ${timeToAnswer}`,
     );
     return new Date();

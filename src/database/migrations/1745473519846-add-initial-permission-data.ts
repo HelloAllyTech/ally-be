@@ -1,6 +1,19 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
-import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 
+const PERMISSIONS = {
+  ViewNavBarCalls: 'view:navbar:calls',
+  ViewNavBarCalendar: 'view:navbar:calendar',
+  ViewNavBarAnalytics: 'view:navbar:analytics',
+  ViewNavBarStressBuster: 'view:navbar:stress-buster',
+  ViewNavBarSettings: 'view:navbar:settings',
+  ViewNavBarSearch: 'view:navbar:search',
+  ViewNavBarCommunity: 'view:navbar:community',
+
+  EditSummary: 'edit:summary',
+
+  ButtonStartCall: 'view:button:start-call',
+  ViewNavBarLearn: 'view:navbar:learn',
+};
 export class AddInitialPermissionData1745473519846
   implements MigrationInterface
 {

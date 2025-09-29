@@ -112,7 +112,7 @@ export class AuthController {
     return { message: 'Logged out successfully' };
   }
 
-  // TO Do: Move to permissions controller
+  // TO Do: Remove this endpoint after app force update
   @UseGuards(JwtAuthGuard)
   @Get('permissions')
   async getPermissions(@Req() req: { user: { id: string } }) {

@@ -23,9 +23,10 @@ export class UpdatePermissions1758620201178 implements MigrationInterface {
 
       // Only insert if it doesn't exist
       if (existingPermission.length === 0) {
-        await queryRunner.query(`INSERT INTO "permissions" (name) VALUES ($1)`, [
-          permissionName,
-        ]);
+        await queryRunner.query(
+          `INSERT INTO "permissions" (name) VALUES ($1)`,
+          [permissionName],
+        );
       }
     }
 
