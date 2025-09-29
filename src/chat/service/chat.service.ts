@@ -269,6 +269,8 @@ export class ChatService {
 
     await chatRoomRepo.save(newChatRoom);
 
+    const createdBy = ExecutionManager.getUserId();
+
     const chat = chatRepo.create({
       clientId,
       counselorId,
@@ -278,6 +280,7 @@ export class ChatService {
       ...(endedAt ? { endedAt } : {}),
       externalId,
       tenantId: tenantId || ExecutionManager.getTenantId(),
+      ...(createdBy ? { createdBy: +createdBy } : {}),
     });
 
     await chatRepo.save(chat);

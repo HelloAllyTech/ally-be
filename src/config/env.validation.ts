@@ -30,8 +30,13 @@ export const validationSchema = Joi.object({
   AI_SERVICE_OUTBOUND_API_KEY: Joi.string().required(), // outbound (BE -> AI)
   DEEPGRAM_API_KEY: Joi.string().required(),
 
-  // SQS
+  // AWS
   AWS_REGION: Joi.string().default('us-east-1'),
+  AWS_ACCESS_KEY_ID: Joi.string().required(),
+  AWS_SECRET_ACCESS_KEY: Joi.string().required(),
+  AWS_SESSION_TOKEN: Joi.string().required(),
+
+  // SQS
   SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: Joi.string().required(),
   SQS_TRANSCRIPTION_REQUEST_DLQ_URL: Joi.string().required(),
   SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL: Joi.string().required(),

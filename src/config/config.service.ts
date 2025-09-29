@@ -111,6 +111,7 @@ export class AppConfigService {
       region: this.configService.get<string>('AWS_REGION'),
       accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID'),
       secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY'),
+      sessionToken: this.configService.get<string>('AWS_SESSION_TOKEN'),
     };
   }
 

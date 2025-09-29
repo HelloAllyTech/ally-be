@@ -32,14 +32,15 @@ export class S3Service {
   private readonly s3: S3Client;
 
   constructor(private readonly config: AppConfigService) {
-    const { region, accessKeyId, secretAccessKey } = config.aws;
+    const { region, accessKeyId, secretAccessKey, sessionToken } = config.aws;
     const s3Config: S3ClientConfig = {
       region,
     };
-    if (accessKeyId && secretAccessKey) {
+    if (accessKeyId && secretAccessKey && sessionToken) {
       s3Config.credentials = {
         accessKeyId,
         secretAccessKey,
+        sessionToken,
       };
     }
     this.s3 = new S3Client(s3Config);

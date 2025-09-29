@@ -26,6 +26,12 @@ import {
   UPLOADED_AUDIO_FILE_SIZE_LIMIT,
 } from '../constants/chat.constants';
 import { ChatAudioUploadStatus } from 'src/common/entities/chat-audio-uploads.entity';
+import {
+  ExecutionContextPropagation,
+  WithExecutionContext,
+} from 'src/common/decorator/execution.context.decorator';
+import { UserRole } from 'src/common/constants/user.constants';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 @Injectable()
 export class AudioUploadService {
@@ -97,7 +103,8 @@ export class AudioUploadService {
       expiresIn: 3600, // 1 hour
       contentType,
       metadata: {
-        chatId: chat.id.toString(),
+        // Custom metadata; S3 stores keys in lowercase automatically
+        chatid: chat.id.toString(),
         provider: AudioChatProvider.AUDIO_UPLOAD,
       },
     });
@@ -110,6 +117,7 @@ export class AudioUploadService {
     };
   }
 
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async processAudioUpload(s3Key: string) {
     this.logger.info(`Processing audio upload`);
 
@@ -125,8 +133,8 @@ export class AudioUploadService {
       return;
     }
 
-    const { chatId, provider } = file.Metadata as {
-      chatId: string;
+    const { chatid: chatId, provider } = file.Metadata as {
+      chatid: string;
       provider: string;
     };
 
@@ -136,6 +144,12 @@ export class AudioUploadService {
     }
 
     const chat = await this.chatService.getChatByIdForServiceCall(+chatId);
+
+    ExecutionManager.setAuthContext(
+      chat.createdBy?.toString() || '',
+      UserRole.ADMIN,
+      chat.tenantId,
+    );
 
     if (!chat || chat.status !== ChatStatus.STARTED) {
       this.logger.error(

@@ -18,28 +18,17 @@ export class ChatRepository extends Repository<Chat> {
       ? em.getRepository(Chat)
       : this.dataSource.getRepository(Chat);
 
-    const queryBuilder = chatRepo.createQueryBuilder('chat').update();
+    const updateData = Object.fromEntries(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      Object.entries(input).filter(([key, value]) => value !== undefined),
+    );
 
-    const setObj: Record<string, any> = {};
-
-    if (input.summaryStatus !== undefined) {
-      setObj.summaryStatus = input.summaryStatus;
+    if (Object.keys(updateData).length === 0) {
+      return false;
     }
 
-    if (input.metadata !== undefined) {
-      setObj.metadata = () =>
-        `"metadata" || '${JSON.stringify([input.metadata])}'::jsonb`;
-    }
-
-    if (Object.keys(setObj).length > 0) {
-      queryBuilder.set(setObj);
-    }
-
-    const updatedResult = await queryBuilder
-      .where('id = :chatId', { chatId })
-      .execute();
-
-    return updatedResult.affected !== 0;
+    const result = await chatRepo.update(chatId, updateData);
+    return result.affected !== 0;
   }
 
   async deleteChat(chatId: number, em?: EntityManager): Promise<boolean> {
