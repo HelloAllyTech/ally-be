@@ -32,9 +32,9 @@ export const validationSchema = Joi.object({
 
   // AWS
   AWS_REGION: Joi.string().default('us-east-1'),
-  AWS_ACCESS_KEY_ID: Joi.string().required(),
-  AWS_SECRET_ACCESS_KEY: Joi.string().required(),
-  AWS_SESSION_TOKEN: Joi.string().required(),
+  AWS_ACCESS_KEY_ID: Joi.string().optional(),
+  AWS_SECRET_ACCESS_KEY: Joi.string().optional(),
+  AWS_SESSION_TOKEN: Joi.string().optional(),
 
   // SQS
   SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: Joi.string().required(),
