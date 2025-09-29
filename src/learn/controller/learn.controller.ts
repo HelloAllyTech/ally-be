@@ -205,7 +205,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'Delete scenario events' })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_SESSION])
   @Delete('scenarios/events')
   async deleteScenarioEvents(
     @Body() DeleteScenarioEventsDto: DeleteScenarioEventsDto,

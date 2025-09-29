@@ -44,6 +44,7 @@ const PERMISSIONS: Record<string, string> = {
   EDIT_SCENARIO_MAP_EVENTS: 'edit:scenario-session:map-events',
   VIEW_SESSION_SCENARIO_MESSAGES: 'view:session-scenario:messages',
   VIEW_SESSION_SCENARIO_SUMMARY: 'view:scenario-session:summary',
+  DELETE_SCENARIO_SESSION: 'delete:scenario-session',
 
   // === SETTINGS ===
   VIEW_SETTINGS_SUMMARY_FIELDS: 'view:settings:summary-fields',
@@ -112,6 +113,7 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_CLOUD_TELEPHONY,
   PERMISSIONS.SUBSCRIBE_OZONETEL_EVENTS,
   PERMISSIONS.UNSUBSCRIBE_OZONETEL_EVENTS,
+  PERMISSIONS.DELETE_SCENARIO_SESSION,
 ];
 
 const COUNSELOR_PERMISSIONS = [
