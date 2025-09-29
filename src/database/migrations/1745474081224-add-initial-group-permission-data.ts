@@ -45,7 +45,7 @@ export class AddInitialGroupPermissionData1745474081224
       const superAdminGroupId = superAdminGroup?.id;
 
       const counselorPermissions = allPermissions.filter(
-        (permission) => permission.name != PERMISSIONS.VIEW_NAVBAR_ANALYTICS,
+        (permission) => permission.name != PERMISSIONS.ViewNavBarAnalytics,
       );
 
       // Insert group permissions for COUNSELOR group
