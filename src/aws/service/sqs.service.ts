@@ -16,27 +16,28 @@ export class SqsService {
   private readonly logger = LoggerService.getInstance(SqsService.name);
   private sqsClient!: SQSClient;
 
-  constructor(private readonly configService: AppConfigService) {
+  constructor(private readonly config: AppConfigService) {
     this.initializeSqsClient();
   }
 
   initializeSqsClient(): void {
-    const { AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION } =
-      process.env;
+    const { region, accessKeyId, secretAccessKey, sessionToken } =
+      this.config.aws;
 
-    if (!AWS_REGION) {
+    if (!region) {
       this.logger.warn('Missing AWS region. Consumer will not start.');
       return;
     }
 
     const sqsConfig: SQSClientConfig = {
-      region: AWS_REGION,
+      region,
     };
 
-    if (AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY) {
+    if (accessKeyId && secretAccessKey && sessionToken) {
       sqsConfig.credentials = {
-        accessKeyId: AWS_ACCESS_KEY_ID,
-        secretAccessKey: AWS_SECRET_ACCESS_KEY,
+        accessKeyId,
+        secretAccessKey,
+        sessionToken,
       };
     }
 

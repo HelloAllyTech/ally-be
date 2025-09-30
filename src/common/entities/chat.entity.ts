@@ -3,11 +3,11 @@ import { BaseEntity } from './base.entity';
 
 // You'll need to create this enum to match the Python ChatStatus
 export enum ChatStatus {
+  STARTED = 'STARTED',
   ACTIVE = 'ACTIVE',
   ENDED = 'ENDED',
   PAUSED = 'PAUSED',
   CANCELLED = 'CANCELLED',
-  // Add other chat statuses as needed
 }
 
 export enum ChatSummaryStatus {
@@ -51,4 +51,7 @@ export class Chat extends BaseEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
+
+  @Column({ nullable: true })
+  createdBy?: number;
 }

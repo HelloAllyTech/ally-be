@@ -24,4 +24,16 @@ export class SummaryFeedbackRepository extends Repository<SummaryFeedback> {
     });
     return this.save(summaryFeedback);
   }
+
+  async deleteSummaryFeedbackByChatId(
+    chatId: number,
+    em?: EntityManager,
+  ): Promise<boolean> {
+    const summaryFeedbackRepo = em
+      ? em.getRepository(SummaryFeedback)
+      : this.dataSource.getRepository(SummaryFeedback);
+
+    const result = await summaryFeedbackRepo.delete(chatId);
+    return result.affected !== 0;
+  }
 }

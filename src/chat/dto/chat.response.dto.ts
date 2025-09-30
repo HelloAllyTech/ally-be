@@ -62,3 +62,8 @@ export class CallInfoDto {
   @IsNotEmpty()
   summaryName!: string;
 }
+
+export class DeleteChatResponseDto {
+  @ApiProperty({ example: true, description: 'Success status' })
+  success!: boolean;
+}
