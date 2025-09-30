@@ -48,7 +48,9 @@ export class AudioUploadRequestDto {
   })
   @Transform(({ value }) => new Date(value))
   @IsDate()
-  @MaxDate(new Date(), { message: 'Start date must be before current date' })
+  @MaxDate(() => new Date(), {
+    message: 'Start date must be before current date',
+  })
   startedAt!: Date;
 
   @ApiProperty({
