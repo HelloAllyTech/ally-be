@@ -47,6 +47,8 @@ import { CounselorNameResponse } from '../dto/call-log.response.dto';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { ChatSummaryService } from '../service/chat-summary.service';
 import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -641,7 +643,7 @@ export class ChatController {
   }
 
   @Delete(':id')
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.DELETE_CHAT])
   @ApiOperation({ summary: 'Delete chat' })
   @ApiResponse({ status: 200, description: 'Chat deleted successfully' })
   async deleteChat(@Param('id') id: string): Promise<DeleteChatResponseDto> {

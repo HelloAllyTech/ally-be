@@ -25,7 +25,7 @@ export class SummaryFeedbackRepository extends Repository<SummaryFeedback> {
     return this.save(summaryFeedback);
   }
 
-  async deleteSummaryFeedback(
+  async deleteSummaryFeedbackByChatId(
     chatId: number,
     em?: EntityManager,
   ): Promise<boolean> {

@@ -6,15 +6,14 @@ import {
   ApiBearerAuth,
   ApiSecurity,
 } from '@nestjs/swagger';
-import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
 import { AudioUploadService } from '../service/audio-upload.service';
 import {
   AudioUploadRequestDto,
   AudioUploadResponseDto,
   CancelUploadRequestDto,
 } from '../dto/audio-upload.dto';
-
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 @ApiTags('Chat Audio Upload')
 @ApiBearerAuth()
 @ApiSecurity('access-token')
@@ -23,7 +22,7 @@ export class AudioUploadController {
   constructor(private readonly audioUploadService: AudioUploadService) {}
 
   @Post('upload-url')
-  @AuthRoles(UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_AUDIO_UPLOAD])
   @ApiOperation({ summary: 'Get presigned URL for audio upload' })
   @ApiResponse({
     status: 201,
@@ -38,7 +37,7 @@ export class AudioUploadController {
   }
 
   @Post('cancel-upload')
-  @AuthRoles(UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.CANCEL_AUDIO_UPLOAD])
   @ApiOperation({ summary: 'Cancel audio upload' })
   @ApiResponse({ status: 200, description: 'Audio upload cancelled' })
   async cancelUpload(@Body() cancelUploadRequestDto: CancelUploadRequestDto) {

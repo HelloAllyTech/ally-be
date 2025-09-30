@@ -8,15 +8,16 @@ export class CallDetailsRepository extends Repository<CallDetails> {
     super(CallDetails, dataSource.createEntityManager());
   }
 
-  async deleteCallDetails(
+  async deleteCallDetailsByChatId(
     chatId: number,
+    tenantId: string,
     em?: EntityManager,
   ): Promise<boolean> {
     const callDetailsRepo = em
       ? em.getRepository(CallDetails)
       : this.dataSource.getRepository(CallDetails);
 
-    const result = await callDetailsRepo.delete(chatId);
+    const result = await callDetailsRepo.delete({ chatId, tenantId });
     return result.affected !== 0;
   }
 }

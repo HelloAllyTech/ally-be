@@ -8,12 +8,16 @@ export class MessageRepository extends Repository<Message> {
     super(Message, dataSource.createEntityManager());
   }
 
-  async deleteMessage(chatId: number, em?: EntityManager): Promise<boolean> {
+  async deleteMessageByChatId(
+    chatId: number,
+    tenantId: string,
+    em?: EntityManager,
+  ): Promise<boolean> {
     const messageRepo = em
       ? em.getRepository(Message)
       : this.dataSource.getRepository(Message);
 
-    const result = await messageRepo.delete(chatId);
+    const result = await messageRepo.delete({ chatId, tenantId });
     return result.affected !== 0;
   }
 }

@@ -80,6 +80,7 @@ import { SummaryFeedbackRepository } from '../repository/summary-feedback.reposi
 import { CallDetailsRepository } from '../repository/call-details.repository';
 import { MessageRepository } from '../repository/message.repository';
 import { ChatUtil } from '../util/chat.util';
+import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
 
 @Injectable()
 export class ChatService {
@@ -90,7 +91,6 @@ export class ChatService {
 
     @InjectRepository(ChatRoom)
     private chatRoomRepository: Repository<ChatRoom>,
-    @InjectRepository(CallDetails)
     private callDetailsRepository: CallDetailsRepository,
     private summaryFeedbackRepository: SummaryFeedbackRepository,
     @Inject(forwardRef(() => QueueService))
@@ -105,6 +105,7 @@ export class ChatService {
     private settingsService: SettingsService,
     private broadcastMessageService: BroadcastMessageService,
     private streamFileProcessorService: StreamFileProcessorService,
+    private chatAudioUploadsService: ChatAudioUploadsService,
   ) {}
 
   async getChat(id: number) {
@@ -1732,15 +1733,29 @@ export class ChatService {
     if (callDetails?.callInfo?.provider !== AudioChatProvider.AUDIO_UPLOAD) {
       throw new BadRequestException('Deletion is nor supported for this chat');
     }
+    const tenantId = ExecutionManager.getTenantId()!;
     try {
       await this.dataSource.transaction(async (manager) => {
-        await this.messageRepository.deleteMessage(chatId, manager);
-        await this.callDetailsRepository.deleteCallDetails(chatId, manager);
-        await this.summaryFeedbackRepository.deleteSummaryFeedback(
+        await this.messageRepository.deleteMessageByChatId(
+          chatId,
+          tenantId,
+          manager,
+        );
+        await this.callDetailsRepository.deleteCallDetailsByChatId(
+          chatId,
+          tenantId,
+          manager,
+        );
+        await this.summaryFeedbackRepository.deleteSummaryFeedbackByChatId(
           chatId,
           manager,
         );
-        await this.chatRepository.deleteChat(chatId, manager);
+        await this.chatAudioUploadsService.deleteChatAudioUploadsByChatId(
+          chatId,
+          tenantId,
+          manager,
+        );
+        await this.chatRepository.deleteChat(chatId, tenantId, manager);
       });
       await this.cache.del(`chat:${chatId}`);
       return { success: true };

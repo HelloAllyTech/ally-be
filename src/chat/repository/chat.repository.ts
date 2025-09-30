@@ -31,12 +31,16 @@ export class ChatRepository extends Repository<Chat> {
     return result.affected !== 0;
   }
 
-  async deleteChat(chatId: number, em?: EntityManager): Promise<boolean> {
+  async deleteChat(
+    id: number,
+    tenantId: string,
+    em?: EntityManager,
+  ): Promise<boolean> {
     const chatRepo = em
       ? em.getRepository(Chat)
       : this.dataSource.getRepository(Chat);
 
-    const result = await chatRepo.delete(chatId);
+    const result = await chatRepo.delete({ id, tenantId });
     return result.affected !== 0;
   }
 }
