@@ -30,10 +30,12 @@ export class AudioUploadController {
     type: AudioUploadResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Invalid file type' })
-  async getPresignedUploadUrl(
+  async createChatWithUploadUrl(
     @Body() audioUploadRequestDto: AudioUploadRequestDto,
   ): Promise<AudioUploadResponseDto> {
-    return this.audioUploadService.getPresignedUploadUrl(audioUploadRequestDto);
+    return this.audioUploadService.createChatWithUploadUrl(
+      audioUploadRequestDto,
+    );
   }
 
   @Post('cancel-upload')

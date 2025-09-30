@@ -45,7 +45,7 @@ export class AudioUploadService {
     private readonly userService: UserService,
   ) {}
 
-  async getPresignedUploadUrl(
+  async createChatWithUploadUrl(
     audioUploadRequestDto: AudioUploadRequestDto,
   ): Promise<AudioUploadResponseDto> {
     const {

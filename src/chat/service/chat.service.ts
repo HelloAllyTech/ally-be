@@ -1728,7 +1728,7 @@ export class ChatService {
   async deleteChat(chatId: number): Promise<DeleteChatResponseDto> {
     const { chat, callDetails } = await this.getChatWithCallDetails(chatId);
     if (!chat) {
-      throw new HttpException('Chat not found', 404);
+      throw new NotFoundException('Chat not found');
     }
     if (callDetails?.callInfo?.provider !== AudioChatProvider.AUDIO_UPLOAD) {
       throw new BadRequestException('Deletion is nor supported for this chat');
