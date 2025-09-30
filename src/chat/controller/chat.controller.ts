@@ -420,8 +420,11 @@ export class ChatController {
 
   @AuthRoles(UserRole.COUNSELOR)
   @Get('messages/:messageId/feedback')
-  async getFeedback(@Param('messageId', ParseIntPipe) messageId: number) {
-    return this.feedbackService.findByMessageId(messageId);
+  async getFeedback(
+    @Param('messageId', ParseIntPipe) messageId: number,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.feedbackService.findByMessageId(messageId, user);
   }
 
   @AuthRoles(UserRole.COUNSELOR)
@@ -429,8 +432,9 @@ export class ChatController {
   async updateFeedback(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateFeedbackDto: CreateFeedbackDto,
+    @CurrentUser() tokenUser: TokenUser,
   ) {
-    return this.feedbackService.update(id, updateFeedbackDto);
+    return this.feedbackService.update(id, updateFeedbackDto, tokenUser);
   }
 
   @ApiOperation({ summary: 'Get chat details' })

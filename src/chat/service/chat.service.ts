@@ -1010,6 +1010,13 @@ export class ChatService {
   async generateSummary(
     chatId: number,
   ): Promise<FlattenedSummaryNotePayloadCamelCase | undefined> {
+    const chat = await this.chatRepository.findOne({ where: { id: chatId } });
+    if (!chat) {
+      throw new NotFoundException('Chat not found');
+    }
+    if (chat.counselorId !== ExecutionManager.getUserId()) {
+      throw new ForbiddenException('You are not allowed to access this chat');
+    }
     this.logger.debug(`generateSummary - chatId:${chatId}`);
     const messageRequests: MessageRequest[] =
       await this.getChatHistoryForAIService(chatId, {
@@ -1311,6 +1318,18 @@ export class ChatService {
     chatId: number,
     summary: FlattenedSummaryNotePayloadCamelCase,
   ) {
+    const chat = await this.getChatById(chatId);
+    if (!chat) {
+      throw new NotFoundException(`Chat with ID ${chatId} not found`);
+    }
+    if (
+      ExecutionManager.getRole() == UserRole.COUNSELOR &&
+      chat.counselorId != ExecutionManager.getUserId()
+    ) {
+      throw new ForbiddenException(
+        'You are not authorized to update call details',
+      );
+    }
     await this.callDetailsRepository.update(
       { chatId, tenantId: ExecutionManager.getTenantId() },
       { summary: summary },
@@ -1651,6 +1670,16 @@ export class ChatService {
     chatId: number,
     createNoteDto: AddNoteDto,
   ): Promise<AddNotesResponse> {
+    const chat = await this.getChatById(chatId);
+    if (!chat) {
+      throw new NotFoundException(`Chat with ID ${chatId} not found`);
+    }
+    if (
+      ExecutionManager.getRole() == UserRole.COUNSELOR &&
+      chat.counselorId != ExecutionManager.getUserId()
+    ) {
+      throw new ForbiddenException('You are not authorized to add notes');
+    }
     const callDetails = await this.callDetailsRepository.findOne({
       where: { chatId, tenantId: ExecutionManager.getTenantId() },
     });
@@ -1678,6 +1707,17 @@ export class ChatService {
     summaryFeedbackDto: SummaryFeedbackDto,
   ): Promise<SummaryFeedbackResponse> {
     return this.dataSource.transaction(async (entityManager) => {
+      const chat = await this.getChatById(chatId);
+      if (!chat) {
+        throw new NotFoundException(`Chat with ID ${chatId} not found`);
+      }
+      if (
+        ExecutionManager.getRole() == UserRole.COUNSELOR &&
+        chat.counselorId != ExecutionManager.getUserId()
+      ) {
+        throw new ForbiddenException('You are not authorized to add feedback');
+      }
+
       const callDetailsRepo =
         entityManager.getRepository(CallDetails) || this.callDetailsRepository;
       const summaryFeedbackRepo = this.summaryFeedbackRepository;
