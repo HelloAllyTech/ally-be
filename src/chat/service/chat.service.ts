@@ -1012,7 +1012,7 @@ export class ChatService {
   ): Promise<FlattenedSummaryNotePayloadCamelCase | undefined> {
     const chat = await this.chatRepository.findOne({ where: { id: chatId } });
     if (!chat) {
-      throw new NotFoundException('Chat not found');
+      throw new NotFoundException(`Chat with ID ${chatId} not found`);
     }
     if (chat.counselorId !== ExecutionManager.getUserId()) {
       throw new ForbiddenException('You are not allowed to access this chat');
@@ -1711,10 +1711,7 @@ export class ChatService {
       if (!chat) {
         throw new NotFoundException(`Chat with ID ${chatId} not found`);
       }
-      if (
-        ExecutionManager.getRole() == UserRole.COUNSELOR &&
-        chat.counselorId != ExecutionManager.getUserId()
-      ) {
+      if (chat.counselorId != ExecutionManager.getUserId()) {
         throw new ForbiddenException('You are not authorized to add feedback');
       }
 
