@@ -32,6 +32,8 @@ import { ChatStatus } from '../../common/entities/chat.entity';
 import { JwtService } from '@nestjs/jwt';
 import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
+import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
+import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -46,6 +48,8 @@ export class MicrophoneChatGateway
   );
 
   private sessions: { [key: string]: UserChatSessionData } = {};
+
+  private readonly auditLogger = AuditLoggerService.getInstance();
 
   constructor(
     private chatService: ChatService,
@@ -92,12 +96,34 @@ export class MicrophoneChatGateway
       session.chatId !== null &&
       session.chatId !== PLACEHOLDER_CHAT_ID
     ) {
+      const { tenantId, userId, chatId, provider } = session;
       try {
         await this.chatService.endChat(session.chatId);
+        this.auditLogger.log({
+          eventType: AUDIT_EVENTS.CALL_ENDED,
+          tenantId,
+          userId,
+          details: {
+            chatId,
+            provider,
+            reason: 'Client disconnected',
+          },
+        });
       } catch (error) {
         this.logger.error(
           `❌ Failed to end chat for client ${clientId} | session chatId: ${session.chatId} | error: ${error.message}`,
         );
+        this.auditLogger.log({
+          eventType: AUDIT_EVENTS.CALL_END_FAILED,
+          tenantId,
+          userId,
+          details: {
+            chatId,
+            reason: error.message,
+            clientId,
+            provider,
+          },
+        });
       }
     }
     this.broadcastMessageService.broadcastUserDisconnectedMessage(
@@ -207,6 +233,22 @@ export class MicrophoneChatGateway
     }
   }
 
+  private async logErrorAudioCallAuditEvent(
+    session: UserChatSessionData,
+    chatId: number | null,
+    error: string,
+  ) {
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.CALL_START_FAILED,
+      tenantId: session.tenantId,
+      userId: session.userId,
+      details: {
+        reason: error,
+        chatId: chatId?.toString(),
+      },
+    });
+  }
+
   @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async startAudioChat(
@@ -230,6 +272,7 @@ export class MicrophoneChatGateway
       this.logger.error(
         `Audio chat start event received but session not found for client ${client.id}`,
       );
+      this.logErrorAudioCallAuditEvent(session, null, 'Session not found');
       return;
     }
 
@@ -242,6 +285,11 @@ export class MicrophoneChatGateway
 
     if (activeChat) {
       this.logger.error(`❌ User ${session.userId} already has an active chat`);
+      this.logErrorAudioCallAuditEvent(
+        session,
+        activeChat.id,
+        'User already has active chat',
+      );
       client.disconnect();
       return;
     }
@@ -266,6 +314,17 @@ export class MicrophoneChatGateway
           this.logger.info(
             `Chat created for user ${session.userId} with chatId ${chatId}`,
           );
+
+          this.auditLogger.log({
+            eventType: AUDIT_EVENTS.CALL_STARTED,
+            tenantId: session.tenantId,
+            userId: session.userId,
+            details: {
+              chatId,
+              platform,
+              provider: AudioChatProvider.MICROPHONE,
+            },
+          });
         },
       );
     } catch (error) {
@@ -274,6 +333,8 @@ export class MicrophoneChatGateway
         error,
       );
       client.disconnect();
+
+      this.logErrorAudioCallAuditEvent(session, session.chatId, error.message);
       return;
     }
   }
@@ -288,12 +349,31 @@ export class MicrophoneChatGateway
       this.logger.error(
         `Audio message event received but session not found for client ${client.id} | chatId: ${chatId}`,
       );
+
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_PROCESSING_FAILED,
+        details: {
+          chatId: chatId?.toString(),
+          reason: 'Session not found',
+          clientId: client.id,
+        },
+      });
       return;
     }
     if (!chatId) {
       this.logger.error(
         `Audio message event received but chatId is not provided for client ${client.id}`,
       );
+
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_PROCESSING_FAILED,
+        tenantId: this.sessions[client.id]?.tenantId,
+        userId: this.sessions[client.id]?.userId,
+        details: {
+          reason: 'ChatId not provided',
+          clientId: client.id,
+        },
+      });
       return;
     }
     const chat = await this.chatService.getChatById(chatId);
@@ -301,6 +381,17 @@ export class MicrophoneChatGateway
       this.logger.error(
         `Audio message event received but chat not found for client ${client.id} | chatId: ${chatId}`,
       );
+
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_PROCESSING_FAILED,
+        tenantId: this.sessions[client.id]?.tenantId,
+        userId: this.sessions[client.id]?.userId,
+        details: {
+          chatId: chatId.toString(),
+          reason: 'Chat not found',
+          clientId: client.id,
+        },
+      });
       return;
     }
     this.sessions[client.id] = {
@@ -313,6 +404,17 @@ export class MicrophoneChatGateway
       this.logger.error(
         `Audio message event received but chat is ended for client ${client.id} | chatId: ${chatId}`,
       );
+
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_PROCESSING_FAILED,
+        tenantId: session.tenantId,
+        userId: session.userId,
+        details: {
+          chatId: chatId.toString(),
+          reason: 'Chat already ended',
+          clientId: client.id,
+        },
+      });
       return;
     }
     this.streamFileProcessorService.saveAudio(session, {

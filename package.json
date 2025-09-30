@@ -26,6 +26,7 @@
     "migration:show": "npm run typeorm -- migration:show -d src/database/data-source.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-cloudwatch-logs": "^3.879.0",
     "@aws-sdk/client-s3": "^3.839.0",
     "@aws-sdk/client-ses": "^3.823.0",
     "@aws-sdk/client-sqs": "^3.859.0",
@@ -53,6 +54,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "csv-parse": "^5.6.0",
+    "fast-geoip": "^1.1.88",
     "dayjs": "^1.11.18",
     "fetch-blob": "^4.0.0",
     "helmet": "^8.1.0",
@@ -71,7 +73,8 @@
     "socket.io": "^4.7.0",
     "typeorm": "^0.3.0",
     "uuid": "^11.1.0",
-    "winston": "^3.17.0"
+    "winston": "^3.17.0",
+    "winston-cloudwatch": "^6.3.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",

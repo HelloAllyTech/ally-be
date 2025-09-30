@@ -58,7 +58,7 @@ export class S3Service {
     bucket: string;
     key: string;
     operation: 'get' | 'put';
-    expiresIn?: number; // seconds, default 3600 (1 hour)
+    expiresIn?: number; // seconds, default 600 (10 minutes)
     contentType?: string;
     metadata?: Record<string, string>;
   }): Promise<string> {
@@ -66,7 +66,7 @@ export class S3Service {
       bucket,
       key,
       operation,
-      expiresIn = 3600,
+      expiresIn = 600,
       contentType,
       metadata,
     } = params;

@@ -7,9 +7,13 @@ import { Chat, ChatStatus } from '../common/entities/chat.entity';
 import { UserRole, UserStatus } from '../common/constants/user.constants';
 import { RedisService } from '../redis/service/redis.service';
 import { ExecutionManager } from '../common/execution/execution-manager';
+import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
+import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 
 @Injectable()
 export class UserService {
+  private readonly auditLogger = AuditLoggerService.getInstance();
+
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
@@ -20,6 +24,9 @@ export class UserService {
   async get(id: number): Promise<User | null> {
     const user = await this.userRepository.findOne({
       where: { id, tenantId: ExecutionManager.getTenantId() },
+    });
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.USER_PROFILE_ACCESS,
     });
     return user || null;
   }

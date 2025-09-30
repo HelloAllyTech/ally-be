@@ -7,6 +7,6 @@ export class ExecutionContextMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction) {
     ExecutionManager.runWithContext(() => {
       next();
-    }, req.path);
+    }, req);
   }
 }

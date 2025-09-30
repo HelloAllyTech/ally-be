@@ -1,9 +1,10 @@
-import fs from 'fs';
 import { AudioChatProvider } from '../../common/constants/chat.constants';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { ChatEvents } from '../constants/chat.constants';
+import { CipherGCM } from 'crypto';
+import { WriteStream } from 'fs';
 import { ChatStatus, ChatSummaryStatus } from 'src/common/entities/chat.entity';
 
 export type UserChatSessionData = {
@@ -101,10 +102,15 @@ export type ActiveCallStream = {
   partNumber: number;
   currentFileIndex: number;
   files: {
-    fileWriteStream: fs.WriteStream;
+    cipher: CipherGCM;
+    writeStream: WriteStream;
+    encryptionKey: Buffer;
+    iv: Buffer;
     tempFilePath: string;
     bufferSize: number;
   }[];
+  callId: string;
+  chatId: number;
 };
 
 export interface UpdateChatInput {

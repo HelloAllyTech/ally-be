@@ -26,7 +26,7 @@ export function WithExecutionContext(
         case ExecutionContextPropagation.REQUIRES_NEW:
           return ExecutionManager.runWithContext(
             () => originalMethod.apply(this, args),
-            `${target.constructor.name}.${String(propertyKey)}`,
+            { path: `${target.constructor.name}.${String(propertyKey)}` },
           );
 
         case ExecutionContextPropagation.SUPPORTS:
@@ -35,7 +35,7 @@ export function WithExecutionContext(
           }
           return ExecutionManager.runWithContext(
             () => originalMethod.apply(this, args),
-            `${target.constructor.name}.${String(propertyKey)}`,
+            { path: `${target.constructor.name}.${String(propertyKey)}` },
           );
 
         case ExecutionContextPropagation.NOT_SUPPORTED:
