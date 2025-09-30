@@ -10,6 +10,9 @@ import {
   ActiveCallStream,
   UserChatSessionData,
 } from '../../chat/type/chat.type';
+import { BroadcastMessageService } from './broadcast-message.service';
+import { AppConfigService } from '../../config/config.service';
+import { generateAudioStorageKey } from '../../common/util/audio.util';
 import {
   AudioChatPlatform,
   AudioChatProvider,
@@ -18,9 +21,8 @@ import { PLACEHOLDER_CHAT_ID } from '../../common/constants/user.constants';
 import { ChatAudioUploadStatus } from '../../common/entities/chat-audio-uploads.entity';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
-import { AppConfigService } from '../../config/config.service';
+import { Chat } from 'src/common/entities/chat.entity';
 import { LoggerService } from '../../logger/logger.service';
-import { BroadcastMessageService } from './broadcast-message.service';
 import { ChatAudioUploadsService } from './chat-audio-uploads.service';
 
 @Injectable()
@@ -84,15 +86,6 @@ export class StreamFileProcessorService {
     }
   }
 
-  private generateStorageKey(chatId: number) {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const timestamp = now.getTime();
-    return `${year}/${month}/${day}/chat-${chatId}-${timestamp}.raw`;
-  }
-
   async startCallStream(
     session: UserChatSessionData,
     chatData: {
@@ -105,7 +98,7 @@ export class StreamFileProcessorService {
   ) {
     const callId = session.id;
     let chatId: number | undefined;
-    let chat: any = null;
+    let chat: Chat | null = null;
     let s3UploadId: string | null = null;
     let tempFiles: string[] = [];
     let s3key: string = '';
@@ -113,18 +106,20 @@ export class StreamFileProcessorService {
     try {
       await this.dataSource.transaction(async (entityManager) => {
         // Create chat using entityManager
-        chat = await this.chatService.createChatForAnonymousClient({
-          counselorId: chatData.counselorId,
-          provider: chatData.provider,
-          platform: chatData.platform,
+        chat = await this.chatService.createChatForAnonymousClient(
+          {
+            counselorId: chatData.counselorId,
+            provider: chatData.provider,
+            platform: chatData.platform,
+          },
           entityManager,
-        });
+        );
 
         if (!chat) {
           throw new Error('Failed to create chat');
         }
 
-        chatId = chat.chatId;
+        chatId = chat.id;
 
         // Setup call stream using entityManager
         const { uploadId, files, key } = await this.setupCallStream({
@@ -171,7 +166,11 @@ export class StreamFileProcessorService {
     sampleRate: number;
   }): Promise<{ uploadId: string; files: string[]; key: string }> {
     const callId = session.id;
-    const key = this.generateStorageKey(chatId);
+    const key = generateAudioStorageKey({
+      chatId,
+      extension: 'raw',
+      prefix: 'microphone-chat',
+    });
     const tempFiles: string[] = [];
 
     try {

@@ -1,5 +1,11 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
-import { UserRole } from '../../common/constants/user.constants';
+
+enum UserRole {
+  CLIENT = 'CLIENT',
+  COUNSELOR = 'COUNSELOR',
+  SUPER_ADMIN = 'SUPER_ADMIN',
+  ADMIN = 'ADMIN',
+}
 
 export class AddInitialGroupData1745473668809 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {

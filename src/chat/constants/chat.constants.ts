@@ -89,3 +89,11 @@ export const DEMOGRAPHIC_FIELDS = [
   'languages',
   'codeOfConcern',
 ];
+
+export const UPLOADED_AUDIO_FILE_SIZE_LIMIT = 200 * 1024 * 1024; // 200 MB
+
+export const SUPPORTED_AUDIO_FILE_TYPES = [
+  'audio/mpeg',
+  'audio/wav',
+  'audio/mp4',
+];

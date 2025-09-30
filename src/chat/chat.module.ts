@@ -5,8 +5,10 @@ import { ChatRoom } from '../common/entities/chat-room.entity';
 import { Message } from '../common/entities/message.entity';
 import { ChatService } from './service/chat.service';
 import { ChatSummaryService } from './service/chat-summary.service';
+import { AudioUploadService } from './service/audio-upload.service';
 import { QueueModule } from '../queue/queue.module';
 import { ChatController } from './controller/chat.controller';
+import { AudioUploadController } from './controller/audio-upload.controller';
 import { ChatGateway } from './gateway/chat.gateway';
 import { UserModule } from '../user/user.module';
 import { Feedback } from '../common/entities/feedback.entity';
@@ -25,6 +27,10 @@ import { AwsModule } from 'src/aws/aws.module';
 import { ChatRepository } from './repository/chat.repository';
 import { SummaryFeedback } from './entity/summary-feedback.entity';
 import { SummaryFeedbackRepository } from './repository/summary-feedback.repository';
+import { MessageRepository } from './repository/message.repository';
+import { CallDetailsRepository } from './repository/call-details.repository';
+import { AudioUploadConsumer } from './consumer/audio-upload.consumer';
+import { AudioUploadDlqConsumer } from './consumer/audio-upload-dlq.consumer';
 
 @Module({
   imports: [
@@ -44,10 +50,11 @@ import { SummaryFeedbackRepository } from './repository/summary-feedback.reposit
     forwardRef(() => AudioModule),
     AwsModule,
   ],
-  controllers: [ChatController],
+  controllers: [ChatController, AudioUploadController],
   providers: [
     ChatService,
     ChatSummaryService,
+    AudioUploadService,
     ChatGateway,
     MicrophoneChatGateway,
     FeedbackService,
@@ -56,8 +63,18 @@ import { SummaryFeedbackRepository } from './repository/summary-feedback.reposit
     JwtService,
     ChatRepository,
     SummaryFeedbackRepository,
+    MessageRepository,
+    CallDetailsRepository,
+    AudioUploadConsumer,
+    AudioUploadDlqConsumer,
   ],
-  exports: [ChatService, FeedbackService, ChatGateway, ChatAiService],
+  exports: [
+    ChatService,
+    FeedbackService,
+    ChatGateway,
+    ChatAiService,
+    AudioUploadService,
+  ],
 })
 export class ChatModule implements OnModuleInit {
   constructor(

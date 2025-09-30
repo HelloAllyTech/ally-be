@@ -149,6 +149,7 @@ SMTP_SECRET_ACCESS_KEY=smtp-secret-access-key
 AWS_REGION=aws-region
 AWS_ACCESS_KEY_ID=aws-access-key-id
 AWS_SECRET_ACCESS_KEY=aws-secret-access-key
+AWS_SESSION_TOKEN=aws-session-token
 
 # EMAIL
 EMAIL_INTEGRATION=aws-ses
@@ -180,6 +181,8 @@ SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL=sqs-ai-transcription-response-queue
 SQS_TRANSCRIPTION_RESPONSE_DLQ_URL=sqs-ai-transcription-response-dlq
 SQS_AUDIO_FILE_RETRY_QUEUE_URL=sqs-audio-file-retry-queue
 SQS_AUDIO_FILE_RETRY_DLQ_URL=sqs-audio-file-retry-dlq
+SQS_AUDIO_UPLOAD_QUEUE_URL=sqs-audio-upload-queue-url
+SQS_AUDIO_UPLOAD_DLQ_URL=sqs-audio-upload-dlq-url
 
 # TEST ACCOUNTS
 TEST_ACCOUNTS=test-accounts

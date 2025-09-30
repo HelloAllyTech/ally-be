@@ -1,8 +1,21 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 import { Group } from '../../common/entities/group.entity';
-import { PERMISSIONS } from '../../auth/constants/auth.constants';
 import { Permission } from '../../common/entities/permission.entity';
 import { UserRole } from '../../common/constants/user.constants';
+
+const PERMISSIONS = {
+  ViewNavBarCalls: 'view:navbar:calls',
+  ViewNavBarCalendar: 'view:navbar:calendar',
+  ViewNavBarAnalytics: 'view:navbar:analytics',
+  ViewNavBarStressBuster: 'view:navbar:stress-buster',
+  ViewNavBarSettings: 'view:navbar:settings',
+  ViewNavBarSearch: 'view:navbar:search',
+  ViewNavBarCommunity: 'view:navbar:community',
+
+  EditSummary: 'edit:summary',
+
+  ButtonStartCall: 'view:button:start-call',
+};
 
 export class AddInitialGroupPermissionData1745474081224
   implements MigrationInterface

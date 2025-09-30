@@ -1,4 +1,11 @@
-import { forwardRef, HttpException, Inject, Injectable } from '@nestjs/common';
+import {
+  forwardRef,
+  HttpException,
+  Injectable,
+  Inject,
+  HttpStatus,
+  BadRequestException,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -65,25 +72,26 @@ import {
   CallInfo,
   SummaryFeedbackResponse,
 } from '../dto/call-log.response.dto';
-import { CallInfoDto } from '../dto/chat.response.dto';
+import { CallInfoDto, DeleteChatResponseDto } from '../dto/chat.response.dto';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 import { ChatRepository } from '../repository/chat.repository';
 import { SummaryFeedbackRepository } from '../repository/summary-feedback.repository';
+import { CallDetailsRepository } from '../repository/call-details.repository';
+import { MessageRepository } from '../repository/message.repository';
 import { ChatUtil } from '../util/chat.util';
+import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
 
 @Injectable()
 export class ChatService {
   logger = LoggerService.getInstance(ChatService.name);
   constructor(
-    @InjectRepository(Message)
-    private messageRepository: Repository<Message>,
+    private messageRepository: MessageRepository,
     private chatRepository: ChatRepository,
 
     @InjectRepository(ChatRoom)
     private chatRoomRepository: Repository<ChatRoom>,
-    @InjectRepository(CallDetails)
-    private callDetailsRepository: Repository<CallDetails>,
+    private callDetailsRepository: CallDetailsRepository,
     private summaryFeedbackRepository: SummaryFeedbackRepository,
     @Inject(forwardRef(() => QueueService))
     private queueService: QueueService,
@@ -97,6 +105,7 @@ export class ChatService {
     private settingsService: SettingsService,
     private broadcastMessageService: BroadcastMessageService,
     private streamFileProcessorService: StreamFileProcessorService,
+    private chatAudioUploadsService: ChatAudioUploadsService,
   ) {}
 
   async getChat(id: number) {
@@ -220,27 +229,33 @@ export class ChatService {
     return chat;
   }
 
-  async createChatWithClientAndCounselor({
-    clientId,
-    counselorId,
-    tenantId,
-    provider,
-    platform,
-    externalId,
-    status,
-    startedAt,
-    entityManager,
-  }: {
-    clientId: number;
-    counselorId?: number;
-    tenantId?: string;
-    provider?: AudioChatProvider;
-    platform?: AudioChatPlatform;
-    externalId?: string;
-    status?: ChatStatus;
-    startedAt?: Date;
-    entityManager?: EntityManager;
-  }) {
+  async createChatWithClientAndCounselor(
+    params: {
+      clientId: number;
+      counselorId?: number;
+      tenantId?: string;
+      provider?: AudioChatProvider;
+      platform?: AudioChatPlatform;
+      externalId?: string;
+      status?: ChatStatus;
+      startedAt?: Date;
+      endedAt?: Date;
+      duration?: number;
+    },
+    entityManager?: EntityManager,
+  ) {
+    const {
+      clientId,
+      counselorId,
+      tenantId,
+      provider,
+      platform,
+      externalId,
+      status,
+      startedAt,
+      endedAt,
+      duration,
+    } = params;
     const chatRepo = entityManager?.getRepository(Chat) || this.chatRepository;
     const chatRoomRepo =
       entityManager?.getRepository(ChatRoom) || this.chatRoomRepository;
@@ -255,72 +270,63 @@ export class ChatService {
 
     await chatRoomRepo.save(newChatRoom);
 
+    const createdBy = ExecutionManager.getUserId();
+
     const chat = chatRepo.create({
       clientId,
       counselorId,
       roomId: newChatRoom.id,
       status: status || ChatStatus.ACTIVE,
       startedAt: startedAt || new Date(),
+      ...(endedAt ? { endedAt } : {}),
       externalId,
       tenantId: tenantId || ExecutionManager.getTenantId(),
+      ...(createdBy ? { createdBy: +createdBy } : {}),
     });
 
     await chatRepo.save(chat);
 
-    await callDetailsRepo.save({
+    const callDetails = callDetailsRepo.create({
       chatId: chat.id,
       tenantId: tenantId || ExecutionManager.getTenantId(),
       startTime: new Date(),
+      callDuration: duration,
       callInfo: {
         provider,
         platform,
+        summaryName: ChatUtil.getSummaryName(chat),
       },
     });
+
+    await callDetailsRepo.save(callDetails);
 
     return chat;
   }
 
-  async createChatForAnonymousClient({
-    counselorId,
-    provider,
-    platform,
-    externalId,
-    status,
-    startedAt,
-    entityManager,
-  }: {
-    counselorId: number;
-    provider?: AudioChatProvider;
-    platform?: AudioChatPlatform;
-    externalId?: string;
-    status?: ChatStatus;
-    startedAt?: Date;
-    entityManager?: EntityManager;
-  }): Promise<{
-    chatId: number;
-    clientId: number;
-    counselorId: number;
-    chat: Chat;
-  } | null> {
+  async createChatForAnonymousClient(
+    params: {
+      counselorId: number;
+      provider?: AudioChatProvider;
+      platform?: AudioChatPlatform;
+      externalId?: string;
+      status?: ChatStatus;
+      startedAt?: Date;
+      endedAt?: Date;
+      duration?: number;
+    },
+    entityManager?: EntityManager,
+  ): Promise<Chat | null> {
     const clientId = ANONYMOUS_CLIENT_ID;
 
-    const chat = await this.createChatWithClientAndCounselor({
-      clientId,
-      counselorId,
-      provider,
-      platform,
+    const chat = await this.createChatWithClientAndCounselor(
+      {
+        clientId,
+        ...params,
+      },
       entityManager,
-      status,
-      externalId,
-      startedAt,
-    });
+    );
 
-    return {
-      chatId: chat.id,
-      clientId: clientId,
-      counselorId,
-      chat,
-    };
+    return chat;
   }
 
   async getOrCreateChatRoom(userId: number, entityManager?: EntityManager) {
@@ -876,12 +882,7 @@ export class ChatService {
       }
 
       if (callDetails) {
-        const existingCallInfo = callDetails.callInfo || {};
         const updates = {
-          callInfo: {
-            ...existingCallInfo,
-            summaryName: ChatUtil.getSummaryName(chat),
-          },
           endTime: endDate,
           callDuration: callDurationInSeconds,
         };
@@ -981,7 +982,9 @@ export class ChatService {
           clientTalkingTime: clientTalkingPercentage * callDurationInSeconds,
           counselorTalkingTime:
             counselorTalkingPercentage * callDurationInSeconds,
-          summaryName: ChatUtil.getSummaryName(chat),
+          ...(!existingCallInfo.summaryName
+            ? { summaryName: ChatUtil.getSummaryName(chat) }
+            : {}),
           wordCountByLanguage,
           clientWordCount,
           counselorWordCount,
@@ -1720,5 +1723,48 @@ export class ChatService {
 
   async updateChat(chatId: number, input: UpdateChatInput) {
     await this.chatRepository.updateChat(chatId, input);
+  }
+
+  async deleteChat(chatId: number): Promise<DeleteChatResponseDto> {
+    const { chat, callDetails } = await this.getChatWithCallDetails(chatId);
+    if (!chat) {
+      throw new NotFoundException('Chat not found');
+    }
+    if (callDetails?.callInfo?.provider !== AudioChatProvider.AUDIO_UPLOAD) {
+      throw new BadRequestException('Deletion is nor supported for this chat');
+    }
+    const tenantId = ExecutionManager.getTenantId()!;
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        await this.messageRepository.deleteMessageByChatId(
+          chatId,
+          tenantId,
+          manager,
+        );
+        await this.callDetailsRepository.deleteCallDetailsByChatId(
+          chatId,
+          tenantId,
+          manager,
+        );
+        await this.summaryFeedbackRepository.deleteSummaryFeedbackByChatId(
+          chatId,
+          manager,
+        );
+        await this.chatAudioUploadsService.deleteChatAudioUploadsByChatId(
+          chatId,
+          tenantId,
+          manager,
+        );
+        await this.chatRepository.deleteChat(chatId, tenantId, manager);
+      });
+      await this.cache.del(`chat:${chatId}`);
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Failed to delete chat ${chatId}: ${error}`);
+      throw new HttpException(
+        `Failed to delete chat ${chatId}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }
