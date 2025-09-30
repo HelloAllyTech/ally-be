@@ -1460,8 +1460,7 @@ export class ChatService {
           decryptedCallDetails.summary.sessionSummary,
           this.config.phiData?.phiDataEncryptionKey,
         );
-        decryptedCallDetails.summary.sessionSummary =
-          JSON.parse(decryptedSummary);
+        decryptedCallDetails.summary.sessionSummary = decryptedSummary;
       }
 
       return decryptedCallDetails;
