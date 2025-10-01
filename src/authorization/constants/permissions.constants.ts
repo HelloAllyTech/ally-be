@@ -94,6 +94,8 @@ const PERMISSIONS: Record<string, string> = {
   // AUDIO UPLOAD
   VIEW_AUDIO_UPLOAD: 'view:audio-upload-url',
   CANCEL_AUDIO_UPLOAD: 'cancel:audio-upload',
+  // === CONTEXT MANAGEMENT ===
+  EDIT_CLOUD_TELEPHONY_JOIN_ROOM: 'edit:cloud-telephony:join-room',
 };
 
 const SUPER_ADMIN_PERMISSIONS = [
@@ -152,6 +154,8 @@ const COUNSELOR_PERMISSIONS = [
 
   PERMISSIONS.VIEW_ANALYTICS,
   PERMISSIONS.VIEW_COMMUNITY,
+
+  PERMISSIONS.EDIT_CLOUD_TELEPHONY_JOIN_ROOM,
 ];
 
 const ADMIN_PERMISSIONS = [

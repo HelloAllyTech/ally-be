@@ -122,7 +122,7 @@ export class OzonetelService {
 
       ExecutionManager.setAuthContext(
         '',
-        UserRole.COUNSELOR,
+        // UserRole.COUNSELOR,
         cloudTelephonyIntegration.tenantId,
       );
 
@@ -136,7 +136,7 @@ export class OzonetelService {
 
       ExecutionManager.setAuthContext(
         counselor.id.toString(),
-        counselor.role,
+        // counselor.role,
         counselor.tenantId,
       );
 
@@ -283,7 +283,7 @@ export class OzonetelService {
 
       ExecutionManager.setAuthContext(
         '',
-        UserRole.COUNSELOR,
+        // UserRole.COUNSELOR,
         cloudTelephonyIntegration.tenantId,
       );
 
@@ -322,7 +322,7 @@ export class OzonetelService {
 
       ExecutionManager.setAuthContext(
         counselor.id.toString(),
-        counselor.role,
+        // counselor.role,
         cloudTelephonyIntegration.tenantId,
       );
       const chat = await this.chatService.createChatForAnonymousClient({

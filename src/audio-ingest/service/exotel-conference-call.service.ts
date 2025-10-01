@@ -74,7 +74,7 @@ export class ExotelConferenceCallService implements AudioIngestInterface {
       type: 'user',
       userId: -1,
       user: null,
-      role: UserRole.COUNSELOR,
+      // role: UserRole.COUNSELOR,
       room: 'placeholder-room',
       tenantId: 'default',
       provider: AudioChatProvider.EXOTEL_CONFERENCE_CALL,
@@ -308,7 +308,7 @@ export class ExotelConferenceCallService implements AudioIngestInterface {
   setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
-      session.role,
+      // session.role,
       session.tenantId,
     );
   }

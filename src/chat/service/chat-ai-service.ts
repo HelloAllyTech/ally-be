@@ -170,7 +170,7 @@ export class ChatAiService {
   }) {
     ExecutionManager.setAuthContext(
       context.userId.toString(),
-      context.role,
+      // context.role,
       context.tenantId,
     );
   }

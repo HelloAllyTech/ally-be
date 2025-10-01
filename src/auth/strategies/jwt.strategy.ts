@@ -31,7 +31,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // Set the execution context with user information
     ExecutionManager.setAuthContext(
       user.id.toString(),
-      user.role,
+      // user.role,
       user.tenantId,
     );
 

@@ -26,6 +26,8 @@ import { Message } from '../../common/entities/message.entity';
 import { JwtService } from '@nestjs/jwt';
 import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/auth/service/permission-validator.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -47,6 +49,7 @@ export class CloudTelephonyGateway
     private jwtService: JwtService,
     private configService: AppConfigService,
     private broadcastMessageService: BroadcastMessageService,
+    private permissionValidator: PermissionValidator,
   ) {}
 
   @WebSocketServer() server!: Server;
@@ -131,9 +134,14 @@ export class CloudTelephonyGateway
         secret: this.configService.jwt.accessToken.secret,
       });
 
-      if (payload.role !== UserRole.COUNSELOR) {
+      const hasAccess = await this.permissionValidator.validatePermissions(
+        payload.sub,
+        [PERMISSIONS.EDIT_CLOUD_TELEPHONY_JOIN_ROOM],
+      );
+
+      if (hasAccess) {
         throw new UnauthorizedException(
-          `User ${payload.sub} is not a counselor`,
+          `User ${payload.sub} does not have access to cloud telephony`,
         );
       }
       const userId = parseInt(payload.sub);
@@ -153,7 +161,7 @@ export class CloudTelephonyGateway
         userId: +userId,
         user: null,
         type: 'user',
-        role: UserRole.COUNSELOR,
+        // role: UserRole.COUNSELOR,
         room,
         chatId: PLACEHOLDER_CHAT_ID,
         tenantId: user.tenantId,
@@ -217,7 +225,7 @@ export class CloudTelephonyGateway
   setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
-      session.role,
+      // session.role,
       session.tenantId,
     );
   }

@@ -12,7 +12,7 @@ export type UserChatSessionData = {
   type: 'user';
   userId: number;
   user: any;
-  role: string;
+  // role: string;
   room: string;
   chatId: number;
   tenantId: string;

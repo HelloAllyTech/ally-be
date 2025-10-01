@@ -440,7 +440,7 @@ export class MicrophoneChatGateway
   setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
-      session.role,
+      // session.role,
       session.tenantId,
     );
   }
