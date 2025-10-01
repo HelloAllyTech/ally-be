@@ -874,7 +874,7 @@ export class ChatService {
 
     if (summary && summary.sessionSummary) {
       summary.sessionSummary = await this.cryptoService.encrypt(
-        JSON.stringify(summary.sessionSummary),
+        summary.sessionSummary,
         this.config.phiData?.phiDataEncryptionKey,
       );
     }
@@ -1078,7 +1078,6 @@ export class ChatService {
   async generateSummaryForMessage(
     messageRequests: MessageRequest[],
   ): Promise<GenerateSummaryResponse | undefined> {
-
     const aiResponse =
       await this.aiService.generateSummaryAndTags(messageRequests);
     if (aiResponse) {
@@ -1392,7 +1391,7 @@ export class ChatService {
   ) {
     if (summary.sessionSummary) {
       summary.sessionSummary = await this.cryptoService.encrypt(
-        JSON.stringify(summary.sessionSummary),
+        summary.sessionSummary,
         this.config.phiData?.phiDataEncryptionKey,
       );
     }
@@ -1465,7 +1464,9 @@ export class ChatService {
 
       return decryptedCallDetails;
     } catch (error) {
-      this.logger.error('Failed to decrypt call details', error);
+      this.logger.error(
+        `Failed to decrypt call details: ${JSON.stringify(error)}`,
+      );
       decryptedCallDetails.transcript = '';
       if (decryptedCallDetails.summary?.sessionSummary) {
         decryptedCallDetails.summary.sessionSummary = '';
