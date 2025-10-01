@@ -59,7 +59,7 @@ export class ChatAiService {
       ) as FlattenedSummaryNotePayloadCamelCase;
       if (convertedResponse.sessionSummary) {
         convertedResponse.sessionSummary = await this.cryptoService.encrypt(
-          JSON.stringify(convertedResponse.sessionSummary),
+          convertedResponse.sessionSummary,
           this.config.phiData?.phiDataEncryptionKey,
         );
       }
