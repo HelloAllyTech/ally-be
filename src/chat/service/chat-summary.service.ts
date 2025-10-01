@@ -17,10 +17,13 @@ import {
 import { ChatService } from './chat.service';
 import { SettingsService } from '../../settings/service/settings.service';
 import { UserService } from '../../user/user.service';
+import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
+import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 
 @Injectable()
 export class ChatSummaryService {
   private readonly logger = LoggerService.getInstance(ChatSummaryService.name);
+  private readonly auditLogger = AuditLoggerService.getInstance();
 
   constructor(
     private readonly chatService: ChatService,
@@ -91,6 +94,13 @@ export class ChatSummaryService {
       displayNameMap,
       valueMap,
     );
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.EXPORT_SUMMARY,
+      details: {
+        chatId: chatId.toString(),
+      },
+    });
 
     return { summary, fileName: summaryName };
   }

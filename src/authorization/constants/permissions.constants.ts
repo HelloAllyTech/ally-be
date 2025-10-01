@@ -9,6 +9,7 @@ const PERMISSIONS: Record<string, string> = {
   VIEW_CHAT_COUNSELOR: 'view:chat:counselor',
   VIEW_CHAT_DETAILS: 'view:chat:details',
   EDIT_CHAT_NOTE: 'edit:chat:note',
+  DELETE_CHAT: 'delete:chat',
 
   // === CALL MANAGEMENT ===
   VIEW_CALL_LOGS: 'view:call:logs',
@@ -89,6 +90,10 @@ const PERMISSIONS: Record<string, string> = {
   // === OZONETEL ===
   SUBSCRIBE_OZONETEL_EVENTS: 'subscribe:ozonetel:events',
   UNSUBSCRIBE_OZONETEL_EVENTS: 'unsubscribe:ozonetel:events',
+
+  // AUDIO UPLOAD
+  VIEW_AUDIO_UPLOAD: 'view:audio-upload-url',
+  CANCEL_AUDIO_UPLOAD: 'cancel:audio-upload',
 };
 
 const SUPER_ADMIN_PERMISSIONS = [
@@ -174,6 +179,9 @@ const ADMIN_PERMISSIONS = [
 
   PERMISSIONS.VIEW_ANALYTICS,
   PERMISSIONS.VIEW_COMMUNITY,
+  PERMISSIONS.VIEW_AUDIO_UPLOAD,
+  PERMISSIONS.CANCEL_AUDIO_UPLOAD,
+  PERMISSIONS.DELETE_CHAT,
 ];
 
 const LEARNER_PERMISSIONS = [

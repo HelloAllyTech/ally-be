@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, EntityManager } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import {
   ChatAudioUploads,
   ChatAudioUploadStatus,
 } from '../../common/entities/chat-audio-uploads.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
+import { ChatAudioUploadRepository } from '../repository/chat-audio-upload.repository';
 
 @Injectable()
 export class ChatAudioUploadsService {
@@ -14,10 +14,7 @@ export class ChatAudioUploadsService {
     ChatAudioUploadsService.name,
   );
 
-  constructor(
-    @InjectRepository(ChatAudioUploads)
-    private chatAudioUploadRepository: Repository<ChatAudioUploads>,
-  ) {}
+  constructor(private chatAudioUploadRepository: ChatAudioUploadRepository) {}
 
   async createAudioUpload(
     data: {
@@ -101,5 +98,19 @@ export class ChatAudioUploadsService {
     });
 
     return audioUpload;
+  }
+
+  async deleteChatAudioUploadsByChatId(
+    chatId: number,
+    tenantId: string,
+    entityManager?: EntityManager,
+  ): Promise<boolean> {
+    const result =
+      await this.chatAudioUploadRepository.deleteChatAudioUploadsByChatId(
+        chatId,
+        tenantId || ExecutionManager.getTenantId()!,
+        entityManager,
+      );
+    return result;
   }
 }

@@ -12,6 +12,7 @@ export enum AudioChatProvider {
   EXOTEL_CONFERENCE_CALL = 'EXOTEL_CONFERENCE_CALL',
   MICROPHONE = 'MICROPHONE',
   OZONETEL = CloudTelephonyProvider.OZONETEL,
+  AUDIO_UPLOAD = 'AUDIO_UPLOAD',
 }
 
 export enum AudioChatPlatform {

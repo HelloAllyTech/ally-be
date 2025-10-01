@@ -1,3 +1,4 @@
+import { Request } from 'express';
 export type Pagination = {
   offset?: number;
   limit?: number;
@@ -24,3 +25,11 @@ export type PreferenceValue =
   | SummaryPreferenceValue
   | NudgePreferenceValue
   | HiddenChatTypesPreferenceValue;
+
+export type RequestWithUser = Request & {
+  user?: {
+    id: number;
+    role: string;
+    tenantId: string;
+  };
+};

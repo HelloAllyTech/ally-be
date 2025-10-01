@@ -12,12 +12,14 @@ import {
   CreateCloudTelephonyIntegrationDto,
 } from '../dto/cloud-telephony.dto';
 import { CloudTelephonyIntegration } from '../../common/entities/cloud-telephony-integration.entity';
+import { AppConfigService } from 'src/config/config.service';
 
 @Injectable()
 export class CloudTelephonyService {
   constructor(
     private readonly cloudTelephonyRepository: CloudTelephonyRepository,
     private readonly cryptoService: CryptoService,
+    private readonly configService: AppConfigService,
   ) {}
 
   private validateCredentials(
@@ -65,6 +67,7 @@ export class CloudTelephonyService {
     try {
       const encryptedCredentials = await this.cryptoService.encrypt(
         JSON.stringify(data.credentials),
+        this.configService.cloudTelephony?.credentialsEncryptionKey,
       );
 
       const response = await this.cloudTelephonyRepository.create({
@@ -97,7 +100,10 @@ export class CloudTelephonyService {
     if (!response) {
       return null;
     }
-    const credentials = await this.cryptoService.decrypt(response.credentials);
+    const credentials = await this.cryptoService.decrypt(
+      response.credentials,
+      this.configService.cloudTelephony?.credentialsEncryptionKey,
+    );
     return {
       ...response,
       credentials: JSON.parse(credentials),
@@ -117,7 +123,10 @@ export class CloudTelephonyService {
     if (!response) {
       return null;
     }
-    const credentials = await this.cryptoService.decrypt(response.credentials);
+    const credentials = await this.cryptoService.decrypt(
+      response.credentials,
+      this.configService.cloudTelephony?.credentialsEncryptionKey,
+    );
     return {
       ...response,
       credentials: JSON.parse(credentials),
