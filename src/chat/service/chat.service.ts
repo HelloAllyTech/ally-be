@@ -786,7 +786,6 @@ export class ChatService {
       sortOrder = 'DESC',
     } = options;
 
-
     const chat = await this.chatRepository.findOne({
       where: {
         id: chatId,

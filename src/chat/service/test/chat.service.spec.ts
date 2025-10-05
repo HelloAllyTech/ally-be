@@ -2958,7 +2958,25 @@ describe('ChatService', () => {
       };
 
       jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
-      jest.spyOn(service, 'getChat').mockResolvedValue(mockChat);
+      jest.spyOn(service, 'getChat').mockResolvedValue({
+        ...mockChat,
+        details: {
+          id: 1,
+          chatId: 1,
+          callDuration: 300,
+          startTime: new Date(),
+          endTime: new Date(),
+          noOfNudges: 0,
+          noOfStages: 1,
+          transcript: 'Test transcript',
+          summary: undefined,
+          callOutcome: 'Completed',
+          callInfo: undefined,
+          tenantId: 'test-tenant',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
 
       const result = await service.updateCallDetails(1, mockSummary);
 
@@ -2992,7 +3010,25 @@ describe('ChatService', () => {
         .spyOn(callDetailsRepository, 'findOne')
         .mockResolvedValue(mockCallDetails as any);
       jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
-      jest.spyOn(service, 'getChat').mockResolvedValue(mockChat);
+      jest.spyOn(service, 'getChat').mockResolvedValue({
+        ...mockChat,
+        details: {
+          id: 1,
+          chatId: 1,
+          callDuration: 300,
+          startTime: new Date(),
+          endTime: new Date(),
+          noOfNudges: 0,
+          noOfStages: 1,
+          transcript: 'Test transcript',
+          summary: undefined,
+          callOutcome: 'Completed',
+          callInfo: undefined,
+          tenantId: 'test-tenant',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
 
       const result = await service.updateCallInfo(1, mockCallInfo);
 

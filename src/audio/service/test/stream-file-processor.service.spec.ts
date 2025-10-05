@@ -804,10 +804,15 @@ describe('StreamFileProcessorService', () => {
       };
 
       const mockChat = {
-        chatId: 123,
+        id: 123,
         clientId: 456,
         counselorId: 789,
-        chat: {} as any,
+        roomId: 1,
+        status: 'ACTIVE' as any,
+        summaryStatus: 'PENDING' as any,
+        tenantId: 'test-tenant',
+        createdAt: new Date(),
+        updatedAt: new Date(),
       };
       const mockUploadId = 'upload-123';
 

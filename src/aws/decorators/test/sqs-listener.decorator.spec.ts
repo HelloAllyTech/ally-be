@@ -146,13 +146,13 @@ describe('SQS Listener Decorators', () => {
 
       class TestService {
         @SqsListener(queueUrl)
-        handleMessage(message: any) {
+        handleMessage() {
           return 'original method';
         }
       }
 
       const instance = new TestService();
-      expect(instance.handleMessage({})).toBe('original method');
+      expect(instance.handleMessage()).toBe('original method');
     });
 
     it('should work with async methods', () => {
@@ -273,13 +273,13 @@ describe('SQS Listener Decorators', () => {
 
       class TestService {
         @SqsDlqListener(dlqUrl)
-        handleDlqMessage(message: any) {
+        handleDlqMessage() {
           return 'original dlq method';
         }
       }
 
       const instance = new TestService();
-      expect(instance.handleDlqMessage({})).toBe('original dlq method');
+      expect(instance.handleDlqMessage()).toBe('original dlq method');
     });
   });
 

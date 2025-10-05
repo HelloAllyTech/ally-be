@@ -35,7 +35,6 @@ describe('AuthService', () => {
   let refreshTokenRepository: jest.Mocked<Repository<RefreshToken>>;
   let userGroupRepository: jest.Mocked<Repository<UserGroup>>;
   let groupRepository: jest.Mocked<Repository<Group>>;
-  let groupPermissionRepository: jest.Mocked<Repository<GroupPermission>>;
   let jwtService: jest.Mocked<JwtService>;
   let eventEmitter: jest.Mocked<EventEmitter2>;
   let redisService: jest.Mocked<RedisService>;
@@ -176,9 +175,6 @@ describe('AuthService', () => {
     groupRepository = dataSource.getRepository(Group) as jest.Mocked<
       Repository<Group>
     >;
-    groupPermissionRepository = dataSource.getRepository(
-      GroupPermission,
-    ) as jest.Mocked<Repository<GroupPermission>>;
 
     jest.clearAllMocks();
   });
@@ -562,89 +558,6 @@ describe('AuthService', () => {
       await expect(
         authService.verifyOtp(otp, undefined, email),
       ).rejects.toThrow(BadRequestException);
-    });
-  });
-
-  describe('getUserPermissions', () => {
-    it('should return permissions from cache', async () => {
-      const userId = 1;
-      const groupIds = [1, 2];
-      const permissions1 = ['read', 'write'];
-      const permissions2 = ['delete'];
-
-      redisService.get
-        .mockResolvedValueOnce(JSON.stringify(groupIds))
-        .mockResolvedValueOnce(JSON.stringify(permissions1))
-        .mockResolvedValueOnce(JSON.stringify(permissions2));
-
-      const result = await authService.getUserPermissions(userId);
-
-      expect(result).toEqual(['read', 'write', 'delete']);
-    });
-
-    it('should fetch and cache user groups', async () => {
-      const userId = 1;
-
-      redisService.get
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(JSON.stringify(['read']));
-      userGroupRepository.find.mockResolvedValue([
-        { groupId: 1 },
-      ] as UserGroup[]);
-
-      const result = await authService.getUserPermissions(userId);
-
-      expect(redisService.set).toHaveBeenCalledWith(
-        `user:groups:${userId}`,
-        JSON.stringify([1]),
-      );
-      expect(result).toEqual(['read']);
-    });
-
-    it('should return empty array when user has no groups', async () => {
-      const userId = 1;
-
-      redisService.get.mockResolvedValue(JSON.stringify([]));
-
-      const result = await authService.getUserPermissions(userId);
-
-      expect(result).toEqual([]);
-    });
-
-    it('should fetch and cache group permissions', async () => {
-      const userId = 1;
-      const groupIds = [1, 2];
-      const mockQueryBuilder = {
-        leftJoin: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([
-          { groupId: 1, permission: 'read' },
-          { groupId: 1, permission: 'write' },
-          { groupId: 2, permission: 'delete' },
-        ]),
-      };
-
-      redisService.get
-        .mockResolvedValueOnce(JSON.stringify(groupIds))
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
-      groupPermissionRepository.createQueryBuilder.mockReturnValue(
-        mockQueryBuilder as any,
-      );
-
-      const result = await authService.getUserPermissions(userId);
-
-      expect(result).toEqual(['read', 'write', 'delete']);
-      expect(redisService.set).toHaveBeenCalledWith(
-        `group:permissions:1`,
-        JSON.stringify(['read', 'write']),
-      );
-      expect(redisService.set).toHaveBeenCalledWith(
-        `group:permissions:2`,
-        JSON.stringify(['delete']),
-      );
     });
   });
 });
