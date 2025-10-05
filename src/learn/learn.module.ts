@@ -28,7 +28,7 @@ import { ScenarioSessionEvents } from './entity/scenario-session-events.entity';
       ScenarioSessionMessages,
       ScenarioSessionEvents,
     ]),
-    LiveKitModule,
+    forwardRef(() => LiveKitModule),
     SessionEventModule,
     forwardRef(() => AiModule),
   ],
@@ -42,6 +42,6 @@ import { ScenarioSessionEvents } from './entity/scenario-session-events.entity';
     LearnMessageProcessor,
     LearnEventProcessor,
   ],
-  exports: [LearnMessageProcessor, LearnEventProcessor],
+  exports: [LearnMessageProcessor, LearnEventProcessor, ScenarioSessionService],
 })
 export class LearnModule {}
