@@ -7,6 +7,8 @@ import {
 import { LoggerService } from '../../logger/logger.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { ChatAudioUploadRepository } from '../repository/chat-audio-upload.repository';
+import { S3Service } from 'src/aws/service/s3.service';
+import { AppConfigService } from 'src/config/config.service';
 
 @Injectable()
 export class ChatAudioUploadsService {
@@ -14,7 +16,11 @@ export class ChatAudioUploadsService {
     ChatAudioUploadsService.name,
   );
 
-  constructor(private chatAudioUploadRepository: ChatAudioUploadRepository) {}
+  constructor(
+    private chatAudioUploadRepository: ChatAudioUploadRepository,
+    private s3Service: S3Service,
+    private config: AppConfigService,
+  ) {}
 
   async createAudioUpload(
     data: {
@@ -112,5 +118,26 @@ export class ChatAudioUploadsService {
         entityManager,
       );
     return result;
+  }
+
+  async deleteUploadedAudioFile(chatId: number): Promise<boolean> {
+    const uploadedAudioFile = await this.getAudioUpload(chatId);
+    if (!uploadedAudioFile?.storageKey) {
+      return false;
+    }
+    try {
+      await this.s3Service.deleteObject({
+        bucket: this.config.s3.audioBucket!,
+        key: uploadedAudioFile.storageKey,
+      });
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to delete uploaded audio file for chatId: ${chatId} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
+      return false;
+    }
   }
 }

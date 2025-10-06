@@ -90,7 +90,7 @@ export const DEMOGRAPHIC_FIELDS = [
   'codeOfConcern',
 ];
 
-export const UPLOADED_AUDIO_FILE_SIZE_LIMIT = 500 * 1024 * 1024; // 500 MB
+export const UPLOADED_AUDIO_FILE_SIZE_LIMIT = 1024 * 1024 * 1024; // 1 GB
 
 export const SUPPORTED_AUDIO_FILE_TYPES = [
   // MP3

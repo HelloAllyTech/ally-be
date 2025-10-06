@@ -7,6 +7,8 @@ import {
 } from '../../../common/entities/chat-audio-uploads.entity';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { ChatAudioUploadRepository } from '../../repository/chat-audio-upload.repository';
+import { S3Service } from '../../../aws/service/s3.service';
+import { AppConfigService } from '../../../config/config.service';
 
 // Mock the static class
 jest.mock('../../../common/execution/execution-manager', () => ({
@@ -22,6 +24,7 @@ describe('ChatAudioUploadsService', () => {
   let service: ChatAudioUploadsService;
   let repository: jest.Mocked<Repository<ChatAudioUploads>>;
   let entityManager: jest.Mocked<EntityManager>;
+  let s3Service: jest.Mocked<S3Service>;
 
   const mockTenantId = 'tenant-123';
   const mockAudioUpload = {
@@ -48,6 +51,16 @@ describe('ChatAudioUploadsService', () => {
       getRepository: jest.fn(),
     };
 
+    const mockS3Service = {
+      deleteObject: jest.fn(),
+    };
+
+    const mockConfigService = {
+      s3: {
+        audioBucket: 'test-bucket',
+      },
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatAudioUploadsService,
@@ -55,11 +68,20 @@ describe('ChatAudioUploadsService', () => {
           provide: ChatAudioUploadRepository,
           useValue: mockRepository,
         },
+        {
+          provide: S3Service,
+          useValue: mockS3Service,
+        },
+        {
+          provide: AppConfigService,
+          useValue: mockConfigService,
+        },
       ],
     }).compile();
 
     service = module.get<ChatAudioUploadsService>(ChatAudioUploadsService);
     repository = module.get(ChatAudioUploadRepository);
+    s3Service = module.get(S3Service);
     entityManager = mockEntityManager as any;
   });
 
@@ -216,6 +238,83 @@ describe('ChatAudioUploadsService', () => {
 
       expect(result).toEqual(mockAudioUpload);
       expect(repository.findOne).toHaveBeenCalledWith({ where: { chatId } });
+    });
+  });
+
+  describe('deleteUploadedAudioFile', () => {
+    it('should return false when no audio upload found', async () => {
+      const chatId = 456;
+
+      repository.findOne.mockResolvedValue(null);
+
+      const result = await service.deleteUploadedAudioFile(chatId);
+
+      expect(result).toBe(false);
+      expect(repository.findOne).toHaveBeenCalledWith({ where: { chatId } });
+    });
+
+    it('should return false when audio upload has no storage key', async () => {
+      const chatId = 456;
+      const audioUploadWithoutKey = { ...mockAudioUpload, storageKey: null };
+
+      repository.findOne.mockResolvedValue(audioUploadWithoutKey as any);
+
+      const result = await service.deleteUploadedAudioFile(chatId);
+
+      expect(result).toBe(false);
+      expect(repository.findOne).toHaveBeenCalledWith({ where: { chatId } });
+    });
+
+    it('should successfully delete audio file', async () => {
+      const chatId = 456;
+
+      repository.findOne.mockResolvedValue(mockAudioUpload);
+      s3Service.deleteObject.mockResolvedValue({} as any);
+
+      const result = await service.deleteUploadedAudioFile(chatId);
+
+      expect(result).toBe(true);
+      expect(repository.findOne).toHaveBeenCalledWith({ where: { chatId } });
+      expect(s3Service.deleteObject).toHaveBeenCalledWith({
+        bucket: 'test-bucket',
+        key: 'test-key',
+      });
+    });
+
+    it('should return false when S3 delete fails', async () => {
+      const chatId = 456;
+      const error = new Error('S3 delete failed');
+
+      repository.findOne.mockResolvedValue(mockAudioUpload);
+      s3Service.deleteObject.mockRejectedValue(error);
+
+      const result = await service.deleteUploadedAudioFile(chatId);
+
+      expect(result).toBe(false);
+      expect(repository.findOne).toHaveBeenCalledWith({ where: { chatId } });
+      expect(s3Service.deleteObject).toHaveBeenCalledWith({
+        bucket: 'test-bucket',
+        key: 'test-key',
+      });
+    });
+
+    it('should handle S3 delete when file does not exist', async () => {
+      const chatId = 456;
+      const notFoundError = new Error(
+        'NoSuchKey: The specified key does not exist',
+      );
+
+      repository.findOne.mockResolvedValue(mockAudioUpload);
+      s3Service.deleteObject.mockRejectedValue(notFoundError);
+
+      const result = await service.deleteUploadedAudioFile(chatId);
+
+      expect(result).toBe(false);
+      expect(repository.findOne).toHaveBeenCalledWith({ where: { chatId } });
+      expect(s3Service.deleteObject).toHaveBeenCalledWith({
+        bucket: 'test-bucket',
+        key: 'test-key',
+      });
     });
   });
 });

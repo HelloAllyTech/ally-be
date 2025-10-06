@@ -1885,6 +1885,7 @@ export class ChatService {
           chatId,
           manager,
         );
+        await this.chatAudioUploadsService.deleteUploadedAudioFile(chatId);
         await this.chatAudioUploadsService.deleteChatAudioUploadsByChatId(
           chatId,
           tenantId,
