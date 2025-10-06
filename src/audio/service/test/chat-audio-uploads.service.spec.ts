@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Repository, EntityManager } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { ChatAudioUploadsService } from '../chat-audio-uploads.service';
 import {
   ChatAudioUploads,
@@ -22,7 +22,7 @@ jest.mock('../../../common/execution/execution-manager', () => ({
 
 describe('ChatAudioUploadsService', () => {
   let service: ChatAudioUploadsService;
-  let repository: jest.Mocked<Repository<ChatAudioUploads>>;
+  let repository: jest.Mocked<ChatAudioUploadRepository>;
   let entityManager: jest.Mocked<EntityManager>;
   let s3Service: jest.Mocked<S3Service>;
 
@@ -45,6 +45,7 @@ describe('ChatAudioUploadsService', () => {
       save: jest.fn(),
       update: jest.fn(),
       findOne: jest.fn(),
+      deleteChatAudioUploadsByChatId: jest.fn(),
     };
 
     const mockEntityManager = {
@@ -146,6 +147,28 @@ describe('ChatAudioUploadsService', () => {
         tenantId: mockTenantId,
       });
     });
+
+    it('should create audio upload with custom status and format', async () => {
+      const data = {
+        chatId: 456,
+        storageKey: 'test-key',
+        status: ChatAudioUploadStatus.SUCCESS,
+        sampleRate: 16000,
+        format: 'mp3',
+      };
+
+      const customUpload = { ...mockAudioUpload, ...data };
+      repository.create.mockReturnValue(customUpload);
+      repository.save.mockResolvedValue(customUpload);
+
+      const result = await service.createAudioUpload(data);
+
+      expect(result).toEqual(customUpload);
+      expect(repository.create).toHaveBeenCalledWith({
+        ...data,
+        tenantId: mockTenantId,
+      });
+    });
   });
 
   describe('updateAudioUpload', () => {
@@ -214,6 +237,24 @@ describe('ChatAudioUploadsService', () => {
         },
       );
       expect(repository.findOne).toHaveBeenCalledWith({ where: { chatId } });
+    });
+
+    it('should update audio upload with all fields', async () => {
+      const chatId = 456;
+      const data = {
+        status: ChatAudioUploadStatus.SUCCESS,
+        sampleRate: 16000,
+        storageKey: 'new-key',
+        format: 'wav',
+      };
+
+      repository.update.mockResolvedValue({ affected: 1 } as any);
+      repository.findOne.mockResolvedValue(mockAudioUpload);
+
+      const result = await service.updateAudioUpload(chatId, data);
+
+      expect(result).toEqual(mockAudioUpload);
+      expect(repository.update).toHaveBeenCalledWith({ chatId }, data);
     });
   });
 
