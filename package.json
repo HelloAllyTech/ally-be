@@ -12,7 +12,8 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" ",
+    "lint:fix": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -25,7 +26,12 @@
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
     "migration:show": "npm run typeorm -- migration:show -d src/database/data-source.ts"
   },
+  "pre-commit": [
+    "lint",
+    "test"
+  ],
   "dependencies": {
+    "@aws-sdk/client-cloudwatch-logs": "^3.879.0",
     "@aws-sdk/client-s3": "^3.839.0",
     "@aws-sdk/client-ses": "^3.823.0",
     "@aws-sdk/client-sqs": "^3.859.0",
@@ -54,6 +60,7 @@
     "class-validator": "^0.14.1",
     "csv-parse": "^5.6.0",
     "dayjs": "^1.11.18",
+    "fast-geoip": "^1.1.88",
     "fetch-blob": "^4.0.0",
     "helmet": "^8.1.0",
     "ioredis": "^5.6.1",
@@ -65,13 +72,15 @@
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
     "pg": "^8.11.0",
+    "pre-commit": "^1.2.2",
     "reflect-metadata": "^0.2.2",
     "remove": "^0.1.5",
     "rxjs": "^7.8.1",
     "socket.io": "^4.7.0",
     "typeorm": "^0.3.0",
     "uuid": "^11.1.0",
-    "winston": "^3.17.0"
+    "winston": "^3.17.0",
+    "winston-cloudwatch": "^6.3.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",

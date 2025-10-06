@@ -16,7 +16,7 @@ describe('ExecutionManager', () => {
       const mockFn = jest.fn(() => 'test-result');
       const path = '/test/path';
 
-      const result = ExecutionManager.runWithContext(mockFn, path);
+      const result = ExecutionManager.runWithContext(mockFn, { path });
 
       expect(mockFn).toHaveBeenCalled();
       expect(result).toBe('test-result');
@@ -31,13 +31,16 @@ describe('ExecutionManager', () => {
       const path = '/test/path';
 
       // First run with context to create a store
-      ExecutionManager.runWithContext(() => {
-        ExecutionManager.setAuthContext(userId, role, tenantId);
+      ExecutionManager.runWithContext(
+        () => {
+          ExecutionManager.setAuthContext(userId, role, tenantId);
 
-        expect(ExecutionManager.getUserId()).toBe(userId);
-        expect(ExecutionManager.getRole()).toBe(role);
-        expect(ExecutionManager.getTenantId()).toBe(tenantId);
-      }, path);
+          expect(ExecutionManager.getUserId()).toBe(userId);
+          expect(ExecutionManager.getRole()).toBe(role);
+          expect(ExecutionManager.getTenantId()).toBe(tenantId);
+        },
+        { path },
+      );
     });
 
     it('should not set auth context when no context exists', () => {
@@ -59,14 +62,17 @@ describe('ExecutionManager', () => {
     it('should return current execution context', () => {
       const path = '/test/path';
 
-      ExecutionManager.runWithContext(() => {
-        const context = ExecutionManager.getCurrentContext();
+      ExecutionManager.runWithContext(
+        () => {
+          const context = ExecutionManager.getCurrentContext();
 
-        expect(context).toBeDefined();
-        expect(context?.id).toBe('mock-uuid-123');
-        expect(context?.path).toBe(path);
-        expect(context?.startTime).toBeDefined();
-      }, path);
+          expect(context).toBeDefined();
+          expect(context?.id).toBe('mock-uuid-123');
+          expect(context?.path).toBe(path);
+          expect(context?.startTime).toBeDefined();
+        },
+        { path },
+      );
     });
 
     it('should return undefined when no context exists', () => {
@@ -80,10 +86,13 @@ describe('ExecutionManager', () => {
       const userId = 'user-123';
       const path = '/test/path';
 
-      ExecutionManager.runWithContext(() => {
-        ExecutionManager.setAuthContext(userId, 'admin', 'tenant-456');
-        expect(ExecutionManager.getUserId()).toBe(userId);
-      }, path);
+      ExecutionManager.runWithContext(
+        () => {
+          ExecutionManager.setAuthContext(userId, 'admin', 'tenant-456');
+          expect(ExecutionManager.getUserId()).toBe(userId);
+        },
+        { path },
+      );
     });
 
     it('should return undefined when no context or user ID', () => {
@@ -96,10 +105,13 @@ describe('ExecutionManager', () => {
       const role = 'admin';
       const path = '/test/path';
 
-      ExecutionManager.runWithContext(() => {
-        ExecutionManager.setAuthContext('user-123', role, 'tenant-456');
-        expect(ExecutionManager.getRole()).toBe(role);
-      }, path);
+      ExecutionManager.runWithContext(
+        () => {
+          ExecutionManager.setAuthContext('user-123', role, 'tenant-456');
+          expect(ExecutionManager.getRole()).toBe(role);
+        },
+        { path },
+      );
     });
 
     it('should return undefined when no context or role', () => {
@@ -112,10 +124,13 @@ describe('ExecutionManager', () => {
       const tenantId = 'tenant-456';
       const path = '/test/path';
 
-      ExecutionManager.runWithContext(() => {
-        ExecutionManager.setAuthContext('user-123', 'admin', tenantId);
-        expect(ExecutionManager.getTenantId()).toBe(tenantId);
-      }, path);
+      ExecutionManager.runWithContext(
+        () => {
+          ExecutionManager.setAuthContext('user-123', 'admin', tenantId);
+          expect(ExecutionManager.getTenantId()).toBe(tenantId);
+        },
+        { path },
+      );
     });
 
     it('should return undefined when no context or tenant ID', () => {
@@ -127,9 +142,12 @@ describe('ExecutionManager', () => {
     it('should return path from context', () => {
       const path = '/test/path';
 
-      ExecutionManager.runWithContext(() => {
-        expect(ExecutionManager.getPath()).toBe(path);
-      }, path);
+      ExecutionManager.runWithContext(
+        () => {
+          expect(ExecutionManager.getPath()).toBe(path);
+        },
+        { path },
+      );
     });
 
     it('should return undefined when no context', () => {
@@ -141,9 +159,12 @@ describe('ExecutionManager', () => {
     it('should return execution ID from context', () => {
       const path = '/test/path';
 
-      ExecutionManager.runWithContext(() => {
-        expect(ExecutionManager.getExecutionId()).toBe('mock-uuid-123');
-      }, path);
+      ExecutionManager.runWithContext(
+        () => {
+          expect(ExecutionManager.getExecutionId()).toBe('mock-uuid-123');
+        },
+        { path },
+      );
     });
 
     it('should return undefined when no context', () => {

@@ -164,6 +164,23 @@ describe('TranscribeResultProcessor', () => {
       expect(chatService.updateChat).not.toHaveBeenCalled();
     });
 
+    it('should delete from S3 when chat not found', async () => {
+      chatService.getChatByIdForServiceCall.mockResolvedValue(null as any);
+      mockedAxios.delete.mockResolvedValue({});
+
+      await processor.process(mockTranscribeResponse);
+
+      expect(chatService.getChatByIdForServiceCall).toHaveBeenCalledWith(
+        mockTranscribeResponse.chat_id,
+      );
+      expect(mockedAxios.delete).toHaveBeenCalledWith(
+        mockTranscribeResponse.delete_presigned_url,
+      );
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+      expect(chatAiService.addTranscript).not.toHaveBeenCalled();
+      expect(chatService.updateChat).not.toHaveBeenCalled();
+    });
+
     it('should return early when chat already has summary', async () => {
       const chatWithSummary = {
         ...mockChat,

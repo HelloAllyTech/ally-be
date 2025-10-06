@@ -40,7 +40,12 @@ export class AppConfigService {
       sentenceCompletionRequired:
         this.configService.get<string>('SENTENCE_COMPLETION_REQUIRED') ===
         'true',
+      // inbound key (AI -> BE) remains for any inbound verification needs
       apiKey: this.configService.get<string>('AI_SERVICE_API_KEY'),
+      // outbound key (BE -> AI) for x-api-key header
+      outboundApiKey: this.configService.get<string>(
+        'AI_SERVICE_OUTBOUND_API_KEY',
+      ),
     };
   }
 
@@ -106,6 +111,7 @@ export class AppConfigService {
       region: this.configService.get<string>('AWS_REGION'),
       accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID'),
       secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY'),
+      sessionToken: this.configService.get<string>('AWS_SESSION_TOKEN'),
     };
   }
 
@@ -172,6 +178,12 @@ export class AppConfigService {
         retryDlqUrl: this.configService.get<string>(
           'SQS_AUDIO_FILE_RETRY_DLQ_URL',
         ),
+        uploadQueueUrl: this.configService.get<string>(
+          'SQS_AUDIO_UPLOAD_QUEUE_URL',
+        ),
+        uploadDlqUrl: this.configService.get<string>(
+          'SQS_AUDIO_UPLOAD_DLQ_URL',
+        ),
       },
       learn: {
         messageAndEventQueueUrl: this.configService.get<string>(
@@ -214,6 +226,14 @@ export class AppConfigService {
 
   get testAccounts() {
     return this.configService.get<string>('TEST_ACCOUNTS');
+  }
+
+  get phiData() {
+    return {
+      phiDataEncryptionKey: this.configService.get<string>(
+        'PHI_DATA_ENCRYPTION_KEY',
+      ),
+    };
   }
 
   get cors() {

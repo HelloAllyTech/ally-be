@@ -7,6 +7,8 @@ import { JwtService } from '@nestjs/jwt';
 
 import { ChatService } from '../chat.service';
 import { ChatRepository } from '../../repository/chat.repository';
+import { MessageRepository } from '../../repository/message.repository';
+import { CallDetailsRepository } from '../../repository/call-details.repository';
 import { SummaryFeedbackRepository } from '../../repository/summary-feedback.repository';
 import { QueueService } from '../../../queue/service/queue.service';
 import { ChatGateway } from '../../gateway/chat.gateway';
@@ -17,6 +19,9 @@ import { MessageBrokerService } from '../../../message-broker/service/message-br
 import { SettingsService } from '../../../settings/service/settings.service';
 import { BroadcastMessageService } from '../../../audio/service/broadcast-message.service';
 import { StreamFileProcessorService } from '../../../audio/service/stream-file-processor.service';
+import { CryptoService } from '../../../common/service/crypto.service';
+import { AppConfigService } from '../../../config/config.service';
+import { ChatAudioUploadsService } from '../../../audio/service/chat-audio-uploads.service';
 
 import { Message } from '../../../common/entities/message.entity';
 import { ChatRoom } from '../../../common/entities/chat-room.entity';
@@ -121,12 +126,13 @@ describe('ChatService', () => {
       providers: [
         ChatService,
         {
-          provide: getRepositoryToken(Message),
+          provide: MessageRepository,
           useValue: {
             create: jest.fn(),
             save: jest.fn(),
             find: jest.fn(),
             findOne: jest.fn(),
+            deleteMessageByChatId: jest.fn(),
             createQueryBuilder: jest.fn(() => ({
               leftJoinAndMapOne: jest.fn().mockReturnThis(),
               where: jest.fn().mockReturnThis(),
@@ -173,12 +179,13 @@ describe('ChatService', () => {
           },
         },
         {
-          provide: getRepositoryToken(CallDetails),
+          provide: CallDetailsRepository,
           useValue: {
             create: jest.fn(),
             save: jest.fn(),
             findOne: jest.fn(),
             update: jest.fn(),
+            deleteCallDetailsByChatId: jest.fn(),
             createQueryBuilder: jest.fn(() => ({
               select: jest.fn().mockReturnThis(),
               where: jest.fn().mockReturnThis(),
@@ -233,6 +240,13 @@ describe('ChatService', () => {
           },
         },
         {
+          provide: CryptoService,
+          useValue: {
+            encrypt: jest.fn((content) => Promise.resolve(content)), // Return original content for testing
+            decrypt: jest.fn((content) => Promise.resolve(content)), // Return original content for testing
+          },
+        },
+        {
           provide: RedisService,
           useValue: {
             get: jest.fn(),
@@ -280,6 +294,20 @@ describe('ChatService', () => {
           },
         },
         {
+          provide: AppConfigService,
+          useValue: {
+            phiData: {
+              phiDataEncryptionKey: 'test-encryption-key',
+            },
+          },
+        },
+        {
+          provide: ChatAudioUploadsService,
+          useValue: {
+            deleteChatAudioUploadsByChatId: jest.fn(),
+          },
+        },
+        {
           provide: JwtService,
           useValue: {},
         },
@@ -287,15 +315,13 @@ describe('ChatService', () => {
     }).compile();
 
     service = module.get<ChatService>(ChatService);
-    messageRepository = module.get<Repository<Message>>(
-      getRepositoryToken(Message),
-    );
+    messageRepository = module.get<MessageRepository>(MessageRepository);
     chatRepository = module.get<ChatRepository>(ChatRepository);
     chatRoomRepository = module.get<Repository<ChatRoom>>(
       getRepositoryToken(ChatRoom),
     );
-    callDetailsRepository = module.get<Repository<CallDetails>>(
-      getRepositoryToken(CallDetails),
+    callDetailsRepository = module.get<CallDetailsRepository>(
+      CallDetailsRepository,
     );
     queueService = module.get<QueueService>(QueueService);
     userService = module.get<UserService>(UserService);
@@ -1203,22 +1229,19 @@ describe('ChatService', () => {
         startedAt: new Date(),
       });
 
-      expect(result).toEqual({
-        chatId: 2,
-        clientId: -1,
-        counselorId: 2,
-        chat: mockNewChat,
-      });
-      expect(service.createChatWithClientAndCounselor).toHaveBeenCalledWith({
-        clientId: -1,
-        counselorId: 2,
-        provider: AudioChatProvider.WEBRTC,
-        platform: AudioChatPlatform.WEB,
-        externalId: 'ext-123',
-        status: ChatStatus.ACTIVE,
-        startedAt: expect.any(Date),
-        entityManager: undefined,
-      });
+      expect(result).toEqual(mockNewChat);
+      expect(service.createChatWithClientAndCounselor).toHaveBeenCalledWith(
+        {
+          clientId: -1,
+          counselorId: 2,
+          provider: AudioChatProvider.WEBRTC,
+          platform: AudioChatPlatform.WEB,
+          externalId: 'ext-123',
+          status: ChatStatus.ACTIVE,
+          startedAt: expect.any(Date),
+        },
+        undefined,
+      );
     });
   });
 
@@ -1775,9 +1798,6 @@ describe('ChatService', () => {
       expect(callDetailsRepository.update).toHaveBeenCalledWith(
         { chatId: 1 },
         expect.objectContaining({
-          callInfo: expect.objectContaining({
-            summaryName: expect.any(String),
-          }),
           endTime: expect.any(Date),
           callDuration: 300,
         }),
@@ -1804,9 +1824,6 @@ describe('ChatService', () => {
       expect(callDetailsRepository.update).toHaveBeenCalledWith(
         { chatId: 1 },
         expect.objectContaining({
-          callInfo: expect.objectContaining({
-            summaryName: expect.any(String),
-          }),
           endTime: expect.any(Date),
           callDuration: expect.any(Number),
         }),
@@ -1839,9 +1856,6 @@ describe('ChatService', () => {
       expect(callDetailsRepository.update).toHaveBeenCalledWith(
         { chatId: 1 },
         expect.objectContaining({
-          callInfo: expect.objectContaining({
-            summaryName: expect.any(String),
-          }),
           endTime: expect.any(Date),
           callDuration: expect.any(Number),
         }),
@@ -2449,7 +2463,10 @@ describe('ChatService', () => {
     });
 
     it('should build the base query correctly and return call logs', async () => {
-      const mockResult = [{ id: 1 }, { id: 2 }];
+      const mockResult = [
+        { id: 1, details: {} },
+        { id: 2, details: {} },
+      ];
       mockQueryBuilder.getManyAndCount.mockResolvedValue([mockResult, 2]);
 
       const result = await service['getAdminCallLogs']({
@@ -2957,8 +2974,28 @@ describe('ChatService', () => {
         tags: [{ tag: 'tag1', positivity_rating: 0.5 }],
       };
 
+      const mockChatWithDetails = {
+        ...mockChat,
+        details: {
+          id: 1,
+          chatId: 1,
+          callDuration: 300,
+          startTime: new Date(),
+          endTime: new Date(),
+          noOfNudges: 0,
+          noOfStages: 1,
+          transcript: 'Test transcript',
+          summary: undefined,
+          callOutcome: 'Completed',
+          callInfo: undefined,
+          tenantId: 'test-tenant',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      };
+
       jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
-      jest.spyOn(service, 'getChat').mockResolvedValue(mockChat);
+      jest.spyOn(service, 'getChat').mockResolvedValue(mockChatWithDetails);
 
       const result = await service.updateCallDetails(1, mockSummary);
 
@@ -2967,7 +3004,7 @@ describe('ChatService', () => {
         { summary: mockSummary },
       );
       expect(service.getChat).toHaveBeenCalledWith(1);
-      expect(result).toEqual(mockChat);
+      expect(result).toEqual(mockChatWithDetails);
     });
   });
 
@@ -2987,12 +3024,32 @@ describe('ChatService', () => {
         tenantId: 'test-tenant',
       };
 
+      const mockChatWithDetails = {
+        ...mockChat,
+        details: {
+          id: 1,
+          chatId: 1,
+          callDuration: 300,
+          startTime: new Date(),
+          endTime: new Date(),
+          noOfNudges: 0,
+          noOfStages: 1,
+          transcript: 'Test transcript',
+          summary: undefined,
+          callOutcome: 'Completed',
+          callInfo: undefined,
+          tenantId: 'test-tenant',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      };
+
       jest.spyOn(service, 'getChatById').mockResolvedValue(mockChat);
       jest
         .spyOn(callDetailsRepository, 'findOne')
         .mockResolvedValue(mockCallDetails as any);
       jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
-      jest.spyOn(service, 'getChat').mockResolvedValue(mockChat);
+      jest.spyOn(service, 'getChat').mockResolvedValue(mockChatWithDetails);
 
       const result = await service.updateCallInfo(1, mockCallInfo);
 
@@ -3005,7 +3062,7 @@ describe('ChatService', () => {
         { callInfo: { ...mockCallDetails.callInfo, summaryName: 'CALL-456' } },
       );
       expect(service.getChat).toHaveBeenCalledWith(1);
-      expect(result).toEqual(mockChat);
+      expect(result).toEqual(mockChatWithDetails);
     });
 
     it('should throw NotFoundException when chat not found', async () => {

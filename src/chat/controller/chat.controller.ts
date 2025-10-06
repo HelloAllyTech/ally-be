@@ -8,6 +8,7 @@ import {
   Query,
   Res,
   Put,
+  Delete,
 } from '@nestjs/common';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
 import { TokenUser } from '../../auth/type/auth.types';
@@ -29,7 +30,11 @@ import {
   CallLogResponse,
   SummaryFeedbackResponse,
 } from '../dto/call-log.response.dto';
-import { CallInfoDto, ChatResponseDto } from '../dto/chat.response.dto';
+import {
+  CallInfoDto,
+  ChatResponseDto,
+  DeleteChatResponseDto,
+} from '../dto/chat.response.dto';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
@@ -42,6 +47,8 @@ import { CounselorNameResponse } from '../dto/call-log.response.dto';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { ChatSummaryService } from '../service/chat-summary.service';
 import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -633,5 +640,13 @@ export class ChatController {
     @Body() summaryFeedbackDto: SummaryFeedbackDto,
   ): Promise<SummaryFeedbackResponse> {
     return this.service.addFeedbackToChat(chatId, summaryFeedbackDto);
+  }
+
+  @Delete(':id')
+  @AuthPermissions([PERMISSIONS.DELETE_CHAT])
+  @ApiOperation({ summary: 'Delete chat' })
+  @ApiResponse({ status: 200, description: 'Chat deleted successfully' })
+  async deleteChat(@Param('id') id: string): Promise<DeleteChatResponseDto> {
+    return this.service.deleteChat(parseInt(id));
   }
 }

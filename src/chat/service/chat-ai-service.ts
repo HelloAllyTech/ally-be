@@ -13,6 +13,7 @@ import { UserRole } from '../../common/constants/user.constants';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LoggerService } from '../../logger/logger.service';
 import { ValidationException } from '../../exception/custom.exception';
+import { CryptoService } from '../../common/service/crypto.service';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,
@@ -22,6 +23,8 @@ import { S3Service } from '../../aws/service/s3.service';
 import { AppConfigService } from '../../config/config.service';
 import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
 import { Chat } from 'src/common/entities/chat.entity';
+import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
+import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 
 @Injectable()
 export class ChatAiService {
@@ -34,17 +37,33 @@ export class ChatAiService {
     private readonly s3Service: S3Service,
     private readonly config: AppConfigService,
     private readonly chatAudioUploadsService: ChatAudioUploadsService,
+    private readonly cryptoService: CryptoService,
   ) {}
 
   private readonly logger = LoggerService.getInstance(ChatAiService.name);
+  private readonly auditLogger = AuditLoggerService.getInstance();
 
   async addSummary(chatId: number, summary: FlattenedSummaryNotePayload) {
     try {
       this.logger.info(`Adding summary for chatId: ${chatId} from ai service`);
 
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.SUMMARY_RECEIVED,
+        details: {
+          chatId,
+        },
+      });
+
       const convertedResponse = CommonUtil.convertToCamelCase(
         summary,
       ) as FlattenedSummaryNotePayloadCamelCase;
+      if (convertedResponse.sessionSummary) {
+        convertedResponse.sessionSummary = await this.cryptoService.encrypt(
+          convertedResponse.sessionSummary,
+          this.config.phiData?.phiDataEncryptionKey,
+        );
+      }
+
       await this.callDetailsRepository.update(
         { chatId },
         {
@@ -75,21 +94,33 @@ export class ChatAiService {
         role: UserRole.COUNSELOR,
         tenantId: chat.tenantId,
       });
-      const formattedMessages = messages.map((message) =>
-        this.messageRepository.create({
+      const formattedMessages = messages.map(async (message) => {
+        const encryptedContent = await this.cryptoService.encrypt(
+          message.content,
+          this.config.phiData?.phiDataEncryptionKey,
+        );
+        return this.messageRepository.create({
           chatId: chat.id,
           senderId:
             message.role === UserRole.CLIENT ? chat.clientId : chat.counselorId,
           type: MessageType.TEXT,
-          content: message.content,
+          content: encryptedContent,
           startSeconds: message.start_time,
           endSeconds: message.end_time,
           tenantId: ExecutionManager.getTenantId(),
-        }),
-      );
-      await this.messageRepository.save(formattedMessages);
+        });
+      });
+      const createdMessages = await Promise.all(formattedMessages);
+      await this.messageRepository.save(createdMessages);
       // update message statistics
       this.chatService.updateMessageStatistics(chat);
+
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.TRANSCRIPT_RECEIVED,
+        details: {
+          chatId: chat.id,
+        },
+      });
       this.logger.info(
         `Transcript added for chatId: ${chat.id} from ai service`,
       );
@@ -111,6 +142,14 @@ export class ChatAiService {
           storageKey: null,
           sampleRate: null,
           format: null,
+        });
+        this.auditLogger.log({
+          eventType: AUDIT_EVENTS.AUDIO_UPLOAD_CLEANUP_S3_FILES,
+          tenantId: chat.tenantId,
+          userId: chat.counselorId!,
+          details: {
+            chatId: chat.id,
+          },
         });
       }
       return true;

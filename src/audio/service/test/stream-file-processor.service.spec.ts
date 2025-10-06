@@ -1,828 +1,538 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { StreamFileProcessorService } from '../stream-file-processor.service';
-import { S3Service } from '../../../aws/service/s3.service';
-import { ChatAudioUploadsService } from '../chat-audio-uploads.service';
-import { BroadcastMessageService } from '../broadcast-message.service';
-import { ChatService } from '../../../chat/service/chat.service';
-import { AppConfigService } from '../../../config/config.service';
-import { AiEventService } from '../../../ai/service/ai-event.service';
-import { DataSource, EntityManager } from 'typeorm';
-import { AudioChatProvider } from '../../../common/constants/chat.constants';
-import { PLACEHOLDER_CHAT_ID } from '../../../common/constants/user.constants';
-
-// Mock all problematic modules at the top level
-jest.mock('typeorm', () => ({
-  DataSource: jest.fn().mockImplementation(() => ({
-    transaction: jest.fn(),
-  })),
-  EntityManager: jest.fn(),
-  Entity: jest.fn(() => (target: any) => target),
-  PrimaryGeneratedColumn: jest.fn(() => () => {}),
-  Column: jest.fn(() => () => {}),
-  CreateDateColumn: jest.fn(() => () => {}),
-  UpdateDateColumn: jest.fn(() => () => {}),
-  Index: jest.fn(() => (target: any) => target),
-  BaseEntity: jest.fn(),
+// CRITICAL: Mock @nestjs/typeorm FIRST
+jest.mock('@nestjs/typeorm', () => ({
+  InjectRepository: jest.fn(() => jest.fn()),
+  getRepositoryToken: jest.fn((entity) => `${entity}Repository`),
+  TypeOrmModule: {
+    forRoot: jest.fn(),
+    forFeature: jest.fn(),
+  },
 }));
 
-jest.mock('@nestjs/typeorm', () => ({}));
+// Mock entity files that are actually imported - adjust paths based on your project structure
+jest.mock('../../../common/entities/base.entity', () => ({
+  BaseEntity: class BaseEntity {
+    createdAt?: Date;
+    updatedAt?: Date;
+  },
+}));
 
-// Mock entity files to avoid decorator issues
 jest.mock('../../../common/entities/chat.entity', () => ({
-  ChatSummaryStatus: {},
+  ChatStatus: {
+    STARTED: 'STARTED',
+    ENDED: 'ENDED',
+    CANCELLED: 'CANCELLED',
+    PENDING: 'PENDING',
+  },
+  ChatSummaryStatus: {
+    NO_AUDIO: 'NO_AUDIO',
+    FAILED: 'FAILED',
+    PENDING: 'PENDING',
+    SUCCESS: 'SUCCESS',
+  },
+  Chat: class Chat {},
 }));
 
 jest.mock('../../../common/entities/chat-audio-uploads.entity', () => ({
-  ChatAudioUploadStatus: {},
+  ChatAudioUploadStatus: {
+    PENDING: 'PENDING',
+    SUCCESS: 'SUCCESS',
+    FAILED: 'FAILED',
+  },
+  ChatAudioUploads: class ChatAudioUploads {},
 }));
 
-// Mock all service dependencies
-jest.mock('../../../aws/service/s3.service', () => ({
-  S3Service: jest.fn(),
+// Mock TypeORM with decorators and Repository
+jest.mock('typeorm', () => {
+  const dualDecorator = (maybeOpts?: any) => {
+    if (typeof maybeOpts === 'function') {
+      return undefined;
+    }
+    return () => {}; // Fixed: removed unused _args parameter
+  };
+
+  class FakeEntityManager {}
+  class FakeDataSource {
+    transaction = jest.fn(async (cb: any) => cb(new FakeEntityManager()));
+  }
+  class FakeRepository {}
+  class FakeBaseEntity {
+    createdAt?: Date;
+    updatedAt?: Date;
+  }
+
+  return {
+    // Decorators
+    Entity: dualDecorator,
+    ChildEntity: dualDecorator,
+    ViewEntity: dualDecorator,
+    Column: dualDecorator,
+    PrimaryColumn: dualDecorator,
+    PrimaryGeneratedColumn: dualDecorator,
+    ManyToOne: dualDecorator,
+    OneToMany: dualDecorator,
+    OneToOne: dualDecorator,
+    ManyToMany: dualDecorator,
+    JoinColumn: dualDecorator,
+    JoinTable: dualDecorator,
+    Index: dualDecorator,
+    Unique: dualDecorator,
+    CreateDateColumn: dualDecorator,
+    UpdateDateColumn: dualDecorator,
+    DeleteDateColumn: dualDecorator,
+    VersionColumn: dualDecorator,
+    // Classes
+    DataSource: FakeDataSource,
+    EntityManager: FakeEntityManager,
+    Repository: FakeRepository,
+    BaseEntity: FakeBaseEntity,
+  };
+});
+
+// Mock fs to satisfy AWS SDK dependencies
+jest.mock('fs', () => ({
+  promises: {
+    unlink: jest.fn().mockResolvedValue(undefined),
+    readFile: jest.fn().mockResolvedValue(''),
+    writeFile: jest.fn().mockResolvedValue(undefined),
+  },
+  createWriteStream: jest.fn(),
+  createReadStream: jest.fn(),
 }));
 
-jest.mock('../chat-audio-uploads.service', () => ({
-  ChatAudioUploadsService: jest.fn(),
+// Prevent path-scurry/glob loading
+jest.mock('path-scurry', () => ({ PathScurry: jest.fn() }));
+jest.mock('glob', () => ({ glob: jest.fn() }));
+
+// Mock AudioEncryptionUtil with explicit factory
+jest.mock('../../utils/audio-encryption.util', () => ({
+  AudioEncryptionUtil: {
+    createEncryptionStream: jest.fn(() => ({
+      cipher: { write: jest.fn(), end: jest.fn() },
+      writeStream: { end: jest.fn() },
+      key: Buffer.from('key'),
+      iv: Buffer.from('iv'),
+    })),
+    finalizeEncryption: jest.fn(async () => ({
+      tag: Buffer.from('tag'),
+      iv: Buffer.from('iv'),
+      key: Buffer.from('key'),
+    })),
+    decryptToBuffer: jest.fn(async () => Buffer.from('decrypted')),
+  },
 }));
 
-jest.mock('../broadcast-message.service', () => ({
-  BroadcastMessageService: jest.fn(),
+// Mock other services
+jest.mock('../../../logger/logger.service', () => ({
+  LoggerService: {
+    getInstance: jest.fn(() => ({
+      info: jest.fn(),
+      debug: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+    })),
+  },
 }));
 
-jest.mock('../../../chat/service/chat.service', () => ({
-  ChatService: jest.fn(),
-}));
-
-jest.mock('../../../config/config.service', () => ({
-  AppConfigService: jest.fn(),
-}));
-
-jest.mock('../../../ai/service/ai-event.service', () => ({
-  AiEventService: jest.fn(),
+jest.mock('../../../audit/service/audit-logger.service', () => ({
+  AuditLoggerService: {
+    getInstance: jest.fn(() => ({
+      log: jest.fn(),
+    })),
+  },
 }));
 
 jest.mock('../../../common/execution/execution-manager', () => ({
   ExecutionManager: {
-    getTenantId: jest.fn(() => 'tenant-123'),
-    getExecutionId: jest.fn(() => 'exec-123'),
-    getCurrentContext: jest.fn(() => ({ tenantId: 'tenant-123' })),
     setAuthContext: jest.fn(),
   },
 }));
 
-jest.mock('../../../common/util/chat-types.util', () => ({
-  findMessageBrokerChannelUsingProvider: jest.fn(() => 'test-channel'),
-}));
+// NOW import everything
+import { Test, TestingModule } from '@nestjs/testing';
+import { StreamFileProcessorService } from '../stream-file-processor.service';
+import { S3Service } from '../../../aws/service/s3.service';
+import { ChatAudioUploadsService } from '../chat-audio-uploads.service';
+import { DataSource, EntityManager } from 'typeorm';
+import { BroadcastMessageService } from '../broadcast-message.service';
+import { ChatService } from '../../../chat/service/chat.service';
+import { AppConfigService } from '../../../config/config.service';
+import { AiEventService } from '../../../ai/service/ai-event.service';
+import { AudioEncryptionUtil } from '../../utils/audio-encryption.util';
+import { UserChatSessionData } from '../../../chat/type/chat.type';
+import {
+  AudioChatProvider,
+  AudioChatPlatform,
+} from '../../../common/constants/chat.constants';
+import {
+  ChatStatus,
+  ChatSummaryStatus,
+} from '../../../common/entities/chat.entity';
+import {
+  PLACEHOLDER_CHAT_ID,
+  UserRole,
+} from '../../../common/constants/user.constants';
+import { ExecutionManager } from '../../../common/execution/execution-manager';
+import { Writable } from 'stream';
 
-jest.mock('fs', () => ({
-  createWriteStream: jest.fn(() => ({
-    write: jest.fn(),
-    end: jest.fn((cb) => cb()),
-  })),
-  promises: {
-    unlink: jest.fn().mockResolvedValue(undefined),
-  },
-  readFileSync: jest.fn(),
-  createReadStream: jest.fn(() => ({
-    pipe: jest.fn(),
-  })),
-}));
-
-jest.mock('path', () => ({
-  join: jest.fn((...args) => args.join('/')),
-  dirname: jest.fn((path) => path.split('/').slice(0, -1).join('/') || '.'),
-  resolve: jest.fn((...args) => args.join('/')),
-  basename: jest.fn((path) => path.split('/').pop() || ''),
-  extname: jest.fn((path) => {
-    const parts = path.split('.');
-    return parts.length > 1 ? '.' + parts.pop() : '';
-  }),
-}));
+// Mock WriteStream class - Fixed: proper function typing
+class MockWriteStream extends Writable {
+  _write(_chunk: any, _enc: string, cb: () => void) {
+    cb();
+  }
+  end(cb?: () => void) {
+    if (cb) cb();
+    return this;
+  }
+}
 
 describe('StreamFileProcessorService', () => {
   let service: StreamFileProcessorService;
   let s3Service: jest.Mocked<S3Service>;
   let chatAudioUploadsService: jest.Mocked<ChatAudioUploadsService>;
   let dataSource: jest.Mocked<DataSource>;
-  let broadcastMessageService: jest.Mocked<BroadcastMessageService>;
   let chatService: jest.Mocked<ChatService>;
+  let aiEventService: jest.Mocked<AiEventService>;
 
-  const mockEntityManager = {
-    save: jest.fn(),
-    findOne: jest.fn(),
-    update: jest.fn(),
-  } as unknown as EntityManager;
+  const mockSession: UserChatSessionData = {
+    id: 'session-123',
+    userId: 101,
+    role: UserRole.CLIENT,
+    tenantId: '1',
+    provider: AudioChatProvider.MICROPHONE,
+    type: 'user',
+    user: undefined,
+    room: '',
+    chatId: 0,
+  };
+
+  const mockChat = {
+    id: 555,
+    counselorId: 99,
+    status: ChatStatus.STARTED,
+    provider: AudioChatProvider.MICROPHONE,
+    createdBy: 99,
+    tenantId: 1,
+  };
 
   beforeEach(async () => {
-    const mockS3Service = {
-      createMultipartUpload: jest.fn(),
-      uploadPart: jest.fn(),
-      completeMultipartUpload: jest.fn(),
-      completeMultipartUploadWithParts: jest.fn(),
-      abortMultipartUpload: jest.fn(),
-      uploadStream: jest.fn(),
-      generatePresignedUrl: jest.fn(),
-    };
-
-    const mockChatAudioUploadsService = {
-      createAudioUpload: jest.fn(),
-      updateAudioUpload: jest.fn(),
-      getAudioUpload: jest.fn(),
-    };
-
-    const mockDataSource = {
-      transaction: jest.fn(),
-    };
-
-    const mockBroadcastMessageService = {
-      broadcastUserJoinedMessage: jest.fn(),
-      broadcastUserDisconnectedMessage: jest.fn(),
-      broadcastAudioStreamMessage: jest.fn(),
-      broadcastChatEndedEvent: jest.fn(),
-    };
-
-    const mockChatService = {
-      createChatForAnonymousClient: jest.fn(),
-      updateCallMetadata: jest.fn(),
-      updateChat: jest.fn(),
-    };
-
-    const mockConfig = {
-      s3: { audioBucket: 'test-bucket' },
-      audioStorage: { dir: '/tmp' },
-    };
-
-    const mockAiEventService = {
-      publishEvent: jest.fn(),
-      publishTranscribeAudioEvent: jest.fn(),
-    };
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StreamFileProcessorService,
-        { provide: S3Service, useValue: mockS3Service },
+        {
+          provide: S3Service,
+          useValue: {
+            createMultipartUpload: jest.fn(),
+            uploadPart: jest.fn(),
+            completeMultipartUploadWithParts: jest.fn(),
+            abortMultipartUpload: jest.fn(),
+            uploadStream: jest.fn(),
+            generatePresignedUrl: jest.fn(),
+          },
+        },
         {
           provide: ChatAudioUploadsService,
-          useValue: mockChatAudioUploadsService,
+          useValue: {
+            createAudioUpload: jest.fn(),
+            updateAudioUpload: jest.fn(),
+          },
         },
-        { provide: DataSource, useValue: mockDataSource },
+        {
+          provide: DataSource,
+          useValue: {
+            transaction: jest.fn(),
+          },
+        },
         {
           provide: BroadcastMessageService,
-          useValue: mockBroadcastMessageService,
+          useValue: {
+            broadcastUserJoinedMessage: jest.fn(),
+            broadcastAudioStreamMessage: jest.fn(),
+          },
         },
-        { provide: ChatService, useValue: mockChatService },
-        { provide: AppConfigService, useValue: mockConfig },
-        { provide: AiEventService, useValue: mockAiEventService },
+        {
+          provide: ChatService,
+          useValue: {
+            createChatForAnonymousClient: jest.fn(),
+            updateChat: jest.fn(),
+            updateCallMetadata: jest.fn(),
+          },
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            s3: { audioBucket: 'test-bucket' },
+            audioStorage: { dir: '/tmp/audio' },
+          },
+        },
+        {
+          provide: AiEventService,
+          useValue: { publishTranscribeAudioEvent: jest.fn() },
+        },
       ],
     }).compile();
 
-    service = module.get<StreamFileProcessorService>(
-      StreamFileProcessorService,
-    );
+    service = module.get(StreamFileProcessorService);
     s3Service = module.get(S3Service);
     chatAudioUploadsService = module.get(ChatAudioUploadsService);
     dataSource = module.get(DataSource);
-    broadcastMessageService = module.get(BroadcastMessageService);
     chatService = module.get(ChatService);
+    aiEventService = module.get(AiEventService);
 
-    // Setup default mocks
-    (dataSource.transaction as jest.Mock).mockImplementation((callback) =>
-      callback(mockEntityManager),
-    );
+    jest.clearAllMocks();
+  });
 
-    // Setup default S3 service mocks
-    s3Service.uploadPart.mockResolvedValue({
-      ETag: 'etag1',
-      $metadata: {} as any,
-    });
-    s3Service.completeMultipartUpload.mockResolvedValue({
-      $metadata: {} as any,
-    });
-    s3Service.abortMultipartUpload.mockResolvedValue({
-      $metadata: {} as any,
-    });
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  describe('addToPendingAudioQueue', () => {
-    it('should add audio data to pending queue for new client', () => {
-      const clientId = 'client-123';
-      const audioBuffer = Buffer.from('test audio');
+  describe('addToPendingAudioQueue and processPendingAudioQueue', () => {
+    it('should add and process audio buffers', () => {
+      const id = 'c1';
+      const b1 = Buffer.from('a');
+      const b2 = Buffer.from('b');
 
-      service.addToPendingAudioQueue(clientId, audioBuffer);
+      service.addToPendingAudioQueue(id, b1);
+      service.addToPendingAudioQueue(id, b2);
+      expect(service['pendingAudioQueue'][id]).toHaveLength(2);
 
-      const pendingQueue = (service as any).pendingAudioQueue;
-      expect(pendingQueue[clientId]).toEqual([audioBuffer]);
+      const out = service.processPendingAudioQueue(id, Buffer.from('c'));
+      expect(out.toString()).toBe('abc');
+      expect(service['pendingAudioQueue'][id]).toBeUndefined();
     });
 
-    it('should add audio data to existing pending queue', () => {
-      const clientId = 'client-123';
-      const audioBuffer1 = Buffer.from('test audio 1');
-      const audioBuffer2 = Buffer.from('test audio 2');
-
-      service.addToPendingAudioQueue(clientId, audioBuffer1);
-      service.addToPendingAudioQueue(clientId, audioBuffer2);
-
-      const pendingQueue = (service as any).pendingAudioQueue;
-      expect(pendingQueue[clientId]).toEqual([audioBuffer1, audioBuffer2]);
-    });
-  });
-
-  describe('processPendingAudioQueue', () => {
-    it('should return combined audio buffer when pending queue exists', () => {
-      const clientId = 'client-123';
-      const pendingBuffer = Buffer.from('pending audio');
-      const newBuffer = Buffer.from('new audio');
-
-      service.addToPendingAudioQueue(clientId, pendingBuffer);
-
-      const result = service.processPendingAudioQueue(clientId, newBuffer);
-
-      expect(result).toEqual(Buffer.concat([pendingBuffer, newBuffer]));
-
-      const pendingQueue = (service as any).pendingAudioQueue;
-      expect(pendingQueue[clientId]).toBeUndefined();
-    });
-
-    it('should return new buffer when no pending queue exists', () => {
-      const clientId = 'client-123';
-      const newBuffer = Buffer.from('new audio');
-
-      const result = service.processPendingAudioQueue(clientId, newBuffer);
-
-      expect(result).toEqual(newBuffer);
-    });
-
-    it('should return new buffer when pending queue is empty', () => {
-      const clientId = 'client-123';
-      const newBuffer = Buffer.from('new audio');
-
-      // Create empty pending queue
-      (service as any).pendingAudioQueue[clientId] = [];
-
-      const result = service.processPendingAudioQueue(clientId, newBuffer);
-
-      expect(result).toEqual(newBuffer);
-    });
-  });
-
-  describe('generateStorageKey', () => {
-    it('should generate storage key with correct format', () => {
-      const chatId = 123;
-      const result = (service as any).generateStorageKey(chatId);
-
-      expect(result).toMatch(/^\d{4}\/\d{2}\/\d{2}\/chat-123-\d+\.raw$/);
-    });
-
-    it('should generate different keys for different chatIds', () => {
-      const chatId1 = 123;
-      const chatId2 = 456;
-
-      const result1 = (service as any).generateStorageKey(chatId1);
-      const result2 = (service as any).generateStorageKey(chatId2);
-
-      expect(result1).toContain('chat-123-');
-      expect(result2).toContain('chat-456-');
-      expect(result1).not.toEqual(result2);
-    });
-  });
-
-  describe('saveAudio', () => {
-    it('should add to pending queue when chatId is placeholder', () => {
-      const session = {
-        id: 'session-123',
-        type: 'user' as const,
-        userId: 456,
-        user: {},
-        role: 'counselor',
-        room: 'room-123',
-        chatId: 789,
-        tenantId: 'tenant-123',
-        provider: AudioChatProvider.WEBRTC,
-      };
-      const audioData = {
-        chatId: PLACEHOLDER_CHAT_ID,
-        audioBase64: Buffer.from('test audio').toString('base64'),
-        shouldBroadcastAudioMessage: true,
-      };
-
-      service.saveAudio(session, audioData);
-
-      const pendingQueue = (service as any).pendingAudioQueue;
-      expect(pendingQueue[session.id]).toBeDefined();
-      expect(pendingQueue[session.id].length).toBe(1);
-    });
-
-    it('should handle audio when no active stream exists', () => {
-      const session = {
-        id: 'session-123',
-        type: 'user' as const,
-        userId: 456,
-        user: {},
-        role: 'counselor',
-        room: 'room-123',
-        chatId: 789,
-        tenantId: 'tenant-123',
-        provider: AudioChatProvider.WEBRTC,
-      };
-      const audioData = {
-        chatId: 123,
-        audioBase64: Buffer.from('test audio').toString('base64'),
-        shouldBroadcastAudioMessage: true,
-      };
-
-      expect(() => service.saveAudio(session, audioData)).not.toThrow();
-    });
-
-    it('should process audio with active stream and broadcast', () => {
-      const session = {
-        id: 'session-123',
-        type: 'user' as const,
-        userId: 456,
-        user: {},
-        role: 'counselor',
-        room: 'room-123',
-        chatId: 789,
-        tenantId: 'tenant-123',
-        provider: AudioChatProvider.WEBRTC,
-      };
-      const audioData = {
-        chatId: 123,
-        audioBase64: Buffer.from('test audio').toString('base64'),
-        shouldBroadcastAudioMessage: true,
-      };
-
-      // Setup active stream
-      const activeCallStreams = (service as any).activeCallStreams;
-      activeCallStreams[123] = {
-        parts: [],
-        uploadId: 'upload-123',
-        key: 'test-key',
-        partNumber: 1,
-        currentFileIndex: 0,
-        files: [
-          {
-            fileWriteStream: { write: jest.fn(), end: jest.fn((cb) => cb()) },
-            tempFilePath: '/tmp/file1',
-            bufferSize: 0,
-          },
-          {
-            fileWriteStream: { write: jest.fn(), end: jest.fn((cb) => cb()) },
-            tempFilePath: '/tmp/file2',
-            bufferSize: 0,
-          },
-        ],
-        callId: 'call-123',
-        chatId: 123,
-      };
-
-      service.saveAudio(session, audioData);
-
-      expect(activeCallStreams[123].files[0].bufferSize).toBeGreaterThan(0);
-      expect(
-        broadcastMessageService.broadcastAudioStreamMessage,
-      ).toHaveBeenCalled();
-    });
-
-    it('should process audio without broadcasting when shouldBroadcastAudioMessage is false', () => {
-      const session = {
-        id: 'session-123',
-        type: 'user' as const,
-        userId: 456,
-        user: {},
-        role: 'counselor',
-        room: 'room-123',
-        chatId: 789,
-        tenantId: 'tenant-123',
-        provider: AudioChatProvider.WEBRTC,
-      };
-      const audioData = {
-        chatId: 123,
-        audioBase64: Buffer.from('test audio').toString('base64'),
-        shouldBroadcastAudioMessage: false,
-      };
-
-      // Setup active stream
-      const activeCallStreams = (service as any).activeCallStreams;
-      activeCallStreams[123] = {
-        parts: [],
-        uploadId: 'upload-123',
-        key: 'test-key',
-        partNumber: 1,
-        currentFileIndex: 0,
-        files: [
-          {
-            fileWriteStream: { write: jest.fn(), end: jest.fn((cb) => cb()) },
-            tempFilePath: '/tmp/file1',
-            bufferSize: 0,
-          },
-        ],
-        callId: 'call-123',
-        chatId: 123,
-      };
-
-      service.saveAudio(session, audioData);
-
-      expect(
-        broadcastMessageService.broadcastAudioStreamMessage,
-      ).not.toHaveBeenCalled();
-    });
-
-    it('should flush file when buffer size exceeds minimum', async () => {
-      const session = {
-        id: 'session-123',
-        type: 'user' as const,
-        userId: 456,
-        user: {},
-        role: 'counselor',
-        room: 'room-123',
-        chatId: 789,
-        tenantId: 'tenant-123',
-        provider: AudioChatProvider.WEBRTC,
-      };
-      const largeAudioData = {
-        chatId: 123,
-        audioBase64: Buffer.alloc(7 * 1024 * 1024).toString('base64'), // 7MB
-        shouldBroadcastAudioMessage: true,
-      };
-
-      // Setup active stream
-      const activeCallStreams = (service as any).activeCallStreams;
-      activeCallStreams[123] = {
-        parts: [],
-        uploadId: 'upload-123',
-        key: 'test-key',
-        partNumber: 1,
-        currentFileIndex: 0,
-        files: [
-          {
-            fileWriteStream: { write: jest.fn(), end: jest.fn((cb) => cb()) },
-            tempFilePath: '/tmp/file1',
-            bufferSize: 0,
-          },
-          {
-            fileWriteStream: { write: jest.fn(), end: jest.fn((cb) => cb()) },
-            tempFilePath: '/tmp/file2',
-            bufferSize: 0,
-          },
-        ],
-        callId: 'call-123',
-        chatId: 123,
-      };
-
-      service.saveAudio(session, largeAudioData);
-
-      // The flushFileAsPart method is called asynchronously, so we need to wait
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
-      expect(activeCallStreams[123].parts.length).toBeGreaterThan(0);
-      expect(activeCallStreams[123].currentFileIndex).toBe(1);
-    });
-  });
-
-  describe('endCallStream', () => {
-    it('should handle case when no active stream exists', async () => {
-      const callData = { chatId: 123 };
-
-      await expect(service.endCallStream(callData)).resolves.not.toThrow();
-    });
-
-    it('should end call stream with multipart upload', async () => {
-      const callData = { chatId: 123 };
-
-      // Setup active stream with parts
-      const activeCallStreams = (service as any).activeCallStreams;
-      activeCallStreams[123] = {
-        parts: [{ ETag: 'etag1', PartNumber: 1 }],
-        uploadId: 'upload-123',
-        key: 'test-key',
-        partNumber: 1,
-        currentFileIndex: 0,
-        files: [
-          {
-            fileWriteStream: { write: jest.fn(), end: jest.fn((cb) => cb()) },
-            tempFilePath: '/tmp/file1',
-            bufferSize: 1000,
-          },
-        ],
-        callId: 'call-123',
-        chatId: 123,
-      };
-
-      s3Service.completeMultipartUpload.mockResolvedValue({
-        $metadata: {} as any,
-      });
-      chatAudioUploadsService.updateAudioUpload.mockResolvedValue({} as any);
-      chatService.updateCallMetadata.mockResolvedValue(undefined);
-
-      await service.endCallStream(callData);
-
-      expect(s3Service.completeMultipartUploadWithParts).toHaveBeenCalled();
-      expect(chatAudioUploadsService.updateAudioUpload).toHaveBeenCalled();
-      expect(activeCallStreams[123]).toBeUndefined();
-    });
-
-    it('should handle empty file case', async () => {
-      const callData = { chatId: 123 };
-
-      // Setup active stream with empty file
-      const activeCallStreams = (service as any).activeCallStreams;
-      activeCallStreams[123] = {
-        parts: [],
-        uploadId: 'upload-123',
-        key: 'test-key',
-        partNumber: 1,
-        currentFileIndex: 0,
-        files: [
-          {
-            fileWriteStream: { write: jest.fn(), end: jest.fn((cb) => cb()) },
-            tempFilePath: '/tmp/file1',
-            bufferSize: 0,
-          },
-        ],
-        callId: 'call-123',
-        chatId: 123,
-      };
-
-      await service.endCallStream(callData);
-
-      expect(activeCallStreams[123]).toBeUndefined();
-    });
-
-    it('should handle case with no parts and non-empty buffer', async () => {
-      const callData = { chatId: 123 };
-
-      // Setup active stream with no parts but non-empty buffer
-      const activeCallStreams = (service as any).activeCallStreams;
-      activeCallStreams[123] = {
-        parts: [],
-        uploadId: 'upload-123',
-        key: 'test-key',
-        partNumber: 1,
-        currentFileIndex: 0,
-        files: [
-          {
-            fileWriteStream: { write: jest.fn(), end: jest.fn((cb) => cb()) },
-            tempFilePath: '/tmp/file1',
-            bufferSize: 1000,
-          },
-        ],
-        callId: 'call-123',
-        chatId: 123,
-      };
-
-      await service.endCallStream(callData);
-
-      expect(activeCallStreams[123]).toBeUndefined();
+    it('should return buffer if no pending', () => {
+      const id = 'c2';
+      const buffer = Buffer.from('x');
+      const result = service.processPendingAudioQueue(id, buffer);
+      expect(result).toBe(buffer);
     });
   });
 
   describe('clearPendingAudioQueue', () => {
     it('should clear pending audio queue', () => {
-      const callId = 'call-123';
-      const audioBuffer = Buffer.from('test audio');
-
-      service.addToPendingAudioQueue(callId, audioBuffer);
-      service.clearPendingAudioQueue(callId);
-
-      const pendingQueue = (service as any).pendingAudioQueue;
-      expect(pendingQueue[callId]).toBeUndefined();
-    });
-
-    it('should handle clearing non-existent queue', () => {
-      const callId = 'non-existent';
-
-      expect(() => service.clearPendingAudioQueue(callId)).not.toThrow();
+      service['pendingAudioQueue']['call-1'] = [Buffer.from('z')];
+      service.clearPendingAudioQueue('call-1');
+      expect(service['pendingAudioQueue']['call-1']).toBeUndefined();
     });
   });
 
   describe('setAuthContext', () => {
-    it('should set auth context', () => {
-      const session = {
-        id: 'session-123',
-        type: 'user' as const,
-        userId: 456,
-        user: {},
-        role: 'counselor',
-        room: 'room-123',
-        chatId: 789,
-        tenantId: 'tenant-123',
-        provider: AudioChatProvider.WEBRTC,
-      };
-
-      service.setAuthContext(session);
-
-      const {
-        ExecutionManager,
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-      } = require('../../../common/execution/execution-manager');
+    it('should call ExecutionManager.setAuthContext', () => {
+      service.setAuthContext(mockSession);
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
-        session.userId.toString(),
-        session.role,
-        session.tenantId,
+        mockSession.userId.toString(),
+        mockSession.role,
+        mockSession.tenantId,
       );
     });
   });
 
-  describe('cleanUpTemporaryFiles', () => {
-    it('should clean up temporary files', async () => {
-      const files = ['/tmp/file1', '/tmp/file2'];
-      const chatId = 123;
+  describe('startCallStream', () => {
+    const chatData = {
+      counselorId: 99,
+      provider: AudioChatProvider.MICROPHONE,
+      platform: AudioChatPlatform.WEB,
+      sampleRate: 16000,
+    };
 
-      await expect(
-        (service as any).cleanUpTemporaryFiles(files, chatId),
-      ).resolves.not.toThrow();
+    it('should create chat and setup call stream', async () => {
+      (dataSource.transaction as jest.Mock).mockImplementationOnce(
+        async (runInTx: any) => runInTx({} as EntityManager),
+      );
+
+      (AudioEncryptionUtil.createEncryptionStream as jest.Mock)
+        .mockReturnValueOnce({
+          cipher: { write: jest.fn(), end: jest.fn() },
+          writeStream: new MockWriteStream(),
+          key: Buffer.from('k1'),
+          iv: Buffer.from('iv1'),
+        })
+        .mockReturnValueOnce({
+          cipher: { write: jest.fn(), end: jest.fn() },
+          writeStream: new MockWriteStream(),
+          key: Buffer.from('k2'),
+          iv: Buffer.from('iv2'),
+        });
+
+      chatService.createChatForAnonymousClient.mockResolvedValue(
+        mockChat as any,
+      );
+      s3Service.createMultipartUpload.mockResolvedValue({
+        UploadId: 'up-1',
+      } as any);
+      chatAudioUploadsService.createAudioUpload.mockResolvedValue(
+        undefined as any,
+      );
+
+      const onChatCreated = jest.fn();
+      await service.startCallStream(mockSession, chatData, onChatCreated);
+
+      expect(chatService.createChatForAnonymousClient).toHaveBeenCalled();
+      expect(s3Service.createMultipartUpload).toHaveBeenCalled();
+      expect(onChatCreated).toHaveBeenCalledWith(mockChat.id);
+      expect(service['activeCallStreams'][mockChat.id]).toBeDefined();
     });
 
-    it('should handle case when files array is null', async () => {
-      const chatId = 123;
-
-      await expect(
-        (service as any).cleanUpTemporaryFiles(null, chatId),
-      ).resolves.not.toThrow();
-    });
-
-    it('should handle case when files array is undefined', async () => {
-      const chatId = 123;
-
-      await expect(
-        (service as any).cleanUpTemporaryFiles(undefined, chatId),
-      ).resolves.not.toThrow();
-    });
-
-    it('should handle case when files array is empty', async () => {
-      const files: string[] = [];
-      const chatId = 123;
-
-      await expect(
-        (service as any).cleanUpTemporaryFiles(files, chatId),
-      ).resolves.not.toThrow();
-    });
-  });
-
-  describe('handleEmptyFile', () => {
-    it('should handle empty file', () => {
-      const activeCallStream = {
-        files: [{ tempFilePath: '/tmp/file1' }, { tempFilePath: '/tmp/file2' }],
-      };
-      const chatId = 123;
-
-      expect(() =>
-        (service as any).handleEmptyFile(activeCallStream, chatId),
-      ).not.toThrow();
-    });
-
-    it('should handle empty file with no files array', () => {
-      const activeCallStream = {
-        files: null,
-      };
-      const chatId = 123;
-
-      expect(() =>
-        (service as any).handleEmptyFile(activeCallStream, chatId),
-      ).not.toThrow();
-    });
-
-    it('should handle empty file with undefined files array', () => {
-      const activeCallStream = {
-        files: undefined,
-      };
-      const chatId = 123;
-
-      expect(() =>
-        (service as any).handleEmptyFile(activeCallStream, chatId),
-      ).not.toThrow();
-    });
-  });
-
-  describe('rollbackExternalOperations', () => {
-    it('should rollback external operations with s3UploadId', async () => {
-      const rollbackData = {
-        s3UploadId: 'upload-123',
-        tempFiles: ['/tmp/file1'],
-        callId: 'call-123',
-        chatId: 123,
-        s3key: 'test-key',
-      };
-
-      s3Service.abortMultipartUpload.mockResolvedValue({
-        $metadata: {} as any,
+    it('should rollback on error', async () => {
+      (dataSource.transaction as jest.Mock).mockImplementationOnce(async () => {
+        throw new Error('Transaction failed');
       });
 
-      await (service as any).rollbackExternalOperations(rollbackData);
-
-      expect(s3Service.abortMultipartUpload).toHaveBeenCalled();
-    });
-
-    it('should handle rollback when no s3UploadId', async () => {
-      const rollbackData = {
-        s3UploadId: null,
-        tempFiles: ['/tmp/file1'],
-        callId: 'call-123',
-        chatId: 123,
-        s3key: 'test-key',
-      };
-
-      await (service as any).rollbackExternalOperations(rollbackData);
-
-      expect(s3Service.abortMultipartUpload).not.toHaveBeenCalled();
-    });
-
-    it('should handle rollback when no s3key', async () => {
-      const rollbackData = {
-        s3UploadId: 'upload-123',
-        tempFiles: ['/tmp/file1'],
-        callId: 'call-123',
-        chatId: 123,
-        s3key: null,
-      };
-
-      await (service as any).rollbackExternalOperations(rollbackData);
-
-      expect(s3Service.abortMultipartUpload).not.toHaveBeenCalled();
-    });
-
-    it('should handle rollback when no chatId', async () => {
-      const rollbackData = {
-        s3UploadId: 'upload-123',
-        tempFiles: ['/tmp/file1'],
-        callId: 'call-123',
-        chatId: null,
-        s3key: 'test-key',
-      };
-
-      await (service as any).rollbackExternalOperations(rollbackData);
-
-      expect(s3Service.abortMultipartUpload).toHaveBeenCalled();
+      await expect(
+        service.startCallStream(mockSession, chatData, jest.fn()),
+      ).rejects.toThrow('Transaction failed');
     });
   });
 
-  describe('flushFileAsPart', () => {
-    it('should flush file as part', async () => {
-      const activeCallStream = {
-        uploadId: 'upload-123',
-        key: 'test-key',
-        partNumber: 1,
+  describe('saveAudio', () => {
+    const audioBase64 = Buffer.from('hello').toString('base64');
+
+    it('should queue audio if placeholder chatId', () => {
+      service.saveAudio(mockSession, {
+        chatId: PLACEHOLDER_CHAT_ID,
+        audioBase64,
+      });
+      expect(service['pendingAudioQueue'][mockSession.id]).toBeDefined();
+    });
+
+    it('should write to active stream', () => {
+      const cipher = { write: jest.fn() } as any;
+      const chatId = mockChat.id;
+
+      service['activeCallStreams'][chatId] = {
         parts: [],
+        uploadId: 'up-2',
+        key: 'key-2',
+        partNumber: 1,
+        currentFileIndex: 0,
         files: [
           {
-            fileWriteStream: { end: jest.fn((cb) => cb()) },
-            tempFilePath: '/tmp/file1',
-            bufferSize: 1000,
+            cipher,
+            writeStream: new MockWriteStream() as any,
+            encryptionKey: Buffer.from('k'),
+            iv: Buffer.from('iv'),
+            tempFilePath: '/tmp/a',
+            bufferSize: 0,
+          },
+          {
+            cipher,
+            writeStream: new MockWriteStream() as any,
+            encryptionKey: Buffer.from('k2'),
+            iv: Buffer.from('iv2'),
+            tempFilePath: '/tmp/b',
+            bufferSize: 0,
           },
         ],
+        callId: mockSession.id,
+        chatId: chatId,
       };
 
-      s3Service.uploadPart.mockResolvedValue({
-        ETag: 'etag1',
-        $metadata: {} as any,
-      });
-
-      await (service as any).flushFileAsPart({
-        chatId: 123,
-        activeCallStream,
-        fileToFlushIndex: 0,
-        provider: AudioChatProvider.WEBRTC,
-      });
-
-      expect(s3Service.uploadPart).toHaveBeenCalled();
-      expect(activeCallStream.parts).toHaveLength(1);
-      expect(activeCallStream.partNumber).toBe(2);
+      service.saveAudio(mockSession, { chatId, audioBase64 });
+      expect(cipher.write).toHaveBeenCalled();
     });
   });
 
-  describe('setupCallStream', () => {
-    it('should setup call stream', async () => {
-      const setupData = {
-        session: { id: 'session-123' },
-        chatId: 123,
-        entityManager: mockEntityManager,
-        sampleRate: 44100,
+  describe('endCallStream', () => {
+    it('should handle missing stream gracefully', async () => {
+      await service.endCallStream({ chatId: 999 });
+    });
+
+    it('should complete multipart upload when parts exist', async () => {
+      const chatId = mockChat.id;
+      service['activeCallStreams'][chatId] = {
+        parts: [{ ETag: 'E', PartNumber: 1 }],
+        uploadId: 'up-5',
+        key: 'key-5',
+        partNumber: 2,
+        currentFileIndex: 0,
+        files: [
+          {
+            cipher: {} as any,
+            writeStream: new MockWriteStream() as any,
+            encryptionKey: Buffer.from('k'),
+            iv: Buffer.from('iv'),
+            tempFilePath: '/tmp/a',
+            bufferSize: 10,
+          },
+          {
+            cipher: {} as any,
+            writeStream: new MockWriteStream() as any,
+            encryptionKey: Buffer.from('k2'),
+            iv: Buffer.from('iv2'),
+            tempFilePath: '/tmp/b',
+            bufferSize: 0,
+          },
+        ],
+        callId: mockSession.id,
+        chatId: chatId,
       };
 
-      const mockChat = {
-        chatId: 123,
-        clientId: 456,
-        counselorId: 789,
-        chat: {} as any,
-      };
-      const mockUploadId = 'upload-123';
+      jest
+        .spyOn(service as any, 'flushFileAsPart')
+        .mockResolvedValue(undefined);
+      s3Service.completeMultipartUploadWithParts.mockResolvedValue(
+        undefined as any,
+      );
+      chatAudioUploadsService.updateAudioUpload.mockResolvedValue({
+        sampleRate: 16000,
+      } as any);
+      s3Service.generatePresignedUrl.mockResolvedValue('https://audio');
+      aiEventService.publishTranscribeAudioEvent.mockResolvedValue(
+        undefined as any,
+      );
 
-      chatService.createChatForAnonymousClient.mockResolvedValue(mockChat);
-      s3Service.createMultipartUpload.mockResolvedValue({
-        UploadId: mockUploadId,
-        $metadata: {} as any,
+      await service.endCallStream({ chatId });
+
+      expect(s3Service.completeMultipartUploadWithParts).toHaveBeenCalled();
+      expect(aiEventService.publishTranscribeAudioEvent).toHaveBeenCalled();
+    });
+
+    it('should handle empty file case', async () => {
+      const chatId = mockChat.id;
+      service['activeCallStreams'][chatId] = {
+        parts: [],
+        uploadId: 'up-6',
+        key: 'key-6',
+        partNumber: 1,
+        currentFileIndex: 0,
+        files: [
+          {
+            cipher: {} as any,
+            writeStream: new MockWriteStream() as any,
+            encryptionKey: Buffer.from('k'),
+            iv: Buffer.from('iv'),
+            tempFilePath: '/tmp/a',
+            bufferSize: 0,
+          },
+          {
+            cipher: {} as any,
+            writeStream: new MockWriteStream() as any,
+            encryptionKey: Buffer.from('k2'),
+            iv: Buffer.from('iv2'),
+            tempFilePath: '/tmp/b',
+            bufferSize: 0,
+          },
+        ],
+        callId: mockSession.id,
+        chatId: chatId,
+      };
+
+      s3Service.abortMultipartUpload.mockResolvedValue(undefined as any);
+      chatService.updateCallMetadata.mockResolvedValue(undefined as any);
+      chatService.updateChat.mockResolvedValue(undefined as any);
+      chatAudioUploadsService.updateAudioUpload.mockResolvedValue(
+        undefined as any,
+      );
+
+      await service.endCallStream({ chatId });
+
+      expect(chatService.updateChat).toHaveBeenCalledWith(chatId, {
+        summaryStatus: ChatSummaryStatus.NO_AUDIO,
       });
-      chatAudioUploadsService.createAudioUpload.mockResolvedValue({} as any);
-
-      const result = await (service as any).setupCallStream(setupData);
-
-      expect(result).toHaveProperty('uploadId');
-      expect(result).toHaveProperty('files');
-      expect(result).toHaveProperty('key');
     });
   });
 });

@@ -6,9 +6,12 @@ import { RedisService } from '../../redis/service/redis.service';
 import { PreferenceName } from '../constants/user.constants';
 import { Preference } from '../entities/preference.entity';
 import { PreferenceValue } from '../type/common.type';
+import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 
 @Injectable()
 export class PreferenceService {
+  private readonly auditLogger = AuditLoggerService.getInstance();
+
   constructor(
     @InjectRepository(Preference)
     private readonly preferenceRepository: Repository<Preference>,

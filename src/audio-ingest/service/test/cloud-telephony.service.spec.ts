@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CloudTelephonyService } from '../cloud-telephony.service';
 import { CloudTelephonyRepository } from '../../repository/cloud-telephony.repository';
 import { CryptoService } from '../../../common/service/crypto.service';
+import { AppConfigService } from '../../../config/config.service';
 import { CloudTelephonyProvider } from '../../../common/constants/chat.constants';
 import { IntegrationStatus } from '../../type/cloud-telephony.type';
 import { CloudTelephonyIntegration } from '../../../common/entities/cloud-telephony-integration.entity';
@@ -54,6 +55,10 @@ describe('CloudTelephonyService', () => {
       decrypt: jest.fn(),
     };
 
+    const mockAppConfigService = {
+      get: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CloudTelephonyService,
@@ -64,6 +69,10 @@ describe('CloudTelephonyService', () => {
         {
           provide: CryptoService,
           useValue: mockCryptoService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: mockAppConfigService,
         },
       ],
     }).compile();
@@ -250,6 +259,7 @@ describe('CloudTelephonyService', () => {
 
       expect(cryptoService.encrypt).toHaveBeenCalledWith(
         JSON.stringify(mockOzonetelCredentials),
+        undefined, // encryption key from config
       );
       expect(cloudTelephonyRepository.create).toHaveBeenCalledWith({
         credentials: encryptedCredentials,
@@ -324,6 +334,7 @@ describe('CloudTelephonyService', () => {
       );
       expect(cryptoService.decrypt).toHaveBeenCalledWith(
         mockCloudTelephonyIntegration.credentials,
+        undefined, // encryption key from config
       );
       expect(result).toEqual(expectedResult);
     });
@@ -406,6 +417,7 @@ describe('CloudTelephonyService', () => {
       );
       expect(cryptoService.decrypt).toHaveBeenCalledWith(
         mockCloudTelephonyIntegration.credentials,
+        undefined, // encryption key from config
       );
       expect(result).toEqual(expectedResult);
     });

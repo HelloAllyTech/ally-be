@@ -44,7 +44,7 @@ describe('ExecutionContextMiddleware', () => {
 
       expect(mockExecutionManager.runWithContext).toHaveBeenCalledWith(
         expect.any(Function),
-        mockRequest.path,
+        mockRequest,
       );
       expect(mockNext).toHaveBeenCalled();
     });

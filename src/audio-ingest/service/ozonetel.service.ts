@@ -179,14 +179,13 @@ export class OzonetelService {
           timeToAnswer,
           endTime: EndTime,
         });
-        const chatResult = await this.chatService.createChatForAnonymousClient({
+        chat = await this.chatService.createChatForAnonymousClient({
           counselorId: counselor.id,
           provider: AudioChatProvider.OZONETEL,
           startedAt,
           externalId: monitorUCID,
           status: ChatStatus.ACTIVE,
         });
-        chat = chatResult?.chat || null;
         this.logger.info(
           `Chat created for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat?.id}`,
         );
@@ -340,7 +339,7 @@ export class OzonetelService {
           {
             participants: [counselor.id],
             userId: counselor.id,
-            chatId: chat.chatId,
+            chatId: chat.id,
           },
         );
       }

@@ -9,6 +9,7 @@ import { ChatModule } from '../chat/chat.module';
 import { AiModule } from '../ai/ai.module';
 import { BrokerModule } from '../message-broker/broker.module';
 import { ChatAudioUploads } from '../common/entities/chat-audio-uploads.entity';
+import { ChatAudioUploadRepository } from './repository/chat-audio-upload.repository';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { ChatAudioUploads } from '../common/entities/chat-audio-uploads.entity';
     StreamTranscriptionService,
     BroadcastMessageService,
     ChatAudioUploadsService,
+    ChatAudioUploadRepository,
   ],
   exports: [
     StreamFileProcessorService,

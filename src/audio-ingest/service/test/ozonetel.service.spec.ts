@@ -257,12 +257,7 @@ describe('OzonetelService', () => {
 
     it('should create new chat when chat does not exist', async () => {
       chatService.getChatByExternalId.mockResolvedValue(null);
-      chatService.createChatForAnonymousClient.mockResolvedValue({
-        chatId: 1,
-        clientId: 1,
-        counselorId: 1,
-        chat: mockChat,
-      });
+      chatService.createChatForAnonymousClient.mockResolvedValue(mockChat);
 
       await service.processOzonetelCallDetail(mockCallDetail, 'TEST_CODE');
 
@@ -283,7 +278,7 @@ describe('OzonetelService', () => {
       expect(audioRetryProducer.sendAudioFileRetryMessage).toHaveBeenCalledWith(
         {
           audioUrl: 'https://example.com/audio.wav',
-          chatId: 1,
+          chatId: mockChat.id,
           retryCount: 0,
         },
       );
@@ -424,12 +419,7 @@ describe('OzonetelService', () => {
         AudioFile: undefined,
       };
       chatService.getChatByExternalId.mockResolvedValue(null);
-      chatService.createChatForAnonymousClient.mockResolvedValue({
-        chatId: 1,
-        clientId: 1,
-        counselorId: 1,
-        chat: mockChat,
-      });
+      chatService.createChatForAnonymousClient.mockResolvedValue(mockChat);
 
       await expect(
         service.processOzonetelCallDetail(callDetailWithoutAudio, 'TEST_CODE'),
@@ -443,12 +433,7 @@ describe('OzonetelService', () => {
         mockCloudTelephonyIntegration as any,
       );
       userService.getUserByExternalId.mockResolvedValue(mockCounselor);
-      chatService.createChatForAnonymousClient.mockResolvedValue({
-        chatId: 1,
-        clientId: 1,
-        counselorId: 1,
-        chat: mockChat,
-      });
+      chatService.createChatForAnonymousClient.mockResolvedValue(mockChat);
     });
 
     it('should handle answered call event successfully', async () => {
@@ -472,7 +457,7 @@ describe('OzonetelService', () => {
         {
           participants: [1],
           userId: 1,
-          chatId: 1,
+          chatId: mockChat.id,
         },
       );
     });
@@ -890,12 +875,7 @@ describe('OzonetelService', () => {
         mockCloudTelephonyIntegration as any,
       );
       userService.getUserByExternalId.mockResolvedValue(mockCounselor);
-      chatService.createChatForAnonymousClient.mockResolvedValue({
-        chatId: 1,
-        clientId: 1,
-        counselorId: 1,
-        chat: mockChat,
-      });
+      chatService.createChatForAnonymousClient.mockResolvedValue(mockChat);
 
       await service.handleOzonetelCallEvents(mockCallEventsData, 'TEST_CODE');
 

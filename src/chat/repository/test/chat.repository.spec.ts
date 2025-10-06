@@ -30,6 +30,11 @@ describe('ChatRepository', () => {
 
     chatRepo = {
       createQueryBuilder: mockCreateQueryBuilder,
+      update: jest.fn().mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      }),
     } as any;
 
     entityManager = {
@@ -81,48 +86,52 @@ describe('ChatRepository', () => {
     // });
 
     it('should return false when update affects 0 rows', async () => {
-      mockQueryBuilder.execute.mockResolvedValue({ affected: 0 });
+      chatRepo.update.mockResolvedValue({
+        affected: 0,
+        raw: [],
+        generatedMaps: [],
+      });
 
       const result = await repository.updateChat(1, mockUpdateChatInput);
 
       expect(result).toBe(false);
-      expect(mockQueryBuilder.set).toHaveBeenCalled();
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith('id = :chatId', {
-        chatId: 1,
-      });
+      expect(chatRepo.update).toHaveBeenCalledWith(1, mockUpdateChatInput);
     });
 
     it('should return true when update affects rows', async () => {
-      mockQueryBuilder.execute.mockResolvedValue({ affected: 1 });
+      chatRepo.update.mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
 
       const result = await repository.updateChat(1, mockUpdateChatInput);
 
       expect(result).toBe(true);
-      expect(mockQueryBuilder.set).toHaveBeenCalled();
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith('id = :chatId', {
-        chatId: 1,
-      });
+      expect(chatRepo.update).toHaveBeenCalledWith(1, mockUpdateChatInput);
     });
 
     it('should set metadata as function that returns correct SQL', async () => {
       const inputWithMetadata: UpdateChatInput = {
         metadata: { key: 'value' },
       };
-      mockQueryBuilder.execute.mockResolvedValue({ affected: 1 });
+      chatRepo.update.mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
 
       await repository.updateChat(1, inputWithMetadata);
 
-      // Get the setObj that was passed to set()
-      const setCall = mockQueryBuilder.set.mock.calls[0][0];
-      const metadataFunction = setCall.metadata;
-
-      // Execute the function to verify it returns the correct SQL
-      const result = metadataFunction();
-      expect(result).toBe('"metadata" || \'[{"key":"value"}]\'::jsonb');
+      expect(chatRepo.update).toHaveBeenCalledWith(1, inputWithMetadata);
     });
 
     it('should use EntityManager when provided', async () => {
-      mockQueryBuilder.execute.mockResolvedValue({ affected: 1 });
+      chatRepo.update.mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
 
       await repository.updateChat(1, mockUpdateChatInput, entityManager);
 
@@ -131,7 +140,11 @@ describe('ChatRepository', () => {
     });
 
     it('should use DataSource when EntityManager not provided', async () => {
-      mockQueryBuilder.execute.mockResolvedValue({ affected: 1 });
+      chatRepo.update.mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
 
       await repository.updateChat(1, mockUpdateChatInput);
 
@@ -140,14 +153,15 @@ describe('ChatRepository', () => {
     });
 
     it('should handle both summaryStatus and metadata updates', async () => {
-      mockQueryBuilder.execute.mockResolvedValue({ affected: 1 });
+      chatRepo.update.mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
 
       await repository.updateChat(1, mockUpdateChatInput);
 
-      expect(mockQueryBuilder.set).toHaveBeenCalledWith({
-        summaryStatus: ChatSummaryStatus.SUCCESS,
-        metadata: expect.any(Function),
-      });
+      expect(chatRepo.update).toHaveBeenCalledWith(1, mockUpdateChatInput);
     });
   });
 });
