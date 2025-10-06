@@ -206,10 +206,10 @@ export class LearnController {
   @AuthRoles(UserRole.SUPER_ADMIN)
   @Delete('scenarios/events')
   async deleteScenarioEvents(
-    @Body() DeleteScenarioEventsDto: DeleteScenarioEventsDto,
+    @Body() deleteScenarioEventsDto: DeleteScenarioEventsDto,
   ) {
     const rowsAffected = await this.scenarioSessionService.deleteScenarioEvents(
-      DeleteScenarioEventsDto,
+      deleteScenarioEventsDto,
     );
     return rowsAffected != null && rowsAffected > 0;
   }

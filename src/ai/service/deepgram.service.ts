@@ -238,14 +238,19 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
           }
           const finalTranscript = clientSession?.transcriptBuffer + transcript;
           const transcriptWords = data.channel.alternatives[0].words;
-          clientSession.currentTranscriptStart =
-            clientSession.currentTranscriptStart || transcriptWords[0].start;
-          const end = transcriptWords[transcriptWords.length - 1].end;
-          clientSession.currentTranscriptEnd = end;
+
+          // Only process timing if words array is not empty
+          if (transcriptWords && transcriptWords.length > 0) {
+            clientSession.currentTranscriptStart =
+              clientSession.currentTranscriptStart || transcriptWords[0].start;
+            const end = transcriptWords[transcriptWords.length - 1].end;
+            clientSession.currentTranscriptEnd = end;
+          }
+
           const currentTranscriptCreatedAt = chatCreatedAt
             ? new Date(
                 new Date(chatCreatedAt).getTime() +
-                  clientSession.currentTranscriptStart * 1000,
+                  (clientSession.currentTranscriptStart || 0) * 1000,
               )
             : new Date();
           const isSentenceComplete =
@@ -289,10 +294,15 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
       const clientSession = this.liveClients.get(session.id);
       if (clientSession) {
         const transcriptWords = data.channel.alternatives[0].words;
-        clientSession.currentTranscriptStart =
-          clientSession.currentTranscriptStart || transcriptWords[0].start;
-        const end = transcriptWords[transcriptWords.length - 1].end;
-        clientSession.currentTranscriptEnd = end;
+
+        // Only process timing if words array is not empty
+        if (transcriptWords && transcriptWords.length > 0) {
+          clientSession.currentTranscriptStart =
+            clientSession.currentTranscriptStart || transcriptWords[0].start;
+          const end = transcriptWords[transcriptWords.length - 1].end;
+          clientSession.currentTranscriptEnd = end;
+        }
+
         const currentTranscriptCreatedAt =
           chatCreatedAt && clientSession.currentTranscriptStart
             ? new Date(

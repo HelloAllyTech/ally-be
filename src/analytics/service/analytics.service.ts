@@ -88,7 +88,7 @@ export class AnalyticsService {
 
   async getCounselorStats(
     queryParams: CounselorStatsQueryDto,
-    userId: string,
+    userId: number,
   ): Promise<CounselorStatsResponseDto> {
     const query = this.chatRepository
       .createQueryBuilder('chat')
@@ -132,7 +132,7 @@ export class AnalyticsService {
       });
     }
 
-    query.andWhere('user.id = :userId', { userId: parseInt(userId) });
+    query.andWhere('user.id = :userId', { userId });
 
     const result = await query.getRawOne();
 
