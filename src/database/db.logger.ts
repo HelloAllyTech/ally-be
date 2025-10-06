@@ -1,21 +1,16 @@
-import { Logger, QueryRunner } from 'typeorm';
+import { Logger } from 'typeorm';
 import { LoggerService } from '../logger/logger.service';
 
 export class DBLogger implements Logger {
   private readonly logger = LoggerService.getInstance(DBLogger.name);
-  logQuery(query: string, parameters?: any[], queryRunner?: QueryRunner) {
+  logQuery(query: string, parameters?: any[]) {
     this.logger.debug(`QUERY: ${query}`);
     if (parameters && parameters.length > 0) {
       this.logger.debug(`PARAMETERS: ${JSON.stringify(parameters)}`);
     }
   }
 
-  logQueryError(
-    error: string | Error,
-    query: string,
-    parameters?: any[],
-    queryRunner?: QueryRunner,
-  ) {
+  logQueryError(error: string | Error, query: string) {
     // check if tenantId where clause is present only after where since get can contain tenantId
     if (query.includes('where')) {
       const whereIndex = query.indexOf('where');
@@ -26,22 +21,13 @@ export class DBLogger implements Logger {
     }
   }
 
-  logQuerySlow(
-    time: number,
-    query: string,
-    parameters?: any[],
-    queryRunner?: QueryRunner,
-  ) {
+  logQuerySlow(time: number, query: string) {
     this.logger.warn(`SLOW QUERY: ${time}ms | ${query}`);
   }
 
-  logSchemaBuild(message: string, queryRunner?: QueryRunner) {}
+  logSchemaBuild() {}
 
-  logMigration(message: string, queryRunner?: QueryRunner) {}
+  logMigration() {}
 
-  log(
-    level: 'log' | 'info' | 'warn',
-    message: any,
-    queryRunner?: QueryRunner,
-  ) {}
+  log() {}
 }

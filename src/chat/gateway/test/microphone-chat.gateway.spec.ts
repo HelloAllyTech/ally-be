@@ -25,9 +25,20 @@ jest.mock('../../../common/execution/execution-manager', () => ({
   ExecutionManager: {
     setAuthContext: jest.fn(),
     getCurrentContext: jest.fn(() => ({
+      id: 'test-execution-id',
       userId: '1',
       role: 'COUNSELOR',
       tenantId: 'tenant123',
+    })),
+    getExecutionId: jest.fn(() => 'test-execution-id'),
+    getUserId: jest.fn(() => '1'),
+    getTenantId: jest.fn(() => 'tenant123'),
+    getRole: jest.fn(() => 'COUNSELOR'),
+    getRequestMetadata: jest.fn(() => ({
+      ip: '127.0.0.1',
+      method: 'POST',
+      originalUrl: '/test',
+      headers: { 'user-agent': 'test-agent' },
     })),
   },
 }));
@@ -38,6 +49,15 @@ jest.mock('../../../logger/logger.service', () => ({
     getInstance: jest.fn(() => ({
       info: jest.fn(),
       error: jest.fn(),
+    })),
+  },
+}));
+
+// Mock AuditLoggerService
+jest.mock('../../../audit/service/audit-logger.service', () => ({
+  AuditLoggerService: {
+    getInstance: jest.fn(() => ({
+      log: jest.fn(),
     })),
   },
 }));
@@ -357,6 +377,11 @@ describe('MicrophoneChatGateway', () => {
     it('should return early when session not found', async () => {
       gatewayPrivate.sessions = {};
 
+      // Mock the logErrorAudioCallAuditEvent method to handle undefined session
+      const logErrorSpy = jest
+        .spyOn(gatewayPrivate, 'logErrorAudioCallAuditEvent')
+        .mockImplementation(() => {});
+
       await gateway.startAudioChat(mockSocket, {
         platform: AudioChatPlatform.WEB,
         isLinear16Encoded: true,
@@ -366,6 +391,8 @@ describe('MicrophoneChatGateway', () => {
       expect(
         mockStreamFileProcessorService.startCallStream,
       ).not.toHaveBeenCalled();
+
+      logErrorSpy.mockRestore();
     });
 
     it('should disconnect client when active chat exists', async () => {

@@ -34,6 +34,7 @@ describe('S3Service', () => {
     region: 'us-east-1',
     accessKeyId: 'test-access-key',
     secretAccessKey: 'test-secret-key',
+    sessionToken: 'test-session-token',
   };
 
   beforeEach(async () => {
@@ -75,6 +76,7 @@ describe('S3Service', () => {
         credentials: {
           accessKeyId: 'test-access-key',
           secretAccessKey: 'test-secret-key',
+          sessionToken: 'test-session-token',
         },
       });
     });
@@ -210,7 +212,7 @@ describe('S3Service', () => {
       expect(getSignedUrl).toHaveBeenCalledWith(
         mockS3Client,
         expect.any(GetObjectCommand),
-        { expiresIn: 3600 },
+        { expiresIn: 600 },
       );
       expect(result).toBe('https://presigned-url.com');
     });
@@ -227,7 +229,7 @@ describe('S3Service', () => {
       expect(getSignedUrl).toHaveBeenCalledWith(
         mockS3Client,
         expect.any(PutObjectCommand),
-        { expiresIn: 3600 },
+        { expiresIn: 600 },
       );
       expect(result).toBe('https://presigned-url.com');
     });

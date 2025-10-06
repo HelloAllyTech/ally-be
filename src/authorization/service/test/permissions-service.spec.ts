@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GroupService } from 'src/authorization/service/group.service';
+import { GroupPermissionsService } from 'src/authorization/service/group-permissions.service';
+import { UserGroupService } from 'src/authorization/service/user-group.service';
 import { PermissionsService } from '../permissions.service';
 
 describe('PermissionsService', () => {
@@ -16,6 +18,14 @@ describe('PermissionsService', () => {
         {
           provide: GroupService,
           useValue: { getUserRolesByUserId: jest.fn() },
+        },
+        {
+          provide: GroupPermissionsService,
+          useValue: { getPermissionsByGroupId: jest.fn() },
+        },
+        {
+          provide: UserGroupService,
+          useValue: { getUserGroupsByUserId: jest.fn() },
         },
       ],
     }).compile();

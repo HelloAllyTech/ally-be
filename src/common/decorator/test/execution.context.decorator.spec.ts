@@ -84,7 +84,7 @@ describe('WithExecutionContext Decorator', () => {
 
       expect(mockExecutionManager.runWithContext).toHaveBeenCalledWith(
         expect.any(Function),
-        'TestClass.testMethod',
+        { path: 'TestClass.testMethod' },
       );
       expect(mockOriginalMethod).toHaveBeenCalledWith('arg1', 'arg2');
       expect(result).toBe(expectedResult);
@@ -126,7 +126,7 @@ describe('WithExecutionContext Decorator', () => {
 
       expect(mockExecutionManager.runWithContext).toHaveBeenCalledWith(
         expect.any(Function),
-        'TestClass.testMethod',
+        { path: 'TestClass.testMethod' },
       );
       expect(mockOriginalMethod).toHaveBeenCalledWith('arg1', 'arg2');
       expect(result).toBe(expectedResult);

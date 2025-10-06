@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, EntityManager } from 'typeorm';
 import { ChatAudioUploadsService } from '../chat-audio-uploads.service';
 import {
@@ -7,6 +6,7 @@ import {
   ChatAudioUploadStatus,
 } from '../../../common/entities/chat-audio-uploads.entity';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
+import { ChatAudioUploadRepository } from '../../repository/chat-audio-upload.repository';
 
 // Mock the static class
 jest.mock('../../../common/execution/execution-manager', () => ({
@@ -52,14 +52,14 @@ describe('ChatAudioUploadsService', () => {
       providers: [
         ChatAudioUploadsService,
         {
-          provide: getRepositoryToken(ChatAudioUploads),
+          provide: ChatAudioUploadRepository,
           useValue: mockRepository,
         },
       ],
     }).compile();
 
     service = module.get<ChatAudioUploadsService>(ChatAudioUploadsService);
-    repository = module.get(getRepositoryToken(ChatAudioUploads));
+    repository = module.get(ChatAudioUploadRepository);
     entityManager = mockEntityManager as any;
   });
 
