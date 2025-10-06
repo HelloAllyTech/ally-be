@@ -18,7 +18,7 @@ jest.mock('@deepgram/sdk', () => ({
   })),
 }));
 
-const mockedAxios = axios as jest.Mocked<typeof axios>;
+const mockedAxios = axios as any;
 
 describe('AiService', () => {
   let service: AiService;
@@ -94,16 +94,17 @@ describe('AiService', () => {
       const mockBuffer = Buffer.from('audio data');
       const mockResponse = { data: { text: 'Transcribed text' } };
 
-      mockedAxios.post.mockResolvedValue(mockResponse);
+      mockedAxios.mockResolvedValue(mockResponse);
 
       const result = await service.transcribeAudioFromBuffer(mockBuffer);
 
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        `${mockConfig.ai.apiUrl}/transcribe`,
-        mockBuffer,
-        {
-          headers: { 'Content-Type': 'audio/webm' },
-        },
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: `${mockConfig.ai.apiUrl}/transcribe`,
+          method: 'post',
+          data: mockBuffer,
+          headers: expect.objectContaining({ 'Content-Type': 'audio/webm' }),
+        }),
       );
       expect(result).toBe('Transcribed text');
       expect(mockLogger.debug).toHaveBeenCalledWith(
@@ -115,13 +116,13 @@ describe('AiService', () => {
       const mockBuffer = Buffer.from('audio data');
       const error = new Error('Transcription failed');
 
-      mockedAxios.post.mockRejectedValue(error);
+      mockedAxios.mockRejectedValue(error);
 
       await expect(
         service.transcribeAudioFromBuffer(mockBuffer),
       ).rejects.toThrow('AI transcription failed');
       expect(mockLogger.error).toHaveBeenCalledWith(
-        'AI Service Error: Transcription failed',
+        expect.stringContaining('AI Service Error: Transcription failed'),
       );
     });
   });
@@ -357,27 +358,27 @@ describe('AiService', () => {
   describe('Error Handling', () => {
     it('should handle network errors', async () => {
       const networkError = { code: 'ENOTFOUND', message: 'Network error' };
-      mockedAxios.post.mockRejectedValue(networkError);
+      mockedAxios.mockRejectedValue(networkError);
 
       const mockBuffer = Buffer.from('audio data');
       await expect(
         service.transcribeAudioFromBuffer(mockBuffer),
       ).rejects.toThrow('AI transcription failed');
       expect(mockLogger.error).toHaveBeenCalledWith(
-        'AI Service Error: Network error',
+        expect.stringContaining('AI Service Error: Network error'),
       );
     });
 
     it('should handle timeout errors', async () => {
       const timeoutError = { code: 'ECONNABORTED', message: 'timeout' };
-      mockedAxios.post.mockRejectedValue(timeoutError);
+      mockedAxios.mockRejectedValue(timeoutError);
 
       const mockBuffer = Buffer.from('audio data');
       await expect(
         service.transcribeAudioFromBuffer(mockBuffer),
       ).rejects.toThrow('AI transcription failed');
       expect(mockLogger.error).toHaveBeenCalledWith(
-        'AI Service Error: timeout',
+        expect.stringContaining('AI Service Error: timeout'),
       );
     });
 

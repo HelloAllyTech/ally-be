@@ -56,7 +56,14 @@ describe('SqsService', () => {
     (LoggerService.getInstance as jest.Mock).mockReturnValue(mockLogger);
 
     // Mock configuration
-    mockConfig = {} as any;
+    mockConfig = {
+      aws: {
+        region: 'us-east-1',
+        accessKeyId: 'test-access-key',
+        secretAccessKey: 'test-secret-key',
+        sessionToken: 'test-session-token',
+      },
+    } as any;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -83,6 +90,7 @@ describe('SqsService', () => {
         credentials: {
           accessKeyId: 'test-access-key',
           secretAccessKey: 'test-secret-key',
+          sessionToken: 'test-session-token',
         },
       });
       expect(LoggerService.getInstance).toHaveBeenCalledWith('SqsService');
@@ -96,12 +104,21 @@ describe('SqsService', () => {
         AWS_SECRET_ACCESS_KEY: undefined,
       };
 
+      const mockConfigWithoutCredentials = {
+        aws: {
+          region: 'us-west-2',
+          accessKeyId: undefined,
+          secretAccessKey: undefined,
+          sessionToken: undefined,
+        },
+      } as any;
+
       await Test.createTestingModule({
         providers: [
           SqsService,
           {
             provide: AppConfigService,
-            useValue: mockConfig,
+            useValue: mockConfigWithoutCredentials,
           },
         ],
       }).compile();
@@ -119,12 +136,21 @@ describe('SqsService', () => {
         AWS_SECRET_ACCESS_KEY: 'test-secret',
       };
 
+      const mockConfigWithoutRegion = {
+        aws: {
+          region: undefined,
+          accessKeyId: 'test-key',
+          secretAccessKey: 'test-secret',
+          sessionToken: undefined,
+        },
+      } as any;
+
       await Test.createTestingModule({
         providers: [
           SqsService,
           {
             provide: AppConfigService,
-            useValue: mockConfig,
+            useValue: mockConfigWithoutRegion,
           },
         ],
       }).compile();
@@ -142,12 +168,21 @@ describe('SqsService', () => {
         AWS_SECRET_ACCESS_KEY: undefined,
       };
 
+      const mockConfigWithPartialCredentials = {
+        aws: {
+          region: 'eu-west-1',
+          accessKeyId: 'test-key',
+          secretAccessKey: undefined,
+          sessionToken: undefined,
+        },
+      } as any;
+
       await Test.createTestingModule({
         providers: [
           SqsService,
           {
             provide: AppConfigService,
-            useValue: mockConfig,
+            useValue: mockConfigWithPartialCredentials,
           },
         ],
       }).compile();
@@ -412,12 +447,21 @@ describe('SqsService', () => {
         AWS_REGION: undefined,
       };
 
+      const mockConfigWithoutRegion = {
+        aws: {
+          region: undefined,
+          accessKeyId: undefined,
+          secretAccessKey: undefined,
+          sessionToken: undefined,
+        },
+      } as any;
+
       const module: TestingModule = await Test.createTestingModule({
         providers: [
           SqsService,
           {
             provide: AppConfigService,
-            useValue: mockConfig,
+            useValue: mockConfigWithoutRegion,
           },
         ],
       }).compile();

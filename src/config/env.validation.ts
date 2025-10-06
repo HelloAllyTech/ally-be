@@ -46,8 +46,22 @@ export const validationSchema = Joi.object({
   SQS_AUDIO_UPLOAD_QUEUE_URL: Joi.string().required(),
   SQS_AUDIO_UPLOAD_DLQ_URL: Joi.string().required(),
 
+  // CloudWatch
+  CLOUDWATCH_HIPAA_LOG_GROUP_NAME: Joi.string().required(),
+  CLOUDWATCH_HIPAA_LOG_STREAM_NAME: Joi.string().required(),
+
   // TEST ACCOUNTS
   TEST_ACCOUNTS: Joi.string().optional(),
+
+  // ENCRYPTION KEYS
+  PHI_DATA_ENCRYPTION_KEY: Joi.string()
+    .length(64)
+    .pattern(/^[a-f0-9]+$/i)
+    .optional(),
+
+  // HIPPA
+  ENABLE_AUDIT_LOGS_TO_CLOUDWATCH: Joi.boolean().default(false),
+  ENABLE_CONSOLE_AUDIT_LOGS: Joi.boolean().default(false),
 
   // LiveKit
   LIVEKIT_API_KEY: Joi.string().required(),

@@ -6,6 +6,7 @@ import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { AuthController } from '../auth.controller';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from 'src/auth/service/auth.service';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
 
 const mockAuthService = {
   login: jest.fn(),
@@ -17,13 +18,22 @@ const mockAuthService = {
   getUserPermissions: jest.fn(),
 };
 
+const mockPermissionsService = {
+  getUserPermissions: jest.fn(),
+  hasPermission: jest.fn(),
+  checkPermission: jest.fn(),
+};
+
 describe('AuthController', () => {
   let controller: AuthController;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
-      providers: [{ provide: AuthService, useValue: mockAuthService }],
+      providers: [
+        { provide: AuthService, useValue: mockAuthService },
+        { provide: PermissionsService, useValue: mockPermissionsService },
+      ],
     })
       // Mock all guards
       .overrideGuard(CustomThrottlerGuard)
@@ -131,7 +141,10 @@ describe('AuthController', () => {
   });
 
   it('should get user permissions', async () => {
-    mockAuthService.getUserPermissions.mockResolvedValue(['read', 'write']);
+    mockPermissionsService.getUserPermissions.mockResolvedValue([
+      'read',
+      'write',
+    ]);
     const req = { user: { id: '1' } };
     const result = await controller.getPermissions(req as any);
     expect(result).toEqual(['read', 'write']);

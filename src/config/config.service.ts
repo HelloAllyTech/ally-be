@@ -228,6 +228,14 @@ export class AppConfigService {
     return this.configService.get<string>('TEST_ACCOUNTS');
   }
 
+  get phiData() {
+    return {
+      phiDataEncryptionKey: this.configService.get<string>(
+        'PHI_DATA_ENCRYPTION_KEY',
+      ),
+    };
+  }
+
   get cors() {
     const origins = this.configService.get('ALLOWED_ORIGINS', '');
     return {

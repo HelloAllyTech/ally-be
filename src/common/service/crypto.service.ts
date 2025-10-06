@@ -13,10 +13,7 @@ export class CryptoService {
 
   constructor(private readonly configService: AppConfigService) {}
 
-  private getEncryptionKey(): Buffer {
-    const encryptionKeyHex =
-      this.configService.cloudTelephony?.credentialsEncryptionKey;
-
+  private validateAndGetEncryptionKey(encryptionKeyHex?: string): Buffer {
     if (!encryptionKeyHex) {
       throw new Error('No encryption key available');
     }
@@ -31,9 +28,9 @@ export class CryptoService {
     return keyBuffer;
   }
 
-  async encrypt(data: string): Promise<string> {
+  async encrypt(data: string, encryptionKey?: string): Promise<string> {
     try {
-      const key = this.getEncryptionKey();
+      const key = this.validateAndGetEncryptionKey(encryptionKey);
       const iv = crypto.randomBytes(this.ivLength);
 
       const cipher = crypto.createCipheriv(this.algorithm, key, iv);
@@ -53,9 +50,12 @@ export class CryptoService {
     }
   }
 
-  async decrypt(encryptedData: string): Promise<string> {
+  async decrypt(
+    encryptedData: string,
+    encryptionKey?: string,
+  ): Promise<string> {
     try {
-      const key = this.getEncryptionKey();
+      const key = this.validateAndGetEncryptionKey(encryptionKey);
       const combined = Buffer.from(encryptedData, 'base64');
 
       const iv = combined.subarray(0, this.ivLength);
