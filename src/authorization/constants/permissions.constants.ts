@@ -100,6 +100,7 @@ const PERMISSIONS: Record<string, string> = {
   // === SYSTEM ACCESS ===
   SYSTEM_ADMIN_ACCESS: 'system:admin-access',
   ACCESS_OTHERS_CHATS: 'access:others-chats',
+  ACCESS_OTHERS_CALL_INFO: 'access:others-call-info',
 
   // === AUDIO CHAT ===
   START_MICROPHONE_CHAT: 'start:microphone-chat',
@@ -172,6 +173,7 @@ const COUNSELOR_PERMISSIONS = [
 const ADMIN_PERMISSIONS = [
   // Administrative access to core features
   PERMISSIONS.ACCESS_OTHER_CHATS,
+  PERMISSIONS.ACCESS_OTHERS_CALL_INFO,
   PERMISSIONS.VIEW_CHAT_DETAILS,
   PERMISSIONS.VIEW_CALL_LOGS,
   PERMISSIONS.VIEW_CALL_LOGS_SUMMARY,

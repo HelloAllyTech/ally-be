@@ -1451,12 +1451,25 @@ export class ChatService {
       throw new NotFoundException(`Chat with ID ${chatId} not found`);
     }
 
+    const currentUserId = ExecutionManager.getUserId();
+    if (!currentUserId) {
+      throw new ForbiddenException('User not authenticated');
+    }
+
+    // Check if user has admin permissions to update any call info
+    const canAccessOthersCallInfo =
+      await this.permissionValidator.validatePermissions(
+        parseInt(currentUserId),
+        [PERMISSIONS.ACCESS_OTHERS_CALL_INFO],
+      );
+
+    // If not admin, check if user is the counselor assigned to this chat
     if (
-      ExecutionManager.getRole() == UserRole.COUNSELOR &&
-      chat.counselorId != ExecutionManager.getUserId()
+      !canAccessOthersCallInfo &&
+      chat.counselorId != parseInt(currentUserId)
     ) {
       throw new ForbiddenException(
-        'You are not authorized to update call info',
+        'You are not authorized to update call info for this chat',
       );
     }
     const callDetails = await this.callDetailsRepository.findOne({
