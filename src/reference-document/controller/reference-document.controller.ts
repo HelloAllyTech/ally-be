@@ -42,11 +42,7 @@ export class ReferenceDocumentController {
     @CurrentUser() tokenUser: TokenUser,
     @Body() documentDto: AddDocumentDto,
   ) {
-    return this.documentService.addReferenceDocument(
-      tokenUser.id,
-      documentDto,
-      tokenUser.role,
-    );
+    return this.documentService.addReferenceDocument(tokenUser.id, documentDto);
   }
 
   @Public()

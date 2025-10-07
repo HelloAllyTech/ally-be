@@ -163,14 +163,9 @@ export class ChatAiService {
     }
   }
 
-  setAuthContext(context: {
-    userId: number;
-    // role: UserRole;
-    tenantId: string;
-  }) {
+  setAuthContext(context: { userId: number; tenantId: string }) {
     ExecutionManager.setAuthContext(
       context.userId.toString(),
-      // context.role,
       context.tenantId,
     );
   }

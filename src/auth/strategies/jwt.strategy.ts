@@ -33,11 +33,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     };
 
     // Set the execution context with user information
-    ExecutionManager.setAuthContext(
-      user.id.toString(),
-      // user.role,
-      user.tenantId,
-    );
+    ExecutionManager.setAuthContext(user.id.toString(), user.tenantId);
 
     // Check if user has system admin access (can operate without tenant)
     const userPermissions = await this.permissionsService.getUserPermissions(

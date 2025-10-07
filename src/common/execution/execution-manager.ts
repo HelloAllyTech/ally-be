@@ -38,7 +38,6 @@ export class ExecutionManager {
     const context = this.storage.getStore();
     if (context) {
       context.userId = userId;
-      // context.role = role;
       context.tenantId = tenantId;
     }
   }
@@ -50,10 +49,6 @@ export class ExecutionManager {
   static getUserId(): string | undefined {
     return this.storage.getStore()?.userId;
   }
-
-  // static getRole(): string | undefined {
-  //   return this.storage.getStore()?.role;
-  // }
 
   static getTenantId(): string | undefined {
     return this.storage.getStore()?.tenantId;

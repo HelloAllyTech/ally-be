@@ -74,6 +74,7 @@ export class ExotelConferenceCallService implements AudioIngestInterface {
       type: 'user',
       userId: -1,
       user: null,
+      role: UserRole.COUNSELOR,
       room: 'placeholder-room',
       tenantId: 'default',
       provider: AudioChatProvider.EXOTEL_CONFERENCE_CALL,

@@ -28,6 +28,7 @@ import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/auth/service/permission-validator.service';
+import { User } from 'src/common/entities/user.entity';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -161,6 +162,7 @@ export class CloudTelephonyGateway
         userId: +userId,
         user: null,
         type: 'user',
+        role: UserRole.COUNSELOR,
         room,
         chatId: PLACEHOLDER_CHAT_ID,
         tenantId: user.tenantId,
