@@ -38,6 +38,10 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
       const chat = await this.chatService.getChatByIdForServiceCall(chat_id);
       if (!chat) {
         this.logInfo(`Chat not found: ${chat_id}`);
+        if (!this.config.isDevelopment && delete_presigned_url) {
+          // Delete the result from S3
+          await this.deleteFromS3(delete_presigned_url);
+        }
         return;
       }
 

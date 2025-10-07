@@ -16,7 +16,6 @@ import { UserStatus } from '../../common/constants/user.constants';
 import { UserCreateDto } from '../dto/user-create.dto';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GroupPermission } from 'src/common/entities/group-permission.entity';
-import { Permission } from '../../common/entities/permission.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { AuthUtil } from '../util/auth.util';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';

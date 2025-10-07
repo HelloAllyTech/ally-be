@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
+import { ScenarioStatus } from '../enum/scenario.status.enum';
 
 export class CreateScenarioDto {
   @ApiProperty({
@@ -38,9 +39,9 @@ export class CreateScenarioDto {
     description: 'Status of the scenario',
     example: 'ACTIVE',
   })
-  @IsString()
+  @IsEnum(ScenarioStatus)
   @IsNotEmpty()
-  status!: string;
+  status!: ScenarioStatus;
 
   @ApiProperty({
     description: 'Prompt of the scenario',
@@ -52,9 +53,8 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description: 'Metadata of the scenario',
-    example: 'Metadata 1',
+    example: { lifeHistory: 'value', gender: 'male', age: 42 },
   })
-  @IsString()
   @IsOptional()
   metadata?: Record<string, any>;
 }

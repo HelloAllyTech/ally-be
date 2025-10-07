@@ -90,10 +90,24 @@ export const DEMOGRAPHIC_FIELDS = [
   'codeOfConcern',
 ];
 
-export const UPLOADED_AUDIO_FILE_SIZE_LIMIT = 200 * 1024 * 1024; // 200 MB
+export const UPLOADED_AUDIO_FILE_SIZE_LIMIT = 1024 * 1024 * 1024; // 1 GB
 
 export const SUPPORTED_AUDIO_FILE_TYPES = [
+  // MP3
   'audio/mpeg',
+  'audio/mp3',
+  'audio/x-mp3',
+
+  // WAV
   'audio/wav',
-  'audio/mp4',
+  'audio/x-wav',
+  'audio/wave',
+  'audio/x-wave',
+  'audio/vnd.wave',
+
+  // m4a
+  'audio/m4a',
+  'audio/x-m4a',
+  'audio/m4a',
+  'audio/mp4a-latm',
 ];

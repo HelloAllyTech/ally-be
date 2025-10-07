@@ -27,6 +27,8 @@ import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
 import { UserRole } from 'src/common/constants/user.constants';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { Scenarios } from '../entity/scenarios.entity';
+import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -118,12 +120,11 @@ export class ScenarioSessionService {
         startScenarioSessionDto,
       );
 
+    const roomMetadata = this.createRoomMetadata(scenario, sessionEvents);
     await this.livekitService.createRoom({
       name: `${scenarioSession.roomId}`,
-      metadata: {
-        scenario: scenario,
-        sessionEvents: sessionEvents,
-      },
+      ttl: startScenarioSessionDto.ttl ?? 1800,
+      metadata: roomMetadata,
     });
 
     const accessToken = await this.generateScenarioSessionToken(
@@ -132,6 +133,33 @@ export class ScenarioSessionService {
     );
 
     return { scenarioSession, accessToken };
+  }
+
+  private createRoomMetadata(
+    scenario: Scenarios,
+    sessionEvents: SessionEvents[],
+  ) {
+    if (!scenario.metadata?.lifeHistory) {
+      this.logger.error(
+        `Scenario metadata lifeHistory is required for scenario ${scenario.id}`,
+      );
+      throw new BadRequestException(
+        'Scenario details are not complete. Please contact admin.',
+      );
+    }
+
+    const { lifeHistory, ...metadataWithoutLifeHistory } = scenario.metadata;
+    scenario.metadata = JSON.parse(JSON.stringify(metadataWithoutLifeHistory));
+
+    return {
+      version: '1.0',
+      tenantId: ExecutionManager.getTenantId(),
+      scenario: {
+        ...scenario,
+        lifeHistory: JSON.parse(JSON.stringify(lifeHistory)),
+        events: sessionEvents,
+      },
+    };
   }
 
   async mapEventsToScenario(createScenarioEventsDto: CreateScenarioEventsDto) {
@@ -285,6 +313,7 @@ export class ScenarioSessionService {
 
       const scenario = await this.scenarioService.getScenario(
         scenarioId,
+        ['id', 'title', 'description'],
         entityManager,
       );
 
@@ -364,7 +393,7 @@ export class ScenarioSessionService {
 
   async getScenarioSessionByRoomId(roomId: string) {
     const scenarioSession = await this.scenarioSessionRepository.findOne({
-      where: { roomId, tenantId: ExecutionManager.getTenantId() },
+      where: { roomId },
     });
 
     if (!scenarioSession) {

@@ -57,7 +57,14 @@ export class LearnController {
   @ApiOperation({ summary: 'Get a scenario by id' })
   @Get('scenarios/:id')
   async getScenario(@Param('id') id: number): Promise<ScenarioResponse> {
-    return this.scenarioService.getScenario(id);
+    return this.scenarioService.getScenario(id, [
+      'id',
+      'title',
+      'scenario',
+      'description',
+      'coverImageUrl',
+      'status',
+    ]);
   }
 
   @ApiOperation({ summary: 'Create multiple scenarios' })
@@ -206,10 +213,10 @@ export class LearnController {
   @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_SESSION])
   @Delete('scenarios/events')
   async deleteScenarioEvents(
-    @Body() DeleteScenarioEventsDto: DeleteScenarioEventsDto,
+    @Body() deleteScenarioEventsDto: DeleteScenarioEventsDto,
   ) {
     const rowsAffected = await this.scenarioSessionService.deleteScenarioEvents(
-      DeleteScenarioEventsDto,
+      deleteScenarioEventsDto,
     );
     return rowsAffected != null && rowsAffected > 0;
   }
