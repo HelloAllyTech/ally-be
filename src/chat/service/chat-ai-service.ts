@@ -91,9 +91,10 @@ export class ChatAiService {
 
       this.setAuthContext({
         userId: chat.counselorId!,
-        role: UserRole.COUNSELOR,
+        // role: UserRole.COUNSELOR,
         tenantId: chat.tenantId,
       });
+
       const formattedMessages = messages.map(async (message) => {
         const encryptedContent = await this.cryptoService.encrypt(
           message.content,
@@ -165,7 +166,7 @@ export class ChatAiService {
 
   setAuthContext(context: {
     userId: number;
-    role: UserRole;
+    // role: UserRole;
     tenantId: string;
   }) {
     ExecutionManager.setAuthContext(
