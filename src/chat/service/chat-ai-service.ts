@@ -91,7 +91,6 @@ export class ChatAiService {
 
       this.setAuthContext({
         userId: chat.counselorId!,
-        // role: UserRole.COUNSELOR,
         tenantId: chat.tenantId,
       });
 

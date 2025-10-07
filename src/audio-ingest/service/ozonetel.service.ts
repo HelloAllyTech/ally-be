@@ -120,11 +120,7 @@ export class OzonetelService {
         `Processing Ozonetel call detail for agent with phone ${AgentID} | monitorUCID: ${monitorUCID}`,
       );
 
-      ExecutionManager.setAuthContext(
-        '',
-        // UserRole.COUNSELOR,
-        cloudTelephonyIntegration.tenantId,
-      );
+      ExecutionManager.setAuthContext('', cloudTelephonyIntegration.tenantId);
 
       const counselor = await this.userService.getUserByExternalId(AgentID);
 
@@ -281,11 +277,7 @@ export class OzonetelService {
         return;
       }
 
-      ExecutionManager.setAuthContext(
-        '',
-        // UserRole.COUNSELOR,
-        cloudTelephonyIntegration.tenantId,
-      );
+      ExecutionManager.setAuthContext('', cloudTelephonyIntegration.tenantId);
 
       if (data.action === OzonetelCallAction.Disconnect && monitor_ucid) {
         const chat = await this.chatService.getChatByExternalId(monitor_ucid);

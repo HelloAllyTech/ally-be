@@ -161,7 +161,6 @@ export class CloudTelephonyGateway
         userId: +userId,
         user: null,
         type: 'user',
-        // role: UserRole.COUNSELOR,
         room,
         chatId: PLACEHOLDER_CHAT_ID,
         tenantId: user.tenantId,
