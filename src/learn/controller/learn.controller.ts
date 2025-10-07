@@ -57,7 +57,14 @@ export class LearnController {
   @ApiOperation({ summary: 'Get a scenario by id' })
   @Get('scenarios/:id')
   async getScenario(@Param('id') id: number): Promise<ScenarioResponse> {
-    return this.scenarioService.getScenario(id);
+    return this.scenarioService.getScenario(id, [
+      'id',
+      'title',
+      'scenario',
+      'description',
+      'coverImageUrl',
+      'status',
+    ]);
   }
 
   @ApiOperation({ summary: 'Create multiple scenarios' })
