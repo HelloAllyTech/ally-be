@@ -13,7 +13,7 @@ import {
   AudioChatPlatform,
   AudioChatProvider,
 } from '../../common/constants/chat.constants';
-import { PLACEHOLDER_CHAT_ID } from '../../common/constants/user.constants';
+import { PLACEHOLDER_CHAT_ID, UserRole } from '../../common/constants/user.constants';
 import { MessagePayload, UserChatSessionData } from '../type/chat.type';
 import { ChatEvents } from '../constants/chat.constants';
 import {
@@ -209,6 +209,7 @@ export class MicrophoneChatGateway
         userId: +userId,
         user: null,
         type: 'user',
+        role: UserRole.COUNSELOR,
         room,
         provider: AudioChatProvider.MICROPHONE,
         chatId: PLACEHOLDER_CHAT_ID,
