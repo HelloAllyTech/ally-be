@@ -44,7 +44,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       user.id,
     );
     const hasSystemAdminAccess = userPermissions.includes(
-      PERMISSIONS.SYSTEM_ADMIN_ACCESS,
+      PERMISSIONS.SYSTEM_ACCESS,
     );
 
     if (!hasSystemAdminAccess && !user.tenantId) {

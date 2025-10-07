@@ -87,7 +87,7 @@ export class SettingsService {
     // Check if user has admin permissions to manage organization settings
     const canManageOrgSettings =
       await this.permissionValidator.validatePermissions(parseInt(userId), [
-        PERMISSIONS.ORGANIZATION_ADMIN_ACCESS,
+        PERMISSIONS.ORGANIZATION_ACCESS,
       ]);
 
     const relatedId = canManageOrgSettings
@@ -149,7 +149,7 @@ export class SettingsService {
     // Check if user has admin permissions to manage organization settings
     const canManageOrgSettings =
       await this.permissionValidator.validatePermissions(parseInt(userId), [
-        PERMISSIONS.ORGANIZATION_ADMIN_ACCESS,
+        PERMISSIONS.ORGANIZATION_ACCESS,
       ]);
 
     const relatedId = canManageOrgSettings
