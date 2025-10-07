@@ -86,6 +86,8 @@ import { CallDetailsRepository } from '../repository/call-details.repository';
 import { MessageRepository } from '../repository/message.repository';
 import { ChatUtil } from '../util/chat.util';
 import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/auth/service/permission-validator.service';
 
 @Injectable()
 export class ChatService {
@@ -114,6 +116,7 @@ export class ChatService {
     private streamFileProcessorService: StreamFileProcessorService,
     private readonly config: AppConfigService,
     private chatAudioUploadsService: ChatAudioUploadsService,
+    private permissionValidator: PermissionValidator,
   ) {}
 
   async getChat(id: number) {
@@ -468,21 +471,53 @@ export class ChatService {
       participantPhoneNumbers,
     );
 
-    const counselor = participants?.find(
-      (participant) => participant.role === UserRole.COUNSELOR,
-    );
-    if (!counselor) {
-      throw new HttpException(`Counselor not found`, 404);
+    if (!participants || participants.length < 2) {
+      throw new HttpException('Not enough valid participants found', 404);
     }
-    let client = participants?.find(
-      (participant) => participant.role === UserRole.CLIENT,
-    );
+
+    // Check for counselor and client permissions
+    let counselor = null;
+    let client = null;
+
+    for (const participant of participants) {
+      // Check if participant has counselor permissions
+      const hasCounselorPermissions =
+        await this.permissionValidator.validatePermissions(
+          participant.id,
+          [PERMISSIONS.START_MICROPHONE_CHAT], // or any counselor-specific permission
+        );
+
+      // Check if participant has client permissions (join call access)
+      const hasClientPermissions =
+        await this.permissionValidator.validatePermissions(
+          participant.id,
+          [PERMISSIONS.JOIN_CALL], // Client-specific permission
+        );
+
+      if (hasCounselorPermissions && !counselor) {
+        counselor = participant;
+      } else if (hasClientPermissions && !client) {
+        client = participant;
+      }
+    }
+
+    if (!counselor) {
+      throw new HttpException(
+        'No participant with counselor permissions found',
+        404,
+      );
+    }
+
     if (!client) {
+      // Try to find a phone number that's not the counselor's
       const clientPhoneNumber = participantPhoneNumbers?.find(
         (phn) => phn !== counselor.phone,
       );
       if (!clientPhoneNumber) {
-        throw new HttpException('Client phone number not found', 404);
+        throw new HttpException(
+          'No participant with client permissions found',
+          404,
+        );
       }
       client = await this.userService.createUser({
         phoneNumber: clientPhoneNumber,

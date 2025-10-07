@@ -103,6 +103,7 @@ const PERMISSIONS: Record<string, string> = {
 
   // === AUDIO CHAT ===
   START_MICROPHONE_CHAT: 'start:microphone-chat',
+  JOIN_CALL: 'join:call',
 };
 
 const SUPER_ADMIN_PERMISSIONS = [
@@ -214,6 +215,7 @@ const CLIENT_PERMISSIONS = [
   PERMISSIONS.VIEW_CHAT,
   PERMISSIONS.EDIT_CHAT,
   PERMISSIONS.EDIT_CALL_END,
+  PERMISSIONS.JOIN_CALL,
 ];
 
 export {
