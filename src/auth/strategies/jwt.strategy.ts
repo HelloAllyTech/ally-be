@@ -4,12 +4,16 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
-import { UserRole } from '../../common/constants/user.constants';
+import { PermissionsService } from '../../authorization/service/permissions.service';
+import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   logger = LoggerService.getInstance(JwtStrategy.name);
-  constructor(configService: AppConfigService) {
+  constructor(
+    configService: AppConfigService,
+    private permissionsService: PermissionsService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -35,7 +39,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       user.tenantId,
     );
 
-    if (user.role != UserRole.SUPER_ADMIN && !user.tenantId) {
+    // Check if user has system admin access (can operate without tenant)
+    const userPermissions = await this.permissionsService.getUserPermissions(
+      user.id,
+    );
+    const hasSystemAdminAccess = userPermissions.includes(
+      PERMISSIONS.SYSTEM_ADMIN_ACCESS,
+    );
+
+    if (!hasSystemAdminAccess && !user.tenantId) {
       throw new UnauthorizedException('Tenant ID is required');
     }
     return user;

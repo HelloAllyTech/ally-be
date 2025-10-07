@@ -96,10 +96,14 @@ const PERMISSIONS: Record<string, string> = {
   CANCEL_AUDIO_UPLOAD: 'cancel:audio-upload',
   // === CONTEXT MANAGEMENT ===
   EDIT_CLOUD_TELEPHONY_JOIN_ROOM: 'edit:cloud-telephony:join-room',
+
+  // === SYSTEM ACCESS ===
+  SYSTEM_ADMIN_ACCESS: 'system:admin-access',
 };
 
 const SUPER_ADMIN_PERMISSIONS = [
   // Full administrative access
+  PERMISSIONS.SYSTEM_ADMIN_ACCESS,
   PERMISSIONS.EDIT_USER,
   PERMISSIONS.EDIT_USER_ROLE,
   PERMISSIONS.VIEW_CALL_LOGS,
