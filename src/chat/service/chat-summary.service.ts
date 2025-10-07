@@ -44,7 +44,9 @@ export class ChatSummaryService {
     // Check if user can access other users' chats (admin/super admin) or is the counselor for this chat
     const canAccessOtherChats =
       await this.permissionValidator.validatePermissions(tokenUser.id, [
-        PERMISSIONS.ACCESS_OTHERS_CHATS,
+        PERMISSIONS.SYSTEM_ACCESS,
+        PERMISSIONS.ORGANIZATION_ACCESS,
+        'OR',
       ]);
 
     const isAuthorized =

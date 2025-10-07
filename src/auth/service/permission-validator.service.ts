@@ -8,13 +8,14 @@ export class PermissionValidator {
   async validatePermissions(
     userId: number,
     permissions: string[],
-  ): Promise<boolean> {
+    operation?: 'AND' | 'OR',
+  ): Promise<boolean> {;
     if (!permissions?.length || !userId) return true;
 
     const userPermissions =
       await this.permissionsService.getUserPermissions(userId);
-    return permissions.every((permission) =>
-      userPermissions.includes(permission),
-    );
+    return !operation || operation === 'AND'
+      ? permissions.every((permission) => userPermissions.includes(permission))
+      : permissions.some((permission) => userPermissions.includes(permission));
   }
 }

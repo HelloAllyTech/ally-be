@@ -88,6 +88,7 @@ import { ChatUtil } from '../util/chat.util';
 import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/auth/service/permission-validator.service';
+import { GroupService } from 'src/authorization/service/group.service';
 
 @Injectable()
 export class ChatService {
@@ -117,6 +118,7 @@ export class ChatService {
     private readonly config: AppConfigService,
     private chatAudioUploadsService: ChatAudioUploadsService,
     private permissionValidator: PermissionValidator,
+    private groupService: GroupService,
   ) {}
 
   async getChat(id: number) {
@@ -463,6 +465,26 @@ export class ChatService {
     return updatedChat;
   }
 
+  async getParticipantRoles(participants: User[]) {
+    const userIds = participants?.map((participant) => participant.id) ?? [];
+
+    // Process all user role lookups in parallel
+    const userRolesPromises = userIds.map((userId) =>
+      this.groupService.getUserRolesByUserId(userId),
+    );
+    const userRolesResults = await Promise.all(userRolesPromises);
+
+    // Create userId to roles mapping
+    const userIdRoleMapping: { [userId: number]: string[] } = {};
+    userIds.forEach((userId, index) => {
+      userIdRoleMapping[userId] = userRolesResults[index].map(
+        (userRole) => userRole.name,
+      );
+    });
+
+    return userIdRoleMapping;
+  }
+
   async startCall(participantPhoneNumbers: string[]) {
     if (!participantPhoneNumbers || participantPhoneNumbers?.length < 2) {
       throw new HttpException('Need at least 2 participants', 400);
@@ -475,38 +497,19 @@ export class ChatService {
       throw new HttpException('Not enough valid participants found', 404);
     }
 
-    // Check for counselor and client permissions
-    let counselor = null;
-    let client = null;
+    const participantRoles = await this.getParticipantRoles(participants);
 
-    for (const participant of participants) {
-      // Check if participant has counselor permissions
-      const hasCounselorPermissions =
-        await this.permissionValidator.validatePermissions(
-          participant.id,
-          [PERMISSIONS.START_MICROPHONE_CHAT], // or any counselor-specific permission
-        );
-
-      // Check if participant has client permissions (join call access)
-      const hasClientPermissions =
-        await this.permissionValidator.validatePermissions(
-          participant.id,
-          [PERMISSIONS.JOIN_CALL], // Client-specific permission
-        );
-
-      if (hasCounselorPermissions && !counselor) {
-        counselor = participant;
-      } else if (hasClientPermissions && !client) {
-        client = participant;
-      }
-    }
+    const counselor = participants?.find((participant) =>
+      participantRoles[participant.id].includes(UserRole.COUNSELOR),
+    );
 
     if (!counselor) {
-      throw new HttpException(
-        'No participant with counselor permissions found',
-        404,
-      );
+      throw new HttpException(`Counselor not found`, 404);
     }
+
+    let client = participants?.find((participant) =>
+      participantRoles[participant.id].includes(UserRole.CLIENT),
+    );
 
     if (!client) {
       // Try to find a phone number that's not the counselor's
@@ -514,10 +517,7 @@ export class ChatService {
         (phn) => phn !== counselor.phone,
       );
       if (!clientPhoneNumber) {
-        throw new HttpException(
-          'No participant with client permissions found',
-          404,
-        );
+        throw new HttpException('Client phone number not found', 404);
       }
       client = await this.userService.createUser({
         phoneNumber: clientPhoneNumber,
@@ -1460,7 +1460,7 @@ export class ChatService {
     const canAccessOthersCallInfo =
       await this.permissionValidator.validatePermissions(
         parseInt(currentUserId),
-        [PERMISSIONS.ACCESS_OTHERS_CALL_INFO],
+        [PERMISSIONS.ORGANIZATION_ACCESS],
       );
 
     // If not admin, check if user is the counselor assigned to this chat

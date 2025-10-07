@@ -137,7 +137,7 @@ export class CloudTelephonyGateway
 
       const hasAccess = await this.permissionValidator.validatePermissions(
         payload.sub,
-        [PERMISSIONS.EDIT_CLOUD_TELEPHONY_JOIN_ROOM],
+        [PERMISSIONS.START_CLOUD_TELEPHONY_CHAT],
       );
 
       if (hasAccess) {
