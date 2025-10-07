@@ -99,6 +99,7 @@ const PERMISSIONS: Record<string, string> = {
 
   // === SYSTEM ACCESS ===
   SYSTEM_ADMIN_ACCESS: 'system:admin-access',
+  ORGANIZATION_ADMIN_ACCESS: 'organization:admin-access',
   ACCESS_OTHERS_CHATS: 'access:others-chats',
   ACCESS_OTHERS_CALL_INFO: 'access:others-call-info',
 
@@ -174,6 +175,7 @@ const ADMIN_PERMISSIONS = [
   // Administrative access to core features
   PERMISSIONS.ACCESS_OTHER_CHATS,
   PERMISSIONS.ACCESS_OTHERS_CALL_INFO,
+  PERMISSIONS.ORGANIZATION_ADMIN_ACCESS,
   PERMISSIONS.VIEW_CHAT_DETAILS,
   PERMISSIONS.VIEW_CALL_LOGS,
   PERMISSIONS.VIEW_CALL_LOGS_SUMMARY,
