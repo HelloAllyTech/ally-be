@@ -832,14 +832,22 @@ export class ChatService {
       throw new HttpException('Chat not found', 404);
     }
 
-    const role = ExecutionManager.getRole();
-    if (role !== UserRole.ADMIN) {
-      if (chat.clientId !== userId && chat.counselorId !== userId) {
-        throw new HttpException(
-          'You are not authorized to access this chat',
-          403,
-        );
-      }
+    // Check if user has permission to view messages or is the participant of this chat
+    const canViewMessages = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.VIEW_MESSAGE],
+    );
+    // Does client has permission to view messages?
+
+    if (
+      !canViewMessages &&
+      chat.clientId !== userId &&
+      chat.counselorId !== userId
+    ) {
+      throw new HttpException(
+        'You are not authorized to access this chat',
+        403,
+      );
     }
 
     const { messages, count } = await this.getMessageByChatId(chatId, {
