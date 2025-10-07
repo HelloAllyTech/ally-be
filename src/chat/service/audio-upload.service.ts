@@ -147,7 +147,7 @@ export class AudioUploadService {
 
     ExecutionManager.setAuthContext(
       chat.createdBy?.toString() || '',
-      UserRole.ADMIN,
+      // UserRole.ADMIN,
       chat.tenantId,
     );
 
