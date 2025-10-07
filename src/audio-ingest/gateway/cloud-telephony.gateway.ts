@@ -224,7 +224,6 @@ export class CloudTelephonyGateway
   setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
-      // session.role,
       session.tenantId,
     );
   }

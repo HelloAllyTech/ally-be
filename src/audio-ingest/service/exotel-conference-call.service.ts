@@ -307,7 +307,6 @@ export class ExotelConferenceCallService implements AudioIngestInterface {
   setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
-      // session.role,
       session.tenantId,
     );
   }
