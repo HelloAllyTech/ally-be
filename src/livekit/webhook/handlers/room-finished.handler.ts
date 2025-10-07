@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import { ScenarioSessionService } from 'src/learn/service/scenario-session.service';
 import { LoggerService } from 'src/logger/logger.service';
 
@@ -18,6 +19,7 @@ export interface RoomFinishedEvent {
   created_at: number;
 }
 
+@Injectable()
 export class RoomFinishedHandler {
   private readonly logger = new LoggerService(RoomFinishedHandler.name);
 

@@ -786,7 +786,6 @@ export class ChatService {
       sortOrder = 'DESC',
     } = options;
 
-
     const chat = await this.chatRepository.findOne({
       where: {
         id: chatId,
@@ -1886,6 +1885,7 @@ export class ChatService {
           chatId,
           manager,
         );
+        await this.chatAudioUploadsService.deleteUploadedAudioFile(chatId);
         await this.chatAudioUploadsService.deleteChatAudioUploadsByChatId(
           chatId,
           tenantId,

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber } from 'class-validator';
+import { IsNumber, Max, IsOptional } from 'class-validator';
 
 export class StartScenarioSessionRequestDto {
   @ApiProperty({
@@ -8,4 +8,13 @@ export class StartScenarioSessionRequestDto {
   })
   @IsNumber()
   scenarioId!: number;
+
+  @ApiProperty({
+    description: 'TTL in seconds',
+    example: 1800,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Max(1800)
+  ttl?: number;
 }

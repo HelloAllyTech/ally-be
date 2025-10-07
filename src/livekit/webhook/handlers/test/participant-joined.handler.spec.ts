@@ -1,0 +1,359 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import {
+  ParticipantJoinedHandler,
+  ParticipantJoinedEvent,
+} from '../participant-joined.handler';
+import { LiveKitService } from '../../../service/livekit.service';
+import { LoggerService } from 'src/logger/logger.service';
+
+// Mock LoggerService
+jest.mock('src/logger/logger.service');
+
+describe('ParticipantJoinedHandler', () => {
+  let handler: ParticipantJoinedHandler;
+  let liveKitService: jest.Mocked<LiveKitService>;
+  let mockLogger: jest.Mocked<LoggerService>;
+
+  const mockParticipantJoinedEvent: ParticipantJoinedEvent = {
+    event: 'participant_joined',
+    room: {
+      name: 'test-room',
+      sid: 'room-sid-123',
+      creation_time: Date.now(),
+      empty_timeout: 3600,
+      max_participants: 5,
+      num_participants: 1,
+      num_publishers: 1,
+      active_recording: false,
+      metadata: '{"scenarioId": 123, "type": "training"}',
+    },
+    participant: {
+      sid: 'participant-sid-123',
+      identity: 'user-123',
+      name: 'John Doe',
+      metadata: '{"role": "counselor"}',
+      joined_at: Date.now(),
+      version: 1,
+      kind: 1,
+      permission: {
+        can_subscribe: true,
+        can_publish: true,
+        can_publish_data: true,
+        hidden: false,
+        recorder: false,
+      },
+    },
+    id: 'event-id-123',
+    created_at: Date.now(),
+  };
+
+  beforeEach(async () => {
+    const mockLiveKitService = {
+      agentDispatch: jest.fn(),
+    };
+
+    mockLogger = {
+      info: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+      warn: jest.fn(),
+    } as any;
+
+    (
+      LoggerService as jest.MockedClass<typeof LoggerService>
+    ).mockImplementation(() => mockLogger);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ParticipantJoinedHandler,
+        {
+          provide: LiveKitService,
+          useValue: mockLiveKitService,
+        },
+      ],
+    }).compile();
+
+    handler = module.get<ParticipantJoinedHandler>(ParticipantJoinedHandler);
+    liveKitService = module.get(LiveKitService);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('handle', () => {
+    it('should handle participant joined event with metadata successfully', async () => {
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(mockParticipantJoinedEvent);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        `Processing participant_joined event ${JSON.stringify(mockParticipantJoinedEvent)} for ${mockParticipantJoinedEvent.participant.identity} in room ${mockParticipantJoinedEvent.room.name}`,
+      );
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        `Parsed metadata: ${JSON.stringify({ scenarioId: 123, type: 'training' })}`,
+      );
+      expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
+        'test-room',
+        'Agent',
+        JSON.stringify({ scenarioId: 123, type: 'training' }),
+      );
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Successfully dispatched agent for participant Agent in room test-room',
+      );
+    });
+
+    it('should handle participant joined event with empty metadata', async () => {
+      const eventWithEmptyMetadata: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        room: {
+          ...mockParticipantJoinedEvent.room,
+          metadata: '',
+        },
+      };
+
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(eventWithEmptyMetadata);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Room metadata is empty or null, using default values',
+      );
+      expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
+        'test-room',
+        'Agent',
+        JSON.stringify({}),
+      );
+    });
+
+    it('should handle participant joined event with null metadata', async () => {
+      const eventWithNullMetadata: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        room: {
+          ...mockParticipantJoinedEvent.room,
+          metadata: null as any,
+        },
+      };
+
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(eventWithNullMetadata);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Room metadata is empty or null, using default values',
+      );
+      expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
+        'test-room',
+        'Agent',
+        JSON.stringify({}),
+      );
+    });
+
+    it('should handle participant joined event with whitespace-only metadata', async () => {
+      const eventWithWhitespaceMetadata: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        room: {
+          ...mockParticipantJoinedEvent.room,
+          metadata: '   ',
+        },
+      };
+
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(eventWithWhitespaceMetadata);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Room metadata is empty or null, using default values',
+      );
+      expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
+        'test-room',
+        'Agent',
+        JSON.stringify({}),
+      );
+    });
+
+    it('should handle participant joined event with invalid JSON metadata', async () => {
+      const eventWithInvalidMetadata: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        room: {
+          ...mockParticipantJoinedEvent.room,
+          metadata: '{invalid json}',
+        },
+      };
+
+      await expect(handler.handle(eventWithInvalidMetadata)).rejects.toThrow();
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Error handling participant_joined event:'),
+        expect.any(String),
+      );
+    });
+
+    it('should handle agent dispatch error', async () => {
+      const error = new Error('Agent dispatch failed');
+      liveKitService.agentDispatch.mockRejectedValue(error);
+
+      await expect(handler.handle(mockParticipantJoinedEvent)).rejects.toThrow(
+        'Agent dispatch failed',
+      );
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        `Error handling participant_joined event: ${error.message}`,
+        error.stack,
+      );
+    });
+
+    it('should handle complex metadata successfully', async () => {
+      const complexMetadata = {
+        scenarioId: 456,
+        type: 'assessment',
+        level: 'advanced',
+        settings: {
+          aiEnabled: true,
+          recordingEnabled: false,
+        },
+        tags: ['training', 'counseling'],
+      };
+
+      const eventWithComplexMetadata: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        room: {
+          ...mockParticipantJoinedEvent.room,
+          metadata: JSON.stringify(complexMetadata),
+        },
+      };
+
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(eventWithComplexMetadata);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        `Parsed metadata: ${JSON.stringify(complexMetadata)}`,
+      );
+      expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
+        'test-room',
+        'Agent',
+        JSON.stringify(complexMetadata),
+      );
+    });
+
+    it('should handle different room names', async () => {
+      const eventWithDifferentRoom: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        room: {
+          ...mockParticipantJoinedEvent.room,
+          name: 'scenario-room-456',
+        },
+      };
+
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(eventWithDifferentRoom);
+
+      expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
+        'scenario-room-456',
+        'Agent',
+        JSON.stringify({ scenarioId: 123, type: 'training' }),
+      );
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Successfully dispatched agent for participant Agent in room scenario-room-456',
+      );
+    });
+
+    it('should handle different participant identities', async () => {
+      const eventWithDifferentParticipant: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        participant: {
+          ...mockParticipantJoinedEvent.participant,
+          identity: 'counselor-789',
+          name: 'Jane Smith',
+        },
+      };
+
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(eventWithDifferentParticipant);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        `Processing participant_joined event ${JSON.stringify(eventWithDifferentParticipant)} for counselor-789 in room test-room`,
+      );
+      expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
+        'test-room',
+        'Agent',
+        JSON.stringify({ scenarioId: 123, type: 'training' }),
+      );
+    });
+
+    it('should handle minimal event data', async () => {
+      const minimalEvent: ParticipantJoinedEvent = {
+        event: 'participant_joined',
+        room: {
+          name: 'minimal-room',
+          sid: 'room-sid-minimal',
+          creation_time: Date.now(),
+          empty_timeout: 3600,
+          max_participants: 2,
+          num_participants: 1,
+          num_publishers: 0,
+          active_recording: false,
+          metadata: '',
+        },
+        participant: {
+          sid: 'participant-minimal',
+          identity: 'minimal-user',
+          name: 'Minimal User',
+          metadata: '',
+          joined_at: Date.now(),
+          version: 1,
+          kind: 1,
+          permission: {
+            can_subscribe: true,
+            can_publish: false,
+            can_publish_data: false,
+            hidden: false,
+            recorder: false,
+          },
+        },
+        id: 'minimal-event-id',
+        created_at: Date.now(),
+      };
+
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(minimalEvent);
+
+      expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
+        'minimal-room',
+        'Agent',
+        JSON.stringify({}),
+      );
+    });
+
+    it('should handle numeric metadata values', async () => {
+      const numericMetadata = {
+        scenarioId: 999,
+        duration: 3600,
+        maxScore: 100,
+        difficulty: 5.5,
+      };
+
+      const eventWithNumericMetadata: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        room: {
+          ...mockParticipantJoinedEvent.room,
+          metadata: JSON.stringify(numericMetadata),
+        },
+      };
+
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(eventWithNumericMetadata);
+
+      expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
+        'test-room',
+        'Agent',
+        JSON.stringify(numericMetadata),
+      );
+    });
+  });
+});
