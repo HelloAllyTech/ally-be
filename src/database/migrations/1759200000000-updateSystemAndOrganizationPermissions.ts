@@ -1,12 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
-import {
-  PERMISSIONS,
-  SUPER_ADMIN_PERMISSIONS,
-  COUNSELOR_PERMISSIONS,
-  ADMIN_PERMISSIONS,
-  LEARNER_PERMISSIONS,
-  CLIENT_PERMISSIONS,
-} from '../../authorization/constants/permissions.constants';
+import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 
 enum UserRole {
   CLIENT = 'CLIENT',
@@ -23,10 +16,7 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
     PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
     PERMISSIONS.SYSTEM_ACCESS,
     PERMISSIONS.ORGANIZATION_ACCESS,
-    PERMISSIONS.ACCESS_OTHERS_CHATS,
-    PERMISSIONS.ACCESS_OTHERS_CALL_INFO,
     PERMISSIONS.START_MICROPHONE_CHAT,
-    PERMISSIONS.JOIN_CALL,
   ];
   public async up(queryRunner: QueryRunner): Promise<void> {
     for (const permissionName of this.newPermissions) {
@@ -92,24 +82,14 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
         role: UserRole.SUPER_ADMIN,
         permissions: [
           PERMISSIONS.SYSTEM_ACCESS,
-          PERMISSIONS.ACCESS_OTHERS_CHATS,
           PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
           PERMISSIONS.START_MICROPHONE_CHAT,
         ],
       },
       {
         role: UserRole.ADMIN,
-        permissions: [
-          PERMISSIONS.ORGANIZATION_ACCESS,
-          PERMISSIONS.ACCESS_OTHERS_CHATS,
-          PERMISSIONS.ACCESS_OTHERS_CALL_INFO,
-        ],
+        permissions: [PERMISSIONS.ORGANIZATION_ACCESS],
       },
-      {
-        role: UserRole.CLIENT,
-        permissions: [PERMISSIONS.JOIN_CALL],
-      },
-      { role: UserRole.CLIENT, permissions: [PERMISSIONS.JOIN_CALL] },
     ];
 
     for (const mapping of newPermissionAssignments) {
