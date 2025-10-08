@@ -11,15 +11,16 @@ enum UserRole {
 export class UpdateSystemAndOrganizationPermissions1759200000000
   implements MigrationInterface
 {
-  // 1. Insert new permissions
-  newPermissions = [
-    PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
-    PERMISSIONS.SYSTEM_ACCESS,
-    PERMISSIONS.ORGANIZATION_ACCESS,
-    PERMISSIONS.START_MICROPHONE_CHAT,
-  ];
   public async up(queryRunner: QueryRunner): Promise<void> {
-    for (const permissionName of this.newPermissions) {
+    // 1. Define new permissions to be added
+    const newPermissions = [
+      PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
+      PERMISSIONS.SYSTEM_ACCESS,
+      PERMISSIONS.ORGANIZATION_ACCESS,
+      PERMISSIONS.START_MICROPHONE_CHAT,
+    ];
+
+    for (const permissionName of newPermissions) {
       // Check if permission already exists
       const existingPermission = await queryRunner.query(
         `SELECT id FROM "permissions" WHERE name = $1`,
@@ -80,15 +81,21 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
     const newPermissionAssignments = [
       {
         role: UserRole.SUPER_ADMIN,
-        permissions: [
-          PERMISSIONS.SYSTEM_ACCESS,
-          PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
-          PERMISSIONS.START_MICROPHONE_CHAT,
-        ],
+        permissions: [PERMISSIONS.SYSTEM_ACCESS],
       },
       {
         role: UserRole.ADMIN,
-        permissions: [PERMISSIONS.ORGANIZATION_ACCESS],
+        permissions: [
+          PERMISSIONS.ORGANIZATION_ACCESS,
+          PERMISSIONS.EDIT_REFERENCE_DOCUMENT,
+        ],
+      },
+      {
+        role: UserRole.COUNSELOR,
+        permissions: [
+          PERMISSIONS.START_MICROPHONE_CHAT,
+          PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
+        ],
       },
     ];
 
@@ -118,27 +125,43 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Remove the new permissions from groups
-    const permissions = await queryRunner.query(
-      `
-            SELECT id, name FROM "permissions" WHERE name IN (${this.newPermissions
-              .map((_, index) => `$${index + 1}`)
-              .join(',')})
-        `,
-      this.newPermissions,
+    // Define permissions to be removed
+    const newPermissions = [
+      PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
+      PERMISSIONS.SYSTEM_ACCESS,
+      PERMISSIONS.ORGANIZATION_ACCESS,
+      PERMISSIONS.START_MICROPHONE_CHAT,
+    ];
+
+    // Get IDs of permissions to be removed
+    const permissionsToDelete = await queryRunner.query(
+      `SELECT id FROM "permissions" WHERE name IN (${newPermissions
+        .map((_, index) => `$${index + 1}`)
+        .join(',')})`,
+      newPermissions,
     );
 
-    for (const permission of permissions) {
+    // Extract just the IDs
+    const permissionIdsToDelete = permissionsToDelete.map(
+      (p: { id: number }) => p.id,
+    );
+
+    if (permissionIdsToDelete.length > 0) {
+      // Remove these permissions from group_permissions table
       await queryRunner.query(
-        `DELETE FROM group_permissions WHERE "permissionId" = $1`,
-        [permission.id],
+        `DELETE FROM group_permissions WHERE "permissionId" IN (${permissionIdsToDelete
+          .map((_: any, index: number) => `$${index + 1}`)
+          .join(',')})`,
+        permissionIdsToDelete,
+      );
+
+      // Remove these permissions from the permissions table
+      await queryRunner.query(
+        `DELETE FROM "permissions" WHERE id IN (${permissionIdsToDelete
+          .map((_: any, index: number) => `$${index + 1}`)
+          .join(',')})`,
+        permissionIdsToDelete,
       );
     }
-
-    // Remove the new permissions from permissions table
-    await queryRunner.query(
-      `DELETE FROM "permissions" WHERE name IN (${this.newPermissions.map((_, index) => `$${index + 1}`).join(',')})`,
-      this.newPermissions,
-    );
   }
 }
