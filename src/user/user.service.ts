@@ -9,6 +9,8 @@ import { RedisService } from '../redis/service/redis.service';
 import { ExecutionManager } from '../common/execution/execution-manager';
 import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { Group } from 'src/common/entities/group.entity';
+import { UserGroup } from 'src/common/entities/user-group.entity';
 
 @Injectable()
 export class UserService {
@@ -155,10 +157,12 @@ export class UserService {
       .createQueryBuilder('user')
       .select('user.id', 'id')
       .addSelect('user.name', 'name')
-      .where('user.role = :role', { role: UserRole.COUNSELOR })
       .andWhere('user.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
       })
+      .leftJoin(UserGroup, 'userGroup', 'userGroup.userId = user.id')
+      .leftJoin(Group, 'group', 'group.id = userGroup.groupId')
+      .andWhere('group.name = :role', { role: UserRole.COUNSELOR })
       .orderBy('user.id', 'ASC');
 
     if (search && search.trim()) {
