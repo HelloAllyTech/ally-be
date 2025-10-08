@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { LiveKitService } from '../../service/livekit.service';
 import { LoggerService } from 'src/logger/logger.service';
+import { ParticipantInfo_Kind } from '@livekit/protocol';
 
 export interface ParticipantJoinedEvent {
   event: 'participant_joined';
@@ -22,6 +23,7 @@ export interface ParticipantJoinedEvent {
     metadata: string;
     joined_at: number;
     version: number;
+    kind: number;
     permission: {
       can_subscribe: boolean;
       can_publish: boolean;
@@ -60,11 +62,13 @@ export class ParticipantJoinedHandler {
         );
       }
 
-      await this.liveKitService.agentDispatch(
-        roomName,
-        participantIdentity,
-        JSON.stringify(metadata),
-      );
+      if (event.participant.kind !== ParticipantInfo_Kind.AGENT) {
+        await this.liveKitService.agentDispatch(
+          roomName,
+          participantIdentity,
+          JSON.stringify(metadata),
+        );
+      }
 
       this.logger.info(
         `Successfully dispatched agent for participant ${participantIdentity} in room ${roomName}`,

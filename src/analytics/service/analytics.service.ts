@@ -113,21 +113,18 @@ export class AnalyticsService {
     if (queryParams.startDate && queryParams.endDate) {
       const startDateTime = `${queryParams.startDate} 00:00:00`;
       const endDateTime = `${queryParams.endDate} 23:59:59`;
-      query.andWhere(
-        '"callDetails"."createdAt" BETWEEN :startDate AND :endDate',
-        {
-          startDate: startDateTime,
-          endDate: endDateTime,
-        },
-      );
+      query.andWhere('"chat"."startedAt" BETWEEN :startDate AND :endDate', {
+        startDate: startDateTime,
+        endDate: endDateTime,
+      });
     } else if (queryParams.startDate) {
       const startDateTime = `${queryParams.startDate} 00:00:00`;
-      query.andWhere('"callDetails"."createdAt" >= :startDate', {
+      query.andWhere('"chat"."startedAt" >= :startDate', {
         startDate: startDateTime,
       });
     } else if (queryParams.endDate) {
       const endDateTime = `${queryParams.endDate} 23:59:59`;
-      query.andWhere('"callDetails"."createdAt" <= :endDate', {
+      query.andWhere('"chat"."startedAt" <= :endDate', {
         endDate: endDateTime,
       });
     }

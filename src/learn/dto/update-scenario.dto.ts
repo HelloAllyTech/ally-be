@@ -51,9 +51,8 @@ export class UpdateScenarioDto {
 
   @ApiProperty({
     description: 'Metadata of the scenario',
-    example: 'Metadata 1',
+    example: { lifeHistory: 'value', gender: 'male', age: 42 },
   })
-  @IsString()
   @IsOptional()
   metadata?: Record<string, any>;
 }

@@ -137,7 +137,9 @@ describe('DeepgramService', () => {
     service = module.get<DeepgramService>(DeepgramService);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Clean up any live connections and intervals to prevent Jest from hanging
+    await service.onModuleDestroy();
     jest.clearAllMocks();
   });
 

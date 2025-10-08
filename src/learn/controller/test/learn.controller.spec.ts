@@ -32,6 +32,10 @@ describe('LearnController', () => {
     description: 'Test Description',
     coverImageUrl: 'https://example.com/cover.jpg',
     status: ScenarioStatus.ACTIVE,
+    prompt: 'You are a counselor',
+    metadata: undefined,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   };
 
   const mockScenarios = [mockScenarioResponse];
@@ -67,7 +71,7 @@ describe('LearnController', () => {
         scenario: 'New Scenario Content',
         description: 'New Description',
         coverImageUrl: 'https://example.com/new-cover.jpg',
-        status: 'ACTIVE',
+        status: ScenarioStatus.ACTIVE,
         prompt: 'Test prompt',
         metadata: {},
       },
@@ -79,7 +83,7 @@ describe('LearnController', () => {
     scenario: 'Updated Scenario Content',
     description: 'Updated Description',
     coverImageUrl: 'https://example.com/updated-cover.jpg',
-    status: 'ACTIVE',
+    status: ScenarioStatus.ACTIVE,
     prompt: 'Updated prompt',
     metadata: {},
   };
@@ -179,7 +183,14 @@ describe('LearnController', () => {
       expect(result).toEqual(mockScenarioResponse);
 
       expect(scenarioService.getScenario).toHaveBeenCalledTimes(1);
-      expect(scenarioService.getScenario).toHaveBeenCalledWith(scenarioId);
+      expect(scenarioService.getScenario).toHaveBeenCalledWith(scenarioId, [
+        'id',
+        'title',
+        'scenario',
+        'description',
+        'coverImageUrl',
+        'status',
+      ]);
     });
   });
 

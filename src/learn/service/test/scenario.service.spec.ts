@@ -37,7 +37,7 @@ describe('ScenarioService', () => {
         scenario: 'New scenario content',
         description: 'New description',
         coverImageUrl: 'https://example.com/new-cover.jpg',
-        status: 'ACTIVE',
+        status: ScenarioStatus.ACTIVE,
         prompt: 'You are a counselor helping a client with depression',
         metadata: {
           difficulty: 'beginner',
@@ -118,7 +118,7 @@ describe('ScenarioService', () => {
       );
     });
 
-    it('should return scenario by id', async () => {
+    it('should return scenario by id without select parameter', async () => {
       const scenarioId = 1;
       repository.findOne.mockResolvedValue(mockScenario);
 
@@ -126,30 +126,94 @@ describe('ScenarioService', () => {
 
       expect(result).toEqual(mockScenario);
       expect(repository.findOne).toHaveBeenCalledWith({
-        select: [
-          'id',
-          'title',
-          'scenario',
-          'description',
-          'coverImageUrl',
-          'status',
-        ],
+        select: undefined,
+        where: { id: scenarioId },
+      });
+    });
+
+    it('should return scenario by id with select parameter', async () => {
+      const scenarioId = 1;
+      const selectFields: (keyof Scenarios)[] = [
+        'id',
+        'title',
+        'scenario',
+        'description',
+        'coverImageUrl',
+        'status',
+      ];
+      repository.findOne.mockResolvedValue(mockScenario);
+
+      const result = await service.getScenario(scenarioId, selectFields);
+
+      expect(result).toEqual(mockScenario);
+      expect(repository.findOne).toHaveBeenCalledWith({
+        select: selectFields,
         where: { id: scenarioId },
       });
     });
 
     it('should return scenario by id using EntityManager', async () => {
       const scenarioId = 1;
+      const mockFindOne = jest.fn().mockResolvedValue(mockScenario);
       const mockEntityManager = {
         getRepository: jest.fn().mockReturnValue({
-          findOne: jest.fn().mockResolvedValue(mockScenario),
+          findOne: mockFindOne,
         }),
       } as unknown as EntityManager;
 
-      const result = await service.getScenario(scenarioId, mockEntityManager);
+      const result = await service.getScenario(
+        scenarioId,
+        undefined,
+        mockEntityManager,
+      );
 
       expect(result).toEqual(mockScenario);
       expect(mockEntityManager.getRepository).toHaveBeenCalledWith(Scenarios);
+      expect(mockFindOne).toHaveBeenCalledWith({
+        select: undefined,
+        where: { id: scenarioId },
+      });
+    });
+
+    it('should return scenario by id using EntityManager with select parameter', async () => {
+      const scenarioId = 1;
+      const selectFields: (keyof Scenarios)[] = ['id', 'title', 'prompt'];
+      const mockFindOne = jest.fn().mockResolvedValue(mockScenario);
+      const mockEntityManager = {
+        getRepository: jest.fn().mockReturnValue({
+          findOne: mockFindOne,
+        }),
+      } as unknown as EntityManager;
+
+      const result = await service.getScenario(
+        scenarioId,
+        selectFields,
+        mockEntityManager,
+      );
+
+      expect(result).toEqual(mockScenario);
+      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(Scenarios);
+      expect(mockFindOne).toHaveBeenCalledWith({
+        select: selectFields,
+        where: { id: scenarioId },
+      });
+    });
+
+    it('should throw NotFoundException when scenario is not found with EntityManager', async () => {
+      const scenarioId = 999;
+      const mockFindOne = jest.fn().mockResolvedValue(null);
+      const mockEntityManager = {
+        getRepository: jest.fn().mockReturnValue({
+          findOne: mockFindOne,
+        }),
+      } as unknown as EntityManager;
+
+      await expect(
+        service.getScenario(scenarioId, undefined, mockEntityManager),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.getScenario(scenarioId, undefined, mockEntityManager),
+      ).rejects.toThrow('Scenario not found');
     });
   });
 
