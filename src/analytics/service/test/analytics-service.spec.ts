@@ -416,7 +416,7 @@ describe('AnalyticsService', () => {
         `(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`,
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        '"callDetails"."createdAt" BETWEEN :startDate AND :endDate',
+        '"chat"."startedAt" BETWEEN :startDate AND :endDate',
         {
           startDate: '2024-01-01 00:00:00',
           endDate: '2024-01-31 23:59:59',
@@ -500,7 +500,7 @@ describe('AnalyticsService', () => {
         `(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`,
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        '"callDetails"."createdAt" >= :startDate',
+        '"chat"."startedAt" >= :startDate',
         { startDate: '2024-01-01 00:00:00' },
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
@@ -581,7 +581,7 @@ describe('AnalyticsService', () => {
         `(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`,
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        '"callDetails"."createdAt" <= :endDate',
+        '"chat"."startedAt" <= :endDate',
         { endDate: '2024-01-31 23:59:59' },
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
