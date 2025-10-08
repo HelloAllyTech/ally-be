@@ -140,7 +140,7 @@ export class CloudTelephonyGateway
         [PERMISSIONS.START_CLOUD_TELEPHONY_CHAT],
       );
 
-      if (hasAccess) {
+      if (!hasAccess) {
         throw new UnauthorizedException(
           `User ${payload.sub} does not have access to cloud telephony`,
         );
