@@ -24,13 +24,27 @@ export class UserService {
   ) {}
 
   async get(id: number): Promise<User | null> {
-    const user = await this.userRepository.findOne({
-      where: { id, tenantId: ExecutionManager.getTenantId() },
-    });
-    this.auditLogger.log({
-      eventType: AUDIT_EVENTS.USER_PROFILE_ACCESS,
-    });
-    return user || null;
+    const user = await this.userRepository.query(
+      `
+      SELECT 
+       u.*,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', g.id,
+              'name', g.name
+            )
+          ) FILTER (WHERE g.id IS NOT NULL), '[]'
+        ) AS roles
+      FROM users u
+      LEFT JOIN user_groups ug ON u.id = ug."userId"
+      LEFT JOIN "groups" g ON ug."groupId" = g.id
+      WHERE u.id = $1
+      GROUP BY u.id
+      `,
+      [id],
+    );
+    return user[0];
   }
 
   async getUserByPhoneNumber(phoneNumber: string): Promise<User | null> {
@@ -109,7 +123,7 @@ export class UserService {
     return { totalWaiting: clientIds.size, clients: formattedData };
   }
 
-  getMinimalUserInfo(user: User | null) {
+  getMinimalUserInfo(user: any | null) {
     if (!user) return null;
     return {
       id: user.id,
@@ -119,6 +133,7 @@ export class UserService {
       role: user.role,
       tenantId: user.tenantId,
       phone: user.phone,
+      groups: user.roles || [],
     };
   }
 

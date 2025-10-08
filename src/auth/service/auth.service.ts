@@ -12,7 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { RefreshToken } from '../../common/entities/refresh-token.entity';
 import { AppConfigService } from '../../config/config.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { UserStatus } from '../../common/constants/user.constants';
+import { UserRole, UserStatus } from '../../common/constants/user.constants';
 import { UserCreateDto } from '../dto/user-create.dto';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GroupPermission } from 'src/common/entities/group-permission.entity';
@@ -212,8 +212,8 @@ export class AuthService {
       ? await bcrypt.hash(userData.password, 10)
       : undefined;
 
-    // TODO: Temporary fix adding for role
-    const role = userData.roles[0];
+    // To Do: Remove this role column logic after removing role column from user table
+    const role = this.determineUserRole(userData.roles);
 
     // Create new user
     const newUser = this.userRepository.create({
@@ -400,6 +400,23 @@ export class AuthService {
         tokenType: 'bearer',
       };
     }
+  }
+
+  /**
+   * Determines the user role based on available roles
+   * Priority: ADMIN > COUNSELOR > first available role
+   */
+  private determineUserRole(roles: UserRole[]): UserRole {
+    if (roles.includes(UserRole.ADMIN)) {
+      return UserRole.ADMIN;
+    }
+
+    if (roles.includes(UserRole.COUNSELOR)) {
+      return UserRole.COUNSELOR;
+    }
+
+    // Return the first available role if neither ADMIN nor COUNSELOR
+    return roles[0];
   }
 
   private getOtpKey(email: string) {
