@@ -24,11 +24,12 @@ import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
     setAuthContext: jest.fn(),
-    getTenantId: jest.fn(),
+    getTenantId: jest.fn(() => 'test-tenant'),
     getRole: jest.fn(),
     getUserId: jest.fn(),
     getExecutionId: jest.fn(),
     getCurrentContext: jest.fn(),
+    getRequestMetadata: jest.fn(() => ({ requestId: 'test-request-id' })),
     runWithContext: jest.fn((fn) => fn()),
   },
 }));
@@ -308,7 +309,6 @@ describe('ChatAiService', () => {
       expect(result).toBe(true);
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '2',
-        UserRole.COUNSELOR,
         'test-tenant',
       );
       expect(mockMessageRepository.create).toHaveBeenCalledTimes(2);
@@ -392,7 +392,6 @@ describe('ChatAiService', () => {
     it('should set auth context correctly', () => {
       const context = {
         userId: 1,
-        role: UserRole.CLIENT,
         tenantId: 'test-tenant',
       };
 
@@ -400,7 +399,6 @@ describe('ChatAiService', () => {
 
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '1',
-        UserRole.CLIENT,
         'test-tenant',
       );
     });
@@ -408,7 +406,6 @@ describe('ChatAiService', () => {
     it('should set auth context for counselor', () => {
       const context = {
         userId: 2,
-        role: UserRole.COUNSELOR,
         tenantId: 'test-tenant',
       };
 
@@ -416,7 +413,6 @@ describe('ChatAiService', () => {
 
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '2',
-        UserRole.COUNSELOR,
         'test-tenant',
       );
     });

@@ -325,7 +325,6 @@ describe('StreamFileProcessorService', () => {
       service.setAuthContext(mockSession);
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         mockSession.userId.toString(),
-        mockSession.role,
         mockSession.tenantId,
       );
     });

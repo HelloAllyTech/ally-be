@@ -16,6 +16,7 @@ import {
 } from 'src/common/constants/chat.constants';
 import { SettingsService } from 'src/settings/service/settings.service';
 import { UserService } from 'src/user/user.service';
+import { PermissionValidator } from 'src/auth/service/permission-validator.service';
 
 describe('ChatSummaryService', () => {
   let service: ChatSummaryService;
@@ -27,6 +28,9 @@ describe('ChatSummaryService', () => {
   };
   let mockUserService: {
     get: jest.Mock;
+  };
+  let mockPermissionValidator: {
+    validatePermissions: jest.Mock;
   };
 
   const mockTokenUser: TokenUser = {
@@ -164,6 +168,10 @@ describe('ChatSummaryService', () => {
       }),
     };
 
+    mockPermissionValidator = {
+      validatePermissions: jest.fn().mockResolvedValue(true),
+    };
+
     const module = await Test.createTestingModule({
       providers: [
         ChatSummaryService,
@@ -179,6 +187,10 @@ describe('ChatSummaryService', () => {
           provide: UserService,
           useValue: mockUserService,
         },
+        {
+          provide: PermissionValidator,
+          useValue: mockPermissionValidator,
+        },
       ],
     }).compile();
 
@@ -187,6 +199,8 @@ describe('ChatSummaryService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    // Reset permission validator mock to return true by default
+    mockPermissionValidator.validatePermissions.mockResolvedValue(true);
   });
 
   describe('exportSummary', () => {
@@ -307,6 +321,9 @@ describe('ChatSummaryService', () => {
         counselorId: 888, // Different counselor ID
       };
 
+      // Mock validatePermissions to return false for unauthorized user
+      mockPermissionValidator.validatePermissions.mockResolvedValue(false);
+
       mockChatService.getChatWithCallDetails.mockResolvedValue({
         chat: chatWithDifferentCounselor,
         callDetails: mockCallDetails,
@@ -332,6 +349,9 @@ describe('ChatSummaryService', () => {
         ...mockChat,
         counselorId: 888, // Different counselor ID
       };
+
+      // Ensure validatePermissions returns true for super admin
+      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
 
       mockChatService.getChatWithCallDetails.mockResolvedValue({
         chat: chatWithDifferentCounselor,

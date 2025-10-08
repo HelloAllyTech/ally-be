@@ -276,7 +276,6 @@ describe('AudioUploadService', () => {
       expect(chatService.getChatByIdForServiceCall).toHaveBeenCalledWith(123);
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '1',
-        UserRole.ADMIN,
         1,
       );
       expect(chatService.updateChat).toHaveBeenCalledWith(mockChat.id, {
@@ -477,7 +476,6 @@ describe('AudioUploadService', () => {
 
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '',
-        UserRole.ADMIN,
         1,
       );
     });

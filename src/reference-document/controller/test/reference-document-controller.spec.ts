@@ -75,7 +75,6 @@ describe('ReferenceDocumentController', () => {
     expect(service.addReferenceDocument).toHaveBeenCalledWith(
       tokenUser.id,
       dto,
-      tokenUser.role,
     );
     expect(result).toBe(expected);
   });

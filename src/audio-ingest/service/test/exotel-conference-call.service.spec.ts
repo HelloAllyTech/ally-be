@@ -312,11 +312,10 @@ describe('ExotelConferenceCallService', () => {
 
       (service as any).setAuthContext(session);
 
-      expect(MockedExecutionManager.setAuthContext).toHaveBeenCalledWith(
-        '123',
-        UserRole.COUNSELOR,
-        'tenant-123',
-      );
+    expect(MockedExecutionManager.setAuthContext).toHaveBeenCalledWith(
+      '123',
+      'tenant-123',
+    );
     });
   });
 

@@ -58,7 +58,7 @@ export class CloudTelephonyGateway
   async handleConnection(client: Socket) {
     this.logger.info(`Client connected to cloud telephony chat: ${client.id}`);
 
-    this.authenticateClient(client);
+    await this.authenticateClient(client);
 
     client.on('connect_error', (err) => {
       this.logger.error(
