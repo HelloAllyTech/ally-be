@@ -34,6 +34,7 @@ describe('ParticipantJoinedHandler', () => {
       metadata: '{"role": "counselor"}',
       joined_at: Date.now(),
       version: 1,
+      kind: 1,
       permission: {
         can_subscribe: true,
         can_publish: true,
@@ -304,6 +305,7 @@ describe('ParticipantJoinedHandler', () => {
           metadata: '',
           joined_at: Date.now(),
           version: 1,
+          kind: 1,
           permission: {
             can_subscribe: true,
             can_publish: false,

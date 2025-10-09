@@ -27,18 +27,15 @@ export class ScenarioService {
     });
   }
 
-  async getScenario(id: number, em?: EntityManager): Promise<ScenarioResponse> {
+  async getScenario(
+    id: number,
+    select?: (keyof Scenarios)[],
+    em?: EntityManager,
+  ) {
     const scenarioRepo =
       em?.getRepository(Scenarios) || this.scenarioRepository;
     const scenario = await scenarioRepo.findOne({
-      select: [
-        'id',
-        'title',
-        'scenario',
-        'description',
-        'coverImageUrl',
-        'status',
-      ],
+      select,
       where: { id },
     });
 
@@ -52,7 +49,7 @@ export class ScenarioService {
     createScenariosDto: CreateScenariosDto,
   ): Promise<Scenarios[]> {
     const scenarios = this.scenarioRepository.create(
-      createScenariosDto.scenarios as DeepPartial<Scenarios>[],
+      createScenariosDto.scenarios,
     );
     return this.scenarioRepository.save(scenarios);
   }

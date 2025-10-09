@@ -26,7 +26,6 @@ import { StartScenarioSessionRequestDto } from '../../dto/start-scenario-session
 import { AddFeedbackToScenarioSessionRequestDto } from '../../dto/add-feedback-to-scenario-session.dto';
 import { CreateScenarioEventsDto } from '../../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../../dto/delete-scenario-events.dto';
-import { ScenarioResponse } from '../../dto/scenario-response.dto';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../../interface/learn-message.interface';
 
@@ -80,13 +79,17 @@ describe('ScenarioSessionService', () => {
     updatedAt: new Date(),
   } as ScenarioSessions;
 
-  const mockScenario: ScenarioResponse = {
+  const mockScenario = {
     id: mockScenarioId,
     title: 'Test Scenario',
     scenario: 'Test scenario content',
     description: 'Test scenario description',
     coverImageUrl: 'https://example.com/image.jpg',
     status: ScenarioStatus.ACTIVE,
+    prompt: 'You are a counselor',
+    metadata: undefined,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   };
 
   const mockSessionEvents: SessionEvents[] = [
@@ -405,14 +408,77 @@ describe('ScenarioSessionService', () => {
       );
     });
 
-    it('should successfully start scenario session', async () => {
+    it('should throw BadRequestException when scenario has no lifeHistory', async () => {
+      const mockScenarioWithoutLifeHistory = {
+        ...mockScenario,
+        metadata: {
+          difficulty: 'beginner',
+          tags: ['test'],
+        },
+      };
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      scenarioService.getScenario.mockResolvedValue(
+        mockScenarioWithoutLifeHistory,
+      );
+      sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue(
+        mockScenarioSession,
+      );
+
+      await expect(
+        service.startScenarioSession(mockCounselorId, mockStartDto),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'Scenario details are not complete. Please contact admin.',
+        ),
+      );
+    });
+
+    it('should throw BadRequestException when scenario metadata is null', async () => {
+      const mockScenarioWithNullMetadata = {
+        ...mockScenario,
+        metadata: null,
+      };
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      scenarioService.getScenario.mockResolvedValue(
+        mockScenarioWithNullMetadata as any,
+      );
+      sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue(
+        mockScenarioSession,
+      );
+
+      await expect(
+        service.startScenarioSession(mockCounselorId, mockStartDto),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'Scenario details are not complete. Please contact admin.',
+        ),
+      );
+    });
+
+    it('should successfully start scenario session with default ttl', async () => {
       const mockTokenResponse = {
         token: 'access-token-123',
         roomName: mockRoomId,
         serverUrl: 'https://livekit.example.com',
       };
+      const mockScenarioWithMetadata = {
+        ...mockScenario,
+        metadata: {
+          difficulty: 'intermediate',
+          tags: ['anxiety'],
+          lifeHistory: { age: 25, background: 'test' },
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
-      scenarioService.getScenario.mockResolvedValue(mockScenario);
+      scenarioService.getScenario.mockResolvedValue(mockScenarioWithMetadata);
       sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
       );
@@ -433,11 +499,66 @@ describe('ScenarioSessionService', () => {
       });
       expect(livekitService.createRoom).toHaveBeenCalledWith({
         name: mockRoomId,
+        ttl: 1800,
         metadata: {
-          scenario: mockScenario,
-          sessionEvents: mockSessionEvents,
+          version: '1.0',
+          tenantId: mockTenantId,
+          scenario: {
+            ...mockScenarioWithMetadata,
+            metadata: {
+              difficulty: 'intermediate',
+              tags: ['anxiety'],
+            },
+            lifeHistory: { age: 25, background: 'test' },
+            events: mockSessionEvents,
+          },
         },
       });
+    });
+
+    it('should successfully start scenario session with custom ttl', async () => {
+      const mockTokenResponse = {
+        token: 'access-token-123',
+        roomName: mockRoomId,
+        serverUrl: 'https://livekit.example.com',
+      };
+      const customTtl = 3600;
+      const mockStartDtoWithTtl = { ...mockStartDto, ttl: customTtl };
+      const mockScenarioWithMetadata = {
+        ...mockScenario,
+        metadata: {
+          difficulty: 'beginner',
+          lifeHistory: { age: 30, background: 'test background' },
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      scenarioService.getScenario.mockResolvedValue(mockScenarioWithMetadata);
+      sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue(
+        mockScenarioSession,
+      );
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue(mockTokenResponse);
+
+      const result = await service.startScenarioSession(
+        mockCounselorId,
+        mockStartDtoWithTtl,
+      );
+
+      expect(result).toEqual({
+        scenarioSession: mockScenarioSession,
+        accessToken: mockTokenResponse,
+      });
+      expect(livekitService.createRoom).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: mockRoomId,
+          ttl: customTtl,
+        }),
+      );
     });
   });
 
@@ -848,7 +969,7 @@ describe('ScenarioSessionService', () => {
 
       expect(result).toEqual(mockScenarioSession);
       expect(scenarioSessionRepository.findOne).toHaveBeenCalledWith({
-        where: { roomId: mockRoomId, tenantId: mockTenantId },
+        where: { roomId: mockRoomId },
       });
     });
   });
