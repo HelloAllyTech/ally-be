@@ -1,13 +1,14 @@
 import { Controller, Get, Body, Put } from '@nestjs/common';
 import { SettingsService } from '../service/settings.service';
+import { ApiTags, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiBearerAuth,
-  ApiSecurity,
-  ApiBody,
-} from '@nestjs/swagger';
+  GetSummaryFields,
+  UpdateSummaryFields,
+  GetNudgeStatus,
+  UpdateNudgeStatus,
+  GetChatTypes,
+  UpdateHiddenChatTypes,
+} from '../decorators/api-documentation.decorators';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 
@@ -18,93 +19,44 @@ import { UserRole } from '../../common/constants/user.constants';
 export class SettingsController {
   constructor(private readonly service: SettingsService) {}
 
-  @Get('summary-fields')
-  @ApiOperation({ summary: 'Get summary fields' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns the summary fields configuration',
-    type: [String],
-  })
+  @GetSummaryFields()
   @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  @Get('summary-fields')
   getSummaryFields() {
     return this.service.getSummaryFieldsConfig();
   }
 
-  @Put('summary-fields')
-  @ApiOperation({ summary: 'Update summary fields' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        hiddenFields: { type: 'array', items: { type: 'string' } },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Summary fields updated successfully',
-  })
+  @UpdateSummaryFields()
   @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @Put('summary-fields')
   updateSummaryFields(@Body() body: { hiddenFields: string[] }) {
     return this.service.updateSummaryFields(body.hiddenFields);
   }
 
-  @Get('nudge-status')
-  @ApiOperation({ summary: 'Get nudge status' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns the nudge status',
-  })
+  @GetNudgeStatus()
   @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @Get('nudge-status')
   getNudgeStatus() {
     return this.service.getNudgeStatus();
   }
 
-  @Put('nudge-status')
-  @ApiOperation({ summary: 'Update nudge status' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        status: { type: 'boolean' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Nudge status updated successfully',
-  })
+  @UpdateNudgeStatus()
   @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @Put('nudge-status')
   updateNudgeStatus(@Body() body: { status: boolean }) {
     return this.service.updateNudgeStatus(body.status);
   }
 
-  @Get('chat-types')
-  @ApiOperation({ summary: 'Get enabled chat types' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns the enabled chat types',
-  })
+  @GetChatTypes()
   @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  @Get('chat-types')
   getChatTypes() {
     return this.service.getChatTypes();
   }
 
-  @Put('chat-types')
-  @ApiOperation({ summary: 'Update hidden chat types' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        hiddenChatTypes: { type: 'array', items: { type: 'string' } },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Hidden chat types updated successfully',
-  })
+  @UpdateHiddenChatTypes()
   @AuthRoles(UserRole.ADMIN)
+  @Put('chat-types')
   updateHiddenChatTypes(@Body() body: { hiddenChatTypes: string[] }) {
     return this.service.updateChatTypes(body.hiddenChatTypes);
   }
