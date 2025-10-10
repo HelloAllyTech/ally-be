@@ -9,12 +9,20 @@ import {
   Get,
   Delete,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, ApiSecurity } from '@nestjs/swagger';
 import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiTags,
-  ApiSecurity,
-} from '@nestjs/swagger';
+  AddReferenceDocument,
+  SearchPublicDocuments,
+  SearchTenantDocuments,
+  UpdateReferenceDocument,
+  BulkUploadCsv,
+  GetCategories,
+  GetPublicDocument,
+  GetPrivateDocument,
+  DeleteReferenceDocument,
+  ArchiveDocument,
+  UnarchiveDocument,
+} from '../decorators/api-documentation.decorators';
 import { ReferenceDocumentService } from '../service/reference-document.service';
 import {
   AddDocumentDto,
@@ -35,9 +43,9 @@ import { FileInterceptor } from '@nestjs/platform-express';
 export class ReferenceDocumentController {
   constructor(private readonly documentService: ReferenceDocumentService) {}
 
-  @Post('')
-  @ApiOperation({ summary: 'Add a new reference document' })
+  @AddReferenceDocument()
   @AuthRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  @Post('')
   async addDocument(
     @CurrentUser() tokenUser: TokenUser,
     @Body() documentDto: AddDocumentDto,
@@ -49,25 +57,23 @@ export class ReferenceDocumentController {
     );
   }
 
+  @SearchPublicDocuments()
   @Public()
   @Post('search/public')
-  @ApiOperation({ summary: 'Search public reference documents' })
   async searchPublicDocuments(@Body() searchDto: SearchDocumentsDto) {
     return this.documentService.searchPublicDocuments(searchDto);
   }
 
-  @Post('search')
-  @ApiOperation({
-    summary: 'Search organization reference documents ',
-  })
+  @SearchTenantDocuments()
   @AuthRoles(UserRole.COUNSELOR)
+  @Post('search')
   async searchTenantDocuments(@Body() searchDto: SearchDocumentsDto) {
     return this.documentService.searchTenantDocuments(searchDto);
   }
 
-  @Put(':id')
-  @ApiOperation({ summary: 'Update an existing reference document' })
+  @UpdateReferenceDocument()
   @AuthRoles(UserRole.SUPER_ADMIN)
+  @Put(':id')
   async updateDocument(
     @Param('id') id: string,
     @Body() updateDto: UpdateReferenceDocumentDto,
@@ -75,9 +81,9 @@ export class ReferenceDocumentController {
     return this.documentService.updateReferenceDocument(id, updateDto);
   }
 
-  @Post('upload-csv')
-  @ApiOperation({ summary: 'Bulk upload reference documents via CSV' })
+  @BulkUploadCsv()
   @AuthRoles(UserRole.SUPER_ADMIN)
+  @Post('upload-csv')
   @UseInterceptors(FileInterceptor('file'))
   async uploadCsv(
     @CurrentUser() tokenUser: TokenUser,
@@ -86,46 +92,44 @@ export class ReferenceDocumentController {
     return this.documentService.bulkCreateFromCsv(tokenUser.id, file);
   }
 
-  @Get('categories')
-  @ApiOperation({ summary: 'Get all distinct categories in ascending order' })
+  @GetCategories()
   @Public()
+  @Get('categories')
   async getCategories() {
     return this.documentService.getDistinctCategories();
   }
 
-  @Get('public/:id')
-  @ApiOperation({ summary: 'Get a public reference document by ID' })
+  @GetPublicDocument()
   @Public()
+  @Get('public/:id')
   async getDocument(@Param('id') id: string) {
     return this.documentService.getPublicReferenceDocument(id);
   }
 
-  @Get(':id')
-  @ApiOperation({
-    summary: 'Get a reference document by ID ',
-  })
+  @GetPrivateDocument()
   @AuthRoles(UserRole.COUNSELOR)
+  @Get(':id')
   async getPrivateDocument(@Param('id') id: string) {
     return this.documentService.getPrivateReferenceDocument(id);
   }
 
-  @Delete(':id')
-  @ApiOperation({ summary: 'Delete a reference document' })
+  @DeleteReferenceDocument()
   @AuthRoles(UserRole.SUPER_ADMIN)
+  @Delete(':id')
   async deleteDocument(@Param('id') id: string) {
     return this.documentService.deleteReferenceDocument(id);
   }
 
-  @Post(':id/archive')
-  @ApiOperation({ summary: 'Archive a reference document' })
+  @ArchiveDocument()
   @AuthRoles(UserRole.SUPER_ADMIN)
+  @Post(':id/archive')
   async archiveDocument(@Param('id') id: string) {
     return this.documentService.archiveReferenceDocument(id);
   }
 
-  @Post(':id/unarchive')
-  @ApiOperation({ summary: 'Unarchive a reference document' })
+  @UnarchiveDocument()
   @AuthRoles(UserRole.SUPER_ADMIN)
+  @Post(':id/unarchive')
   async unarchiveDocument(@Param('id') id: string) {
     return this.documentService.unarchiveReferenceDocument(id);
   }
