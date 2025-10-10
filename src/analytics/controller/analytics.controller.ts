@@ -18,7 +18,8 @@ import {
 } from '../validation/analytics.validation';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiTags } from '@nestjs/swagger';
+import { GetCounselorStats } from '../decorators/api-documentation.decorators';
 
 @ApiTags('Analytics')
 @Controller('v1/analytics')
@@ -49,18 +50,9 @@ export class AnalyticsController {
     return this.analyticsService.getDashboards(req.user.id);
   }
 
+  @GetCounselorStats()
   @UseGuards(JwtAuthGuard)
   @Get('counselor-stats')
-  @ApiOperation({
-    summary: 'Get counselor statistics',
-    description:
-      'Fetch counselor listening and sharing duration statistics with optional date range for the authenticated user',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Counselor statistics retrieved successfully',
-    type: [CounselorStatsResponseDto],
-  })
   async getCounselorStats(
     @Query() queryParams: CounselorStatsQueryDto,
     @Req() req: { user: { id: number } },
