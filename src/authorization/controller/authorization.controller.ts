@@ -1,11 +1,7 @@
 import { Controller, Get, UseGuards, Req } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import {
-  ApiBearerAuth,
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { GetUserPermissions } from '../decorators/api-documentation.decorators';
 import { PermissionsService } from '../service/permissions.service';
 
 @ApiTags('Authorization')
@@ -14,17 +10,9 @@ import { PermissionsService } from '../service/permissions.service';
 export class AuthorizationController {
   constructor(private readonly permissionsService: PermissionsService) {}
 
-  @Get('permissions')
-  @ApiOperation({ summary: 'Get current user permissions' })
-  @ApiResponse({
-    status: 200,
-    description: 'Successfully retrieved user permissions',
-    schema: {
-      type: 'array',
-      items: { type: 'string' },
-    },
-  })
+  @GetUserPermissions()
   @UseGuards(JwtAuthGuard)
+  @Get('permissions')
   async getPermissions(@Req() req: { user: { id: string } }) {
     return await this.permissionsService.getUserPermissions(
       parseInt(req.user.id),
