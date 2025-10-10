@@ -1,11 +1,9 @@
 import { Controller, Post, Body } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiBearerAuth,
-  ApiSecurity,
-} from '@nestjs/swagger';
+  GetPresignedUploadUrl,
+  CancelAudioUpload,
+} from '../decorators/audio-upload-api-documentation.decorators';
 import { AudioUploadService } from '../service/audio-upload.service';
 import {
   AudioUploadRequestDto,
@@ -21,15 +19,9 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 export class AudioUploadController {
   constructor(private readonly audioUploadService: AudioUploadService) {}
 
-  @Post('upload-url')
+  @GetPresignedUploadUrl()
   @AuthPermissions([PERMISSIONS.VIEW_AUDIO_UPLOAD])
-  @ApiOperation({ summary: 'Get presigned URL for audio upload' })
-  @ApiResponse({
-    status: 201,
-    description: 'Presigned URL generated successfully',
-    type: AudioUploadResponseDto,
-  })
-  @ApiResponse({ status: 400, description: 'Invalid file type' })
+  @Post('upload-url')
   async createChatWithUploadUrl(
     @Body() audioUploadRequestDto: AudioUploadRequestDto,
   ): Promise<AudioUploadResponseDto> {
@@ -38,10 +30,9 @@ export class AudioUploadController {
     );
   }
 
-  @Post('cancel-upload')
+  @CancelAudioUpload()
   @AuthPermissions([PERMISSIONS.CANCEL_AUDIO_UPLOAD])
-  @ApiOperation({ summary: 'Cancel audio upload' })
-  @ApiResponse({ status: 200, description: 'Audio upload cancelled' })
+  @Post('cancel-upload')
   async cancelUpload(@Body() cancelUploadRequestDto: CancelUploadRequestDto) {
     return this.audioUploadService.cancelUpload(cancelUploadRequestDto);
   }
