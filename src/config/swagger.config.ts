@@ -1,42 +1,47 @@
+// Memory storage for Swagger tokens (most secure approach)
+// Make token accessible globally for Swagger UI
+declare global {
+  interface Window {
+    swaggerToken: string | null;
+  }
+}
+
 export const swaggerCustomOptions = {
   swaggerOptions: {
+    persistAuthorization: false, // Disable localStorage persistence
     requestInterceptor: (req: any) => {
-      // Auto-capture and apply token from login response
+      if ((window as any).swaggerToken) {
+        req.headers.Authorization = `Bearer ${(window as any).swaggerToken}`;
+      }
       return req;
     },
     responseInterceptor: (res: any) => {
-      // Check if this is a login response and has an access token
-      if (res.url && res.url.includes('/api/v1/auth/login') && res.body) {
+      // Store token from login response
+      if (res.url?.includes('/api/v1/auth/login') && res.body) {
         try {
           const body = JSON.parse(res.text);
           if (body.accessToken) {
-            // Store token in localStorage for persistence
-            localStorage.setItem('swagger_auth_token', body.accessToken);
-            // Auto-authorize with the received token (Swagger adds "Bearer " automatically)
+            (window as any).swaggerToken = body.accessToken;
             const ui = (window as any).ui;
-            if (ui) {
-              ui.preauthorizeApiKey('access-token', body.accessToken);
-            }
+            ui?.preauthorizeApiKey('access-token', body.accessToken);
           }
         } catch (e) {
-          // Silently fail if parsing doesn't work
+          // Silently fail
         }
       }
+
+      // Clear token on logout
+      if (res.url?.includes('/api/v1/auth/logout')) {
+        (window as any).swaggerToken = null;
+      }
+
       return res;
     },
     onComplete: () => {
-      // On page load, check if we have a stored token and apply it
-      try {
-        const storedToken = localStorage.getItem('swagger_auth_token');
-        if (storedToken) {
-          const ui = (window as any).ui;
-          if (ui) {
-            // Swagger adds "Bearer " automatically
-            ui.preauthorizeApiKey('access-token', storedToken);
-          }
-        }
-      } catch (e) {
-        // Silently fail if localStorage is not available
+      // Apply stored token on page load
+      if ((window as any).swaggerToken) {
+        const ui = (window as any).ui;
+        ui?.preauthorizeApiKey('access-token', (window as any).swaggerToken);
       }
     },
   },
