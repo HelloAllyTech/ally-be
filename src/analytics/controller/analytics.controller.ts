@@ -18,11 +18,13 @@ import {
 } from '../validation/analytics.validation';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { GetCounselorStats } from '../decorator/api-documentation.decorator';
 
 @ApiTags('Analytics')
 @Controller('v1/analytics')
+@ApiBearerAuth()
+@ApiSecurity('access-token')
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 

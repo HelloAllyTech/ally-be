@@ -1,14 +1,17 @@
 import { Controller, Get, Post, Body, Param, Put } from '@nestjs/common';
 import { TenantService } from './tenant.service';
 import { Tenant, TenantStatus } from '../common/entities/tenant.entity';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
 import { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto';
 import { UpdateTenantMetadataDto } from './dto/update-tenant-metadata.dto';
 import { UserRole } from '../common/constants/user.constants';
 import { AuthRoles } from '../auth/decorators/auth-roles.decorator';
+
 @ApiTags('Tenant')
+@ApiBearerAuth()
+@ApiSecurity('access-token')
 @Controller('v1/tenants')
 @AuthRoles(UserRole.SUPER_ADMIN)
 export class TenantController {

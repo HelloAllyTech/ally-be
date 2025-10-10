@@ -3,6 +3,7 @@ import { RedisService } from '../service/redis.service';
 import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { IsString, IsNotEmpty } from 'class-validator';
+import { ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 
 class CacheQueryDto {
   @IsString()
@@ -10,6 +11,8 @@ class CacheQueryDto {
   pattern!: string;
 }
 
+@ApiBearerAuth()
+@ApiSecurity('access-token')
 @UseGuards(JwtAuthGuard)
 @Controller('v1/cache')
 export class CacheController {
