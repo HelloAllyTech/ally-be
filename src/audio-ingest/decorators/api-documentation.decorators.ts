@@ -24,6 +24,3 @@ export const SubscribeOzonetelEvents = () =>
 
 export const UnsubscribeOzonetelEvents = () =>
   ApiOperation({ summary: 'Unsubscribe Ozonetel events' });
-
-export const CreateCloudTelephonyIntegration = () =>
-  ApiOperation({ summary: 'Create cloud telephony integration' });
