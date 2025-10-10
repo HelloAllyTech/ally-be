@@ -35,7 +35,7 @@ import {
   AddNoteToChat,
   AddSummaryFeedback,
   DeleteChat,
-} from '../decorators/api-documentation.decorators';
+} from '../decorator/api-documentation.decorator';
 import { CallInfoDto, DeleteChatResponseDto } from '../dto/chat.response.dto';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';

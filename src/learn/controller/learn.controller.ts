@@ -23,7 +23,7 @@ import {
   StartScenarioSession,
   EndScenarioSession,
   AddScenarioSessionFeedback,
-} from '../decorators/api-documentation.decorators';
+} from '../decorator/api-documentation.decorator';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
 import { UserRole } from 'src/common/constants/user.constants';
 import { ScenarioService } from '../service/scenario.service';

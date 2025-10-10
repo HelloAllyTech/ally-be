@@ -1,7 +1,7 @@
 import { Controller, Get, UseGuards, Req } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { GetUserPermissions } from '../decorators/api-documentation.decorators';
+import { GetUserPermissions } from '../decorator/api-documentation.decorator';
 import { PermissionsService } from '../service/permissions.service';
 
 @ApiTags('Authorization')

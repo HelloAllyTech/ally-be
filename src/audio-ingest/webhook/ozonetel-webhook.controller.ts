@@ -11,7 +11,7 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   HandleOzonetelCallDetails,
   HandleOzonetelEventsSubscription,
-} from '../decorators/api-documentation.decorators';
+} from '../decorator/api-documentation.decorator';
 import { LoggerService } from '../../logger/logger.service';
 import { OzonetelService } from '../service/ozonetel.service';
 import {

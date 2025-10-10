@@ -8,7 +8,7 @@ import {
   UpdateNudgeStatus,
   GetChatTypes,
   UpdateHiddenChatTypes,
-} from '../decorators/api-documentation.decorators';
+} from '../decorator/api-documentation.decorator';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 

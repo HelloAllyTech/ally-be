@@ -11,7 +11,7 @@ import {
   ListRoomParticipants,
   RemoveRoomParticipant,
   DispatchAgent,
-} from '../decorators/api-documentation.decorators';
+} from '../decorator/api-documentation.decorator';
 import { UserRole } from 'src/common/constants/user.constants';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
 

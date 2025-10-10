@@ -3,7 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import {
   GetPresignedUploadUrl,
   CancelAudioUpload,
-} from '../decorators/audio-upload-api-documentation.decorators';
+} from '../decorator/audio-upload-api-documentation.decorator';
 import { AudioUploadService } from '../service/audio-upload.service';
 import {
   AudioUploadRequestDto,

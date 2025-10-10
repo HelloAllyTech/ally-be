@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import {
   SubscribeOzonetelEvents,
   UnsubscribeOzonetelEvents,
-} from '../decorators/api-documentation.decorators';
+} from '../decorator/api-documentation.decorator';
 import { OzonetelService } from '../service/ozonetel.service';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';

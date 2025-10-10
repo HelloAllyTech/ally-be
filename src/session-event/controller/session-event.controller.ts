@@ -1,7 +1,7 @@
 import { Body, Controller, Param, Post, Put } from '@nestjs/common';
 import { SessionEventService } from '../service/session-event.service';
 import { ApiBearerAuth, ApiSecurity, ApiTags } from '@nestjs/swagger';
-import { CreateSessionEvents, UpdateSessionEvent } from '../decorators/api-documentation.decorators';
+import { CreateSessionEvents, UpdateSessionEvent } from '../decorator/api-documentation.decorator';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 import { SessionEvents } from '../entity/session-events.entity';

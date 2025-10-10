@@ -22,7 +22,7 @@ import {
   DeleteReferenceDocument,
   ArchiveDocument,
   UnarchiveDocument,
-} from '../decorators/api-documentation.decorators';
+} from '../decorator/api-documentation.decorator';
 import { ReferenceDocumentService } from '../service/reference-document.service';
 import {
   AddDocumentDto,

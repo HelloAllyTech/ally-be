@@ -19,7 +19,7 @@ import {
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 import { ApiTags } from '@nestjs/swagger';
-import { GetCounselorStats } from '../decorators/api-documentation.decorators';
+import { GetCounselorStats } from '../decorator/api-documentation.decorator';
 
 @ApiTags('Analytics')
 @Controller('v1/analytics')

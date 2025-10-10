@@ -12,7 +12,7 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   SearchCities,
   ListPlaces,
-} from '../decorators/api-documentation.decorators';
+} from '../decorator/api-documentation.decorator';
 
 @ApiTags('Places')
 @Controller('v1/places')
