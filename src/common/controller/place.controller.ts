@@ -8,27 +8,19 @@ import {
 } from '@nestjs/common';
 import { PlaceService } from '../service/place.service';
 import { Place } from '../entities/place.entity';
+import { ApiTags } from '@nestjs/swagger';
 import {
-  ApiOperation,
-  ApiQuery,
-  ApiResponse,
-  ApiTags,
-  getSchemaPath,
-} from '@nestjs/swagger';
+  SearchCities,
+  ListPlaces,
+} from '../decorators/api-documentation.decorators';
 
 @ApiTags('Places')
 @Controller('v1/places')
 export class PlaceController {
   constructor(private readonly placeService: PlaceService) {}
 
+  @SearchCities()
   @Get('search')
-  @ApiOperation({ summary: 'Search for cities' })
-  @ApiQuery({ name: 'query', type: String, required: true })
-  @ApiResponse({
-    status: 200,
-    description: 'List of cities',
-    type: [Place],
-  })
   async searchCities(@Query('query') query: string): Promise<Place[]> {
     if (!query || query.trim().length === 0) {
       throw new BadRequestException('Query parameter cannot be empty');
@@ -39,21 +31,8 @@ export class PlaceController {
     return this.placeService.searchCities(query);
   }
 
+  @ListPlaces()
   @Get()
-  @ApiOperation({ summary: 'List all places' })
-  @ApiQuery({ name: 'page', type: Number, required: false })
-  @ApiQuery({ name: 'limit', type: Number, required: false })
-  @ApiResponse({
-    status: 200,
-    description: 'List of places',
-    schema: {
-      type: 'object',
-      properties: {
-        data: { type: 'array', items: { $ref: getSchemaPath(Place) } },
-        total: { type: 'number' },
-      },
-    },
-  })
   async listPlaces(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
