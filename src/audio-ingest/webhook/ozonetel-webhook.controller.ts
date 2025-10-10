@@ -7,7 +7,11 @@ import {
   BadRequestException,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiTags } from '@nestjs/swagger';
+import {
+  HandleOzonetelCallDetails,
+  HandleOzonetelEventsSubscription,
+} from '../decorators/api-documentation.decorators';
 import { LoggerService } from '../../logger/logger.service';
 import { OzonetelService } from '../service/ozonetel.service';
 import {
@@ -24,13 +28,9 @@ export class OzonetelWebhookController {
 
   constructor(private readonly ozonetelService: OzonetelService) {}
 
-  @Post('call-details')
+  @HandleOzonetelCallDetails()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Handle Ozonetel call details webhook' })
-  @ApiResponse({
-    status: 200,
-    description: 'Ozonetel call details processed successfully',
-  })
+  @Post('call-details')
   async handleOzonetelCallDetails(
     @Query('code') code: string,
     @Body() body: OzonetelCallDetailsBody,
@@ -48,13 +48,9 @@ export class OzonetelWebhookController {
     }
   }
 
-  @Post('call-events')
+  @HandleOzonetelEventsSubscription()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Handle Ozonetel events subscription' })
-  @ApiResponse({
-    status: 200,
-    description: 'Ozonetel events subscription processed successfully',
-  })
+  @Post('call-events')
   async handleOzonetelEventsSubscription(
     @Query('code') code: string,
     @Body() body: any,

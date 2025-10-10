@@ -1,5 +1,9 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiSecurity } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
+import {
+  SubscribeOzonetelEvents,
+  UnsubscribeOzonetelEvents,
+} from '../decorators/api-documentation.decorators';
 import { OzonetelService } from '../service/ozonetel.service';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
@@ -15,9 +19,9 @@ import {
 export class OzonetelController {
   constructor(private readonly ozonetelService: OzonetelService) {}
 
-  @Post('subscribe-events')
+  @SubscribeOzonetelEvents()
   @AuthRoles(UserRole.SUPER_ADMIN)
-  @ApiOperation({ summary: 'Subscribe Ozonetel events' })
+  @Post('subscribe-events')
   async handleOzonetelCallDetails(
     @Body() ozonetelSubscriptionDto: OzonetelSubscriptionDto,
   ) {
@@ -26,9 +30,9 @@ export class OzonetelController {
     );
   }
 
-  @Post('unsubscribe-events')
+  @UnsubscribeOzonetelEvents()
   @AuthRoles(UserRole.SUPER_ADMIN)
-  @ApiOperation({ summary: 'Unsubscribe Ozonetel events' })
+  @Post('unsubscribe-events')
   async handleOzonetelUnsubscribe(
     @Body() ozonetelUnsubscriptionDto: OzonetelUnsubscriptionDto,
   ) {
