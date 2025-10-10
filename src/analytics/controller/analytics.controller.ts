@@ -15,7 +15,7 @@ import {
   DashboardIdParamDto,
   CounselorStatsQueryDto,
   CounselorStatsResponseDto,
-} from '../validation/analytics.validation';
+} from '../dto/analytics.dto';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 import { ApiBearerAuth, ApiSecurity, ApiTags } from '@nestjs/swagger';

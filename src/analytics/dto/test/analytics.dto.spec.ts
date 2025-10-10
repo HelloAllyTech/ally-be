@@ -7,7 +7,7 @@ import {
   DashboardIdParamDto,
   CounselorStatsQueryDto,
   CounselorStatsResponseDto,
-} from '../analytics.validation';
+} from '../analytics.dto';
 
 describe('Analytics Validation DTOs', () => {
   describe('DashboardDataDto', () => {

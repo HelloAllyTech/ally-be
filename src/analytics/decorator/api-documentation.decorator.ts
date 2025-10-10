@@ -1,6 +1,6 @@
 import { applyDecorators } from '@nestjs/common';
 import { ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { CounselorStatsResponseDto } from '../validation/analytics.validation';
+import { CounselorStatsResponseDto } from '../dto/analytics.dto';
 
 export const GetCounselorStats = () =>
   applyDecorators(

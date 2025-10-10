@@ -11,7 +11,7 @@ import { AnalyticsUtil } from '../util/analytics.util';
 import {
   CounselorStatsQueryDto,
   CounselorStatsResponseDto,
-} from '../validation/analytics.validation';
+} from '../dto/analytics.dto';
 
 @Injectable()
 export class AnalyticsService {

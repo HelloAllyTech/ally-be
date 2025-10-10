@@ -9,7 +9,7 @@ import {
   CreateDashboardDto,
   DashboardIdParamDto,
   CounselorStatsQueryDto,
-} from '../../validation/analytics.validation';
+} from '../../dto/analytics.dto';
 
 describe('AnalyticsController', () => {
   let controller: AnalyticsController;
