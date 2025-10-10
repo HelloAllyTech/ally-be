@@ -8,14 +8,22 @@ import {
   Put,
   Delete,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiQuery,
-  ApiResponse,
-  ApiSecurity,
-  ApiTags,
-} from '@nestjs/swagger';
+  GetUserScenarioSessions,
+  GetAdminScenarioSessions,
+  GetScenarioSessionMessages,
+  GetAllScenarios,
+  GetScenarioById,
+  CreateScenarios,
+  UpdateScenario,
+  GetScenarioSessionById,
+  MapEventsToScenario,
+  DeleteScenarioEvents,
+  StartScenarioSession,
+  EndScenarioSession,
+  AddScenarioSessionFeedback,
+} from '../decorators/api-documentation.decorators';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
 import { UserRole } from 'src/common/constants/user.constants';
 import { ScenarioService } from '../service/scenario.service';
@@ -25,7 +33,6 @@ import { TokenUser } from 'src/auth/type/auth.types';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { ScenarioSessionSortBy } from '../enum/scenario-session-sort-by.enum';
-import { ScenarioSessionResponseDto } from '../dto/scenario-session-response.dto';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
@@ -46,7 +53,7 @@ export class LearnController {
   ) {}
 
   @Public()
-  @ApiOperation({ summary: 'Get all scenarios' })
+  @GetAllScenarios()
   @Get('scenarios')
   async getScenarios(): Promise<ScenarioResponse[]> {
     return this.scenarioService.getScenarios();
@@ -54,7 +61,7 @@ export class LearnController {
 
   // TODO: Remove swagger lock
   @Public()
-  @ApiOperation({ summary: 'Get a scenario by id' })
+  @GetScenarioById()
   @Get('scenarios/:id')
   async getScenario(@Param('id') id: number): Promise<ScenarioResponse> {
     return this.scenarioService.getScenario(id, [
@@ -67,7 +74,7 @@ export class LearnController {
     ]);
   }
 
-  @ApiOperation({ summary: 'Create multiple scenarios' })
+  @CreateScenarios()
   @AuthRoles(UserRole.SUPER_ADMIN)
   @Post('scenarios')
   async createScenario(
@@ -76,7 +83,7 @@ export class LearnController {
     return this.scenarioService.createScenarios(createScenariosDto);
   }
 
-  @ApiOperation({ summary: 'Update a scenario by id' })
+  @UpdateScenario()
   @AuthRoles(UserRole.SUPER_ADMIN)
   @Put('scenarios/:id')
   async updateScenario(
@@ -86,43 +93,7 @@ export class LearnController {
     return this.scenarioService.updateScenario(id, updateScenarioDto);
   }
 
-  @ApiOperation({ summary: 'Get all scenario sessions for user' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns the list of scenario sessions',
-    type: ScenarioSessionResponseDto,
-    isArray: true,
-  })
-  @ApiQuery({
-    name: 'statuses',
-    required: false,
-    type: String,
-    description: 'Filter by scenario session statuses (comma-separated)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    description: 'Number of records to return',
-  })
-  @ApiQuery({
-    name: 'offset',
-    required: false,
-    type: Number,
-    description: 'Number of records to skip',
-  })
-  @ApiQuery({
-    name: 'sortBy',
-    required: false,
-    enum: ScenarioSessionSortBy,
-    description: 'Field to sort by',
-  })
-  @ApiQuery({
-    name: 'order',
-    required: false,
-    enum: SortOrder,
-    description: 'Sort order',
-  })
+  @GetUserScenarioSessions()
   @AuthRoles(UserRole.LEARNER)
   @Get('scenario-sessions')
   async getScenarioSessions(
@@ -146,31 +117,7 @@ export class LearnController {
     );
   }
 
-  @ApiOperation({ summary: 'Get all scenario sessions for admin' })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    description: 'Number of records to return',
-  })
-  @ApiQuery({
-    name: 'offset',
-    required: false,
-    type: Number,
-    description: 'Number of records to skip',
-  })
-  @ApiQuery({
-    name: 'sortBy',
-    required: false,
-    enum: ScenarioSessionSortBy,
-    description: 'Field to sort by',
-  })
-  @ApiQuery({
-    name: 'order',
-    required: false,
-    enum: SortOrder,
-    description: 'Sort order',
-  })
+  @GetAdminScenarioSessions()
   @AuthRoles(UserRole.ADMIN)
   @Get('admin-scenario-sessions')
   async getAdminScenarioSessions(
@@ -188,7 +135,7 @@ export class LearnController {
     });
   }
 
-  @ApiOperation({ summary: 'Get a scenario session by id' })
+  @GetScenarioSessionById()
   @AuthRoles(UserRole.LEARNER, UserRole.ADMIN)
   @Get('scenario-session/:id')
   async getScenarioSession(
@@ -198,7 +145,7 @@ export class LearnController {
     return this.scenarioSessionService.getScenarioSession(id, tokenUser.id);
   }
 
-  @ApiOperation({ summary: 'Map events to scenario' })
+  @MapEventsToScenario()
   @AuthRoles(UserRole.SUPER_ADMIN)
   @Post('scenarios/map-events')
   async mapEventsToScenario(
@@ -209,7 +156,7 @@ export class LearnController {
     );
   }
 
-  @ApiOperation({ summary: 'Delete scenario events' })
+  @DeleteScenarioEvents()
   @AuthRoles(UserRole.SUPER_ADMIN)
   @Delete('scenarios/events')
   async deleteScenarioEvents(
@@ -221,7 +168,7 @@ export class LearnController {
     return rowsAffected != null && rowsAffected > 0;
   }
 
-  @ApiOperation({ summary: 'Start a scenario session' })
+  @StartScenarioSession()
   @AuthRoles(UserRole.LEARNER)
   @Post('scenario-session-start')
   async startScenarioSession(
@@ -234,7 +181,7 @@ export class LearnController {
     );
   }
 
-  @ApiOperation({ summary: 'End a scenario session' })
+  @EndScenarioSession()
   @AuthRoles(UserRole.LEARNER)
   @Post('scenario-session/:scenarioSessionId/end')
   async endScenarioSession(
@@ -247,7 +194,7 @@ export class LearnController {
     );
   }
 
-  @ApiOperation({ summary: 'Add a feedback to a scenario session' })
+  @AddScenarioSessionFeedback()
   @AuthRoles(UserRole.LEARNER)
   @Post('scenario-session/:scenarioSessionId/feedback')
   async addFeedbackToScenarioSession(
@@ -263,31 +210,7 @@ export class LearnController {
     );
   }
 
-  @ApiOperation({ summary: 'Get messages for a scenario session' })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    description: 'Number of messages to return',
-  })
-  @ApiQuery({
-    name: 'offset',
-    required: false,
-    type: Number,
-    description: 'Number of messages to skip',
-  })
-  @ApiQuery({
-    name: 'sortBy',
-    required: false,
-    type: String,
-    description: 'Field to sort by (default: createdAt)',
-  })
-  @ApiQuery({
-    name: 'order',
-    required: false,
-    enum: SortOrder,
-    description: 'Sort order (default: DESC)',
-  })
+  @GetScenarioSessionMessages()
   @AuthRoles(UserRole.LEARNER, UserRole.ADMIN)
   @Get('scenario-session/:scenarioSessionId/messages')
   async getMessagesByScenarioSessionId(
