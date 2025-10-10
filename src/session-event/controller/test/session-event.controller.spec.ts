@@ -8,6 +8,8 @@ import { CreateSessionEventDto } from '../../dto/create-session-event.dto';
 import { SessionEvents } from '../../entity/session-events.entity';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
+import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection-type.enum';
 
 describe('SessionEventController', () => {
   let controller: SessionEventController;
@@ -21,6 +23,8 @@ describe('SessionEventController', () => {
     emoji: '👍',
     message: 'Great job!',
     branchInstruction: 'Continue with next step',
+    detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+    visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
   };

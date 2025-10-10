@@ -1,5 +1,7 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from '../../common/entities/base-without-tenant.entity';
+import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
+import { SessionEventDetectionType } from '../enum/session-event-detection-type.enum';
 
 @Entity('session_events')
 export class SessionEvents extends BaseWithoutTenantEntity {
@@ -23,4 +25,19 @@ export class SessionEvents extends BaseWithoutTenantEntity {
 
   @Column({ nullable: true })
   branchInstruction?: string;
+
+  @Column({
+    enum: SessionEventDetectionType,
+    default: SessionEventDetectionType.SENTENCE_SIMILARITY,
+  })
+  detectionType!: SessionEventDetectionType;
+
+  @Column({
+    enum: SessionEventVisibilityType,
+    default: SessionEventVisibilityType.ACTIVE,
+  })
+  visibilityType!: SessionEventVisibilityType;
+
+  @Column('text', { array: true, nullable: true })
+  sentences?: string[];
 }
