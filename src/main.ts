@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AudioIngestGateway } from './audio-ingest/gateway/audio.ingest.gateway';
 import { AppConfigService } from './config/config.service';
+import { swaggerCustomOptions } from './config/swagger.config';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -68,7 +69,7 @@ async function bootstrap() {
       )
       .build();
     const documentFactory = () => SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('api-docs', app, documentFactory);
+    SwaggerModule.setup('api-docs', app, documentFactory, swaggerCustomOptions);
     const audioIngestGateway = app.get(AudioIngestGateway);
     const httpServer = app.getHttpServer();
     // Route upgrade requests for `/ws` manually to raw ws
