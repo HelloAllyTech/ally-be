@@ -81,7 +81,7 @@ export class WebSocketAuthMiddleware {
     return (
       socket.handshake.auth?.token ||
       socket.handshake.query?.token ||
-      this.extractBearerToken(socket.request.headers.authorization)
+      this.extractBearerToken(socket.handshake.headers.authorization)
     );
   }
 
