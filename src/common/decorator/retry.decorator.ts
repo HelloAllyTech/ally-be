@@ -1,3 +1,6 @@
+import { LoggerService } from '../../logger/logger.service';
+
+const logger = LoggerService.getInstance('RetryOnFail');
 export function RetryOnFail(attempts = 3, delayMs = 1000) {
   return function (
     _target: any,
@@ -15,7 +18,7 @@ export function RetryOnFail(attempts = 3, delayMs = 1000) {
           attempt++;
           if (attempt >= attempts) throw error;
           const backoff = delayMs * Math.pow(2, attempt - 1); // Exponential backoff
-          console.warn(`Retrying (${attempt}/${attempts}) in ${backoff}ms...`);
+          logger.warn(`Retrying (${attempt}/${attempts}) in ${backoff}ms...`);
           await new Promise((res) => setTimeout(res, backoff));
         }
       }

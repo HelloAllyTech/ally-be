@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, EntityManager } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import {
   ChatAudioUploads,
   ChatAudioUploadStatus,
 } from '../../common/entities/chat-audio-uploads.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
+import { ChatAudioUploadRepository } from '../repository/chat-audio-upload.repository';
+import { S3Service } from 'src/aws/service/s3.service';
+import { AppConfigService } from 'src/config/config.service';
 
 @Injectable()
 export class ChatAudioUploadsService {
@@ -15,8 +17,9 @@ export class ChatAudioUploadsService {
   );
 
   constructor(
-    @InjectRepository(ChatAudioUploads)
-    private chatAudioUploadRepository: Repository<ChatAudioUploads>,
+    private chatAudioUploadRepository: ChatAudioUploadRepository,
+    private s3Service: S3Service,
+    private config: AppConfigService,
   ) {}
 
   async createAudioUpload(
@@ -48,8 +51,9 @@ export class ChatAudioUploadsService {
       return savedUpload;
     } catch (error) {
       this.logger.error(
-        `Failed to create audio upload for chatId: ${data.chatId}`,
-        error,
+        `Failed to create audio upload for chatId: ${data.chatId} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw error;
     }
@@ -86,22 +90,54 @@ export class ChatAudioUploadsService {
       return updatedUpload;
     } catch (error) {
       this.logger.error(
-        `Failed to update audio upload status for ChatId: ${chatId}`,
-        error,
+        `Failed to update audio upload status for ChatId: ${chatId} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw error;
     }
   }
 
-  async getAudioUpload(chatId: number): Promise<ChatAudioUploads> {
+  async getAudioUpload(chatId: number): Promise<ChatAudioUploads | null> {
     const audioUpload = await this.chatAudioUploadRepository.findOne({
       where: { chatId },
     });
 
-    if (!audioUpload) {
-      throw new Error(`Audio upload not found for chatId: ${chatId}`);
-    }
-
     return audioUpload;
+  }
+
+  async deleteChatAudioUploadsByChatId(
+    chatId: number,
+    tenantId: string,
+    entityManager?: EntityManager,
+  ): Promise<boolean> {
+    const result =
+      await this.chatAudioUploadRepository.deleteChatAudioUploadsByChatId(
+        chatId,
+        tenantId || ExecutionManager.getTenantId()!,
+        entityManager,
+      );
+    return result;
+  }
+
+  async deleteUploadedAudioFile(chatId: number): Promise<boolean> {
+    const uploadedAudioFile = await this.getAudioUpload(chatId);
+    if (!uploadedAudioFile?.storageKey) {
+      return false;
+    }
+    try {
+      await this.s3Service.deleteObject({
+        bucket: this.config.s3.audioBucket!,
+        key: uploadedAudioFile.storageKey,
+      });
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to delete uploaded audio file for chatId: ${chatId} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
+      return false;
+    }
   }
 }

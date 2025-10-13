@@ -1,45 +1,33 @@
-import { Logger, QueryRunner } from 'typeorm';
+import { Logger } from 'typeorm';
+import { LoggerService } from '../logger/logger.service';
 
 export class DBLogger implements Logger {
-  logQuery(query: string, parameters?: any[], queryRunner?: QueryRunner) {
-    console.log('QUERY:', query);
-    console.log('PARAMETERS:', parameters);
+  private readonly logger = LoggerService.getInstance(DBLogger.name);
+  logQuery(query: string, parameters?: any[]) {
+    this.logger.debug(`QUERY: ${query}`);
+    if (parameters && parameters.length > 0) {
+      this.logger.debug(`PARAMETERS: ${JSON.stringify(parameters)}`);
+    }
   }
 
-  logQueryError(
-    error: string | Error,
-    query: string,
-    parameters?: any[],
-    queryRunner?: QueryRunner,
-  ) {
+  logQueryError(error: string | Error, query: string) {
     // check if tenantId where clause is present only after where since get can contain tenantId
     if (query.includes('where')) {
       const whereIndex = query.indexOf('where');
       const tenantIdIndex = query.indexOf('tenantId');
       if (tenantIdIndex > whereIndex) {
-        console.log('QUERY:', query);
+        this.logger.error(`QUERY ERROR: ${query}`);
       }
     }
   }
 
-  logQuerySlow(
-    time: number,
-    query: string,
-    parameters?: any[],
-    queryRunner?: QueryRunner,
-  ) {
-    console.warn('SLOW QUERY:', time, query);
+  logQuerySlow(time: number, query: string) {
+    this.logger.warn(`SLOW QUERY: ${time}ms | ${query}`);
   }
 
-  logSchemaBuild(message: string, queryRunner?: QueryRunner) {
-    // console.log('SCHEMA BUILD:', message);
-  }
+  logSchemaBuild() {}
 
-  logMigration(message: string, queryRunner?: QueryRunner) {
-    // console.log('MIGRATION:', message);
-  }
+  logMigration() {}
 
-  log(level: 'log' | 'info' | 'warn', message: any, queryRunner?: QueryRunner) {
-    //console[level](message);
-  }
+  log() {}
 }

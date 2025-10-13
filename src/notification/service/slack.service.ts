@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { AppConfigService } from '../../config/config.service';
 import axios from 'axios';
+import { AppConfigService } from '../../config/config.service';
+import { LoggerService } from '../../logger/logger.service';
 @Injectable()
 export class SlackService {
   private apiEndpoint = 'https://slack.com/api/chat.postMessage';
   private botToken;
   private channel;
+  private readonly logger = LoggerService.getInstance(SlackService.name);
   constructor(private readonly config: AppConfigService) {
     this.botToken = config.slack.botToken;
     this.channel = config.slack.channel;
@@ -23,7 +25,7 @@ export class SlackService {
         },
       });
     } catch (error) {
-      console.error(error);
+      this.logger.error('Slack sendMessage error', error);
     }
   }
 }

@@ -10,6 +10,7 @@ export function findMessageBrokerChannelUsingProvider(
     case AudioChatProvider.MICROPHONE:
       return MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE;
     case AudioChatProvider.EXOTEL_CONFERENCE_CALL:
+    case AudioChatProvider.OZONETEL:
       return MessageBrokerChannel.CHAT_MESSAGE_CLOUD_TELEPHONY;
     default:
       return null;

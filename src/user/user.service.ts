@@ -7,9 +7,13 @@ import { Chat, ChatStatus } from '../common/entities/chat.entity';
 import { UserRole, UserStatus } from '../common/constants/user.constants';
 import { RedisService } from '../redis/service/redis.service';
 import { ExecutionManager } from '../common/execution/execution-manager';
+import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
+import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 
 @Injectable()
 export class UserService {
+  private readonly auditLogger = AuditLoggerService.getInstance();
+
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
@@ -20,6 +24,9 @@ export class UserService {
   async get(id: number): Promise<User | null> {
     const user = await this.userRepository.findOne({
       where: { id, tenantId: ExecutionManager.getTenantId() },
+    });
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.USER_PROFILE_ACCESS,
     });
     return user || null;
   }
@@ -113,17 +120,6 @@ export class UserService {
     };
   }
 
-  async getUserRole(id: number): Promise<UserRole | undefined> {
-    const cachedUserRole = await this.cache.get(`user_role_${id}`);
-    if (cachedUserRole) return cachedUserRole as UserRole;
-    const user = await this.userRepository.findOne({
-      where: { id, tenantId: ExecutionManager.getTenantId() },
-    });
-    const userRole = user?.role;
-    if (userRole) await this.cache.set(`user_role_${id}`, userRole);
-    return userRole;
-  }
-
   async createUser({
     role,
     phoneNumber,
@@ -188,5 +184,11 @@ export class UserService {
       })),
       count,
     };
+  }
+
+  async getUserByExternalId(externalId: string): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { externalId, tenantId: ExecutionManager.getTenantId() },
+    });
   }
 }

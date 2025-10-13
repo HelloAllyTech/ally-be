@@ -13,6 +13,10 @@ export class AppConfigService {
     return this.configService.get<string>('NODE_ENV', 'development');
   }
 
+  get logLevel(): string {
+    return this.configService.get<string>('LOG_LEVEL', 'warn');
+  }
+
   get isDevelopment(): boolean {
     return this.nodeEnv === 'development';
   }
@@ -36,7 +40,12 @@ export class AppConfigService {
       sentenceCompletionRequired:
         this.configService.get<string>('SENTENCE_COMPLETION_REQUIRED') ===
         'true',
+      // inbound key (AI -> BE) remains for any inbound verification needs
       apiKey: this.configService.get<string>('AI_SERVICE_API_KEY'),
+      // outbound key (BE -> AI) for x-api-key header
+      outboundApiKey: this.configService.get<string>(
+        'AI_SERVICE_OUTBOUND_API_KEY',
+      ),
     };
   }
 
@@ -102,6 +111,7 @@ export class AppConfigService {
       region: this.configService.get<string>('AWS_REGION'),
       accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID'),
       secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY'),
+      sessionToken: this.configService.get<string>('AWS_SESSION_TOKEN'),
     };
   }
 
@@ -144,6 +154,44 @@ export class AppConfigService {
     };
   }
 
+  get sqs() {
+    return {
+      region: this.configService.get<string>('AWS_REGION', 'us-east-1'),
+      transcription: {
+        requestQueueUrl: this.configService.get<string>(
+          'SQS_TRANSCRIPTION_REQUEST_QUEUE_URL',
+        ),
+        requestDlqUrl: this.configService.get<string>(
+          'SQS_TRANSCRIPTION_REQUEST_DLQ_URL',
+        ),
+        responseQueueUrl: this.configService.get<string>(
+          'SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL',
+        ),
+        responseDlqUrl: this.configService.get<string>(
+          'SQS_TRANSCRIPTION_RESPONSE_DLQ_URL',
+        ),
+      },
+      audioFile: {
+        retryQueueUrl: this.configService.get<string>(
+          'SQS_AUDIO_FILE_RETRY_QUEUE_URL',
+        ),
+        retryDlqUrl: this.configService.get<string>(
+          'SQS_AUDIO_FILE_RETRY_DLQ_URL',
+        ),
+        uploadQueueUrl: this.configService.get<string>(
+          'SQS_AUDIO_UPLOAD_QUEUE_URL',
+        ),
+        uploadDlqUrl: this.configService.get<string>(
+          'SQS_AUDIO_UPLOAD_DLQ_URL',
+        ),
+      },
+      learn: {
+        messageAndEventQueueUrl: this.configService.get<string>(
+          'SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL',
+        ),
+      },
+    };
+  }
   get s3() {
     return {
       audioBucket: this.configService.get<string>('AUDIO_STORAGE_S3_BUCKET'),
@@ -153,6 +201,53 @@ export class AppConfigService {
   get audioStorage() {
     return {
       dir: this.configService.get<string>('AUDIO_STORAGE_DIR'),
+    };
+  }
+
+  get cloudTelephony() {
+    return {
+      credentialsEncryptionKey: this.configService.get<string>(
+        'CLOUD_TELEPHONY_CREDENTIALS_ENCRYPTION_KEY',
+      ),
+    };
+  }
+
+  get ozonetel() {
+    return {
+      apiUrl: this.configService.get<string>('OZONETEL_API_URL'),
+    };
+  }
+
+  get api() {
+    return {
+      baseUrl: this.configService.get<string>('API_BASE_URL'),
+    };
+  }
+
+  get testAccounts() {
+    return this.configService.get<string>('TEST_ACCOUNTS');
+  }
+
+  get phiData() {
+    return {
+      phiDataEncryptionKey: this.configService.get<string>(
+        'PHI_DATA_ENCRYPTION_KEY',
+      ),
+    };
+  }
+
+  get cors() {
+    const origins = this.configService.get('ALLOWED_ORIGINS', '');
+    return {
+      allowedOrigins: origins ? origins.split(',') : [],
+    };
+  }
+
+  get livekit() {
+    return {
+      apiKey: this.configService.get<string>('LIVEKIT_API_KEY'),
+      apiSecret: this.configService.get<string>('LIVEKIT_API_SECRET'),
+      serverUrl: this.configService.get<string>('LIVEKIT_URL'),
     };
   }
 }

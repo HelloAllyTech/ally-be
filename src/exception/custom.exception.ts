@@ -55,3 +55,23 @@ export class OrganizationRequiredException extends HttpException {
     );
   }
 }
+
+export class FailedDependencyException extends HttpException {
+  constructor(message: any) {
+    super(message, HttpStatus.FAILED_DEPENDENCY);
+  }
+}
+
+export class EntityOperationException extends HttpException {
+  constructor(message: string, entityId: string) {
+    super(
+      {
+        message,
+        entityId,
+        error: 'Entity Operation Error',
+        status: HttpStatus.BAD_REQUEST,
+      },
+      HttpStatus.BAD_REQUEST,
+    );
+  }
+}

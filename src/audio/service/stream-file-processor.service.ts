@@ -1,27 +1,34 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import * as fs from 'fs';
+import { WriteStream } from 'fs';
 import * as path from 'path';
+import { ChatSummaryStatus } from 'src/common/entities/chat.entity';
+import { DataSource, EntityManager } from 'typeorm';
+import { AiEventService } from '../../ai/service/ai-event.service';
 import { LoggerService } from '../../logger/logger.service';
-import {
-  ActiveCallStream,
-  UserChatSessionData,
-} from '../../chat/type/chat.type';
 import { ExecutionManager } from '../../common/execution/execution-manager';
-import { S3Service } from '../../aws/service/s3.service';
+import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { ChatAudioUploadStatus } from '../../common/entities/chat-audio-uploads.entity';
-import { ChatAudioUploadsService } from './chat-audio-uploads.service';
-
-import { EntityManager, DataSource } from 'typeorm';
 import {
   AudioChatProvider,
   AudioChatPlatform,
 } from '../../common/constants/chat.constants';
+import { S3Service } from '../../aws/service/s3.service';
+import { ChatService } from '../../chat/service/chat.service';
+import {
+  ActiveCallStream,
+  UserChatSessionData,
+} from '../../chat/type/chat.type';
 import { BroadcastMessageService } from './broadcast-message.service';
 import { AppConfigService } from '../../config/config.service';
-import { ChatService } from '../../chat/service/chat.service';
-import { AiService } from '../../ai/service/ai.service';
+import { generateAudioStorageKey } from '../../common/util/audio.util';
 import { PLACEHOLDER_CHAT_ID } from '../../common/constants/user.constants';
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
+import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { AudioEncryptionUtil } from '../utils/audio-encryption.util';
+import { CipherGCM } from 'crypto';
+import { Chat } from 'src/common/entities/chat.entity';
+import { ChatAudioUploadsService } from './chat-audio-uploads.service';
 
 @Injectable()
 export class StreamFileProcessorService {
@@ -33,12 +40,14 @@ export class StreamFileProcessorService {
     @Inject(forwardRef(() => ChatService))
     private chatService: ChatService,
     private config: AppConfigService,
-    private aiService: AiService,
+    private aiEventService: AiEventService,
   ) {}
 
   private readonly logger = LoggerService.getInstance(
     StreamFileProcessorService.name,
   );
+
+  private readonly auditLogger = AuditLoggerService.getInstance();
 
   private pendingAudioQueue: { [key: string]: Buffer[] } = {};
 
@@ -55,7 +64,10 @@ export class StreamFileProcessorService {
       partNumber: number;
       currentFileIndex: number;
       files: {
-        fileWriteStream: fs.WriteStream;
+        cipher: CipherGCM;
+        writeStream: WriteStream;
+        encryptionKey: Buffer;
+        iv: Buffer;
         tempFilePath: string;
         bufferSize: number;
       }[];
@@ -84,15 +96,6 @@ export class StreamFileProcessorService {
     }
   }
 
-  private generateStorageKey(chatId: number) {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const timestamp = now.getTime();
-    return `${year}/${month}/${day}/chat-${chatId}-${timestamp}.raw`;
-  }
-
   async startCallStream(
     session: UserChatSessionData,
     chatData: {
@@ -105,7 +108,7 @@ export class StreamFileProcessorService {
   ) {
     const callId = session.id;
     let chatId: number | undefined;
-    let chat: any = null;
+    let chat: Chat | null = null;
     let s3UploadId: string | null = null;
     let tempFiles: string[] = [];
     let s3key: string = '';
@@ -113,18 +116,20 @@ export class StreamFileProcessorService {
     try {
       await this.dataSource.transaction(async (entityManager) => {
         // Create chat using entityManager
-        chat = await this.chatService.createChatForAnyonymousClient({
-          counselorId: chatData.counselorId,
-          provider: chatData.provider,
-          platform: chatData.platform,
+        chat = await this.chatService.createChatForAnonymousClient(
+          {
+            counselorId: chatData.counselorId,
+            provider: chatData.provider,
+            platform: chatData.platform,
+          },
           entityManager,
-        });
+        );
 
         if (!chat) {
           throw new Error('Failed to create chat');
         }
 
-        chatId = chat.chatId;
+        chatId = chat.id;
 
         // Setup call stream using entityManager
         const { uploadId, files, key } = await this.setupCallStream({
@@ -142,8 +147,9 @@ export class StreamFileProcessorService {
       if (chatId !== undefined && onChatCreated) onChatCreated(chatId);
     } catch (error) {
       this.logger.error(
-        `Failed to create chat and start call stream for client ${callId}:`,
-        error,
+        `Failed to create chat and start call stream for client ${callId}: with error ${JSON.stringify(
+          error,
+        )}`,
       );
 
       // Rollback external operations
@@ -170,7 +176,11 @@ export class StreamFileProcessorService {
     sampleRate: number;
   }): Promise<{ uploadId: string; files: string[]; key: string }> {
     const callId = session.id;
-    const key = this.generateStorageKey(chatId);
+    const key = generateAudioStorageKey({
+      chatId,
+      extension: 'raw',
+      prefix: 'microphone-chat',
+    });
     const tempFiles: string[] = [];
 
     try {
@@ -191,8 +201,11 @@ export class StreamFileProcessorService {
       );
       tempFiles.push(tempFilePath0, tempFilePath1);
 
-      const fileWriteStream0 = fs.createWriteStream(tempFilePath0);
-      const fileWriteStream1 = fs.createWriteStream(tempFilePath1);
+      // Create encrypted streams using AudioEncryptionUtil
+      const encryptionStream0 =
+        AudioEncryptionUtil.createEncryptionStream(tempFilePath0);
+      const encryptionStream1 =
+        AudioEncryptionUtil.createEncryptionStream(tempFilePath1);
 
       // Create audio upload record using entityManager
       await this.chatAudioUploadsService.createAudioUpload(
@@ -214,12 +227,18 @@ export class StreamFileProcessorService {
         currentFileIndex: 0, // Start with file 0
         files: [
           {
-            fileWriteStream: fileWriteStream0,
+            cipher: encryptionStream0.cipher,
+            writeStream: encryptionStream0.writeStream,
+            encryptionKey: encryptionStream0.key,
+            iv: encryptionStream0.iv,
             tempFilePath: tempFilePath0,
             bufferSize: 0,
           },
           {
-            fileWriteStream: fileWriteStream1,
+            cipher: encryptionStream1.cipher,
+            writeStream: encryptionStream1.writeStream,
+            encryptionKey: encryptionStream1.key,
+            iv: encryptionStream1.iv,
             tempFilePath: tempFilePath1,
             bufferSize: 0,
           },
@@ -234,15 +253,14 @@ export class StreamFileProcessorService {
         userId: session.userId,
         chatId,
       });
-      this.logger.info(
+      this.logger.debug(
         `Call stream started with dual files | ChatId: ${chatId} | Provider: ${session.provider}`,
       );
 
       return { uploadId: UploadId!, files: tempFiles, key };
     } catch (err) {
       this.logger.error(
-        `Call stream start failed with error: ${err.message} | ChatId: ${chatId} | Provider: ${session.provider}`,
-        err,
+        `Call stream start failed with error: ${err.message} | ChatId: ${chatId} | Provider: ${session.provider} with error ${JSON.stringify(err)}`,
       );
       throw err;
     }
@@ -265,7 +283,7 @@ export class StreamFileProcessorService {
     chatId?: number;
   }) {
     try {
-      this.logger.info(`Rolling back external operations for call ${callId}`);
+      this.logger.debug(`Rolling back external operations for call ${callId}`);
 
       // Abort S3 multipart upload if it exists
       if (s3UploadId && s3key) {
@@ -275,7 +293,15 @@ export class StreamFileProcessorService {
             Key: s3key,
             UploadId: s3UploadId,
           });
-          this.logger.info(`Aborted S3 multipart upload for key: ${s3key}`);
+
+          this.auditLogger.log({
+            eventType: AUDIT_EVENTS.AUDIO_S3_MULTIPART_UPLOAD_ABORTED,
+            details: {
+              chatId,
+            },
+          });
+
+          this.logger.debug(`Aborted S3 multipart upload for key: ${s3key}`);
         } catch (abortError) {
           this.logger.warn(
             `Failed to abort S3 multipart upload: ${abortError.message}`,
@@ -294,13 +320,14 @@ export class StreamFileProcessorService {
       // Clear pending audio queue
       this.clearPendingAudioQueue(callId);
 
-      this.logger.info(
+      this.logger.debug(
         `Successfully rolled back external operations for call ${callId}`,
       );
     } catch (error) {
       this.logger.error(
-        `Failed to rollback external operations for call ${callId}:`,
-        error,
+        `Failed to rollback external operations for call ${callId}: with error ${JSON.stringify(
+          error,
+        )}`,
       );
     }
   }
@@ -319,22 +346,48 @@ export class StreamFileProcessorService {
     // Get the file to flush (the one that's not currently active)
     const fileToFlush = activeCallStream.files[fileToFlushIndex];
 
-    // End the write stream for the file being flushed
-    await new Promise((resolve) => fileToFlush.fileWriteStream.end(resolve));
+    // Finalize encryption and get metadata
+    const encryptionMetadata = await AudioEncryptionUtil.finalizeEncryption(
+      fileToFlush.cipher,
+      fileToFlush.encryptionKey,
+      fileToFlush.iv,
+      fileToFlush.writeStream,
+    );
 
-    // Upload the file to S3
-    const fileBuffer = fs.createReadStream(fileToFlush.tempFilePath);
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.AUDIO_S3_MULTIPART_UPLOAD_STARTED,
+      details: {
+        chatId,
+        partNumber: activeCallStream.partNumber,
+      },
+    });
+
+    // Decrypt file to buffer for S3 upload
+    const decryptedBuffer = await AudioEncryptionUtil.decryptToBuffer(
+      fileToFlush.tempFilePath,
+      encryptionMetadata,
+    );
+
+    // Upload decrypted audio to S3
     const { ETag } = await this.s3Service.uploadPart({
       Bucket: this.config.s3.audioBucket,
       Key: activeCallStream.key,
       UploadId: activeCallStream.uploadId,
       PartNumber: activeCallStream.partNumber,
-      Body: fileBuffer,
+      Body: decryptedBuffer,
     });
 
-    this.logger.info(
+    this.logger.debug(
       `Flushed file ${fileToFlushIndex} as part | ETag: ${ETag} | PartNumber: ${activeCallStream.partNumber} | ChatId: ${chatId} | Provider: ${provider}`,
     );
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.AUDIO_S3_MULTIPART_UPLOAD_STARTED,
+      details: {
+        chatId,
+        partNumber: activeCallStream.partNumber,
+      },
+    });
 
     activeCallStream.parts.push({
       ETag: ETag!,
@@ -346,8 +399,15 @@ export class StreamFileProcessorService {
       this.config.audioStorage.dir!,
       `chat-${chatId}-${fileToFlushIndex}.part`,
     );
+
+    // Create new encryption stream
+    const newEncryptionStream =
+      AudioEncryptionUtil.createEncryptionStream(newTempFilePath);
     fileToFlush.tempFilePath = newTempFilePath;
-    fileToFlush.fileWriteStream = fs.createWriteStream(newTempFilePath);
+    fileToFlush.cipher = newEncryptionStream.cipher;
+    fileToFlush.writeStream = newEncryptionStream.writeStream;
+    fileToFlush.encryptionKey = newEncryptionStream.key;
+    fileToFlush.iv = newEncryptionStream.iv;
     fileToFlush.bufferSize = 0;
 
     activeCallStream.partNumber += 1;
@@ -376,6 +436,15 @@ export class StreamFileProcessorService {
 
     if (!activeCallStream) {
       this.logger.error(`No active stream for chatId: ${chatId}`);
+
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_PROCESSING_FAILED,
+        details: {
+          chatId,
+          reason: 'No active stream found',
+          provider: session.provider,
+        },
+      });
       return;
     }
 
@@ -384,10 +453,10 @@ export class StreamFileProcessorService {
       audioData,
     );
 
-    // Write to current active file
+    // Write to current active encrypted stream
     const currentFileIndex = activeCallStream.currentFileIndex;
     const currentFile = activeCallStream.files[currentFileIndex];
-    currentFile.fileWriteStream.write(audioBuffer);
+    currentFile.cipher.write(audioBuffer);
     currentFile.bufferSize += audioBuffer.length;
 
     // Check if we need to flush the current file
@@ -422,8 +491,9 @@ export class StreamFileProcessorService {
         fs.promises.unlink(file).catch((error) => {
           if (error.code !== 'ENOENT') {
             this.logger.error(
-              `Error deleting temporary file: ${file} | ChatId: ${chatId}`,
-              error,
+              `Error deleting temporary file: ${file} | ChatId: ${chatId} with error ${JSON.stringify(
+                error,
+              )}`,
             );
           }
         }),
@@ -431,6 +501,13 @@ export class StreamFileProcessorService {
     }
 
     await Promise.allSettled(deletePromises);
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.AUDIO_TEMP_FILES_CLEANUP,
+      details: {
+        chatId,
+        files: files.join(','),
+      },
+    });
   }
 
   private handleEmptyFile(activeCallStream: ActiveCallStream, chatId: number) {
@@ -442,6 +519,10 @@ export class StreamFileProcessorService {
       activeCallStream.files?.map((file) => file.tempFilePath) || [],
       chatId,
     );
+
+    this.chatService.updateChat(chatId, {
+      summaryStatus: ChatSummaryStatus.NO_AUDIO,
+    });
   }
 
   async endCallStream({
@@ -483,6 +564,13 @@ export class StreamFileProcessorService {
           uploadId: activeCallStream.uploadId,
           parts: activeCallStream.parts,
         });
+
+        this.auditLogger.log({
+          eventType: AUDIT_EVENTS.AUDIO_S3_MULTIPART_UPLOAD_COMPLETED,
+          details: {
+            chatId,
+          },
+        });
       } else {
         // Abort the multipart upload since we're using regular upload
         try {
@@ -491,6 +579,14 @@ export class StreamFileProcessorService {
             Key: activeCallStream.key,
             UploadId: activeCallStream.uploadId,
           });
+
+          this.auditLogger.log({
+            eventType: AUDIT_EVENTS.AUDIO_S3_MULTIPART_UPLOAD_ABORTED,
+            details: {
+              chatId,
+            },
+          });
+
           this.logger.debug(
             `Aborted multipart upload for regular upload | ChatId: ${chatId} | Provider: ${provider}`,
           );
@@ -501,7 +597,7 @@ export class StreamFileProcessorService {
         }
 
         if (activeCallStream.files[0].bufferSize === 0) {
-          this.logger.info(
+          this.logger.debug(
             `No audio data in file 0 | ChatId: ${chatId} | Provider: ${provider}`,
           );
 
@@ -510,10 +606,27 @@ export class StreamFileProcessorService {
           return;
         }
 
-        // Use regular upload for small files - only file 0 has data
-        const audioBuffer = fs.readFileSync(
-          activeCallStream.files[0].tempFilePath,
+        // Finalize encryption for single-part upload
+        const encryptionMetadata = await AudioEncryptionUtil.finalizeEncryption(
+          activeCallStream.files[0].cipher,
+          activeCallStream.files[0].encryptionKey,
+          activeCallStream.files[0].iv,
+          activeCallStream.files[0].writeStream,
         );
+
+        // Decrypt file to buffer for S3 upload
+        const audioBuffer = await AudioEncryptionUtil.decryptToBuffer(
+          activeCallStream.files[0].tempFilePath,
+          encryptionMetadata,
+        );
+
+        this.auditLogger.log({
+          eventType: AUDIT_EVENTS.AUDIO_S3_SINGLEPART_UPLOAD_STARTED,
+          details: {
+            chatId,
+            partNumber: activeCallStream.partNumber,
+          },
+        });
 
         await this.s3Service.uploadStream({
           Bucket: this.config.s3.audioBucket!,
@@ -523,9 +636,17 @@ export class StreamFileProcessorService {
         });
       }
 
-      this.logger.info(
+      this.logger.debug(
         `Call stream upload completed | ChatId: ${chatId} | Provider: ${provider}`,
       );
+
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_S3_SINGLEPART_UPLOAD_ENDED,
+        details: {
+          chatId,
+          partNumber: activeCallStream.partNumber,
+        },
+      });
 
       const audioUpload = await this.chatAudioUploadsService.updateAudioUpload(
         chatId,
@@ -541,33 +662,44 @@ export class StreamFileProcessorService {
         chatId,
       );
 
-      const presignedUrl = await this.s3Service.generatePresignedUrl({
+      const audioUrl = await this.s3Service.generatePresignedUrl({
         bucket: this.config.s3.audioBucket!,
         key: activeCallStream.key,
         operation: 'get',
       });
 
-      this.aiService
-        .transcribeAudioAndSummarize({
-          presigned_url: presignedUrl,
-          chat_id: chatId,
-          sample_rate: sampleRate!,
-        })
-        .catch((err) => {
-          this.logger.error(
-            `Error transcribing audio for chatId ${chatId}:`,
-            err,
-          );
-        });
+      this.aiEventService.publishTranscribeAudioEvent({
+        message_type: 'transcribe_and_summarize_request',
+        timestamp: Date.now(),
+        audio_url: audioUrl,
+        chat_id: chatId,
+        sample_rate: sampleRate!,
+      });
 
-      this.logger.info(
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.PRESIGNED_URL_GENERATED,
+        details: {
+          purpose: 'audio_url',
+          chatId,
+          url: audioUrl,
+        },
+      });
+
+      this.logger.debug(
         `Call stream end completed | ChatId: ${chatId} | Provider: ${provider}`,
       );
     } catch (err) {
       this.logger.error(
-        `Call stream end failed with error: ${err.message} | ChatId: ${chatId} | Provider: ${provider}`,
-        err,
+        `Call stream end failed with error: ${err.message} | ChatId: ${chatId} | Provider: ${provider} with error ${JSON.stringify(
+          err,
+        )}`,
       );
+      await this.chatService.updateChat(chatId, {
+        summaryStatus: ChatSummaryStatus.FAILED,
+        metadata: {
+          error: err.message,
+        },
+      });
     }
   }
 

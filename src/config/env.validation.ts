@@ -6,6 +6,9 @@ export const validationSchema = Joi.object({
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test', 'local')
     .default('development'),
+  LOG_LEVEL: Joi.string()
+    .valid('error', 'warn', 'info', 'debug')
+    .default('warn'),
 
   // JWT
   JWT_ACCESS_SECRET: Joi.string().required(),
@@ -23,5 +26,50 @@ export const validationSchema = Joi.object({
 
   // AI
   AI_SERVICE_API_URL: Joi.string().required(),
+  AI_SERVICE_API_KEY: Joi.string().required(), // inbound (AI -> BE)
+  AI_SERVICE_OUTBOUND_API_KEY: Joi.string().required(), // outbound (BE -> AI)
   DEEPGRAM_API_KEY: Joi.string().required(),
+
+  // AWS
+  AWS_REGION: Joi.string().default('us-east-1'),
+  AWS_ACCESS_KEY_ID: Joi.string().optional(),
+  AWS_SECRET_ACCESS_KEY: Joi.string().optional(),
+  AWS_SESSION_TOKEN: Joi.string().optional(),
+
+  // SQS
+  SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: Joi.string().required(),
+  SQS_TRANSCRIPTION_REQUEST_DLQ_URL: Joi.string().required(),
+  SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL: Joi.string().required(),
+  SQS_TRANSCRIPTION_RESPONSE_DLQ_URL: Joi.string().required(),
+  SQS_AUDIO_FILE_RETRY_QUEUE_URL: Joi.string().required(),
+  SQS_AUDIO_FILE_RETRY_DLQ_URL: Joi.string().required(),
+  SQS_AUDIO_UPLOAD_QUEUE_URL: Joi.string().required(),
+  SQS_AUDIO_UPLOAD_DLQ_URL: Joi.string().required(),
+
+  // CloudWatch
+  CLOUDWATCH_HIPAA_LOG_GROUP_NAME: Joi.string().required(),
+  CLOUDWATCH_HIPAA_LOG_STREAM_NAME: Joi.string().required(),
+
+  // TEST ACCOUNTS
+  TEST_ACCOUNTS: Joi.string().optional(),
+
+  // ENCRYPTION KEYS
+  PHI_DATA_ENCRYPTION_KEY: Joi.string()
+    .length(64)
+    .pattern(/^[a-f0-9]+$/i)
+    .optional(),
+
+  // HIPPA
+  ENABLE_AUDIT_LOGS_TO_CLOUDWATCH: Joi.boolean().default(false),
+  ENABLE_CONSOLE_AUDIT_LOGS: Joi.boolean().default(false),
+
+  // LiveKit
+  LIVEKIT_API_KEY: Joi.string().required(),
+  LIVEKIT_API_SECRET: Joi.string().required(),
+  LIVEKIT_URL: Joi.string().required(),
+
+  SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: Joi.string().required(),
+
+  // CORS ORIGINS
+  ALLOWED_ORIGINS: Joi.string().required(),
 });

@@ -1,7 +1,5 @@
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { config } from 'dotenv';
-import { DBLogger } from './db.logger';
-// Import other entities as needed
 
 config(); // Load .env file
 
@@ -12,7 +10,7 @@ export const dataSourceOptions: DataSourceOptions = {
   username: process.env.DB_USERNAME,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_DATABASE,
-  entities: ['dist/common/entities/*.entity.js'],
+  entities: ['dist/common/entities/*.entity.js', 'dist/*/entity/*.entity.js'],
   migrations: ['dist/database/migrations/*.js'], // Point to compiled JS files
   synchronize: false, // Set to false in production
   ssl:

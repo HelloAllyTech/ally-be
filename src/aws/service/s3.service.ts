@@ -21,6 +21,8 @@ import {
   DeleteObjectCommandInput,
   DeleteObjectCommandOutput,
   S3ClientConfig,
+  HeadObjectCommand,
+  HeadObjectCommandOutput,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AppConfigService } from '../../config/config.service';
@@ -30,14 +32,15 @@ export class S3Service {
   private readonly s3: S3Client;
 
   constructor(private readonly config: AppConfigService) {
-    const { region, accessKeyId, secretAccessKey } = config.aws;
+    const { region, accessKeyId, secretAccessKey, sessionToken } = config.aws;
     const s3Config: S3ClientConfig = {
       region,
     };
-    if (accessKeyId && secretAccessKey) {
+    if (accessKeyId && secretAccessKey && sessionToken) {
       s3Config.credentials = {
         accessKeyId,
         secretAccessKey,
+        sessionToken,
       };
     }
     this.s3 = new S3Client(s3Config);
@@ -55,14 +58,28 @@ export class S3Service {
     bucket: string;
     key: string;
     operation: 'get' | 'put';
-    expiresIn?: number; // seconds, default 3600 (1 hour)
+    expiresIn?: number; // seconds, default 600 (10 minutes)
+    contentType?: string;
+    metadata?: Record<string, string>;
   }): Promise<string> {
-    const { bucket, key, operation, expiresIn = 3600 } = params;
+    const {
+      bucket,
+      key,
+      operation,
+      expiresIn = 600,
+      contentType,
+      metadata,
+    } = params;
 
     const command =
       operation === 'get'
         ? new GetObjectCommand({ Bucket: bucket, Key: key })
-        : new PutObjectCommand({ Bucket: bucket, Key: key });
+        : new PutObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            ...(contentType && { ContentType: contentType }),
+            ...(metadata && { Metadata: metadata }),
+          });
 
     try {
       const presignedUrl = await getSignedUrl(this.s3, command, {
@@ -156,6 +173,22 @@ export class S3Service {
       throw new Error(
         `Failed to delete object ${key} from bucket ${bucket}: ${error.message}`,
       );
+    }
+  }
+
+  async getHeadObject(params: {
+    bucket: string;
+    key: string;
+  }): Promise<HeadObjectCommandOutput> {
+    try {
+      return await this.s3.send(
+        new HeadObjectCommand({
+          Bucket: params.bucket,
+          Key: params.key,
+        }),
+      );
+    } catch (error) {
+      throw new Error(`Failed to get head object: ${error.message}`);
     }
   }
 }

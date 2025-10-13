@@ -8,7 +8,7 @@ import {
   EmailIntegrationEnum,
   SMSIntegrationEnum,
 } from './provider.enum';
-import { ExotelService } from '../audio-ingest/service/exotel.service';
+import { ExotelConferenceCallService } from '../audio-ingest/service/exotel-conference-call.service';
 import { EmailInterface } from '../notification/interface/email.interface';
 import { SESService } from '../notification/service/ses.service';
 export class ProviderFactory {
@@ -55,7 +55,7 @@ export class ProviderFactory {
       provide: 'AudioIngestInterface',
       useFactory: async (
         configService: AppConfigService,
-        exotelService: ExotelService,
+        exotelService: ExotelConferenceCallService,
       ) => {
         const audioIngestIntegration = configService.audioIngest.integration;
         switch (audioIngestIntegration) {
@@ -65,7 +65,7 @@ export class ProviderFactory {
             return exotelService;
         }
       },
-      inject: [AppConfigService, ExotelService],
+      inject: [AppConfigService, ExotelConferenceCallService],
     };
   }
 

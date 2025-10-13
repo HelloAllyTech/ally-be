@@ -8,6 +8,7 @@ import {
   Query,
   Res,
   Put,
+  Delete,
 } from '@nestjs/common';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
 import { TokenUser } from '../../auth/type/auth.types';
@@ -25,8 +26,15 @@ import {
   ApiBearerAuth,
   ApiSecurity,
 } from '@nestjs/swagger';
-import { CallLogResponse } from '../dto/call-log.response.dto';
-import { CallInfoDto, ChatResponseDto } from '../dto/chat.response.dto';
+import {
+  CallLogResponse,
+  SummaryFeedbackResponse,
+} from '../dto/call-log.response.dto';
+import {
+  CallInfoDto,
+  ChatResponseDto,
+  DeleteChatResponseDto,
+} from '../dto/chat.response.dto';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
@@ -36,8 +44,11 @@ import { GetMessagesResponse } from '../dto/message.response.dto';
 import { CallLogSortBy, SortOrder } from '../dto/call-log.request.dto';
 import { PaginatedResponse } from '../../common/type/common.type';
 import { CounselorNameResponse } from '../dto/call-log.response.dto';
-import { AddNoteDto } from '../dto/notes.dto';
+import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { ChatSummaryService } from '../service/chat-summary.service';
+import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -435,7 +446,7 @@ export class ChatController {
     description: 'Returns the chat details',
     type: ChatResponseDto,
   })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @Get(':id')
   async getChat(@Param('id', ParseIntPipe) id: number) {
     return this.service.getChat(id);
@@ -606,7 +617,36 @@ export class ChatController {
   async addNoteToChat(
     @Param('id') chatId: number,
     @Body() createNoteDto: AddNoteDto,
-  ): Promise<string> {
+  ): Promise<AddNotesResponse> {
     return this.service.addNoteToSession(chatId, createNoteDto);
+  }
+
+  @Post(':id/summary-feedback')
+  @ApiOperation({ summary: 'Add a feedback to summary generated' })
+  @ApiResponse({
+    status: 201,
+    description: 'Feedback added successfully',
+    type: SummaryFeedbackResponse,
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    type: Number,
+    description: 'Chat ID',
+  })
+  @AuthRoles(UserRole.COUNSELOR)
+  async addFeedbackToChat(
+    @Param('id') chatId: number,
+    @Body() summaryFeedbackDto: SummaryFeedbackDto,
+  ): Promise<SummaryFeedbackResponse> {
+    return this.service.addFeedbackToChat(chatId, summaryFeedbackDto);
+  }
+
+  @Delete(':id')
+  @AuthPermissions([PERMISSIONS.DELETE_CHAT])
+  @ApiOperation({ summary: 'Delete chat' })
+  @ApiResponse({ status: 200, description: 'Chat deleted successfully' })
+  async deleteChat(@Param('id') id: string): Promise<DeleteChatResponseDto> {
+    return this.service.deleteChat(parseInt(id));
   }
 }

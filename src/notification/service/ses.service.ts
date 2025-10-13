@@ -66,7 +66,9 @@ export class SESService implements EmailInterface {
 
       return true;
     } catch (error) {
-      this.logger.error(`Failed to send email via SES: ${error}`);
+      this.logger.error(
+        `Failed to send email via SES with error ${JSON.stringify(error)}`,
+      );
       return false;
     }
   }
@@ -83,17 +85,15 @@ export class SESService implements EmailInterface {
         channel: 'C08T402E3K5',
       });
     }
+    const minutes = Math.floor(this.config.otp.ttl / 60);
 
-    const subject = 'Your HelloAlly Verification Code';
-    const body = `Use the verification code below to sign in to your HelloAlly account:
-
+    const subject = 'Your Ally Verification Code';
+    const body = `Your Ally Verification Code is:
 ${params.otp}
 
-This code is valid for 2 minutes. Please do not share it with anyone.
-
-If you did not request this code, you can safely ignore this email.
-
-— The HelloAlly Team
+⏱️ This security code is valid for the next ${minutes} minutes.
+🚫 Do not share this code with anyone.
+❌ If you did not request this code, you can safely ignore this email.
 `;
 
     return this.sendEmail({
