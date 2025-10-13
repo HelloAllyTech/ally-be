@@ -4,6 +4,11 @@ import { Socket } from 'socket.io';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { UserRole } from '../../common/constants/user.constants';
+import {
+  UnauthorizedException,
+  ForbiddenException,
+  ValidationException,
+} from '../../exception/custom.exception';
 
 @Injectable()
 export class WebSocketAuthMiddleware {
@@ -27,8 +32,11 @@ export class WebSocketAuthMiddleware {
         const token = this.extractToken(socket);
 
         if (!token) {
-          this.logger.error(`No JWT token provided for socket ${socket.id}`);
-          return next(new Error('No JWT token provided'));
+          const error = new UnauthorizedException('No JWT token provided');
+          this.logger.error(
+            `No JWT token provided for socket ${socket.id}: ${error.message}`,
+          );
+          return next(error);
         }
 
         // Verify JWT token
@@ -36,22 +44,25 @@ export class WebSocketAuthMiddleware {
           secret: this.configService.jwt.accessToken.secret,
         });
 
-        // Role-based authorization
-        if (requiredRole && payload.role !== requiredRole) {
-          this.logger.error(
-            `User ${payload.sub} does not have required role. Expected: ${requiredRole}, Got: ${payload.role}`,
-          );
-          return next(
-            new Error(
-              `Access denied. Required role: ${requiredRole}, but user has role: ${payload.role}`,
-            ),
-          );
-        }
-
+        // Validate user ID
         const userId = parseInt(payload.sub);
         if (isNaN(userId)) {
-          this.logger.error(`Invalid user ID in token: ${payload.sub}`);
-          return next(new Error('Invalid user ID'));
+          const error = new ValidationException('Invalid user ID in token');
+          this.logger.error(
+            `Invalid user ID in token for socket ${socket.id}: ${payload.sub}`,
+          );
+          return next(error);
+        }
+
+        // Role-based authorization
+        if (requiredRole && payload.role !== requiredRole) {
+          const error = new ForbiddenException(
+            `Access denied. Required role: ${requiredRole}`,
+          );
+          this.logger.error(
+            `User ${userId} does not have required role. Expected: ${requiredRole}, Got: ${payload.role}`,
+          );
+          return next(error);
         }
 
         // Attach authenticated user data to socket
@@ -68,11 +79,15 @@ export class WebSocketAuthMiddleware {
 
         next(); // Allow connection to proceed
       } catch (error) {
+        // Catch any unexpected errors
+        const unexpectedError = new UnauthorizedException(
+          'Authentication failed',
+        );
         this.logger.error(
-          `JWT verification failed for socket ${socket.id}:`,
+          `Unexpected error during WebSocket authentication for socket ${socket.id}:`,
           error.message,
         );
-        next(new Error('Authentication failed'));
+        next(unexpectedError);
       }
     };
   }
