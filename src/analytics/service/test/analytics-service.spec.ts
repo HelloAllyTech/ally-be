@@ -318,15 +318,27 @@ describe('AnalyticsService', () => {
       expect(result).toEqual(undefined);
 
       expect(groupService.getUserRolesByUserId).toHaveBeenCalledTimes(1);
-      expect(groupService.getUserRolesByUserId).toHaveBeenCalledWith(mockUserId);
+      expect(groupService.getUserRolesByUserId).toHaveBeenCalledWith(
+        mockUserId,
+      );
 
       expect(dashboardRepository.find).not.toHaveBeenCalled();
     });
     it('should return dashboards when user has groups', async () => {
       const mockUserGroups = [
-        { id: 1, name: 'COUNSELOR', createdAt: new Date(), updatedAt: new Date() },
+        {
+          id: 1,
+          name: 'COUNSELOR',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
         { id: 2, name: 'ADMIN', createdAt: new Date(), updatedAt: new Date() },
-        { id: 3, name: 'LEARNER', createdAt: new Date(), updatedAt: new Date() },
+        {
+          id: 3,
+          name: 'LEARNER',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
       ];
       groupService.getUserRolesByUserId.mockResolvedValue(mockUserGroups);
       const mockDashboards = [
@@ -345,7 +357,9 @@ describe('AnalyticsService', () => {
       ]);
 
       expect(groupService.getUserRolesByUserId).toHaveBeenCalledTimes(1);
-      expect(groupService.getUserRolesByUserId).toHaveBeenCalledWith(mockUserId);
+      expect(groupService.getUserRolesByUserId).toHaveBeenCalledWith(
+        mockUserId,
+      );
 
       expect(dashboardRepository.find).toHaveBeenCalledTimes(1);
       expect(dashboardRepository.find).toHaveBeenCalledWith({
