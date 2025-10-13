@@ -1,6 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { SessionEventService } from '../session-event.service';
 import { SessionEvents } from '../../entity/session-events.entity';
@@ -8,10 +6,12 @@ import { CreateSessionEventDto } from '../../dto/create-session-event.dto';
 import { UpdateSessionEventDto } from '../../dto/update-session-event.dto';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection-type.enum';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
+import { SessionEventRepository } from '../../repository/session-event.repository';
+import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 
 describe('SessionEventService', () => {
   let service: SessionEventService;
-  let repository: jest.Mocked<Repository<SessionEvents>>;
+  let repository: jest.Mocked<SessionEventRepository>;
 
   const mockSessionEvent: SessionEvents = {
     id: 'event-1',
@@ -35,6 +35,9 @@ describe('SessionEventService', () => {
     emoji: '👍',
     message: 'Great job!',
     branchInstruction: 'Continue with next step',
+    detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+    visibilityType: SessionEventVisibilityType.ACTIVE,
+    sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
   };
 
   const mockUpdateSessionEventDto: UpdateSessionEventDto = {
@@ -49,31 +52,32 @@ describe('SessionEventService', () => {
   const mockQueryBuilder = {
     leftJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
+    orWhere: jest.fn().mockReturnThis(),
     getMany: jest.fn(),
   };
 
   beforeEach(async () => {
     const mockRepository = {
-      create: jest.fn(),
       save: jest.fn(),
       findOne: jest.fn(),
       find: jest.fn(),
       update: jest.fn(),
       createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
+      getAllSessionEvents: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SessionEventService,
         {
-          provide: getRepositoryToken(SessionEvents),
+          provide: SessionEventRepository,
           useValue: mockRepository,
         },
       ],
     }).compile();
 
     service = module.get<SessionEventService>(SessionEventService);
-    repository = module.get(getRepositoryToken(SessionEvents));
+    repository = module.get(SessionEventRepository);
   });
 
   afterEach(() => {
@@ -85,13 +89,11 @@ describe('SessionEventService', () => {
       const createEventDtos = [mockCreateSessionEventDto];
       const createdEvents = [mockSessionEvent];
 
-      repository.create.mockReturnValue(createdEvents as any);
       repository.save.mockResolvedValue(createdEvents as any);
 
       const result = await service.createSessionEvents(createEventDtos);
 
-      expect(repository.create).toHaveBeenCalledWith(createEventDtos);
-      expect(repository.save).toHaveBeenCalledWith(createdEvents);
+      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
       expect(result).toEqual(createdEvents);
     });
 
@@ -109,13 +111,11 @@ describe('SessionEventService', () => {
         { ...mockSessionEvent, id: 'event-2', name: 'Second Event' },
       ];
 
-      repository.create.mockReturnValue(createdEvents as any);
       repository.save.mockResolvedValue(createdEvents as any);
 
       const result = await service.createSessionEvents(createEventDtos);
 
-      expect(repository.create).toHaveBeenCalledWith(createEventDtos);
-      expect(repository.save).toHaveBeenCalledWith(createdEvents);
+      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
       expect(result).toEqual(createdEvents);
     });
 
@@ -123,44 +123,24 @@ describe('SessionEventService', () => {
       const createEventDtos: CreateSessionEventDto[] = [];
       const createdEvents: SessionEvents[] = [];
 
-      repository.create.mockReturnValue(createdEvents as any);
       repository.save.mockResolvedValue(createdEvents as any);
 
       const result = await service.createSessionEvents(createEventDtos);
 
-      expect(repository.create).toHaveBeenCalledWith(createEventDtos);
-      expect(repository.save).toHaveBeenCalledWith(createdEvents);
+      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
       expect(result).toEqual(createdEvents);
-    });
-
-    it('should handle repository create error', async () => {
-      const createEventDtos = [mockCreateSessionEventDto];
-      const error = new Error('Database error');
-
-      repository.create.mockImplementation(() => {
-        throw error;
-      });
-
-      await expect(
-        service.createSessionEvents(createEventDtos),
-      ).rejects.toThrow('Database error');
-      expect(repository.create).toHaveBeenCalledWith(createEventDtos);
-      expect(repository.save).not.toHaveBeenCalled();
     });
 
     it('should handle repository save error', async () => {
       const createEventDtos = [mockCreateSessionEventDto];
-      const createdEvents = [mockSessionEvent];
       const error = new Error('Save failed');
 
-      repository.create.mockReturnValue(createdEvents as any);
       repository.save.mockRejectedValue(error);
 
       await expect(
         service.createSessionEvents(createEventDtos),
       ).rejects.toThrow('Save failed');
-      expect(repository.create).toHaveBeenCalledWith(createEventDtos);
-      expect(repository.save).toHaveBeenCalledWith(createdEvents);
+      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
     });
   });
 
@@ -177,13 +157,16 @@ describe('SessionEventService', () => {
         'sessionEvents',
       );
       expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-        expect.anything(), // ScenarioEvents class
+        ScenarioEvents, // ScenarioEvents class
         'scenarioEvents',
         'scenarioEvents.eventId = sessionEvents.id',
       );
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'scenarioEvents.scenarioId = :scenarioId',
+        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
         { scenarioId: scenarioId },
+      );
+      expect(mockQueryBuilder.orWhere).toHaveBeenCalledWith(
+        `sessionEvents.visibilityType = '${SessionEventVisibilityType.PASSIVE}'`,
       );
       expect(mockQueryBuilder.getMany).toHaveBeenCalled();
       expect(result).toEqual(expectedEvents);
@@ -201,13 +184,16 @@ describe('SessionEventService', () => {
         'sessionEvents',
       );
       expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-        expect.anything(),
+        ScenarioEvents,
         'scenarioEvents',
         'scenarioEvents.eventId = sessionEvents.id',
       );
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'scenarioEvents.scenarioId = :scenarioId',
+        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
         { scenarioId: scenarioId },
+      );
+      expect(mockQueryBuilder.orWhere).toHaveBeenCalledWith(
+        `sessionEvents.visibilityType = '${SessionEventVisibilityType.PASSIVE}'`,
       );
       expect(mockQueryBuilder.getMany).toHaveBeenCalled();
       expect(result).toEqual(expectedEvents);
@@ -222,7 +208,7 @@ describe('SessionEventService', () => {
       const result = await service.getSessionEventsByScenarioId(scenarioId);
 
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'scenarioEvents.scenarioId = :scenarioId',
+        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
         { scenarioId: 0 },
       );
       expect(result).toEqual(expectedEvents);
@@ -237,7 +223,7 @@ describe('SessionEventService', () => {
       const result = await service.getSessionEventsByScenarioId(scenarioId);
 
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'scenarioEvents.scenarioId = :scenarioId',
+        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
         { scenarioId: -1 },
       );
       expect(result).toEqual(expectedEvents);
@@ -521,6 +507,113 @@ describe('SessionEventService', () => {
         where: { id: expect.objectContaining({ _type: 'in', _value: ids }) },
       });
       expect(result).toEqual(expectedEvents);
+    });
+  });
+
+  describe('getAllSessionEvents', () => {
+    it('should get all session events without filters', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const expectedResult = { data: expectedEvents };
+
+      repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
+
+      const result = await service.getAllSessionEvents();
+
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('should get session events with visibility type filter', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const expectedResult = { data: expectedEvents };
+      const visibilityType = SessionEventVisibilityType.ACTIVE;
+
+      repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
+
+      const result = await service.getAllSessionEvents(visibilityType);
+
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        visibilityType,
+        undefined,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('should get session events with pagination', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const expectedResult = { data: expectedEvents };
+      const pagination = {
+        limit: 10,
+        offset: 0,
+        sortBy: 'createdAt',
+        order: 'DESC' as any,
+      };
+
+      repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
+
+      const result = await service.getAllSessionEvents(undefined, pagination);
+
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        pagination,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('should get session events with both visibility type and pagination', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const expectedResult = { data: expectedEvents };
+      const visibilityType = SessionEventVisibilityType.PASSIVE;
+      const pagination = {
+        limit: 5,
+        offset: 10,
+        sortBy: 'name',
+        order: 'ASC' as any,
+      };
+
+      repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
+
+      const result = await service.getAllSessionEvents(
+        visibilityType,
+        pagination,
+      );
+
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        visibilityType,
+        pagination,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('should return empty array when no events found', async () => {
+      const expectedEvents: SessionEvents[] = [];
+      const expectedResult = { data: expectedEvents };
+
+      repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
+
+      const result = await service.getAllSessionEvents();
+
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('should handle repository error', async () => {
+      const error = new Error('Database query failed');
+      repository.getAllSessionEvents.mockRejectedValue(error);
+
+      await expect(service.getAllSessionEvents()).rejects.toThrow(
+        'Database query failed',
+      );
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+      );
     });
   });
 });

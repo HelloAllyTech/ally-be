@@ -11,17 +11,17 @@ export class SessionEvents extends BaseWithoutTenantEntity {
   @Column()
   name!: string;
 
-  @Column()
-  description!: string;
+  @Column({ nullable: true })
+  description?: string;
 
-  @Column()
-  score!: number;
+  @Column({ nullable: true })
+  score?: number;
 
-  @Column()
-  emoji!: string;
+  @Column({ nullable: true })
+  emoji?: string;
 
-  @Column()
-  message!: string;
+  @Column({ nullable: true })
+  message?: string;
 
   @Column({ nullable: true })
   branchInstruction?: string;

@@ -10,6 +10,8 @@ import { PermissionsService } from '../../../authorization/service/permissions.s
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection-type.enum';
+import { SessionEventSortBy } from 'src/session-event/enum/session-event-sort-by.enum';
+import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 
 describe('SessionEventController', () => {
   let controller: SessionEventController;
@@ -37,6 +39,9 @@ describe('SessionEventController', () => {
     emoji: '👍',
     message: 'Great job!',
     branchInstruction: 'Continue with next step',
+    detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+    visibilityType: SessionEventVisibilityType.ACTIVE,
+    sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
   };
 
   const mockCreateSessionEventsDto: CreateSessionEventsDto = {
@@ -56,6 +61,7 @@ describe('SessionEventController', () => {
     const mockSessionEventService = {
       createSessionEvents: jest.fn(),
       updateSessionEvent: jest.fn(),
+      getAllSessionEvents: jest.fn(),
     };
 
     const mockPermissionsService = {
@@ -169,6 +175,9 @@ describe('SessionEventController', () => {
         score: 50,
         emoji: '⭐',
         message: 'Basic message',
+        detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+        visibilityType: SessionEventVisibilityType.ACTIVE,
+        sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
       };
       const minimalEventsDto: CreateSessionEventsDto = {
         events: [minimalEventDto],
@@ -207,6 +216,9 @@ describe('SessionEventController', () => {
         emoji: '🏆',
         message: 'Perfect execution!',
         branchInstruction: 'Proceed to final stage',
+        detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+        visibilityType: SessionEventVisibilityType.ACTIVE,
+        sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
       };
       const fullEventsDto: CreateSessionEventsDto = {
         events: [fullEventDto],
@@ -582,6 +594,180 @@ describe('SessionEventController', () => {
         unicodeUpdate,
       );
       expect(result).toBe(true);
+    });
+  });
+
+  describe('getAllSessionEvents', () => {
+    const mockResult = { data: [mockSessionEvent] };
+
+    it('should get all session events without filters', async () => {
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents();
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should get session events with visibility type filter', async () => {
+      const visibilityType = SessionEventVisibilityType.ACTIVE;
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(visibilityType);
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        visibilityType,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should get session events with pagination parameters', async () => {
+      const limit = 10;
+      const offset = 5;
+      const sortBy = SessionEventSortBy.NAME;
+      const order = SortOrder.ASC;
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(
+        undefined,
+        limit,
+        offset,
+        sortBy,
+        order,
+      );
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        {
+          limit,
+          offset,
+          sortBy,
+          order,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should get session events with all parameters', async () => {
+      const visibilityType = SessionEventVisibilityType.PASSIVE;
+      const limit = 20;
+      const offset = 10;
+      const sortBy = SessionEventSortBy.SCORE;
+      const order = SortOrder.DESC;
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(
+        visibilityType,
+        limit,
+        offset,
+        sortBy,
+        order,
+      );
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        visibilityType,
+        {
+          limit,
+          offset,
+          sortBy,
+          order,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should handle empty result from service', async () => {
+      const emptyResult = { data: [] };
+      sessionEventService.getAllSessionEvents.mockResolvedValue(emptyResult);
+
+      const result = await controller.getAllSessionEvents();
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+      expect(result).toEqual(emptyResult);
+    });
+
+    it('should handle service error', async () => {
+      const error = new Error('Service error');
+      sessionEventService.getAllSessionEvents.mockRejectedValue(error);
+
+      await expect(controller.getAllSessionEvents()).rejects.toThrow(
+        'Service error',
+      );
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+    });
+
+    it('should use default sort parameters when not provided', async () => {
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(
+        SessionEventVisibilityType.ACTIVE,
+        10,
+        0,
+      );
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        SessionEventVisibilityType.ACTIVE,
+        {
+          limit: 10,
+          offset: 0,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should handle zero limit and offset', async () => {
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(
+        undefined,
+        0,
+        0,
+        SessionEventSortBy.NAME,
+        SortOrder.ASC,
+      );
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        {
+          limit: 0,
+          offset: 0,
+          sortBy: SessionEventSortBy.NAME,
+          order: SortOrder.ASC,
+        },
+      );
+      expect(result).toEqual(mockResult);
     });
   });
 });
