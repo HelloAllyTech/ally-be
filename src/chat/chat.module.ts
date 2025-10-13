@@ -24,6 +24,7 @@ import { AudioModule } from '../audio/audio.module';
 import { AiModule } from '../ai/ai.module';
 
 import { AwsModule } from 'src/aws/aws.module';
+import { NotificationModule } from '../notification/notification.module';
 import { ChatRepository } from './repository/chat.repository';
 import { SummaryFeedback } from './entity/summary-feedback.entity';
 import { SummaryFeedbackRepository } from './repository/summary-feedback.repository';
@@ -49,6 +50,7 @@ import { AudioUploadDlqConsumer } from './consumer/audio-upload-dlq.consumer';
     forwardRef(() => BrokerModule),
     forwardRef(() => AudioModule),
     AwsModule,
+    NotificationModule,
   ],
   controllers: [ChatController, AudioUploadController],
   providers: [
