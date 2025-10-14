@@ -9,6 +9,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { RefreshToken } from '../common/entities/refresh-token.entity';
 import { User } from '../common/entities/user.entity';
+import { TenantModule } from 'src/tenant/tenant.module';
 
 @Global()
 @Module({
@@ -16,6 +17,7 @@ import { User } from '../common/entities/user.entity';
     JwtModule.register({}), // Empty config since we're using different configs for access and refresh tokens
     TypeOrmModule.forFeature([User, RefreshToken]),
     ConfigModule,
+    TenantModule,
   ],
   providers: [AuthService, JwtStrategy, JwtRefreshStrategy, PermissionsGuard],
   controllers: [AuthController],

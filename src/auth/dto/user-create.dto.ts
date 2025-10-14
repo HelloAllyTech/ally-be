@@ -6,9 +6,13 @@ import {
   IsOptional,
   IsArray,
   ArrayNotEmpty,
+  Matches,
 } from 'class-validator';
 import { UserRole } from '../../common/constants/user.constants';
-import { PASSWORD_VALIDATION } from '../../common/constants/validation.constants';
+import {
+  PASSWORD_VALIDATION,
+  PHONE_NUMBER_VALIDATION,
+} from '../../common/constants/validation.constants';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UserCreateDto {
@@ -56,6 +60,9 @@ export class UserCreateDto {
   })
   @IsOptional()
   @IsString()
+  @Matches(PHONE_NUMBER_VALIDATION.REGEX, {
+    message: PHONE_NUMBER_VALIDATION.MESSAGE,
+  })
   phone?: string;
 
   @IsOptional()

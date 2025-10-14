@@ -20,6 +20,7 @@ import { LoggerService } from '../../logger/logger.service';
 import { AuthUtil } from '../util/auth.util';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { TenantService } from 'src/tenant/tenant.service';
 
 @Injectable()
 export class AuthService {
@@ -38,6 +39,7 @@ export class AuthService {
     private configService: AppConfigService,
     private eventEmitter: EventEmitter2,
     private readonly cache: RedisService,
+    private tenantService: TenantService,
   ) {
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
@@ -205,6 +207,12 @@ export class AuthService {
         throw new BadRequestException('Email already registered');
       }
       throw new BadRequestException('Phone number already registered');
+    }
+
+    const tenant = await this.tenantService.findById(userData.tenantId);
+
+    if (!tenant) {
+      throw new BadRequestException('Tenant not found');
     }
 
     // Hash password

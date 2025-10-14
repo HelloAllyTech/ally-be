@@ -16,6 +16,8 @@ import { UserRole, UserStatus } from 'src/common/constants/user.constants';
 import { UserCreateDto } from 'src/auth/dto/user-create.dto';
 import { AuthUtil } from 'src/auth/util/auth.util';
 import { LoggerService } from 'src/logger/logger.service';
+import { TenantService } from 'src/tenant/tenant.service';
+import { Tenant } from 'src/common/entities/tenant.entity';
 
 // Mock bcrypt at the module level
 jest.mock('bcrypt', () => ({
@@ -39,6 +41,7 @@ describe('AuthService', () => {
   let eventEmitter: jest.Mocked<EventEmitter2>;
   let redisService: jest.Mocked<RedisService>;
   let dataSource: jest.Mocked<DataSource>;
+  let tenantService: jest.Mocked<TenantService>;
 
   const mockLogger = {
     info: jest.fn(),
@@ -90,6 +93,9 @@ describe('AuthService', () => {
     delete: jest.fn(),
     createQueryBuilder: jest.fn(),
   });
+  const mockTenantService = {
+    findById: jest.fn(),
+  };
 
   beforeAll(() => {
     jest.spyOn(LoggerService, 'getInstance').mockReturnValue(mockLogger as any);
@@ -154,6 +160,10 @@ describe('AuthService', () => {
             del: jest.fn(),
           },
         },
+        {
+          provide: TenantService,
+          useValue: mockTenantService,
+        },
       ],
     }).compile();
 
@@ -162,7 +172,7 @@ describe('AuthService', () => {
     jwtService = module.get(JwtService);
     eventEmitter = module.get(EventEmitter2);
     redisService = module.get(RedisService);
-
+    tenantService = module.get(TenantService);
     userRepository = dataSource.getRepository(User) as jest.Mocked<
       Repository<User>
     >;
@@ -248,7 +258,7 @@ describe('AuthService', () => {
       roles: [UserRole.CLIENT],
       tenantId: '1',
     };
-
+    const mockTenant = { id: '1', name: 'Test Tenant' } as Tenant;
     it('should create new user successfully', async () => {
       const hashedPassword = 'hashed-password';
       const savedUser = {
@@ -258,14 +268,13 @@ describe('AuthService', () => {
         email: signupData.email,
       } as unknown as User;
       const mockGroup = { id: 1, name: UserRole.CLIENT } as Group;
-
       userRepository.findOne.mockResolvedValue(null);
       (bcrypt.hash as jest.Mock).mockResolvedValue(hashedPassword);
       userRepository.create.mockReturnValue(savedUser);
       userRepository.save.mockResolvedValue(savedUser);
       groupRepository.find.mockResolvedValue([mockGroup]);
       userGroupRepository.save.mockResolvedValue({} as UserGroup);
-
+      tenantService.findById.mockResolvedValue(mockTenant);
       const result = await authService.signup(signupData);
 
       expect(result.id).toBe(savedUser.id);
@@ -280,7 +289,7 @@ describe('AuthService', () => {
         email: signupData.email,
         phone: '+9999999999',
       } as unknown as User);
-
+      tenantService.findById.mockResolvedValue(mockTenant);
       await expect(authService.signup(signupData)).rejects.toThrow(
         new BadRequestException('Email already registered'),
       );
@@ -293,9 +302,15 @@ describe('AuthService', () => {
         phone: signupData.phone,
       } as unknown as User;
       userRepository.findOne.mockResolvedValue(existingUserWithSamePhone);
-
       await expect(authService.signup(signupData)).rejects.toThrow(
         new BadRequestException('Phone number already registered'),
+      );
+    });
+
+    it('should throw BadRequestException if tenant not found', async () => {
+      tenantService.findById.mockResolvedValue(null);
+      await expect(authService.signup(signupData)).rejects.toThrow(
+        new BadRequestException('Tenant not found'),
       );
     });
   });
