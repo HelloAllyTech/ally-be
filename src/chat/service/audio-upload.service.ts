@@ -91,8 +91,10 @@ export class AudioUploadService {
       throw new InternalServerErrorException('Failed to create chat');
     }
 
+    const sanitizedFileName = this.sanitizeFileName(fileName);
+
     const s3Key = generateAudioStorageKey({
-      key: `${Date.now()}-${chat.id}-${fileName}`,
+      key: `${Date.now()}-${chat.id}-${sanitizedFileName}`,
       prefix: 'audio-upload',
     });
 
@@ -205,5 +207,14 @@ export class AudioUploadService {
       status: ChatStatus.CANCELLED,
       summaryStatus: ChatSummaryStatus.NO_AUDIO,
     });
+  }
+
+  private sanitizeFileName(fileName: string) {
+    return fileName
+      .trim()
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/[^a-zA-Z0-9._-]/g, '') // Remove special characters
+      .replace(/\.+/g, '.') // Replace multiple dots with single dot
+      .replace(/-+/g, '-'); // Replace multiple hyphens with single hyphen
   }
 }

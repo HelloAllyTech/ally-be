@@ -287,12 +287,14 @@ export class ChatService {
 
     const createdBy = ExecutionManager.getUserId();
 
+    const startTime = startedAt || new Date();
+
     const chat = chatRepo.create({
       clientId,
       counselorId,
       roomId: newChatRoom.id,
       status: status || ChatStatus.ACTIVE,
-      startedAt: startedAt || new Date(),
+      startedAt: startTime,
       ...(endedAt ? { endedAt } : {}),
       externalId,
       tenantId: tenantId || ExecutionManager.getTenantId(),
@@ -304,7 +306,8 @@ export class ChatService {
     const callDetails = callDetailsRepo.create({
       chatId: chat.id,
       tenantId: tenantId || ExecutionManager.getTenantId(),
-      startTime: new Date(),
+      startTime,
+      ...(endedAt ? { endTime: endedAt } : {}),
       callDuration: duration,
       callInfo: {
         provider,

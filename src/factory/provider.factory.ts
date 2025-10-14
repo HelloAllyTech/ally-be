@@ -5,12 +5,9 @@ import { SMSInterface } from '../notification/interface/sms.interface';
 import { Msg91Service } from '../notification/service/msg91.service';
 import {
   AudioIngestIntegrationEnum,
-  EmailIntegrationEnum,
   SMSIntegrationEnum,
 } from './provider.enum';
 import { ExotelConferenceCallService } from '../audio-ingest/service/exotel-conference-call.service';
-import { EmailInterface } from '../notification/interface/email.interface';
-import { SESService } from '../notification/service/ses.service';
 export class ProviderFactory {
   public static getSMSFactory() {
     return {
@@ -66,25 +63,6 @@ export class ProviderFactory {
         }
       },
       inject: [AppConfigService, ExotelConferenceCallService],
-    };
-  }
-
-  public static getEmailFactory() {
-    return {
-      provide: EmailInterface,
-      useFactory: async (
-        configService: AppConfigService,
-        sesService: SESService,
-      ) => {
-        const emailIntegration = configService.email.integration;
-        switch (emailIntegration) {
-          case EmailIntegrationEnum.SES:
-            return sesService;
-          default:
-            return sesService;
-        }
-      },
-      inject: [AppConfigService, SESService],
     };
   }
 }

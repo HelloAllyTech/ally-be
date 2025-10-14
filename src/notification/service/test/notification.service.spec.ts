@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationService } from '../notification.service';
 import { SlackService } from '../slack.service';
 import { SMSInterface } from '../../interface/sms.interface';
-import { EmailInterface } from '../../interface/email.interface';
+import { EmailService } from '../email.service';
 import { NotificationErrorType } from '../../type/notification.error.type';
 
 describe('NotificationService', () => {
@@ -41,6 +41,7 @@ describe('NotificationService', () => {
 
     mockEmailService = {
       sendEmailOTP: jest.fn(),
+      sendSummaryNotification: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -48,7 +49,7 @@ describe('NotificationService', () => {
         NotificationService,
         { provide: SlackService, useValue: mockSlackService },
         { provide: SMSInterface, useValue: mockSmsService },
-        { provide: EmailInterface, useValue: mockEmailService },
+        { provide: EmailService, useValue: mockEmailService },
       ],
     }).compile();
 
@@ -103,6 +104,35 @@ describe('NotificationService', () => {
       await service.sendEmailOTP(to, otp);
 
       expect(mockEmailService.sendEmailOTP).toHaveBeenCalledWith({ to, otp });
+    });
+  });
+
+  describe('sendEmailSummaryNotification', () => {
+    it('should send summary email notification', async () => {
+      const params = {
+        to: 'counselor@example.com',
+        chatId: 123,
+        summaryName: 'summary-456',
+      };
+
+      await service.sendEmailSummaryNotification(params);
+
+      expect(mockEmailService.sendSummaryNotification).toHaveBeenCalledWith(
+        params,
+      );
+    });
+
+    it('should send summary email notification without summaryName', async () => {
+      const params = {
+        to: 'counselor@example.com',
+        chatId: 123,
+      };
+
+      await service.sendEmailSummaryNotification(params);
+
+      expect(mockEmailService.sendSummaryNotification).toHaveBeenCalledWith(
+        params,
+      );
     });
   });
 });

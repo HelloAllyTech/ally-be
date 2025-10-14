@@ -23,6 +23,7 @@ describe('AnalyticsController', () => {
     tenantId: 'tenant-123',
     createdAt: new Date(),
     updatedAt: new Date(),
+    analyticsType: 'CALL_LOG_ANALYTICS',
   };
 
   const mockDashboardUrl = {
@@ -231,6 +232,7 @@ describe('AnalyticsController', () => {
         tenantId: 'tenant-123',
         createdAt: new Date(),
         updatedAt: new Date(),
+        analyticsType: 'CALL_LOG_ANALYTICS',
       };
 
       analyticsService.createDashboard.mockResolvedValue(minimalDashboard);
@@ -255,6 +257,7 @@ describe('AnalyticsController', () => {
           id: 2,
           createdAt: new Date(),
           updatedAt: new Date(),
+          analyticsType: 'ORG_ANALYTICS',
         },
       ];
 
