@@ -55,6 +55,7 @@ describe('UserService', () => {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       leftJoinAndMapMany: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
@@ -70,6 +71,7 @@ describe('UserService', () => {
       find: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
+      query: jest.fn(),
       createQueryBuilder: jest.fn(() => mockQueryBuilder),
     };
 
@@ -97,22 +99,24 @@ describe('UserService', () => {
 
   describe('get', () => {
     it('should return user when found', async () => {
-      mockUserRepository.findOne.mockResolvedValue(mockUser);
+      const userWithRoles = { ...mockUser, roles: [] };
+      mockUserRepository.query.mockResolvedValue([userWithRoles]);
 
       const result = await service.get(1);
 
-      expect(mockUserRepository.findOne).toHaveBeenCalledWith({
-        where: { id: 1, tenantId: 'test-tenant' },
-      });
-      expect(result).toEqual(mockUser);
+      expect(mockUserRepository.query).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT'),
+        [1],
+      );
+      expect(result).toEqual(userWithRoles);
     });
 
-    it('should return null when user not found', async () => {
-      mockUserRepository.findOne.mockResolvedValue(null);
+    it('should return undefined when user not found', async () => {
+      mockUserRepository.query.mockResolvedValue([]);
 
       const result = await service.get(1);
 
-      expect(result).toBeNull();
+      expect(result).toBeUndefined();
     });
   });
 
@@ -258,6 +262,23 @@ describe('UserService', () => {
         role: UserRole.CLIENT,
         tenantId: 'test-tenant',
         phone: '+1234567890',
+        groups: [],
+      });
+    });
+
+    it('should return formatted user info with roles when user has roles', () => {
+      const userWithRoles = { ...mockUser, roles: [{ id: 1, name: 'Admin' }] };
+      const result = service.getMinimalUserInfo(userWithRoles);
+
+      expect(result).toEqual({
+        id: 1,
+        userId: 1,
+        name: 'Test User',
+        email: 'test@example.com',
+        role: UserRole.CLIENT,
+        tenantId: 'test-tenant',
+        phone: '+1234567890',
+        groups: [{ id: 1, name: 'Admin' }],
       });
     });
   });
@@ -327,6 +348,12 @@ describe('UserService', () => {
 
       const result = await service.getCounselorNames(10, 0, 'test');
 
+      expect(mockQueryBuilder.select).toHaveBeenCalledWith('user.id', 'id');
+      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
+        'user.name',
+        'name',
+      );
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledTimes(2);
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         'user.name ILIKE :search',
         { search: '%test%' },
@@ -349,10 +376,12 @@ describe('UserService', () => {
 
       const result = await service.getCounselorNames();
 
-      expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
-        'user.name ILIKE :search',
-        expect.any(Object),
+      expect(mockQueryBuilder.select).toHaveBeenCalledWith('user.id', 'id');
+      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
+        'user.name',
+        'name',
       );
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledTimes(2);
       expect(mockQueryBuilder.limit).not.toHaveBeenCalled();
       expect(mockQueryBuilder.offset).not.toHaveBeenCalled();
       expect(result).toEqual({
@@ -368,10 +397,12 @@ describe('UserService', () => {
 
       const result = await service.getCounselorNames(undefined, 5);
 
-      expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
-        'user.name ILIKE :search',
-        expect.any(Object),
+      expect(mockQueryBuilder.select).toHaveBeenCalledWith('user.id', 'id');
+      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
+        'user.name',
+        'name',
       );
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledTimes(2);
       expect(mockQueryBuilder.limit).not.toHaveBeenCalled();
       expect(mockQueryBuilder.offset).toHaveBeenCalledWith(5);
       expect(result).toEqual({
