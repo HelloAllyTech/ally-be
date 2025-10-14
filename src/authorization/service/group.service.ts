@@ -96,4 +96,8 @@ export class GroupService {
   async getUserRolesByUserId(userId: number): Promise<Group[]> {
     return this.groupRepository.findUserRoleByUserId(userId);
   }
+
+  async getGroupById(id: number): Promise<Group | null> {
+    return this.groupRepository.findOne({ id });
+  }
 }

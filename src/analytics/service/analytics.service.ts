@@ -69,6 +69,13 @@ export class AnalyticsService {
       );
       return existingDashboard;
     }
+
+    const group = await this.groupService.getGroupById(
+      parseInt(dashboard.groupId),
+    );
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
     const dashboardEntity = this.dashboardRepository.create({
       ...dashboard,
       tenantId: ExecutionManager.getTenantId(),

@@ -63,6 +63,7 @@ describe('AnalyticsService', () => {
     const mockGroupService = {
       getUserGroups: jest.fn(),
       getUserRolesByUserId: jest.fn(),
+      getGroupById: jest.fn(),
     };
     mockQueryBuilder = {
       innerJoin: jest.fn().mockReturnThis(),
@@ -254,6 +255,12 @@ describe('AnalyticsService', () => {
         tenantId: mockTenantId,
       };
       dashboardRepository.findOne.mockResolvedValue(null);
+      groupService.getGroupById.mockResolvedValue({
+        id: 1,
+        name: 'COUNSELOR',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
 
       dashboardRepository.create.mockReturnValue(savedDashboard as Dashboard);
       dashboardRepository.save.mockResolvedValue(savedDashboard as Dashboard);
@@ -279,6 +286,27 @@ describe('AnalyticsService', () => {
       expect(dashboardRepository.save).toHaveBeenCalledTimes(1);
       expect(dashboardRepository.save).toHaveBeenCalledWith(savedDashboard);
     });
+    it('it should throw an error when group not found', async () => {
+      dashboardRepository.findOne.mockResolvedValue(null);
+      groupService.getGroupById.mockResolvedValue(null);
+
+      await expect(service.createDashboard(mockDashboardDto)).rejects.toThrow(
+        new NotFoundException('Group not found'),
+      );
+
+      expect(dashboardRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          externalId: mockDashboardDto.externalId,
+          tenantId: mockTenantId,
+          groupId: mockDashboardDto.groupId,
+        },
+      });
+
+      expect(groupService.getGroupById).toHaveBeenCalledWith(
+        parseInt(mockDashboardDto.groupId),
+      );
+    });
+
     it('should update existing dashboard when found', async () => {
       const existingDashboard = { id: 1, ...mockDashboardDto } as Dashboard;
 
