@@ -19,6 +19,8 @@ import { UserRole } from 'src/common/constants/user.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { FlattenedSummaryNotePayload } from 'src/common/entities/type/call.details.type';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
+import { NotificationService } from 'src/notification/service/notification.service';
+import { UserService } from 'src/user/user.service';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -33,6 +35,15 @@ jest.mock('src/common/execution/execution-manager', () => ({
   },
 }));
 
+// Mock AuditLoggerService
+jest.mock('src/audit/service/audit-logger.service', () => ({
+  AuditLoggerService: {
+    getInstance: jest.fn(() => ({
+      log: jest.fn(),
+    })),
+  },
+}));
+
 describe('ChatAiService', () => {
   let service: ChatAiService;
   let mockCallDetailsRepository: {
@@ -44,6 +55,8 @@ describe('ChatAiService', () => {
   };
   let mockChatService: {
     updateMessageStatistics: jest.Mock;
+    getChatByIdForServiceCall: jest.Mock;
+    getChatWithCallDetails: jest.Mock;
   };
   let mockS3Service: {
     deleteObject: jest.Mock;
@@ -60,6 +73,12 @@ describe('ChatAiService', () => {
     encrypt: jest.Mock;
     decrypt: jest.Mock;
   };
+  let mockNotificationService: {
+    sendEmailSummaryNotification: jest.Mock;
+  };
+  let mockUserService: {
+    get: jest.Mock;
+  };
 
   const mockChat: Chat = {
     id: 1,
@@ -74,6 +93,18 @@ describe('ChatAiService', () => {
     updatedAt: new Date(),
     tenantId: 'test-tenant',
     externalId: undefined,
+  };
+
+  const mockCounselor = {
+    id: 2,
+    email: 'counselor@test.com',
+    name: 'Test Counselor',
+  };
+
+  const mockCallDetails = {
+    callInfo: {
+      summaryName: 'test-call-1',
+    },
   };
 
   const mockSummary: FlattenedSummaryNotePayload = {
@@ -150,6 +181,8 @@ describe('ChatAiService', () => {
 
     mockChatService = {
       updateMessageStatistics: jest.fn(),
+      getChatByIdForServiceCall: jest.fn(),
+      getChatWithCallDetails: jest.fn(),
     };
 
     mockS3Service = {
@@ -171,6 +204,14 @@ describe('ChatAiService', () => {
     mockCryptoService = {
       encrypt: jest.fn((content) => Promise.resolve(content)), // Return original content for testing
       decrypt: jest.fn((content) => Promise.resolve(content)), // Return original content for testing
+    };
+
+    mockNotificationService = {
+      sendEmailSummaryNotification: jest.fn(),
+    };
+
+    mockUserService = {
+      get: jest.fn(),
     };
 
     const module = await Test.createTestingModule({
@@ -204,6 +245,14 @@ describe('ChatAiService', () => {
           provide: CryptoService,
           useValue: mockCryptoService,
         },
+        {
+          provide: NotificationService,
+          useValue: mockNotificationService,
+        },
+        {
+          provide: UserService,
+          useValue: mockUserService,
+        },
       ],
     }).compile();
 
@@ -217,10 +266,19 @@ describe('ChatAiService', () => {
   describe('addSummary', () => {
     it('should add summary successfully', async () => {
       mockCallDetailsRepository.update.mockResolvedValue({});
+      mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+      mockUserService.get.mockResolvedValue(mockCounselor);
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        callDetails: mockCallDetails,
+      });
+      mockNotificationService.sendEmailSummaryNotification.mockResolvedValue(
+        {},
+      );
 
       const result = await service.addSummary(1, mockSummary);
 
       expect(result).toBe(true);
+      expect(mockChatService.getChatByIdForServiceCall).toHaveBeenCalledWith(1);
       expect(mockCallDetailsRepository.update).toHaveBeenCalledWith(
         { chatId: 1 },
         {
@@ -238,10 +296,60 @@ describe('ChatAiService', () => {
           }),
         },
       );
+      expect(mockUserService.get).toHaveBeenCalledWith(2);
+      expect(mockChatService.getChatWithCallDetails).toHaveBeenCalledWith(1);
+      expect(
+        mockNotificationService.sendEmailSummaryNotification,
+      ).toHaveBeenCalledWith({
+        to: 'counselor@test.com',
+        chatId: 1,
+        summaryName: 'test-call-1',
+      });
+    });
+
+    it('should throw ValidationException when chat not found', async () => {
+      mockChatService.getChatByIdForServiceCall.mockResolvedValue(null);
+
+      await expect(service.addSummary(1, mockSummary)).rejects.toThrow(
+        ValidationException,
+      );
+      await expect(service.addSummary(1, mockSummary)).rejects.toThrow(
+        'Error adding summary',
+      );
+    });
+
+    it('should handle missing counselor gracefully', async () => {
+      mockCallDetailsRepository.update.mockResolvedValue({});
+      mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+      mockUserService.get.mockResolvedValue(null);
+
+      const result = await service.addSummary(1, mockSummary);
+
+      expect(result).toBe(true);
+      expect(mockUserService.get).toHaveBeenCalledWith(2);
+      expect(
+        mockNotificationService.sendEmailSummaryNotification,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should throw ValidationException when counselorId is null', async () => {
+      const chatWithoutCounselor = { ...mockChat, counselorId: null };
+      mockCallDetailsRepository.update.mockResolvedValue({});
+      mockChatService.getChatByIdForServiceCall.mockResolvedValue(
+        chatWithoutCounselor,
+      );
+
+      await expect(service.addSummary(1, mockSummary)).rejects.toThrow(
+        ValidationException,
+      );
+      await expect(service.addSummary(1, mockSummary)).rejects.toThrow(
+        'Error adding summary',
+      );
     });
 
     it('should throw ValidationException on database error', async () => {
       const dbError = new Error('Database connection failed');
+      mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
       mockCallDetailsRepository.update.mockRejectedValue(dbError);
 
       await expect(service.addSummary(1, mockSummary)).rejects.toThrow(
@@ -255,6 +363,14 @@ describe('ChatAiService', () => {
     it('should handle empty summary data', async () => {
       const emptySummary = {} as FlattenedSummaryNotePayload;
       mockCallDetailsRepository.update.mockResolvedValue({});
+      mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+      mockUserService.get.mockResolvedValue(mockCounselor);
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        callDetails: mockCallDetails,
+      });
+      mockNotificationService.sendEmailSummaryNotification.mockResolvedValue(
+        {},
+      );
 
       const result = await service.addSummary(1, emptySummary);
 
@@ -291,7 +407,7 @@ describe('ChatAiService', () => {
         },
       ];
 
-      mockMessageRepository.create.mockReturnValue(mockMessages[0]);
+      // Mock the async message creation pattern
       mockMessageRepository.create
         .mockReturnValueOnce(mockMessages[0])
         .mockReturnValueOnce(mockMessages[1]);

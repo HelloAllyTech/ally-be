@@ -19,6 +19,8 @@ import {
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
+import { UserRole } from 'src/common/constants/user.constants';
 
 @ApiTags('Analytics')
 @Controller('v1/analytics')
@@ -26,7 +28,7 @@ export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
   @Get('dashboard/:dashboardId')
-  @UseGuards(JwtAuthGuard)
+  @AuthPermissions([PERMISSIONS.VIEW_ANALYTICS_DASHBOARD_URL])
   getDashboardUrl(@Param() { dashboardId }: DashboardIdParamDto) {
     return this.analyticsService.getDashboardUrl(dashboardId);
   }
@@ -43,13 +45,13 @@ export class AnalyticsController {
     return this.analyticsService.createDashboard(dashboard);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get('dashboard')
+  @AuthPermissions([PERMISSIONS.VIEW_ANALYTICS_DASHBOARD])
   getDashboards(@Req() req: { user: { id: number } }) {
     return this.analyticsService.getDashboards(req.user.id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @AuthRoles(UserRole.COUNSELOR)
   @Get('counselor-stats')
   @ApiOperation({
     summary: 'Get counselor statistics',

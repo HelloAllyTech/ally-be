@@ -155,7 +155,7 @@ AWS_SESSION_TOKEN=aws-session-token
 EMAIL_INTEGRATION=aws-ses
 
 # AWS-SES
-SES_SOURCE_EMAIL=ses-source-email
+SOURCE_EMAIL=source-email
 
 # Audio upload
 AUDIO_STORAGE_S3_BUCKET=audio-storage-s3-bucket
@@ -189,6 +189,9 @@ TEST_ACCOUNTS=test-accounts
 
 #CORS ORIGINS
 ALLOWED_ORIGINS=allowed-origins
+
+# APP base URL
+APP_BASE_URL=app-base-url
 ```
 
 ---

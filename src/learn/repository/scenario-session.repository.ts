@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 
 @Injectable()
 export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
@@ -159,7 +160,10 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'events',
         'events.id = scenarioSessionEvent.eventId',
       )
-      .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId });
+      .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
+      .andWhere('events.visibilityType = :visibilityType', {
+        visibilityType: SessionEventVisibilityType.ACTIVE,
+      });
 
     if (!isAdmin) {
       query.andWhere('scenarioSession.counselorId = :counselorId', {
@@ -191,6 +195,9 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
       .andWhere('scenarioSession.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
+      })
+      .andWhere('events.visibilityType = :visibilityType', {
+        visibilityType: SessionEventVisibilityType.ACTIVE,
       })
       .getRawOne();
 
