@@ -313,6 +313,21 @@ describe('AuthService', () => {
         new BadRequestException('Tenant not found'),
       );
     });
+
+    it('should throw BadRequestException if roles and groups do not match', async () => {
+      groupRepository.find.mockResolvedValue([
+        { id: 1, name: UserRole.CLIENT } as Group,
+      ]);
+      tenantService.findById.mockResolvedValue(mockTenant);
+      await expect(
+        authService.signup({
+          ...signupData,
+          roles: [UserRole.CLIENT, UserRole.COUNSELOR],
+        }),
+      ).rejects.toThrow(
+        new BadRequestException('Roles and groups do not match'),
+      );
+    });
   });
 
   describe('refreshTokens', () => {

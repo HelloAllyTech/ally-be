@@ -215,6 +215,14 @@ export class AuthService {
       throw new BadRequestException('Tenant not found');
     }
 
+    const groups = await this.groupRepository.find({
+      where: { name: In(userData.roles) },
+    });
+
+    if (groups.length !== userData.roles.length) {
+      throw new BadRequestException('Roles and groups do not match');
+    }
+
     // Hash password
     const hashedPassword = userData.password
       ? await bcrypt.hash(userData.password, 10)
@@ -239,10 +247,6 @@ export class AuthService {
 
     // Save user
     const savedUser = await this.userRepository.save(newUser);
-
-    const groups = await this.groupRepository.find({
-      where: { name: In(userData.roles) },
-    });
 
     if (groups.length > 0) {
       // Add user to default group
