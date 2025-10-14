@@ -9,7 +9,7 @@ export class PermissionValidator {
     userId: number,
     permissions: string[],
     operation?: 'AND' | 'OR',
-  ): Promise<boolean> {;
+  ): Promise<boolean> {
     if (!permissions?.length || !userId) return true;
 
     const userPermissions =

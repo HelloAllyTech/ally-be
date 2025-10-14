@@ -10,7 +10,9 @@ jest.mock('@nestjs/passport', () => {
   return {
     AuthGuard: jest.fn().mockImplementation(() => {
       return class MockAuthGuard {
-        canActivate(context: any): boolean | Promise<boolean> | Observable<boolean> {
+        canActivate(
+          context: any,
+        ): boolean | Promise<boolean> | Observable<boolean> {
           return mockCanActivate(context);
         }
       };
@@ -104,7 +106,9 @@ describe('JwtAuthGuard', () => {
     const error = new Error('Authentication failed');
     mockCanActivate.mockRejectedValue(error);
 
-    await expect(guard.canActivate(mockContext)).rejects.toThrow('Authentication failed');
+    await expect(guard.canActivate(mockContext)).rejects.toThrow(
+      'Authentication failed',
+    );
     expect(mockCanActivate).toHaveBeenCalledWith(mockContext);
   });
 });

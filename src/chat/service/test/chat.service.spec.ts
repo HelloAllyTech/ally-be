@@ -61,7 +61,6 @@ describe('ChatService', () => {
   let settingsService: SettingsService;
   let summaryFeedbackRepository: SummaryFeedbackRepository;
   let permissionValidator: PermissionValidator;
-  let groupService: GroupService;
 
   const mockChat: Chat = {
     id: 1,
@@ -324,10 +323,9 @@ describe('ChatService', () => {
         {
           provide: GroupService,
           useValue: {
-            getUserRolesByUserId: jest.fn().mockResolvedValue([
-              { name: 'COUNSELOR' },
-              { name: 'CLIENT' },
-            ]),
+            getUserRolesByUserId: jest
+              .fn()
+              .mockResolvedValue([{ name: 'COUNSELOR' }, { name: 'CLIENT' }]),
           },
         },
       ],
@@ -352,7 +350,6 @@ describe('ChatService', () => {
       SummaryFeedbackRepository,
     );
     permissionValidator = module.get<PermissionValidator>(PermissionValidator);
-    groupService = module.get<GroupService>(GroupService);
 
     // Mock ExecutionManager
     jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue('test-tenant');

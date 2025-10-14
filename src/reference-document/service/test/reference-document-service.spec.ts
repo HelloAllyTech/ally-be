@@ -18,7 +18,6 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { OrganizationRequiredException } from 'src/exception/custom.exception';
 import { parseCsvBuffer } from 'src/common/util/csv.util';
-import { UserRole } from 'src/common/constants/user.constants';
 import { PermissionValidator } from 'src/auth/service/permission-validator.service';
 
 import {
@@ -202,9 +201,9 @@ describe('ReferenceDocumentService', () => {
       };
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(undefined);
       permissionValidator.validatePermissions.mockResolvedValue(false);
-      await expect(
-        service.addReferenceDocument(1, dto),
-      ).rejects.toThrow(OrganizationRequiredException);
+      await expect(service.addReferenceDocument(1, dto)).rejects.toThrow(
+        OrganizationRequiredException,
+      );
     });
 
     it('marks FAILED when AI throws, and rethrows if repo update fails second phase', async () => {

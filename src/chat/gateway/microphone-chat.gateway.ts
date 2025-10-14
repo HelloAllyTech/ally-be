@@ -13,7 +13,10 @@ import {
   AudioChatPlatform,
   AudioChatProvider,
 } from '../../common/constants/chat.constants';
-import { PLACEHOLDER_CHAT_ID, UserRole } from '../../common/constants/user.constants';
+import {
+  PLACEHOLDER_CHAT_ID,
+  UserRole,
+} from '../../common/constants/user.constants';
 import { MessagePayload, UserChatSessionData } from '../type/chat.type';
 import { ChatEvents } from '../constants/chat.constants';
 import {
