@@ -123,9 +123,10 @@ export class ChatService {
     if (!chatData) {
       throw new NotFoundException(`Chat not found for chatId: ${id}`);
     }
+    const userId = Number(ExecutionManager.getUserId());
     if (
       (ExecutionManager.getRole() === UserRole.COUNSELOR &&
-        chatData.counselorId !== ExecutionManager.getUserId()) ||
+        chatData.counselorId !== userId) ||
       (ExecutionManager.getRole() === UserRole.ADMIN &&
         chatData.tenantId !== ExecutionManager.getTenantId())
     ) {

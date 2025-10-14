@@ -486,6 +486,27 @@ describe('ChatService', () => {
 
       expect(result).toEqual({ ...mockChatWithSameTenant, details: {} });
     });
+
+    it('should throw ForbiddenException when userId is undefined', async () => {
+      const mockChatWithCounselor = {
+        ...mockChat,
+        counselorId: 1,
+      };
+
+      // Mock ExecutionManager to return undefined userId
+      jest
+        .spyOn(ExecutionManager, 'getRole')
+        .mockReturnValue(UserRole.COUNSELOR);
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
+
+      jest
+        .spyOn(chatRepository, 'findOne')
+        .mockResolvedValue(mockChatWithCounselor as any);
+
+      await expect(service.getChat(1)).rejects.toThrow(
+        'You are not allowed to access this chat',
+      );
+    });
   });
 
   describe('requestChat', () => {
