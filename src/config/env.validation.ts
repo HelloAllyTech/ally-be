@@ -36,6 +36,9 @@ export const validationSchema = Joi.object({
   AWS_SECRET_ACCESS_KEY: Joi.string().optional(),
   AWS_SESSION_TOKEN: Joi.string().optional(),
 
+  // SOURCE EMAIL
+  SOURCE_EMAIL: Joi.string().required(),
+
   // SQS
   SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: Joi.string().required(),
   SQS_TRANSCRIPTION_REQUEST_DLQ_URL: Joi.string().required(),
@@ -72,4 +75,6 @@ export const validationSchema = Joi.object({
 
   // CORS ORIGINS
   ALLOWED_ORIGINS: Joi.string().required(),
+
+  APP_BASE_URL: Joi.string().required(),
 });

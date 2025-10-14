@@ -8,9 +8,12 @@ import { RequirePermissions } from './permissions.decorator';
  * @param permissions - List of permission strings required to access the endpoint
  * @example @AuthPermissions(PERMISSIONS.ReadUser, PERMISSIONS.WriteUser)
  */
-export function AuthPermissions(permissions: string[]) {
+export function AuthPermissions(
+  permissions: string[],
+  operator: 'AND' | 'OR' = 'AND',
+) {
   return applyDecorators(
     UseGuards(AuthGuard('jwt'), PermissionsGuard),
-    RequirePermissions(permissions),
+    RequirePermissions(permissions, operator),
   );
 }
