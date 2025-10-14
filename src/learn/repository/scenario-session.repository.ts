@@ -158,10 +158,10 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'scenarioSessionEvent.events',
         SessionEvents,
         'events',
-        'events.id = scenarioSessionEvent.eventId',
+        'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
       )
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
-      .andWhere('events.visibilityType = :visibilityType', {
+      .setParameters({
         visibilityType: SessionEventVisibilityType.ACTIVE,
       });
 
@@ -189,14 +189,14 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       .leftJoin(
         SessionEvents,
         'events',
-        'events.id = scenarioSessionEvent.eventId',
+        'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
       )
       .select('COALESCE(SUM(events.score), 0)', 'totalScore')
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
       .andWhere('scenarioSession.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
       })
-      .andWhere('events.visibilityType = :visibilityType', {
+      .setParameters({
         visibilityType: SessionEventVisibilityType.ACTIVE,
       })
       .getRawOne();
