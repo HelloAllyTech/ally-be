@@ -338,14 +338,12 @@ describe('AnalyticsService', () => {
   });
 
   describe('getDashboards', () => {
-    it('should return when user has no groups', async () => {
+    it('should throw an error when user has no groups', async () => {
       groupService.getUserRolesByUserId.mockResolvedValue([]);
+      await expect(service.getDashboards(mockUserId)).rejects.toThrow(
+        new NotFoundException('No groups found for user'),
+      );
 
-      const result = await service.getDashboards(mockUserId);
-
-      expect(result).toEqual(undefined);
-
-      expect(groupService.getUserRolesByUserId).toHaveBeenCalledTimes(1);
       expect(groupService.getUserRolesByUserId).toHaveBeenCalledWith(
         mockUserId,
       );

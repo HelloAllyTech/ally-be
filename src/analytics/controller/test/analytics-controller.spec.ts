@@ -270,14 +270,14 @@ describe('AnalyticsController', () => {
       expect(analyticsService.getDashboards).toHaveBeenCalledWith(mockUser.id);
     });
 
-    it('should return undefined when user has no dashboards', async () => {
+    it('should return empty array when user has no dashboards', async () => {
       const mockUser = { id: 123 };
 
-      analyticsService.getDashboards.mockResolvedValue(undefined);
+      analyticsService.getDashboards.mockResolvedValue([]);
 
       const result = await controller.getDashboards({ user: mockUser });
 
-      expect(result).toBeUndefined();
+      expect(result).toEqual([]);
       expect(analyticsService.getDashboards).toHaveBeenCalledTimes(1);
       expect(analyticsService.getDashboards).toHaveBeenCalledWith(mockUser.id);
     });

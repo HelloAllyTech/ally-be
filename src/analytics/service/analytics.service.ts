@@ -92,7 +92,8 @@ export class AnalyticsService {
     const userGroups = await this.groupService.getUserRolesByUserId(userId);
 
     const groupIds = userGroups.map((group) => group.id);
-    if (!userGroups.length) return;
+    if (!userGroups.length)
+      throw new NotFoundException('No groups found for user');
     const dashboards = await this.dashboardRepository.find({
       where: {
         groupId: In(groupIds),
