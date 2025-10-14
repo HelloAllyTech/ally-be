@@ -1183,6 +1183,10 @@ export class ChatService {
   }
 
   async getCallLogs(user: TokenUser, options: Pagination) {
+    const userRoles = await this.groupService
+      .getUserRolesByUserId(user.id)
+      .then((roles) => roles.map((role) => role.name));
+    console.log('userRoles', userRoles);
     const query = this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndMapOne(
@@ -1197,7 +1201,7 @@ export class ChatService {
         'client',
         'client.id = chat.clientId',
       );
-    if (user.role === UserRole.COUNSELOR) {
+    if (userRoles.includes(UserRole.COUNSELOR)) {
       query.where('chat.counselorId = :counselorId', { counselorId: user.id });
     }
     if (options.limit) {

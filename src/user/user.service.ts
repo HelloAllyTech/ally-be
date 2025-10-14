@@ -7,8 +7,9 @@ import { Chat, ChatStatus } from '../common/entities/chat.entity';
 import { UserRole, UserStatus } from '../common/constants/user.constants';
 import { RedisService } from '../redis/service/redis.service';
 import { ExecutionManager } from '../common/execution/execution-manager';
-import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { Group } from 'src/common/entities/group.entity';
+import { UserGroup } from 'src/common/entities/user-group.entity';
 
 @Injectable()
 export class UserService {
@@ -22,13 +23,27 @@ export class UserService {
   ) {}
 
   async get(id: number): Promise<User | null> {
-    const user = await this.userRepository.findOne({
-      where: { id, tenantId: ExecutionManager.getTenantId() },
-    });
-    this.auditLogger.log({
-      eventType: AUDIT_EVENTS.USER_PROFILE_ACCESS,
-    });
-    return user || null;
+    const user = await this.userRepository.query(
+      `
+      SELECT 
+       u.*,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', g.id,
+              'name', g.name
+            )
+          ) FILTER (WHERE g.id IS NOT NULL), '[]'
+        ) AS roles
+      FROM users u
+      LEFT JOIN user_groups ug ON u.id = ug."userId"
+      LEFT JOIN "groups" g ON ug."groupId" = g.id
+      WHERE u.id = $1
+      GROUP BY u.id
+      `,
+      [id],
+    );
+    return user[0];
   }
 
   async getUserByPhoneNumber(phoneNumber: string): Promise<User | null> {
@@ -107,7 +122,7 @@ export class UserService {
     return { totalWaiting: clientIds.size, clients: formattedData };
   }
 
-  getMinimalUserInfo(user: User | null) {
+  getMinimalUserInfo(user: any | null) {
     if (!user) return null;
     return {
       id: user.id,
@@ -117,6 +132,7 @@ export class UserService {
       role: user.role,
       tenantId: user.tenantId,
       phone: user.phone,
+      groups: user.roles || [],
     };
   }
 
@@ -155,10 +171,12 @@ export class UserService {
       .createQueryBuilder('user')
       .select('user.id', 'id')
       .addSelect('user.name', 'name')
-      .where('user.role = :role', { role: UserRole.COUNSELOR })
       .andWhere('user.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
       })
+      .leftJoin(UserGroup, 'userGroup', 'userGroup.userId = user.id')
+      .leftJoin(Group, 'group', 'group.id = userGroup.groupId')
+      .andWhere('group.name = :role', { role: UserRole.COUNSELOR })
       .orderBy('user.id', 'ASC');
 
     if (search && search.trim()) {
