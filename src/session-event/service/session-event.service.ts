@@ -1,23 +1,23 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateSessionEventDto } from '../dto/create-session-event.dto';
-import { In, Repository } from 'typeorm';
-import { InjectRepository } from '@nestjs/typeorm';
+import { In } from 'typeorm';
 import { SessionEvents } from '../entity/session-events.entity';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { UpdateSessionEventDto } from '../dto/update-session-event.dto';
+import { Pagination } from 'src/common/type/common.type';
+import { SessionEventRepository } from '../repository/session-event.repository';
+import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 
 @Injectable()
 export class SessionEventService {
   constructor(
-    @InjectRepository(SessionEvents)
-    private readonly sessionEventRepository: Repository<SessionEvents>,
+    private readonly sessionEventRepository: SessionEventRepository,
   ) {}
 
   async createSessionEvents(
     createEventDtos: CreateSessionEventDto[],
   ): Promise<SessionEvents[]> {
-    const events = this.sessionEventRepository.create(createEventDtos);
-    return this.sessionEventRepository.save(events);
+    return this.sessionEventRepository.save(createEventDtos);
   }
 
   async getSessionEventsByScenarioId(
@@ -30,11 +30,18 @@ export class SessionEventService {
         'scenarioEvents',
         'scenarioEvents.eventId = sessionEvents.id',
       )
-      .where('scenarioEvents.scenarioId = :scenarioId', {
-        scenarioId: scenarioId,
-      })
+      .where(
+        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
+        {
+          scenarioId,
+        },
+      )
+      .orWhere(
+        `sessionEvents.visibilityType = '${SessionEventVisibilityType.PASSIVE}'`,
+      )
       .getMany();
   }
+
   async updateSessionEvent(
     id: string,
     updateEventDto: UpdateSessionEventDto,
@@ -58,5 +65,16 @@ export class SessionEventService {
     return this.sessionEventRepository.find({
       where: { id: In(ids) },
     });
+  }
+
+  async getAllSessionEvents(
+    visibilityType?: SessionEventVisibilityType,
+    pagination?: Pagination,
+  ): Promise<{ data: SessionEvents[] }> {
+    const sessionEvents = await this.sessionEventRepository.getAllSessionEvents(
+      visibilityType,
+      pagination,
+    );
+    return { data: sessionEvents };
   }
 }

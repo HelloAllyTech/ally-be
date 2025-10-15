@@ -37,9 +37,8 @@ export class LearnEventProcessor extends BaseEventProcessor {
       }
 
       await this.scenarioSessionService.addScenarioSessionEvent(
-        scenarioSession.id,
+        scenarioSession,
         event,
-        scenarioSession.tenantId,
       );
 
       this.logger.info(`Scenario session event added: ${scenarioSession.id}`);

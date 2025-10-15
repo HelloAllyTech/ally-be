@@ -117,6 +117,21 @@ export class ChatService {
   ) {}
 
   async getChat(id: number) {
+    const chatData = await this.chatRepository.findOne({
+      where: { id, tenantId: ExecutionManager.getTenantId() },
+    });
+    if (!chatData) {
+      throw new NotFoundException(`Chat not found for chatId: ${id}`);
+    }
+    const userId = Number(ExecutionManager.getUserId());
+    if (
+      (ExecutionManager.getRole() === UserRole.COUNSELOR &&
+        chatData.counselorId !== userId) ||
+      (ExecutionManager.getRole() === UserRole.ADMIN &&
+        chatData.tenantId !== ExecutionManager.getTenantId())
+    ) {
+      throw new ForbiddenException('You are not allowed to access this chat');
+    }
     const chatQuery = this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndMapOne(

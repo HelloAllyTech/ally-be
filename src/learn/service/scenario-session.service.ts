@@ -29,6 +29,7 @@ import { UserRole } from 'src/common/constants/user.constants';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { Scenarios } from '../entity/scenarios.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -88,6 +89,14 @@ export class ScenarioSessionService {
 
     if (!scenarioSession) {
       throw new BadRequestException('Scenario session not found');
+    }
+
+    // Filter events to only include ACTIVE ones
+    if ((scenarioSession as any).events) {
+      (scenarioSession as any).events = (scenarioSession as any).events.filter(
+        (event: any) =>
+          event.events?.visibilityType === SessionEventVisibilityType.ACTIVE,
+      );
     }
 
     const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
@@ -436,16 +445,37 @@ export class ScenarioSessionService {
   }
 
   async addScenarioSessionEvent(
-    scenarioSessionId: string,
+    scenarioSession: ScenarioSessions,
     event: LearnEventData,
-    tenantId: string,
   ) {
-    const scenarioSessionEvent = this.scenarioSessionEventsRepository.create({
-      scenarioSessionId,
-      eventId: event.event_id,
-      occurredAt: event.timestamp,
-      tenantId,
+    await this.dataSource.transaction(async (entityManager) => {
+      const scenarioSessionEventsRepo = entityManager.getRepository(
+        ScenarioSessionEvents,
+      );
+      const scenarioSessionEvent = scenarioSessionEventsRepo.create({
+        scenarioSessionId: scenarioSession.id,
+        eventId: event.event_id,
+        occurredAt: event.timestamp,
+        tenantId: scenarioSession.tenantId,
+      });
+      const savedScenarioSessionEvent =
+        await scenarioSessionEventsRepo.save(scenarioSessionEvent);
+
+      if (scenarioSession.status === ScenarioSessionStatus.ENDED) {
+        const eventRepo = entityManager.getRepository(SessionEvents);
+        const sessionEvent = await eventRepo.findOne({
+          where: {
+            id: event.event_id,
+          },
+        });
+
+        const scenrioSessionRepo =
+          entityManager.getRepository(ScenarioSessions);
+        await scenrioSessionRepo.update(scenarioSession.id, {
+          score: () => `score + ${sessionEvent?.score ?? 0}`,
+        });
+      }
+      return savedScenarioSessionEvent;
     });
-    return this.scenarioSessionEventsRepository.save(scenarioSessionEvent);
   }
 }

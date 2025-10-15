@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 
 @Injectable()
 export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
@@ -128,7 +129,6 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     return this.save(scenarioSession);
   }
 
-  // TODO: Change total score to db column
   async getScenarioSession(
     scenarioSessionId: string,
     counselorId: number,
@@ -159,7 +159,10 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'events',
         'events.id = scenarioSessionEvent.eventId',
       )
-      .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId });
+      .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
+      .andWhere('scenarioSession.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
+      });
 
     if (!isAdmin) {
       query.andWhere('scenarioSession.counselorId = :counselorId', {
@@ -167,12 +170,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       });
     }
 
-    return query
-      .andWhere('scenarioSession.tenantId = :tenantId', {
-        tenantId: ExecutionManager.getTenantId(),
-      })
-      .orderBy('scenarioSessionEvent.occurredAt', 'ASC')
-      .getOne();
+    return query.orderBy('scenarioSessionEvent.occurredAt', 'ASC').getOne();
   }
 
   async getScenarioSessionScore(scenarioSessionId: string) {
@@ -185,12 +183,15 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       .leftJoin(
         SessionEvents,
         'events',
-        'events.id = scenarioSessionEvent.eventId',
+        'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
       )
       .select('COALESCE(SUM(events.score), 0)', 'totalScore')
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
       .andWhere('scenarioSession.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
+      })
+      .setParameters({
+        visibilityType: SessionEventVisibilityType.ACTIVE,
       })
       .getRawOne();
 
