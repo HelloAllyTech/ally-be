@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.enum';
 import { ScenarioSessionService } from 'src/learn/service/scenario-session.service';
 import { LoggerService } from 'src/logger/logger.service';
 
@@ -35,10 +36,13 @@ export class RoomFinishedHandler {
         await this.scenarioSessionService.getScenarioSessionByRoomId(
           event.room.name,
         );
-      await this.scenarioSessionService.endScenarioSession(
-        scenarioSession.id,
-        scenarioSession.counselorId,
-      );
+
+      if (scenarioSession.status !== ScenarioSessionStatus.ENDED) {
+        await this.scenarioSessionService.endScenarioSession(
+          scenarioSession.id,
+          scenarioSession.counselorId,
+        );
+      }
     } catch (error) {
       this.logger.error(
         `Failed to handle room finished: ${JSON.stringify(error.message)}`,

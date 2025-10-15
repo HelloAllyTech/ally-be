@@ -445,16 +445,37 @@ export class ScenarioSessionService {
   }
 
   async addScenarioSessionEvent(
-    scenarioSessionId: string,
+    scenarioSession: ScenarioSessions,
     event: LearnEventData,
-    tenantId: string,
   ) {
-    const scenarioSessionEvent = this.scenarioSessionEventsRepository.create({
-      scenarioSessionId,
-      eventId: event.event_id,
-      occurredAt: event.timestamp,
-      tenantId,
+    await this.dataSource.transaction(async (entityManager) => {
+      const scenarioSessionEventsRepo = entityManager.getRepository(
+        ScenarioSessionEvents,
+      );
+      const scenarioSessionEvent = scenarioSessionEventsRepo.create({
+        scenarioSessionId: scenarioSession.id,
+        eventId: event.event_id,
+        occurredAt: event.timestamp,
+        tenantId: scenarioSession.tenantId,
+      });
+      const savedScenarioSessionEvent =
+        await scenarioSessionEventsRepo.save(scenarioSessionEvent);
+
+      if (scenarioSession.status === ScenarioSessionStatus.ENDED) {
+        const eventRepo = entityManager.getRepository(SessionEvents);
+        const sessionEvent = await eventRepo.findOne({
+          where: {
+            id: event.event_id,
+          },
+        });
+
+        const scenrioSessionRepo =
+          entityManager.getRepository(ScenarioSessions);
+        await scenrioSessionRepo.update(scenarioSession.id, {
+          score: () => `score + ${sessionEvent?.score ?? 0}`,
+        });
+      }
+      return savedScenarioSessionEvent;
     });
-    return this.scenarioSessionEventsRepository.save(scenarioSessionEvent);
   }
 }
