@@ -131,7 +131,7 @@ export class ChatService {
       });
     const chat = (await chatQuery.getOne()) as Chat & { details: CallDetails };
     if (!chat) {
-      throw new HttpException('Chat not found', 404);
+      throw new NotFoundException('Chat not found');
     }
     const decryptedCallDetails = await this.decryptCallDetails(chat.details);
     chat.details = decryptedCallDetails ?? ({} as CallDetails);
