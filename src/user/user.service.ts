@@ -7,7 +7,6 @@ import { Chat, ChatStatus } from '../common/entities/chat.entity';
 import { UserRole, UserStatus } from '../common/constants/user.constants';
 import { RedisService } from '../redis/service/redis.service';
 import { ExecutionManager } from '../common/execution/execution-manager';
-import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { Group } from 'src/common/entities/group.entity';
 import { UserGroup } from 'src/common/entities/user-group.entity';

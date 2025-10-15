@@ -55,6 +55,7 @@ describe('UserService', () => {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       leftJoinAndMapMany: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
@@ -71,6 +72,7 @@ describe('UserService', () => {
       create: jest.fn(),
       save: jest.fn(),
       createQueryBuilder: jest.fn(() => mockQueryBuilder),
+      query: jest.fn(),
     };
 
     mockQueueService = {
@@ -97,22 +99,24 @@ describe('UserService', () => {
 
   describe('get', () => {
     it('should return user when found', async () => {
-      mockUserRepository.findOne.mockResolvedValue(mockUser);
+      const mockUserWithRoles = { ...mockUser, roles: [] };
+      mockUserRepository.query.mockResolvedValue([mockUserWithRoles]);
 
       const result = await service.get(1);
 
-      expect(mockUserRepository.findOne).toHaveBeenCalledWith({
-        where: { id: 1, tenantId: 'test-tenant' },
-      });
-      expect(result).toEqual(mockUser);
+      expect(mockUserRepository.query).toHaveBeenCalledWith(
+        expect.any(String),
+        [1],
+      );
+      expect(result).toEqual(mockUserWithRoles);
     });
 
     it('should return null when user not found', async () => {
-      mockUserRepository.findOne.mockResolvedValue(null);
+      mockUserRepository.query.mockResolvedValue([]);
 
       const result = await service.get(1);
 
-      expect(result).toBeNull();
+      expect(result).toBeUndefined();
     });
   });
 
@@ -258,6 +262,7 @@ describe('UserService', () => {
         role: UserRole.CLIENT,
         tenantId: 'test-tenant',
         phone: '+1234567890',
+        groups: [],
       });
     });
   });
