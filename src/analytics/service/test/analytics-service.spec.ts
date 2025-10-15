@@ -62,6 +62,7 @@ describe('AnalyticsService', () => {
     };
     const mockGroupService = {
       getUserGroups: jest.fn(),
+      getUserRolesByUserId: jest.fn(),
     };
     mockQueryBuilder = {
       innerJoin: jest.fn().mockReturnThis(),
@@ -310,31 +311,55 @@ describe('AnalyticsService', () => {
 
   describe('getDashboards', () => {
     it('should return when user has no groups', async () => {
-      groupService.getUserGroups.mockResolvedValue([]);
+      groupService.getUserRolesByUserId.mockResolvedValue([]);
 
       const result = await service.getDashboards(mockUserId);
 
       expect(result).toEqual(undefined);
 
-      expect(groupService.getUserGroups).toHaveBeenCalledTimes(1);
-      expect(groupService.getUserGroups).toHaveBeenCalledWith(mockUserId);
+      expect(groupService.getUserRolesByUserId).toHaveBeenCalledTimes(1);
+      expect(groupService.getUserRolesByUserId).toHaveBeenCalledWith(
+        mockUserId,
+      );
 
       expect(dashboardRepository.find).not.toHaveBeenCalled();
     });
     it('should return dashboards when user has groups', async () => {
-      groupService.getUserGroups.mockResolvedValue([1, 2, 3]);
-      dashboardRepository.find.mockResolvedValue([
-        mockDashboard,
-        mockDashboard,
-        mockDashboard,
-      ]);
+      const mockUserGroups = [
+        {
+          id: 1,
+          name: 'COUNSELOR',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        { id: 2, name: 'ADMIN', createdAt: new Date(), updatedAt: new Date() },
+        {
+          id: 3,
+          name: 'LEARNER',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+      groupService.getUserRolesByUserId.mockResolvedValue(mockUserGroups);
+      const mockDashboards = [
+        { ...mockDashboard, groupId: '1' }, // COUNSELOR
+        { ...mockDashboard, groupId: '2' }, // ADMIN
+        { ...mockDashboard, groupId: '3' }, // LEARNER
+      ];
+      dashboardRepository.find.mockResolvedValue(mockDashboards);
 
       const result = await service.getDashboards(mockUserId);
 
-      expect(result).toEqual([mockDashboard, mockDashboard, mockDashboard]);
+      expect(result).toEqual([
+        { ...mockDashboards[0], analyticsType: 'CALL_LOG_ANALYTICS' },
+        { ...mockDashboards[1], analyticsType: 'ORG_ANALYTICS' },
+        { ...mockDashboards[2], analyticsType: 'SIMULATION_ANALYTICS' },
+      ]);
 
-      expect(groupService.getUserGroups).toHaveBeenCalledTimes(1);
-      expect(groupService.getUserGroups).toHaveBeenCalledWith(mockUserId);
+      expect(groupService.getUserRolesByUserId).toHaveBeenCalledTimes(1);
+      expect(groupService.getUserRolesByUserId).toHaveBeenCalledWith(
+        mockUserId,
+      );
 
       expect(dashboardRepository.find).toHaveBeenCalledTimes(1);
       expect(dashboardRepository.find).toHaveBeenCalledWith({
