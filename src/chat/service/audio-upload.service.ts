@@ -30,7 +30,6 @@ import {
   ExecutionContextPropagation,
   WithExecutionContext,
 } from 'src/common/decorator/execution.context.decorator';
-import { UserRole } from 'src/common/constants/user.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 @Injectable()
@@ -149,7 +148,6 @@ export class AudioUploadService {
 
     ExecutionManager.setAuthContext(
       chat.createdBy?.toString() || '',
-      UserRole.ADMIN,
       chat.tenantId,
     );
 

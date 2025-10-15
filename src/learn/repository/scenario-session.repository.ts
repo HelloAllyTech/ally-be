@@ -129,7 +129,6 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     return this.save(scenarioSession);
   }
 
-  // TODO: Change total score to db column
   async getScenarioSession(
     scenarioSessionId: string,
     counselorId: number,
@@ -161,8 +160,8 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'events.id = scenarioSessionEvent.eventId',
       )
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
-      .andWhere('events.visibilityType = :visibilityType', {
-        visibilityType: SessionEventVisibilityType.ACTIVE,
+      .andWhere('scenarioSession.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
       });
 
     if (!isAdmin) {
@@ -171,12 +170,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       });
     }
 
-    return query
-      .andWhere('scenarioSession.tenantId = :tenantId', {
-        tenantId: ExecutionManager.getTenantId(),
-      })
-      .orderBy('scenarioSessionEvent.occurredAt', 'ASC')
-      .getOne();
+    return query.orderBy('scenarioSessionEvent.occurredAt', 'ASC').getOne();
   }
 
   async getScenarioSessionScore(scenarioSessionId: string) {
@@ -189,14 +183,14 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       .leftJoin(
         SessionEvents,
         'events',
-        'events.id = scenarioSessionEvent.eventId',
+        'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
       )
       .select('COALESCE(SUM(events.score), 0)', 'totalScore')
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
       .andWhere('scenarioSession.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
       })
-      .andWhere('events.visibilityType = :visibilityType', {
+      .setParameters({
         visibilityType: SessionEventVisibilityType.ACTIVE,
       })
       .getRawOne();

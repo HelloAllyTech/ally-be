@@ -1,13 +1,13 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiSecurity } from '@nestjs/swagger';
 import { OzonetelService } from '../service/ozonetel.service';
-import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
 
 import {
   OzonetelSubscriptionDto,
   OzonetelUnsubscriptionDto,
 } from '../dto/ozonetel.dto';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @ApiBearerAuth()
 @ApiSecurity('access-token')
@@ -16,7 +16,7 @@ export class OzonetelController {
   constructor(private readonly ozonetelService: OzonetelService) {}
 
   @Post('subscribe-events')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.SUBSCRIBE_OZONETEL_EVENTS])
   @ApiOperation({ summary: 'Subscribe Ozonetel events' })
   async handleOzonetelCallDetails(
     @Body() ozonetelSubscriptionDto: OzonetelSubscriptionDto,
@@ -27,7 +27,7 @@ export class OzonetelController {
   }
 
   @Post('unsubscribe-events')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.UNSUBSCRIBE_OZONETEL_EVENTS])
   @ApiOperation({ summary: 'Unsubscribe Ozonetel events' })
   async handleOzonetelUnsubscribe(
     @Body() ozonetelUnsubscriptionDto: OzonetelUnsubscriptionDto,

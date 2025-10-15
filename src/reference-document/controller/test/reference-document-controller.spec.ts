@@ -10,6 +10,7 @@ import {
   UpdateReferenceDocumentDto,
 } from 'src/reference-document/dto/reference-document.dto';
 import { ReferenceDocumentService } from 'src/reference-document/service/reference-document.service';
+import { PermissionsService } from '../../../authorization/service/permissions.service';
 
 describe('ReferenceDocumentController', () => {
   let controller: ReferenceDocumentController;
@@ -33,11 +34,16 @@ describe('ReferenceDocumentController', () => {
 
   const allowGuard: CanActivate = { canActivate: () => true };
 
+  const mockPermissionsService = {
+    getUserPermissions: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ReferenceDocumentController],
       providers: [
         { provide: ReferenceDocumentService, useValue: mockService },
+        { provide: PermissionsService, useValue: mockPermissionsService },
         Reflector,
       ],
     })
@@ -69,7 +75,6 @@ describe('ReferenceDocumentController', () => {
     expect(service.addReferenceDocument).toHaveBeenCalledWith(
       tokenUser.id,
       dto,
-      tokenUser.role,
     );
     expect(result).toBe(expected);
   });

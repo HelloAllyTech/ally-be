@@ -26,17 +26,15 @@ describe('ExecutionManager', () => {
   describe('setAuthContext', () => {
     it('should set auth context when context exists', () => {
       const userId = 'user-123';
-      const role = 'admin';
       const tenantId = 'tenant-456';
       const path = '/test/path';
 
       // First run with context to create a store
       ExecutionManager.runWithContext(
         () => {
-          ExecutionManager.setAuthContext(userId, role, tenantId);
+          ExecutionManager.setAuthContext(userId, tenantId);
 
           expect(ExecutionManager.getUserId()).toBe(userId);
-          expect(ExecutionManager.getRole()).toBe(role);
           expect(ExecutionManager.getTenantId()).toBe(tenantId);
         },
         { path },
@@ -45,15 +43,13 @@ describe('ExecutionManager', () => {
 
     it('should not set auth context when no context exists', () => {
       const userId = 'user-123';
-      const role = 'admin';
       const tenantId = 'tenant-456';
 
       // Call setAuthContext without any existing context
-      ExecutionManager.setAuthContext(userId, role, tenantId);
+      ExecutionManager.setAuthContext(userId, tenantId);
 
       // Should not throw error and context should remain undefined
       expect(ExecutionManager.getUserId()).toBeUndefined();
-      expect(ExecutionManager.getRole()).toBeUndefined();
       expect(ExecutionManager.getTenantId()).toBeUndefined();
     });
   });
@@ -88,7 +84,7 @@ describe('ExecutionManager', () => {
 
       ExecutionManager.runWithContext(
         () => {
-          ExecutionManager.setAuthContext(userId, 'admin', 'tenant-456');
+          ExecutionManager.setAuthContext(userId, 'tenant-456');
           expect(ExecutionManager.getUserId()).toBe(userId);
         },
         { path },
@@ -100,25 +96,6 @@ describe('ExecutionManager', () => {
     });
   });
 
-  describe('getRole', () => {
-    it('should return role from context', () => {
-      const role = 'admin';
-      const path = '/test/path';
-
-      ExecutionManager.runWithContext(
-        () => {
-          ExecutionManager.setAuthContext('user-123', role, 'tenant-456');
-          expect(ExecutionManager.getRole()).toBe(role);
-        },
-        { path },
-      );
-    });
-
-    it('should return undefined when no context or role', () => {
-      expect(ExecutionManager.getRole()).toBeUndefined();
-    });
-  });
-
   describe('getTenantId', () => {
     it('should return tenant ID from context', () => {
       const tenantId = 'tenant-456';
@@ -126,7 +103,7 @@ describe('ExecutionManager', () => {
 
       ExecutionManager.runWithContext(
         () => {
-          ExecutionManager.setAuthContext('user-123', 'admin', tenantId);
+          ExecutionManager.setAuthContext('user-123', tenantId);
           expect(ExecutionManager.getTenantId()).toBe(tenantId);
         },
         { path },

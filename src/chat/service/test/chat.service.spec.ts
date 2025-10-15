@@ -22,6 +22,8 @@ import { StreamFileProcessorService } from '../../../audio/service/stream-file-p
 import { CryptoService } from '../../../common/service/crypto.service';
 import { AppConfigService } from '../../../config/config.service';
 import { ChatAudioUploadsService } from '../../../audio/service/chat-audio-uploads.service';
+import { PermissionValidator } from '../../../auth/service/permission-validator.service';
+import { GroupService } from '../../../authorization/service/group.service';
 
 import { Message } from '../../../common/entities/message.entity';
 import { ChatRoom } from '../../../common/entities/chat-room.entity';
@@ -58,6 +60,7 @@ describe('ChatService', () => {
   let dataSource: DataSource;
   let settingsService: SettingsService;
   let summaryFeedbackRepository: SummaryFeedbackRepository;
+  let permissionValidator: PermissionValidator;
 
   const mockChat: Chat = {
     id: 1,
@@ -311,6 +314,20 @@ describe('ChatService', () => {
           provide: JwtService,
           useValue: {},
         },
+        {
+          provide: PermissionValidator,
+          useValue: {
+            validatePermissions: jest.fn(),
+          },
+        },
+        {
+          provide: GroupService,
+          useValue: {
+            getUserRolesByUserId: jest
+              .fn()
+              .mockResolvedValue([{ name: 'COUNSELOR' }, { name: 'CLIENT' }]),
+          },
+        },
       ],
     }).compile();
 
@@ -332,10 +349,10 @@ describe('ChatService', () => {
     summaryFeedbackRepository = module.get<SummaryFeedbackRepository>(
       SummaryFeedbackRepository,
     );
+    permissionValidator = module.get<PermissionValidator>(PermissionValidator);
 
     // Mock ExecutionManager
     jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue('test-tenant');
-    jest.spyOn(ExecutionManager, 'getRole').mockReturnValue(UserRole.CLIENT);
     jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('1');
   });
 
@@ -345,11 +362,31 @@ describe('ChatService', () => {
 
   describe('getChat', () => {
     it('should return a chat when found', async () => {
+      // Create a mock chat with counselorId as number to match service logic
+      // ExecutionManager.getUserId() returns string but service converts to Number
+      const mockChatWithMatchingCounselor = {
+        ...mockChat,
+        counselorId: 1,
+      };
+
+      // Mock the first findOne call for chatData
+      jest
+        .spyOn(chatRepository, 'findOne')
+        .mockResolvedValue(mockChatWithMatchingCounselor as any);
+
+      // Mock the decryptCallDetails method
+      jest.spyOn(service, 'decryptCallDetails').mockResolvedValue({} as any);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+
       const chatQuery = {
         leftJoinAndMapOne: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue(mockChat),
+        getOne: jest
+          .fn()
+          .mockResolvedValue({ ...mockChatWithMatchingCounselor, details: {} }),
       };
       jest
         .spyOn(chatRepository, 'createQueryBuilder')
@@ -357,7 +394,7 @@ describe('ChatService', () => {
 
       const result = await service.getChat(1);
 
-      expect(result).toEqual(mockChat);
+      expect(result).toEqual({ ...mockChatWithMatchingCounselor, details: {} });
       expect(chatQuery.where).toHaveBeenCalledWith('chat.id = :id', { id: 1 });
       expect(chatQuery.andWhere).toHaveBeenCalledWith(
         'chat.tenantId = :tenantId',
@@ -368,18 +405,134 @@ describe('ChatService', () => {
     });
 
     it('should throw HttpException when chat not found', async () => {
+      // Mock the first findOne call to return null (chat not found)
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(null);
+
+      await expect(service.getChat(1)).rejects.toThrow(
+        'Chat not found for chatId: 1',
+      );
+    });
+
+    it('should throw ForbiddenException when counselor tries to access chat not assigned to them', async () => {
+      const mockChatWithDifferentCounselor = {
+        ...mockChat,
+        counselorId: 999, // Different counselor ID
+      };
+
+      // Mock ExecutionManager to return counselor role and user ID 1
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('1');
+
+      jest
+        .spyOn(chatRepository, 'findOne')
+        .mockResolvedValue(mockChatWithDifferentCounselor as any);
+
+      await expect(service.getChat(1)).rejects.toThrow(
+        'You are not allowed to access this chat',
+      );
+    });
+
+    it('should throw ForbiddenException when admin tries to access chat from different tenant', async () => {
+      const mockChatWithDifferentTenant = {
+        ...mockChat,
+        tenantId: 'different-tenant',
+      };
+
+      jest
+        .spyOn(chatRepository, 'findOne')
+        .mockResolvedValue(mockChatWithDifferentTenant as any);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+
+      await expect(service.getChat(1)).rejects.toThrow(
+        'You are not allowed to access this chat',
+      );
+    });
+
+    it('should allow counselor to access their own chat', async () => {
+      const mockChatWithMatchingCounselor = {
+        ...mockChat,
+        counselorId: 1,
+      };
+
+      jest
+        .spyOn(chatRepository, 'findOne')
+        .mockResolvedValue(mockChatWithMatchingCounselor as any);
+      jest.spyOn(service, 'decryptCallDetails').mockResolvedValue({} as any);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+
       const chatQuery = {
         leftJoinAndMapOne: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue(null),
+        getOne: jest
+          .fn()
+          .mockResolvedValue({ ...mockChatWithMatchingCounselor, details: {} }),
       };
       jest
         .spyOn(chatRepository, 'createQueryBuilder')
         .mockReturnValue(chatQuery as any);
 
-      await expect(service.getChat(1)).rejects.toThrow(HttpException);
-      await expect(service.getChat(1)).rejects.toThrow('Chat not found');
+      const result = await service.getChat(1);
+
+      expect(result).toEqual({ ...mockChatWithMatchingCounselor, details: {} });
+    });
+
+    it('should allow admin to access chat from same tenant', async () => {
+      const mockChatWithSameTenant = {
+        ...mockChat,
+        tenantId: 'test-tenant',
+      };
+
+      jest
+        .spyOn(chatRepository, 'findOne')
+        .mockResolvedValue(mockChatWithSameTenant as any);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+      jest.spyOn(service, 'decryptCallDetails').mockResolvedValue({} as any);
+
+      const chatQuery = {
+        leftJoinAndMapOne: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest
+          .fn()
+          .mockResolvedValue({ ...mockChatWithSameTenant, details: {} }),
+      };
+      jest
+        .spyOn(chatRepository, 'createQueryBuilder')
+        .mockReturnValue(chatQuery as any);
+
+      const result = await service.getChat(1);
+
+      expect(result).toEqual({ ...mockChatWithSameTenant, details: {} });
+    });
+
+    it('should throw ForbiddenException when userId is undefined', async () => {
+      const mockChatWithCounselor = {
+        ...mockChat,
+        counselorId: 1,
+      };
+
+      // Mock ExecutionManager to return undefined userId
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
+
+      jest
+        .spyOn(chatRepository, 'findOne')
+        .mockResolvedValue(mockChatWithCounselor as any);
+
+      await expect(service.getChat(1)).rejects.toThrow(
+        'You are not allowed to access this chat',
+      );
     });
   });
 
@@ -637,6 +790,9 @@ describe('ChatService', () => {
         .spyOn(userService, 'getUsersByPhoneNumbers')
         .mockResolvedValue([mockCounselor, mockClient]);
       jest
+        .spyOn(service, 'getParticipantRoles')
+        .mockResolvedValue({ 1: ['CLIENT'], 2: ['COUNSELOR'] });
+      jest
         .spyOn(service, 'addNewChatWithCounselor')
         .mockResolvedValue(mockNewChat as any);
       jest
@@ -645,7 +801,6 @@ describe('ChatService', () => {
       jest
         .spyOn(service['gateway'], 'sendMessagesToRoomUsingPublish')
         .mockImplementation(() => {});
-
       const result = await service.startCall(participantPhoneNumbers);
 
       expect(result).toEqual(mockNewChat);
@@ -670,16 +825,25 @@ describe('ChatService', () => {
 
     it('should throw HttpException when no counselor found', async () => {
       const participantPhoneNumbers = ['+1234567890', '+0987654321'];
-      const mockClient = {
+      const mockClient1 = {
+        ...mockUser,
+        role: UserRole.CLIENT,
+        phone: '+1234567890',
+        id: 1,
+      };
+      const mockClient2 = {
         ...mockUser,
         role: UserRole.CLIENT,
         phone: '+0987654321',
+        id: 2,
       };
 
       jest
         .spyOn(userService, 'getUsersByPhoneNumbers')
-        .mockResolvedValue([mockClient]);
-
+        .mockResolvedValue([mockClient1, mockClient2]);
+      jest
+        .spyOn(service, 'getParticipantRoles')
+        .mockResolvedValue({ 1: ['CLIENT'], 2: ['CLIENT'] });
       await expect(service.startCall(participantPhoneNumbers)).rejects.toThrow(
         HttpException,
       );
@@ -719,12 +883,15 @@ describe('ChatService', () => {
         ...mockUser,
         role: UserRole.COUNSELOR,
         phone: '+1234567890',
+        id: 2,
       };
 
       jest
         .spyOn(userService, 'getUsersByPhoneNumbers')
-        .mockResolvedValue([mockCounselor]);
-
+        .mockResolvedValue([mockCounselor, mockCounselor]); // Return same counselor twice
+      jest
+        .spyOn(service, 'getParticipantRoles')
+        .mockResolvedValue({ 2: ['COUNSELOR'] });
       await expect(service.startCall(participantPhoneNumbers)).rejects.toThrow(
         HttpException,
       );
@@ -751,11 +918,15 @@ describe('ChatService', () => {
         ...mockUser,
         role: UserRole.COUNSELOR,
         phone: '+1234567890',
+        id: 2,
       };
 
       jest
         .spyOn(userService, 'getUsersByPhoneNumbers')
-        .mockResolvedValue([mockCounselor]);
+        .mockResolvedValue([mockCounselor, mockCounselor]); // Return same counselor twice
+      jest
+        .spyOn(service, 'getParticipantRoles')
+        .mockResolvedValue({ 2: ['COUNSELOR'] });
       jest
         .spyOn(userService, 'createUser')
         .mockRejectedValue(new Error('Failed to create user'));
@@ -1017,7 +1188,9 @@ describe('ChatService', () => {
       jest
         .spyOn(chatRepository, 'findOne')
         .mockResolvedValue(mockChatWithDifferentUsers as any);
-      jest.spyOn(ExecutionManager, 'getRole').mockReturnValue(UserRole.CLIENT);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
 
       await expect(service.getMessages(1, 1, {})).rejects.toThrow(
         HttpException,
@@ -3050,6 +3223,9 @@ describe('ChatService', () => {
         .mockResolvedValue(mockCallDetails as any);
       jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
       jest.spyOn(service, 'getChat').mockResolvedValue(mockChatWithDetails);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true); // User has ACCESS_OTHERS_CALL_INFO permission
 
       const result = await service.updateCallInfo(1, mockCallInfo);
 
@@ -3087,17 +3263,17 @@ describe('ChatService', () => {
         counselorId: 999, // Different counselor ID
       };
 
-      // Mock ExecutionManager to return counselor role and different user ID
-      jest
-        .spyOn(ExecutionManager, 'getRole')
-        .mockReturnValue(UserRole.COUNSELOR);
+      // Mock ExecutionManager to return different user ID
       jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('123');
       jest
         .spyOn(service, 'getChatById')
         .mockResolvedValue(mockChatWithDifferentCounselor as any);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
 
       await expect(service.updateCallInfo(1, mockCallInfo)).rejects.toThrow(
-        'You are not authorized to update call info',
+        'You are not authorized to update call info for this chat',
       );
     });
 
@@ -3108,6 +3284,9 @@ describe('ChatService', () => {
 
       jest.spyOn(service, 'getChatById').mockResolvedValue(mockChat);
       jest.spyOn(callDetailsRepository, 'findOne').mockResolvedValue(null);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
 
       await expect(service.updateCallInfo(1, mockCallInfo)).rejects.toThrow(
         'Call details not found for chat 1',

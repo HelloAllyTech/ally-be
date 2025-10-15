@@ -8,6 +8,8 @@ import { AuthRoles } from '../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../common/constants/user.constants';
 import { AssignUserRoleDto, RemoveUserRoleDto } from './dto/group.dto';
 import { GroupService } from 'src/authorization/service/group.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 
 @Controller('v1/users')
 @ApiTags('Users')
@@ -35,13 +37,13 @@ export class UserController {
     return this.userService.getWaitingList();
   }
 
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_USER_ROLE])
   @Post('assign-role')
   assignRole(@Body() assignUserRoleDto: AssignUserRoleDto): Promise<boolean> {
     return this.groupService.assignRole(assignUserRoleDto);
   }
 
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_USER_ROLE])
   @Delete('role')
   removeRole(@Body() removeUserRoleDto: RemoveUserRoleDto): Promise<boolean> {
     return this.groupService.removeRole(removeUserRoleDto);

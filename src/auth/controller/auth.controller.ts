@@ -18,10 +18,10 @@ import { JwtRefreshAuthGuard } from '../guards/jwt-refresh-auth.guard';
 import { LoggerService } from '../../logger/logger.service';
 import { ApiBearerAuth, ApiBody, ApiSecurity } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
-import { UserRole } from '../../common/constants/user.constants';
-import { AuthRoles } from '../decorators/auth-roles.decorator';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from '../decorators/auth-permissions.decorator';
 
 @Controller('v1/auth')
 export class AuthController {
@@ -67,7 +67,7 @@ export class AuthController {
 
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_USER])
   @ApiBearerAuth()
   @ApiSecurity('access-token')
   async signup(@Body() userData: UserCreateDto) {

@@ -25,10 +25,12 @@ import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
-import { UserRole } from 'src/common/constants/user.constants';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { Scenarios } from '../entity/scenarios.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/auth/service/permission-validator.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -48,6 +50,7 @@ export class ScenarioSessionService {
     @InjectRepository(ScenarioEvents)
     private scenarioEventsRepository: Repository<ScenarioEvents>,
     private permissionsService: PermissionsService,
+    private permissionValidatorService: PermissionValidator,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -78,16 +81,27 @@ export class ScenarioSessionService {
   }
 
   async getScenarioSession(scenarioSessionId: string, counselorId: number) {
-    const userRoles = await this.permissionsService.getUserRoles(counselorId);
+    const hasAdminAccess =
+      await this.permissionValidatorService.validatePermissions(counselorId, [
+        PERMISSIONS.ORGANIZATION_ACCESS,
+      ]);
     const scenarioSession =
       await this.scenarioSessionRepository.getScenarioSession(
         scenarioSessionId,
         counselorId,
-        userRoles.includes(UserRole.ADMIN),
+        hasAdminAccess,
       );
 
     if (!scenarioSession) {
       throw new BadRequestException('Scenario session not found');
+    }
+
+    // Filter events to only include ACTIVE ones
+    if ((scenarioSession as any).events) {
+      (scenarioSession as any).events = (scenarioSession as any).events.filter(
+        (event: any) =>
+          event.events?.visibilityType === SessionEventVisibilityType.ACTIVE,
+      );
     }
 
     const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
