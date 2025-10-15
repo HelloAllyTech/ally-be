@@ -21,13 +21,14 @@ import { ScenarioSessionMessageType } from '../../enum/scenario-session-message.
 import { ScenarioStatus } from '../../enum/scenario.status.enum';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { EntityOperationException } from 'src/exception/custom.exception';
-import { UserRole } from 'src/common/constants/user.constants';
 import { StartScenarioSessionRequestDto } from '../../dto/start-scenario-session-request.dto';
 import { AddFeedbackToScenarioSessionRequestDto } from '../../dto/add-feedback-to-scenario-session.dto';
 import { CreateScenarioEventsDto } from '../../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../../dto/delete-scenario-events.dto';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../../interface/learn-message.interface';
+import { PermissionValidator } from 'src/auth/service/permission-validator.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -46,7 +47,6 @@ describe('ScenarioSessionService', () => {
   let livekitService: jest.Mocked<LiveKitService>;
   let sessionEventService: jest.Mocked<SessionEventService>;
   let aiService: jest.Mocked<AiService>;
-  let permissionsService: jest.Mocked<PermissionsService>;
   let scenarioSessionFeedbacksRepository: jest.Mocked<
     Repository<ScenarioSessionFeedbacks>
   >;
@@ -56,7 +56,7 @@ describe('ScenarioSessionService', () => {
   let scenarioEventsRepository: jest.Mocked<Repository<ScenarioEvents>>;
   let dataSource: jest.Mocked<DataSource>;
   let mockEntityManager: any;
-
+  let permissionValidatorService: jest.Mocked<PermissionValidator>;
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
   const mockCounselorId = 123;
@@ -183,6 +183,9 @@ describe('ScenarioSessionService', () => {
     const mockDataSource = {
       transaction: jest.fn(),
     };
+    const mockPermissionValidatorService = {
+      validatePermissions: jest.fn(),
+    };
 
     // Setup ExecutionManager mocks
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
@@ -236,6 +239,10 @@ describe('ScenarioSessionService', () => {
           provide: DataSource,
           useValue: mockDataSource,
         },
+        {
+          provide: PermissionValidator,
+          useValue: mockPermissionValidatorService,
+        },
       ],
     }).compile();
 
@@ -248,7 +255,6 @@ describe('ScenarioSessionService', () => {
     livekitService = module.get(LiveKitService);
     sessionEventService = module.get(SessionEventService);
     aiService = module.get(AiService);
-    permissionsService = module.get(PermissionsService);
     scenarioSessionFeedbacksRepository = module.get(
       getRepositoryToken(ScenarioSessionFeedbacks),
     );
@@ -257,6 +263,7 @@ describe('ScenarioSessionService', () => {
     );
     scenarioEventsRepository = module.get(getRepositoryToken(ScenarioEvents));
     dataSource = module.get(DataSource);
+    permissionValidatorService = module.get(PermissionValidator);
   });
 
   afterEach(() => {
@@ -323,16 +330,18 @@ describe('ScenarioSessionService', () => {
 
   describe('getScenarioSession', () => {
     it('should throw BadRequestException when scenario session not found', async () => {
-      permissionsService.getUserRoles.mockResolvedValue([UserRole.COUNSELOR]);
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(null);
 
       await expect(
         service.getScenarioSession(mockScenarioSessionId, mockCounselorId),
       ).rejects.toThrow(new BadRequestException('Scenario session not found'));
 
-      expect(permissionsService.getUserRoles).toHaveBeenCalledWith(
-        mockCounselorId,
-      );
+      expect(
+        permissionValidatorService.validatePermissions,
+      ).toHaveBeenCalledWith(mockCounselorId, [
+        PERMISSIONS.ORGANIZATION_ACCESS,
+      ]);
       expect(scenarioSessionRepository.getScenarioSession).toHaveBeenCalledWith(
         mockScenarioSessionId,
         mockCounselorId,
@@ -342,7 +351,7 @@ describe('ScenarioSessionService', () => {
 
     it('should return scenario session with feedback for admin user', async () => {
       const mockFeedback = { id: 'feedback-1', rating: 5 };
-      permissionsService.getUserRoles.mockResolvedValue([UserRole.ADMIN]);
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockScenarioSession,
       );
@@ -364,7 +373,7 @@ describe('ScenarioSessionService', () => {
     });
 
     it('should return scenario session without feedback for regular user', async () => {
-      permissionsService.getUserRoles.mockResolvedValue([UserRole.COUNSELOR]);
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockScenarioSession,
       );
@@ -414,7 +423,7 @@ describe('ScenarioSessionService', () => {
         ],
       };
 
-      permissionsService.getUserRoles.mockResolvedValue([UserRole.COUNSELOR]);
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockSessionWithMixedEvents as any,
       );
@@ -454,7 +463,7 @@ describe('ScenarioSessionService', () => {
         ],
       };
 
-      permissionsService.getUserRoles.mockResolvedValue([UserRole.COUNSELOR]);
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockSessionWithPassiveEvents as any,
       );
@@ -475,7 +484,7 @@ describe('ScenarioSessionService', () => {
         events: [],
       };
 
-      permissionsService.getUserRoles.mockResolvedValue([UserRole.COUNSELOR]);
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockSessionWithNoEvents as any,
       );
@@ -491,7 +500,7 @@ describe('ScenarioSessionService', () => {
     });
 
     it('should handle scenario session without events property', async () => {
-      permissionsService.getUserRoles.mockResolvedValue([UserRole.COUNSELOR]);
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockScenarioSession,
       );
@@ -804,6 +813,7 @@ describe('ScenarioSessionService', () => {
 
   describe('endScenarioSession', () => {
     it('should throw BadRequestException when scenario session not found', async () => {
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
       scenarioSessionRepository.findOne.mockResolvedValue(null);
 
       await expect(
@@ -816,6 +826,7 @@ describe('ScenarioSessionService', () => {
         ...mockScenarioSession,
         status: ScenarioSessionStatus.ENDED,
       };
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
       scenarioSessionRepository.findOne.mockResolvedValue(inactiveSession);
 
       await expect(
