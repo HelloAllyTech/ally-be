@@ -382,6 +382,129 @@ describe('ScenarioSessionService', () => {
         false,
       );
     });
+
+    it('should filter out PASSIVE events and return only ACTIVE events', async () => {
+      const mockSessionWithMixedEvents = {
+        ...mockScenarioSession,
+        events: [
+          {
+            id: 'session-event-1',
+            events: {
+              id: 'event-1',
+              visibilityType: 'ACTIVE',
+              name: 'Active Event 1',
+            },
+          },
+          {
+            id: 'session-event-2',
+            events: {
+              id: 'event-2',
+              visibilityType: 'PASSIVE',
+              name: 'Passive Event',
+            },
+          },
+          {
+            id: 'session-event-3',
+            events: {
+              id: 'event-3',
+              visibilityType: 'ACTIVE',
+              name: 'Active Event 2',
+            },
+          },
+        ],
+      };
+
+      permissionsService.getUserRoles.mockResolvedValue([UserRole.COUNSELOR]);
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        mockSessionWithMixedEvents as any,
+      );
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect((result as any).events).toHaveLength(2);
+      expect((result as any).events[0].events.visibilityType).toBe('ACTIVE');
+      expect((result as any).events[1].events.visibilityType).toBe('ACTIVE');
+      expect(result.hasFeedback).toBe(false);
+    });
+
+    it('should return empty events array when all events are PASSIVE', async () => {
+      const mockSessionWithPassiveEvents = {
+        ...mockScenarioSession,
+        events: [
+          {
+            id: 'session-event-1',
+            events: {
+              id: 'event-1',
+              visibilityType: 'PASSIVE',
+              name: 'Passive Event 1',
+            },
+          },
+          {
+            id: 'session-event-2',
+            events: {
+              id: 'event-2',
+              visibilityType: 'PASSIVE',
+              name: 'Passive Event 2',
+            },
+          },
+        ],
+      };
+
+      permissionsService.getUserRoles.mockResolvedValue([UserRole.COUNSELOR]);
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        mockSessionWithPassiveEvents as any,
+      );
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect((result as any).events).toEqual([]);
+      expect(result.hasFeedback).toBe(false);
+    });
+
+    it('should handle scenario session with no events', async () => {
+      const mockSessionWithNoEvents = {
+        ...mockScenarioSession,
+        events: [],
+      };
+
+      permissionsService.getUserRoles.mockResolvedValue([UserRole.COUNSELOR]);
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        mockSessionWithNoEvents as any,
+      );
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect((result as any).events).toEqual([]);
+      expect(result.hasFeedback).toBe(false);
+    });
+
+    it('should handle scenario session without events property', async () => {
+      permissionsService.getUserRoles.mockResolvedValue([UserRole.COUNSELOR]);
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        mockScenarioSession,
+      );
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      // Should not throw error and should return session normally
+      expect(result).toEqual({ ...mockScenarioSession, hasFeedback: false });
+    });
   });
 
   describe('startScenarioSession', () => {

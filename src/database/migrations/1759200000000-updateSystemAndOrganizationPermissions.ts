@@ -1,5 +1,4 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
-import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 
 enum UserRole {
   CLIENT = 'CLIENT',
@@ -8,17 +7,34 @@ enum UserRole {
   ADMIN = 'ADMIN',
   LEARNER = 'LEARNER',
 }
+
+const PERMISSIONS = {
+  START_CLOUD_TELEPHONY_CHAT: 'start:cloud-telephony-chat',
+  SYSTEM_ACCESS: 'system:access',
+  ORGANIZATION_ACCESS: 'organization:access',
+  START_MICROPHONE_CHAT: 'start:microphone-chat',
+  EDIT_SCENARIO_SESSION_FEEDBACK: 'edit:scenario-session:feedback',
+  DELETE_SCENARIO_SESSION: 'delete:scenario-session',
+};
+
+const PERMISSIONS_TO_REASSIGN = {
+  EDIT_REFERENCE_DOCUMENT: 'edit:reference-document',
+};
+
+const newPermissions = [
+  PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
+  PERMISSIONS.SYSTEM_ACCESS,
+  PERMISSIONS.ORGANIZATION_ACCESS,
+  PERMISSIONS.START_MICROPHONE_CHAT,
+  PERMISSIONS.EDIT_SCENARIO_SESSION_FEEDBACK,
+  PERMISSIONS.DELETE_SCENARIO_SESSION,
+];
+
 export class UpdateSystemAndOrganizationPermissions1759200000000
   implements MigrationInterface
 {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // 1. Define new permissions to be added
-    const newPermissions = [
-      PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
-      PERMISSIONS.SYSTEM_ACCESS,
-      PERMISSIONS.ORGANIZATION_ACCESS,
-      PERMISSIONS.START_MICROPHONE_CHAT,
-    ];
+    // create new permissions to be added
 
     for (const permissionName of newPermissions) {
       // Check if permission already exists
@@ -36,7 +52,7 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
       }
     }
 
-    // 2. Get all existing group IDs
+    // Get all existing group IDs
     const roleGroups = Object.values(UserRole);
     const groups = await queryRunner.query(
       `
@@ -55,7 +71,7 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
       {},
     );
 
-    // 3. Get all permission IDs
+    // Get all permission IDs
     const allPermissions = Object.values(PERMISSIONS);
     const permissions = await queryRunner.query(
       `
@@ -77,17 +93,20 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
       {},
     );
 
-    // 4. Assign only new permissions to groups based on role-specific arrays
+    // Assign only new permissions to groups based on role-specific arrays
     const newPermissionAssignments = [
       {
         role: UserRole.SUPER_ADMIN,
-        permissions: [PERMISSIONS.SYSTEM_ACCESS],
+        permissions: [
+          PERMISSIONS.SYSTEM_ACCESS,
+          PERMISSIONS.DELETE_SCENARIO_SESSION,
+        ],
       },
       {
         role: UserRole.ADMIN,
         permissions: [
           PERMISSIONS.ORGANIZATION_ACCESS,
-          PERMISSIONS.EDIT_REFERENCE_DOCUMENT,
+          PERMISSIONS_TO_REASSIGN.EDIT_REFERENCE_DOCUMENT,
         ],
       },
       {
@@ -122,16 +141,66 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
         }
       }
     }
+
+    // Remove EDIT_REFERENCE_DOCUMENT permission from COUNSELOR if it exists
+    const counselorGroupId = groupMap[UserRole.COUNSELOR];
+    const editRefDocPermission = await queryRunner.query(
+      `SELECT id FROM "permissions" WHERE name = $1`,
+      [PERMISSIONS_TO_REASSIGN.EDIT_REFERENCE_DOCUMENT],
+    );
+
+    if (counselorGroupId && editRefDocPermission.length > 0) {
+      const editRefDocPermissionId = editRefDocPermission[0].id;
+
+      // Delete the permission from COUNSELOR group if it exists
+      await queryRunner.query(
+        `DELETE FROM group_permissions WHERE "groupId" = $1 AND "permissionId" = $2`,
+        [counselorGroupId, editRefDocPermissionId],
+      );
+    }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Define permissions to be removed
-    const newPermissions = [
-      PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
-      PERMISSIONS.SYSTEM_ACCESS,
-      PERMISSIONS.ORGANIZATION_ACCESS,
-      PERMISSIONS.START_MICROPHONE_CHAT,
-    ];
+    // Restore EDIT_REFERENCE_DOCUMENT permission to COUNSELOR
+    const roleGroups = Object.values(UserRole);
+    const groups = await queryRunner.query(
+      `SELECT id, name FROM "groups" WHERE name IN (${roleGroups
+        .map((_, index) => `$${index + 1}`)
+        .join(',')})`,
+      roleGroups,
+    );
+
+    const groupMap = groups.reduce(
+      (acc: Record<string, number>, group: { id: number; name: string }) => {
+        acc[group.name] = group.id;
+        return acc;
+      },
+      {},
+    );
+
+    const counselorGroupId = groupMap[UserRole.COUNSELOR];
+    const editRefDocPermission = await queryRunner.query(
+      `SELECT id FROM "permissions" WHERE name = $1`,
+      [PERMISSIONS_TO_REASSIGN.EDIT_REFERENCE_DOCUMENT],
+    );
+
+    if (counselorGroupId && editRefDocPermission.length > 0) {
+      const editRefDocPermissionId = editRefDocPermission[0].id;
+
+      // Check if it doesn't already exist before inserting
+      const existingGroupPermission = await queryRunner.query(
+        `SELECT id FROM group_permissions WHERE "groupId" = $1 AND "permissionId" = $2`,
+        [counselorGroupId, editRefDocPermissionId],
+      );
+
+      if (existingGroupPermission.length === 0) {
+        // Restore the permission to COUNSELOR group
+        await queryRunner.query(
+          `INSERT INTO group_permissions ("groupId", "permissionId") VALUES ($1, $2)`,
+          [counselorGroupId, editRefDocPermissionId],
+        );
+      }
+    }
 
     // Get IDs of permissions to be removed
     const permissionsToDelete = await queryRunner.query(

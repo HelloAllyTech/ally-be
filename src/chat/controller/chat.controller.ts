@@ -416,7 +416,7 @@ export class ChatController {
     });
   }
 
-  @AuthPermissions([PERMISSIONS.VIEW_MESSAGE_FEEDBACK])
+  @AuthPermissions([PERMISSIONS.EDIT_MESSAGE_FEEDBACK])
   @Post('messages/:messageId/feedback')
   async createFeedback(
     @Param('messageId', ParseIntPipe) messageId: number,
