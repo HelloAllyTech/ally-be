@@ -248,7 +248,7 @@ export class LearnController {
   }
 
   @ApiOperation({ summary: 'Add a feedback to a scenario session' })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_SESSION])
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_SESSION_FEEDBACK])
   @Post('scenario-session/:scenarioSessionId/feedback')
   async addFeedbackToScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
