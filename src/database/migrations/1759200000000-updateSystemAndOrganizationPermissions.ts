@@ -22,6 +22,11 @@ const PERMISSIONS_TO_REASSIGN = {
   EDIT_REFERENCE_DOCUMENT: 'edit:reference-document',
 };
 
+const PERMISSIONS_TO_RENAME = [
+  { old: 'view:message', new: 'view:messages' },
+  { old: 'view:counselor', new: 'view:counselors' },
+];
+
 const newPermissions = [
   PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
   PERMISSIONS.SYSTEM_ACCESS,
@@ -36,6 +41,14 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
   implements MigrationInterface
 {
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Rename existing permissions
+    for (const { old: oldName, new: newName } of PERMISSIONS_TO_RENAME) {
+      await queryRunner.query(
+        `UPDATE "permissions" SET name = $1 WHERE name = $2`,
+        [newName, oldName],
+      );
+    }
+
     // create new permissions to be added
 
     for (const permissionName of newPermissions) {
@@ -164,6 +177,14 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // Rename permissions back to original names
+    for (const { old: oldName, new: newName } of PERMISSIONS_TO_RENAME) {
+      await queryRunner.query(
+        `UPDATE "permissions" SET name = $1 WHERE name = $2`,
+        [oldName, newName],
+      );
+    }
+
     // Restore EDIT_REFERENCE_DOCUMENT permission to COUNSELOR
     const roleGroups = Object.values(UserRole);
     const groups = await queryRunner.query(

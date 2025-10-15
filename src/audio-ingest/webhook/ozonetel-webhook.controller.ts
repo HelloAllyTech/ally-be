@@ -14,6 +14,7 @@ import {
   OzonetelCallDetailsBody,
   OzonetelCallDetails,
 } from '../type/ozonetel.type';
+
 @ApiTags('Ozonetel Webhook')
 @Controller('v1/webhook/ozonetel')
 export class OzonetelWebhookController {
