@@ -362,11 +362,11 @@ describe('ChatService', () => {
 
   describe('getChat', () => {
     it('should return a chat when found', async () => {
-      // Create a mock chat with counselorId as string to match ExecutionManager.getUserId() return type
-      // We need to cast this to bypass TypeScript's strict typing for the test
+      // Create a mock chat with counselorId as number to match service logic
+      // ExecutionManager.getUserId() returns string but service converts to Number
       const mockChatWithMatchingCounselor = {
         ...mockChat,
-        counselorId: '1' as any,
+        counselorId: 1,
       };
 
       // Mock the first findOne call for chatData
@@ -376,6 +376,9 @@ describe('ChatService', () => {
 
       // Mock the decryptCallDetails method
       jest.spyOn(service, 'decryptCallDetails').mockResolvedValue({} as any);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
 
       const chatQuery = {
         leftJoinAndMapOne: jest.fn().mockReturnThis(),
@@ -418,8 +421,8 @@ describe('ChatService', () => {
 
       // Mock ExecutionManager to return counselor role and user ID 1
       jest
-        .spyOn(ExecutionManager, 'getRole')
-        .mockReturnValue(UserRole.COUNSELOR);
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
       jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('1');
 
       jest
@@ -440,7 +443,9 @@ describe('ChatService', () => {
       jest
         .spyOn(chatRepository, 'findOne')
         .mockResolvedValue(mockChatWithDifferentTenant as any);
-      jest.spyOn(ExecutionManager, 'getRole').mockReturnValue(UserRole.ADMIN);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
 
       await expect(service.getChat(1)).rejects.toThrow(
         'You are not allowed to access this chat',
@@ -450,13 +455,16 @@ describe('ChatService', () => {
     it('should allow counselor to access their own chat', async () => {
       const mockChatWithMatchingCounselor = {
         ...mockChat,
-        counselorId: '1' as any,
+        counselorId: 1,
       };
 
       jest
         .spyOn(chatRepository, 'findOne')
         .mockResolvedValue(mockChatWithMatchingCounselor as any);
       jest.spyOn(service, 'decryptCallDetails').mockResolvedValue({} as any);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
 
       const chatQuery = {
         leftJoinAndMapOne: jest.fn().mockReturnThis(),
@@ -484,7 +492,9 @@ describe('ChatService', () => {
       jest
         .spyOn(chatRepository, 'findOne')
         .mockResolvedValue(mockChatWithSameTenant as any);
-      jest.spyOn(ExecutionManager, 'getRole').mockReturnValue(UserRole.ADMIN);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
       jest.spyOn(service, 'decryptCallDetails').mockResolvedValue({} as any);
 
       const chatQuery = {
@@ -512,8 +522,8 @@ describe('ChatService', () => {
 
       // Mock ExecutionManager to return undefined userId
       jest
-        .spyOn(ExecutionManager, 'getRole')
-        .mockReturnValue(UserRole.COUNSELOR);
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
       jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
 
       jest

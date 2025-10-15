@@ -129,11 +129,13 @@ export class ChatService {
       throw new NotFoundException(`Chat not found for chatId: ${id}`);
     }
     const userId = Number(ExecutionManager.getUserId());
+    const hasAdminAccess = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.ORGANIZATION_ACCESS],
+    );
     if (
-      (ExecutionManager.getRole() === UserRole.COUNSELOR &&
-        chatData.counselorId !== userId) ||
-      (ExecutionManager.getRole() === UserRole.ADMIN &&
-        chatData.tenantId !== ExecutionManager.getTenantId())
+      (!hasAdminAccess && chatData.counselorId !== userId) ||
+      (hasAdminAccess && chatData.tenantId !== ExecutionManager.getTenantId())
     ) {
       throw new ForbiddenException('You are not allowed to access this chat');
     }
