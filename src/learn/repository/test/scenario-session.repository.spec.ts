@@ -493,16 +493,13 @@ describe('ScenarioSessionRepository', () => {
         'scenarioSession.id = :scenarioSessionId',
         { scenarioSessionId: mockScenarioSessionId },
       );
-      expect(mockQueryBuilder.setParameters).toHaveBeenCalledWith({
-        visibilityType: SessionEventVisibilityType.ACTIVE,
-      });
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'scenarioSession.counselorId = :counselorId',
-        { counselorId: mockCounselorId },
-      );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         'scenarioSession.tenantId = :tenantId',
         { tenantId: mockTenantId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioSession.counselorId = :counselorId',
+        { counselorId: mockCounselorId },
       );
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
         'scenarioSessionEvent.occurredAt',
@@ -528,9 +525,6 @@ describe('ScenarioSessionRepository', () => {
         'scenarioSession.id = :scenarioSessionId',
         { scenarioSessionId: mockScenarioSessionId },
       );
-      expect(mockQueryBuilder.setParameters).toHaveBeenCalledWith({
-        visibilityType: SessionEventVisibilityType.ACTIVE,
-      });
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         'scenarioSession.tenantId = :tenantId',
         { tenantId: mockTenantId },
@@ -576,8 +570,59 @@ describe('ScenarioSessionRepository', () => {
         'scenarioSessionEvent.events',
         SessionEvents,
         'events',
-        'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
+        'events.id = scenarioSessionEvent.eventId',
       );
+    });
+
+    it('should return scenario session with all events (including PASSIVE)', async () => {
+      const mockSessionWithMixedEvents = {
+        ...mockScenarioSession,
+        scenario: mockScenario,
+        events: [
+          {
+            id: 'session-event-1',
+            events: {
+              id: 'event-1',
+              visibilityType: SessionEventVisibilityType.ACTIVE,
+            },
+          },
+          {
+            id: 'session-event-2',
+            events: {
+              id: 'event-2',
+              visibilityType: SessionEventVisibilityType.PASSIVE,
+            },
+          },
+        ],
+      };
+      mockQueryBuilder.getOne.mockResolvedValue(mockSessionWithMixedEvents);
+
+      const result = await repository.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect(result).toBeDefined();
+      // Repository should return all events without filtering
+      expect((result as any).events).toHaveLength(2);
+    });
+
+    it('should return scenario session with empty events array when session has no events', async () => {
+      const mockSessionWithNoEvents = {
+        ...mockScenarioSession,
+        scenario: mockScenario,
+        events: [],
+      };
+      mockQueryBuilder.getOne.mockResolvedValue(mockSessionWithNoEvents);
+
+      const result = await repository.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect(result).toBeDefined();
+      expect(result?.id).toEqual(mockScenarioSessionId);
+      expect((result as any).events).toEqual([]);
     });
   });
 

@@ -29,6 +29,7 @@ import { UserRole } from 'src/common/constants/user.constants';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { Scenarios } from '../entity/scenarios.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -88,6 +89,14 @@ export class ScenarioSessionService {
 
     if (!scenarioSession) {
       throw new BadRequestException('Scenario session not found');
+    }
+
+    // Filter events to only include ACTIVE ones
+    if ((scenarioSession as any).events) {
+      (scenarioSession as any).events = (scenarioSession as any).events.filter(
+        (event: any) =>
+          event.events?.visibilityType === SessionEventVisibilityType.ACTIVE,
+      );
     }
 
     const feedback = await this.scenarioSessionFeedbacksRepository.findOne({

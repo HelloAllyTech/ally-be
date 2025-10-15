@@ -129,7 +129,6 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     return this.save(scenarioSession);
   }
 
-  // TODO: Change total score to db column
   async getScenarioSession(
     scenarioSessionId: string,
     counselorId: number,
@@ -158,11 +157,11 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'scenarioSessionEvent.events',
         SessionEvents,
         'events',
-        'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
+        'events.id = scenarioSessionEvent.eventId',
       )
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
-      .setParameters({
-        visibilityType: SessionEventVisibilityType.ACTIVE,
+      .andWhere('scenarioSession.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
       });
 
     if (!isAdmin) {
@@ -171,12 +170,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       });
     }
 
-    return query
-      .andWhere('scenarioSession.tenantId = :tenantId', {
-        tenantId: ExecutionManager.getTenantId(),
-      })
-      .orderBy('scenarioSessionEvent.occurredAt', 'ASC')
-      .getOne();
+    return query.orderBy('scenarioSessionEvent.occurredAt', 'ASC').getOne();
   }
 
   async getScenarioSessionScore(scenarioSessionId: string) {
