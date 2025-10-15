@@ -12,7 +12,6 @@ import {
   CloudTelephonyProvider,
 } from '../../common/constants/chat.constants';
 import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
-import { UserRole } from '../../common/constants/user.constants';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,
@@ -124,7 +123,7 @@ export class OzonetelService {
 
       const counselor = await this.userService.getUserByExternalId(AgentID);
 
-      if (!counselor || counselor.role !== UserRole.COUNSELOR) {
+      if (!counselor) {
         throw new Error(
           `Counselor not found for AgentId: ${AgentID} | monitorUCID: ${monitorUCID}`,
         );
@@ -305,7 +304,7 @@ export class OzonetelService {
 
       const counselor = await this.userService.getUserByExternalId(agent_id);
 
-      if (!counselor || counselor.role !== UserRole.COUNSELOR) {
+      if (!counselor) {
         throw new Error(
           `Counselor not found for agent id ${agent_id} | monitorUCID: ${monitor_ucid}`,
         );

@@ -14,6 +14,8 @@ import {
   OzonetelCallDetailsBody,
   OzonetelCallDetails,
 } from '../type/ozonetel.type';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @ApiTags('Ozonetel Webhook')
 @Controller('v1/webhook/ozonetel')
@@ -31,6 +33,7 @@ export class OzonetelWebhookController {
     status: 200,
     description: 'Ozonetel call details processed successfully',
   })
+  @AuthPermissions([PERMISSIONS.PROCESS_OZONETEL_WEBHOOK])
   async handleOzonetelCallDetails(
     @Query('code') code: string,
     @Body() body: OzonetelCallDetailsBody,
@@ -55,6 +58,7 @@ export class OzonetelWebhookController {
     status: 200,
     description: 'Ozonetel events subscription processed successfully',
   })
+  @AuthPermissions([PERMISSIONS.PROCESS_OZONETEL_WEBHOOK])
   async handleOzonetelEventsSubscription(
     @Query('code') code: string,
     @Body() body: any,

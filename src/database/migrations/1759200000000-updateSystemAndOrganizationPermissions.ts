@@ -15,6 +15,7 @@ const PERMISSIONS = {
   START_MICROPHONE_CHAT: 'start:microphone-chat',
   EDIT_SCENARIO_SESSION_FEEDBACK: 'edit:scenario-session:feedback',
   DELETE_SCENARIO_SESSION: 'delete:scenario-session',
+  PROCESS_OZONETEL_WEBHOOK: 'process:ozonetel:webhook',
 };
 
 const PERMISSIONS_TO_REASSIGN = {
@@ -28,6 +29,7 @@ const newPermissions = [
   PERMISSIONS.START_MICROPHONE_CHAT,
   PERMISSIONS.EDIT_SCENARIO_SESSION_FEEDBACK,
   PERMISSIONS.DELETE_SCENARIO_SESSION,
+  PERMISSIONS.PROCESS_OZONETEL_WEBHOOK,
 ];
 
 export class UpdateSystemAndOrganizationPermissions1759200000000
@@ -114,6 +116,7 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
         permissions: [
           PERMISSIONS.START_MICROPHONE_CHAT,
           PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
+          PERMISSIONS.PROCESS_OZONETEL_WEBHOOK,
         ],
       },
     ];
