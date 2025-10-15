@@ -23,10 +23,10 @@ import {
 } from '../dto/reference-document.dto';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
 import { TokenUser } from '../../auth/type/auth.types';
-import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
 import { Public } from '../../auth/decorators/auth.metadata';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @ApiTags('Reference Documents')
 @ApiBearerAuth()
@@ -37,7 +37,7 @@ export class ReferenceDocumentController {
 
   @Post('')
   @ApiOperation({ summary: 'Add a new reference document' })
-  @AuthRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_REFERENCE_DOCUMENT])
   async addDocument(
     @CurrentUser() tokenUser: TokenUser,
     @Body() documentDto: AddDocumentDto,
@@ -60,14 +60,14 @@ export class ReferenceDocumentController {
   @ApiOperation({
     summary: 'Search organization reference documents ',
   })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.VIEW_REFERENCE_DOCUMENT])
   async searchTenantDocuments(@Body() searchDto: SearchDocumentsDto) {
     return this.documentService.searchTenantDocuments(searchDto);
   }
 
   @Put(':id')
   @ApiOperation({ summary: 'Update an existing reference document' })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_REFERENCE_DOCUMENT])
   async updateDocument(
     @Param('id') id: string,
     @Body() updateDto: UpdateReferenceDocumentDto,
@@ -77,7 +77,7 @@ export class ReferenceDocumentController {
 
   @Post('upload-csv')
   @ApiOperation({ summary: 'Bulk upload reference documents via CSV' })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.UPLOAD_REFERENCE_DOCUMENT])
   @UseInterceptors(FileInterceptor('file'))
   async uploadCsv(
     @CurrentUser() tokenUser: TokenUser,
@@ -104,28 +104,28 @@ export class ReferenceDocumentController {
   @ApiOperation({
     summary: 'Get a reference document by ID ',
   })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.VIEW_REFERENCE_DOCUMENT])
   async getPrivateDocument(@Param('id') id: string) {
     return this.documentService.getPrivateReferenceDocument(id);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a reference document' })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.DELETE_REFERENCE_DOCUMENT])
   async deleteDocument(@Param('id') id: string) {
     return this.documentService.deleteReferenceDocument(id);
   }
 
   @Post(':id/archive')
   @ApiOperation({ summary: 'Archive a reference document' })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.UPDATE_REFERENCE_DOCUMENT_ARCHIVE])
   async archiveDocument(@Param('id') id: string) {
     return this.documentService.archiveReferenceDocument(id);
   }
 
   @Post(':id/unarchive')
   @ApiOperation({ summary: 'Unarchive a reference document' })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.UPDATE_REFERENCE_DOCUMENT_ARCHIVE])
   async unarchiveDocument(@Param('id') id: string) {
     return this.documentService.unarchiveReferenceDocument(id);
   }

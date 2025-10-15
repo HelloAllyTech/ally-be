@@ -61,7 +61,7 @@ export class ChatController {
     private readonly chatSummaryService: ChatSummaryService,
   ) {}
 
-  @AuthRoles(UserRole.CLIENT, UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.VIEW_CHAT])
   @Get('my-chat')
   async getMyChats(@CurrentUser() tokenUser: TokenUser) {
     return this.service.getMyChats(tokenUser.id);
@@ -73,7 +73,7 @@ export class ChatController {
     return this.service.requestChat(tokenUser.id);
   }
 
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.VIEW_CHAT_COUNSELOR])
   @Get('counsellor-chat')
   async getCounselorChat(@CurrentUser() tokenUser: TokenUser) {
     return this.service.getCounselorChat(tokenUser.id);
@@ -110,7 +110,7 @@ export class ChatController {
     enum: SortOrder,
     description: 'Sort order (default: DESC)',
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_CALL_LOGS])
   @Get('call-logs')
   async getCallLogs(
     @CurrentUser() tokenUser: TokenUser,
@@ -218,7 +218,7 @@ export class ChatController {
     type: String,
     description: 'Filter by tags (comma-separated)',
   })
-  @AuthRoles(UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_CALL_LOGS_SUMMARY])
   @Get('call-logs-summary')
   async getAdminCallLogs(
     @Query('limit') limit: number,
@@ -285,7 +285,7 @@ export class ChatController {
     type: String,
     description: 'Search counselor names (partial match)',
   })
-  @AuthRoles(UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_COUNSELORS])
   @Get('counselors')
   async getCounselorNames(
     @Query('limit') limit?: number,
@@ -319,7 +319,7 @@ export class ChatController {
     type: String,
     description: 'Search tag names (partial match)',
   })
-  @AuthRoles(UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_TAGS])
   @Get('tags')
   async getAllTags(
     @Query('limit') limit?: number,
@@ -329,19 +329,19 @@ export class ChatController {
     return this.service.getAllTags(limit, offset, search);
   }
 
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.EDIT_CALL_START])
   @Post('call-start')
   async callStart(@Body() params: CallStartDto) {
     return this.service.startCall(params.participantPhoneNumbers);
   }
 
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.EDIT_CALL_ACCEPT])
   @Post(':id/accept')
   async accept(@CurrentUser() tokenUser: TokenUser, @Param('id') id: string) {
     return this.service.accept(tokenUser.id, parseInt(id));
   }
 
-  @AuthRoles(UserRole.COUNSELOR, UserRole.CLIENT)
+  @AuthPermissions([PERMISSIONS.EDIT_CALL_END])
   @Post(':id/end')
   async endChat(@Param('id') id: string) {
     return this.service.endChat(parseInt(id));
@@ -356,7 +356,7 @@ export class ChatController {
     return this.service.cancelCallByClient(tokenUser.id, parseInt(id));
   }
 
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_MESSAGES])
   @ApiOperation({ summary: 'Get messages' })
   @ApiResponse({
     status: 200,
@@ -410,7 +410,7 @@ export class ChatController {
     });
   }
 
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.EDIT_MESSAGE_FEEDBACK])
   @Post('messages/:messageId/feedback')
   async createFeedback(
     @Param('messageId', ParseIntPipe) messageId: number,
@@ -425,13 +425,13 @@ export class ChatController {
     return this.feedbackService.create(feedback);
   }
 
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.VIEW_MESSAGE_FEEDBACK])
   @Get('messages/:messageId/feedback')
   async getFeedback(@Param('messageId', ParseIntPipe) messageId: number) {
     return this.feedbackService.findByMessageId(messageId);
   }
 
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.EDIT_MESSAGE_FEEDBACK])
   @Patch('messages/feedback/:id')
   async updateFeedback(
     @Param('id', ParseIntPipe) id: number,
@@ -446,7 +446,7 @@ export class ChatController {
     description: 'Returns the chat details',
     type: ChatResponseDto,
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_CHAT_DETAILS])
   @Get(':id')
   async getChat(@Param('id', ParseIntPipe) id: number) {
     return this.service.getChat(id);
@@ -477,7 +477,7 @@ export class ChatController {
       required: ['content'],
     },
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_ENHANCEMENT])
   @Post('enhance')
   async enhance(@Body() body: { content: string }) {
     return this.service.enhance(body.content);
@@ -498,7 +498,7 @@ export class ChatController {
       },
     },
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_CALL_DETAILS])
   @Put(':id/call-details')
   async updateCallDetails(
     @Param('id', ParseIntPipe) id: number,
@@ -508,14 +508,14 @@ export class ChatController {
   }
 
   @ApiOperation({ summary: 'Get chat summary' })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.VIEW_SUMMARY])
   @Get(':id/summary')
   async getChatSummary(@Param('id', ParseIntPipe) id: number) {
     return this.service.generateSummary(id);
   }
 
   @ApiOperation({ summary: 'Get chat summary for message' })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.EDIT_SUMMARY])
   @Post('summaryForMessage')
   async getChatSummaryForMessage(
     @Body() body: { messageRequests: MessageRequest[] },
@@ -524,7 +524,7 @@ export class ChatController {
   }
 
   @ApiOperation({ summary: 'Get chat AI nugde for message' })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.VIEW_CHAT_NUDGE])
   @Post('nudge')
   async getChatNudge(
     @Body() body: { newMessage: string; chatHistory: MessageRequest[] },
@@ -546,7 +546,7 @@ export class ChatController {
     },
   })
   @ApiResponse({ status: 404, description: 'Chat not found' })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EXPORT_SUMMARY])
   async exportSummary(
     @Param('chatId', ParseIntPipe) chatId: number,
     @CurrentUser() tokenUser: TokenUser,
@@ -571,7 +571,7 @@ export class ChatController {
     description: 'Returns the updated call info',
     type: ChatResponseDto,
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_CALL_INFO])
   async updateCallInfo(
     @Param('chatId', ParseIntPipe) chatId: number,
     @Body() body: CallInfoDto,
@@ -595,7 +595,7 @@ export class ChatController {
       },
     },
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_TAG_POSITIVITY_RATINGS])
   async tagPositivityRatings(@Body() body: { tags: string[] }) {
     return this.service.tagPositivityRatings(body.tags);
   }
@@ -613,7 +613,7 @@ export class ChatController {
     type: Number,
     description: 'Chat ID',
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_CHAT_NOTE])
   async addNoteToChat(
     @Param('id') chatId: number,
     @Body() createNoteDto: AddNoteDto,
@@ -634,7 +634,7 @@ export class ChatController {
     type: Number,
     description: 'Chat ID',
   })
-  @AuthRoles(UserRole.COUNSELOR)
+  @AuthPermissions([PERMISSIONS.EDIT_SUMMARY_FEEDBACK])
   async addFeedbackToChat(
     @Param('id') chatId: number,
     @Body() summaryFeedbackDto: SummaryFeedbackDto,
