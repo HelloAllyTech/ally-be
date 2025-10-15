@@ -454,8 +454,11 @@ export class ChatController {
   })
   @AuthPermissions([PERMISSIONS.VIEW_CHAT_DETAILS])
   @Get(':id')
-  async getChat(@Param('id', ParseIntPipe) id: number) {
-    return this.service.getChat(id);
+  async getChat(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() tokenUser: TokenUser,
+  ) {
+    return this.service.getChat(id, tokenUser);
   }
 
   @ApiOperation({ summary: 'Enhance chat summary' })
@@ -509,8 +512,9 @@ export class ChatController {
   async updateCallDetails(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { summary: any },
+    @CurrentUser() tokenUser: TokenUser,
   ) {
-    return this.service.updateCallDetails(id, body.summary);
+    return this.service.updateCallDetails(id, body.summary, tokenUser);
   }
 
   @ApiOperation({ summary: 'Get chat summary' })
@@ -581,8 +585,9 @@ export class ChatController {
   async updateCallInfo(
     @Param('chatId', ParseIntPipe) chatId: number,
     @Body() body: CallInfoDto,
+    @CurrentUser() tokenUser: TokenUser,
   ) {
-    return this.service.updateCallInfo(chatId, body);
+    return this.service.updateCallInfo(chatId, body, tokenUser);
   }
 
   @Post('/summary/tag-positivity-ratings')

@@ -1,8 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { ExecutionManager } from '../../common/execution/execution-manager';
+import { TokenUser } from 'src/auth/type/auth.types';
+import { number } from 'joi';
+import { Chat } from 'src/common/entities/chat.entity';
+import { ChatService } from './chat.service';
 @Injectable()
 export class FeedbackService {
   constructor(
@@ -20,7 +28,11 @@ export class FeedbackService {
 
   async findByMessageId(messageId: number): Promise<Feedback[]> {
     return await this.feedbackRepository.find({
-      where: { messageId, tenantId: ExecutionManager.getTenantId() },
+      where: {
+        messageId,
+        tenantId: ExecutionManager.getTenantId(),
+        userId: Number(ExecutionManager.getUserId()),
+      },
     });
   }
 
@@ -33,6 +45,11 @@ export class FeedbackService {
     });
     if (!feedback) {
       throw new NotFoundException(`Feedback with ID ${id} not found`);
+    }
+    if (feedback.userId !== Number(ExecutionManager.getUserId())) {
+      throw new ForbiddenException(
+        'You can only update your own feedback. This feedback was created by another user.',
+      );
     }
     Object.assign(feedback, updateFeedbackDto);
     return await this.feedbackRepository.save(feedback);
