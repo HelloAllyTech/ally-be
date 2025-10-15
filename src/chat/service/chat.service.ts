@@ -133,10 +133,7 @@ export class ChatService {
       userId,
       [PERMISSIONS.ORGANIZATION_ACCESS],
     );
-    if (
-      (!hasAdminAccess && chatData.counselorId !== userId) ||
-      (hasAdminAccess && chatData.tenantId !== ExecutionManager.getTenantId())
-    ) {
+    if (!hasAdminAccess && chatData.counselorId !== userId) {
       throw new ForbiddenException('You are not allowed to access this chat');
     }
     const chatQuery = this.chatRepository
@@ -151,11 +148,7 @@ export class ChatService {
       .andWhere('chat.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
       });
-    if (tokenUser.role === UserRole.COUNSELOR) {
-      chatQuery.andWhere('chat.counselorId = :counselorId', {
-        counselorId: tokenUser.id,
-      });
-    }
+
     const chat = (await chatQuery.getOne()) as Chat & { details: CallDetails };
     if (!chat) {
       throw new HttpException('Chat not found', 404);
@@ -1480,9 +1473,17 @@ export class ChatService {
     if (!chat) {
       throw new NotFoundException('Chat not found');
     }
+    const currentUserId = ExecutionManager.getUserId();
+    if (!currentUserId) {
+      throw new ForbiddenException('User not authenticated');
+    }
+    const isAdmin = await this.permissionValidator.validatePermissions(
+      parseInt(currentUserId),
+      [PERMISSIONS.ORGANIZATION_ACCESS],
+    );
 
     // If user is a counselor, verify they own this chat
-    if (tokenUser.role === 'COUNSELOR' && chat.counselorId !== tokenUser.id) {
+    if (!isAdmin && chat.counselorId !== tokenUser.id) {
       throw new ForbiddenException('You can only update your own call details');
     }
 
@@ -1497,7 +1498,7 @@ export class ChatService {
       { chatId, tenantId: ExecutionManager.getTenantId() },
       { summary },
     );
-    return this.getChat(chatId, tokenUser);
+    return this.getChat(chatId);
   }
 
   async updateCallInfo(
@@ -1541,7 +1542,7 @@ export class ChatService {
       { chatId, tenantId: ExecutionManager.getTenantId() },
       { callInfo: { ...callDetails.callInfo, summaryName: body.summaryName } },
     );
-    return this.getChat(chatId, tokenUser);
+    return this.getChat(chatId);
   }
 
   getNudge(newMessage: string, messageRequests: MessageRequest[]) {

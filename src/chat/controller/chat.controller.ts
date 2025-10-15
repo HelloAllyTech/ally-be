@@ -454,11 +454,8 @@ export class ChatController {
   })
   @AuthPermissions([PERMISSIONS.VIEW_CHAT_DETAILS])
   @Get(':id')
-  async getChat(
-    @Param('id', ParseIntPipe) id: number,
-    @CurrentUser() tokenUser: TokenUser,
-  ) {
-    return this.service.getChat(id, tokenUser);
+  async getChat(@Param('id', ParseIntPipe) id: number) {
+    return this.service.getChat(id);
   }
 
   @ApiOperation({ summary: 'Enhance chat summary' })
