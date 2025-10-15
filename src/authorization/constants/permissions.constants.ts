@@ -42,6 +42,7 @@ const PERMISSIONS: Record<string, string> = {
   EDIT_SCENARIO: 'edit:scenario',
   VIEW_SCENARIO_SESSION: 'view:scenario-session',
   EDIT_SCENARIO_SESSION: 'edit:scenario-session',
+  EDIT_SCENARIO_SESSION_FEEDBACK: 'edit:scenario-session:feedback',
   VIEW_ADMIN_SCENARIO_SESSION: 'view:admin:scenario-session',
   VIEW_SCENARIO_SESSION_DETAILS: 'view:scenario-session:details',
   EDIT_SCENARIO_MAP_EVENTS: 'edit:scenario-session:map-events',
@@ -210,6 +211,7 @@ const LEARNER_PERMISSIONS = [
   // Learning focused permissions
   PERMISSIONS.VIEW_SCENARIO_SESSION,
   PERMISSIONS.EDIT_SCENARIO_SESSION,
+  PERMISSIONS.EDIT_SCENARIO_SESSION_FEEDBACK,
   PERMISSIONS.VIEW_SCENARIO_SESSION_DETAILS,
   PERMISSIONS.VIEW_SESSION_SCENARIO_MESSAGES,
 
