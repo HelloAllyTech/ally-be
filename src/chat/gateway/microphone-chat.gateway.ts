@@ -200,7 +200,6 @@ export class MicrophoneChatGateway
       const user = {
         id: userId,
         username: payload.username,
-        role: payload.role,
         tenantId: payload.tenantId,
       };
 

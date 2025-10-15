@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { LearnController } from '../learn.controller';
 import { ScenarioService } from '../../service/scenario.service';
 import { ScenarioSessionService } from '../../service/scenario-session.service';
-import { UserRole } from 'src/common/constants/user.constants';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { ScenarioSessionSortBy } from '../../enum/scenario-session-sort-by.enum';
 import { TokenUser } from 'src/auth/type/auth.types';
@@ -21,7 +20,6 @@ describe('LearnController', () => {
   const mockTokenUser: TokenUser = {
     id: 123,
     username: 'test@example.com',
-    role: UserRole.LEARNER,
     tenantId: 'tenant-123',
   };
 

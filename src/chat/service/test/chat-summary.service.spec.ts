@@ -9,7 +9,6 @@ import {
   ChatSummaryStatus,
 } from 'src/common/entities/chat.entity';
 import { TokenUser } from 'src/auth/type/auth.types';
-import { UserRole } from 'src/common/constants/user.constants';
 import {
   AudioChatProvider,
   AudioChatPlatform,
@@ -36,7 +35,6 @@ describe('ChatSummaryService', () => {
   const mockTokenUser: TokenUser = {
     id: 2, // counselor ID
     username: 'testuser',
-    role: UserRole.COUNSELOR,
     tenantId: 'test-tenant',
   };
 
@@ -235,7 +233,6 @@ describe('ChatSummaryService', () => {
       const counselorUser: TokenUser = {
         ...mockTokenUser,
         id: 2,
-        role: UserRole.COUNSELOR,
       };
 
       mockChatService.getChatWithCallDetails.mockResolvedValue({
@@ -312,7 +309,6 @@ describe('ChatSummaryService', () => {
       const unauthorizedUser: TokenUser = {
         id: 999, // Different user ID
         username: 'unauthorized',
-        role: UserRole.COUNSELOR,
         tenantId: 'test-tenant',
       };
 
@@ -341,7 +337,6 @@ describe('ChatSummaryService', () => {
       const superAdminUser: TokenUser = {
         id: 999,
         username: 'superadmin',
-        role: UserRole.SUPER_ADMIN,
         tenantId: 'test-tenant',
       };
 

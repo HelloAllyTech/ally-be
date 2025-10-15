@@ -16,7 +16,6 @@ describe('UserController', () => {
   const mockTokenUser: TokenUser = {
     id: 1,
     username: 'testuser',
-    role: UserRole.CLIENT,
     tenantId: 'test-tenant',
   };
 

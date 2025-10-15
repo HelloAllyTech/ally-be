@@ -22,14 +22,12 @@ describe('ChatController', () => {
   const mockTokenUser: TokenUser = {
     id: 1,
     username: 'testuser',
-    role: UserRole.CLIENT,
     tenantId: 'test-tenant',
   };
 
   const mockCounselorUser: TokenUser = {
     id: 2,
     username: 'counselor',
-    role: UserRole.COUNSELOR,
     tenantId: 'test-tenant',
   };
 

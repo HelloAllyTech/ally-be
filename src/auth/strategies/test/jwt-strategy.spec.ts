@@ -3,7 +3,6 @@ import { AppConfigService } from '../../../config/config.service';
 import { LoggerService } from '../../../logger/logger.service';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { UnauthorizedException } from '@nestjs/common';
-import { UserRole } from '../../../common/constants/user.constants';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
@@ -59,7 +58,6 @@ describe('JwtStrategy', () => {
     const payload = {
       sub: '101',
       username: 'alice',
-      role: UserRole.COUNSELOR,
       tenantId: 'tenant-1',
     };
 
@@ -78,7 +76,6 @@ describe('JwtStrategy', () => {
     expect(user).toEqual({
       id: 101,
       username: 'alice',
-      role: UserRole.COUNSELOR,
       tenantId: 'tenant-1',
     });
   });
@@ -87,7 +84,6 @@ describe('JwtStrategy', () => {
     const payload = {
       sub: '5',
       username: 'root',
-      role: UserRole.SUPER_ADMIN,
       tenantId: undefined,
     };
 
@@ -105,7 +101,6 @@ describe('JwtStrategy', () => {
     expect(user).toEqual({
       id: 5,
       username: 'root',
-      role: UserRole.SUPER_ADMIN,
       tenantId: undefined,
     });
   });
@@ -114,7 +109,6 @@ describe('JwtStrategy', () => {
     const payload = {
       sub: '7',
       username: 'bob',
-      role: UserRole.CLIENT,
       tenantId: undefined,
     };
 
