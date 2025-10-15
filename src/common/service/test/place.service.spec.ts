@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { PlaceService } from '../place.service';
 import { Place } from '../../entities/place.entity';
 
@@ -33,7 +34,7 @@ describe('PlaceService', () => {
       providers: [
         PlaceService,
         {
-          provide: 'PlaceRepository', // getRepositoryToken(Place)
+          provide: getRepositoryToken(Place),
           useValue: mockPlaceRepository,
         },
       ],
@@ -63,6 +64,40 @@ describe('PlaceService', () => {
       );
       expect(mockQueryBuilder.getMany).toHaveBeenCalled();
       expect(result).toEqual(expectedPlaces);
+    });
+
+    it('should trim whitespace from search query', async () => {
+      const query = '  Los Angeles  ';
+      const expectedPlaces = [mockPlace];
+      mockQueryBuilder.getMany.mockResolvedValue(expectedPlaces);
+
+      await service.searchCities(query);
+
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'LOWER(place.city) LIKE LOWER(:query)',
+        { query: '%Los Angeles%' },
+      );
+    });
+
+    it('should return empty array when no cities match', async () => {
+      const query = 'NonexistentCity';
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+
+      const result = await service.searchCities(query);
+
+      expect(result).toEqual([]);
+    });
+
+    it('should handle empty string query', async () => {
+      const query = '';
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+
+      await service.searchCities(query);
+
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'LOWER(place.city) LIKE LOWER(:query)',
+        { query: '%%' },
+      );
     });
   });
 
@@ -104,6 +139,48 @@ describe('PlaceService', () => {
       });
       expect(result).toEqual({ data: expectedData, total: expectedTotal });
     });
+
+    it('should return empty result when no places exist', async () => {
+      mockPlaceRepository.findAndCount.mockResolvedValue([[], 0]);
+
+      const result = await service.listPlaces();
+
+      expect(result).toEqual({ data: [], total: 0 });
+    });
+
+    it('should handle first page correctly', async () => {
+      const page = 1;
+      const limit = 20;
+      const expectedData = [mockPlace];
+      const expectedTotal = 5;
+      mockPlaceRepository.findAndCount.mockResolvedValue([
+        expectedData,
+        expectedTotal,
+      ]);
+
+      const result = await service.listPlaces(page, limit);
+
+      expect(mockPlaceRepository.findAndCount).toHaveBeenCalledWith({
+        order: { city: 'ASC' },
+        skip: 0,
+        take: 20,
+      });
+      expect(result).toEqual({ data: expectedData, total: expectedTotal });
+    });
+
+    it('should calculate correct offset for page 3', async () => {
+      const page = 3;
+      const limit = 15;
+      mockPlaceRepository.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.listPlaces(page, limit);
+
+      expect(mockPlaceRepository.findAndCount).toHaveBeenCalledWith({
+        order: { city: 'ASC' },
+        skip: 30, // (3 - 1) * 15
+        take: 15,
+      });
+    });
   });
 
   describe('createPlace', () => {
@@ -121,6 +198,41 @@ describe('PlaceService', () => {
         state: state.trim(),
       });
       expect(mockPlaceRepository.save).toHaveBeenCalledWith(createdPlace);
+      expect(result).toEqual(createdPlace);
+    });
+
+    it('should trim whitespace from city and state before creating', async () => {
+      const city = '  San Francisco  ';
+      const state = '  California  ';
+      const createdPlace = {
+        ...mockPlace,
+        city: 'San Francisco',
+        state: 'California',
+      };
+      mockPlaceRepository.create.mockReturnValue(createdPlace);
+      mockPlaceRepository.save.mockResolvedValue(createdPlace);
+
+      await service.createPlace(city, state);
+
+      expect(mockPlaceRepository.create).toHaveBeenCalledWith({
+        city: 'San Francisco',
+        state: 'California',
+      });
+    });
+
+    it('should create place with no whitespace', async () => {
+      const city = 'Chicago';
+      const state = 'IL';
+      const createdPlace = { ...mockPlace, city, state };
+      mockPlaceRepository.create.mockReturnValue(createdPlace);
+      mockPlaceRepository.save.mockResolvedValue(createdPlace);
+
+      const result = await service.createPlace(city, state);
+
+      expect(mockPlaceRepository.create).toHaveBeenCalledWith({
+        city,
+        state,
+      });
       expect(result).toEqual(createdPlace);
     });
   });
