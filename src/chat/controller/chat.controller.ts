@@ -68,7 +68,6 @@ export class ChatController {
   }
 
   @AuthRoles(UserRole.CLIENT)
-  //webrtc
   @Post('request')
   async requestChat(@CurrentUser() tokenUser: TokenUser) {
     return this.service.requestChat(tokenUser.id);
@@ -330,14 +329,11 @@ export class ChatController {
     return this.service.getAllTags(limit, offset, search);
   }
 
-  //webrtc
   @AuthPermissions([PERMISSIONS.EDIT_CALL_START])
   @Post('call-start')
   async callStart(@Body() params: CallStartDto) {
     return this.service.startCall(params.participantPhoneNumbers);
   }
-
-  //webrtc
 
   @AuthPermissions([PERMISSIONS.EDIT_CALL_ACCEPT])
   @Post(':id/accept')
@@ -350,8 +346,6 @@ export class ChatController {
   async endChat(@Param('id') id: string) {
     return this.service.endChat(parseInt(id));
   }
-
-  //webrtc
 
   @AuthRoles(UserRole.CLIENT)
   @Post(':id/cancel')
