@@ -109,7 +109,7 @@ export class UserService {
     return { totalWaiting: clientIds.size, clients: formattedData };
   }
 
-  getMinimalUserInfo(user: any | null) {
+  getMinimalUserInfo(user: User | null) {
     if (!user) return null;
     return {
       id: user.id,
