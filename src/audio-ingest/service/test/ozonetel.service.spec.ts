@@ -33,7 +33,7 @@ import {
   convertIstStringToUtc,
   subtractDurationFromDate,
 } from '../../../common/util/date.util';
-import { PermissionValidator } from 'src/auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 // Mock external dependencies
 jest.mock('axios');

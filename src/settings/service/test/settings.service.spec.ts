@@ -4,7 +4,7 @@ import { SettingsService } from '../settings.service';
 import { PreferenceService } from '../../../common/service/preference.service';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { CommonUtil } from '../../../common/util/common.util';
-import { PermissionValidator } from '../../../auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import {
   PreferenceName,
   PreferenceRelatedEntity,

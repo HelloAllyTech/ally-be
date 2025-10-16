@@ -16,7 +16,7 @@ import {
 import { MessageBrokerChannel } from '../../../common/constants/message-broker.constants';
 import { Message } from '../../../common/entities/message.entity';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
-import { PermissionValidator } from '../../../auth/service/permission-validator.service';
+import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({

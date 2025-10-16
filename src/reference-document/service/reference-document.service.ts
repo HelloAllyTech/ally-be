@@ -23,7 +23,7 @@ import { AddReferenceDocumentRequest } from '../../ai/dto/ai.request.dto';
 import { OrganizationRequiredException } from '../../exception/custom.exception';
 import { parseCsvBuffer } from '../../common/util/csv.util';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { PermissionValidator } from 'src/auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @Injectable()
 export class ReferenceDocumentService {

@@ -27,7 +27,7 @@ import { CreateScenarioEventsDto } from '../../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../../dto/delete-scenario-events.dto';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../../interface/learn-message.interface';
-import { PermissionValidator } from 'src/auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 // Mock static classes
