@@ -41,10 +41,13 @@ import {
   OzonetelCallStatus,
   OzonetelEventTypes,
 } from '../type/ozonetel.type';
+import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 
 @Injectable()
 export class OzonetelService {
   private readonly logger = LoggerService.getInstance(OzonetelService.name);
+  private readonly auditLogger = AuditLoggerService.getInstance();
   constructor(
     private chatService: ChatService,
     private userService: UserService,
@@ -216,6 +219,14 @@ export class OzonetelService {
             audio_url: AudioFile,
             chat_id: chat.id,
           });
+          this.auditLogger.log({
+            eventType: AUDIT_EVENTS.AUDIO_TRANSCRIPT_REQUEST_SENT,
+            details: {
+              purpose: 'Audio transcript request sent to AI service',
+              chatId: chat.id,
+              provider: AudioChatProvider.OZONETEL,
+            },
+          });
         } else {
           this.audioRetryProducer.sendAudioFileRetryMessage({
             audioUrl: AudioFile,
@@ -233,6 +244,13 @@ export class OzonetelService {
         );
       }
     } catch (error) {
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_PROCESSING_FAILED,
+        details: {
+          error: `Ozonetel call detail webhook error: ${error.message}`,
+          provider: AudioChatProvider.OZONETEL,
+        },
+      });
       this.logger.error(`Ozonetel call detail webhook error: ${error.message}`);
     }
   }
