@@ -15,6 +15,15 @@ jest.mock('src/common/execution/execution-manager', () => ({
   },
 }));
 
+// Mock AuditLoggerService
+jest.mock('src/audit/service/audit-logger.service', () => ({
+  AuditLoggerService: {
+    getInstance: jest.fn().mockReturnValue({
+      log: jest.fn(),
+    }),
+  },
+}));
+
 describe('UserService', () => {
   let service: UserService;
   let mockUserRepository: any;
@@ -99,24 +108,22 @@ describe('UserService', () => {
 
   describe('get', () => {
     it('should return user when found', async () => {
-      const mockUserWithRoles = { ...mockUser, roles: [] };
-      mockUserRepository.query.mockResolvedValue([mockUserWithRoles]);
+      mockUserRepository.findOne.mockResolvedValue(mockUser);
 
       const result = await service.get(1);
 
-      expect(mockUserRepository.query).toHaveBeenCalledWith(
-        expect.any(String),
-        [1],
-      );
-      expect(result).toEqual(mockUserWithRoles);
+      expect(mockUserRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1, tenantId: 'test-tenant' },
+      });
+      expect(result).toEqual(mockUser);
     });
 
     it('should return null when user not found', async () => {
-      mockUserRepository.query.mockResolvedValue([]);
+      mockUserRepository.findOne.mockResolvedValue(null);
 
       const result = await service.get(1);
 
-      expect(result).toBeUndefined();
+      expect(result).toBeNull();
     });
   });
 
@@ -262,7 +269,6 @@ describe('UserService', () => {
         role: UserRole.CLIENT,
         tenantId: 'test-tenant',
         phone: '+1234567890',
-        groups: [],
       });
     });
   });
