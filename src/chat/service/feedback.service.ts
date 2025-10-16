@@ -7,10 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { ExecutionManager } from '../../common/execution/execution-manager';
-import { TokenUser } from 'src/auth/type/auth.types';
-import { number } from 'joi';
-import { Chat } from 'src/common/entities/chat.entity';
-import { ChatService } from './chat.service';
+
 @Injectable()
 export class FeedbackService {
   constructor(

@@ -12,7 +12,6 @@ import {
   CloudTelephonyProvider,
 } from '../../common/constants/chat.constants';
 import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
-import { UserRole } from '../../common/constants/user.constants';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,
@@ -41,6 +40,8 @@ import {
   OzonetelCallStatus,
   OzonetelEventTypes,
 } from '../type/ozonetel.type';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/auth/service/permission-validator.service';
 
 @Injectable()
 export class OzonetelService {
@@ -53,6 +54,7 @@ export class OzonetelService {
     private aiEventService: AiEventService,
     private broadcastMessageService: BroadcastMessageService,
     private audioRetryProducer: AudioRetryProducer,
+    private permissionValidatorService: PermissionValidator,
   ) {}
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
@@ -124,7 +126,14 @@ export class OzonetelService {
 
       const counselor = await this.userService.getUserByExternalId(AgentID);
 
-      if (!counselor || counselor.role !== UserRole.COUNSELOR) {
+      const hasAccess = counselor?.id
+        ? await this.permissionValidatorService.validatePermissions(
+            counselor.id,
+            [PERMISSIONS.PROCESS_OZONETEL_WEBHOOK],
+          )
+        : false;
+
+      if (!counselor || !hasAccess) {
         throw new Error(
           `Counselor not found for AgentId: ${AgentID} | monitorUCID: ${monitorUCID}`,
         );
@@ -305,7 +314,14 @@ export class OzonetelService {
 
       const counselor = await this.userService.getUserByExternalId(agent_id);
 
-      if (!counselor || counselor.role !== UserRole.COUNSELOR) {
+      const hasAccess = counselor?.id
+        ? await this.permissionValidatorService.validatePermissions(
+            counselor.id,
+            [PERMISSIONS.PROCESS_OZONETEL_WEBHOOK],
+          )
+        : false;
+
+      if (!counselor || !hasAccess) {
         throw new Error(
           `Counselor not found for agent id ${agent_id} | monitorUCID: ${monitor_ucid}`,
         );

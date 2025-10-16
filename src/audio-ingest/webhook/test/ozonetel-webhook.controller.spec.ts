@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { OzonetelWebhookController } from '../ozonetel-webhook.controller';
 import { OzonetelService } from '../../service/ozonetel.service';
 import { LoggerService } from '../../../logger/logger.service';
+import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import {
   OzonetelCallDetailsBody,
   OzonetelCallDetails,
@@ -41,7 +42,10 @@ describe('OzonetelWebhookController', () => {
           useValue: mockOzonetelService,
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .compile();
 
     controller = module.get<OzonetelWebhookController>(
       OzonetelWebhookController,

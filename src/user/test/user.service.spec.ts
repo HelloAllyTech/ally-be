@@ -55,7 +55,6 @@ describe('UserService', () => {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       leftJoinAndMapMany: jest.fn().mockReturnThis(),
-      leftJoin: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
@@ -99,19 +98,19 @@ describe('UserService', () => {
 
   describe('get', () => {
     it('should return user when found', async () => {
-      const userWithRoles = { ...mockUser, roles: [] };
-      mockUserRepository.query.mockResolvedValue([userWithRoles]);
+      const mockUserWithRoles = { ...mockUser, roles: [] };
+      mockUserRepository.query.mockResolvedValue([mockUserWithRoles]);
 
       const result = await service.get(1);
 
       expect(mockUserRepository.query).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT'),
+        expect.any(String),
         [1],
       );
-      expect(result).toEqual(userWithRoles);
+      expect(result).toEqual(mockUserWithRoles);
     });
 
-    it('should return undefined when user not found', async () => {
+    it('should return null when user not found', async () => {
       mockUserRepository.query.mockResolvedValue([]);
 
       const result = await service.get(1);

@@ -1215,6 +1215,7 @@ export class ChatService {
     const userRoles = await this.groupService
       .getUserRolesByUserId(user.id)
       .then((roles) => roles.map((role) => role.name));
+    console.log('userRoles', userRoles);
     const query = this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndMapOne(
@@ -1229,9 +1230,7 @@ export class ChatService {
         'client',
         'client.id = chat.clientId',
       );
-    if (userRoles.includes(UserRole.COUNSELOR)) {
-      query.where('chat.counselorId = :counselorId', { counselorId: user.id });
-    }
+    query.where('chat.counselorId = :counselorId', { counselorId: user.id });
     if (options.limit) {
       query.limit(options.limit);
     }
@@ -1500,10 +1499,7 @@ export class ChatService {
     return this.getChat(chatId);
   }
 
-  async updateCallInfo(
-    chatId: number,
-    body: CallInfoDto
-  ) {
+  async updateCallInfo(chatId: number, body: CallInfoDto) {
     const chat = await this.getChatById(chatId);
     if (!chat) {
       throw new NotFoundException(`Chat with ID ${chatId} not found`);
