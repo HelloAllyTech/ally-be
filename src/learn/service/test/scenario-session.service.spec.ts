@@ -50,9 +50,6 @@ describe('ScenarioSessionService', () => {
   let scenarioSessionFeedbacksRepository: jest.Mocked<
     Repository<ScenarioSessionFeedbacks>
   >;
-  let scenarioSessionEventsRepository: jest.Mocked<
-    Repository<ScenarioSessionEvents>
-  >;
   let scenarioEventsRepository: jest.Mocked<Repository<ScenarioEvents>>;
   let dataSource: jest.Mocked<DataSource>;
   let mockEntityManager: any;
@@ -257,9 +254,6 @@ describe('ScenarioSessionService', () => {
     aiService = module.get(AiService);
     scenarioSessionFeedbacksRepository = module.get(
       getRepositoryToken(ScenarioSessionFeedbacks),
-    );
-    scenarioSessionEventsRepository = module.get(
-      getRepositoryToken(ScenarioSessionEvents),
     );
     scenarioEventsRepository = module.get(getRepositoryToken(ScenarioEvents));
     dataSource = module.get(DataSource);
@@ -1227,33 +1221,161 @@ describe('ScenarioSessionService', () => {
   });
 
   describe('addScenarioSessionEvent', () => {
-    it('should add scenario session event', async () => {
+    it('should add scenario session event for active session', async () => {
       const mockEvent: LearnEventData = {
         event_id: 'event-123',
         timestamp: new Date('2024-01-01T12:00:00Z'),
       };
       const mockCreatedEvent = { id: 1, eventId: 'event-123' };
+      const mockActiveSession = {
+        ...mockScenarioSession,
+        status: ScenarioSessionStatus.ACTIVE,
+      };
 
-      scenarioSessionEventsRepository.create.mockReturnValue(
-        mockCreatedEvent as any,
-      );
-      scenarioSessionEventsRepository.save.mockResolvedValue(
-        mockCreatedEvent as any,
+      const mockScenarioSessionEventsRepo = {
+        create: jest.fn().mockReturnValue(mockCreatedEvent),
+        save: jest.fn().mockResolvedValue(mockCreatedEvent),
+      };
+
+      mockEntityManager.getRepository.mockImplementation((entity: any) => {
+        if (entity === ScenarioSessionEvents) {
+          return mockScenarioSessionEventsRepo;
+        }
+        return {};
+      });
+
+      dataSource.transaction.mockImplementation(async (callback: any) =>
+        callback(mockEntityManager),
       );
 
-      const result = await service.addScenarioSessionEvent(
-        mockScenarioSessionId,
-        mockEvent,
-        mockTenantId,
-      );
+      await service.addScenarioSessionEvent(mockActiveSession, mockEvent);
 
-      expect(result).toEqual(mockCreatedEvent);
-      expect(scenarioSessionEventsRepository.create).toHaveBeenCalledWith({
+      expect(mockScenarioSessionEventsRepo.create).toHaveBeenCalledWith({
         scenarioSessionId: mockScenarioSessionId,
         eventId: mockEvent.event_id,
         occurredAt: mockEvent.timestamp,
         tenantId: mockTenantId,
       });
+      expect(mockScenarioSessionEventsRepo.save).toHaveBeenCalledWith(
+        mockCreatedEvent,
+      );
+    });
+
+    it('should add scenario session event and update score for ended session', async () => {
+      const mockEvent: LearnEventData = {
+        event_id: 'event-123',
+        timestamp: new Date('2024-01-01T12:00:00Z'),
+      };
+      const mockCreatedEvent = { id: 1, eventId: 'event-123' };
+      const mockEndedSession = {
+        ...mockScenarioSession,
+        status: ScenarioSessionStatus.ENDED,
+      };
+      const mockSessionEvent = {
+        id: 'event-123',
+        score: 10,
+      };
+
+      const mockScenarioSessionEventsRepo = {
+        create: jest.fn().mockReturnValue(mockCreatedEvent),
+        save: jest.fn().mockResolvedValue(mockCreatedEvent),
+      };
+
+      const mockEventRepo = {
+        findOne: jest.fn().mockResolvedValue(mockSessionEvent),
+      };
+
+      const mockScenarioSessionRepo = {
+        update: jest.fn().mockResolvedValue({ affected: 1 }),
+      };
+
+      mockEntityManager.getRepository.mockImplementation((entity: any) => {
+        if (entity === ScenarioSessionEvents) {
+          return mockScenarioSessionEventsRepo;
+        }
+        if (entity === SessionEvents) {
+          return mockEventRepo;
+        }
+        if (entity === ScenarioSessions) {
+          return mockScenarioSessionRepo;
+        }
+        return {};
+      });
+
+      dataSource.transaction.mockImplementation(async (callback: any) =>
+        callback(mockEntityManager),
+      );
+
+      await service.addScenarioSessionEvent(mockEndedSession, mockEvent);
+
+      expect(mockScenarioSessionEventsRepo.create).toHaveBeenCalledWith({
+        scenarioSessionId: mockScenarioSessionId,
+        eventId: mockEvent.event_id,
+        occurredAt: mockEvent.timestamp,
+        tenantId: mockTenantId,
+      });
+      expect(mockScenarioSessionEventsRepo.save).toHaveBeenCalledWith(
+        mockCreatedEvent,
+      );
+      expect(mockEventRepo.findOne).toHaveBeenCalledWith({
+        where: { id: mockEvent.event_id },
+      });
+      expect(mockScenarioSessionRepo.update).toHaveBeenCalledWith(
+        mockScenarioSessionId,
+        { score: expect.any(Function) },
+      );
+    });
+
+    it('should handle ended session with event that has no score', async () => {
+      const mockEvent: LearnEventData = {
+        event_id: 'event-123',
+        timestamp: new Date('2024-01-01T12:00:00Z'),
+      };
+      const mockCreatedEvent = { id: 1, eventId: 'event-123' };
+      const mockEndedSession = {
+        ...mockScenarioSession,
+        status: ScenarioSessionStatus.ENDED,
+      };
+
+      const mockScenarioSessionEventsRepo = {
+        create: jest.fn().mockReturnValue(mockCreatedEvent),
+        save: jest.fn().mockResolvedValue(mockCreatedEvent),
+      };
+
+      const mockEventRepo = {
+        findOne: jest.fn().mockResolvedValue(null),
+      };
+
+      const mockScenarioSessionRepo = {
+        update: jest.fn().mockResolvedValue({ affected: 1 }),
+      };
+
+      mockEntityManager.getRepository.mockImplementation((entity: any) => {
+        if (entity === ScenarioSessionEvents) {
+          return mockScenarioSessionEventsRepo;
+        }
+        if (entity === SessionEvents) {
+          return mockEventRepo;
+        }
+        if (entity === ScenarioSessions) {
+          return mockScenarioSessionRepo;
+        }
+        return {};
+      });
+
+      dataSource.transaction.mockImplementation(async (callback: any) =>
+        callback(mockEntityManager),
+      );
+
+      await service.addScenarioSessionEvent(mockEndedSession, mockEvent);
+
+      expect(mockEventRepo.findOne).toHaveBeenCalledWith({
+        where: { id: mockEvent.event_id },
+      });
+      expect(mockScenarioSessionRepo.update).toHaveBeenCalledWith(
+        mockScenarioSessionId,
+        { score: expect.any(Function) },
+      );
     });
   });
 
