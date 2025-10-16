@@ -1465,7 +1465,6 @@ export class ChatService {
   async updateCallDetails(
     chatId: number,
     summary: FlattenedSummaryNotePayloadCamelCase,
-    tokenUser: TokenUser,
   ) {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId, tenantId: ExecutionManager.getTenantId() },
@@ -1483,7 +1482,7 @@ export class ChatService {
     );
 
     // If user is a counselor, verify they own this chat
-    if (!isAdmin && chat.counselorId !== tokenUser.id) {
+    if (!isAdmin && chat.counselorId !== Number(currentUserId)) {
       throw new ForbiddenException('You can only update your own call details');
     }
 
