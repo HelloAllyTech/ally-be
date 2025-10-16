@@ -581,9 +581,8 @@ export class ChatController {
   async updateCallInfo(
     @Param('chatId', ParseIntPipe) chatId: number,
     @Body() body: CallInfoDto,
-    @CurrentUser() tokenUser: TokenUser,
   ) {
-    return this.service.updateCallInfo(chatId, body, tokenUser);
+    return this.service.updateCallInfo(chatId, body);
   }
 
   @Post('/summary/tag-positivity-ratings')

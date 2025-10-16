@@ -1502,8 +1502,7 @@ export class ChatService {
 
   async updateCallInfo(
     chatId: number,
-    body: CallInfoDto,
-    tokenUser: TokenUser,
+    body: CallInfoDto
   ) {
     const chat = await this.getChatById(chatId);
     if (!chat) {
