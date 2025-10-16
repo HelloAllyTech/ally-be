@@ -19,7 +19,7 @@ import { UserService } from '../../user/user.service';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { PermissionValidator } from '../../auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @Injectable()
 export class ChatSummaryService {

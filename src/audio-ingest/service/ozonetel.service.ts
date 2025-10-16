@@ -41,7 +41,7 @@ import {
   OzonetelEventTypes,
 } from '../type/ozonetel.type';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { PermissionValidator } from 'src/auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @Injectable()
 export class OzonetelService {

@@ -16,10 +16,23 @@ const PERMISSIONS = {
   EDIT_SCENARIO_SESSION_FEEDBACK: 'edit:scenario-session:feedback',
   DELETE_SCENARIO_SESSION: 'delete:scenario-session',
   PROCESS_OZONETEL_WEBHOOK: 'process:ozonetel:webhook',
+  VIEW_PLACES: 'view:places',
+  VIEW_CACHE: 'view:cache',
+  DELETE_CACHE: 'delete:cache',
 };
 
 const PERMISSIONS_TO_REASSIGN = {
   EDIT_REFERENCE_DOCUMENT: 'edit:reference-document',
+};
+
+const PERMISSIONS_TO_REMOVE_FROM_ADMIN = {
+  VIEW_CALL_LOGS: 'view:call:logs',
+  EDIT_CALL_DETAILS: 'edit:call:details',
+  EDIT_CALL_INFO: 'edit:call:info',
+};
+
+const PERMISSIONS_TO_REMOVE_FROM_SUPER_ADMIN = {
+  VIEW_CALL_LOGS: 'view:call:logs',
 };
 
 const PERMISSIONS_TO_RENAME = [
@@ -35,6 +48,9 @@ const newPermissions = [
   PERMISSIONS.EDIT_SCENARIO_SESSION_FEEDBACK,
   PERMISSIONS.DELETE_SCENARIO_SESSION,
   PERMISSIONS.PROCESS_OZONETEL_WEBHOOK,
+  PERMISSIONS.VIEW_PLACES,
+  PERMISSIONS.VIEW_CACHE,
+  PERMISSIONS.DELETE_CACHE,
 ];
 
 export class UpdateSystemAndOrganizationPermissions1759200000000
@@ -115,6 +131,8 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
         permissions: [
           PERMISSIONS.SYSTEM_ACCESS,
           PERMISSIONS.DELETE_SCENARIO_SESSION,
+          PERMISSIONS.VIEW_CACHE,
+          PERMISSIONS.DELETE_CACHE,
         ],
       },
       {
@@ -130,6 +148,7 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
           PERMISSIONS.START_MICROPHONE_CHAT,
           PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
           PERMISSIONS.PROCESS_OZONETEL_WEBHOOK,
+          PERMISSIONS.VIEW_PLACES,
         ],
       },
     ];
@@ -174,18 +193,52 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
         [counselorGroupId, editRefDocPermissionId],
       );
     }
+
+    // Remove permissions from ADMIN role
+    const adminGroupId = groupMap[UserRole.ADMIN];
+    if (adminGroupId) {
+      const adminPermissionsToRemove = Object.values(
+        PERMISSIONS_TO_REMOVE_FROM_ADMIN,
+      );
+      const adminPermissionsToRemoveIds = await queryRunner.query(
+        `SELECT id FROM "permissions" WHERE name IN (${adminPermissionsToRemove
+          .map((_, index) => `$${index + 1}`)
+          .join(',')})`,
+        adminPermissionsToRemove,
+      );
+
+      for (const permission of adminPermissionsToRemoveIds) {
+        await queryRunner.query(
+          `DELETE FROM group_permissions WHERE "groupId" = $1 AND "permissionId" = $2`,
+          [adminGroupId, permission.id],
+        );
+      }
+    }
+
+    // Remove permissions from SUPER_ADMIN role
+    const superAdminGroupId = groupMap[UserRole.SUPER_ADMIN];
+    if (superAdminGroupId) {
+      const superAdminPermissionsToRemove = Object.values(
+        PERMISSIONS_TO_REMOVE_FROM_SUPER_ADMIN,
+      );
+      const superAdminPermissionsToRemoveIds = await queryRunner.query(
+        `SELECT id FROM "permissions" WHERE name IN (${superAdminPermissionsToRemove
+          .map((_, index) => `$${index + 1}`)
+          .join(',')})`,
+        superAdminPermissionsToRemove,
+      );
+
+      for (const permission of superAdminPermissionsToRemoveIds) {
+        await queryRunner.query(
+          `DELETE FROM group_permissions WHERE "groupId" = $1 AND "permissionId" = $2`,
+          [superAdminGroupId, permission.id],
+        );
+      }
+    }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Rename permissions back to original names
-    for (const { old: oldName, new: newName } of PERMISSIONS_TO_RENAME) {
-      await queryRunner.query(
-        `UPDATE "permissions" SET name = $1 WHERE name = $2`,
-        [oldName, newName],
-      );
-    }
-
-    // Restore EDIT_REFERENCE_DOCUMENT permission to COUNSELOR
+    // Get all existing group IDs for rollback
     const roleGroups = Object.values(UserRole);
     const groups = await queryRunner.query(
       `SELECT id, name FROM "groups" WHERE name IN (${roleGroups
@@ -202,6 +255,65 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
       {},
     );
 
+    // Restore permissions to SUPER_ADMIN role
+    const superAdminGroupId = groupMap[UserRole.SUPER_ADMIN];
+    if (superAdminGroupId) {
+      const superAdminPermissionsToRestore = Object.values(
+        PERMISSIONS_TO_REMOVE_FROM_SUPER_ADMIN,
+      );
+      const superAdminPermissionsToRestoreIds = await queryRunner.query(
+        `SELECT id FROM "permissions" WHERE name IN (${superAdminPermissionsToRestore
+          .map((_, index) => `$${index + 1}`)
+          .join(',')})`,
+        superAdminPermissionsToRestore,
+      );
+
+      for (const permission of superAdminPermissionsToRestoreIds) {
+        // Check if it doesn't already exist before inserting
+        const existingGroupPermission = await queryRunner.query(
+          `SELECT id FROM group_permissions WHERE "groupId" = $1 AND "permissionId" = $2`,
+          [superAdminGroupId, permission.id],
+        );
+
+        if (existingGroupPermission.length === 0) {
+          await queryRunner.query(
+            `INSERT INTO group_permissions ("groupId", "permissionId") VALUES ($1, $2)`,
+            [superAdminGroupId, permission.id],
+          );
+        }
+      }
+    }
+
+    // Restore permissions to ADMIN role
+    const adminGroupId = groupMap[UserRole.ADMIN];
+    if (adminGroupId) {
+      const adminPermissionsToRestore = Object.values(
+        PERMISSIONS_TO_REMOVE_FROM_ADMIN,
+      );
+      const adminPermissionsToRestoreIds = await queryRunner.query(
+        `SELECT id FROM "permissions" WHERE name IN (${adminPermissionsToRestore
+          .map((_, index) => `$${index + 1}`)
+          .join(',')})`,
+        adminPermissionsToRestore,
+      );
+
+      for (const permission of adminPermissionsToRestoreIds) {
+        // Check if it doesn't already exist before inserting
+        const existingGroupPermission = await queryRunner.query(
+          `SELECT id FROM group_permissions WHERE "groupId" = $1 AND "permissionId" = $2`,
+          [adminGroupId, permission.id],
+        );
+
+        if (existingGroupPermission.length === 0) {
+          await queryRunner.query(
+            `INSERT INTO group_permissions ("groupId", "permissionId") VALUES ($1, $2)`,
+            [adminGroupId, permission.id],
+          );
+        }
+      }
+    }
+
+    // Restore EDIT_REFERENCE_DOCUMENT permission to COUNSELOR
     const counselorGroupId = groupMap[UserRole.COUNSELOR];
     const editRefDocPermission = await queryRunner.query(
       `SELECT id FROM "permissions" WHERE name = $1`,
@@ -254,6 +366,14 @@ export class UpdateSystemAndOrganizationPermissions1759200000000
           .map((_: any, index: number) => `$${index + 1}`)
           .join(',')})`,
         permissionIdsToDelete,
+      );
+    }
+
+    // Rename permissions back to original names
+    for (const { old: oldName, new: newName } of PERMISSIONS_TO_RENAME) {
+      await queryRunner.query(
+        `UPDATE "permissions" SET name = $1 WHERE name = $2`,
+        [oldName, newName],
       );
     }
   }
