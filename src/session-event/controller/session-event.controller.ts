@@ -17,8 +17,6 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { SessionEventSortBy } from '../enum/session-event-sort-by.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
-import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
-import { UserRole } from 'src/common/constants/user.constants';
 
 @ApiTags('SessionEvents')
 @ApiBearerAuth()
@@ -79,7 +77,7 @@ export class SessionEventController {
     enum: SortOrder,
     description: 'Sort order',
   })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_SESSION_EVENTS])
   @Get()
   getAllSessionEvents(
     @Query('visibilityType') visibilityType?: SessionEventVisibilityType,
