@@ -285,7 +285,7 @@ export class ChatController {
     type: String,
     description: 'Search counselor names (partial match)',
   })
-  @AuthPermissions([PERMISSIONS.VIEW_COUNSELOR])
+  @AuthPermissions([PERMISSIONS.VIEW_COUNSELORS])
   @Get('counselors')
   async getCounselorNames(
     @Query('limit') limit?: number,
@@ -356,7 +356,7 @@ export class ChatController {
     return this.service.cancelCallByClient(tokenUser.id, parseInt(id));
   }
 
-  @AuthPermissions([PERMISSIONS.VIEW_MESSAGE])
+  @AuthPermissions([PERMISSIONS.VIEW_MESSAGES])
   @ApiOperation({ summary: 'Get messages' })
   @ApiResponse({
     status: 200,

@@ -18,7 +18,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { OrganizationRequiredException } from 'src/exception/custom.exception';
 import { parseCsvBuffer } from 'src/common/util/csv.util';
-import { PermissionValidator } from 'src/auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 import {
   AddReferenceDocumentResponse,

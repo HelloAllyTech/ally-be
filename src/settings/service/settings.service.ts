@@ -11,7 +11,7 @@ import {
   PreferenceRelatedEntity,
 } from '../../common/constants/user.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
-import { PermissionValidator } from '../../auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { SummaryPreferenceValue } from '../../common/type/common.type';
 import { DEFAULT_CHAT_TYPES } from '../constants/settings.constants';
 import * as _ from 'lodash';

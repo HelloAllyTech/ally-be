@@ -264,9 +264,9 @@ describe('RoomFinishedHandler', () => {
         roomId: 'complete-room',
         scenarioId: 42,
         counselorId: 123,
-        status: ScenarioSessionStatus.ENDED,
+        status: ScenarioSessionStatus.ACTIVE,
         startedAt: new Date('2024-01-01T10:00:00Z'),
-        endedAt: new Date('2024-01-01T11:00:00Z'),
+        endedAt: undefined,
         score: 85.5,
         metadata: { sessionType: 'assessment' },
         tenantId: 'complete-tenant',
@@ -287,6 +287,37 @@ describe('RoomFinishedHandler', () => {
         'complete-session-123',
         123,
       );
+    });
+
+    it('should not end scenario session if already ended', async () => {
+      const endedScenarioSession: ScenarioSessions = {
+        id: 'ended-session-123',
+        roomId: 'test-room',
+        scenarioId: 1,
+        counselorId: 456,
+        status: ScenarioSessionStatus.ENDED,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T11:00:00Z'),
+        score: 85.5,
+        metadata: undefined,
+        tenantId: 'tenant-123',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as ScenarioSessions;
+
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+        endedScenarioSession,
+      );
+
+      await handler.handle(mockRoomFinishedEvent);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        `Room finished: ${mockRoomFinishedEvent.room.name}`,
+      );
+      expect(
+        scenarioSessionService.getScenarioSessionByRoomId,
+      ).toHaveBeenCalledWith('test-room');
+      expect(scenarioSessionService.endScenarioSession).not.toHaveBeenCalled();
     });
 
     it('should handle minimal room finished event', async () => {

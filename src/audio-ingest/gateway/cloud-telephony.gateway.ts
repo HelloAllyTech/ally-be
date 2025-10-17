@@ -27,7 +27,7 @@ import { JwtService } from '@nestjs/jwt';
 import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { PermissionValidator } from 'src/auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },

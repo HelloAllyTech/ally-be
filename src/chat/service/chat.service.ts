@@ -87,7 +87,7 @@ import { MessageRepository } from '../repository/message.repository';
 import { ChatUtil } from '../util/chat.util';
 import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { PermissionValidator } from 'src/auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { GroupService } from 'src/authorization/service/group.service';
 
 @Injectable()

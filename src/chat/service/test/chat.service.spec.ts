@@ -22,7 +22,7 @@ import { StreamFileProcessorService } from '../../../audio/service/stream-file-p
 import { CryptoService } from '../../../common/service/crypto.service';
 import { AppConfigService } from '../../../config/config.service';
 import { ChatAudioUploadsService } from '../../../audio/service/chat-audio-uploads.service';
-import { PermissionValidator } from '../../../auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { GroupService } from '../../../authorization/service/group.service';
 
 import { Message } from '../../../common/entities/message.entity';

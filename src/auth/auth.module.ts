@@ -5,7 +5,6 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { PermissionsGuard } from './guards/permissions.guard';
-import { PermissionValidator } from './service/permission-validator.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { RefreshToken } from '../common/entities/refresh-token.entity';
@@ -18,14 +17,8 @@ import { User } from '../common/entities/user.entity';
     TypeOrmModule.forFeature([User, RefreshToken]),
     ConfigModule,
   ],
-  providers: [
-    AuthService,
-    JwtStrategy,
-    JwtRefreshStrategy,
-    PermissionsGuard,
-    PermissionValidator,
-  ],
+  providers: [AuthService, JwtStrategy, JwtRefreshStrategy, PermissionsGuard],
   controllers: [AuthController],
-  exports: [AuthService, PermissionsGuard, PermissionValidator],
+  exports: [AuthService, PermissionsGuard],
 })
 export class AuthModule {}

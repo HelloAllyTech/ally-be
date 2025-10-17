@@ -15,7 +15,7 @@ import {
 } from 'src/common/constants/chat.constants';
 import { SettingsService } from 'src/settings/service/settings.service';
 import { UserService } from 'src/user/user.service';
-import { PermissionValidator } from 'src/auth/service/permission-validator.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 describe('ChatSummaryService', () => {
   let service: ChatSummaryService;
