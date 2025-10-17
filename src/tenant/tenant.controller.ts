@@ -6,15 +6,16 @@ import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
 import { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto';
 import { UpdateTenantMetadataDto } from './dto/update-tenant-metadata.dto';
-import { UserRole } from '../common/constants/user.constants';
-import { AuthRoles } from '../auth/decorators/auth-roles.decorator';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+
 @ApiTags('Tenant')
 @Controller('v1/tenants')
-@AuthRoles(UserRole.SUPER_ADMIN)
 export class TenantController {
   constructor(private readonly tenantService: TenantService) {}
 
   @Post()
+  @AuthPermissions([PERMISSIONS.EDIT_TENANT])
   async create(@Body() createTenantDto: CreateTenantDto): Promise<Tenant> {
     return this.tenantService.create({
       ...createTenantDto,
@@ -22,16 +23,19 @@ export class TenantController {
     });
   }
 
+  @AuthPermissions([PERMISSIONS.VIEW_TENANT])
   @Get(':id')
   async findById(@Param('id') id: string): Promise<Tenant | null> {
     return this.tenantService.findById(id);
   }
 
+  @AuthPermissions([PERMISSIONS.VIEW_TENANT])
   @Get('code/:code')
   async findByCode(@Param('code') code: string): Promise<Tenant | null> {
     return this.tenantService.findByCode(code);
   }
 
+  @AuthPermissions([PERMISSIONS.EDIT_TENANT])
   @Put(':id/status')
   async updateStatus(
     @Param('id') id: string,
@@ -40,6 +44,7 @@ export class TenantController {
     return this.tenantService.updateStatus(id, updateTenantStatusDto.status);
   }
 
+  @AuthPermissions([PERMISSIONS.EDIT_TENANT])
   @Put(':id/settings')
   async updateSettings(
     @Param('id') id: string,
@@ -51,6 +56,7 @@ export class TenantController {
     );
   }
 
+  @AuthPermissions([PERMISSIONS.EDIT_TENANT])
   @Put(':id/metadata')
   async updateMetadata(
     @Param('id') id: string,

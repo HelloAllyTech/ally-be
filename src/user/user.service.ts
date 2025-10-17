@@ -7,8 +7,11 @@ import { Chat, ChatStatus } from '../common/entities/chat.entity';
 import { UserRole, UserStatus } from '../common/constants/user.constants';
 import { RedisService } from '../redis/service/redis.service';
 import { ExecutionManager } from '../common/execution/execution-manager';
-import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { Group } from 'src/common/entities/group.entity';
+import { UserGroup } from 'src/common/entities/user-group.entity';
+import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
+import { GroupService } from 'src/authorization/service/group.service';
 
 @Injectable()
 export class UserService {
@@ -19,6 +22,7 @@ export class UserService {
     private readonly userRepository: Repository<User>,
     private queueService: QueueService,
     private readonly cache: RedisService,
+    private readonly groupService: GroupService,
   ) {}
 
   async get(id: number): Promise<User | null> {
@@ -90,7 +94,6 @@ export class UserService {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role,
         chat: chat
           ? {
               chatId: chat.id,
@@ -107,21 +110,23 @@ export class UserService {
     return { totalWaiting: clientIds.size, clients: formattedData };
   }
 
-  getMinimalUserInfo(user: User | null) {
+  async getMinimalUserInfo(user: User | null) {
     if (!user) return null;
+    // TO DO : Remove the role field from the api once mobile forceupdate is done after permissions integration
+    const roles = await this.groupService.getUserRolesByUserId(user.id);
+    const role = this.determineUserRole(roles);
     return {
       id: user.id,
       userId: user.id,
       name: user.name,
       email: user.email,
-      role: user.role,
+      role,
       tenantId: user.tenantId,
       phone: user.phone,
     };
   }
 
   async createUser({
-    role,
     phoneNumber,
     name,
     email,
@@ -130,7 +135,6 @@ export class UserService {
     tenantId,
   }: {
     phoneNumber: string;
-    role: UserRole;
     name?: string;
     email?: string;
     status?: UserStatus;
@@ -139,7 +143,6 @@ export class UserService {
   }) {
     // TODO: Add phone number to the user table and update this query
     const user = this.userRepository.create({
-      role,
       phone: phoneNumber,
       name: name || 'Anonymous user',
       email: email || `${phoneNumber}@placeholder.com`,
@@ -155,10 +158,12 @@ export class UserService {
       .createQueryBuilder('user')
       .select('user.id', 'id')
       .addSelect('user.name', 'name')
-      .where('user.role = :role', { role: UserRole.COUNSELOR })
       .andWhere('user.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
       })
+      .leftJoin(UserGroup, 'userGroup', 'userGroup.userId = user.id')
+      .leftJoin(Group, 'group', 'group.id = userGroup.groupId')
+      .andWhere('group.name = :role', { role: UserRole.COUNSELOR })
       .orderBy('user.id', 'ASC');
 
     if (search && search.trim()) {
@@ -190,5 +195,22 @@ export class UserService {
     return this.userRepository.findOne({
       where: { externalId, tenantId: ExecutionManager.getTenantId() },
     });
+  }
+
+  /**
+   * Determines the user role based on available roles
+   * Priority: ADMIN > COUNSELOR > first available role
+   */
+  private determineUserRole(roles: Group[]): string {
+    if (roles.some((role) => role.name === UserRole.ADMIN)) {
+      return UserRole.ADMIN;
+    }
+
+    if (roles.some((role) => role.name === UserRole.COUNSELOR)) {
+      return UserRole.COUNSELOR;
+    }
+
+    // Return the first available role if neither ADMIN nor COUNSELOR
+    return roles[0].name;
   }
 }

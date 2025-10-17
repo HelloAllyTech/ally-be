@@ -13,6 +13,7 @@ import { GroupPermission } from '../common/entities/group-permission.entity';
 import { Permission } from '../common/entities/permission.entity';
 import { GroupPermissionsRepository } from './repository/group-permissions.repository';
 import { RedisModule } from '../redis/redis.module';
+import { PermissionValidator } from './service/permission-validator.service';
 
 @Global()
 @Module({
@@ -29,12 +30,14 @@ import { RedisModule } from '../redis/redis.module';
     GroupRepository,
     UserGroupRepository,
     GroupPermissionsRepository,
+    PermissionValidator,
   ],
   exports: [
     PermissionsService,
     GroupService,
     GroupPermissionsService,
     UserGroupService,
+    PermissionValidator,
   ],
 })
 export class AuthorizationModule {}

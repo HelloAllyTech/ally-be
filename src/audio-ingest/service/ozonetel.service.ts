@@ -12,7 +12,6 @@ import {
   CloudTelephonyProvider,
 } from '../../common/constants/chat.constants';
 import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
-import { UserRole } from '../../common/constants/user.constants';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,
@@ -41,6 +40,8 @@ import {
   OzonetelCallStatus,
   OzonetelEventTypes,
 } from '../type/ozonetel.type';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @Injectable()
 export class OzonetelService {
@@ -53,6 +54,7 @@ export class OzonetelService {
     private aiEventService: AiEventService,
     private broadcastMessageService: BroadcastMessageService,
     private audioRetryProducer: AudioRetryProducer,
+    private permissionValidatorService: PermissionValidator,
   ) {}
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
@@ -120,15 +122,18 @@ export class OzonetelService {
         `Processing Ozonetel call detail for agent with phone ${AgentID} | monitorUCID: ${monitorUCID}`,
       );
 
-      ExecutionManager.setAuthContext(
-        '',
-        UserRole.COUNSELOR,
-        cloudTelephonyIntegration.tenantId,
-      );
+      ExecutionManager.setAuthContext('', cloudTelephonyIntegration.tenantId);
 
       const counselor = await this.userService.getUserByExternalId(AgentID);
 
-      if (!counselor || counselor.role !== UserRole.COUNSELOR) {
+      const hasAccess = counselor?.id
+        ? await this.permissionValidatorService.validatePermissions(
+            counselor.id,
+            [PERMISSIONS.PROCESS_OZONETEL_WEBHOOK],
+          )
+        : false;
+
+      if (!counselor || !hasAccess) {
         throw new Error(
           `Counselor not found for AgentId: ${AgentID} | monitorUCID: ${monitorUCID}`,
         );
@@ -136,7 +141,6 @@ export class OzonetelService {
 
       ExecutionManager.setAuthContext(
         counselor.id.toString(),
-        counselor.role,
         counselor.tenantId,
       );
 
@@ -281,11 +285,7 @@ export class OzonetelService {
         return;
       }
 
-      ExecutionManager.setAuthContext(
-        '',
-        UserRole.COUNSELOR,
-        cloudTelephonyIntegration.tenantId,
-      );
+      ExecutionManager.setAuthContext('', cloudTelephonyIntegration.tenantId);
 
       if (data.action === OzonetelCallAction.Disconnect && monitor_ucid) {
         const chat = await this.chatService.getChatByExternalId(monitor_ucid);
@@ -314,7 +314,14 @@ export class OzonetelService {
 
       const counselor = await this.userService.getUserByExternalId(agent_id);
 
-      if (!counselor || counselor.role !== UserRole.COUNSELOR) {
+      const hasAccess = counselor?.id
+        ? await this.permissionValidatorService.validatePermissions(
+            counselor.id,
+            [PERMISSIONS.PROCESS_OZONETEL_WEBHOOK],
+          )
+        : false;
+
+      if (!counselor || !hasAccess) {
         throw new Error(
           `Counselor not found for agent id ${agent_id} | monitorUCID: ${monitor_ucid}`,
         );
@@ -322,7 +329,6 @@ export class OzonetelService {
 
       ExecutionManager.setAuthContext(
         counselor.id.toString(),
-        counselor.role,
         cloudTelephonyIntegration.tenantId,
       );
       const chat = await this.chatService.createChatForAnonymousClient({

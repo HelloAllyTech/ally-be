@@ -7,11 +7,21 @@ import { RedisService } from 'src/redis/service/redis.service';
 import { UserRole, UserStatus } from 'src/common/constants/user.constants';
 import { ChatStatus } from 'src/common/entities/chat.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { GroupService } from 'src/authorization/service/group.service';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
     getTenantId: jest.fn(),
+  },
+}));
+
+// Mock AuditLoggerService
+jest.mock('src/audit/service/audit-logger.service', () => ({
+  AuditLoggerService: {
+    getInstance: jest.fn().mockReturnValue({
+      log: jest.fn(),
+    }),
   },
 }));
 
@@ -21,13 +31,13 @@ describe('UserService', () => {
   let mockQueueService: any;
   let mockCache: any;
   let mockQueryBuilder: any;
+  let mockGroupService: any;
 
   const mockUser: User = {
     id: 1,
     name: 'Test User',
     email: 'test@example.com',
     phone: '+1234567890',
-    role: UserRole.CLIENT,
     status: UserStatus.ACTIVE,
     username: 'testuser',
     tenantId: 'test-tenant',
@@ -55,6 +65,7 @@ describe('UserService', () => {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       leftJoinAndMapMany: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
@@ -71,6 +82,7 @@ describe('UserService', () => {
       create: jest.fn(),
       save: jest.fn(),
       createQueryBuilder: jest.fn(() => mockQueryBuilder),
+      query: jest.fn(),
     };
 
     mockQueueService = {
@@ -81,6 +93,9 @@ describe('UserService', () => {
       get: jest.fn(),
       set: jest.fn(),
     };
+    mockGroupService = {
+      getUserRolesByUserId: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -88,6 +103,7 @@ describe('UserService', () => {
         { provide: getRepositoryToken(User), useValue: mockUserRepository },
         { provide: QueueService, useValue: mockQueueService },
         { provide: RedisService, useValue: mockCache },
+        { provide: GroupService, useValue: mockGroupService },
       ],
     }).compile();
 
@@ -224,7 +240,6 @@ describe('UserService', () => {
             id: 1,
             name: 'Test User',
             email: 'test@example.com',
-            role: UserRole.CLIENT,
             chat: {
               chatId: 1,
               roomId: 1,
@@ -241,15 +256,19 @@ describe('UserService', () => {
   });
 
   describe('getMinimalUserInfo', () => {
-    it('should return null when user is null', () => {
-      const result = service.getMinimalUserInfo(null);
+    it('should return null when user is null', async () => {
+      const result = await service.getMinimalUserInfo(null);
 
       expect(result).toBeNull();
     });
 
-    it('should return formatted user info when user exists', () => {
-      const result = service.getMinimalUserInfo(mockUser);
+    it('should return formatted user info with CLIENT role', async () => {
+      const mockRoles = [{ id: 1, name: UserRole.CLIENT }];
+      mockGroupService.getUserRolesByUserId.mockResolvedValue(mockRoles);
 
+      const result = await service.getMinimalUserInfo(mockUser);
+
+      expect(mockGroupService.getUserRolesByUserId).toHaveBeenCalledWith(1);
       expect(result).toEqual({
         id: 1,
         userId: 1,
@@ -260,12 +279,35 @@ describe('UserService', () => {
         phone: '+1234567890',
       });
     });
+
+    it('should return formatted user info with ADMIN role when user has ADMIN', async () => {
+      const mockRoles = [
+        { id: 1, name: UserRole.CLIENT },
+        { id: 2, name: UserRole.ADMIN },
+      ];
+      mockGroupService.getUserRolesByUserId.mockResolvedValue(mockRoles);
+
+      const result = await service.getMinimalUserInfo(mockUser);
+
+      expect(result?.role).toEqual(UserRole.ADMIN);
+    });
+
+    it('should return formatted user info with COUNSELOR role when user has COUNSELOR but not ADMIN', async () => {
+      const mockRoles = [
+        { id: 1, name: UserRole.CLIENT },
+        { id: 2, name: UserRole.COUNSELOR },
+      ];
+      mockGroupService.getUserRolesByUserId.mockResolvedValue(mockRoles);
+
+      const result = await service.getMinimalUserInfo(mockUser);
+
+      expect(result?.role).toEqual(UserRole.COUNSELOR);
+    });
   });
 
   describe('createUser', () => {
     it('should create and save user with provided data', async () => {
       const userData = {
-        role: UserRole.CLIENT,
         phoneNumber: '+1234567890',
         name: 'Test User',
         email: 'test@example.com',
@@ -280,7 +322,6 @@ describe('UserService', () => {
       const result = await service.createUser(userData);
 
       expect(mockUserRepository.create).toHaveBeenCalledWith({
-        role: UserRole.CLIENT,
         phone: '+1234567890',
         name: 'Test User',
         email: 'test@example.com',
@@ -294,7 +335,6 @@ describe('UserService', () => {
 
     it('should create user with default values when optional fields not provided', async () => {
       const userData = {
-        role: UserRole.CLIENT,
         phoneNumber: '+1234567890',
       };
       const createdUser = { ...mockUser, ...userData };
@@ -304,7 +344,6 @@ describe('UserService', () => {
       const result = await service.createUser(userData);
 
       expect(mockUserRepository.create).toHaveBeenCalledWith({
-        role: UserRole.CLIENT,
         phone: '+1234567890',
         name: 'Anonymous user',
         email: '+1234567890@placeholder.com',
