@@ -67,7 +67,6 @@ export class AuditLoggerService {
 
       const userId = event.userId || ExecutionManager.getUserId();
       const tenantId = event.tenantId || ExecutionManager.getTenantId();
-      const role = ExecutionManager.getRole();
       const request = ExecutionManager.getRequestMetadata();
 
       const ip = request?.ip || 'Unknown';
@@ -86,7 +85,6 @@ export class AuditLoggerService {
         ...event,
         userId,
         tenantId,
-        role,
         auditId: eventId,
         loggedAt,
         details: {

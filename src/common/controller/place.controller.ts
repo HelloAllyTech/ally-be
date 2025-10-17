@@ -15,6 +15,8 @@ import {
   ApiTags,
   getSchemaPath,
 } from '@nestjs/swagger';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @ApiTags('Places')
 @Controller('v1/places')
@@ -54,6 +56,7 @@ export class PlaceController {
       },
     },
   })
+  @AuthPermissions([PERMISSIONS.VIEW_PLACES])
   async listPlaces(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,

@@ -30,7 +30,6 @@ import {
   ExecutionContextPropagation,
   WithExecutionContext,
 } from 'src/common/decorator/execution.context.decorator';
-import { UserRole } from 'src/common/constants/user.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
@@ -212,7 +211,6 @@ export class AudioUploadService {
 
     ExecutionManager.setAuthContext(
       chat.createdBy?.toString() || '',
-      UserRole.ADMIN,
       chat.tenantId,
     );
 

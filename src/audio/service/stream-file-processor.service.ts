@@ -725,7 +725,6 @@ export class StreamFileProcessorService {
   setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
-      session.role,
       session.tenantId,
     );
   }

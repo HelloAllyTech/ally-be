@@ -314,7 +314,6 @@ describe('ExotelConferenceCallService', () => {
 
       expect(MockedExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '123',
-        UserRole.COUNSELOR,
         'tenant-123',
       );
     });

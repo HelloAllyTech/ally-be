@@ -274,11 +274,7 @@ describe('AudioUploadService', () => {
         key: s3Key,
       });
       expect(chatService.getChatByIdForServiceCall).toHaveBeenCalledWith(123);
-      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
-        '1',
-        UserRole.ADMIN,
-        1,
-      );
+      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith('1', 1);
       expect(chatService.updateChat).toHaveBeenCalledWith(mockChat.id, {
         status: ChatStatus.ENDED,
       });
@@ -475,11 +471,7 @@ describe('AudioUploadService', () => {
 
       await service.processAudioUpload(s3Key);
 
-      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
-        '',
-        UserRole.ADMIN,
-        1,
-      );
+      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith('', 1);
     });
   });
 

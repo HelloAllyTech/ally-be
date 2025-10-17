@@ -15,7 +15,6 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UserStatus } from '../../common/constants/user.constants';
 import { UserCreateDto } from '../dto/user-create.dto';
 import { RedisService } from 'src/redis/service/redis.service';
-import { GroupPermission } from 'src/common/entities/group-permission.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { AuthUtil } from '../util/auth.util';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
@@ -30,7 +29,6 @@ export class AuthService {
   private refreshTokenRepository: Repository<RefreshToken>;
   private userGroupRepository: Repository<UserGroup>;
   private groupRepository: Repository<Group>;
-  private groupPermissionRepository: Repository<GroupPermission>;
   private readonly auditLogger = AuditLoggerService.getInstance();
   constructor(
     private dataSource: DataSource,
@@ -43,8 +41,6 @@ export class AuthService {
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
     this.userGroupRepository = this.dataSource.getRepository(UserGroup);
     this.groupRepository = this.dataSource.getRepository(Group);
-    this.groupPermissionRepository =
-      this.dataSource.getRepository(GroupPermission);
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
     this.OTP_TTL = +this.configService.otp.ttl;
@@ -76,7 +72,6 @@ export class AuthService {
     const payload = {
       sub: user.id,
       username: user.username,
-      role: user.role,
       tenantId: user.tenantId,
     };
 
@@ -148,7 +143,7 @@ export class AuthService {
   async login(username: string, password: string) {
     const user = await this.userRepository.findOne({
       where: { username },
-      select: ['id', 'username', 'password', 'role', 'tenantId'],
+      select: ['id', 'username', 'password', 'tenantId'],
     });
 
     if (!user) {
@@ -178,7 +173,6 @@ export class AuthService {
       user: {
         id: user.id,
         username: user.username,
-        role: user.role,
       },
       ...tokens,
       tokenType: 'bearer',
@@ -212,15 +206,11 @@ export class AuthService {
       ? await bcrypt.hash(userData.password, 10)
       : undefined;
 
-    // TODO: Temporary fix adding for role
-    const role = userData.roles[0];
-
     // Create new user
     const newUser = this.userRepository.create({
       email: userData.email,
       password: hashedPassword,
       name: userData.name,
-      role,
       status: UserStatus.ACTIVE,
       metadata: {},
       username: userData.username || userData.email,
@@ -259,7 +249,6 @@ export class AuthService {
         username: savedUser.username,
         email: savedUser.email,
         phone: savedUser.phone,
-        role: savedUser.role,
       },
     });
 
@@ -395,7 +384,6 @@ export class AuthService {
         user: {
           id: user!.id,
           username: user!.username,
-          role: user!.role,
         },
         ...tokens,
         tokenType: 'bearer',

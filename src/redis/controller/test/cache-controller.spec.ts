@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CacheController } from '../../controller/cache.controller';
 import { RedisService } from '../../service/redis.service';
+import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
+import { Reflector } from '@nestjs/core';
+import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 
 describe('CacheController', () => {
   let controller: CacheController;
@@ -11,11 +15,31 @@ describe('CacheController', () => {
     deleteByPattern: jest.fn(),
   } as any;
 
+  const mockPermissionsService = {
+    getUserPermissions: jest.fn(),
+  };
+
+  const mockReflector = {
+    get: jest.fn(),
+    getAll: jest.fn(),
+    getAllAndOverride: jest.fn(),
+    getAllAndMerge: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [CacheController],
-      providers: [{ provide: RedisService, useValue: mockRedisService }],
-    }).compile();
+      providers: [
+        { provide: RedisService, useValue: mockRedisService },
+        { provide: PermissionsService, useValue: mockPermissionsService },
+        { provide: Reflector, useValue: mockReflector },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn(() => true) })
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: jest.fn(() => true) })
+      .compile();
 
     controller = module.get<CacheController>(CacheController);
     redisService = module.get(RedisService);
@@ -35,7 +59,7 @@ describe('CacheController', () => {
       expect(result).toEqual(['k1', 'k2']);
     });
 
-    it('propagates original error from redisService', async () => {
+    it('propagates error from redisService (catch block does not catch async errors)', async () => {
       redisService.getByPattern.mockRejectedValueOnce(new Error('boom'));
 
       await expect(
@@ -63,7 +87,7 @@ describe('CacheController', () => {
       expect(result).toEqual(['user:1', 'user:2']);
     });
 
-    it('propagates original error from redisService', async () => {
+    it('propagates error from redisService (catch block does not catch async errors)', async () => {
       redisService.deleteByPattern.mockRejectedValueOnce(new Error('nope'));
 
       await expect(

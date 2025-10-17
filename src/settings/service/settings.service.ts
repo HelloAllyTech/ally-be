@@ -9,8 +9,9 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import {
   PreferenceName,
   PreferenceRelatedEntity,
-  UserRole,
 } from '../../common/constants/user.constants';
+import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { SummaryPreferenceValue } from '../../common/type/common.type';
 import { DEFAULT_CHAT_TYPES } from '../constants/settings.constants';
 import * as _ from 'lodash';
@@ -18,7 +19,10 @@ import { ChatTypes } from '../../common/constants/chat.constants';
 
 @Injectable()
 export class SettingsService {
-  constructor(private readonly preferenceService: PreferenceService) {}
+  constructor(
+    private readonly preferenceService: PreferenceService,
+    private readonly permissionValidator: PermissionValidator,
+  ) {}
 
   async getSummaryFieldsConfig() {
     const tenantId = ExecutionManager.getTenantId();
@@ -75,14 +79,23 @@ export class SettingsService {
         `Invalid summary fields - ${invalidKeys.join(', ')}`,
       );
     }
-    const relatedId =
-      ExecutionManager.getRole() === UserRole.ADMIN
-        ? ExecutionManager.getTenantId()
-        : ExecutionManager.getUserId();
-    const relatedEntity =
-      ExecutionManager.getRole() === UserRole.ADMIN
-        ? PreferenceRelatedEntity.ORGANIZATION
-        : PreferenceRelatedEntity.COUNSELOR;
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('User ID is required');
+    }
+
+    // Check if user has admin permissions to manage organization settings
+    const canManageOrgSettings =
+      await this.permissionValidator.validatePermissions(parseInt(userId), [
+        PERMISSIONS.ORGANIZATION_ACCESS,
+      ]);
+
+    const relatedId = canManageOrgSettings
+      ? ExecutionManager.getTenantId()
+      : userId;
+    const relatedEntity = canManageOrgSettings
+      ? PreferenceRelatedEntity.ORGANIZATION
+      : PreferenceRelatedEntity.COUNSELOR;
     if (!relatedId || !relatedEntity) {
       throw new BadRequestException('Related ID or Entity is required');
     }
@@ -128,14 +141,23 @@ export class SettingsService {
   }
 
   async updateNudgeStatus(status: boolean) {
-    const relatedId =
-      ExecutionManager.getRole() === UserRole.ADMIN
-        ? ExecutionManager.getTenantId()
-        : ExecutionManager.getUserId();
-    const relatedEntity =
-      ExecutionManager.getRole() === UserRole.ADMIN
-        ? PreferenceRelatedEntity.ORGANIZATION
-        : PreferenceRelatedEntity.COUNSELOR;
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('User ID is required');
+    }
+
+    // Check if user has admin permissions to manage organization settings
+    const canManageOrgSettings =
+      await this.permissionValidator.validatePermissions(parseInt(userId), [
+        PERMISSIONS.ORGANIZATION_ACCESS,
+      ]);
+
+    const relatedId = canManageOrgSettings
+      ? ExecutionManager.getTenantId()
+      : userId;
+    const relatedEntity = canManageOrgSettings
+      ? PreferenceRelatedEntity.ORGANIZATION
+      : PreferenceRelatedEntity.COUNSELOR;
     if (!relatedId || !relatedEntity) {
       throw new BadRequestException('Related ID or Entity is required');
     }

@@ -200,7 +200,6 @@ describe('AuthService', () => {
         user: {
           id: mockUser.id,
           username: mockUser.username,
-          role: mockUser.role,
         },
         accessToken,
         refreshToken,
