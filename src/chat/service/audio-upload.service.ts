@@ -31,10 +31,13 @@ import {
   WithExecutionContext,
 } from 'src/common/decorator/execution.context.decorator';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
+import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 
 @Injectable()
 export class AudioUploadService {
   private readonly logger = LoggerService.getInstance(AudioUploadService.name);
+  private readonly auditLogger = AuditLoggerService.getInstance();
 
   constructor(
     private readonly chatService: ChatService,
@@ -60,16 +63,41 @@ export class AudioUploadService {
     this.logger.info(`Getting presigned URL for file: ${fileName}`);
 
     if (!SUPPORTED_AUDIO_FILE_TYPES.includes(contentType)) {
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_UPLOAD_FAILED,
+        userId: counselorId,
+        details: {
+          reason: 'Invalid file type',
+          provider: AudioChatProvider.AUDIO_UPLOAD,
+        },
+      });
       throw new BadRequestException('Invalid file type');
     }
 
     if (fileSize > UPLOADED_AUDIO_FILE_SIZE_LIMIT) {
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_UPLOAD_FAILED,
+        userId: counselorId,
+        details: {
+          reason: 'File size exceeds the limit',
+          fileSize,
+          provider: AudioChatProvider.AUDIO_UPLOAD,
+        },
+      });
       throw new BadRequestException('File size exceeds the limit');
     }
 
     const counselor = await this.userService.get(counselorId);
 
     if (!counselor) {
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_UPLOAD_FAILED,
+        details: {
+          reason: 'Counselor not found',
+          counselorId,
+          provider: AudioChatProvider.AUDIO_UPLOAD,
+        },
+      });
       throw new BadRequestException('Counselor not found');
     }
 
@@ -87,6 +115,16 @@ export class AudioUploadService {
     });
 
     if (!chat) {
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_UPLOAD_FAILED,
+        tenantId: counselor.tenantId,
+        details: {
+          reason: 'Failed to create chat',
+          counselorId,
+          fileName,
+          provider: AudioChatProvider.AUDIO_UPLOAD,
+        },
+      });
       throw new InternalServerErrorException('Failed to create chat');
     }
 
@@ -112,6 +150,16 @@ export class AudioUploadService {
 
     this.logger.info(`Presigned URL generated for chat ${chat.id}`);
 
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.AUDIO_UPLOAD_PRESIGNED_URL_GENERATED,
+      tenantId: counselor.tenantId,
+      userId: counselorId,
+      details: {
+        chatId: chat.id,
+        provider: AudioChatProvider.AUDIO_UPLOAD,
+      },
+    });
+
     return {
       presignedUrl,
       chatId: chat.id,
@@ -131,6 +179,13 @@ export class AudioUploadService {
       });
     } catch (error) {
       this.logger.error(`Failed to get head object: ${error.message}`);
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_PROCESSING_FAILED,
+        details: {
+          reason: 'Failed to get head object from S3',
+          provider: AudioChatProvider.AUDIO_UPLOAD,
+        },
+      });
       return;
     }
 
@@ -141,6 +196,14 @@ export class AudioUploadService {
 
     if (!chatId || !provider || provider !== AudioChatProvider.AUDIO_UPLOAD) {
       this.logger.error(`Invalid file metadata: ${file.Metadata}`);
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_PROCESSING_FAILED,
+        details: {
+          reason: 'Invalid file metadata',
+          metadata: file.Metadata,
+          provider: AudioChatProvider.AUDIO_UPLOAD,
+        },
+      });
       return;
     }
 
@@ -155,10 +218,26 @@ export class AudioUploadService {
       this.logger.error(
         `Chat not found or not in started status: ${chatId} and status: ${chat?.status}`,
       );
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_PROCESSING_FAILED,
+        details: {
+          reason: 'Chat not found or not in started status',
+          chatId,
+          provider: AudioChatProvider.AUDIO_UPLOAD,
+        },
+      });
       return;
     }
 
     this.logger.info(`Audio upload processed for chat ${chat.id}`);
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.AUDIO_PROCESSING_COMPLETED,
+      details: {
+        chatId: chat.id,
+        provider: AudioChatProvider.AUDIO_UPLOAD,
+      },
+    });
 
     await this.chatService.updateChat(chat.id, {
       status: ChatStatus.ENDED,
@@ -178,11 +257,29 @@ export class AudioUploadService {
         expiresIn: 3600, // 1 hour
       });
 
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.PRESIGNED_URL_GENERATED,
+        details: {
+          purpose: 'Audio presigned url generated',
+          chatId: chat.id,
+          provider: AudioChatProvider.AUDIO_UPLOAD,
+        },
+      });
+
       await this.aiEventService.publishTranscribeAudioEvent({
         message_type: 'transcribe_and_summarize_request',
         chat_id: chat.id,
         timestamp: Date.now(),
         audio_url: audioUrl,
+      });
+
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_TRANSCRIPT_REQUEST_SENT,
+        details: {
+          purpose: 'Audio transcript request sent to AI service',
+          chatId: chat.id,
+          provider: AudioChatProvider.AUDIO_UPLOAD,
+        },
       });
       this.logger.info(`Uploaded audio send to AI service for chat ${chat.id}`);
     } catch (error) {
@@ -191,6 +288,15 @@ export class AudioUploadService {
           error,
         )}`,
       );
+
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_UPLOAD_FAILED,
+        details: {
+          purpose: 'Audio presigned url sending to AI service',
+          chatId,
+        },
+      });
+
       await this.chatService.updateChat(chat.id, {
         summaryStatus: ChatSummaryStatus.FAILED,
         metadata: {
@@ -202,9 +308,19 @@ export class AudioUploadService {
 
   async cancelUpload(cancelUploadRequestDto: CancelUploadRequestDto) {
     const { chatId } = cancelUploadRequestDto;
+
     await this.chatService.updateChat(chatId, {
       status: ChatStatus.CANCELLED,
       summaryStatus: ChatSummaryStatus.NO_AUDIO,
+    });
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.AUDIO_UPLOAD_CANCELLED,
+      details: {
+        chatId,
+        reason: 'Upload cancelled by user',
+        provider: AudioChatProvider.AUDIO_UPLOAD,
+      },
     });
   }
 

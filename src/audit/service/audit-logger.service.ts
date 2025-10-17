@@ -65,8 +65,8 @@ export class AuditLoggerService {
     try {
       const eventId = ExecutionManager.getExecutionId();
 
-      const userId = ExecutionManager.getUserId() || event.userId;
-      const tenantId = ExecutionManager.getTenantId() || event.tenantId;
+      const userId = event.userId || ExecutionManager.getUserId();
+      const tenantId = event.tenantId || ExecutionManager.getTenantId();
       const request = ExecutionManager.getRequestMetadata();
 
       const ip = request?.ip || 'Unknown';
