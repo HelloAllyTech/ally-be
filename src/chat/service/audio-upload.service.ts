@@ -69,7 +69,6 @@ export class AudioUploadService {
         userId: counselorId,
         details: {
           reason: 'Invalid file type',
-          fileName,
           provider: AudioChatProvider.AUDIO_UPLOAD,
         },
       });
@@ -82,7 +81,6 @@ export class AudioUploadService {
         userId: counselorId,
         details: {
           reason: 'File size exceeds the limit',
-          fileName,
           fileSize,
           provider: AudioChatProvider.AUDIO_UPLOAD,
         },
@@ -98,7 +96,6 @@ export class AudioUploadService {
         details: {
           reason: 'Counselor not found',
           counselorId,
-          fileName,
           provider: AudioChatProvider.AUDIO_UPLOAD,
         },
       });
@@ -160,7 +157,6 @@ export class AudioUploadService {
       userId: counselorId,
       details: {
         chatId: chat.id,
-        fileName: sanitizedFileName,
         provider: AudioChatProvider.AUDIO_UPLOAD,
       },
     });
