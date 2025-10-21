@@ -6,9 +6,17 @@ import {
 } from '@nestjs/common';
 import { RedisService } from 'src/redis/service/redis.service';
 import { LoggerService } from 'src/logger/logger.service';
-import { AssignUserRoleDto, RemoveUserRoleDto } from 'src/user/dto/group.dto';
+import {
+  AssignUserRoleDto,
+  ChangeUserRolesDto,
+  RemoveUserRoleDto,
+} from 'src/user/dto/group.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, In, DataSource } from 'typeorm';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from '../repository/user-group.repository';
+
+import { User } from 'src/common/entities/user.entity';
 
 @Injectable()
 export class GroupService {
@@ -17,8 +25,13 @@ export class GroupService {
     private readonly cache: RedisService,
     private readonly groupRepository: GroupRepository,
     private readonly userGroupRepository: UserGroupRepository,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    private readonly dataSource: DataSource,
   ) {}
-
+  async getAllRoles(): Promise<Group[]> {
+    return this.groupRepository.getAll();
+  }
   async getUserGroups(userId: number): Promise<number[]> {
     const cachedUserGroups = await this.cache.get(`user:groups:${userId}`);
     if (cachedUserGroups) {
@@ -95,5 +108,65 @@ export class GroupService {
 
   async getUserRolesByUserId(userId: number): Promise<Group[]> {
     return this.groupRepository.findUserRoleByUserId(userId);
+  }
+
+  async changeUserRoles(changeUserRolesDto: ChangeUserRolesDto) {
+    const user = await this.userRepository.findOne({
+      where: { id: changeUserRolesDto.userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException(
+        `User with ID ${changeUserRolesDto.userId} not found`,
+      );
+    }
+    const groups = await this.groupRepository.getAll({
+      where: { id: In(changeUserRolesDto.groupIds) },
+    });
+
+    if (groups.length !== changeUserRolesDto.groupIds.length) {
+      throw new NotFoundException(`One or more roles not found`);
+    }
+    try {
+      // Get current user-group mappings
+      const currentUserGroups = await this.userGroupRepository.findMany({
+        userId: changeUserRolesDto.userId,
+      });
+      const currentGroupIds = currentUserGroups.map((group) => group.groupId);
+
+      const groupIdsToAdd = changeUserRolesDto.groupIds.filter(
+        (id) => !currentGroupIds.includes(id),
+      );
+      const groupIdsToRemove = currentGroupIds.filter(
+        (id) => !changeUserRolesDto.groupIds.includes(id),
+      );
+
+      await this.dataSource.transaction(async () => {
+        if (groupIdsToRemove.length > 0) {
+          const userGroupsToRemove = currentUserGroups.filter((group) =>
+            groupIdsToRemove.includes(group.groupId),
+          );
+          for (const userGroup of userGroupsToRemove) {
+            await this.userGroupRepository.remove(userGroup);
+          }
+        }
+        if (groupIdsToAdd.length > 0) {
+          for (const groupId of groupIdsToAdd) {
+            await this.userGroupRepository.create({
+              userId: changeUserRolesDto.userId,
+              groupId,
+            });
+          }
+        }
+      });
+      return {
+        success: true,
+        message: `User roles updated successfully`,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to update user roles: ${error.message}`,
+      );
+    }
   }
 }

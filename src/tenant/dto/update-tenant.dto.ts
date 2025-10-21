@@ -1,0 +1,19 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString, Length, Matches } from 'class-validator';
+
+export class UpdateTenantDto {
+  @ApiProperty({ description: 'new name for teanant' })
+  @IsString()
+  @IsOptional()
+  @Length(1, 100)
+  @Matches(/^[a-zA-Z0-9\s-_]+$/, {
+    message:
+      'Name can only contain letters, numbers, spaces, hyphens, and underscores',
+  })
+  name?: string;
+
+  @ApiProperty({ description: 'new description' })
+  @IsString()
+  @IsOptional()
+  description?: string;
+}

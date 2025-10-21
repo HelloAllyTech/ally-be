@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { User } from '../common/entities/user.entity';
 import { QueueService } from '../queue/service/queue.service';
 import { Chat, ChatStatus } from '../common/entities/chat.entity';
@@ -8,10 +8,22 @@ import { UserRole, UserStatus } from '../common/constants/user.constants';
 import { RedisService } from '../redis/service/redis.service';
 import { ExecutionManager } from '../common/execution/execution-manager';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
-import { Group } from 'src/common/entities/group.entity';
+import { NotFoundException } from 'src/exception/custom.exception';
+import { UserFilterOptions } from './interface/user-filter-options.interface';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { UsersRepository } from './repository/user.repository';
+import { TenantService } from 'src/tenant/tenant.service';
 import { UserGroup } from 'src/common/entities/user-group.entity';
+import { Group } from 'src/common/entities/group.entity';
+import { UserCreateDto } from 'src/auth/dto/user-create.dto';
 import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { GroupService } from 'src/authorization/service/group.service';
+import {
+  UserDto,
+  UserListResponseDto,
+  UserUpdateResponseDto,
+} from './dto/user-response.dto';
+import { addUserResponseDto } from './dto/user-add-response.dto';
 
 @Injectable()
 export class UserService {
@@ -22,6 +34,12 @@ export class UserService {
     private readonly userRepository: Repository<User>,
     private queueService: QueueService,
     private readonly cache: RedisService,
+    @InjectRepository(Group)
+    private groupRepository: Repository<Group>,
+    @InjectRepository(UserGroup)
+    private userGroupRepository: Repository<UserGroup>,
+    private readonly tenantService: TenantService,
+    private readonly usersRepository: UsersRepository,
     private readonly groupService: GroupService,
   ) {}
 
@@ -195,6 +213,203 @@ export class UserService {
     return this.userRepository.findOne({
       where: { externalId, tenantId: ExecutionManager.getTenantId() },
     });
+  }
+
+  async getAllUsers(
+    filters: UserFilterOptions,
+  ): Promise<Promise<UserListResponseDto>> {
+    const result = await this.usersRepository.getAllUsers(filters);
+
+    if (result.count === 0) {
+      return { data: [], count: 0 };
+    }
+
+    const transformedUsers: UserDto[] = result.users.map((user) => ({
+      id: user.user_id,
+      name: user.user_name,
+      email: user.user_email,
+      username: user.user_username,
+      telephonyId: user.user_externalId,
+      status: user.user_status,
+      role: user.user_role,
+      metadata: user.user_metadata,
+      organization: user.tenant_name,
+      tenantId: user.user_tenant_id,
+      createdAt: user.user_createdAt,
+      updatedAt: user.user_updatedAt,
+      roles: result.rolesMap.get(user.user_id) || [],
+      maxCredits: undefined,
+      usedCredits: undefined,
+    }));
+
+    return { data: transformedUsers, count: result.count };
+  }
+
+  async updateUser(
+    id: number,
+    body: UpdateUserDto,
+  ): Promise<UserUpdateResponseDto> {
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+    if (body.email && body.email !== user.email) {
+      // Email is different from current - check uniqueness
+      const existingUser = await this.userRepository.findOne({
+        where: {
+          email: body.email,
+          id: Not(id),
+        },
+      });
+
+      if (existingUser) {
+        throw new BadRequestException(
+          `Email ${body.email} is already in use by another user`,
+        );
+      }
+    }
+    if (body.externalId && body.externalId !== user.externalId) {
+      const existingUserWithExternalId = await this.userRepository.findOne({
+        where: {
+          tenantId: user.tenantId,
+          externalId: body.externalId,
+          id: Not(id), // Exclude current user
+        },
+      });
+
+      if (existingUserWithExternalId) {
+        throw new BadRequestException(
+          `External ID ${body.externalId} is already in use by another user in this tenant`,
+        );
+      }
+    }
+    const updated = await this.userRepository.update(id, body as Partial<User>);
+
+    return { success: updated.affected !== 0 };
+  }
+
+  async updateUserStatus(
+    id: number,
+    newStatus: UserStatus,
+  ): Promise<UserUpdateResponseDto> {
+    const user = await this.userRepository.findOne({ where: { id } });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    if (user.status === newStatus) {
+      throw new BadRequestException(
+        `User with ID ${id} is already ${newStatus.toLowerCase()}`,
+      );
+    }
+
+    user.status = newStatus;
+    await this.userRepository.save(user);
+
+    return { success: true };
+  }
+
+  async addUser(
+    userData: UserCreateDto,
+    hashedpassword?: string,
+  ): Promise<Omit<User, 'password'>> {
+    // Check if user with email or phone already exists
+    const existingUser = await this.userRepository.findOne({
+      where: [{ email: userData.email }, { phone: userData.phone }],
+      select: ['email', 'phone'],
+    });
+
+    if (existingUser) {
+      if (existingUser.email === userData.email) {
+        throw new BadRequestException('Email already registered');
+      }
+      throw new BadRequestException('Phone number already registered');
+    }
+
+    if (!userData.tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    } else {
+      const tenant = await this.tenantService.findById(userData.tenantId);
+      if (!tenant) {
+        throw new BadRequestException(' Tenant is not valid');
+      }
+    }
+    if (userData.externalId) {
+      const existingExternalId = await this.userRepository.findOne({
+        where: {
+          tenantId: userData.tenantId,
+          externalId: userData.externalId,
+        },
+      });
+
+      if (existingExternalId) {
+        throw new BadRequestException(
+          `External ID ${userData.externalId} is already in use by another user in this organization`,
+        );
+      }
+    }
+    // // Hash password
+    // const hashedPassword = userData.password
+    //   ? await bcrypt.hash(userData.password, 10)
+    //   : undefined;
+
+    // Create new user
+    const newUser = this.userRepository.create({
+      email: userData.email,
+      password: hashedpassword,
+      name: userData.name,
+      status: userData.status || UserStatus.ACTIVE,
+      metadata: {},
+      username: userData.username || userData.email,
+      phone: userData.phone,
+      tenantId: userData.tenantId,
+      externalId: userData.externalId,
+    });
+
+    // Save user
+    const savedUser = await this.userRepository.save(newUser);
+
+    const groups = await this.groupRepository.find({
+      where: { name: In(userData.roles) },
+    });
+
+    if (groups.length > 0) {
+      // Add user to default group
+      const groupsData = groups.map((group) =>
+        this.userGroupRepository.create({
+          userId: savedUser.id,
+          groupId: group.id,
+        }),
+      );
+      await this.userGroupRepository.save(groupsData);
+    }
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.USER_SIGNUP,
+      tenantId: savedUser.tenantId,
+      userId: savedUser.id,
+      details: {
+        username: savedUser.username,
+        email: savedUser.email,
+        phone: savedUser.phone,
+      },
+    });
+    const userDto: addUserResponseDto = {
+      id: savedUser.id,
+      name: savedUser.name,
+      email: savedUser.email,
+      username: savedUser.username,
+      phone: savedUser.phone,
+      externalId: savedUser.externalId,
+      status: savedUser.status,
+      metadata: savedUser.metadata,
+      tenantId: savedUser.tenantId,
+      createdAt: savedUser.createdAt,
+      updatedAt: savedUser.updatedAt,
+    };
+
+    return userDto;
   }
 
   /**

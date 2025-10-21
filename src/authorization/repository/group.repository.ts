@@ -14,6 +14,9 @@ export class GroupRepository {
   async findOne(where: FindOptionsWhere<Group>): Promise<Group | null> {
     return this.groupRepository.findOne({ where });
   }
+  async getAll(options?: any): Promise<Group[]> {
+    return this.groupRepository.find(options || {});
+  }
 
   async findUserRoleByUserId(userId: number): Promise<Group[]> {
     return this.groupRepository

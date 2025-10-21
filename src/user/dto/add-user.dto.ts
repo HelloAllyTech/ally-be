@@ -1,35 +1,23 @@
-import {
-  IsEnum,
-  IsEmail,
-  IsString,
-  MinLength,
-  IsOptional,
-  IsArray,
-  ArrayNotEmpty,
-} from 'class-validator';
-import { UserRole, UserStatus } from '../../common/constants/user.constants';
-import { PASSWORD_VALIDATION } from '../../common/constants/validation.constants';
 import { ApiProperty } from '@nestjs/swagger';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  IsArray,
+  IsEnum,
+  ArrayNotEmpty,
+  IsNotEmpty,
+  IsUUID,
+} from 'class-validator';
+import { UserRole } from 'src/common/constants/user.constants';
 
-export class UserCreateDto {
+export class AddUserDto {
   @ApiProperty({
     description: 'User email',
     example: 'john_doe@example.com',
   })
   @IsEmail()
   email!: string;
-
-  @ApiProperty({
-    description: 'User password (optional)',
-    example: 'password123',
-    minLength: 6,
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  @MinLength(PASSWORD_VALIDATION.MIN_LENGTH)
-  //@Matches(PASSWORD_VALIDATION.REGEX)
-  password?: string;
 
   @ApiProperty({
     description: 'User name',
@@ -58,14 +46,12 @@ export class UserCreateDto {
   @IsString()
   phone?: string;
 
-  @IsOptional()
-  @IsString()
-  username?: string;
-
   @ApiProperty({
     description: 'Tenant ID(UUID)',
     example: 'c56a4180-65aa-42ec-a945-5fd21dec0538',
   })
+  @IsUUID()
+  @IsNotEmpty()
   @IsString()
   tenantId!: string;
 
@@ -76,14 +62,4 @@ export class UserCreateDto {
   @IsOptional()
   @IsString()
   externalId?: string;
-  @ApiProperty({
-    description: 'User status',
-    example: 'ACTIVE',
-    enum: UserStatus,
-    default: UserStatus.ACTIVE,
-    required: false,
-  })
-  @IsOptional()
-  @IsEnum(UserStatus)
-  status?: UserStatus;
 }

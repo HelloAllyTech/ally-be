@@ -1,16 +1,38 @@
-import { Controller, Get, Post, Body, Param, Put } from '@nestjs/common';
-import { TenantService } from './tenant.service';
 import { Tenant, TenantStatus } from '../common/entities/tenant.entity';
-import { ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiResponse,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
 import { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto';
 import { UpdateTenantMetadataDto } from './dto/update-tenant-metadata.dto';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Param,
+  Put,
+  Query,
+  Patch,
+} from '@nestjs/common';
+import { TenantService } from './tenant.service';
+import { SortOrder } from 'src/user/enum/user.enum';
+import { TenantSortBy } from './enum/tenant.enum';
+import { UpdateTenantDto } from './dto/update-tenant.dto';
+import { GetAllTenantsResponseDto } from './dto/get-tenants.dto';
 
 @ApiTags('Tenant')
 @Controller('v1/tenants')
+@ApiBearerAuth()
+@ApiSecurity('access-token')
 export class TenantController {
   constructor(private readonly tenantService: TenantService) {}
 
@@ -66,5 +88,71 @@ export class TenantController {
       id,
       updateTenantMetadataDto.metadata,
     );
+  }
+
+  @ApiOperation({ summary: 'Get all tenants' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of tenants',
+    type: Tenant,
+    isArray: true,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of users to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of users to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: TenantSortBy,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order: ASC or DESC',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    isArray: true,
+    type: String,
+    description: 'Search by name',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_TENANTS])
+  @Get()
+  async getAllTenants(
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: TenantSortBy,
+    @Query('sortOrder') order?: SortOrder,
+    @Query('search') search?: string,
+  ): Promise<GetAllTenantsResponseDto> {
+    return this.tenantService.getallTenants(search, {
+      limit,
+      offset,
+      sortBy,
+      order,
+    });
+  }
+
+  @ApiOperation({ summary: 'Edit tenant details' })
+  @ApiResponse({ status: 200, description: 'updated tenanant successfully' })
+  @AuthPermissions([PERMISSIONS.EDIT_TENANT])
+  @Patch(':id')
+  async updateTenant(
+    @Param('id') id: string,
+    @Body() updateTenanatDto: UpdateTenantDto,
+  ): Promise<Tenant | null> {
+    return this.tenantService.updateTenant(id, updateTenanatDto);
   }
 }
