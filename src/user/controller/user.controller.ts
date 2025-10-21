@@ -21,28 +21,28 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser } from '../auth/decorators/user.decorator';
-import { TokenUser } from '../auth/type/auth.types';
-import { UserService } from './user.service';
-import { AuthRoles } from '../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../common/constants/user.constants';
-import { AssignUserRoleDto, RemoveUserRoleDto } from './dto/group.dto';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../../auth/decorators/user.decorator';
+import { TokenUser } from '../../auth/type/auth.types';
+import { UserService } from '../service/user.service';
+import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
+import { UserRole } from '../../common/constants/user.constants';
+import { AssignUserRoleDto, RemoveUserRoleDto } from '../dto/group.dto';
 import { GroupService } from 'src/authorization/service/group.service';
 import { User } from 'src/common/entities/user.entity';
-import { AddUserDto } from './dto/add-user.dto';
+import { AddUserDto } from '../dto/add-user.dto';
 import { LoggerService } from 'src/logger/logger.service';
 import { AuthController } from 'src/auth/controller/auth.controller';
-import { UpdateUserDto } from './dto/update-user.dto';
-import { UpdateUserStatusDto } from './dto/update-user-status.dto';
-import { UserSortBy, SortOrder } from './enum/user.enum';
+import { UpdateUserDto } from '../dto/update-user.dto';
+import { UpdateUserStatusDto } from '../dto/update-user-status.dto';
+import { UserSortBy, SortOrder } from '../enum/user.enum';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import {
   UserListResponseDto,
   UserUpdateResponseDto,
-} from './dto/user-response.dto';
-import { addUserResponseDto } from './dto/user-add-response.dto';
+} from '../dto/user-response.dto';
+import { addUserResponseDto } from '../dto/user-add-response.dto';
 
 @Controller('v1/users')
 @ApiTags('Users')

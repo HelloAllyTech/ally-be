@@ -33,7 +33,7 @@ import { CallDetails } from '../../common/entities/call.details.entity';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { User } from '../../common/entities/user.entity';
 import { Pagination } from '../../common/type/common.type';
-import { UserService } from '../../user/user.service';
+import { UserService } from '../../user/service/user.service';
 import { ChatEvents } from '../constants/chat.constants';
 import { ChatGateway } from '../gateway/chat.gateway';
 import {

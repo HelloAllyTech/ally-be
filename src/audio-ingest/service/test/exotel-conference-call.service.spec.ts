@@ -3,7 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as WebSocket from 'ws';
 import { ExotelConferenceCallService } from '../exotel-conference-call.service';
 import { ChatService } from '../../../chat/service/chat.service';
-import { UserService } from '../../../user/user.service';
+import { UserService } from '../../../user/service/user.service';
 import { StreamFileProcessorService } from '../../../audio/service/stream-file-processor.service';
 import { LoggerService } from '../../../logger/logger.service';
 import { ExecutionManager } from '../../../common/execution/execution-manager';

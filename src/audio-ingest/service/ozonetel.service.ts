@@ -30,7 +30,7 @@ import {
 } from '../../common/util/date.util';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
-import { UserService } from '../../user/user.service';
+import { UserService } from '../../user/service/user.service';
 import { AudioRetryProducer } from '../producer/audio-retry.producer';
 import { CloudTelephonyService } from '../service/cloud-telephony.service';
 import {

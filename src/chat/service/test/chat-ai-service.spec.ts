@@ -20,7 +20,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { FlattenedSummaryNotePayload } from 'src/common/entities/type/call.details.type';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { NotificationService } from 'src/notification/service/notification.service';
-import { UserService } from 'src/user/user.service';
+import { UserService } from 'src/user/service/user.service';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({

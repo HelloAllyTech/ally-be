@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { UserController } from './user.controller';
+import { UserController } from './controller/user.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../common/entities/user.entity';
-import { UserService } from './user.service';
+import { UserService } from './service/user.service';
 import { QueueModule } from '../queue/queue.module';
 import { UsersRepository } from './repository/user.repository';
 import { Group } from 'src/common/entities/group.entity';

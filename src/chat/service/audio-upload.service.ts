@@ -19,7 +19,7 @@ import {
 } from '../dto/audio-upload.dto';
 import { generateAudioStorageKey } from 'src/common/util/audio.util';
 import { AudioChatProvider } from 'src/common/constants/chat.constants';
-import { UserService } from 'src/user/user.service';
+import { UserService } from 'src/user/service/user.service';
 import { addDurationToDate } from 'src/common/util/date.util';
 import {
   SUPPORTED_AUDIO_FILE_TYPES,

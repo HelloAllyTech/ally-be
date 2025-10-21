@@ -3,7 +3,7 @@ import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import axios from 'axios';
 import { OzonetelService } from '../ozonetel.service';
 import { ChatService } from '../../../chat/service/chat.service';
-import { UserService } from '../../../user/user.service';
+import { UserService } from '../../../user/service/user.service';
 import { CloudTelephonyService } from '../cloud-telephony.service';
 import { AppConfigService } from '../../../config/config.service';
 import { AiEventService } from '../../../ai/service/ai-event.service';

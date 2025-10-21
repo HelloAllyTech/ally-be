@@ -15,7 +15,7 @@ import {
 } from '../constants/chat.constants';
 import { ChatService } from './chat.service';
 import { SettingsService } from '../../settings/service/settings.service';
-import { UserService } from '../../user/user.service';
+import { UserService } from '../../user/service/user.service';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';

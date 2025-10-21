@@ -1,4 +1,4 @@
-import { Tenant, TenantStatus } from '../common/entities/tenant.entity';
+import { Tenant, TenantStatus } from '../../common/entities/tenant.entity';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -7,10 +7,10 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { CreateTenantDto } from './dto/create-tenant.dto';
-import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
-import { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto';
-import { UpdateTenantMetadataDto } from './dto/update-tenant-metadata.dto';
+import { CreateTenantDto } from '../dto/create-tenant.dto';
+import { UpdateTenantStatusDto } from '../dto/update-tenant-status.dto';
+import { UpdateTenantSettingsDto } from '../dto/update-tenant-settings.dto';
+import { UpdateTenantMetadataDto } from '../dto/update-tenant-metadata.dto';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import {
@@ -23,11 +23,11 @@ import {
   Query,
   Patch,
 } from '@nestjs/common';
-import { TenantService } from './tenant.service';
+import { TenantService } from '../service/tenant.service';
 import { SortOrder } from 'src/user/enum/user.enum';
-import { TenantSortBy } from './enum/tenant.enum';
-import { UpdateTenantDto } from './dto/update-tenant.dto';
-import { GetAllTenantsResponseDto } from './dto/get-tenants.dto';
+import { TenantSortBy } from '../enum/tenant.enum';
+import { UpdateTenantDto } from '../dto/update-tenant.dto';
+import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
 
 @ApiTags('Tenant')
 @Controller('v1/tenants')

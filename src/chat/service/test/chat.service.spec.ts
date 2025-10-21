@@ -12,7 +12,7 @@ import { CallDetailsRepository } from '../../repository/call-details.repository'
 import { SummaryFeedbackRepository } from '../../repository/summary-feedback.repository';
 import { QueueService } from '../../../queue/service/queue.service';
 import { ChatGateway } from '../../gateway/chat.gateway';
-import { UserService } from '../../../user/user.service';
+import { UserService } from '../../../user/service/user.service';
 import { AiService } from '../../../ai/service/ai.service';
 import { RedisService } from '../../../redis/service/redis.service';
 import { MessageBrokerService } from '../../../message-broker/service/message-broker.service';

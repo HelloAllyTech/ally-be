@@ -9,8 +9,8 @@ import { ChatStatus } from 'src/common/entities/chat.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { Group } from 'src/common/entities/group.entity';
 import { UserGroup } from 'src/common/entities/user-group.entity';
-import { TenantService } from 'src/tenant/tenant.service';
-import { UsersRepository } from '../repository/user.repository';
+import { TenantService } from 'src/tenant/service/tenant.service';
+import { UsersRepository } from 'src/user/repository/user.repository';
 import { GroupService } from 'src/authorization/service/group.service';
 
 // Mock ExecutionManager

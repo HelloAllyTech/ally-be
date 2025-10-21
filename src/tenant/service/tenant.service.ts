@@ -5,12 +5,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
-import { Tenant, TenantStatus } from '../common/entities/tenant.entity';
-import { LoggerService } from '../logger/logger.service';
-import { TenantsRepository } from './repository/tenant.repository';
+import { Tenant, TenantStatus } from '../../common/entities/tenant.entity';
+import { LoggerService } from '../../logger/logger.service';
+import { TenantsRepository } from '../repository/tenant.repository';
 import { Pagination } from 'src/common/type/common.type';
-import { UpdateTenantDto } from './dto/update-tenant.dto';
-import { GetAllTenantsResponseDto } from './dto/get-tenants.dto';
+import { UpdateTenantDto } from '../dto/update-tenant.dto';
+import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
 
 @Injectable()
 export class TenantService {

@@ -2,11 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, UpdateResult } from 'typeorm';
 import { TenantService } from '../tenant.service';
-import { Tenant, TenantStatus } from '../../common/entities/tenant.entity';
-import { TenantsRepository } from '../repository/tenant.repository';
+import { Tenant, TenantStatus } from 'src/common/entities/tenant.entity';
+import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 
 // Mock LoggerService
-jest.mock('../../logger/logger.service', () => ({
+jest.mock('../../../logger/logger.service', () => ({
   LoggerService: {
     getInstance: jest.fn(() => ({
       error: jest.fn(),

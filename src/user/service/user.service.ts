@@ -1,18 +1,18 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
-import { User } from '../common/entities/user.entity';
-import { QueueService } from '../queue/service/queue.service';
-import { Chat, ChatStatus } from '../common/entities/chat.entity';
-import { UserRole, UserStatus } from '../common/constants/user.constants';
-import { RedisService } from '../redis/service/redis.service';
-import { ExecutionManager } from '../common/execution/execution-manager';
+import { User } from '../../common/entities/user.entity';
+import { QueueService } from '../../queue/service/queue.service';
+import { Chat, ChatStatus } from '../../common/entities/chat.entity';
+import { UserRole, UserStatus } from '../../common/constants/user.constants';
+import { RedisService } from '../../redis/service/redis.service';
+import { ExecutionManager } from '../../common/execution/execution-manager';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { NotFoundException } from 'src/exception/custom.exception';
-import { UserFilterOptions } from './interface/user-filter-options.interface';
-import { UpdateUserDto } from './dto/update-user.dto';
-import { UsersRepository } from './repository/user.repository';
-import { TenantService } from 'src/tenant/tenant.service';
+import { UserFilterOptions } from '../interface/user-filter-options.interface';
+import { UpdateUserDto } from '../dto/update-user.dto';
+import { UsersRepository } from '../repository/user.repository';
+import { TenantService } from 'src/tenant/service/tenant.service';
 import { UserGroup } from 'src/common/entities/user-group.entity';
 import { Group } from 'src/common/entities/group.entity';
 import { UserCreateDto } from 'src/auth/dto/user-create.dto';
@@ -22,8 +22,8 @@ import {
   UserDto,
   UserListResponseDto,
   UserUpdateResponseDto,
-} from './dto/user-response.dto';
-import { addUserResponseDto } from './dto/user-add-response.dto';
+} from '../dto/user-response.dto';
+import { addUserResponseDto } from '../dto/user-add-response.dto';
 
 @Injectable()
 export class UserService {
