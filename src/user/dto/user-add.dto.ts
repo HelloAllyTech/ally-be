@@ -6,6 +6,8 @@ import {
   IsOptional,
   IsArray,
   ArrayNotEmpty,
+  IsPositive,
+  IsInt,
   Matches,
 } from 'class-validator';
 import { UserRole, UserStatus } from '../../common/constants/user.constants';
@@ -87,4 +89,13 @@ export class AddUserDto {
   @IsOptional()
   @IsEnum(UserStatus)
   status?: UserStatus;
+
+  @ApiProperty({
+    description: 'Simulation credit limit',
+    example: 100,
+  })
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  simulationCreditLimit?: number;
 }

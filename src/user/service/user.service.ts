@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -23,6 +28,7 @@ import {
   UserListResponseDto,
   UserUpdateResponseDto,
 } from '../dto/user-response.dto';
+import { SimulationCreditsService } from 'src/learn/service/simulation-credits.service';
 import { AddUserResponseDto } from '../dto/user-add-response.dto';
 import { AddUserDto } from '../dto/user-add.dto';
 
@@ -42,6 +48,8 @@ export class UserService {
     private readonly tenantService: TenantService,
     private readonly usersRepository: UserRepository,
     private readonly groupService: GroupService,
+    @Inject(forwardRef(() => SimulationCreditsService))
+    private readonly simulationCreditsService: SimulationCreditsService,
   ) {}
 
   async get(id: number): Promise<User | null> {
@@ -239,8 +247,8 @@ export class UserService {
       createdAt: user.user_createdAt,
       updatedAt: user.user_updatedAt,
       roles: result.rolesMap.get(user.user_id) || [],
-      maxCredits: undefined,
-      usedCredits: undefined,
+      creditLimit: user.simulation_credit_limit,
+      consumedCredits: user.simulation_consumed_credits,
     }));
 
     return { data: transformedUsers, count: result.count };
@@ -382,6 +390,12 @@ export class UserService {
       );
       await this.userGroupRepository.save(groupsData);
     }
+    if (userData.simulationCreditLimit) {
+      await this.simulationCreditsService.updateSimulationCredits({
+        userId: savedUser.id,
+        creditLimit: userData.simulationCreditLimit,
+      });
+    }
 
     this.auditLogger.log({
       eventType: AUDIT_EVENTS.USER_SIGNUP,
@@ -424,5 +438,9 @@ export class UserService {
 
     // Return the first available role if neither ADMIN nor COUNSELOR
     return roles[0].name;
+  }
+
+  async isValidUser(id: number): Promise<boolean> {
+    return this.userRepository.exists({ where: { id } });
   }
 }

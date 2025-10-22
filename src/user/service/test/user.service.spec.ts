@@ -12,6 +12,7 @@ import { UserGroup } from 'src/common/entities/user-group.entity';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { UserRepository } from 'src/user/repository/user.repository';
 import { GroupService } from 'src/authorization/service/group.service';
+import { SimulationCreditsService } from 'src/learn/service/simulation-credits.service';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -40,6 +41,7 @@ describe('UserService', () => {
   let mockUsersRepository: any;
   let mockQueryBuilder: any;
   let mockGroupService: any;
+  let mockSimulationCreditsService: any;
 
   const mockUser: User = {
     id: 1,
@@ -123,6 +125,10 @@ describe('UserService', () => {
       getAllUsers: jest.fn(),
     };
 
+    mockSimulationCreditsService = {
+      updateSimulationCredits: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
@@ -137,6 +143,10 @@ describe('UserService', () => {
         { provide: TenantService, useValue: mockTenantService },
         { provide: UserRepository, useValue: mockUsersRepository },
         { provide: GroupService, useValue: mockGroupService },
+        {
+          provide: SimulationCreditsService,
+          useValue: mockSimulationCreditsService,
+        },
       ],
     }).compile();
 
@@ -343,6 +353,41 @@ describe('UserService', () => {
       const result = await service.addUser(userData as any);
       expect(result.id).toBe(2);
       expect(result.email).toBe(userData.email);
+    });
+
+    it('should create user with simulation credits when provided', async () => {
+      const userData = {
+        email: 'new@example.com',
+        phone: '+9876543210',
+        roles: [UserRole.CLIENT],
+        tenantId: 'test-tenant',
+        simulationCreditLimit: 100,
+      };
+      const savedUser = { ...mockUser, id: 2, ...userData };
+      mockUserRepository.findOne.mockResolvedValue(null);
+      mockTenantService.findById.mockResolvedValue({ id: 'test-tenant' });
+      mockUserRepository.create.mockReturnValue(savedUser);
+      mockUserRepository.save.mockResolvedValue(savedUser);
+      mockGroupRepository.find.mockResolvedValue([
+        { id: 1, name: UserRole.CLIENT },
+      ]);
+      mockUserGroupRepository.create.mockReturnValue({ userId: 2, groupId: 1 });
+      mockUserGroupRepository.save.mockResolvedValue([
+        { userId: 2, groupId: 1 },
+      ]);
+      mockSimulationCreditsService.updateSimulationCredits.mockResolvedValue(
+        {},
+      );
+
+      const result = await service.addUser(userData as any);
+      expect(result.id).toBe(2);
+      expect(result.email).toBe(userData.email);
+      expect(
+        mockSimulationCreditsService.updateSimulationCredits,
+      ).toHaveBeenCalledWith({
+        userId: 2,
+        creditLimit: 100,
+      });
     });
   });
 });

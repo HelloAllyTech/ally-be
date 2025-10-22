@@ -5,6 +5,7 @@ import { UserFilterOptions } from '../interface/user-filter-options.interface';
 import { DataSource, SelectQueryBuilder } from 'typeorm';
 import { Injectable } from '@nestjs/common';
 import { UserGroup } from 'src/common/entities/user-group.entity';
+import { SimulationCredits } from 'src/learn/entity/simulation-credits.entity';
 
 @Injectable()
 export class UserRepository extends Repository<User> {
@@ -15,7 +16,17 @@ export class UserRepository extends Repository<User> {
   async getAllUsers(filters?: UserFilterOptions) {
     const query = this.createQueryBuilder('user')
       .innerJoin(Tenant, 'tenant', '"tenant"."id" = ("user"."tenant_id")::uuid')
-      .select(['user', '"tenant"."name" AS "tenant_name"']);
+      .leftJoin(
+        SimulationCredits,
+        'simulationCredits',
+        'simulationCredits.userId = user.id',
+      )
+      .select([
+        'user',
+        '"tenant"."name" AS "tenant_name"',
+        'COALESCE(simulationCredits.creditLimit, 0) AS "simulation_credit_limit"',
+        'COALESCE(simulationCredits.consumedCredits, 0) AS "simulation_consumed_credits"',
+      ]);
 
     this.applyTenantIdFilter(query, filters);
     this.applyRolesFilter(query, filters);

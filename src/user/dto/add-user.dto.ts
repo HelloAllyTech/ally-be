@@ -8,7 +8,10 @@ import {
   ArrayNotEmpty,
   IsNotEmpty,
   IsUUID,
+  IsPositive,
+  IsNumber,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { UserRole } from 'src/common/constants/user.constants';
 
 export class AddUserDto {
@@ -62,4 +65,14 @@ export class AddUserDto {
   @IsOptional()
   @IsString()
   externalId?: string;
+
+  @ApiProperty({
+    description: 'Simulation credit limit',
+    example: 100,
+  })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  @Type(() => Number)
+  simulationCreditLimit?: number;
 }
