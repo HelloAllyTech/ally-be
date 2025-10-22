@@ -227,11 +227,23 @@ export class AuthService {
     if (!email && !phone) {
       throw new BadRequestException('Email or phone is required');
     }
+
+    const whereConditions = [];
+    if (phone) {
+      whereConditions.push({
+        phone,
+        status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]),
+      });
+    }
+    if (email) {
+      whereConditions.push({
+        email,
+        status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]),
+      });
+    }
+
     const user = await this.userRepository.findOne({
-      where: [
-        { phone: phone, status: UserStatus.ACTIVE },
-        { email: email, status: UserStatus.ACTIVE },
-      ],
+      where: whereConditions,
     });
     if (!user) {
       this.logger.error(`User not found for phone ${phone} or email ${email}`);
@@ -277,15 +289,20 @@ export class AuthService {
       throw new BadRequestException('Email is required');
     }
     const user = await this.userRepository.findOne({
-      where: { email, status: UserStatus.ACTIVE },
+      where: { email, status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]) },
     });
+
     if (!user) {
       this.logger.error(`User not found for email ${email}`);
       this.logOtpGenerationError(email, 'User not found');
       return { success: true };
     }
+
     const userGroups = await this.groupService.getUserGroupNames(user.id);
-    if (allowedRoles.some((role) => userGroups.includes(role))) {
+    const hasAllowedRoles = allowedRoles.some((role) =>
+      userGroups.includes(role),
+    );
+    if (!hasAllowedRoles) {
       this.logger.error(`User not authorized for email ${email}`);
       this.logOtpGenerationError(email, 'User not authorized');
       return { success: true };
@@ -335,10 +352,6 @@ export class AuthService {
         this.logOtpVerificationError(phone, 'User not found');
         throw new BadRequestException('User not found');
       }
-      if (user.status === UserStatus.SUSPENDED) {
-        this.logOtpVerificationError(phone, 'User suspended');
-        throw new UserSuspendedException();
-      }
       email = user.email;
     }
 
@@ -360,6 +373,13 @@ export class AuthService {
         this.logOtpVerificationError(email, 'User not found');
         throw new BadRequestException('User not found');
       }
+
+      if (user.status === UserStatus.SUSPENDED) {
+        this.logger.error(`User ${email} is suspended`);
+        this.logOtpVerificationError(email, 'User suspended');
+        throw new UserSuspendedException();
+      }
+
       const tokens = await this.generateTokens(user);
 
       this.auditLogger.log({
@@ -390,6 +410,7 @@ export class AuthService {
     if (!email) {
       throw new BadRequestException('Email is required');
     }
+
     const user = await this.userRepository.findOne({
       where: { email, status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]) },
     });
@@ -400,16 +421,13 @@ export class AuthService {
     }
 
     const userGroups = await this.groupService.getUserGroupNames(user.id);
-    if (!allowedRoles.some((role) => userGroups.includes(role))) {
+    const hasAllowedRoles = allowedRoles.some((role) =>
+      userGroups.includes(role),
+    );
+    if (!hasAllowedRoles) {
       this.logger.error(`User not authorized for email ${email}`);
       this.logOtpVerificationError(email, 'User not authorized');
       throw new BadRequestException('Invalid otp');
-    }
-
-    if (user.status === UserStatus.SUSPENDED) {
-      this.logger.error(`User ${email} is suspended`);
-      this.logOtpVerificationError(email, 'User suspended');
-      throw new UserSuspendedException();
     }
 
     const cachedOtp = await this.cache.get(this.getOtpKey(email));
@@ -417,6 +435,12 @@ export class AuthService {
       this.logger.error(`Invalid OTP for email ${email}`);
       this.logOtpVerificationError(email, 'Invalid OTP');
       throw new BadRequestException('Invalid OTP');
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      this.logger.error(`User ${email} is suspended`);
+      this.logOtpVerificationError(email, 'User suspended');
+      throw new UserSuspendedException();
     }
 
     await this.cache.del(this.getOtpKey(email));

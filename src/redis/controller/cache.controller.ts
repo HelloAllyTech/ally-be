@@ -1,4 +1,5 @@
 import { Controller, Delete, Get, Query } from '@nestjs/common';
+import { ApiSecurity, ApiBearerAuth } from '@nestjs/swagger';
 import { RedisService } from '../service/redis.service';
 import { IsString, IsNotEmpty } from 'class-validator';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
@@ -11,6 +12,8 @@ class CacheQueryDto {
 }
 
 @Controller('v1/cache')
+@ApiSecurity('access-token')
+@ApiBearerAuth()
 export class CacheController {
   constructor(private readonly redisService: RedisService) {}
 

@@ -546,6 +546,7 @@ describe('AuthService', () => {
     it('should throw UserSuspendedException when user is suspended', async () => {
       userRepository.findOne.mockResolvedValue(mockSuspendedUser);
       groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
+      redisService.get.mockResolvedValue('123456'); // Provide valid OTP
 
       await expect(authService.verifyOtpV2(mockVerifyOtpDto)).rejects.toThrow(
         UserSuspendedException,
@@ -618,6 +619,7 @@ describe('AuthService', () => {
       };
       userRepository.findOne.mockResolvedValue(mockSuspendedUser);
       groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
+      redisService.get.mockResolvedValue('123456'); // Provide valid OTP
 
       await expect(authService.verifyOtpV2(suspendedDto)).rejects.toThrow();
 
@@ -670,6 +672,7 @@ describe('AuthService', () => {
       };
       userRepository.findOne.mockResolvedValue(mockSuspendedUser);
       groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
+      redisService.get.mockResolvedValue('123456'); // Provide valid OTP
       await expect(authService.verifyOtpV2(suspendedDto)).rejects.toThrow();
       expect(logOtpVerificationErrorSpy).toHaveBeenCalledWith(
         mockSuspendedUser.email,
