@@ -18,7 +18,7 @@ export class UserDto {
     description: 'External system ID / Telephony ID',
     nullable: true,
   })
-  telephonyId?: string;
+  externalId?: string;
 
   @ApiProperty({ enum: UserStatus, description: 'Status of the user' })
   status!: UserStatus;

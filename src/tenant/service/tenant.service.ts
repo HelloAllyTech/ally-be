@@ -83,16 +83,24 @@ export class TenantService {
     if (!tenant) {
       throw new NotFoundException(`Tenant with ID ${id} not found`);
     }
-    if (updateTenantDto.name && updateTenantDto.name !== tenant.name) {
-      const existingTenantWithName = await this.tenantRepository.findOne({
-        where: {
-          name: updateTenantDto.name,
-          id: Not(id), // Exclude current tenant
-        },
+    if (
+      (updateTenantDto.name && updateTenantDto.name !== tenant.name) ||
+      (updateTenantDto.code && updateTenantDto.code !== tenant.code)
+    ) {
+      const existingTenant = await this.tenantRepository.findOne({
+        where: [
+          { name: updateTenantDto.name, id: Not(id) },
+          { code: updateTenantDto.code, id: Not(id) },
+        ],
       });
-      if (existingTenantWithName) {
+      if (existingTenant?.name == updateTenantDto.name) {
         throw new BadRequestException(
           `Tenant with name "${updateTenantDto.name}" already exists`,
+        );
+      }
+      if (existingTenant?.code === updateTenantDto.code) {
+        throw new BadRequestException(
+          `Tenant with code "${updateTenantDto.code}" already exists`,
         );
       }
     }

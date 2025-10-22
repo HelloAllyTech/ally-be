@@ -11,12 +11,11 @@ import {
   ChangeUserRolesDto,
   RemoveUserRoleDto,
 } from 'src/user/dto/group.dto';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, DataSource } from 'typeorm';
+import { In, DataSource } from 'typeorm';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from '../repository/user-group.repository';
 
-import { User } from 'src/common/entities/user.entity';
+import { UserRepository } from 'src/user/repository/user.repository';
 
 @Injectable()
 export class GroupService {
@@ -25,14 +24,23 @@ export class GroupService {
     private readonly cache: RedisService,
     private readonly groupRepository: GroupRepository,
     private readonly userGroupRepository: UserGroupRepository,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
+    private readonly userRepository: UserRepository,
     private readonly dataSource: DataSource,
   ) {}
+
   async getAllRoles(): Promise<Group[]> {
     return this.groupRepository.getAll();
   }
-  async getUserGroups(userId: number): Promise<number[]> {
+
+  async getGroupNames(groupIds: number[]): Promise<string[]> {
+    const groupNames = await this.groupRepository.getAll({
+      where: { id: In(groupIds) },
+    });
+
+    return groupNames.map((group) => group.name);
+  }
+
+  async getUserGroupIds(userId: number): Promise<number[]> {
     const cachedUserGroups = await this.cache.get(`user:groups:${userId}`);
     if (cachedUserGroups) {
       return JSON.parse(cachedUserGroups);
@@ -41,6 +49,17 @@ export class GroupService {
     const groupIds = userGroups.map((group) => group.id);
     await this.cache.set(`user:groups:${userId}`, JSON.stringify(groupIds));
     return groupIds;
+  }
+
+  async getUserGroupNames(userId: number): Promise<string[]> {
+    const cachedUserGroups = await this.cache.get(`user:groups:${userId}`);
+    if (cachedUserGroups) {
+      const userGroups = JSON.parse(cachedUserGroups);
+      return await this.getGroupNames(userGroups);
+    }
+    const userGroups = await this.getUserRolesByUserId(userId);
+    const groupNames = userGroups.map((group) => group.name);
+    return groupNames;
   }
 
   async assignRole(assignUserRoleDto: AssignUserRoleDto): Promise<boolean> {
@@ -159,6 +178,8 @@ export class GroupService {
           }
         }
       });
+      this.cache.del(`user:groups:${changeUserRolesDto.userId}`);
+      this.cache.del(`user:roles:${changeUserRolesDto.userId}`);
       return {
         success: true,
         message: `User roles updated successfully`,

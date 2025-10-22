@@ -3,6 +3,7 @@ import { Tenant } from 'src/common/entities/tenant.entity';
 import { User } from 'src/common/entities/user.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
+import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
 
 @Injectable()
 export class TenantsRepository extends Repository<Tenant> {
@@ -10,7 +11,10 @@ export class TenantsRepository extends Repository<Tenant> {
   constructor(private dataSource: DataSource) {
     super(Tenant, dataSource.createEntityManager());
   }
-  async getallTenants(search?: string, options?: Pagination) {
+  async getallTenants(
+    search?: string,
+    options?: Pagination,
+  ): Promise<GetAllTenantsResponseDto> {
     const query = this.createQueryBuilder('tenant').select(['tenant']);
 
     this.applySearchFilter(query, search);
@@ -22,7 +26,7 @@ export class TenantsRepository extends Repository<Tenant> {
       );
     }
 
-    const totalCount = await query.getCount();
+    const count = await query.getCount();
     // Pagination
     if (options?.limit) {
       query.limit(options?.limit);
@@ -33,7 +37,7 @@ export class TenantsRepository extends Repository<Tenant> {
     const tenants = await query.getMany();
 
     if (tenants.length == 0) {
-      return { data: [], total: 0 };
+      return { data: [], count: 0 };
     }
 
     const tenantIds = tenants.map((t) => t.id);
@@ -56,7 +60,7 @@ export class TenantsRepository extends Repository<Tenant> {
 
     return {
       data: tenantsWithUserCount,
-      total: totalCount,
+      count,
     };
   }
   private applySearchFilter(

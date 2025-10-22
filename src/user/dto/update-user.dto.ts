@@ -21,7 +21,7 @@ export class UpdateUserDto {
   email?: string;
 
   @ApiProperty({
-    description: 'TelephonyId of the user',
+    description: 'External ID of the user',
     example: 'TEL007',
     required: false,
   })

@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { UserStatus } from 'src/common/constants/user.constants';
 
-export class addUserResponseDto {
+export class AddUserResponseDto {
   @ApiProperty({ description: 'User ID' })
   id!: number;
 

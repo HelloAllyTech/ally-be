@@ -7,7 +7,7 @@ import { Injectable } from '@nestjs/common';
 import { UserGroup } from 'src/common/entities/user-group.entity';
 
 @Injectable()
-export class UsersRepository extends Repository<User> {
+export class UserRepository extends Repository<User> {
   constructor(private dataSource: DataSource) {
     super(User, dataSource.createEntityManager());
   }

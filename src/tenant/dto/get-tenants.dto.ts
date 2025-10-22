@@ -59,5 +59,5 @@ export class GetAllTenantsResponseDto {
     description: 'Total number of tenants matching the search/filter',
     example: 100,
   })
-  total!: number;
+  count!: number;
 }

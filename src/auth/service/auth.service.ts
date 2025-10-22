@@ -13,12 +13,19 @@ import { RefreshToken } from '../../common/entities/refresh-token.entity';
 import { AppConfigService } from '../../config/config.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UserStatus } from '../../common/constants/user.constants';
-import { UserCreateDto } from '../dto/user-create.dto';
 import { RedisService } from 'src/redis/service/redis.service';
 import { LoggerService } from '../../logger/logger.service';
 import { AuthUtil } from '../util/auth.util';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { GroupService } from 'src/authorization/service/group.service';
+import {
+  GenerateOtpV2Dto,
+  GenerateOtpV2ResponseDto,
+  VerifyOtpV2Dto,
+  VerifyOtpV2ResponseDto,
+} from '../dto/login.dto';
+import { UserSuspendedException } from '../exception/login.exception';
 
 @Injectable()
 export class AuthService {
@@ -36,6 +43,7 @@ export class AuthService {
     private configService: AppConfigService,
     private eventEmitter: EventEmitter2,
     private readonly cache: RedisService,
+    private readonly groupService: GroupService,
   ) {
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
@@ -68,7 +76,9 @@ export class AuthService {
     return result;
   }
 
-  private async generateTokens(user: User) {
+  private async generateTokens(
+    user: User,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const payload = {
       sub: user.id,
       username: user.username,
@@ -187,77 +197,6 @@ export class AuthService {
     });
   }
 
-  async signup(userData: UserCreateDto): Promise<Omit<User, 'password'>> {
-    // Check if user with email or phone already exists
-    const existingUser = await this.userRepository.findOne({
-      where: [{ email: userData.email }, { phone: userData.phone }],
-      select: ['email', 'phone'],
-    });
-
-    if (existingUser) {
-      if (existingUser.email === userData.email) {
-        throw new BadRequestException('Email already registered');
-      }
-      throw new BadRequestException('Phone number already registered');
-    }
-
-    // Hash password
-    const hashedPassword = userData.password
-      ? await bcrypt.hash(userData.password, 10)
-      : undefined;
-
-    // Create new user
-    const newUser = this.userRepository.create({
-      email: userData.email,
-      password: hashedPassword,
-      name: userData.name,
-      status: UserStatus.ACTIVE,
-      metadata: {},
-      username: userData.username || userData.email,
-      phone: userData.phone,
-      tenantId: userData.tenantId,
-      externalId: userData.externalId,
-    });
-
-    // Save user
-    const savedUser = await this.userRepository.save(newUser);
-
-    const groups = await this.groupRepository.find({
-      where: { name: In(userData.roles) },
-    });
-
-    if (groups.length > 0) {
-      // Add user to default group
-      const groupsData = groups.map((group) =>
-        this.userGroupRepository.create({
-          userId: savedUser.id,
-          groupId: group.id,
-        }),
-      );
-      await this.userGroupRepository.save(groupsData);
-    }
-
-    // Emit user created event
-    this.eventEmitter.emit('user.created', {
-      userId: savedUser.id,
-    });
-    this.auditLogger.log({
-      eventType: AUDIT_EVENTS.USER_SIGNUP,
-      tenantId: savedUser.tenantId,
-      userId: savedUser.id,
-      details: {
-        username: savedUser.username,
-        email: savedUser.email,
-        phone: savedUser.phone,
-      },
-    });
-
-    // Remove password from response
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, ...userWithoutPassword } = savedUser;
-    return userWithoutPassword;
-  }
-
   private logOtpGenerationError(username: string | undefined, reason: string) {
     this.auditLogger.log({
       eventType: AUDIT_EVENTS.OTP_GENERATION_FAILED,
@@ -268,12 +207,31 @@ export class AuthService {
     });
   }
 
+  private async handleTestAccountOtp(email: string) {
+    let testAccounts: Record<string, string> = {};
+    try {
+      testAccounts = JSON.parse(this.configService.testAccounts || '{}');
+    } catch (error) {
+      this.logger.error('Invalid TEST_ACCOUNTS JSON format');
+    }
+    if (testAccounts[email]) {
+      const otp = testAccounts[email];
+      await this.cache.set(this.getOtpKey(email), otp, this.OTP_TTL);
+      this.logger.info(`OTP for test account ${email} generated`);
+      return true;
+    }
+    return false;
+  }
+
   async generateOtp(phone?: string, email?: string) {
     if (!email && !phone) {
       throw new BadRequestException('Email or phone is required');
     }
     const user = await this.userRepository.findOne({
-      where: [{ phone: phone }, { email: email }],
+      where: [
+        { phone: phone, status: UserStatus.ACTIVE },
+        { email: email, status: UserStatus.ACTIVE },
+      ],
     });
     if (!user) {
       this.logger.error(`User not found for phone ${phone} or email ${email}`);
@@ -287,16 +245,8 @@ export class AuthService {
       return true;
     }
 
-    let testAccounts: Record<string, string> = {};
-    try {
-      testAccounts = JSON.parse(this.configService.testAccounts || '{}');
-    } catch (error) {
-      this.logger.error('Invalid TEST_ACCOUNTS JSON format');
-    }
-    if (testAccounts[user.email]) {
-      const otp = testAccounts[user.email];
-      await this.cache.set(this.getOtpKey(user.email), otp, this.OTP_TTL);
-      this.logger.info(`OTP for test account ${user.email} generated`);
+    const isTestAccount = await this.handleTestAccountOtp(user.email);
+    if (isTestAccount) {
       return true;
     }
 
@@ -317,6 +267,45 @@ export class AuthService {
       },
     });
     return true;
+  }
+
+  async generateOtpV2(
+    generateOtpDto: GenerateOtpV2Dto,
+  ): Promise<GenerateOtpV2ResponseDto> {
+    const { email, allowedRoles } = generateOtpDto;
+    if (!email) {
+      throw new BadRequestException('Email is required');
+    }
+    const user = await this.userRepository.findOne({
+      where: { email, status: UserStatus.ACTIVE },
+    });
+    if (!user) {
+      this.logger.error(`User not found for email ${email}`);
+      this.logOtpGenerationError(email, 'User not found');
+      return { success: true };
+    }
+    const userGroups = await this.groupService.getUserGroupNames(user.id);
+    if (allowedRoles.some((role) => userGroups.includes(role))) {
+      this.logger.error(`User not authorized for email ${email}`);
+      this.logOtpGenerationError(email, 'User not authorized');
+      return { success: true };
+    }
+
+    const isTestAccount = await this.handleTestAccountOtp(email);
+    if (isTestAccount) {
+      return { success: true };
+    }
+
+    const otp = AuthUtil.generateOtp();
+    await this.cache.set(this.getOtpKey(email), otp, this.OTP_TTL);
+
+    this.eventEmitter.emit('otp.generated', {
+      email,
+      otp,
+    });
+    return {
+      success: true,
+    };
   }
 
   private logOtpVerificationError(
@@ -340,11 +329,15 @@ export class AuthService {
     let user;
     if (!email) {
       user = await this.userRepository.findOne({
-        where: { phone },
+        where: { phone, status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]) },
       });
       if (!user || !user.email) {
         this.logOtpVerificationError(phone, 'User not found');
         throw new BadRequestException('User not found');
+      }
+      if (user.status === UserStatus.SUSPENDED) {
+        this.logOtpVerificationError(phone, 'User suspended');
+        throw new UserSuspendedException();
       }
       email = user.email;
     }
@@ -376,7 +369,6 @@ export class AuthService {
         details: {
           phone,
           email,
-          otp,
         },
       });
 
@@ -389,6 +381,64 @@ export class AuthService {
         tokenType: 'bearer',
       };
     }
+  }
+
+  async verifyOtpV2(
+    verifyOtpDto: VerifyOtpV2Dto,
+  ): Promise<VerifyOtpV2ResponseDto> {
+    const { otp, email, allowedRoles } = verifyOtpDto;
+    if (!email) {
+      throw new BadRequestException('Email is required');
+    }
+    const user = await this.userRepository.findOne({
+      where: { email, status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]) },
+    });
+    if (!user) {
+      this.logger.error(`User not found for email ${email}`);
+      this.logOtpVerificationError(email, 'User not found');
+      throw new BadRequestException('Invalid OTP');
+    }
+
+    const userGroups = await this.groupService.getUserGroupNames(user.id);
+    if (!allowedRoles.some((role) => userGroups.includes(role))) {
+      this.logger.error(`User not authorized for email ${email}`);
+      this.logOtpVerificationError(email, 'User not authorized');
+      throw new BadRequestException('Invalid otp');
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      this.logger.error(`User ${email} is suspended`);
+      this.logOtpVerificationError(email, 'User suspended');
+      throw new UserSuspendedException();
+    }
+
+    const cachedOtp = await this.cache.get(this.getOtpKey(email));
+    if (cachedOtp !== otp) {
+      this.logger.error(`Invalid OTP for email ${email}`);
+      this.logOtpVerificationError(email, 'Invalid OTP');
+      throw new BadRequestException('Invalid OTP');
+    }
+
+    await this.cache.del(this.getOtpKey(email));
+    const tokens = await this.generateTokens(user);
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.OTP_VERIFICATION_SUCCESS,
+      tenantId: user.tenantId,
+      userId: user.id,
+      details: {
+        email,
+      },
+    });
+
+    return {
+      user: {
+        id: user!.id,
+        username: user!.username,
+      },
+      ...tokens,
+      tokenType: 'bearer',
+    };
   }
 
   private getOtpKey(email: string) {

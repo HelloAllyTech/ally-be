@@ -8,22 +8,31 @@ import {
   UnauthorizedException,
   HttpCode,
   HttpStatus,
-  BadRequestException,
+  Version,
 } from '@nestjs/common';
 import { AuthService } from '../service/auth.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
-import { GenerateOtpDto, LoginDto, VerifyOtpDto } from '../dto';
-import { UserCreateDto } from '../dto/user-create.dto';
+import {
+  GenerateOtpDto,
+  LoginDto,
+  VerifyOtpDto,
+  GenerateOtpV2Dto,
+  GenerateOtpV2ResponseDto,
+  VerifyOtpV2Dto,
+  VerifyOtpV2ResponseDto,
+} from '../dto';
 import { JwtRefreshAuthGuard } from '../guards/jwt-refresh-auth.guard';
 import { LoggerService } from '../../logger/logger.service';
-import { ApiBearerAuth, ApiBody, ApiSecurity } from '@nestjs/swagger';
+import { ApiBody, ApiTags } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
-import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { AuthPermissions } from '../decorators/auth-permissions.decorator';
 
-@Controller('v1/auth')
+@Controller({
+  path: 'auth',
+  version: '1',
+})
+@ApiTags('Auth')
 export class AuthController {
   private logger = LoggerService.getInstance(AuthController.name);
   constructor(
@@ -65,25 +74,31 @@ export class AuthController {
     );
   }
 
-  @Post('signup')
-  @HttpCode(HttpStatus.CREATED)
-  @AuthPermissions([PERMISSIONS.EDIT_USER])
-  @ApiBearerAuth()
-  @ApiSecurity('access-token')
-  async signup(@Body() userData: UserCreateDto) {
-    try {
-      const user = await this.authService.signup(userData);
-      return {
-        message: 'User created successfully',
-        user,
-      };
-    } catch (error) {
-      this.logger.error(error.message);
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      throw new BadRequestException('Could not create user');
-    }
+  @Post('generate-otp')
+  @Version('2')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit({
+    name: 'otp',
+    key: 'ip',
+    errorMessage: 'Too many OTP requests. Please try again later.',
+  })
+  async generateOtpV2(
+    @Body() generateOtpDto: GenerateOtpV2Dto,
+  ): Promise<GenerateOtpV2ResponseDto> {
+    return this.authService.generateOtpV2(generateOtpDto);
+  }
+
+  @RateLimit({
+    name: 'otp',
+    key: 'ip',
+    errorMessage: 'Too many OTP verification attempts. Please try again later.',
+  })
+  @Post('verify-otp')
+  @Version('2')
+  async verifyOtpV2(
+    @Body() verifyOtpDto: VerifyOtpV2Dto,
+  ): Promise<VerifyOtpV2ResponseDto> {
+    return this.authService.verifyOtpV2(verifyOtpDto);
   }
 
   @UseGuards(JwtRefreshAuthGuard)

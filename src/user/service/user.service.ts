@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt';
 import { User } from '../../common/entities/user.entity';
 import { QueueService } from '../../queue/service/queue.service';
 import { Chat, ChatStatus } from '../../common/entities/chat.entity';
@@ -11,11 +12,10 @@ import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { NotFoundException } from 'src/exception/custom.exception';
 import { UserFilterOptions } from '../interface/user-filter-options.interface';
 import { UpdateUserDto } from '../dto/update-user.dto';
-import { UsersRepository } from '../repository/user.repository';
+import { UserRepository } from '../repository/user.repository';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { UserGroup } from 'src/common/entities/user-group.entity';
 import { Group } from 'src/common/entities/group.entity';
-import { UserCreateDto } from 'src/auth/dto/user-create.dto';
 import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { GroupService } from 'src/authorization/service/group.service';
 import {
@@ -23,7 +23,8 @@ import {
   UserListResponseDto,
   UserUpdateResponseDto,
 } from '../dto/user-response.dto';
-import { addUserResponseDto } from '../dto/user-add-response.dto';
+import { AddUserResponseDto } from '../dto/user-add-response.dto';
+import { AddUserDto } from '../dto/user-add.dto';
 
 @Injectable()
 export class UserService {
@@ -31,7 +32,7 @@ export class UserService {
 
   constructor(
     @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
+    private userRepository: Repository<User>,
     private queueService: QueueService,
     private readonly cache: RedisService,
     @InjectRepository(Group)
@@ -39,7 +40,7 @@ export class UserService {
     @InjectRepository(UserGroup)
     private userGroupRepository: Repository<UserGroup>,
     private readonly tenantService: TenantService,
-    private readonly usersRepository: UsersRepository,
+    private readonly usersRepository: UserRepository,
     private readonly groupService: GroupService,
   ) {}
 
@@ -229,7 +230,7 @@ export class UserService {
       name: user.user_name,
       email: user.user_email,
       username: user.user_username,
-      telephonyId: user.user_externalId,
+      externalId: user.user_externalId,
       status: user.user_status,
       role: user.user_role,
       metadata: user.user_metadata,
@@ -310,10 +311,7 @@ export class UserService {
     return { success: true };
   }
 
-  async addUser(
-    userData: UserCreateDto,
-    hashedpassword?: string,
-  ): Promise<Omit<User, 'password'>> {
+  async addUser(userData: AddUserDto): Promise<AddUserResponseDto> {
     // Check if user with email or phone already exists
     const existingUser = await this.userRepository.findOne({
       where: [{ email: userData.email }, { phone: userData.phone }],
@@ -349,15 +347,15 @@ export class UserService {
         );
       }
     }
-    // // Hash password
-    // const hashedPassword = userData.password
-    //   ? await bcrypt.hash(userData.password, 10)
-    //   : undefined;
 
-    // Create new user
+    // Hash password
+    const hashedPassword = userData.password
+      ? await bcrypt.hash(userData.password, 10)
+      : undefined;
+
     const newUser = this.userRepository.create({
       email: userData.email,
-      password: hashedpassword,
+      password: hashedPassword,
       name: userData.name,
       status: userData.status || UserStatus.ACTIVE,
       metadata: {},
@@ -395,7 +393,8 @@ export class UserService {
         phone: savedUser.phone,
       },
     });
-    const userDto: addUserResponseDto = {
+
+    return {
       id: savedUser.id,
       name: savedUser.name,
       email: savedUser.email,
@@ -408,8 +407,6 @@ export class UserService {
       createdAt: savedUser.createdAt,
       updatedAt: savedUser.updatedAt,
     };
-
-    return userDto;
   }
 
   /**

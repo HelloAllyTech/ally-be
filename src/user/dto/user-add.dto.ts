@@ -6,12 +6,13 @@ import {
   IsOptional,
   IsArray,
   ArrayNotEmpty,
+  Matches,
 } from 'class-validator';
 import { UserRole, UserStatus } from '../../common/constants/user.constants';
 import { PASSWORD_VALIDATION } from '../../common/constants/validation.constants';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class UserCreateDto {
+export class AddUserDto {
   @ApiProperty({
     description: 'User email',
     example: 'john_doe@example.com',
@@ -28,7 +29,7 @@ export class UserCreateDto {
   @IsOptional()
   @IsString()
   @MinLength(PASSWORD_VALIDATION.MIN_LENGTH)
-  //@Matches(PASSWORD_VALIDATION.REGEX)
+  @Matches(PASSWORD_VALIDATION.REGEX)
   password?: string;
 
   @ApiProperty({

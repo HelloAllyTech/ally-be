@@ -32,7 +32,6 @@ import { GroupService } from 'src/authorization/service/group.service';
 import { User } from 'src/common/entities/user.entity';
 import { AddUserDto } from '../dto/add-user.dto';
 import { LoggerService } from 'src/logger/logger.service';
-import { AuthController } from 'src/auth/controller/auth.controller';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { UpdateUserStatusDto } from '../dto/update-user-status.dto';
 import { UserSortBy, SortOrder } from '../enum/user.enum';
@@ -42,14 +41,14 @@ import {
   UserListResponseDto,
   UserUpdateResponseDto,
 } from '../dto/user-response.dto';
-import { addUserResponseDto } from '../dto/user-add-response.dto';
+import { AddUserResponseDto } from '../dto/user-add-response.dto';
 
 @Controller('v1/users')
 @ApiTags('Users')
 @ApiBearerAuth()
 @ApiSecurity('access-token')
 export class UserController {
-  private logger = LoggerService.getInstance(AuthController.name);
+  private logger = LoggerService.getInstance(UserController.name);
   constructor(
     private userService: UserService,
     private groupService: GroupService,
@@ -171,11 +170,11 @@ export class UserController {
     description: 'User created successfully',
     type: User,
   })
-  @Post('add-user')
+  @Post()
   @HttpCode(HttpStatus.CREATED)
   @AuthPermissions([PERMISSIONS.EDIT_USER])
   @ApiSecurity('access-token')
-  async addUser(@Body() userData: AddUserDto): Promise<addUserResponseDto> {
+  async addUser(@Body() userData: AddUserDto): Promise<AddUserResponseDto> {
     try {
       return await this.userService.addUser(userData);
     } catch (error) {

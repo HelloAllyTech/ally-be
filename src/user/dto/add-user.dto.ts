@@ -16,7 +16,7 @@ export class AddUserDto {
     description: 'User email',
     example: 'john_doe@example.com',
   })
-  @IsEmail()
+  @IsEmail({}, { message: 'Invalid email' })
   email!: string;
 
   @ApiProperty({

@@ -13,9 +13,9 @@ import { GroupPermission } from '../common/entities/group-permission.entity';
 import { Permission } from '../common/entities/permission.entity';
 import { GroupPermissionsRepository } from './repository/group-permissions.repository';
 import { RedisModule } from '../redis/redis.module';
-import { UserGroupController } from './controller/user-group.controller';
 import { User } from 'src/common/entities/user.entity';
 import { PermissionValidator } from './service/permission-validator.service';
+import { UserModule } from '../user/user.module';
 
 @Global()
 @Module({
@@ -28,8 +28,9 @@ import { PermissionValidator } from './service/permission-validator.service';
       Permission,
     ]),
     RedisModule,
+    UserModule,
   ],
-  controllers: [AuthorizationController, UserGroupController],
+  controllers: [AuthorizationController],
   providers: [
     PermissionsService,
     GroupService,

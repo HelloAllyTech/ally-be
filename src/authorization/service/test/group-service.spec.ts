@@ -6,16 +6,17 @@ import { GroupService } from '../group.service';
 import { Group } from 'src/common/entities/group.entity';
 import { LoggerService } from 'src/logger/logger.service';
 import { UserRole } from 'src/common/constants/user.constants';
-import { Repository, DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { User } from 'src/common/entities/user.entity';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { UserRepository } from 'src/user/repository/user.repository';
 
 describe('GroupService - Happy Path Tests', () => {
   let service: GroupService;
   let redisService: jest.Mocked<RedisService>;
   let groupRepo: jest.Mocked<GroupRepository>;
   let userGroupRepo: jest.Mocked<UserGroupRepository>;
-  let userRepository: jest.Mocked<Repository<User>>;
+  let userRepository: jest.Mocked<UserRepository>;
   let dataSource: jest.Mocked<DataSource>;
 
   beforeEach(async () => {
@@ -70,6 +71,13 @@ describe('GroupService - Happy Path Tests', () => {
           provide: DataSource,
           useValue: mockDataSource,
         },
+        {
+          provide: UserRepository,
+          useValue: {
+            getAllUsers: jest.fn(),
+            findOne: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -77,7 +85,7 @@ describe('GroupService - Happy Path Tests', () => {
     redisService = module.get(RedisService);
     groupRepo = module.get(GroupRepository);
     userGroupRepo = module.get(UserGroupRepository);
-    userRepository = module.get(getRepositoryToken(User));
+    userRepository = module.get(UserRepository);
     dataSource = module.get(DataSource);
   });
 
@@ -106,7 +114,7 @@ describe('GroupService - Happy Path Tests', () => {
     it('should return cached groups if available', async () => {
       redisService.get.mockResolvedValue(JSON.stringify([1, 2, 3]));
 
-      const result = await service.getUserGroups(1);
+      const result = await service.getUserGroupIds(1);
 
       expect(result).toEqual([1, 2, 3]);
       expect(redisService.get).toHaveBeenCalledWith('user:groups:1');
@@ -119,7 +127,7 @@ describe('GroupService - Happy Path Tests', () => {
         { id: 20, name: 'COUNSELOR' },
       ] as Group[]);
 
-      const result = await service.getUserGroups(2);
+      const result = await service.getUserGroupIds(2);
 
       expect(result).toEqual([10, 20]);
       expect(redisService.set).toHaveBeenCalledWith(

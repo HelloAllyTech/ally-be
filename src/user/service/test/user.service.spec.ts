@@ -10,7 +10,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { Group } from 'src/common/entities/group.entity';
 import { UserGroup } from 'src/common/entities/user-group.entity';
 import { TenantService } from 'src/tenant/service/tenant.service';
-import { UsersRepository } from 'src/user/repository/user.repository';
+import { UserRepository } from 'src/user/repository/user.repository';
 import { GroupService } from 'src/authorization/service/group.service';
 
 // Mock ExecutionManager
@@ -135,7 +135,7 @@ describe('UserService', () => {
         { provide: QueueService, useValue: mockQueueService },
         { provide: RedisService, useValue: mockCache },
         { provide: TenantService, useValue: mockTenantService },
-        { provide: UsersRepository, useValue: mockUsersRepository },
+        { provide: UserRepository, useValue: mockUsersRepository },
         { provide: GroupService, useValue: mockGroupService },
       ],
     }).compile();

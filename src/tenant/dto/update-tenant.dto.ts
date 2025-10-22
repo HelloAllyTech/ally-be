@@ -16,4 +16,13 @@ export class UpdateTenantDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @ApiProperty({ description: 'Unique code for the tenant' })
+  @IsString()
+  @Length(2, 20)
+  @Matches(/^[a-zA-Z0-9-_]+$/, {
+    message: 'Code can only contain letters, numbers, hyphens, and underscores',
+  })
+  @IsOptional()
+  code?: string;
 }
