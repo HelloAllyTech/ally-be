@@ -128,11 +128,11 @@ describe('UserService', () => {
 
     mockUsersRepository = {
       getAllUsers: jest.fn(),
-      getUserCount: jest.fn(),
+      getUserCountByTenantIds: jest.fn(),
     };
 
     mockUsersGroupService = {
-      findUserRoles: jest.fn(),
+      getUserGroupsByUserIds: jest.fn(),
     };
 
     mockSimulationCreditsService = {
@@ -429,7 +429,7 @@ describe('UserService', () => {
         count: 1,
       };
       mockUsersRepository.getAllUsers.mockResolvedValue(mockResult);
-      mockUsersGroupService.findUserRoles.mockResolvedValue([
+      mockUsersGroupService.getUserGroupsByUserIds.mockResolvedValue([
         { userId: 1, roles: ['CLIENT', 'ADMIN'] },
       ]);
 
@@ -440,7 +440,9 @@ describe('UserService', () => {
       expect(result.data[0].creditLimit).toBe(100);
       expect(result.data[0].consumedCredits).toBe(25);
       expect(result.count).toBe(1);
-      expect(mockUsersGroupService.findUserRoles).toHaveBeenCalledWith([1]);
+      expect(mockUsersGroupService.getUserGroupsByUserIds).toHaveBeenCalledWith(
+        [1],
+      );
     });
 
     it('should return empty array when no users found', async () => {
@@ -451,7 +453,9 @@ describe('UserService', () => {
       const result = await service.getAllUsers({});
       expect(result.data).toEqual([]);
       expect(result.count).toBe(0);
-      expect(mockUsersGroupService.findUserRoles).not.toHaveBeenCalled();
+      expect(
+        mockUsersGroupService.getUserGroupsByUserIds,
+      ).not.toHaveBeenCalled();
     });
   });
 

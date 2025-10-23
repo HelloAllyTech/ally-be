@@ -88,7 +88,8 @@ export class TenantService {
 
     const tenantIds = tenants.map((t) => t.id);
 
-    const userCount = await this.userRepository.getUserCount(tenantIds);
+    const userCount =
+      await this.userRepository.getUserCountByTenantIds(tenantIds);
 
     const userCountMap = new Map(
       userCount.map((uc) => [uc.tenantId, parseInt(uc.userCount)]),

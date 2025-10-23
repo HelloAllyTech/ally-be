@@ -10,7 +10,7 @@ export class UserGroupService {
     return this.userGroupRepository.findMany({ userId });
   }
 
-  async findUserRoles(userIds: number[]) {
-    return this.userGroupRepository.findUserRoles(userIds);
+  async getUserGroupsByUserIds(userIds: number[]) {
+    return this.userGroupRepository.getUserGroupsByUserIds(userIds);
   }
 }

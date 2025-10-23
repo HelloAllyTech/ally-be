@@ -38,7 +38,7 @@ export class UserGroupRepository {
     return this.userGroupRepository.find({ where });
   }
 
-  async findUserRoles(userIds: number[]) {
+  async getUserGroupsByUserIds(userIds: number[]) {
     const roles = await this.dataSource
       .createQueryBuilder(UserGroup, 'ug')
       .innerJoin('groups', 'g', 'g.id = ug."groupId"')

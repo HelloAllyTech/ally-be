@@ -233,7 +233,7 @@ export class UserService {
     }
     const userIds = result.users.map((u) => u.user_id);
 
-    const roles = await this.usersGroupService.findUserRoles(userIds);
+    const roles = await this.usersGroupService.getUserGroupsByUserIds(userIds);
 
     const rolesMap = new Map(roles.map((r) => [r.userId, r.roles]));
 

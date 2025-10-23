@@ -112,7 +112,7 @@ describe('UserGroupRepository', () => {
     });
   });
 
-  describe('findUserRoles', () => {
+  describe('getUserGroupsByUserIds', () => {
     it('should find user roles using query builder', async () => {
       const userIds = [1, 2, 3];
       const expectedRoles = [
@@ -134,7 +134,7 @@ describe('UserGroupRepository', () => {
         mockQueryBuilder as any,
       );
 
-      const result = await repository.findUserRoles(userIds);
+      const result = await repository.getUserGroupsByUserIds(userIds);
 
       expect(result).toEqual(expectedRoles);
       expect(mockDataSource.createQueryBuilder).toHaveBeenCalledWith(
@@ -177,7 +177,7 @@ describe('UserGroupRepository', () => {
         mockQueryBuilder as any,
       );
 
-      const result = await repository.findUserRoles(userIds);
+      const result = await repository.getUserGroupsByUserIds(userIds);
 
       expect(result).toEqual([]);
       expect(mockQueryBuilder.getRawMany).toHaveBeenCalled();

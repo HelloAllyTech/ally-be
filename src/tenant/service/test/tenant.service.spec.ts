@@ -62,7 +62,7 @@ describe('TenantService', () => {
     };
 
     const mockUserRepository = {
-      getUserCount: jest.fn(),
+      getUserCountByTenantIds: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -488,7 +488,7 @@ describe('TenantService', () => {
       ];
 
       tenantsRepository.getallTenants.mockResolvedValue(mockTenantsResult);
-      userRepository.getUserCount.mockResolvedValue(mockUserCounts);
+      userRepository.getUserCountByTenantIds.mockResolvedValue(mockUserCounts);
 
       const result = await service.getallTenants('test', mockPaginationOptions);
 
@@ -496,7 +496,7 @@ describe('TenantService', () => {
         'test',
         mockPaginationOptions,
       );
-      expect(userRepository.getUserCount).toHaveBeenCalledWith([
+      expect(userRepository.getUserCountByTenantIds).toHaveBeenCalledWith([
         'test-tenant-id',
         'tenant-2',
       ]);
@@ -515,7 +515,7 @@ describe('TenantService', () => {
       const mockUserCounts = [{ tenantId: 'test-tenant-id', userCount: '0' }];
 
       tenantsRepository.getallTenants.mockResolvedValue(mockTenantsResult);
-      userRepository.getUserCount.mockResolvedValue(mockUserCounts);
+      userRepository.getUserCountByTenantIds.mockResolvedValue(mockUserCounts);
 
       const result = await service.getallTenants();
 
@@ -538,7 +538,7 @@ describe('TenantService', () => {
       const result = await service.getallTenants('nonexistent');
 
       expect(result).toEqual({ data: [], count: 0 });
-      expect(userRepository.getUserCount).not.toHaveBeenCalled();
+      expect(userRepository.getUserCountByTenantIds).not.toHaveBeenCalled();
     });
 
     it('should handle repository errors', async () => {
@@ -555,7 +555,7 @@ describe('TenantService', () => {
       };
 
       tenantsRepository.getallTenants.mockResolvedValue(mockTenantsResult);
-      userRepository.getUserCount.mockResolvedValue([]);
+      userRepository.getUserCountByTenantIds.mockResolvedValue([]);
 
       const result = await service.getallTenants();
 

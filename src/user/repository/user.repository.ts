@@ -155,7 +155,7 @@ export class UserRepository extends Repository<User> {
       .filter((item) => item.length > 0);
   }
 
-  async getUserCount(tenantIds: string[]) {
+  async getUserCountByTenantIds(tenantIds: string[]) {
     const userCounts = await this.dataSource
       .createQueryBuilder(User, 'user')
       .select('user.tenant_id', 'tenantId')
