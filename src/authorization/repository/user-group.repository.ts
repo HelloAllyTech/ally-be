@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { UserGroup } from 'src/common/entities/user-group.entity';
-import { FindOptionsWhere, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, Repository } from 'typeorm';
 
 @Injectable()
 export class UserGroupRepository {
   constructor(
     @InjectRepository(UserGroup)
     private readonly userGroupRepository: Repository<UserGroup>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async findOne(where: FindOptionsWhere<UserGroup>): Promise<UserGroup | null> {
@@ -35,5 +36,17 @@ export class UserGroupRepository {
 
   async findMany(where: FindOptionsWhere<UserGroup>): Promise<UserGroup[]> {
     return this.userGroupRepository.find({ where });
+  }
+
+  async findUserRoles(userIds: number[]) {
+    const roles = await this.dataSource
+      .createQueryBuilder(UserGroup, 'ug')
+      .innerJoin('groups', 'g', 'g.id = ug."groupId"')
+      .where('ug."userId" IN (:...userIds)', { userIds })
+      .select('ug."userId"', 'userId')
+      .addSelect('ARRAY_AGG(DISTINCT g.name)', 'roles')
+      .groupBy('ug."userId"')
+      .getRawMany();
+    return roles;
   }
 }

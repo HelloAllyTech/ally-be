@@ -48,10 +48,10 @@ export class UserDto {
   updatedAt!: Date;
 
   @ApiProperty({ description: 'Max credits for the user', nullable: true })
-  maxCredits?: number;
+  creditLimit?: number;
 
   @ApiProperty({ description: 'Used credits for the user', nullable: true })
-  usedCredits?: number;
+  consumedCredits?: number;
 }
 
 // Response for get all users

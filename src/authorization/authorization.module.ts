@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { forwardRef, Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PermissionsService } from './service/permissions.service';
 import { GroupService } from './service/group.service';
@@ -28,7 +28,7 @@ import { UserModule } from '../user/user.module';
       Permission,
     ]),
     RedisModule,
-    UserModule,
+    forwardRef(() => UserModule),
   ],
   controllers: [AuthorizationController],
   providers: [
@@ -47,6 +47,7 @@ import { UserModule } from '../user/user.module';
     GroupPermissionsService,
     UserGroupService,
     PermissionValidator,
+    UserGroupRepository,
   ],
 })
 export class AuthorizationModule {}

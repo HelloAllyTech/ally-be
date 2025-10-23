@@ -4,6 +4,8 @@ import { Repository, UpdateResult } from 'typeorm';
 import { TenantService } from '../tenant.service';
 import { Tenant, TenantStatus } from 'src/common/entities/tenant.entity';
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
+import { UserRepository } from 'src/user/repository/user.repository';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -22,6 +24,7 @@ describe('TenantService', () => {
   let service: TenantService;
   let tenantRepository: jest.Mocked<Repository<Tenant>>;
   let tenantsRepository: jest.Mocked<TenantsRepository>;
+  let userRepository: jest.Mocked<UserRepository>;
 
   const mockTenant: Tenant = {
     id: 'test-tenant-id',
@@ -58,6 +61,10 @@ describe('TenantService', () => {
       getallTenants: jest.fn(),
     };
 
+    const mockUserRepository = {
+      getUserCount: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
@@ -69,12 +76,17 @@ describe('TenantService', () => {
           provide: TenantsRepository,
           useValue: mockTenantsRepository,
         },
+        {
+          provide: UserRepository,
+          useValue: mockUserRepository,
+        },
       ],
     }).compile();
 
     service = module.get<TenantService>(TenantService);
     tenantRepository = module.get(getRepositoryToken(Tenant));
     tenantsRepository = module.get(TenantsRepository);
+    userRepository = module.get(UserRepository);
   });
 
   afterEach(() => {
@@ -435,15 +447,15 @@ describe('TenantService', () => {
   });
 
   describe('getallTenants', () => {
-    it('should return paginated tenants with user counts', async () => {
+    it('should return tenants with user counts', async () => {
       const mockPaginationOptions = {
         limit: 10,
         offset: 0,
         sortBy: 'name' as any,
         order: 'ASC' as any,
       };
-      const mockResult = {
-        data: [
+      const mockTenantsResult = {
+        tenants: [
           {
             id: 'test-tenant-id',
             name: 'Test Tenant',
@@ -454,7 +466,6 @@ describe('TenantService', () => {
             settings: { setting: 'value' },
             createdAt: new Date('2023-01-01'),
             updatedAt: new Date('2023-01-01'),
-            userCount: 5,
           },
           {
             id: 'tenant-2',
@@ -466,16 +477,18 @@ describe('TenantService', () => {
             settings: { setting: 'value' },
             createdAt: new Date('2023-01-01'),
             updatedAt: new Date('2023-01-01'),
-            userCount: 10,
           },
         ],
-        total: 100,
-        page: 1,
-        pageSize: 10,
-        totalPages: 10,
+        totalCount: 100,
       };
 
-      tenantsRepository.getallTenants.mockResolvedValue(mockResult as any);
+      const mockUserCounts = [
+        { tenantId: 'test-tenant-id', userCount: '5' },
+        { tenantId: 'tenant-2', userCount: '10' },
+      ];
+
+      tenantsRepository.getallTenants.mockResolvedValue(mockTenantsResult);
+      userRepository.getUserCount.mockResolvedValue(mockUserCounts);
 
       const result = await service.getallTenants('test', mockPaginationOptions);
 
@@ -483,26 +496,26 @@ describe('TenantService', () => {
         'test',
         mockPaginationOptions,
       );
-      expect(result).toEqual(mockResult);
-      expect(result.data[0]).toHaveProperty('userCount');
+      expect(userRepository.getUserCount).toHaveBeenCalledWith([
+        'test-tenant-id',
+        'tenant-2',
+      ]);
+      expect(result.data).toHaveLength(2);
       expect(result.data[0].userCount).toBe(5);
+      expect(result.data[1].userCount).toBe(10);
+      expect(result.count).toBe(100);
     });
 
     it('should return tenants without search filter', async () => {
-      const mockResult = {
-        data: [
-          {
-            ...mockTenant,
-            userCount: 0,
-          },
-        ],
-        total: 1,
-        page: 1,
-        pageSize: 10,
-        totalPages: 1,
+      const mockTenantsResult = {
+        tenants: [mockTenant],
+        totalCount: 1,
       };
 
-      tenantsRepository.getallTenants.mockResolvedValue(mockResult as any);
+      const mockUserCounts = [{ tenantId: 'test-tenant-id', userCount: '0' }];
+
+      tenantsRepository.getallTenants.mockResolvedValue(mockTenantsResult);
+      userRepository.getUserCount.mockResolvedValue(mockUserCounts);
 
       const result = await service.getallTenants();
 
@@ -510,24 +523,22 @@ describe('TenantService', () => {
         undefined,
         undefined,
       );
-      expect(result).toEqual(mockResult);
+      expect(result.data[0].userCount).toBe(0);
+      expect(result.count).toBe(1);
     });
 
-    it('should return empty result when no tenants match search', async () => {
-      const mockResult = {
-        data: [],
-        total: 0,
-        page: 1,
-        pageSize: 10,
-        totalPages: 0,
+    it('should return empty result when no tenants exist', async () => {
+      const mockTenantsResult = {
+        tenants: [],
+        totalCount: 0,
       };
 
-      tenantsRepository.getallTenants.mockResolvedValue(mockResult as any);
+      tenantsRepository.getallTenants.mockResolvedValue(mockTenantsResult);
 
       const result = await service.getallTenants('nonexistent');
 
-      expect(result).toEqual(mockResult);
-      expect(result.data).toHaveLength(0);
+      expect(result).toEqual({ data: [], count: 0 });
+      expect(userRepository.getUserCount).not.toHaveBeenCalled();
     });
 
     it('should handle repository errors', async () => {
@@ -537,33 +548,157 @@ describe('TenantService', () => {
       await expect(service.getallTenants()).rejects.toThrow('Database error');
     });
 
-    it('should handle pagination correctly', async () => {
-      const mockPaginationOptions = {
-        limit: 5,
-        offset: 10,
-        sortBy: 'createdAt' as any,
-        order: 'DESC' as any,
+    it('should handle tenants with no user count', async () => {
+      const mockTenantsResult = {
+        tenants: [mockTenant],
+        totalCount: 1,
       };
 
-      const mockResult = {
-        data: [
-          { ...mockTenant, userCount: 3 },
-          { ...mockTenant, id: 'tenant-2', userCount: 7 },
-        ],
-        total: 50,
-        page: 3,
-        pageSize: 5,
-        totalPages: 10,
+      tenantsRepository.getallTenants.mockResolvedValue(mockTenantsResult);
+      userRepository.getUserCount.mockResolvedValue([]);
+
+      const result = await service.getallTenants();
+
+      expect(result.data[0].userCount).toBe(0);
+    });
+  });
+
+  describe('updateTenant', () => {
+    it('should update tenant successfully', async () => {
+      const updateDto = {
+        description: 'Updated description',
       };
+      const updatedTenant = { ...mockTenant, ...updateDto };
 
-      tenantsRepository.getallTenants.mockResolvedValue(mockResult as any);
+      jest
+        .spyOn(service, 'findById')
+        .mockResolvedValueOnce(mockTenant)
+        .mockResolvedValueOnce(updatedTenant);
+      tenantRepository.update.mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
 
-      const result = await service.getallTenants(
-        undefined,
-        mockPaginationOptions,
+      const result = await service.updateTenant('test-tenant-id', updateDto);
+
+      expect(service.findById).toHaveBeenCalledWith('test-tenant-id');
+      expect(tenantRepository.update).toHaveBeenCalledWith(
+        'test-tenant-id',
+        updateDto,
       );
+      expect(tenantRepository.findOne).not.toHaveBeenCalled();
+      expect(result).toEqual(updatedTenant);
+    });
 
-      expect(result.data).toHaveLength(2);
+    it('should throw NotFoundException when tenant not found', async () => {
+      jest.spyOn(service, 'findById').mockResolvedValue(null);
+
+      await expect(
+        service.updateTenant('non-existent-id', { name: 'Test' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw BadRequestException when name already exists', async () => {
+      const updateDto = { name: 'Existing Tenant' };
+      const existingTenant = {
+        ...mockTenant,
+        id: 'different-id',
+        name: 'Existing Tenant',
+      };
+
+      jest.spyOn(service, 'findById').mockResolvedValue(mockTenant);
+      tenantRepository.findOne.mockResolvedValue(existingTenant);
+
+      await expect(
+        service.updateTenant('test-tenant-id', updateDto),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.updateTenant('test-tenant-id', updateDto),
+      ).rejects.toThrow('Tenant with name "Existing Tenant" already exists');
+    });
+
+    it('should throw BadRequestException when code already exists', async () => {
+      const updateDto = { code: 'existing-code' };
+      const existingTenant = {
+        ...mockTenant,
+        id: 'different-id',
+        code: 'existing-code',
+      };
+
+      jest.spyOn(service, 'findById').mockResolvedValue(mockTenant);
+      tenantRepository.findOne.mockResolvedValue(existingTenant);
+
+      await expect(
+        service.updateTenant('test-tenant-id', updateDto),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.updateTenant('test-tenant-id', updateDto),
+      ).rejects.toThrow('Tenant with code "existing-code" already exists');
+    });
+
+    it('should allow updating tenant with same name and code', async () => {
+      const updateDto = {
+        name: 'Test Tenant',
+        code: 'test-tenant',
+        description: 'Updated description',
+      };
+      const updatedTenant = {
+        ...mockTenant,
+        description: 'Updated description',
+      };
+
+      jest
+        .spyOn(service, 'findById')
+        .mockResolvedValueOnce(mockTenant)
+        .mockResolvedValueOnce(updatedTenant);
+      tenantRepository.update.mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
+
+      const result = await service.updateTenant('test-tenant-id', updateDto);
+
+      expect(tenantRepository.findOne).not.toHaveBeenCalled();
+      expect(result).toEqual(updatedTenant);
+    });
+
+    it('should handle repository errors during update', async () => {
+      const error = new Error('Database error');
+      const updateDto = { description: 'Updated' };
+
+      jest.spyOn(service, 'findById').mockResolvedValue(mockTenant);
+      tenantRepository.update.mockRejectedValue(error);
+
+      await expect(
+        service.updateTenant('test-tenant-id', updateDto),
+      ).rejects.toThrow('Database error');
+    });
+
+    it('should update both name and code when both are different', async () => {
+      const updateDto = { name: 'New Name', code: 'new-code' };
+      const updatedTenant = { ...mockTenant, ...updateDto };
+
+      jest
+        .spyOn(service, 'findById')
+        .mockResolvedValueOnce(mockTenant)
+        .mockResolvedValueOnce(updatedTenant);
+      tenantRepository.findOne.mockResolvedValue(null);
+      tenantRepository.update.mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
+
+      const result = await service.updateTenant('test-tenant-id', updateDto);
+
+      expect(tenantRepository.findOne).toHaveBeenCalled();
+      expect(tenantRepository.update).toHaveBeenCalledWith(
+        'test-tenant-id',
+        updateDto,
+      );
+      expect(result).toEqual(updatedTenant);
     });
   });
 });

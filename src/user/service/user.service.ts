@@ -31,6 +31,7 @@ import {
 import { SimulationCreditsService } from 'src/learn/service/simulation-credits.service';
 import { AddUserResponseDto } from '../dto/user-add-response.dto';
 import { AddUserDto } from '../dto/user-add.dto';
+import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
 
 @Injectable()
 export class UserService {
@@ -50,6 +51,7 @@ export class UserService {
     private readonly groupService: GroupService,
     @Inject(forwardRef(() => SimulationCreditsService))
     private readonly simulationCreditsService: SimulationCreditsService,
+    private readonly usersGroupRepository: UserGroupRepository,
   ) {}
 
   async get(id: number): Promise<User | null> {
@@ -224,14 +226,16 @@ export class UserService {
     });
   }
 
-  async getAllUsers(
-    filters: UserFilterOptions,
-  ): Promise<Promise<UserListResponseDto>> {
-    const result = await this.usersRepository.getAllUsers(filters);
-
-    if (result.count === 0) {
+  async getAllUsers(filters: UserFilterOptions): Promise<UserListResponseDto> {
+    const result = await this.usersRepository.getAllUsers(filters, true);
+    if (result.users.length === 0) {
       return { data: [], count: 0 };
     }
+    const userIds = result.users.map((u) => u.user_id);
+
+    const roles = await this.usersGroupRepository.findUserRoles(userIds);
+
+    const rolesMap = new Map(roles.map((r) => [r.userId, r.roles]));
 
     const transformedUsers: UserDto[] = result.users.map((user) => ({
       id: user.user_id,
@@ -246,7 +250,7 @@ export class UserService {
       tenantId: user.user_tenant_id,
       createdAt: user.user_createdAt,
       updatedAt: user.user_updatedAt,
-      roles: result.rolesMap.get(user.user_id) || [],
+      roles: rolesMap.get(user.user_id) || [],
       creditLimit: user.simulation_credit_limit,
       consumedCredits: user.simulation_consumed_credits,
     }));
