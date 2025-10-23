@@ -7,7 +7,7 @@ export class UserSuspendedException extends HttpException {
     super(
       {
         message: `User suspended`,
-        errorCode: 'USER_SUSPENDED',
+        error: 'USER_SUSPENDED',
         status: HttpStatus.FORBIDDEN,
       },
       HttpStatus.FORBIDDEN,
