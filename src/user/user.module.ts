@@ -9,13 +9,15 @@ import { Group } from 'src/common/entities/group.entity';
 import { UserGroup } from 'src/common/entities/user-group.entity';
 import { TenantModule } from 'src/tenant/tenant.module';
 import { LearnModule } from 'src/learn/learn.module';
+import { AuthorizationModule } from 'src/authorization/authorization.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, Group, UserGroup]),
     QueueModule,
-    TenantModule,
     forwardRef(() => LearnModule),
+    forwardRef(() => TenantModule),
+    AuthorizationModule,
   ],
   providers: [UserService, UserRepository],
   controllers: [UserController],

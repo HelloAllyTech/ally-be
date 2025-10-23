@@ -4,7 +4,6 @@ import { Repository } from 'typeorm/repository/Repository.js';
 import { UserFilterOptions } from '../interface/user-filter-options.interface';
 import { DataSource, SelectQueryBuilder } from 'typeorm';
 import { Injectable } from '@nestjs/common';
-import { UserGroup } from 'src/common/entities/user-group.entity';
 import { SimulationCredits } from 'src/learn/entity/simulation-credits.entity';
 
 @Injectable()
@@ -13,9 +12,16 @@ export class UserRepository extends Repository<User> {
     super(User, dataSource.createEntityManager());
   }
 
-  async getAllUsers(filters?: UserFilterOptions) {
+  async getAllUsers(
+    filters?: UserFilterOptions,
+    excludeSuperAdmin: boolean = true,
+  ) {
     const query = this.createQueryBuilder('user')
-      .innerJoin(Tenant, 'tenant', '"tenant"."id" = ("user"."tenant_id")::uuid')
+      .leftJoin(
+        Tenant,
+        'tenant',
+        'CAST("tenant"."id" AS TEXT) = CAST("user"."tenant_id" AS TEXT)',
+      )
       .leftJoin(
         SimulationCredits,
         'simulationCredits',
@@ -29,7 +35,7 @@ export class UserRepository extends Repository<User> {
       ]);
 
     this.applyTenantIdFilter(query, filters);
-    this.applyRolesFilter(query, filters);
+    this.applyRolesFilter(query, filters, excludeSuperAdmin);
     this.applyStatusFilter(query, filters);
     this.applySearchFilter(query, filters);
 
@@ -41,7 +47,7 @@ export class UserRepository extends Repository<User> {
     const totalCount = await query.getCount();
 
     if (totalCount === 0) {
-      return { users: [], rolesMap: new Map(), count: 0 };
+      return { users: [], count: 0 };
     }
 
     // Pagination
@@ -54,24 +60,10 @@ export class UserRepository extends Repository<User> {
     }
 
     const users = await query.getRawMany();
-    if (users.length === 0) {
-      return { users: [], rolesMap: new Map(), count: 0 };
-    }
-    const userIds = users.map((u) => u.user_id);
 
-    const roles = await this.dataSource
-      .createQueryBuilder(UserGroup, 'ug')
-      .innerJoin('groups', 'g', 'g.id = ug."groupId"')
-      .where('ug."userId" IN (:...userIds)', { userIds })
-      .select('ug."userId"', 'userId')
-      .addSelect('ARRAY_AGG(DISTINCT g.name)', 'roles')
-      .groupBy('ug."userId"')
-      .getRawMany();
-
-    const rolesMap = new Map(roles.map((r) => [r.userId, r.roles]));
-
-    return { users, rolesMap, count: totalCount };
+    return { users, count: totalCount };
   }
+
   private applyTenantIdFilter(
     query: SelectQueryBuilder<User>,
     filters?: UserFilterOptions,
@@ -90,20 +82,41 @@ export class UserRepository extends Repository<User> {
   private applyRolesFilter(
     query: SelectQueryBuilder<User>,
     filters?: UserFilterOptions,
+    excludeSuperAdmin?: boolean,
   ) {
-    if (filters?.roles) {
-      const roles = this.parseStringArray(filters.roles);
-      if (roles.length > 0) {
-        query.andWhere(
-          `EXISTS (
-    SELECT 1 
-    FROM user_groups ug
-    INNER JOIN groups g ON g.id = ug."groupId"
-    WHERE ug."userId" = "user"."id"
-    AND g.name IN (:...roles)
-  )`,
-          { roles },
+    if (excludeSuperAdmin || filters?.roles) {
+      const conditions: string[] = [];
+      const params: Record<string, any> = {};
+
+      if (excludeSuperAdmin) {
+        conditions.push(
+          `NOT EXISTS (
+        SELECT 1
+        FROM user_groups ug_excl
+        INNER JOIN groups g_excl ON g_excl.id = ug_excl."groupId"
+        WHERE ug_excl."userId" = "user"."id" AND g_excl.name = :superAdminRole
+      )`,
         );
+        params.superAdminRole = 'SUPER_ADMIN';
+      }
+
+      if (filters?.roles) {
+        const roles = this.parseStringArray(filters.roles);
+        if (roles.length > 0) {
+          conditions.push(
+            `EXISTS (
+          SELECT 1
+          FROM user_groups ug
+          INNER JOIN groups g ON g.id = ug."groupId"
+          WHERE ug."userId" = "user"."id"
+          AND g.name IN (:...roles)
+        )`,
+          );
+          params.roles = roles;
+        }
+      }
+      if (conditions.length > 0) {
+        query.andWhere(conditions.join(' AND '), params);
       }
     }
   }
@@ -140,5 +153,17 @@ export class UserRepository extends Repository<User> {
       .split(',')
       .map((item) => item.trim())
       .filter((item) => item.length > 0);
+  }
+
+  async getUserCountByTenantIds(tenantIds: string[]) {
+    const userCounts = await this.dataSource
+      .createQueryBuilder(User, 'user')
+      .select('user.tenant_id', 'tenantId')
+      .addSelect('COUNT(*)', 'userCount')
+      .where('user.tenant_id IN (:...tenantIds)', { tenantIds })
+      .groupBy('user.tenant_id')
+      .getRawMany();
+
+    return userCounts;
   }
 }

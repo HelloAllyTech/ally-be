@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,6 +13,7 @@ import { TenantsRepository } from '../repository/tenant.repository';
 import { Pagination } from 'src/common/type/common.type';
 import { UpdateTenantDto } from '../dto/update-tenant.dto';
 import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
+import { UserRepository } from 'src/user/repository/user.repository';
 
 @Injectable()
 export class TenantService {
@@ -20,6 +23,8 @@ export class TenantService {
     @InjectRepository(Tenant)
     private readonly tenantRepository: Repository<Tenant>,
     private readonly tenantsRepository: TenantsRepository,
+    @Inject(forwardRef(() => UserRepository))
+    private readonly userRepository: UserRepository,
   ) {}
   async findAll(): Promise<Tenant[]> {
     return this.tenantRepository.find();
@@ -73,8 +78,34 @@ export class TenantService {
     search?: string,
     options?: Pagination,
   ): Promise<GetAllTenantsResponseDto> {
-    return this.tenantsRepository.getallTenants(search, options);
+    const { tenants, count } = await this.tenantsRepository.getallTenants(
+      search,
+      options,
+    );
+    if (tenants.length == 0) {
+      return { data: [], count: 0 };
+    }
+
+    const tenantIds = tenants.map((t) => t.id);
+
+    const userCount =
+      await this.userRepository.getUserCountByTenantIds(tenantIds);
+
+    const userCountMap = new Map(
+      userCount.map((uc) => [uc.tenantId, parseInt(uc.userCount)]),
+    );
+
+    const tenantsWithUserCount = tenants.map((tenant) => ({
+      ...tenant,
+      userCount: userCountMap.get(tenant.id) || 0,
+    }));
+
+    return {
+      data: tenantsWithUserCount,
+      count,
+    };
   }
+
   async updateTenant(
     id: string,
     updateTenantDto: UpdateTenantDto,
