@@ -9,4 +9,8 @@ export class UserGroupService {
   async getUserGroups(userId: number): Promise<UserGroup[]> {
     return this.userGroupRepository.findMany({ userId });
   }
+
+  async findUserRoles(userIds: number[]) {
+    return this.userGroupRepository.findUserRoles(userIds);
+  }
 }

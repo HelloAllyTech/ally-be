@@ -12,9 +12,16 @@ export class UserRepository extends Repository<User> {
     super(User, dataSource.createEntityManager());
   }
 
-  async getAllUsers(filters?: UserFilterOptions, isAdmin: boolean = true) {
+  async getAllUsers(
+    filters?: UserFilterOptions,
+    excludeSuperAdmin: boolean = true,
+  ) {
     const query = this.createQueryBuilder('user')
-      .innerJoin(Tenant, 'tenant', '"tenant"."id" = ("user"."tenant_id")::uuid')
+      .leftJoin(
+        Tenant,
+        'tenant',
+        'CAST("tenant"."id" AS TEXT) = CAST("user"."tenant_id" AS TEXT)',
+      )
       .leftJoin(
         SimulationCredits,
         'simulationCredits',
@@ -28,7 +35,7 @@ export class UserRepository extends Repository<User> {
       ]);
 
     this.applyTenantIdFilter(query, filters);
-    this.applyRolesFilter(query, filters, isAdmin);
+    this.applyRolesFilter(query, filters, excludeSuperAdmin);
     this.applyStatusFilter(query, filters);
     this.applySearchFilter(query, filters);
 
@@ -75,13 +82,13 @@ export class UserRepository extends Repository<User> {
   private applyRolesFilter(
     query: SelectQueryBuilder<User>,
     filters?: UserFilterOptions,
-    isAdmin?: boolean,
+    excludeSuperAdmin?: boolean,
   ) {
-    if (isAdmin || filters?.roles) {
+    if (excludeSuperAdmin || filters?.roles) {
       const conditions: string[] = [];
       const params: Record<string, any> = {};
 
-      if (isAdmin) {
+      if (excludeSuperAdmin) {
         conditions.push(
           `NOT EXISTS (
         SELECT 1

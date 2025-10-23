@@ -12,9 +12,9 @@ import { UserGroup } from 'src/common/entities/user-group.entity';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { UserRepository } from 'src/user/repository/user.repository';
 import { GroupService } from 'src/authorization/service/group.service';
-import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
 import { SimulationCreditsService } from 'src/learn/service/simulation-credits.service';
 import { BadRequestException } from '@nestjs/common';
+import { UserGroupService } from 'src/authorization/service/user-group.service';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -43,7 +43,7 @@ describe('UserService', () => {
   let mockUsersRepository: any;
   let mockQueryBuilder: any;
   let mockGroupService: any;
-  let mockUsersGroupRepository: any;
+  let mockUsersGroupService: any;
   let mockSimulationCreditsService: any;
 
   const mockUser: User = {
@@ -131,7 +131,7 @@ describe('UserService', () => {
       getUserCount: jest.fn(),
     };
 
-    mockUsersGroupRepository = {
+    mockUsersGroupService = {
       findUserRoles: jest.fn(),
     };
 
@@ -153,7 +153,7 @@ describe('UserService', () => {
         { provide: TenantService, useValue: mockTenantService },
         { provide: UserRepository, useValue: mockUsersRepository },
         { provide: GroupService, useValue: mockGroupService },
-        { provide: UserGroupRepository, useValue: mockUsersGroupRepository },
+        { provide: UserGroupService, useValue: mockUsersGroupService },
         {
           provide: SimulationCreditsService,
           useValue: mockSimulationCreditsService,
@@ -382,6 +382,16 @@ describe('UserService', () => {
         { search: '%John%' },
       );
     });
+
+    it('should trim search term before filtering', async () => {
+      mockQueryBuilder.getRawMany.mockResolvedValue([]);
+      mockQueryBuilder.getCount.mockResolvedValue(0);
+      await service.getCounselorNames(undefined, undefined, '  John  ');
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'user.name ILIKE :search',
+        { search: '%John%' },
+      );
+    });
   });
 
   describe('getUserByExternalId', () => {
@@ -419,7 +429,7 @@ describe('UserService', () => {
         count: 1,
       };
       mockUsersRepository.getAllUsers.mockResolvedValue(mockResult);
-      mockUsersGroupRepository.findUserRoles.mockResolvedValue([
+      mockUsersGroupService.findUserRoles.mockResolvedValue([
         { userId: 1, roles: ['CLIENT', 'ADMIN'] },
       ]);
 
@@ -430,7 +440,7 @@ describe('UserService', () => {
       expect(result.data[0].creditLimit).toBe(100);
       expect(result.data[0].consumedCredits).toBe(25);
       expect(result.count).toBe(1);
-      expect(mockUsersGroupRepository.findUserRoles).toHaveBeenCalledWith([1]);
+      expect(mockUsersGroupService.findUserRoles).toHaveBeenCalledWith([1]);
     });
 
     it('should return empty array when no users found', async () => {
@@ -441,7 +451,7 @@ describe('UserService', () => {
       const result = await service.getAllUsers({});
       expect(result.data).toEqual([]);
       expect(result.count).toBe(0);
-      expect(mockUsersGroupRepository.findUserRoles).not.toHaveBeenCalled();
+      expect(mockUsersGroupService.findUserRoles).not.toHaveBeenCalled();
     });
   });
 
@@ -485,6 +495,30 @@ describe('UserService', () => {
         service.updateUser(1, { externalId: 'existing-ext' } as any),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('should allow updating email to same value', async () => {
+      mockUserRepository.findOne.mockResolvedValue(mockUser);
+      mockUserRepository.update.mockResolvedValue({ affected: 1 });
+
+      const result = await service.updateUser(1, {
+        email: mockUser.email,
+      } as any);
+
+      expect(result).toEqual({ success: true });
+      expect(mockUserRepository.findOne).toHaveBeenCalledTimes(1);
+    });
+
+    it('should allow updating externalId to same value', async () => {
+      mockUserRepository.findOne.mockResolvedValue(mockUser);
+      mockUserRepository.update.mockResolvedValue({ affected: 1 });
+
+      const result = await service.updateUser(1, {
+        externalId: mockUser.externalId,
+      } as any);
+
+      expect(result).toEqual({ success: true });
+      expect(mockUserRepository.findOne).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('updateUserStatus', () => {
@@ -492,16 +526,16 @@ describe('UserService', () => {
       mockUserRepository.findOne.mockResolvedValue(mockUser);
       mockUserRepository.save.mockResolvedValue({
         ...mockUser,
-        status: UserStatus.INACTIVE,
+        status: UserStatus.SUSPENDED,
       });
-      const result = await service.updateUserStatus(1, UserStatus.INACTIVE);
+      const result = await service.updateUserStatus(1, UserStatus.SUSPENDED);
       expect(result).toEqual({ success: true });
     });
 
     it('should throw NotFoundException when user not found', async () => {
       mockUserRepository.findOne.mockResolvedValue(null);
       await expect(
-        service.updateUserStatus(1, UserStatus.INACTIVE),
+        service.updateUserStatus(1, UserStatus.SUSPENDED),
       ).rejects.toThrow('User with ID 1 not found');
     });
 
@@ -609,11 +643,21 @@ describe('UserService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('should throw BadRequestException when tenant is not provided', async () => {
+      mockUserRepository.findOne.mockResolvedValue(null);
+      await expect(
+        service.addUser({ email: 'test@example.com' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should throw BadRequestException when tenant is invalid', async () => {
       mockUserRepository.findOne.mockResolvedValue(null);
       mockTenantService.findById.mockResolvedValue(null);
       await expect(
-        service.addUser({ tenantId: 'invalid-tenant' } as any),
+        service.addUser({
+          tenantId: 'invalid-tenant',
+          email: 'test@example.com',
+        } as any),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -629,6 +673,36 @@ describe('UserService', () => {
           externalId: 'existing-ext',
         } as any),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should use email as username when username not provided', async () => {
+      const userData = {
+        email: 'new@example.com',
+        phone: '+9876543210',
+        name: 'New User',
+        roles: [UserRole.CLIENT],
+        tenantId: 'test-tenant',
+      };
+      const savedUser = { ...mockUser, id: 2, username: userData.email };
+      mockUserRepository.findOne.mockResolvedValue(null);
+      mockTenantService.findById.mockResolvedValue({ id: 'test-tenant' });
+      mockUserRepository.create.mockReturnValue(savedUser);
+      mockUserRepository.save.mockResolvedValue(savedUser);
+      mockGroupRepository.find.mockResolvedValue([
+        { id: 1, name: UserRole.CLIENT },
+      ]);
+      mockUserGroupRepository.create.mockReturnValue({ userId: 2, groupId: 1 });
+      mockUserGroupRepository.save.mockResolvedValue([
+        { userId: 2, groupId: 1 },
+      ]);
+
+      await service.addUser(userData as any);
+
+      expect(mockUserRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          username: userData.email,
+        }),
+      );
     });
   });
 

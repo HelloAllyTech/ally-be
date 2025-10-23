@@ -78,7 +78,7 @@ export class TenantService {
     search?: string,
     options?: Pagination,
   ): Promise<GetAllTenantsResponseDto> {
-    const { tenants, totalCount } = await this.tenantsRepository.getallTenants(
+    const { tenants, count } = await this.tenantsRepository.getallTenants(
       search,
       options,
     );
@@ -88,10 +88,10 @@ export class TenantService {
 
     const tenantIds = tenants.map((t) => t.id);
 
-    const userCounts = await this.userRepository.getUserCount(tenantIds);
+    const userCount = await this.userRepository.getUserCount(tenantIds);
 
     const userCountMap = new Map(
-      userCounts.map((uc) => [uc.tenantId, parseInt(uc.userCount)]),
+      userCount.map((uc) => [uc.tenantId, parseInt(uc.userCount)]),
     );
 
     const tenantsWithUserCount = tenants.map((tenant) => ({
@@ -101,7 +101,7 @@ export class TenantService {
 
     return {
       data: tenantsWithUserCount,
-      count: totalCount,
+      count,
     };
   }
 

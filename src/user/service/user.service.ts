@@ -31,7 +31,7 @@ import {
 import { SimulationCreditsService } from 'src/learn/service/simulation-credits.service';
 import { AddUserResponseDto } from '../dto/user-add-response.dto';
 import { AddUserDto } from '../dto/user-add.dto';
-import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
+import { UserGroupService } from 'src/authorization/service/user-group.service';
 
 @Injectable()
 export class UserService {
@@ -51,7 +51,7 @@ export class UserService {
     private readonly groupService: GroupService,
     @Inject(forwardRef(() => SimulationCreditsService))
     private readonly simulationCreditsService: SimulationCreditsService,
-    private readonly usersGroupRepository: UserGroupRepository,
+    private readonly usersGroupService: UserGroupService,
   ) {}
 
   async get(id: number): Promise<User | null> {
@@ -233,7 +233,7 @@ export class UserService {
     }
     const userIds = result.users.map((u) => u.user_id);
 
-    const roles = await this.usersGroupRepository.findUserRoles(userIds);
+    const roles = await this.usersGroupService.findUserRoles(userIds);
 
     const rolesMap = new Map(roles.map((r) => [r.userId, r.roles]));
 

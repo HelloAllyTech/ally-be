@@ -479,7 +479,7 @@ describe('TenantService', () => {
             updatedAt: new Date('2023-01-01'),
           },
         ],
-        totalCount: 100,
+        count: 100,
       };
 
       const mockUserCounts = [
@@ -509,7 +509,7 @@ describe('TenantService', () => {
     it('should return tenants without search filter', async () => {
       const mockTenantsResult = {
         tenants: [mockTenant],
-        totalCount: 1,
+        count: 1,
       };
 
       const mockUserCounts = [{ tenantId: 'test-tenant-id', userCount: '0' }];
@@ -530,7 +530,7 @@ describe('TenantService', () => {
     it('should return empty result when no tenants exist', async () => {
       const mockTenantsResult = {
         tenants: [],
-        totalCount: 0,
+        count: 0,
       };
 
       tenantsRepository.getallTenants.mockResolvedValue(mockTenantsResult);
@@ -551,7 +551,7 @@ describe('TenantService', () => {
     it('should handle tenants with no user count', async () => {
       const mockTenantsResult = {
         tenants: [mockTenant],
-        totalCount: 1,
+        count: 1,
       };
 
       tenantsRepository.getallTenants.mockResolvedValue(mockTenantsResult);

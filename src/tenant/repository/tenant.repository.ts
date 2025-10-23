@@ -22,7 +22,7 @@ export class TenantsRepository extends Repository<Tenant> {
       );
     }
 
-    const totalCount = await query.getCount();
+    const count = await query.getCount();
     // Pagination
     if (options?.limit) {
       query.limit(options?.limit);
@@ -33,7 +33,7 @@ export class TenantsRepository extends Repository<Tenant> {
     const tenants = await query.getMany();
     return {
       tenants,
-      totalCount,
+      count,
     };
   }
 
