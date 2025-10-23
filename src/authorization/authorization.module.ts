@@ -13,12 +13,22 @@ import { GroupPermission } from '../common/entities/group-permission.entity';
 import { Permission } from '../common/entities/permission.entity';
 import { GroupPermissionsRepository } from './repository/group-permissions.repository';
 import { RedisModule } from '../redis/redis.module';
+import { User } from 'src/common/entities/user.entity';
+import { PermissionValidator } from './service/permission-validator.service';
+import { UserModule } from '../user/user.module';
 
 @Global()
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Group, UserGroup, GroupPermission, Permission]),
+    TypeOrmModule.forFeature([
+      User,
+      Group,
+      UserGroup,
+      GroupPermission,
+      Permission,
+    ]),
     RedisModule,
+    UserModule,
   ],
   controllers: [AuthorizationController],
   providers: [
@@ -29,12 +39,14 @@ import { RedisModule } from '../redis/redis.module';
     GroupRepository,
     UserGroupRepository,
     GroupPermissionsRepository,
+    PermissionValidator,
   ],
   exports: [
     PermissionsService,
     GroupService,
     GroupPermissionsService,
     UserGroupService,
+    PermissionValidator,
   ],
 })
 export class AuthorizationModule {}

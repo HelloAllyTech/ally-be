@@ -2,17 +2,19 @@ import { CustomThrottlerGuard } from 'src/rate-limit/guard/custom-throttler.guar
 import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { JwtRefreshAuthGuard } from 'src/auth/guards/jwt-refresh-auth.guard';
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedException } from '@nestjs/common';
 import { AuthController } from '../auth.controller';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from 'src/auth/service/auth.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { UserRole } from 'src/common/constants/user.constants';
 
 const mockAuthService = {
   login: jest.fn(),
   generateOtp: jest.fn(),
   verifyOtp: jest.fn(),
-  signup: jest.fn(),
+  generateOtpV2: jest.fn(),
+  verifyOtpV2: jest.fn(),
   refreshTokens: jest.fn(),
   logout: jest.fn(),
   getUserPermissions: jest.fn(),
@@ -81,36 +83,6 @@ describe('AuthController', () => {
     expect(result).toEqual({ verified: true });
   });
 
-  it('should signup successfully', async () => {
-    mockAuthService.signup.mockResolvedValue({ id: 1, username: 'test' });
-    const result = await controller.signup({
-      username: 'test',
-      password: 'pass',
-      email: '',
-      name: '',
-      roles: [],
-      tenantId: '',
-    });
-    expect(result).toEqual({
-      message: 'User created successfully',
-      user: { id: 1, username: 'test' },
-    });
-  });
-
-  it('should throw BadRequestException if signup fails', async () => {
-    mockAuthService.signup.mockRejectedValue(new Error('Fail'));
-    await expect(
-      controller.signup({
-        username: 'test',
-        password: 'pass',
-        email: '',
-        name: '',
-        roles: [],
-        tenantId: '',
-      }),
-    ).rejects.toThrow(BadRequestException);
-  });
-
   it('should refresh tokens successfully', async () => {
     mockAuthService.refreshTokens.mockResolvedValue({
       accessToken: 'newToken',
@@ -148,5 +120,33 @@ describe('AuthController', () => {
     const req = { user: { id: '1' } };
     const result = await controller.getPermissions(req as any);
     expect(result).toEqual(['read', 'write']);
+  });
+
+  // V2 OTP tests
+  it('should generate OTP V2 successfully', async () => {
+    mockAuthService.generateOtpV2.mockResolvedValue({ success: true });
+    const result = await controller.generateOtpV2({
+      email: 'test@example.com',
+      allowedRoles: [UserRole.CLIENT],
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it('should verify OTP V2 successfully', async () => {
+    mockAuthService.verifyOtpV2.mockResolvedValue({
+      accessToken: 'token',
+      refreshToken: 'refresh',
+      user: { id: 1, email: 'test@example.com' },
+    });
+    const result = await controller.verifyOtpV2({
+      otp: '123456',
+      email: 'test@example.com',
+      allowedRoles: [UserRole.CLIENT],
+    });
+    expect(result).toEqual({
+      accessToken: 'token',
+      refreshToken: 'refresh',
+      user: { id: 1, email: 'test@example.com' },
+    });
   });
 });

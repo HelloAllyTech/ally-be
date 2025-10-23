@@ -4,7 +4,6 @@ import { Chat } from '../../common/entities/chat.entity';
 import { User } from '../../common/entities/user.entity';
 import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
 import { TokenUser } from '../../auth/type/auth.types';
-import { UserRole } from '../../common/constants/user.constants';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ChatUtil } from '../util/chat.util';
 import {
@@ -16,9 +15,11 @@ import {
 } from '../constants/chat.constants';
 import { ChatService } from './chat.service';
 import { SettingsService } from '../../settings/service/settings.service';
-import { UserService } from '../../user/user.service';
+import { UserService } from '../../user/service/user.service';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @Injectable()
 export class ChatSummaryService {
@@ -29,6 +30,7 @@ export class ChatSummaryService {
     private readonly chatService: ChatService,
     private readonly settingsService: SettingsService,
     private readonly userService: UserService,
+    private readonly permissionValidator: PermissionValidator,
   ) {}
 
   async exportSummary(
@@ -39,14 +41,22 @@ export class ChatSummaryService {
       await this.chatService.getChatWithCallDetails(chatId);
     if (!chat) throw new NotFoundException(`Chat with ID ${chatId} not found`);
 
+    // Check if user can access other users' chats (admin/super admin) or is the counselor for this chat
+    const canAccessOtherChats =
+      await this.permissionValidator.validatePermissions(
+        tokenUser.id,
+        [PERMISSIONS.SYSTEM_ACCESS, PERMISSIONS.ORGANIZATION_ACCESS],
+        'OR',
+      );
+
     const isAuthorized =
-      tokenUser.role === UserRole.SUPER_ADMIN ||
-      tokenUser.role === UserRole.ADMIN ||
-      tokenUser.id === chat.counselorId;
-    if (!isAuthorized)
+      canAccessOtherChats || tokenUser.id === chat.counselorId;
+
+    if (!isAuthorized) {
       throw new ForbiddenException(
         'You are not authorized to export this chat summary',
       );
+    }
 
     const visibleFields = await this.settingsService.getSummaryFieldsConfig();
     const counselor = chat?.counselorId

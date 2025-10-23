@@ -16,10 +16,12 @@ import {
   CounselorStatsQueryDto,
   CounselorStatsResponseDto,
 } from '../dto/analytics.dto';
-import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
 import { ApiBearerAuth, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { GetCounselorStats } from '../decorator/api-documentation.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
+import { UserRole } from 'src/common/constants/user.constants';
 
 @ApiTags('Analytics')
 @Controller('v1/analytics')
@@ -29,7 +31,7 @@ export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
   @Get('dashboard/:dashboardId')
-  @UseGuards(JwtAuthGuard)
+  @AuthPermissions([PERMISSIONS.VIEW_ANALYTICS_DASHBOARD_URL])
   getDashboardUrl(@Param() { dashboardId }: DashboardIdParamDto) {
     return this.analyticsService.getDashboardUrl(dashboardId);
   }
@@ -41,19 +43,19 @@ export class AnalyticsController {
   }
 
   @Post('dashboard')
-  @AuthRoles(UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
   createDashboard(@Body() dashboard: CreateDashboardDto) {
     return this.analyticsService.createDashboard(dashboard);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get('dashboard')
+  @AuthPermissions([PERMISSIONS.VIEW_ANALYTICS_DASHBOARD])
   getDashboards(@Req() req: { user: { id: number } }) {
     return this.analyticsService.getDashboards(req.user.id);
   }
 
   @GetCounselorStats()
-  @UseGuards(JwtAuthGuard)
+  @AuthRoles(UserRole.COUNSELOR)
   @Get('counselor-stats')
   async getCounselorStats(
     @Query() queryParams: CounselorStatsQueryDto,

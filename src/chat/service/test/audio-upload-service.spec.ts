@@ -20,7 +20,7 @@ import {
 } from 'src/chat/dto/audio-upload.dto';
 import { ChatStatus, ChatSummaryStatus } from 'src/common/entities/chat.entity';
 
-import { UserService } from 'src/user/user.service';
+import { UserService } from 'src/user/service/user.service';
 import { AudioUploadService } from '../audio-upload.service';
 import { ChatService } from '../chat.service';
 import { LoggerService } from 'src/logger/logger.service';
@@ -274,11 +274,7 @@ describe('AudioUploadService', () => {
         key: s3Key,
       });
       expect(chatService.getChatByIdForServiceCall).toHaveBeenCalledWith(123);
-      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
-        '1',
-        UserRole.ADMIN,
-        1,
-      );
+      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith('1', 1);
       expect(chatService.updateChat).toHaveBeenCalledWith(mockChat.id, {
         status: ChatStatus.ENDED,
       });
@@ -475,11 +471,7 @@ describe('AudioUploadService', () => {
 
       await service.processAudioUpload(s3Key);
 
-      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
-        '',
-        UserRole.ADMIN,
-        1,
-      );
+      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith('', 1);
     });
   });
 

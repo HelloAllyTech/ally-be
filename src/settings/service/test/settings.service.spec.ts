@@ -4,10 +4,10 @@ import { SettingsService } from '../settings.service';
 import { PreferenceService } from '../../../common/service/preference.service';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { CommonUtil } from '../../../common/util/common.util';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import {
   PreferenceName,
   PreferenceRelatedEntity,
-  UserRole,
 } from '../../../common/constants/user.constants';
 import {
   DEFAULT_SUMMARY_FIELDS_ARRAY,
@@ -83,6 +83,12 @@ describe('SettingsService', () => {
           provide: PreferenceService,
           useValue: mockPreferenceService,
         },
+        {
+          provide: PermissionValidator,
+          useValue: {
+            validatePermissions: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -92,7 +98,12 @@ describe('SettingsService', () => {
     // Mock ExecutionManager static methods
     jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(mockTenantId);
     jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(mockUserId);
-    jest.spyOn(ExecutionManager, 'getRole').mockReturnValue(UserRole.ADMIN);
+
+    // Mock PermissionValidator to return true for admin permissions by default
+    const permissionValidator = module.get(PermissionValidator);
+    jest
+      .spyOn(permissionValidator, 'validatePermissions')
+      .mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -286,10 +297,12 @@ describe('SettingsService', () => {
     });
 
     it('should update existing preference for counselor role', async () => {
-      jest
-        .spyOn(ExecutionManager, 'getRole')
-        .mockReturnValue(UserRole.COUNSELOR);
       jest.spyOn(CommonUtil, 'getInvalidKeysFromSet').mockReturnValue([]);
+      // Mock PermissionValidator to return false for counselor permissions
+      const permissionValidator = service['permissionValidator'];
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
       preferenceService.getPreference.mockResolvedValue(
         mockCounselorPreference,
       );
@@ -312,10 +325,12 @@ describe('SettingsService', () => {
     });
 
     it('should create new preference for counselor role when none exists', async () => {
-      jest
-        .spyOn(ExecutionManager, 'getRole')
-        .mockReturnValue(UserRole.COUNSELOR);
       jest.spyOn(CommonUtil, 'getInvalidKeysFromSet').mockReturnValue([]);
+      // Mock PermissionValidator to return false for counselor permissions
+      const permissionValidator = service['permissionValidator'];
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
       preferenceService.getPreference.mockResolvedValue(null);
       preferenceService.createPreference.mockResolvedValue(
         mockCounselorPreference,
@@ -343,6 +358,15 @@ describe('SettingsService', () => {
         new BadRequestException(
           `Invalid summary fields - ${invalidFields.join(', ')}`,
         ),
+      );
+    });
+
+    it('should throw BadRequestException when userId is missing', async () => {
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
+      jest.spyOn(CommonUtil, 'getInvalidKeysFromSet').mockReturnValue([]);
+
+      await expect(service.updateSummaryFields(validFields)).rejects.toThrow(
+        new BadRequestException('User ID is required'),
       );
     });
 
@@ -442,9 +466,11 @@ describe('SettingsService', () => {
     });
 
     it('should update existing preference for counselor role', async () => {
+      // Mock PermissionValidator to return false for counselor permissions
+      const permissionValidator = service['permissionValidator'];
       jest
-        .spyOn(ExecutionManager, 'getRole')
-        .mockReturnValue(UserRole.COUNSELOR);
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
       preferenceService.getPreference.mockResolvedValue(mockNudgePreference);
       preferenceService.updatePreference.mockResolvedValue(mockNudgePreference);
 
@@ -459,9 +485,11 @@ describe('SettingsService', () => {
     });
 
     it('should create new preference for counselor role when none exists', async () => {
+      // Mock PermissionValidator to return false for counselor permissions
+      const permissionValidator = service['permissionValidator'];
       jest
-        .spyOn(ExecutionManager, 'getRole')
-        .mockReturnValue(UserRole.COUNSELOR);
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
       preferenceService.getPreference.mockResolvedValue(null);
       preferenceService.createPreference.mockResolvedValue(mockNudgePreference);
 
@@ -475,6 +503,14 @@ describe('SettingsService', () => {
         tenantId: mockTenantId,
       });
       expect(result).toEqual(mockNudgePreference);
+    });
+
+    it('should throw BadRequestException when userId is missing', async () => {
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
+
+      await expect(service.updateNudgeStatus(true)).rejects.toThrow(
+        new BadRequestException('User ID is required'),
+      );
     });
 
     it('should throw BadRequestException when relatedId is missing', async () => {

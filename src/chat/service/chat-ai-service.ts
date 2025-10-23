@@ -25,6 +25,8 @@ import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.se
 import { Chat } from 'src/common/entities/chat.entity';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { UserService } from 'src/user/service/user.service';
+import { NotificationService } from 'src/notification/service/notification.service';
 
 @Injectable()
 export class ChatAiService {
@@ -38,11 +40,14 @@ export class ChatAiService {
     private readonly config: AppConfigService,
     private readonly chatAudioUploadsService: ChatAudioUploadsService,
     private readonly cryptoService: CryptoService,
+    private readonly notificationService: NotificationService,
+    private readonly userService: UserService,
   ) {}
 
   private readonly logger = LoggerService.getInstance(ChatAiService.name);
   private readonly auditLogger = AuditLoggerService.getInstance();
 
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async addSummary(chatId: number, summary: FlattenedSummaryNotePayload) {
     try {
       this.logger.info(`Adding summary for chatId: ${chatId} from ai service`);
@@ -53,6 +58,12 @@ export class ChatAiService {
           chatId,
         },
       });
+
+      const chat = await this.chatService.getChatByIdForServiceCall(chatId);
+
+      if (!chat) {
+        throw new ValidationException('Chat not found');
+      }
 
       const convertedResponse = CommonUtil.convertToCamelCase(
         summary,
@@ -70,6 +81,32 @@ export class ChatAiService {
           summary: convertedResponse,
         },
       );
+
+      this.setAuthContext({
+        userId: chat.counselorId!,
+        tenantId: chat.tenantId,
+      });
+
+      if (!chat.counselorId) {
+        this.logger.error(`Counselor id is not set for chatId: ${chatId}`);
+        return true;
+      }
+
+      const counselor = await this.userService.get(chat.counselorId);
+
+      if (!counselor) {
+        this.logger.error(`Counselor not found for chatId: ${chatId}`);
+        return true;
+      }
+
+      const { callDetails } =
+        await this.chatService.getChatWithCallDetails(chatId);
+
+      await this.notificationService.sendEmailSummaryNotification({
+        to: counselor.email,
+        chatId,
+        summaryName: callDetails?.callInfo?.summaryName,
+      });
       this.logger.info(`Summary added for chatId: ${chatId} from ai service`);
       return true;
     } catch (error) {
@@ -91,9 +128,9 @@ export class ChatAiService {
 
       this.setAuthContext({
         userId: chat.counselorId!,
-        role: UserRole.COUNSELOR,
         tenantId: chat.tenantId,
       });
+
       const formattedMessages = messages.map(async (message) => {
         const encryptedContent = await this.cryptoService.encrypt(
           message.content,
@@ -163,14 +200,9 @@ export class ChatAiService {
     }
   }
 
-  setAuthContext(context: {
-    userId: number;
-    role: UserRole;
-    tenantId: string;
-  }) {
+  setAuthContext(context: { userId: number; tenantId: string }) {
     ExecutionManager.setAuthContext(
       context.userId.toString(),
-      context.role,
       context.tenantId,
     );
   }

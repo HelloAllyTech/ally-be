@@ -3,6 +3,7 @@ import { ApiOperation, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { ScenarioSessionResponseDto } from '../dto/scenario-session-response.dto';
 import { ScenarioSessionSortBy } from '../enum/scenario-session-sort-by.enum';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
+import { SimulationCreditsResponseDto } from '../dto/simulation-credits-response.dto';
 
 const withPagination = () =>
   applyDecorators(
@@ -131,3 +132,30 @@ export const EndScenarioSession = () =>
 
 export const AddScenarioSessionFeedback = () =>
   ApiOperation({ summary: 'Add a feedback to a scenario session' });
+
+export function GetSimulationCreditsDocumentation() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Get simulation credits for a user' }),
+    ApiResponse({
+      status: 200,
+      description: 'Simulation credits retrieved successfully',
+      type: SimulationCreditsResponseDto,
+    }),
+  );
+}
+
+export function UpdateSimulationCreditsDocumentation() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Update simulation credits for a user' }),
+    ApiResponse({
+      status: 200,
+      description: 'Simulation credits updated successfully',
+      type: Boolean,
+    }),
+    ApiResponse({
+      status: 400,
+      description:
+        'Bad request - total credits cannot be less than consumed credits',
+    }),
+  );
+}

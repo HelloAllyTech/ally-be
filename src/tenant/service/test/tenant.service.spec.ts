@@ -2,11 +2,26 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, UpdateResult } from 'typeorm';
 import { TenantService } from '../tenant.service';
-import { Tenant, TenantStatus } from '../../common/entities/tenant.entity';
+import { Tenant, TenantStatus } from 'src/common/entities/tenant.entity';
+import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
+
+// Mock LoggerService
+jest.mock('../../../logger/logger.service', () => ({
+  LoggerService: {
+    getInstance: jest.fn(() => ({
+      error: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      log: jest.fn(),
+    })),
+  },
+}));
 
 describe('TenantService', () => {
   let service: TenantService;
   let tenantRepository: jest.Mocked<Repository<Tenant>>;
+  let tenantsRepository: jest.Mocked<TenantsRepository>;
 
   const mockTenant: Tenant = {
     id: 'test-tenant-id',
@@ -33,9 +48,14 @@ describe('TenantService', () => {
     const mockRepository = {
       create: jest.fn(),
       save: jest.fn(),
+      find: jest.fn(),
       findOne: jest.fn(),
       update: jest.fn(),
       createQueryBuilder: jest.fn(),
+    };
+
+    const mockTenantsRepository = {
+      getallTenants: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -45,15 +65,47 @@ describe('TenantService', () => {
           provide: getRepositoryToken(Tenant),
           useValue: mockRepository,
         },
+        {
+          provide: TenantsRepository,
+          useValue: mockTenantsRepository,
+        },
       ],
     }).compile();
 
     service = module.get<TenantService>(TenantService);
     tenantRepository = module.get(getRepositoryToken(Tenant));
+    tenantsRepository = module.get(TenantsRepository);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('findAll', () => {
+    it('should return all tenants', async () => {
+      const mockTenants = [mockTenant, { ...mockTenant, id: 'tenant-2' }];
+      tenantRepository.find.mockResolvedValue(mockTenants);
+
+      const result = await service.findAll();
+
+      expect(tenantRepository.find).toHaveBeenCalled();
+      expect(result).toEqual(mockTenants);
+    });
+
+    it('should return empty array when no tenants exist', async () => {
+      tenantRepository.find.mockResolvedValue([]);
+
+      const result = await service.findAll();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should handle repository errors', async () => {
+      const error = new Error('Database error');
+      tenantRepository.find.mockRejectedValue(error);
+
+      await expect(service.findAll()).rejects.toThrow('Database error');
+    });
   });
 
   describe('create', () => {
@@ -379,6 +431,139 @@ describe('TenantService', () => {
       await expect(service.validateTenant('test-tenant-id')).rejects.toThrow(
         'Database error',
       );
+    });
+  });
+
+  describe('getallTenants', () => {
+    it('should return paginated tenants with user counts', async () => {
+      const mockPaginationOptions = {
+        limit: 10,
+        offset: 0,
+        sortBy: 'name' as any,
+        order: 'ASC' as any,
+      };
+      const mockResult = {
+        data: [
+          {
+            id: 'test-tenant-id',
+            name: 'Test Tenant',
+            code: 'test-tenant',
+            description: 'Test tenant description',
+            status: TenantStatus.ACTIVE,
+            metadata: { key: 'value' },
+            settings: { setting: 'value' },
+            createdAt: new Date('2023-01-01'),
+            updatedAt: new Date('2023-01-01'),
+            userCount: 5,
+          },
+          {
+            id: 'tenant-2',
+            name: 'Test Tenant 2',
+            code: 'test-tenant-2',
+            description: 'Test tenant description 2',
+            status: TenantStatus.ACTIVE,
+            metadata: { key: 'value' },
+            settings: { setting: 'value' },
+            createdAt: new Date('2023-01-01'),
+            updatedAt: new Date('2023-01-01'),
+            userCount: 10,
+          },
+        ],
+        total: 100,
+        page: 1,
+        pageSize: 10,
+        totalPages: 10,
+      };
+
+      tenantsRepository.getallTenants.mockResolvedValue(mockResult as any);
+
+      const result = await service.getallTenants('test', mockPaginationOptions);
+
+      expect(tenantsRepository.getallTenants).toHaveBeenCalledWith(
+        'test',
+        mockPaginationOptions,
+      );
+      expect(result).toEqual(mockResult);
+      expect(result.data[0]).toHaveProperty('userCount');
+      expect(result.data[0].userCount).toBe(5);
+    });
+
+    it('should return tenants without search filter', async () => {
+      const mockResult = {
+        data: [
+          {
+            ...mockTenant,
+            userCount: 0,
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+        totalPages: 1,
+      };
+
+      tenantsRepository.getallTenants.mockResolvedValue(mockResult as any);
+
+      const result = await service.getallTenants();
+
+      expect(tenantsRepository.getallTenants).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should return empty result when no tenants match search', async () => {
+      const mockResult = {
+        data: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+        totalPages: 0,
+      };
+
+      tenantsRepository.getallTenants.mockResolvedValue(mockResult as any);
+
+      const result = await service.getallTenants('nonexistent');
+
+      expect(result).toEqual(mockResult);
+      expect(result.data).toHaveLength(0);
+    });
+
+    it('should handle repository errors', async () => {
+      const error = new Error('Database error');
+      tenantsRepository.getallTenants.mockRejectedValue(error);
+
+      await expect(service.getallTenants()).rejects.toThrow('Database error');
+    });
+
+    it('should handle pagination correctly', async () => {
+      const mockPaginationOptions = {
+        limit: 5,
+        offset: 10,
+        sortBy: 'createdAt' as any,
+        order: 'DESC' as any,
+      };
+
+      const mockResult = {
+        data: [
+          { ...mockTenant, userCount: 3 },
+          { ...mockTenant, id: 'tenant-2', userCount: 7 },
+        ],
+        total: 50,
+        page: 3,
+        pageSize: 5,
+        totalPages: 10,
+      };
+
+      tenantsRepository.getallTenants.mockResolvedValue(mockResult as any);
+
+      const result = await service.getallTenants(
+        undefined,
+        mockPaginationOptions,
+      );
+
+      expect(result.data).toHaveLength(2);
     });
   });
 });

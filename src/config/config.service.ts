@@ -118,9 +118,9 @@ export class AppConfigService {
   get email() {
     return {
       integration: this.configService.get<string>('EMAIL_INTEGRATION'),
+      sourceEmail: this.configService.get<string>('SOURCE_EMAIL'),
       ses: {
         region: this.configService.get<string>('SMTP_REGION'),
-        sourceEmail: this.configService.get<string>('SES_SOURCE_EMAIL'),
         accessKeyId: this.configService.get<string>('SMTP_ACCESS_KEY_ID'),
         secretAccessKey: this.configService.get<string>(
           'SMTP_SECRET_ACCESS_KEY',
@@ -248,6 +248,20 @@ export class AppConfigService {
       apiKey: this.configService.get<string>('LIVEKIT_API_KEY'),
       apiSecret: this.configService.get<string>('LIVEKIT_API_SECRET'),
       serverUrl: this.configService.get<string>('LIVEKIT_URL'),
+    };
+  }
+
+  get app() {
+    return {
+      baseUrl: this.configService.get<string>('APP_BASE_URL'),
+    };
+  }
+
+  get simulationCredits() {
+    return {
+      lifespanSecondsPerCredit: this.configService.get<number>(
+        'SIMULATION_SESSION_SECONDS_PER_CREDIT',
+      ),
     };
   }
 }

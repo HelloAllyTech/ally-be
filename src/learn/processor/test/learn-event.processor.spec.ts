@@ -113,11 +113,7 @@ describe('LearnEventProcessor', () => {
       ).toHaveBeenCalledWith(mockRoomId);
       expect(
         scenarioSessionService.addScenarioSessionEvent,
-      ).toHaveBeenCalledWith(
-        mockScenarioSessionId,
-        mockEventData.data.event,
-        mockTenantId,
-      );
+      ).toHaveBeenCalledWith(mockScenarioSession, mockEventData.data.event);
       expect(mockLogger.info).toHaveBeenCalledWith(
         `Scenario session event added: ${mockScenarioSessionId}`,
       );
@@ -275,11 +271,7 @@ describe('LearnEventProcessor', () => {
       ).toHaveBeenCalledWith(mockRoomId);
       expect(
         scenarioSessionService.addScenarioSessionEvent,
-      ).toHaveBeenCalledWith(
-        mockScenarioSessionId,
-        mockEventData.data.event,
-        mockTenantId,
-      );
+      ).toHaveBeenCalledWith(mockScenarioSession, mockEventData.data.event);
       expect(mockLogger.error).toHaveBeenCalledWith(
         'Failed to process learn event: "Failed to add event"',
       );
@@ -351,11 +343,7 @@ describe('LearnEventProcessor', () => {
       );
       expect(
         scenarioSessionService.addScenarioSessionEvent,
-      ).toHaveBeenCalledWith(
-        mockScenarioSessionId,
-        complexEventData.data.event,
-        mockTenantId,
-      );
+      ).toHaveBeenCalledWith(mockScenarioSession, complexEventData.data.event);
     });
 
     it('should handle scenario session with different tenant ID', async () => {
@@ -377,9 +365,8 @@ describe('LearnEventProcessor', () => {
       expect(
         scenarioSessionService.addScenarioSessionEvent,
       ).toHaveBeenCalledWith(
-        mockScenarioSessionId,
+        sessionWithDifferentTenant,
         mockEventData.data.event,
-        differentTenantId,
       );
     });
   });

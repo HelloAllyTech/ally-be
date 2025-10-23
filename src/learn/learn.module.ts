@@ -17,6 +17,12 @@ import { LearnMessageAndEventConsumer } from './consumer/learn-message-and-event
 import { LearnMessageProcessor } from './processor/learn-message.processor';
 import { LearnEventProcessor } from './processor/learn-event.processor';
 import { ScenarioSessionEvents } from './entity/scenario-session-events.entity';
+import { SimulationCreditsController } from './controller/simulation-credits.controller';
+import { SimulationCreditsService } from './service/simulation-credits.service';
+import { SimulationCreditsRepository } from './repository/simulation-credits.repository';
+import { SimulationCredits } from 'src/learn/entity/simulation-credits.entity';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { UserModule } from 'src/user/user.module';
 
 @Module({
   imports: [
@@ -27,12 +33,14 @@ import { ScenarioSessionEvents } from './entity/scenario-session-events.entity';
       ScenarioSessionFeedbacks,
       ScenarioSessionMessages,
       ScenarioSessionEvents,
+      SimulationCredits,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
     forwardRef(() => AiModule),
+    forwardRef(() => UserModule),
   ],
-  controllers: [LearnController],
+  controllers: [LearnController, SimulationCreditsController],
   providers: [
     ScenarioService,
     ScenarioSessionService,
@@ -41,7 +49,15 @@ import { ScenarioSessionEvents } from './entity/scenario-session-events.entity';
     LearnMessageAndEventConsumer,
     LearnMessageProcessor,
     LearnEventProcessor,
+    SimulationCreditsService,
+    SimulationCreditsRepository,
+    PermissionValidator,
   ],
-  exports: [LearnMessageProcessor, LearnEventProcessor, ScenarioSessionService],
+  exports: [
+    LearnMessageProcessor,
+    LearnEventProcessor,
+    ScenarioSessionService,
+    SimulationCreditsService,
+  ],
 })
 export class LearnModule {}

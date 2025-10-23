@@ -11,6 +11,8 @@ import {
 } from '../decorator/api-documentation.decorator';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 
 @ApiTags('Settings')
 @ApiBearerAuth()
@@ -20,15 +22,15 @@ export class SettingsController {
   constructor(private readonly service: SettingsService) {}
 
   @GetSummaryFields()
-  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
   @Get('summary-fields')
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_SUMMARY_FIELDS])
   getSummaryFields() {
     return this.service.getSummaryFieldsConfig();
   }
 
   @UpdateSummaryFields()
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @Put('summary-fields')
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_SUMMARY_FIELDS])
   updateSummaryFields(@Body() body: { hiddenFields: string[] }) {
     return this.service.updateSummaryFields(body.hiddenFields);
   }
@@ -36,27 +38,28 @@ export class SettingsController {
   @GetNudgeStatus()
   @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @Get('nudge-status')
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_NUDGE_STATUS])
   getNudgeStatus() {
     return this.service.getNudgeStatus();
   }
 
   @UpdateNudgeStatus()
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
   @Put('nudge-status')
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_NUDGE_STATUS])
   updateNudgeStatus(@Body() body: { status: boolean }) {
     return this.service.updateNudgeStatus(body.status);
   }
 
   @GetChatTypes()
-  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
   @Get('chat-types')
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_CHAT_TYPES])
   getChatTypes() {
     return this.service.getChatTypes();
   }
 
   @UpdateHiddenChatTypes()
-  @AuthRoles(UserRole.ADMIN)
   @Put('chat-types')
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_CHAT_TYPES])
   updateHiddenChatTypes(@Body() body: { hiddenChatTypes: string[] }) {
     return this.service.updateChatTypes(body.hiddenChatTypes);
   }

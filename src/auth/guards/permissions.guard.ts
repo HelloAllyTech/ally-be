@@ -11,12 +11,12 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
-      PERMISSIONS_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const requiredPermissions = this.reflector.getAllAndOverride<{
+      permissions: string[];
+      operator: 'AND' | 'OR';
+    }>(PERMISSIONS_KEY, [context.getHandler(), context.getClass()]);
 
-    if (!requiredPermissions || requiredPermissions.length === 0) {
+    if (!requiredPermissions || requiredPermissions.permissions.length === 0) {
       return true;
     }
 
@@ -30,8 +30,14 @@ export class PermissionsGuard implements CanActivate {
     );
 
     // Check if user has all required permissions
-    return requiredPermissions.every((permission) =>
-      userPermissions.includes(permission),
-    );
+    if (requiredPermissions.operator === 'AND') {
+      return requiredPermissions.permissions.every((permission) =>
+        userPermissions.includes(permission),
+      );
+    } else {
+      return requiredPermissions.permissions.some((permission) =>
+        userPermissions.includes(permission),
+      );
+    }
   }
 }

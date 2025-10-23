@@ -1,14 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Reflector } from '@nestjs/core';
 import { TenantController } from '../tenant.controller';
-import { TenantService } from '../tenant.service';
-import { Tenant, TenantStatus } from '../../common/entities/tenant.entity';
-import { CreateTenantDto } from '../dto/create-tenant.dto';
-import { UpdateTenantStatusDto } from '../dto/update-tenant-status.dto';
-import { UpdateTenantSettingsDto } from '../dto/update-tenant-settings.dto';
-import { UpdateTenantMetadataDto } from '../dto/update-tenant-metadata.dto';
-import { RolesGuard } from '../../auth/guards/roles.guard';
-import { PermissionsService } from '../../authorization/service/permissions.service';
+import { TenantService } from '../../service/tenant.service';
+import { Tenant, TenantStatus } from '../../../common/entities/tenant.entity';
+import { CreateTenantDto } from '../../dto/create-tenant.dto';
+import { UpdateTenantStatusDto } from '../../dto/update-tenant-status.dto';
+import { UpdateTenantSettingsDto } from '../../dto/update-tenant-settings.dto';
+import { UpdateTenantMetadataDto } from '../../dto/update-tenant-metadata.dto';
+import { RolesGuard } from '../../../auth/guards/roles.guard';
+import { PermissionsService } from '../../../authorization/service/permissions.service';
 
 describe('TenantController', () => {
   let controller: TenantController;

@@ -6,7 +6,6 @@ import {
   Length,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 
 export class CreateTenantDto {
   @ApiProperty({ description: 'Name of the tenant' })
@@ -24,7 +23,6 @@ export class CreateTenantDto {
   @Matches(/^[a-zA-Z0-9-_]+$/, {
     message: 'Code can only contain letters, numbers, hyphens, and underscores',
   })
-  @Transform(({ value }) => value?.toLowerCase())
   code!: string;
 
   @ApiProperty({ description: 'Description of the tenant', required: false })

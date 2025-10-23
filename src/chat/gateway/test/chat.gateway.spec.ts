@@ -1326,7 +1326,6 @@ describe('ChatGateway', () => {
 
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '1',
-        UserRole.CLIENT,
         'test-tenant',
       );
     });

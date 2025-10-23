@@ -33,7 +33,7 @@ import { CallDetails } from '../../common/entities/call.details.entity';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { User } from '../../common/entities/user.entity';
 import { Pagination } from '../../common/type/common.type';
-import { UserService } from '../../user/user.service';
+import { UserService } from '../../user/service/user.service';
 import { ChatEvents } from '../constants/chat.constants';
 import { ChatGateway } from '../gateway/chat.gateway';
 import {
@@ -86,6 +86,9 @@ import { CallDetailsRepository } from '../repository/call-details.repository';
 import { MessageRepository } from '../repository/message.repository';
 import { ChatUtil } from '../util/chat.util';
 import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { GroupService } from 'src/authorization/service/group.service';
 
 @Injectable()
 export class ChatService {
@@ -114,9 +117,28 @@ export class ChatService {
     private streamFileProcessorService: StreamFileProcessorService,
     private readonly config: AppConfigService,
     private chatAudioUploadsService: ChatAudioUploadsService,
+    private permissionValidator: PermissionValidator,
+    private groupService: GroupService,
   ) {}
 
   async getChat(id: number) {
+    const chatData = await this.chatRepository.findOne({
+      where: { id, tenantId: ExecutionManager.getTenantId() },
+    });
+    if (!chatData) {
+      throw new NotFoundException(`Chat not found for chatId: ${id}`);
+    }
+    const userId = Number(ExecutionManager.getUserId());
+    const hasAdminAccess = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.ORGANIZATION_ACCESS],
+    );
+    if (
+      (!hasAdminAccess && chatData.counselorId !== userId) ||
+      (hasAdminAccess && chatData.tenantId !== ExecutionManager.getTenantId())
+    ) {
+      throw new ForbiddenException('You are not allowed to access this chat');
+    }
     const chatQuery = this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndMapOne(
@@ -463,6 +485,26 @@ export class ChatService {
     return updatedChat;
   }
 
+  async getParticipantRoles(participants: User[]) {
+    const userIds = participants?.map((participant) => participant.id) ?? [];
+
+    // Process all user role lookups in parallel
+    const userRolesPromises = userIds.map((userId) =>
+      this.groupService.getUserRolesByUserId(userId),
+    );
+    const userRolesResults = await Promise.all(userRolesPromises);
+
+    // Create userId to roles mapping
+    const userIdRoleMapping: { [userId: number]: string[] } = {};
+    userIds.forEach((userId, index) => {
+      userIdRoleMapping[userId] = userRolesResults[index].map(
+        (userRole) => userRole.name,
+      );
+    });
+
+    return userIdRoleMapping;
+  }
+
   async startCall(participantPhoneNumbers: string[]) {
     if (!participantPhoneNumbers || participantPhoneNumbers?.length < 2) {
       throw new HttpException('Need at least 2 participants', 400);
@@ -471,16 +513,26 @@ export class ChatService {
       participantPhoneNumbers,
     );
 
-    const counselor = participants?.find(
-      (participant) => participant.role === UserRole.COUNSELOR,
+    if (!participants || participants.length < 2) {
+      throw new HttpException('Not enough valid participants found', 404);
+    }
+
+    const participantRoles = await this.getParticipantRoles(participants);
+
+    const counselor = participants?.find((participant) =>
+      participantRoles[participant.id].includes(UserRole.COUNSELOR),
     );
+
     if (!counselor) {
       throw new HttpException(`Counselor not found`, 404);
     }
-    let client = participants?.find(
-      (participant) => participant.role === UserRole.CLIENT,
+
+    let client = participants?.find((participant) =>
+      participantRoles[participant.id].includes(UserRole.CLIENT),
     );
+
     if (!client) {
+      // Try to find a phone number that's not the counselor's
       const clientPhoneNumber = participantPhoneNumbers?.find(
         (phn) => phn !== counselor.phone,
       );
@@ -489,7 +541,6 @@ export class ChatService {
       }
       client = await this.userService.createUser({
         phoneNumber: clientPhoneNumber,
-        role: UserRole.CLIENT,
       });
     }
     // TODO: check if we could reuse requestChat method
@@ -710,9 +761,11 @@ export class ChatService {
       undefined,
       entityManager,
     );
+    const counselorInfo = await this.userService.getMinimalUserInfo(counselor);
+    const clientInfo = await this.userService.getMinimalUserInfo(client);
     const payload = {
-      counselor: this.userService.getMinimalUserInfo(counselor),
-      client: this.userService.getMinimalUserInfo(client),
+      counselor: counselorInfo,
+      client: clientInfo,
       messages: messages, //messages.map(this.formatMessage),
       chatId: chat.id,
       clientId: chat.clientId,
@@ -800,14 +853,22 @@ export class ChatService {
       throw new HttpException('Chat not found', 404);
     }
 
-    const role = ExecutionManager.getRole();
-    if (role !== UserRole.ADMIN) {
-      if (chat.clientId !== userId && chat.counselorId !== userId) {
-        throw new HttpException(
-          'You are not authorized to access this chat',
-          403,
-        );
-      }
+    // Check if user has permission to view messages or is the participant of this chat
+    const canViewMessages = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.VIEW_MESSAGES],
+    );
+    // Does client has permission to view messages?
+
+    if (
+      !canViewMessages &&
+      chat.clientId !== userId &&
+      chat.counselorId !== userId
+    ) {
+      throw new HttpException(
+        'You are not authorized to access this chat',
+        403,
+      );
     }
 
     const { messages, count } = await this.getMessageByChatId(chatId, {
@@ -1154,9 +1215,7 @@ export class ChatService {
         'client',
         'client.id = chat.clientId',
       );
-    if (user.role === UserRole.COUNSELOR) {
-      query.where('chat.counselorId = :counselorId', { counselorId: user.id });
-    }
+    query.where('chat.counselorId = :counselorId', { counselorId: user.id });
     if (options.limit) {
       query.limit(options.limit);
     }
@@ -1411,12 +1470,14 @@ export class ChatService {
       throw new NotFoundException(`Chat with ID ${chatId} not found`);
     }
 
-    if (
-      ExecutionManager.getRole() == UserRole.COUNSELOR &&
-      chat.counselorId != ExecutionManager.getUserId()
-    ) {
+    const currentUserId = ExecutionManager.getUserId();
+    if (!currentUserId) {
+      throw new ForbiddenException('User not authenticated');
+    }
+
+    if (chat.counselorId !== parseInt(currentUserId)) {
       throw new ForbiddenException(
-        'You are not authorized to update call info',
+        'You are not authorized to update call info for this chat',
       );
     }
     const callDetails = await this.callDetailsRepository.findOne({

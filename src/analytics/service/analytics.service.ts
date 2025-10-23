@@ -12,6 +12,7 @@ import {
   CounselorStatsQueryDto,
   CounselorStatsResponseDto,
 } from '../dto/analytics.dto';
+import { UserRole } from 'src/common/constants/user.constants';
 
 @Injectable()
 export class AnalyticsService {
@@ -76,13 +77,35 @@ export class AnalyticsService {
   }
 
   async getDashboards(userId: number) {
-    const userGroups = await this.groupService.getUserGroups(userId);
+    const ANALYTICS_TYPE: Partial<Record<UserRole, string>> = {
+      [UserRole.COUNSELOR]: 'CALL_LOG_ANALYTICS',
+      [UserRole.LEARNER]: 'SIMULATION_ANALYTICS',
+      [UserRole.ADMIN]: 'ORG_ANALYTICS',
+    };
+    const userGroups = await this.groupService.getUserRolesByUserId(userId);
+
+    const groupIds = userGroups.map((group) => group.id);
     if (!userGroups.length) return;
-    return this.dashboardRepository.find({
+    const dashboards = await this.dashboardRepository.find({
       where: {
-        groupId: In(userGroups),
+        groupId: In(groupIds),
         tenantId: ExecutionManager.getTenantId(),
       },
+    });
+    const groupMap = Object.fromEntries(
+      userGroups.map((group) => [group.id.toString(), group.name]),
+    );
+
+    return dashboards.map((dashboard) => {
+      const roleName = groupMap[dashboard.groupId];
+      const analyticsType = roleName
+        ? (ANALYTICS_TYPE[roleName as keyof typeof ANALYTICS_TYPE] ?? '')
+        : '';
+
+      return {
+        ...dashboard,
+        analyticsType,
+      };
     });
   }
 

@@ -24,8 +24,6 @@ import {
   EndScenarioSession,
   AddScenarioSessionFeedback,
 } from '../decorator/api-documentation.decorator';
-import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
-import { UserRole } from 'src/common/constants/user.constants';
 import { ScenarioService } from '../service/scenario.service';
 import { ScenarioResponse } from '../dto/scenario-response.dto';
 import { ScenarioSessionService } from '../service/scenario-session.service';
@@ -40,6 +38,8 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { Public } from 'src/auth/decorators/auth.metadata';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 
 @ApiTags('Learn')
@@ -75,7 +75,7 @@ export class LearnController {
   }
 
   @CreateScenarios()
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
   @Post('scenarios')
   async createScenario(
     @Body() createScenariosDto: CreateScenariosDto,
@@ -84,7 +84,7 @@ export class LearnController {
   }
 
   @UpdateScenario()
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
   @Put('scenarios/:id')
   async updateScenario(
     @Param('id') id: number,
@@ -94,7 +94,7 @@ export class LearnController {
   }
 
   @GetUserScenarioSessions()
-  @AuthRoles(UserRole.LEARNER)
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_SESSION])
   @Get('scenario-sessions')
   async getScenarioSessions(
     @CurrentUser() tokenUser: TokenUser,
@@ -118,7 +118,7 @@ export class LearnController {
   }
 
   @GetAdminScenarioSessions()
-  @AuthRoles(UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_SESSION])
   @Get('admin-scenario-sessions')
   async getAdminScenarioSessions(
     @Query('limit') limit?: number,
@@ -136,7 +136,7 @@ export class LearnController {
   }
 
   @GetScenarioSessionById()
-  @AuthRoles(UserRole.LEARNER, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_SESSION_DETAILS])
   @Get('scenario-session/:id')
   async getScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -146,7 +146,7 @@ export class LearnController {
   }
 
   @MapEventsToScenario()
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_MAP_EVENTS])
   @Post('scenarios/map-events')
   async mapEventsToScenario(
     @Body() createScenarioEventsDto: CreateScenarioEventsDto,
@@ -157,7 +157,7 @@ export class LearnController {
   }
 
   @DeleteScenarioEvents()
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_SESSION])
   @Delete('scenarios/events')
   async deleteScenarioEvents(
     @Body() deleteScenarioEventsDto: DeleteScenarioEventsDto,
@@ -169,7 +169,7 @@ export class LearnController {
   }
 
   @StartScenarioSession()
-  @AuthRoles(UserRole.LEARNER)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_SESSION])
   @Post('scenario-session-start')
   async startScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -182,7 +182,7 @@ export class LearnController {
   }
 
   @EndScenarioSession()
-  @AuthRoles(UserRole.LEARNER)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_SESSION])
   @Post('scenario-session/:scenarioSessionId/end')
   async endScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -195,7 +195,7 @@ export class LearnController {
   }
 
   @AddScenarioSessionFeedback()
-  @AuthRoles(UserRole.LEARNER)
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_SESSION_FEEDBACK])
   @Post('scenario-session/:scenarioSessionId/feedback')
   async addFeedbackToScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
@@ -211,7 +211,7 @@ export class LearnController {
   }
 
   @GetScenarioSessionMessages()
-  @AuthRoles(UserRole.LEARNER, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_SESSION_SCENARIO_MESSAGES])
   @Get('scenario-session/:scenarioSessionId/messages')
   async getMessagesByScenarioSessionId(
     @Param('scenarioSessionId') scenarioSessionId: string,

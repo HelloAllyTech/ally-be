@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserController } from '../user.controller';
-import { UserService } from '../user.service';
+import { UserService } from '../../service/user.service';
 import { GroupService } from 'src/authorization/service/group.service';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { UserRole } from 'src/common/constants/user.constants';
-import { AssignUserRoleDto, RemoveUserRoleDto } from '../dto/group.dto';
+import { AssignUserRoleDto, RemoveUserRoleDto } from '../../dto/group.dto';
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 
@@ -16,7 +16,6 @@ describe('UserController', () => {
   const mockTokenUser: TokenUser = {
     id: 1,
     username: 'testuser',
-    role: UserRole.CLIENT,
     tenantId: 'test-tenant',
   };
 

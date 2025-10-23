@@ -6,12 +6,15 @@ import {
   IsOptional,
   IsArray,
   ArrayNotEmpty,
+  IsPositive,
+  IsInt,
+  Matches,
 } from 'class-validator';
-import { UserRole } from '../../common/constants/user.constants';
+import { UserRole, UserStatus } from '../../common/constants/user.constants';
 import { PASSWORD_VALIDATION } from '../../common/constants/validation.constants';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class UserCreateDto {
+export class AddUserDto {
   @ApiProperty({
     description: 'User email',
     example: 'john_doe@example.com',
@@ -28,7 +31,7 @@ export class UserCreateDto {
   @IsOptional()
   @IsString()
   @MinLength(PASSWORD_VALIDATION.MIN_LENGTH)
-  //@Matches(PASSWORD_VALIDATION.REGEX)
+  @Matches(PASSWORD_VALIDATION.REGEX)
   password?: string;
 
   @ApiProperty({
@@ -63,8 +66,8 @@ export class UserCreateDto {
   username?: string;
 
   @ApiProperty({
-    description: 'Tenant ID',
-    example: 'tenant-123',
+    description: 'Tenant ID(UUID)',
+    example: 'c56a4180-65aa-42ec-a945-5fd21dec0538',
   })
   @IsString()
   tenantId!: string;
@@ -76,4 +79,23 @@ export class UserCreateDto {
   @IsOptional()
   @IsString()
   externalId?: string;
+  @ApiProperty({
+    description: 'User status',
+    example: 'ACTIVE',
+    enum: UserStatus,
+    default: UserStatus.ACTIVE,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(UserStatus)
+  status?: UserStatus;
+
+  @ApiProperty({
+    description: 'Simulation credit limit',
+    example: 100,
+  })
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  simulationCreditLimit?: number;
 }

@@ -1,5 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsArray,
+  IsEnum,
+} from 'class-validator';
+import { SessionEventDetectionType } from '../enum/session-event-detection-type.enum';
+import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 
 export class CreateSessionEventDto {
   @ApiProperty({
@@ -20,29 +28,33 @@ export class CreateSessionEventDto {
     description: 'The description of the event',
     example: 'Event 1 description',
   })
+  @IsOptional()
   @IsString()
-  description!: string;
+  description?: string;
 
   @ApiProperty({
     description: 'The session quality score of the event',
     example: 1,
   })
+  @IsOptional()
   @IsNumber()
-  score!: number;
+  score?: number;
 
   @ApiProperty({
     description: 'The emoji of the event',
     example: '👍',
   })
+  @IsOptional()
   @IsString()
-  emoji!: string;
+  emoji?: string;
 
   @ApiProperty({
     description: 'The real time feedback message of the event',
     example: 'Event 1 real time feedback message',
   })
+  @IsOptional()
   @IsString()
-  message!: string;
+  message?: string;
 
   @ApiProperty({
     description: 'The branch instruction of the event',
@@ -51,4 +63,33 @@ export class CreateSessionEventDto {
   @IsString()
   @IsOptional()
   branchInstruction?: string;
+
+  @ApiProperty({
+    description: 'The detection type of the event',
+    example: 'SENTENCE_SIMILARITY',
+    default: 'SENTENCE_SIMILARITY',
+  })
+  @IsEnum(SessionEventDetectionType)
+  @IsOptional()
+  detectionType?: SessionEventDetectionType =
+    SessionEventDetectionType.SENTENCE_SIMILARITY;
+
+  @ApiProperty({
+    description: 'The visibility type of the event',
+    example: 'ACTIVE',
+    default: 'ACTIVE',
+  })
+  @IsEnum(SessionEventVisibilityType)
+  @IsOptional()
+  visibilityType?: SessionEventVisibilityType =
+    SessionEventVisibilityType.ACTIVE;
+
+  @ApiProperty({
+    description: 'The sentences of the event',
+    example: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  sentences?: string[];
 }
