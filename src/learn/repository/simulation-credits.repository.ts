@@ -40,12 +40,16 @@ export class SimulationCreditsRepository extends Repository<SimulationCredits> {
     const result = await this.createQueryBuilder()
       .update(SimulationCredits)
       .set({
-        consumedCredits: () => `consumedCredits + ${creditsToConsume}`,
+        consumedCredits: () => `
+          CASE 
+            WHEN "creditLimit" >= "consumedCredits" + :creditsToConsume 
+            THEN "consumedCredits" + :creditsToConsume
+            ELSE "creditLimit"
+          END
+        `,
       })
       .where('userId = :userId', { userId })
-      .andWhere('creditLimit >= consumedCredits + :creditsToConsume', {
-        creditsToConsume,
-      })
+      .setParameter('creditsToConsume', creditsToConsume)
       .execute();
 
     return result.affected !== 0;

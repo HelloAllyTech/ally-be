@@ -179,7 +179,7 @@ describe('SimulationCreditsService', () => {
   });
 
   describe('consumeCredits', () => {
-    it('should consume credits successfully', async () => {
+    it('should consume credits successfully when enough credits available', async () => {
       mockSimulationCreditsRepository.consumeCredits.mockResolvedValue(true);
 
       const result = await service.consumeCredits(1, 10);
@@ -190,18 +190,58 @@ describe('SimulationCreditsService', () => {
       ).toHaveBeenCalledWith(1, 10);
     });
 
+    it('should consume credits successfully even when insufficient credits (maxes out)', async () => {
+      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue(true);
+
+      const result = await service.consumeCredits(1, 1000);
+
+      expect(result).toBe(true);
+      expect(
+        mockSimulationCreditsRepository.consumeCredits,
+      ).toHaveBeenCalledWith(1, 1000);
+    });
+
     it('should throw error when credits to consume is invalid', async () => {
       await expect(service.consumeCredits(1, 0)).rejects.toThrow(
         BadRequestException,
       );
     });
 
-    it('should throw error when insufficient credits', async () => {
-      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue(false);
-
-      await expect(service.consumeCredits(1, 10)).rejects.toThrow(
+    it('should throw error when credits to consume is negative', async () => {
+      await expect(service.consumeCredits(1, -5)).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    it('should throw error when user not found', async () => {
+      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue(false);
+
+      await expect(service.consumeCredits(999, 10)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(
+        mockSimulationCreditsRepository.consumeCredits,
+      ).toHaveBeenCalledWith(999, 10);
+    });
+
+    it('should handle zero credits consumption by throwing error', async () => {
+      await expect(service.consumeCredits(1, 0)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(
+        mockSimulationCreditsRepository.consumeCredits,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should handle fractional credits consumption', async () => {
+      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue(true);
+
+      const result = await service.consumeCredits(1, 1.5);
+
+      expect(result).toBe(true);
+      expect(
+        mockSimulationCreditsRepository.consumeCredits,
+      ).toHaveBeenCalledWith(1, 1.5);
     });
   });
 });

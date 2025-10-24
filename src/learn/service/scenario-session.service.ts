@@ -31,6 +31,9 @@ import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from '../constants/scenrio-session.constants';
+import { SimulationCreditsService } from './simulation-credits.service';
+import { AppConfigService } from 'src/config/config.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -51,6 +54,8 @@ export class ScenarioSessionService {
     private scenarioEventsRepository: Repository<ScenarioEvents>,
     private permissionsService: PermissionsService,
     private permissionValidatorService: PermissionValidator,
+    private simulationCreditsService: SimulationCreditsService,
+    private configService: AppConfigService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -137,7 +142,7 @@ export class ScenarioSessionService {
     const roomMetadata = this.createRoomMetadata(scenario, sessionEvents);
     await this.livekitService.createRoom({
       name: `${scenarioSession.roomId}`,
-      ttl: startScenarioSessionDto.ttl ?? 1800,
+      ttl: 1800,
       metadata: roomMetadata,
     });
 
@@ -237,6 +242,19 @@ export class ScenarioSessionService {
         activeScenarioSessions.data[0].id,
       );
     }
+    const credits =
+      await this.simulationCreditsService.getSimulationCredits(counselorId);
+    const lifespanSecondsPerCredit =
+      this.configService.simulationCredits.lifespanSecondsPerCredit ?? 60;
+    if (
+      credits.consumedCredits +
+        DEFAULT_SCENARIO_SESSION_TTL_SECONDS / lifespanSecondsPerCredit >
+      credits.creditLimit
+    ) {
+      throw new BadRequestException(
+        'You have insufficient credits to start a new scenario session',
+      );
+    }
   }
 
   async endScenarioSession(scenarioSessionId: string, counselorId: number) {
@@ -256,7 +274,7 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario session is not active');
     }
 
-    const endedAt = new Date();
+    const endedAt = scenarioSession.endedAt ?? new Date();
     const score = await this.calculateScenarioSessionScore(scenarioSessionId);
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
@@ -266,7 +284,7 @@ export class ScenarioSessionService {
     });
 
     let callDuration = 0;
-    if (scenarioSession.startedAt && scenarioSession.endedAt) {
+    if (scenarioSession.startedAt && endedAt) {
       callDuration =
         endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
     }
@@ -285,12 +303,37 @@ export class ScenarioSessionService {
       );
     }
 
+    await this.consumeSimulationCredits(
+      scenarioSession.counselorId,
+      callDuration,
+    );
+
     return { message: 'Scenario session ended successfully' };
   }
 
   private async calculateScenarioSessionScore(scenarioSessionId: string) {
     return this.scenarioSessionRepository.getScenarioSessionScore(
       scenarioSessionId,
+    );
+  }
+
+  private async consumeSimulationCredits(userId: number, callDuration: number) {
+    const callDurationInSeconds = callDuration / 1000;
+    const secondsPerCredit =
+      this.configService.simulationCredits.lifespanSecondsPerCredit ?? 60;
+
+    // Calculate full credits and remaining seconds
+    const fullCredits = Math.floor(callDurationInSeconds / secondsPerCredit);
+    const remainingSeconds = callDurationInSeconds % secondsPerCredit;
+
+    // If remaining seconds >= 30, charge 1 additional credit, otherwise 0
+    const additionalCredit = remainingSeconds >= 30 ? 1 : 0;
+    const totalCreditsToConsume = fullCredits + additionalCredit;
+
+    if (totalCreditsToConsume <= 0) return;
+    await this.simulationCreditsService.consumeCredits(
+      userId,
+      totalCreditsToConsume,
     );
   }
 

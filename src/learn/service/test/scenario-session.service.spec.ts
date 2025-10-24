@@ -16,6 +16,7 @@ import { ScenarioSessionEvents } from '../../entity/scenario-session-events.enti
 import { ScenarioEvents } from '../../entity/scenario-events.entity';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
 import { ScenarioSessionMessages } from '../../entity/scenario-session-messages.entity';
+import { ScenarioSessionDetails } from '../../entity/scenario-session-details.entity';
 import { ScenarioSessionStatus } from '../../enum/scenario-session-status.enum';
 import { ScenarioSessionMessageType } from '../../enum/scenario-session-message.type.enum';
 import { ScenarioStatus } from '../../enum/scenario.status.enum';
@@ -29,13 +30,16 @@ import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../../interface/learn-message.interface';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { SimulationCreditsService } from '../simulation-credits.service';
+import { AppConfigService } from 'src/config/config.service';
+import { LoggerService } from 'src/logger/logger.service';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
-    getTenantId: jest.fn(),
-    getUserId: jest.fn(),
-    getExecutionId: jest.fn(),
+    getTenantId: jest.fn(() => 'test-tenant-id'),
+    getUserId: jest.fn(() => 'test-user-id'),
+    getExecutionId: jest.fn(() => 'test-execution-id'),
   },
 }));
 
@@ -54,6 +58,7 @@ describe('ScenarioSessionService', () => {
   let dataSource: jest.Mocked<DataSource>;
   let mockEntityManager: any;
   let permissionValidatorService: jest.Mocked<PermissionValidator>;
+  let simulationCreditsService: jest.Mocked<SimulationCreditsService>;
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
   const mockCounselorId = 123;
@@ -173,6 +178,11 @@ describe('ScenarioSessionService', () => {
       delete: jest.fn(),
     };
 
+    const mockScenarioSessionDetailsRepo = {
+      create: jest.fn(),
+      save: jest.fn(),
+    };
+
     mockEntityManager = {
       getRepository: jest.fn(),
     };
@@ -182,6 +192,25 @@ describe('ScenarioSessionService', () => {
     };
     const mockPermissionValidatorService = {
       validatePermissions: jest.fn(),
+    };
+
+    const mockSimulationCreditsService = {
+      getSimulationCredits: jest.fn(),
+      consumeCredits: jest.fn(),
+    };
+
+    const mockConfigService = {
+      simulationCredits: {
+        lifespanSecondsPerCredit: 60,
+      },
+    };
+
+    const mockLoggerService = {
+      getInstance: jest.fn().mockReturnValue({
+        error: jest.fn(),
+        warn: jest.fn(),
+        debug: jest.fn(),
+      }),
     };
 
     // Setup ExecutionManager mocks
@@ -233,12 +262,28 @@ describe('ScenarioSessionService', () => {
           useValue: mockEventsRepo,
         },
         {
+          provide: getRepositoryToken(ScenarioSessionDetails),
+          useValue: mockScenarioSessionDetailsRepo,
+        },
+        {
           provide: DataSource,
           useValue: mockDataSource,
         },
         {
           provide: PermissionValidator,
           useValue: mockPermissionValidatorService,
+        },
+        {
+          provide: SimulationCreditsService,
+          useValue: mockSimulationCreditsService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: mockConfigService,
+        },
+        {
+          provide: LoggerService,
+          useValue: mockLoggerService,
         },
       ],
     }).compile();
@@ -258,6 +303,7 @@ describe('ScenarioSessionService', () => {
     scenarioEventsRepository = module.get(getRepositoryToken(ScenarioEvents));
     dataSource = module.get(DataSource);
     permissionValidatorService = module.get(PermissionValidator);
+    simulationCreditsService = module.get(SimulationCreditsService);
   });
 
   afterEach(() => {
@@ -543,6 +589,11 @@ describe('ScenarioSessionService', () => {
         },
       };
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        creditLimit: 100,
+        consumedCredits: 50,
+        secondsAllowedPerCredit: 60,
+      });
       scenarioService.getScenario.mockResolvedValue(
         mockScenarioWithoutLifeHistory,
       );
@@ -568,6 +619,11 @@ describe('ScenarioSessionService', () => {
         metadata: null,
       };
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        creditLimit: 100,
+        consumedCredits: 50,
+        secondsAllowedPerCredit: 60,
+      });
       scenarioService.getScenario.mockResolvedValue(
         mockScenarioWithNullMetadata as any,
       );
@@ -604,6 +660,11 @@ describe('ScenarioSessionService', () => {
         updatedAt: new Date(),
       };
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        creditLimit: 100,
+        consumedCredits: 50,
+        secondsAllowedPerCredit: 60,
+      });
       scenarioService.getScenario.mockResolvedValue(mockScenarioWithMetadata);
       sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
@@ -625,7 +686,7 @@ describe('ScenarioSessionService', () => {
       });
       expect(livekitService.createRoom).toHaveBeenCalledWith({
         name: mockRoomId,
-        ttl: 1800,
+        ttl: 1200,
         metadata: {
           version: '1.0',
           tenantId: mockTenantId,
@@ -660,6 +721,11 @@ describe('ScenarioSessionService', () => {
         updatedAt: new Date(),
       };
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        creditLimit: 100,
+        consumedCredits: 50,
+        secondsAllowedPerCredit: 60,
+      });
       scenarioService.getScenario.mockResolvedValue(mockScenarioWithMetadata);
       sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
@@ -685,6 +751,73 @@ describe('ScenarioSessionService', () => {
           ttl: customTtl,
         }),
       );
+    });
+
+    it('should throw BadRequestException when user has insufficient credits', async () => {
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        creditLimit: 10,
+        consumedCredits: 95, // Almost at limit
+        secondsAllowedPerCredit: 60,
+      });
+
+      await expect(
+        service.startScenarioSession(mockCounselorId, mockStartDto),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'You have insufficient credits to start a new scenario session',
+        ),
+      );
+
+      expect(
+        simulationCreditsService.getSimulationCredits,
+      ).toHaveBeenCalledWith(mockCounselorId);
+    });
+
+    it('should successfully start scenario session when user has sufficient credits', async () => {
+      const mockTokenResponse = {
+        token: 'access-token-123',
+        roomName: mockRoomId,
+        serverUrl: 'https://livekit.example.com',
+      };
+      const mockScenarioWithMetadata = {
+        ...mockScenario,
+        metadata: {
+          difficulty: 'intermediate',
+          tags: ['anxiety'],
+          lifeHistory: { age: 25, background: 'test' },
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        creditLimit: 100,
+        consumedCredits: 50,
+        secondsAllowedPerCredit: 60,
+      });
+      scenarioService.getScenario.mockResolvedValue(mockScenarioWithMetadata);
+      sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue(
+        mockScenarioSession,
+      );
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue(mockTokenResponse);
+
+      const result = await service.startScenarioSession(
+        mockCounselorId,
+        mockStartDto,
+      );
+
+      expect(result).toEqual({
+        scenarioSession: mockScenarioSession,
+        accessToken: mockTokenResponse,
+      });
+      expect(
+        simulationCreditsService.getSimulationCredits,
+      ).toHaveBeenCalledWith(mockCounselorId);
     });
   });
 
@@ -842,6 +975,7 @@ describe('ScenarioSessionService', () => {
       livekitService.deleteRoom.mockRejectedValue(
         new Error('Room deletion failed'),
       );
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
 
       const result = await service.endScenarioSession(
         mockScenarioSessionId,
@@ -858,6 +992,10 @@ describe('ScenarioSessionService', () => {
           score: mockScore,
         }),
       );
+      expect(simulationCreditsService.consumeCredits).toHaveBeenCalledWith(
+        mockCounselorId,
+        expect.any(Number),
+      );
     });
 
     it('should successfully end scenario session', async () => {
@@ -870,6 +1008,7 @@ describe('ScenarioSessionService', () => {
         affected: 1,
       } as any);
       livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
 
       const result = await service.endScenarioSession(
         mockScenarioSessionId,
@@ -880,6 +1019,10 @@ describe('ScenarioSessionService', () => {
         message: 'Scenario session ended successfully',
       });
       expect(livekitService.deleteRoom).toHaveBeenCalledWith(mockRoomId);
+      expect(simulationCreditsService.consumeCredits).toHaveBeenCalledWith(
+        mockCounselorId,
+        expect.any(Number),
+      );
     });
 
     it('should successfully end scenario session with call duration calculation', async () => {
@@ -929,6 +1072,7 @@ describe('ScenarioSessionService', () => {
         affected: 1,
       } as any);
       livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
 
       // Mock Date constructor to return a date that when subtracted gives 0
       const originalDate = global.Date;
@@ -945,6 +1089,51 @@ describe('ScenarioSessionService', () => {
       expect(result).toEqual({
         message: 'Scenario session ended successfully',
       });
+      // With 0 duration, consumeSimulationCredits should return early and not call consumeCredits
+      expect(simulationCreditsService.consumeCredits).not.toHaveBeenCalled();
+
+      // Restore original Date
+      global.Date = originalDate;
+    });
+
+    it('should consume correct number of credits based on call duration', async () => {
+      const mockScore = 85.5;
+      const startTime = new Date('2024-01-01T10:00:00Z');
+      const endTime = new Date('2024-01-01T10:05:00Z'); // 5 minutes = 300 seconds
+      const sessionWithDuration = {
+        ...mockScenarioSession,
+        startedAt: startTime,
+        endedAt: endTime,
+      };
+
+      // Mock Date constructor to return the end time when new Date() is called
+      const originalDate = global.Date;
+      const mockDate = jest.fn(() => endTime);
+      (global as any).Date = mockDate;
+
+      scenarioSessionRepository.findOne.mockResolvedValue(sessionWithDuration);
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(
+        mockScore,
+      );
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      const result = await service.endScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect(result).toEqual({
+        message: 'Scenario session ended successfully',
+      });
+      // 300 seconds: 5 full credits (300/60=5) + 0 remaining seconds (< 30) = 5 credits
+      expect(simulationCreditsService.consumeCredits).toHaveBeenCalledWith(
+        mockCounselorId,
+        5,
+      );
 
       // Restore original Date
       global.Date = originalDate;

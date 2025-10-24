@@ -142,6 +142,56 @@ describe('SessionEventService', () => {
       ).rejects.toThrow('Save failed');
       expect(repository.save).toHaveBeenCalledWith(createEventDtos);
     });
+
+    it('should handle null input gracefully', async () => {
+      const createEventDtos = null as any;
+      const error = new Error('Invalid input');
+
+      repository.save.mockRejectedValue(error);
+
+      await expect(
+        service.createSessionEvents(createEventDtos),
+      ).rejects.toThrow('Invalid input');
+      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
+    });
+
+    it('should handle undefined input gracefully', async () => {
+      const createEventDtos = undefined as any;
+      const error = new Error('Invalid input');
+
+      repository.save.mockRejectedValue(error);
+
+      await expect(
+        service.createSessionEvents(createEventDtos),
+      ).rejects.toThrow('Invalid input');
+      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
+    });
+
+    it('should handle single event with minimal data', async () => {
+      const minimalEventDto = {
+        id: 'minimal-event',
+        name: 'Minimal Event',
+        detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+        visibilityType: SessionEventVisibilityType.ACTIVE,
+      };
+      const createdEvent = {
+        ...minimalEventDto,
+        description: null,
+        score: null,
+        emoji: null,
+        message: null,
+        branchInstruction: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      repository.save.mockResolvedValue([createdEvent] as any);
+
+      const result = await service.createSessionEvents([minimalEventDto]);
+
+      expect(repository.save).toHaveBeenCalledWith([minimalEventDto]);
+      expect(result).toEqual([createdEvent]);
+    });
   });
 
   describe('getSessionEventsByScenarioId', () => {
@@ -241,6 +291,36 @@ describe('SessionEventService', () => {
       expect(repository.createQueryBuilder).toHaveBeenCalledWith(
         'sessionEvents',
       );
+    });
+
+    it('should handle very large scenario ID', async () => {
+      const scenarioId = Number.MAX_SAFE_INTEGER;
+      const expectedEvents = [mockSessionEvent];
+
+      mockQueryBuilder.getMany.mockResolvedValue(expectedEvents);
+
+      const result = await service.getSessionEventsByScenarioId(scenarioId);
+
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
+        { scenarioId: Number.MAX_SAFE_INTEGER },
+      );
+      expect(result).toEqual(expectedEvents);
+    });
+
+    it('should handle decimal scenario ID by converting to integer', async () => {
+      const scenarioId = 123.45;
+      const expectedEvents = [mockSessionEvent];
+
+      mockQueryBuilder.getMany.mockResolvedValue(expectedEvents);
+
+      const result = await service.getSessionEventsByScenarioId(scenarioId);
+
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
+        { scenarioId: 123.45 },
+      );
+      expect(result).toEqual(expectedEvents);
     });
   });
 
@@ -374,6 +454,30 @@ describe('SessionEventService', () => {
         eventId,
         mockUpdateSessionEventDto,
       );
+    });
+
+    it('should handle null affected value', async () => {
+      repository.findOne.mockResolvedValue(mockSessionEvent);
+      repository.update.mockResolvedValue({ affected: null } as any);
+
+      const result = await service.updateSessionEvent(
+        eventId,
+        mockUpdateSessionEventDto,
+      );
+
+      expect(result).toBe(true); // null !== 0 is true
+    });
+
+    it('should handle negative affected value', async () => {
+      repository.findOne.mockResolvedValue(mockSessionEvent);
+      repository.update.mockResolvedValue({ affected: -1 } as any);
+
+      const result = await service.updateSessionEvent(
+        eventId,
+        mockUpdateSessionEventDto,
+      );
+
+      expect(result).toBe(true); // -1 !== 0 is true
     });
   });
 
@@ -614,6 +718,90 @@ describe('SessionEventService', () => {
         undefined,
         undefined,
       );
+    });
+
+    it('should handle pagination with zero limit', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const expectedResult = { data: expectedEvents };
+      const pagination = {
+        limit: 0,
+        offset: 0,
+        sortBy: 'createdAt',
+        order: 'DESC' as any,
+      };
+
+      repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
+
+      const result = await service.getAllSessionEvents(undefined, pagination);
+
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        pagination,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('should handle pagination with negative offset', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const expectedResult = { data: expectedEvents };
+      const pagination = {
+        limit: 10,
+        offset: -5,
+        sortBy: 'name',
+        order: 'ASC' as any,
+      };
+
+      repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
+
+      const result = await service.getAllSessionEvents(undefined, pagination);
+
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        pagination,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('should handle pagination with very large limit', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const expectedResult = { data: expectedEvents };
+      const pagination = {
+        limit: Number.MAX_SAFE_INTEGER,
+        offset: 0,
+        sortBy: 'createdAt',
+        order: 'DESC' as any,
+      };
+
+      repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
+
+      const result = await service.getAllSessionEvents(undefined, pagination);
+
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        pagination,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('should handle pagination with invalid sortBy', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const expectedResult = { data: expectedEvents };
+      const pagination = {
+        limit: 10,
+        offset: 0,
+        sortBy: 'invalidField',
+        order: 'DESC' as any,
+      };
+
+      repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
+
+      const result = await service.getAllSessionEvents(undefined, pagination);
+
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        pagination,
+      );
+      expect(result).toEqual(expectedResult);
     });
   });
 });
