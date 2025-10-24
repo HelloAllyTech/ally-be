@@ -256,4 +256,12 @@ export class AppConfigService {
       baseUrl: this.configService.get<string>('APP_BASE_URL'),
     };
   }
+
+  get simulationCredits() {
+    return {
+      lifespanSecondsPerCredit: this.configService.get<number>(
+        'SIMULATION_SESSION_SECONDS_PER_CREDIT',
+      ),
+    };
+  }
 }

@@ -21,6 +21,7 @@ import { UserChatSessionData } from '../../type/chat.type';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
+import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
 
 // Mock ExecutionManager
 jest.mock('../../../common/execution/execution-manager', () => ({
@@ -73,6 +74,7 @@ describe('MicrophoneChatGateway', () => {
   let mockJwtService: any;
   let mockBroadcastMessageService: any;
   let mockPermissionsService: any;
+  let mockPermissionValidator: any;
   let mockSocket: any;
   let mockServer: any;
 
@@ -148,6 +150,10 @@ describe('MicrophoneChatGateway', () => {
       getUserPermissions: jest.fn(),
     };
 
+    mockPermissionValidator = {
+      validatePermissions: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MicrophoneChatGateway,
@@ -184,6 +190,10 @@ describe('MicrophoneChatGateway', () => {
         {
           provide: PermissionsService,
           useValue: mockPermissionsService,
+        },
+        {
+          provide: PermissionValidator,
+          useValue: mockPermissionValidator,
         },
       ],
     }).compile();
@@ -363,6 +373,7 @@ describe('MicrophoneChatGateway', () => {
         tenantId: 'tenant123',
       });
       mockPermissionsService.getUserPermissions.mockResolvedValue([]);
+      mockPermissionValidator.validatePermissions.mockResolvedValue(false);
 
       await gatewayPrivate.authenticateClient(mockSocket);
 
@@ -379,6 +390,7 @@ describe('MicrophoneChatGateway', () => {
       mockPermissionsService.getUserPermissions.mockResolvedValue([
         PERMISSIONS.START_MICROPHONE_CHAT,
       ]);
+      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
 
       await gatewayPrivate.authenticateClient(mockSocket);
 

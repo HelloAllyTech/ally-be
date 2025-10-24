@@ -33,7 +33,7 @@ import { CallDetails } from '../../common/entities/call.details.entity';
 import { Feedback } from '../../common/entities/feedback.entity';
 import { User } from '../../common/entities/user.entity';
 import { Pagination } from '../../common/type/common.type';
-import { UserService } from '../../user/user.service';
+import { UserService } from '../../user/service/user.service';
 import { ChatEvents } from '../constants/chat.constants';
 import { ChatGateway } from '../gateway/chat.gateway';
 import {
@@ -133,7 +133,10 @@ export class ChatService {
       userId,
       [PERMISSIONS.ORGANIZATION_ACCESS],
     );
-    if (!hasAdminAccess && chatData.counselorId !== userId) {
+    if (
+      (!hasAdminAccess && chatData.counselorId !== userId) ||
+      (hasAdminAccess && chatData.tenantId !== ExecutionManager.getTenantId())
+    ) {
       throw new ForbiddenException('You are not allowed to access this chat');
     }
     const chatQuery = this.chatRepository
@@ -539,7 +542,6 @@ export class ChatService {
       }
       client = await this.userService.createUser({
         phoneNumber: clientPhoneNumber,
-        role: UserRole.CLIENT,
       });
     }
     // TODO: check if we could reuse requestChat method
@@ -760,9 +762,11 @@ export class ChatService {
       undefined,
       entityManager,
     );
+    const counselorInfo = await this.userService.getMinimalUserInfo(counselor);
+    const clientInfo = await this.userService.getMinimalUserInfo(client);
     const payload = {
-      counselor: this.userService.getMinimalUserInfo(counselor),
-      client: this.userService.getMinimalUserInfo(client),
+      counselor: counselorInfo,
+      client: clientInfo,
       messages: messages, //messages.map(this.formatMessage),
       chatId: chat.id,
       clientId: chat.clientId,
@@ -853,7 +857,7 @@ export class ChatService {
     // Check if user has permission to view messages or is the participant of this chat
     const canViewMessages = await this.permissionValidator.validatePermissions(
       userId,
-      [PERMISSIONS.VIEW_MESSAGE],
+      [PERMISSIONS.VIEW_MESSAGES],
     );
     // Does client has permission to view messages?
 

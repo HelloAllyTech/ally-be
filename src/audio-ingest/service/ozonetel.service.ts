@@ -30,7 +30,7 @@ import {
 } from '../../common/util/date.util';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
-import { UserService } from '../../user/user.service';
+import { UserService } from '../../user/service/user.service';
 import { AudioRetryProducer } from '../producer/audio-retry.producer';
 import { CloudTelephonyService } from '../service/cloud-telephony.service';
 import {
@@ -40,12 +40,15 @@ import {
   OzonetelCallStatus,
   OzonetelEventTypes,
 } from '../type/ozonetel.type';
+import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @Injectable()
 export class OzonetelService {
   private readonly logger = LoggerService.getInstance(OzonetelService.name);
+  private readonly auditLogger = AuditLoggerService.getInstance();
   constructor(
     private chatService: ChatService,
     private userService: UserService,
@@ -220,6 +223,14 @@ export class OzonetelService {
             audio_url: AudioFile,
             chat_id: chat.id,
           });
+          this.auditLogger.log({
+            eventType: AUDIT_EVENTS.AUDIO_TRANSCRIPT_REQUEST_SENT,
+            details: {
+              purpose: 'Audio transcript request sent to AI service',
+              chatId: chat.id,
+              provider: AudioChatProvider.OZONETEL,
+            },
+          });
         } else {
           this.audioRetryProducer.sendAudioFileRetryMessage({
             audioUrl: AudioFile,
@@ -237,6 +248,13 @@ export class OzonetelService {
         );
       }
     } catch (error) {
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_PROCESSING_FAILED,
+        details: {
+          error: `Ozonetel call detail webhook error: ${error.message}`,
+          provider: AudioChatProvider.OZONETEL,
+        },
+      });
       this.logger.error(`Ozonetel call detail webhook error: ${error.message}`);
     }
   }

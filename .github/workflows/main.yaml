@@ -123,8 +123,32 @@ jobs:
           echo "CONTAINER_NAME=$PROJECT_PREFIX-cntr-core" >> $GITHUB_OUTPUT
           echo "ENVIRONMENT_BUCKET=$PROJECT_PREFIX-s3-environment"  >> $GITHUB_OUTPUT
           echo ":seedling: Branch:${GITHUB_REF#refs/heads/}" >> $GITHUB_STEP_SUMMARY
-  build:
+
+  test:
+    name: Run Tests
     needs: prepare-env
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test -- --forceExit --detectOpenHandles
+
+  build:
+    needs:
+      - prepare-env
+      - test
     runs-on: ubuntu-22.04
     env:
       AWS_ROLE: ${{ needs.prepare-env.outputs.AWS_ROLE }}
@@ -166,6 +190,7 @@ jobs:
       contents: read
     needs:
       - prepare-env
+      - test
       - build
     env:
       PROJECT_PREFIX: ${{needs.prepare-env.outputs.PROJECT_PREFIX}}

@@ -25,7 +25,7 @@ import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.se
 import { Chat } from 'src/common/entities/chat.entity';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
-import { UserService } from 'src/user/user.service';
+import { UserService } from 'src/user/service/user.service';
 import { NotificationService } from 'src/notification/service/notification.service';
 
 @Injectable()

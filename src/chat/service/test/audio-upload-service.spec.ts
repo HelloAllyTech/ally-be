@@ -20,7 +20,7 @@ import {
 } from 'src/chat/dto/audio-upload.dto';
 import { ChatStatus, ChatSummaryStatus } from 'src/common/entities/chat.entity';
 
-import { UserService } from 'src/user/user.service';
+import { UserService } from 'src/user/service/user.service';
 import { AudioUploadService } from '../audio-upload.service';
 import { ChatService } from '../chat.service';
 import { LoggerService } from 'src/logger/logger.service';

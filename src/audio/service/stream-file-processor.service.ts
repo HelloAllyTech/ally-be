@@ -359,6 +359,7 @@ export class StreamFileProcessorService {
       details: {
         chatId,
         partNumber: activeCallStream.partNumber,
+        provider,
       },
     });
 
@@ -386,6 +387,7 @@ export class StreamFileProcessorService {
       details: {
         chatId,
         partNumber: activeCallStream.partNumber,
+        provider,
       },
     });
 
@@ -569,6 +571,7 @@ export class StreamFileProcessorService {
           eventType: AUDIT_EVENTS.AUDIO_S3_MULTIPART_UPLOAD_COMPLETED,
           details: {
             chatId,
+            provider,
           },
         });
       } else {
@@ -584,6 +587,7 @@ export class StreamFileProcessorService {
             eventType: AUDIT_EVENTS.AUDIO_S3_MULTIPART_UPLOAD_ABORTED,
             details: {
               chatId,
+              provider,
             },
           });
 
@@ -625,6 +629,7 @@ export class StreamFileProcessorService {
           details: {
             chatId,
             partNumber: activeCallStream.partNumber,
+            provider,
           },
         });
 
@@ -645,6 +650,7 @@ export class StreamFileProcessorService {
         details: {
           chatId,
           partNumber: activeCallStream.partNumber,
+          provider,
         },
       });
 
@@ -668,6 +674,15 @@ export class StreamFileProcessorService {
         operation: 'get',
       });
 
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.PRESIGNED_URL_GENERATED,
+        details: {
+          purpose: 'Audio presigned url generated',
+          chatId,
+          provider,
+        },
+      });
+
       this.aiEventService.publishTranscribeAudioEvent({
         message_type: 'transcribe_and_summarize_request',
         timestamp: Date.now(),
@@ -677,11 +692,11 @@ export class StreamFileProcessorService {
       });
 
       this.auditLogger.log({
-        eventType: AUDIT_EVENTS.PRESIGNED_URL_GENERATED,
+        eventType: AUDIT_EVENTS.AUDIO_TRANSCRIPT_REQUEST_SENT,
         details: {
-          purpose: 'audio_url',
-          chatId,
-          url: audioUrl,
+          purpose: 'Audio transcript request sent to AI service',
+          chatId: chatId,
+          provider,
         },
       });
 

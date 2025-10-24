@@ -34,8 +34,8 @@ import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
-import { PermissionsService } from '../../authorization/service/permissions.service';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -60,7 +60,7 @@ export class MicrophoneChatGateway
     private jwtService: JwtService,
     private configService: AppConfigService,
     private broadcastMessageService: BroadcastMessageService,
-    private permissionsService: PermissionsService,
+    private permissionValidator: PermissionValidator,
   ) {}
 
   @WebSocketServer() server!: Server;
@@ -183,15 +183,12 @@ export class MicrophoneChatGateway
       });
 
       const userId = parseInt(payload.sub);
-
-      // Check if user has permission to start microphone chat
-      const userPermissions =
-        await this.permissionsService.getUserPermissions(userId);
-      const canStartMicrophoneChat = userPermissions.includes(
-        PERMISSIONS.START_MICROPHONE_CHAT,
+      const hasAccess = await this.permissionValidator.validatePermissions(
+        userId,
+        [PERMISSIONS.START_MICROPHONE_CHAT],
       );
 
-      if (!canStartMicrophoneChat) {
+      if (!hasAccess) {
         throw new UnauthorizedException(
           `User ${payload.sub} does not have permission to start microphone chat`,
         );

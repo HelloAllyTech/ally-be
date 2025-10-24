@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { forwardRef, Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PermissionsService } from './service/permissions.service';
 import { GroupService } from './service/group.service';
@@ -13,13 +13,22 @@ import { GroupPermission } from '../common/entities/group-permission.entity';
 import { Permission } from '../common/entities/permission.entity';
 import { GroupPermissionsRepository } from './repository/group-permissions.repository';
 import { RedisModule } from '../redis/redis.module';
+import { User } from 'src/common/entities/user.entity';
 import { PermissionValidator } from './service/permission-validator.service';
+import { UserModule } from '../user/user.module';
 
 @Global()
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Group, UserGroup, GroupPermission, Permission]),
+    TypeOrmModule.forFeature([
+      User,
+      Group,
+      UserGroup,
+      GroupPermission,
+      Permission,
+    ]),
     RedisModule,
+    forwardRef(() => UserModule),
   ],
   controllers: [AuthorizationController],
   providers: [
@@ -38,6 +47,7 @@ import { PermissionValidator } from './service/permission-validator.service';
     GroupPermissionsService,
     UserGroupService,
     PermissionValidator,
+    UserGroupRepository,
   ],
 })
 export class AuthorizationModule {}

@@ -1,3 +1,9 @@
+// CRITICAL: Mock bcrypt FIRST to prevent import issues
+jest.mock('bcrypt', () => ({
+  compare: jest.fn(),
+  hash: jest.fn(),
+}));
+
 // CRITICAL: Mock @nestjs/typeorm FIRST
 jest.mock('@nestjs/typeorm', () => ({
   InjectRepository: jest.fn(() => jest.fn()),
