@@ -89,7 +89,7 @@ describe('UserGroupRepository', () => {
   describe('remove', () => {
     it('should remove a UserGroup', async () => {
       const userGroup = { userId: 1, groupId: 2 } as UserGroup;
-      mockRepo.remove.mockResolvedValueOnce(userGroup);
+      mockRepo.remove.mockResolvedValue(userGroup);
 
       await repository.remove(userGroup);
 

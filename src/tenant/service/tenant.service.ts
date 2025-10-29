@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   forwardRef,
   Inject,
   Injectable,
@@ -30,6 +31,20 @@ export class TenantService {
     return this.tenantRepository.find();
   }
   async create(tenantData: Partial<Tenant>): Promise<Tenant> {
+    const existingTenant = await this.tenantRepository.findOne({
+      where: [{ name: tenantData.name }, { code: tenantData.code }],
+    });
+    if (existingTenant?.name == tenantData.name) {
+      throw new ConflictException(
+        `Tenant with name "${tenantData.name}" already exists`,
+      );
+    }
+    if (existingTenant?.code === tenantData.code) {
+      throw new ConflictException(
+        `Tenant with code "${tenantData.code}" already exists`,
+      );
+    }
+
     const tenant = this.tenantRepository.create(tenantData);
     return this.tenantRepository.save(tenant);
   }

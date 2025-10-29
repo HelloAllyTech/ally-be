@@ -5,7 +5,11 @@ import { TenantService } from '../tenant.service';
 import { Tenant, TenantStatus } from 'src/common/entities/tenant.entity';
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { UserRepository } from 'src/user/repository/user.repository';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -123,11 +127,18 @@ describe('TenantService', () => {
   describe('create', () => {
     it('should create and save a new tenant successfully', async () => {
       const createdTenant = { ...mockTenant, ...mockCreateTenantData };
+      tenantRepository.findOne.mockResolvedValue(null);
       tenantRepository.create.mockReturnValue(createdTenant as any);
       tenantRepository.save.mockResolvedValue(createdTenant);
 
       const result = await service.create(mockCreateTenantData);
 
+      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+        where: [
+          { name: mockCreateTenantData.name },
+          { code: mockCreateTenantData.code },
+        ],
+      });
       expect(tenantRepository.create).toHaveBeenCalledWith(
         mockCreateTenantData,
       );
@@ -135,8 +146,40 @@ describe('TenantService', () => {
       expect(result).toEqual(createdTenant);
     });
 
+    it('should throw ConflictException when tenant name already exists', async () => {
+      const existingTenant = {
+        ...mockTenant,
+        name: mockCreateTenantData.name,
+      };
+      tenantRepository.findOne.mockResolvedValue(existingTenant);
+
+      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
+        `Tenant with name "${mockCreateTenantData.name}" already exists`,
+      );
+    });
+
+    it('should throw ConflictException when tenant code already exists', async () => {
+      const existingTenant = {
+        ...mockTenant,
+        name: 'Different Name',
+        code: mockCreateTenantData.code,
+      };
+      tenantRepository.findOne.mockResolvedValue(existingTenant);
+
+      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
+        `Tenant with code "${mockCreateTenantData.code}" already exists`,
+      );
+    });
+
     it('should handle repository errors during tenant creation', async () => {
       const error = new Error('Database error');
+      tenantRepository.findOne.mockResolvedValue(null);
       tenantRepository.create.mockReturnValue(mockTenant as any);
       tenantRepository.save.mockRejectedValue(error);
 
@@ -597,6 +640,9 @@ describe('TenantService', () => {
       await expect(
         service.updateTenant('non-existent-id', { name: 'Test' }),
       ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.updateTenant('non-existent-id', { name: 'Test' }),
+      ).rejects.toThrow('Tenant with ID non-existent-id not found');
     });
 
     it('should throw BadRequestException when name already exists', async () => {
@@ -616,6 +662,13 @@ describe('TenantService', () => {
       await expect(
         service.updateTenant('test-tenant-id', updateDto),
       ).rejects.toThrow('Tenant with name "Existing Tenant" already exists');
+
+      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+        where: [
+          { name: updateDto.name, id: expect.anything() },
+          { code: undefined, id: expect.anything() },
+        ],
+      });
     });
 
     it('should throw BadRequestException when code already exists', async () => {
@@ -635,6 +688,13 @@ describe('TenantService', () => {
       await expect(
         service.updateTenant('test-tenant-id', updateDto),
       ).rejects.toThrow('Tenant with code "existing-code" already exists');
+
+      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+        where: [
+          { name: undefined, id: expect.anything() },
+          { code: updateDto.code, id: expect.anything() },
+        ],
+      });
     });
 
     it('should allow updating tenant with same name and code', async () => {
@@ -693,7 +753,12 @@ describe('TenantService', () => {
 
       const result = await service.updateTenant('test-tenant-id', updateDto);
 
-      expect(tenantRepository.findOne).toHaveBeenCalled();
+      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+        where: [
+          { name: updateDto.name, id: expect.anything() },
+          { code: updateDto.code, id: expect.anything() },
+        ],
+      });
       expect(tenantRepository.update).toHaveBeenCalledWith(
         'test-tenant-id',
         updateDto,
