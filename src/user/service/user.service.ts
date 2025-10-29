@@ -297,6 +297,17 @@ export class UserService {
       }
     }
     const updated = await this.userRepository.update(id, body as Partial<User>);
+    const updatedUser = await this.userRepository.findOne({ where: { id } });
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.USER_UPDATED,
+      tenantId: updatedUser?.tenantId,
+      userId: user.id,
+      details: {
+        username: updatedUser?.username,
+        email: updatedUser?.email,
+        phone: updatedUser?.phone,
+      },
+    });
 
     return { success: updated.affected !== 0 };
   }
@@ -316,10 +327,8 @@ export class UserService {
         `User with ID ${id} is already ${newStatus.toLowerCase()}`,
       );
     }
-
     user.status = newStatus;
     await this.userRepository.save(user);
-
     return { success: true };
   }
 
@@ -402,7 +411,7 @@ export class UserService {
     }
 
     this.auditLogger.log({
-      eventType: AUDIT_EVENTS.USER_SIGNUP,
+      eventType: AUDIT_EVENTS.USER_CREATED,
       tenantId: savedUser.tenantId,
       userId: savedUser.id,
       details: {

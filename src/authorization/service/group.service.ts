@@ -14,7 +14,6 @@ import {
 import { In, DataSource } from 'typeorm';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from '../repository/user-group.repository';
-
 import { UserRepository } from 'src/user/repository/user.repository';
 
 @Injectable()
@@ -178,6 +177,7 @@ export class GroupService {
           }
         }
       });
+
       this.cache.del(`user:groups:${changeUserRolesDto.userId}`);
       this.cache.del(`user:roles:${changeUserRolesDto.userId}`);
       return {

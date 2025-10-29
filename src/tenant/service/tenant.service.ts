@@ -151,7 +151,6 @@ export class TenantService {
       }
     }
     await this.tenantRepository.update(id, updateTenantDto as Partial<Tenant>);
-
     return this.findById(id);
   }
 }

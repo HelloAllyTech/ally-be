@@ -501,7 +501,8 @@ describe('UserService', () => {
     });
 
     it('should allow updating email to same value', async () => {
-      mockUserRepository.findOne.mockResolvedValue(mockUser);
+      mockUserRepository.findOne.mockReset();
+      mockUserRepository.findOne.mockResolvedValueOnce(mockUser);
       mockUserRepository.update.mockResolvedValue({ affected: 1 });
 
       const result = await service.updateUser(1, {
@@ -509,11 +510,12 @@ describe('UserService', () => {
       } as any);
 
       expect(result).toEqual({ success: true });
-      expect(mockUserRepository.findOne).toHaveBeenCalledTimes(1);
+      expect(mockUserRepository.findOne).toHaveBeenCalledTimes(2);
     });
 
     it('should allow updating externalId to same value', async () => {
-      mockUserRepository.findOne.mockResolvedValue(mockUser);
+      mockUserRepository.findOne.mockReset();
+      mockUserRepository.findOne.mockResolvedValueOnce(mockUser);
       mockUserRepository.update.mockResolvedValue({ affected: 1 });
 
       const result = await service.updateUser(1, {
@@ -521,7 +523,10 @@ describe('UserService', () => {
       } as any);
 
       expect(result).toEqual({ success: true });
-      expect(mockUserRepository.findOne).toHaveBeenCalledTimes(1);
+      expect(mockUserRepository.findOne).toHaveBeenCalledTimes(2);
+      expect(mockUserRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1 },
+      });
     });
   });
 
