@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
-import { DataSource, Repository, In } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { ScenarioSessionService } from '../scenario-session.service';
 import { ScenarioSessionRepository } from '../../repository/scenario-session.repository';
 import { ScenarioSessionMessagesRepository } from '../../repository/scenario-session-messages.repository';
@@ -13,7 +13,6 @@ import { AiService } from 'src/ai/service/ai.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { ScenarioSessionFeedbacks } from '../../entity/scenario-session-feedbacks.entity';
 import { ScenarioSessionEvents } from '../../entity/scenario-session-events.entity';
-import { ScenarioEvents } from '../../entity/scenario-events.entity';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
 import { ScenarioSessionMessages } from '../../entity/scenario-session-messages.entity';
 import { ScenarioSessionDetails } from '../../entity/scenario-session-details.entity';
@@ -24,8 +23,6 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { EntityOperationException } from 'src/exception/custom.exception';
 import { StartScenarioSessionRequestDto } from '../../dto/start-scenario-session-request.dto';
 import { AddFeedbackToScenarioSessionRequestDto } from '../../dto/add-feedback-to-scenario-session.dto';
-import { CreateScenarioEventsDto } from '../../dto/create-scenario-events.dto';
-import { DeleteScenarioEventsDto } from '../../dto/delete-scenario-events.dto';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../../interface/learn-message.interface';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
@@ -33,6 +30,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { SimulationCreditsService } from '../simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
+import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -54,7 +52,6 @@ describe('ScenarioSessionService', () => {
   let scenarioSessionFeedbacksRepository: jest.Mocked<
     Repository<ScenarioSessionFeedbacks>
   >;
-  let scenarioEventsRepository: jest.Mocked<Repository<ScenarioEvents>>;
   let dataSource: jest.Mocked<DataSource>;
   let mockEntityManager: any;
   let permissionValidatorService: jest.Mocked<PermissionValidator>;
@@ -141,6 +138,7 @@ describe('ScenarioSessionService', () => {
 
     const mockScenarioService = {
       getScenario: jest.fn(),
+      getScenarioVoice: jest.fn(),
     };
 
     const mockLivekitService = {
@@ -300,7 +298,6 @@ describe('ScenarioSessionService', () => {
     scenarioSessionFeedbacksRepository = module.get(
       getRepositoryToken(ScenarioSessionFeedbacks),
     );
-    scenarioEventsRepository = module.get(getRepositoryToken(ScenarioEvents));
     dataSource = module.get(DataSource);
     permissionValidatorService = module.get(PermissionValidator);
     simulationCreditsService = module.get(SimulationCreditsService);
@@ -655,7 +652,16 @@ describe('ScenarioSessionService', () => {
           difficulty: 'intermediate',
           tags: ['anxiety'],
           lifeHistory: { age: 25, background: 'test' },
+          voiceId: 'voice-123',
         },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const mockVoice = {
+        id: 'voice-123',
+        name: 'Test Voice',
+        voiceId: 'openai-voice-id',
+        provider: 'openai',
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -666,6 +672,7 @@ describe('ScenarioSessionService', () => {
         secondsAllowedPerCredit: 60,
       });
       scenarioService.getScenario.mockResolvedValue(mockScenarioWithMetadata);
+      scenarioService.getScenarioVoice.mockResolvedValue(mockVoice);
       sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
       );
@@ -691,12 +698,21 @@ describe('ScenarioSessionService', () => {
           version: '1.0',
           tenantId: mockTenantId,
           scenario: {
-            ...mockScenarioWithMetadata,
-            metadata: {
+            id: mockScenarioWithMetadata.id,
+            title: mockScenarioWithMetadata.title,
+            scenario: mockScenarioWithMetadata.scenario,
+            description: mockScenarioWithMetadata.description,
+            coverImageUrl: mockScenarioWithMetadata.coverImageUrl,
+            status: mockScenarioWithMetadata.status,
+            prompt: mockScenarioWithMetadata.prompt,
+            promptData: {
               difficulty: 'intermediate',
               tags: ['anxiety'],
+              lifeHistory: { age: 25, background: 'test' },
             },
-            lifeHistory: { age: 25, background: 'test' },
+            createdAt: mockScenarioWithMetadata.createdAt,
+            updatedAt: mockScenarioWithMetadata.updatedAt,
+            voice: mockVoice,
             events: mockSessionEvents,
           },
         },
@@ -716,7 +732,16 @@ describe('ScenarioSessionService', () => {
         metadata: {
           difficulty: 'beginner',
           lifeHistory: { age: 30, background: 'test background' },
+          voiceId: 'voice-456',
         },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const mockVoice = {
+        id: 'voice-456',
+        name: 'Another Voice',
+        voiceId: 'openai-voice-id-2',
+        provider: 'openai',
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -727,6 +752,7 @@ describe('ScenarioSessionService', () => {
         secondsAllowedPerCredit: 60,
       });
       scenarioService.getScenario.mockResolvedValue(mockScenarioWithMetadata);
+      scenarioService.getScenarioVoice.mockResolvedValue(mockVoice);
       sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
       );
@@ -818,123 +844,6 @@ describe('ScenarioSessionService', () => {
       expect(
         simulationCreditsService.getSimulationCredits,
       ).toHaveBeenCalledWith(mockCounselorId);
-    });
-  });
-
-  describe('mapEventsToScenario', () => {
-    const mockCreateDto: CreateScenarioEventsDto = {
-      scenarioId: mockScenarioId,
-      eventIds: ['event-1', 'event-2'],
-    };
-
-    it('should throw BadRequestException when eventIds array is empty', async () => {
-      const emptyDto = { ...mockCreateDto, eventIds: [] };
-
-      await expect(service.mapEventsToScenario(emptyDto)).rejects.toThrow(
-        new BadRequestException('Event IDs array cannot be empty'),
-      );
-    });
-
-    it('should throw BadRequestException when invalid event IDs provided', async () => {
-      const validEvents = [
-        {
-          id: 'event-1',
-          name: 'Event 1',
-          description: 'First event',
-          score: 10,
-          emoji: '🎯',
-          message: 'Event 1 message',
-        } as SessionEvents,
-      ];
-      scenarioService.getScenario.mockResolvedValue(mockScenario);
-      sessionEventService.findByIds.mockResolvedValue(validEvents);
-
-      await expect(service.mapEventsToScenario(mockCreateDto)).rejects.toThrow(
-        new BadRequestException('Invalid event IDs: event-2'),
-      );
-    });
-
-    it('should successfully map events to scenario', async () => {
-      const validEvents = [
-        {
-          id: 'event-1',
-          name: 'Event 1',
-          description: 'First event',
-          score: 10,
-          emoji: '🎯',
-          message: 'Event 1 message',
-        } as SessionEvents,
-        {
-          id: 'event-2',
-          name: 'Event 2',
-          description: 'Second event',
-          score: 15,
-          emoji: '🚀',
-          message: 'Event 2 message',
-        } as SessionEvents,
-      ];
-      const expectedScenarioEvents = [
-        {
-          scenarioId: mockScenarioId,
-          eventId: 'event-1',
-          tenantId: mockTenantId,
-        },
-        {
-          scenarioId: mockScenarioId,
-          eventId: 'event-2',
-          tenantId: mockTenantId,
-        },
-      ];
-
-      scenarioService.getScenario.mockResolvedValue(mockScenario);
-      sessionEventService.findByIds.mockResolvedValue(validEvents);
-      scenarioEventsRepository.save.mockResolvedValue(
-        expectedScenarioEvents as any,
-      );
-
-      const result = await service.mapEventsToScenario(mockCreateDto);
-
-      expect(result).toEqual(expectedScenarioEvents);
-      expect(scenarioEventsRepository.save).toHaveBeenCalledWith(
-        expectedScenarioEvents,
-      );
-    });
-  });
-
-  describe('deleteScenarioEvents', () => {
-    const mockDeleteDto: DeleteScenarioEventsDto = {
-      scenarioId: mockScenarioId,
-      eventIds: ['event-1', 'event-2'],
-    };
-
-    it('should throw BadRequestException when eventIds array is empty', async () => {
-      const emptyDto = { ...mockDeleteDto, eventIds: [] };
-
-      await expect(service.deleteScenarioEvents(emptyDto)).rejects.toThrow(
-        new BadRequestException('Event IDs array cannot be empty'),
-      );
-    });
-
-    it('should throw BadRequestException when no scenario events found to delete', async () => {
-      scenarioService.getScenario.mockResolvedValue(mockScenario);
-      scenarioEventsRepository.delete.mockResolvedValue({ affected: 0 } as any);
-
-      await expect(service.deleteScenarioEvents(mockDeleteDto)).rejects.toThrow(
-        new BadRequestException('No scenario events found to delete'),
-      );
-    });
-
-    it('should successfully delete scenario events', async () => {
-      scenarioService.getScenario.mockResolvedValue(mockScenario);
-      scenarioEventsRepository.delete.mockResolvedValue({ affected: 2 } as any);
-
-      const result = await service.deleteScenarioEvents(mockDeleteDto);
-
-      expect(result).toBe(2);
-      expect(scenarioEventsRepository.delete).toHaveBeenCalledWith({
-        eventId: In(mockDeleteDto.eventIds),
-        scenarioId: mockScenarioId,
-      });
     });
   });
 
@@ -1649,8 +1558,16 @@ describe('ScenarioSessionService', () => {
       } as any);
       livekitService.deleteRoom.mockResolvedValue(undefined);
 
-      // Mock getScenario to be called within the transaction
-      scenarioService.getScenario.mockResolvedValue(mockScenario);
+      // Mock getScenario to be called within the transaction with select parameter
+      const mockScenarioForSummary = {
+        id: mockScenarioId,
+        metadata: {
+          agentGoal: 'Test agent goal',
+        },
+      };
+      scenarioService.getScenario.mockResolvedValue(
+        mockScenarioForSummary as any,
+      );
 
       await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
 
@@ -1672,9 +1589,88 @@ describe('ScenarioSessionService', () => {
             end_time: 20.5,
           },
         ],
-        mockScenario.description,
+        'Test agent goal',
       );
       expect(mockScenarioSessionDetailsRepo.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('previewScenario', () => {
+    it('should create preview scenario session successfully', async () => {
+      const previewDto = { scenarioId: mockScenarioId };
+      const mockScenarioWithMetadata = {
+        ...mockScenario,
+        title: 'Test Scenario',
+        description: 'Test Description',
+        coverImageUrl: 'https://example.com/cover.jpg',
+        metadata: {
+          difficulty: 'intermediate',
+          tags: ['anxiety'],
+          agentGoal: 'Help the client overcome anxiety',
+          lifeHistory: 'Life history of the client',
+          voiceId: 'voice-123',
+          name: 'Test Client',
+          age: 25,
+          gender: 'female',
+          currentLocation: 'New York, USA',
+          context: 'Context of the client',
+          openingStatements: 'Opening statements of the client',
+        },
+      };
+      const mockVoice = {
+        id: 'voice-123',
+        name: 'Test Voice',
+        voiceId: 'openai-voice-id',
+        provider: 'openai',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const mockTokenResponse = {
+        token: 'access-token-123',
+        roomName: 'preview-room',
+        serverUrl: 'https://livekit.example.com',
+      };
+
+      scenarioService.getScenario.mockResolvedValue(mockScenarioWithMetadata);
+      scenarioService.getScenarioVoice.mockResolvedValue(mockVoice);
+      sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue(mockTokenResponse);
+
+      const result = await service.previewScenario(
+        previewDto as any,
+        mockUserId,
+      );
+
+      expect(result.roomName).toMatch(/^preview-\d+-/);
+      expect(result.accessToken).toEqual(mockTokenResponse);
+      expect(scenarioService.getScenario).toHaveBeenCalledWith(mockScenarioId);
+      expect(
+        sessionEventService.getSessionEventsByScenarioId,
+      ).toHaveBeenCalledWith(mockScenarioId);
+      expect(livekitService.createRoom).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: expect.stringMatching(/^preview-\d+-/),
+          metadata: expect.any(Object),
+        }),
+      );
+      expect(livekitService.generateAccessToken).toHaveBeenCalledWith({
+        roomName: expect.stringMatching(/^preview-\d+-/),
+        participantName: mockUserId.toString(),
+      });
+    });
+  });
+
+  describe('endPreviewScenario', () => {
+    it('should delete preview scenario room successfully', async () => {
+      const roomName = 'preview-test-session-123';
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+
+      await service.endPreviewScenario(roomName);
+
+      expect(livekitService.deleteRoom).toHaveBeenCalledWith(roomName);
     });
   });
 });

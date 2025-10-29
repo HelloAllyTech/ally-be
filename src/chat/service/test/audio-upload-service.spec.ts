@@ -35,6 +35,9 @@ jest.mock('src/common/execution/execution-manager', () => ({
       role: 'ADMIN',
       tenantId: 1,
     })),
+    getExecutionId: jest.fn(() => 'mock-execution-id'),
+    getTenantId: jest.fn(() => 1),
+    getUserId: jest.fn(() => '1'),
   },
 }));
 
@@ -73,6 +76,7 @@ describe('AudioUploadService', () => {
           useValue: {
             generatePresignedUrl: jest.fn(),
             getHeadObject: jest.fn(),
+            sanitizeFileName: jest.fn(),
           },
         },
         {
@@ -144,6 +148,7 @@ describe('AudioUploadService', () => {
       chatService.createChatForAnonymousClient.mockResolvedValue(
         mockChat as any,
       );
+      s3Service.sanitizeFileName.mockReturnValue(validRequestDto.fileName);
       s3Service.generatePresignedUrl.mockResolvedValue(mockPresignedUrl);
 
       const result = await service.createChatWithUploadUrl(validRequestDto);
@@ -157,6 +162,9 @@ describe('AudioUploadService', () => {
         endedAt: expect.any(Date),
         platform: validRequestDto.platform,
       });
+      expect(s3Service.sanitizeFileName).toHaveBeenCalledWith(
+        validRequestDto.fileName,
+      );
       expect(s3Service.generatePresignedUrl).toHaveBeenCalledWith({
         bucket: 'test-bucket',
         key: expect.stringContaining(

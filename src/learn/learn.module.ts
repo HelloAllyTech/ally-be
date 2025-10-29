@@ -17,12 +17,17 @@ import { LearnMessageAndEventConsumer } from './consumer/learn-message-and-event
 import { LearnMessageProcessor } from './processor/learn-message.processor';
 import { LearnEventProcessor } from './processor/learn-event.processor';
 import { ScenarioSessionEvents } from './entity/scenario-session-events.entity';
+import { ScenariosRepository } from './repository/scenario.repository';
+import { ScenarioVoices } from './entity/scenario-voices.entity';
+import { ScenarioVoicesRepository } from './repository/scenario-voices.repository';
 import { SimulationCreditsController } from './controller/simulation-credits.controller';
 import { SimulationCreditsService } from './service/simulation-credits.service';
 import { SimulationCreditsRepository } from './repository/simulation-credits.repository';
 import { SimulationCredits } from 'src/learn/entity/simulation-credits.entity';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { UserModule } from 'src/user/user.module';
+import { AwsModule } from 'src/aws/aws.module';
+import { ScenarioEventsRepository } from './repository/scenario-events.repository';
 
 @Module({
   imports: [
@@ -33,12 +38,14 @@ import { UserModule } from 'src/user/user.module';
       ScenarioSessionFeedbacks,
       ScenarioSessionMessages,
       ScenarioSessionEvents,
+      ScenarioVoices,
       SimulationCredits,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
     forwardRef(() => AiModule),
     forwardRef(() => UserModule),
+    AwsModule,
   ],
   controllers: [LearnController, SimulationCreditsController],
   providers: [
@@ -46,12 +53,15 @@ import { UserModule } from 'src/user/user.module';
     ScenarioSessionService,
     ScenarioSessionRepository,
     ScenarioSessionMessagesRepository,
+    ScenariosRepository,
     LearnMessageAndEventConsumer,
     LearnMessageProcessor,
     LearnEventProcessor,
+    ScenarioVoicesRepository,
     SimulationCreditsService,
     SimulationCreditsRepository,
     PermissionValidator,
+    ScenarioEventsRepository,
   ],
   exports: [
     LearnMessageProcessor,

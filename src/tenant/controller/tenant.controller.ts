@@ -146,13 +146,13 @@ export class TenantController {
   }
 
   @ApiOperation({ summary: 'Edit tenant details' })
-  @ApiResponse({ status: 200, description: 'updated tenanant successfully' })
+  @ApiResponse({ status: 200, description: 'updated tenant successfully' })
   @AuthPermissions([PERMISSIONS.EDIT_TENANT])
   @Patch(':id')
   async updateTenant(
     @Param('id') id: string,
-    @Body() updateTenanatDto: UpdateTenantDto,
+    @Body() updateTenantDto: UpdateTenantDto,
   ): Promise<Tenant | null> {
-    return this.tenantService.updateTenant(id, updateTenanatDto);
+    return this.tenantService.updateTenant(id, updateTenantDto);
   }
 }

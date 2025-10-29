@@ -5,23 +5,19 @@ import {
   IsNumber,
   IsArray,
   IsEnum,
+  IsNotEmpty,
 } from 'class-validator';
 import { SessionEventDetectionType } from '../enum/session-event-detection-type.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
+import { SessionEventSpeaker } from '../enum/session-event-speaker.enum';
 
 export class CreateSessionEventDto {
-  @ApiProperty({
-    description: 'ID for the event',
-    example: 'event-1',
-  })
-  @IsString()
-  id!: string;
-
   @ApiProperty({
     description: 'The name of the event',
     example: 'Event 1',
   })
   @IsString()
+  @IsNotEmpty()
   name!: string;
 
   @ApiProperty({
@@ -92,4 +88,13 @@ export class CreateSessionEventDto {
   @IsString({ each: true })
   @IsOptional()
   sentences?: string[];
+
+  @ApiProperty({
+    description: 'The speaker of the event',
+    example: SessionEventSpeaker.CARE_GIVER,
+    enum: SessionEventSpeaker,
+  })
+  @IsEnum(SessionEventSpeaker)
+  @IsNotEmpty()
+  speaker!: SessionEventSpeaker;
 }

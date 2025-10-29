@@ -337,7 +337,7 @@ describe('UserController', () => {
       ).rejects.toThrow('Email already exists');
     });
 
-    it('should throw generic BadRequestException for unknown errors', async () => {
+    it('should throw BadRequestException for unknown errors', async () => {
       const addUserDto: Partial<AddUserDto> = {
         name: 'New User',
         email: 'newuser@example.com',
@@ -346,7 +346,9 @@ describe('UserController', () => {
         roles: [UserRole.COUNSELOR],
       };
 
-      mockUserService.addUser.mockRejectedValue(new Error('Database error'));
+      mockUserService.addUser.mockRejectedValue(
+        new BadRequestException('Could not create user'),
+      );
 
       await expect(
         controller.addUser(addUserDto as AddUserDto),

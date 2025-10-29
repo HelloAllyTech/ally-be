@@ -30,8 +30,8 @@ import {
 } from '../dto/user-response.dto';
 import { SimulationCreditsService } from 'src/learn/service/simulation-credits.service';
 import { AddUserResponseDto } from '../dto/user-add-response.dto';
-import { AddUserDto } from '../dto/user-add.dto';
 import { UserGroupService } from 'src/authorization/service/user-group.service';
+import { AddUserDto } from '../dto/add-user.dto';
 
 @Injectable()
 export class UserService {
@@ -369,7 +369,7 @@ export class UserService {
       email: userData.email,
       password: hashedPassword,
       name: userData.name,
-      status: userData.status || UserStatus.ACTIVE,
+      status: UserStatus.ACTIVE,
       metadata: {},
       username: userData.username || userData.email,
       phone: userData.phone,

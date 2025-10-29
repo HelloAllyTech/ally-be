@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -30,7 +29,6 @@ import { UserRole } from '../../common/constants/user.constants';
 import { AssignUserRoleDto, RemoveUserRoleDto } from '../dto/group.dto';
 import { GroupService } from 'src/authorization/service/group.service';
 import { User } from 'src/common/entities/user.entity';
-import { AddUserDto } from '../dto/add-user.dto';
 import { LoggerService } from 'src/logger/logger.service';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { UpdateUserStatusDto } from '../dto/update-user-status.dto';
@@ -42,6 +40,7 @@ import {
   UserUpdateResponseDto,
 } from '../dto/user-response.dto';
 import { AddUserResponseDto } from '../dto/user-add-response.dto';
+import { AddUserDto } from '../dto/add-user.dto';
 
 @Controller('v1/users')
 @ApiTags('Users')
@@ -175,15 +174,7 @@ export class UserController {
   @AuthPermissions([PERMISSIONS.EDIT_USER])
   @ApiSecurity('access-token')
   async addUser(@Body() userData: AddUserDto): Promise<AddUserResponseDto> {
-    try {
-      return await this.userService.addUser(userData);
-    } catch (error) {
-      this.logger.error(error.message);
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      throw new BadRequestException('Could not create user');
-    }
+    return this.userService.addUser(userData);
   }
 
   @Patch(':id')

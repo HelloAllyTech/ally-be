@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNumber, Max, IsOptional } from 'class-validator';
-import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from '../constants/scenrio-session.constants';
+import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from '../constants/scenario-session.constants';
 
 export class StartScenarioSessionRequestDto {
   @ApiProperty({

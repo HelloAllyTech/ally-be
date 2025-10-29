@@ -12,12 +12,18 @@ export class SessionEventRepository extends Repository<SessionEvents> {
 
   async getAllSessionEvents(
     visibilityType?: SessionEventVisibilityType,
+    searchName?: string,
     pagination?: Pagination,
   ): Promise<SessionEvents[]> {
     const query = this.createQueryBuilder('sessionEvent');
     if (visibilityType) {
       query.andWhere('sessionEvent.visibilityType = :visibilityType', {
         visibilityType,
+      });
+    }
+    if (searchName) {
+      query.andWhere('sessionEvent.name ILIKE :searchName').setParameters({
+        searchName: `%${searchName}%`,
       });
     }
     this.applySorting(query, pagination);

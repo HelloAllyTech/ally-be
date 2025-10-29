@@ -195,6 +195,9 @@ export class AppConfigService {
   get s3() {
     return {
       audioBucket: this.configService.get<string>('AUDIO_STORAGE_S3_BUCKET'),
+      learnMediaPublicBucket: this.configService.get<string>(
+        'LEARN_MEDIA_PUBLIC_S3_BUCKET',
+      ),
     };
   }
 

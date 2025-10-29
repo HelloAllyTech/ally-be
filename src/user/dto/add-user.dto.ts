@@ -10,9 +10,12 @@ import {
   IsUUID,
   IsPositive,
   IsNumber,
+  MinLength,
+  Matches,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { UserRole } from 'src/common/constants/user.constants';
+import { PASSWORD_VALIDATION } from 'src/common/constants/validation.constants';
 
 export class AddUserDto {
   @ApiProperty({
@@ -64,6 +67,7 @@ export class AddUserDto {
   })
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => (!value || value.trim() === '' ? null : value))
   externalId?: string;
 
   @ApiProperty({
@@ -75,4 +79,20 @@ export class AddUserDto {
   @IsPositive()
   @Type(() => Number)
   simulationCreditLimit?: number;
+
+  @IsOptional()
+  @IsString()
+  username?: string;
+
+  @ApiProperty({
+    description: 'User password (optional)',
+    example: 'password123',
+    minLength: 6,
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(PASSWORD_VALIDATION.MIN_LENGTH)
+  @Matches(PASSWORD_VALIDATION.REGEX)
+  password?: string;
 }

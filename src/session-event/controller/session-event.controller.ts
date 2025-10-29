@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import { SessionEventService } from '../service/session-event.service';
 import {
   ApiBearerAuth,
@@ -17,6 +26,7 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { SessionEventSortBy } from '../enum/session-event-sort-by.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
+import { DeleteSessionEventsDto } from '../dto/delete-session-events.dto';
 
 @ApiTags('SessionEvents')
 @ApiBearerAuth()
@@ -29,7 +39,7 @@ export class SessionEventController {
   @ApiBody({ type: CreateSessionEventsDto })
   @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
   @Post()
-  createSessionEvents(
+  async createSessionEvents(
     @Body() createEventsDto: CreateSessionEventsDto,
   ): Promise<SessionEvents[]> {
     return this.sessionEventService.createSessionEvents(createEventsDto.events);
@@ -39,7 +49,7 @@ export class SessionEventController {
   @ApiBody({ type: UpdateSessionEventDto })
   @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
   @Put('events/:id')
-  updateSessionEvents(
+  async updateSessionEvents(
     @Param('id') id: string,
     @Body() updateEventsDto: UpdateSessionEventDto,
   ): Promise<boolean> {
@@ -79,18 +89,35 @@ export class SessionEventController {
   })
   @AuthPermissions([PERMISSIONS.VIEW_SESSION_EVENTS])
   @Get()
-  getAllSessionEvents(
+  async getAllSessionEvents(
     @Query('visibilityType') visibilityType?: SessionEventVisibilityType,
+    @Query('searchName') searchName?: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
     @Query('sortBy') sortBy: SessionEventSortBy = SessionEventSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<{ data: SessionEvents[] }> {
-    return this.sessionEventService.getAllSessionEvents(visibilityType, {
-      limit,
-      offset,
-      sortBy,
-      order,
-    });
+    return this.sessionEventService.getAllSessionEvents(
+      visibilityType,
+      searchName,
+      {
+        limit,
+        offset,
+        sortBy,
+        order,
+      },
+    );
+  }
+
+  @ApiOperation({ summary: 'Delete session events' })
+  @ApiBody({ type: DeleteSessionEventsDto })
+  @AuthPermissions([PERMISSIONS.DELETE_SESSION_EVENTS])
+  @Delete('events')
+  async deleteSessionEvents(
+    @Body() deleteEventsDto: DeleteSessionEventsDto,
+  ): Promise<boolean> {
+    return this.sessionEventService.deleteSessionEvents(
+      deleteEventsDto.eventIds,
+    );
   }
 }

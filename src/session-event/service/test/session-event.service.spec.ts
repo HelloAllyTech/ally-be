@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { SessionEventService } from '../session-event.service';
 import { SessionEvents } from '../../entity/session-events.entity';
 import { CreateSessionEventDto } from '../../dto/create-session-event.dto';
@@ -8,6 +9,7 @@ import { SessionEventDetectionType } from 'src/session-event/enum/session-event-
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { SessionEventRepository } from '../../repository/session-event.repository';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
+import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
 
 describe('SessionEventService', () => {
   let service: SessionEventService;
@@ -25,10 +27,10 @@ describe('SessionEventService', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
+    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockCreateSessionEventDto: CreateSessionEventDto = {
-    id: 'event-1',
     name: 'Test Event',
     description: 'Test event description',
     score: 85,
@@ -38,6 +40,7 @@ describe('SessionEventService', () => {
     detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
     visibilityType: SessionEventVisibilityType.ACTIVE,
     sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockUpdateSessionEventDto: UpdateSessionEventDto = {
@@ -47,6 +50,7 @@ describe('SessionEventService', () => {
     emoji: '🎉',
     message: 'Excellent work!',
     branchInstruction: 'Move to advanced level',
+    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockQueryBuilder = {
@@ -66,12 +70,27 @@ describe('SessionEventService', () => {
       getAllSessionEvents: jest.fn(),
     };
 
+    const mockEntityManager = {
+      getRepository: jest.fn().mockReturnValue({
+        softDelete: jest.fn().mockResolvedValue({ affected: 1 }),
+      }),
+    };
+
+    const mockDataSource = {
+      createEntityManager: jest.fn(),
+      transaction: jest.fn((callback) => callback(mockEntityManager)),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SessionEventService,
         {
           provide: SessionEventRepository,
           useValue: mockRepository,
+        },
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
         },
       ],
     }).compile();
@@ -93,7 +112,14 @@ describe('SessionEventService', () => {
 
       const result = await service.createSessionEvents(createEventDtos);
 
-      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: expect.any(String),
+            ...mockCreateSessionEventDto,
+          }),
+        ]),
+      );
       expect(result).toEqual(createdEvents);
     });
 
@@ -102,7 +128,6 @@ describe('SessionEventService', () => {
         mockCreateSessionEventDto,
         {
           ...mockCreateSessionEventDto,
-          id: 'event-2',
           name: 'Second Event',
         },
       ];
@@ -115,7 +140,19 @@ describe('SessionEventService', () => {
 
       const result = await service.createSessionEvents(createEventDtos);
 
-      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: expect.any(String),
+            ...mockCreateSessionEventDto,
+          }),
+          expect.objectContaining({
+            id: expect.any(String),
+            ...mockCreateSessionEventDto,
+            name: 'Second Event',
+          }),
+        ]),
+      );
       expect(result).toEqual(createdEvents);
     });
 
@@ -140,31 +177,30 @@ describe('SessionEventService', () => {
       await expect(
         service.createSessionEvents(createEventDtos),
       ).rejects.toThrow('Save failed');
-      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: expect.any(String),
+            ...mockCreateSessionEventDto,
+          }),
+        ]),
+      );
     });
 
     it('should handle null input gracefully', async () => {
       const createEventDtos = null as any;
-      const error = new Error('Invalid input');
-
-      repository.save.mockRejectedValue(error);
 
       await expect(
         service.createSessionEvents(createEventDtos),
-      ).rejects.toThrow('Invalid input');
-      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
+      ).rejects.toThrow("Cannot read properties of null (reading 'map')");
     });
 
     it('should handle undefined input gracefully', async () => {
       const createEventDtos = undefined as any;
-      const error = new Error('Invalid input');
-
-      repository.save.mockRejectedValue(error);
 
       await expect(
         service.createSessionEvents(createEventDtos),
-      ).rejects.toThrow('Invalid input');
-      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
+      ).rejects.toThrow("Cannot read properties of undefined (reading 'map')");
     });
 
     it('should handle single event with minimal data', async () => {
@@ -173,6 +209,7 @@ describe('SessionEventService', () => {
         name: 'Minimal Event',
         detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
         visibilityType: SessionEventVisibilityType.ACTIVE,
+        speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const createdEvent = {
         ...minimalEventDto,
@@ -626,6 +663,7 @@ describe('SessionEventService', () => {
       expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
         undefined,
         undefined,
+        undefined,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -641,6 +679,28 @@ describe('SessionEventService', () => {
 
       expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
         visibilityType,
+        undefined,
+        undefined,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('should get session events with searchName filter', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const expectedResult = { data: expectedEvents };
+      const searchName = 'Test';
+
+      repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
+
+      const result = await service.getAllSessionEvents(
+        undefined,
+        searchName,
+        undefined,
+      );
+
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        searchName,
         undefined,
       );
       expect(result).toEqual(expectedResult);
@@ -658,19 +718,47 @@ describe('SessionEventService', () => {
 
       repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
 
-      const result = await service.getAllSessionEvents(undefined, pagination);
+      const result = await service.getAllSessionEvents(
+        undefined,
+        undefined,
+        pagination,
+      );
 
       expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
         undefined,
         pagination,
       );
       expect(result).toEqual(expectedResult);
     });
 
-    it('should get session events with both visibility type and pagination', async () => {
+    it('should get session events with visibility type and searchName', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const expectedResult = { data: expectedEvents };
+      const visibilityType = SessionEventVisibilityType.ACTIVE;
+      const searchName = 'Event';
+
+      repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
+
+      const result = await service.getAllSessionEvents(
+        visibilityType,
+        searchName,
+        undefined,
+      );
+
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        visibilityType,
+        searchName,
+        undefined,
+      );
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('should get session events with all parameters', async () => {
       const expectedEvents = [mockSessionEvent];
       const expectedResult = { data: expectedEvents };
       const visibilityType = SessionEventVisibilityType.PASSIVE;
+      const searchName = 'Test Event';
       const pagination = {
         limit: 5,
         offset: 10,
@@ -682,11 +770,13 @@ describe('SessionEventService', () => {
 
       const result = await service.getAllSessionEvents(
         visibilityType,
+        searchName,
         pagination,
       );
 
       expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
         visibilityType,
+        searchName,
         pagination,
       );
       expect(result).toEqual(expectedResult);
@@ -703,6 +793,7 @@ describe('SessionEventService', () => {
       expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
         undefined,
         undefined,
+        undefined,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -715,6 +806,7 @@ describe('SessionEventService', () => {
         'Database query failed',
       );
       expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
         undefined,
         undefined,
       );
@@ -732,9 +824,14 @@ describe('SessionEventService', () => {
 
       repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
 
-      const result = await service.getAllSessionEvents(undefined, pagination);
+      const result = await service.getAllSessionEvents(
+        undefined,
+        undefined,
+        pagination,
+      );
 
       expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
         undefined,
         pagination,
       );
@@ -753,9 +850,14 @@ describe('SessionEventService', () => {
 
       repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
 
-      const result = await service.getAllSessionEvents(undefined, pagination);
+      const result = await service.getAllSessionEvents(
+        undefined,
+        undefined,
+        pagination,
+      );
 
       expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
         undefined,
         pagination,
       );
@@ -774,9 +876,14 @@ describe('SessionEventService', () => {
 
       repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
 
-      const result = await service.getAllSessionEvents(undefined, pagination);
+      const result = await service.getAllSessionEvents(
+        undefined,
+        undefined,
+        pagination,
+      );
 
       expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
         undefined,
         pagination,
       );
@@ -795,13 +902,155 @@ describe('SessionEventService', () => {
 
       repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
 
-      const result = await service.getAllSessionEvents(undefined, pagination);
+      const result = await service.getAllSessionEvents(
+        undefined,
+        undefined,
+        pagination,
+      );
 
       expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
         undefined,
         pagination,
       );
       expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('deleteSessionEvents', () => {
+    let mockSoftDelete: jest.Mock;
+    let mockGetRepository: jest.Mock;
+    let mockTransaction: jest.Mock;
+
+    beforeEach(() => {
+      mockSoftDelete = jest.fn().mockResolvedValue({ affected: 1 });
+      mockGetRepository = jest.fn().mockReturnValue({
+        softDelete: mockSoftDelete,
+      });
+
+      const serviceDataSource = (service as any).dataSource;
+      mockTransaction = serviceDataSource.transaction as jest.Mock;
+      mockTransaction.mockImplementation(async (callback) => {
+        const mockEntityManager = {
+          getRepository: mockGetRepository,
+        };
+        return await callback(mockEntityManager);
+      });
+    });
+
+    it('should delete session events and return true when affected > 0', async () => {
+      const eventIds = ['event-1', 'event-2', 'event-3'];
+      const activeEvents = [
+        { id: 'event-1' },
+        { id: 'event-2' },
+        { id: 'event-3' },
+      ];
+
+      repository.find.mockResolvedValue(activeEvents as any);
+
+      const result = await service.deleteSessionEvents(eventIds);
+
+      expect(repository.find).toHaveBeenCalledWith({
+        select: ['id'],
+        where: {
+          id: expect.any(Object),
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+        },
+      });
+      expect(mockTransaction).toHaveBeenCalled();
+      expect(mockGetRepository).toHaveBeenCalledWith(SessionEvents);
+      expect(mockGetRepository).toHaveBeenCalledWith(ScenarioEvents);
+      expect(mockSoftDelete).toHaveBeenCalledWith({
+        id: expect.any(Object),
+      });
+      expect(mockSoftDelete).toHaveBeenCalledWith({
+        eventId: expect.any(Object),
+      });
+      expect(result).toBe(true);
+    });
+
+    it('should return true when no events affected', async () => {
+      const eventIds = ['event-1'];
+      const activeEvents = [{ id: 'event-1' }];
+
+      repository.find.mockResolvedValue(activeEvents as any);
+      mockSoftDelete.mockResolvedValue({ affected: 0 });
+
+      const result = await service.deleteSessionEvents(eventIds);
+
+      expect(mockTransaction).toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+
+    it('should handle single event id deletion', async () => {
+      const eventIds = ['event-1'];
+      const activeEvents = [{ id: 'event-1' }];
+
+      repository.find.mockResolvedValue(activeEvents as any);
+
+      const result = await service.deleteSessionEvents(eventIds);
+
+      expect(mockTransaction).toHaveBeenCalled();
+      expect(mockSoftDelete).toHaveBeenCalledWith({
+        id: expect.any(Object),
+      });
+      expect(result).toBe(true);
+    });
+
+    it('should throw BadRequestException when empty event ids array', async () => {
+      const eventIds: string[] = [];
+
+      repository.find.mockResolvedValue([]);
+
+      await expect(service.deleteSessionEvents(eventIds)).rejects.toThrow(
+        'No active events found to delete',
+      );
+      expect(mockTransaction).not.toHaveBeenCalled();
+    });
+
+    it('should handle database error during deletion', async () => {
+      const eventIds = ['event-1', 'event-2'];
+      const activeEvents = [{ id: 'event-1' }, { id: 'event-2' }];
+      const error = new Error('Database deletion failed');
+
+      repository.find.mockResolvedValue(activeEvents as any);
+      mockSoftDelete.mockRejectedValue(error);
+
+      await expect(service.deleteSessionEvents(eventIds)).rejects.toThrow(
+        'Database deletion failed',
+      );
+      expect(mockTransaction).toHaveBeenCalled();
+    });
+
+    it('should only delete ACTIVE events, not PASSIVE events', async () => {
+      const eventIds = ['event-1', 'event-2', 'event-3'];
+      const activeEvents = [{ id: 'event-1' }, { id: 'event-2' }]; // Only 2 active
+
+      repository.find.mockResolvedValue(activeEvents as any);
+
+      const result = await service.deleteSessionEvents(eventIds);
+
+      expect(repository.find).toHaveBeenCalledWith({
+        select: ['id'],
+        where: {
+          id: expect.any(Object),
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+        },
+      });
+      expect(mockTransaction).toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+
+    it('should throw BadRequestException when no ACTIVE events found', async () => {
+      const eventIds = ['event-1', 'event-2'];
+
+      repository.find.mockResolvedValue([]);
+
+      await expect(service.deleteSessionEvents(eventIds)).rejects.toThrow(
+        'No active events found to delete',
+      );
+      expect(repository.find).toHaveBeenCalled();
+      expect(mockTransaction).not.toHaveBeenCalled();
     });
   });
 });

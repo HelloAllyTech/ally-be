@@ -9,7 +9,7 @@ import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
@@ -20,10 +20,7 @@ import { ScenarioSessionDetails } from '../entity/scenario-session-details.entit
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../interface/learn-message.interface';
-import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
-import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
-import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { Scenarios } from '../entity/scenarios.entity';
@@ -31,9 +28,13 @@ import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
-import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from '../constants/scenrio-session.constants';
+import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
+import { v4 } from 'uuid';
+import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from '../constants/scenario-session.constants';
 import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
+import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
+import { ScenarioStatus } from '../enum/scenario.status.enum';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -48,10 +49,6 @@ export class ScenarioSessionService {
     private scenarioSessionFeedbacksRepository: Repository<ScenarioSessionFeedbacks>,
     private dataSource: DataSource,
     private aiService: AiService,
-    @InjectRepository(ScenarioSessionEvents)
-    private scenarioSessionEventsRepository: Repository<ScenarioSessionEvents>,
-    @InjectRepository(ScenarioEvents)
-    private scenarioEventsRepository: Repository<ScenarioEvents>,
     private permissionsService: PermissionsService,
     private permissionValidatorService: PermissionValidator,
     private simulationCreditsService: SimulationCreditsService,
@@ -139,10 +136,11 @@ export class ScenarioSessionService {
         startScenarioSessionDto,
       );
 
-    const roomMetadata = this.createRoomMetadata(scenario, sessionEvents);
+    const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
+    // console.log('roomMetadata', JSON.stringify(roomMetadata));
     await this.livekitService.createRoom({
       name: `${scenarioSession.roomId}`,
-      ttl: 1800,
+      ttl: startScenarioSessionDto.ttl ?? DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
       metadata: roomMetadata,
     });
 
@@ -154,7 +152,7 @@ export class ScenarioSessionService {
     return { scenarioSession, accessToken };
   }
 
-  private createRoomMetadata(
+  private async createRoomMetadata(
     scenario: Scenarios,
     sessionEvents: SessionEvents[],
   ) {
@@ -167,63 +165,25 @@ export class ScenarioSessionService {
       );
     }
 
-    const { lifeHistory, ...metadataWithoutLifeHistory } = scenario.metadata;
-    scenario.metadata = JSON.parse(JSON.stringify(metadataWithoutLifeHistory));
+    const { metadata, ...scenarioDataWithoutMetadata } = scenario;
+    const { voiceId, ...promptData } = metadata;
+
+    const scenarioData = {
+      ...scenarioDataWithoutMetadata,
+      promptData: JSON.parse(JSON.stringify(promptData)),
+    };
+
+    const scenarioVoice = await this.scenarioService.getScenarioVoice(voiceId);
 
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
       scenario: {
-        ...scenario,
-        lifeHistory: JSON.parse(JSON.stringify(lifeHistory)),
+        ...scenarioData,
+        voice: scenarioVoice,
         events: sessionEvents,
       },
     };
-  }
-
-  async mapEventsToScenario(createScenarioEventsDto: CreateScenarioEventsDto) {
-    const { scenarioId, eventIds } = createScenarioEventsDto;
-
-    if (eventIds.length === 0) {
-      throw new BadRequestException('Event IDs array cannot be empty');
-    }
-
-    await this.scenarioService.getScenario(scenarioId);
-    // Validate events exist
-    const validEvents = await this.sessionEventService.findByIds(eventIds);
-    const validIdsSet = new Set(validEvents.map((e) => e.id));
-    const invalidEventIds = eventIds.filter((id) => !validIdsSet.has(id));
-    if (invalidEventIds.length > 0) {
-      throw new BadRequestException(`Invalid event IDs: ${invalidEventIds}`);
-    }
-    // Create an array of ScenarioEvents entities to be saved
-    const scenarioEvents = eventIds.map((id) => ({
-      scenarioId: scenarioId,
-      eventId: id,
-      tenantId: ExecutionManager.getTenantId(),
-    }));
-
-    // Save the scenario events to the database
-    await this.scenarioEventsRepository.save(scenarioEvents);
-    return scenarioEvents;
-  }
-
-  async deleteScenarioEvents(scenarioEvents: DeleteScenarioEventsDto) {
-    const { scenarioId, eventIds } = scenarioEvents;
-    if (eventIds.length === 0) {
-      throw new BadRequestException('Event IDs array cannot be empty');
-    }
-
-    await this.scenarioService.getScenario(scenarioId);
-
-    const result = await this.scenarioEventsRepository.delete({
-      eventId: In(eventIds),
-      scenarioId,
-    });
-    if (result.affected === 0) {
-      throw new BadRequestException('No scenario events found to delete');
-    }
-    return result.affected;
   }
 
   private async validateStartScenarioSession(counselorId: number) {
@@ -370,13 +330,13 @@ export class ScenarioSessionService {
 
       const scenario = await this.scenarioService.getScenario(
         scenarioId,
-        ['id', 'title', 'description'],
+        ['id', 'metadata'],
         entityManager,
       );
 
       const summary = await this.aiService.getScenarioSessionSummary(
         messages,
-        scenario.description,
+        scenario.metadata?.agentGoal ?? '',
       );
 
       const scenarioSessionDetailsRepo = entityManager.getRepository(
@@ -525,5 +485,62 @@ export class ScenarioSessionService {
       }
       return savedScenarioSessionEvent;
     });
+  }
+
+  async previewScenario(
+    previewScenarioDto: PreviewScenarioDto,
+    userId: number,
+  ) {
+    const { scenarioId } = previewScenarioDto;
+    const scenario = await this.scenarioService.getScenario(scenarioId);
+
+    await this.validatePreviewScenario(scenario);
+
+    const sessionEvents =
+      await this.sessionEventService.getSessionEventsByScenarioId(scenarioId);
+
+    const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
+    const roomName = `preview-${scenarioId}-${v4()}`;
+
+    await this.livekitService.createRoom({
+      name: roomName,
+      metadata: roomMetadata,
+    });
+
+    const accessToken = await this.livekitService.generateAccessToken({
+      roomName,
+      participantName: userId.toString(),
+    });
+
+    return { roomName, accessToken };
+  }
+
+  private async validatePreviewScenario(scenario: Scenarios) {
+    if (
+      ![ScenarioStatus.DRAFT, ScenarioStatus.ACTIVE].includes(scenario.status)
+    ) {
+      throw new BadRequestException(
+        'Scenario should be draft or active for preview',
+      );
+    }
+
+    const { metadata, ...scenarioDataWithoutMetadata } = scenario;
+    const flatScenario = {
+      ...scenarioDataWithoutMetadata,
+      ...(metadata ? JSON.parse(JSON.stringify(metadata)) : {}),
+    };
+
+    const missingFields = SCENARIO_MANDATORY_FIELDS.filter(
+      (field) => !flatScenario[field as keyof typeof flatScenario],
+    );
+    if (missingFields.length > 0) {
+      throw new BadRequestException(
+        `The following required fields are missing for preview scenario: ${missingFields.join(', ')}`,
+      );
+    }
+  }
+
+  async endPreviewScenario(roomName: string) {
+    await this.livekitService.deleteRoom(roomName);
   }
 }

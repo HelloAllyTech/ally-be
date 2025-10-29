@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsEmail, IsOptional, IsString } from 'class-validator';
 
 export class UpdateUserDto {
@@ -17,7 +18,7 @@ export class UpdateUserDto {
     required: false,
   })
   @IsOptional()
-  @IsEmail()
+  @IsEmail({}, { message: 'Invalid email' })
   email?: string;
 
   @ApiProperty({
@@ -27,5 +28,6 @@ export class UpdateUserDto {
   })
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => (!value || value.trim() === '' ? null : value))
   externalId?: string;
 }

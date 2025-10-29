@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOperation,
   ApiQuery,
   ApiResponse,
@@ -17,7 +18,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ScenarioService } from '../service/scenario.service';
-import { ScenarioResponse } from '../dto/scenario-response.dto';
 import { ScenarioSessionService } from '../service/scenario-session.service';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
@@ -31,9 +31,17 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { Public } from 'src/auth/decorators/auth.metadata';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
+import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
+import { ScenarioSortBy } from '../enum/scenario-sort-by.enum';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
+import { CreateScenarioVoiceDto } from '../dto/create-scenario-voice.dto';
+import { UpdateScenarioVoiceDto } from '../dto/update-scenario-voice.dto';
+import { ScenarioVoiceSortBy } from '../enum/scenario-voice-sort-by.enum';
+import { ScenarioImageUploadRequestDto } from '../dto/scenario-image-upload-request.dto';
+import { ScenarioImageUploadResponseDto } from '../dto/scenario-image-upload-response.dto';
+import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
+import { DeleteCoverImageDto } from '../dto/delete-cover-image.dto';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -48,15 +56,64 @@ export class LearnController {
   @Public()
   @ApiOperation({ summary: 'Get all scenarios' })
   @Get('scenarios')
-  async getScenarios(): Promise<ScenarioResponse[]> {
+  async getScenarios(): Promise<Scenarios[]> {
     return this.scenarioService.getScenarios();
+  }
+
+  @ApiOperation({ summary: 'Get all scenarios ' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of users to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of users to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ScenarioSortBy,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order: ASC or DESC',
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    type: String,
+    description: 'Filter by scenario status(comma-separated)',
+  })
+  @Get('admin-scenarios')
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIOS])
+  async getAdminScenarios(
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy')
+    sortBy: ScenarioSortBy = ScenarioSortBy.CREATED_AT,
+    @Query('order') order: SortOrder = SortOrder.ASC,
+    @Query('status') status?: string,
+  ) {
+    return this.scenarioService.getAdminScenarios(status, {
+      limit,
+      offset,
+      sortBy,
+      order,
+    });
   }
 
   // TODO: Remove swagger lock
   @Public()
   @ApiOperation({ summary: 'Get a scenario by id' })
   @Get('scenarios/:id')
-  async getScenario(@Param('id') id: number): Promise<ScenarioResponse> {
+  async getScenario(@Param('id') id: number): Promise<Scenarios> {
     return this.scenarioService.getScenario(id, [
       'id',
       'title',
@@ -67,23 +124,77 @@ export class LearnController {
     ]);
   }
 
+  @ApiOperation({ summary: 'Get a scenario by id' })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @Get('admin-scenarios/:id')
+  async getAdminScenario(@Param('id') id: number): Promise<Scenarios> {
+    return this.scenarioService.getAdminScenario(id);
+  }
+
+  @ApiOperation({ summary: 'Get presigned URL for scenario cover image' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('scenarios/cover-image-url')
+  async getPresignedUrlForScenarioCoverImage(
+    @Body() scenarioImageUploadRequestDto: ScenarioImageUploadRequestDto,
+  ): Promise<ScenarioImageUploadResponseDto> {
+    return this.scenarioService.getPresignedUrlForScenarioCoverImage(
+      scenarioImageUploadRequestDto,
+    );
+  }
+
   @ApiOperation({ summary: 'Create multiple scenarios' })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
   @Post('scenarios')
   async createScenario(
+    @CurrentUser() tokenUser: TokenUser,
     @Body() createScenariosDto: CreateScenariosDto,
   ): Promise<Scenarios[]> {
-    return this.scenarioService.createScenarios(createScenariosDto);
+    return this.scenarioService.createScenarios(
+      createScenariosDto,
+      tokenUser.id,
+    );
   }
 
   @ApiOperation({ summary: 'Update a scenario by id' })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
   @Put('scenarios/:id')
   async updateScenario(
+    @CurrentUser() tokenUser: TokenUser,
     @Param('id') id: number,
     @Body() updateScenarioDto: UpdateScenarioDto,
   ): Promise<boolean> {
-    return this.scenarioService.updateScenario(id, updateScenarioDto);
+    return this.scenarioService.updateScenario(
+      id,
+      updateScenarioDto,
+      tokenUser.id,
+    );
+  }
+
+  @ApiOperation({ summary: 'Preview a scenario' })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @Post('scenarios/preview')
+  async previewScenario(
+    @CurrentUser() tokenUser: TokenUser,
+    @Body() previewScenarioDto: PreviewScenarioDto,
+  ) {
+    return this.scenarioSessionService.previewScenario(
+      previewScenarioDto,
+      tokenUser.id,
+    );
+  }
+
+  @ApiOperation({ summary: 'End a preview scenario' })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @Post('scenarios/preview/:roomName/end')
+  async endPreviewScenario(@Param('roomName') roomName: string) {
+    return this.scenarioSessionService.endPreviewScenario(roomName);
+  }
+
+  @ApiOperation({ summary: 'Delete a scenario by id' })
+  @AuthPermissions([PERMISSIONS.DELETE_ADMIN_SCENARIO])
+  @Delete('admin-scenarios/:id')
+  async deleteAdminScenario(@Param('id') id: number): Promise<boolean> {
+    return this.scenarioService.deleteAdminScenario(id);
   }
 
   @ApiOperation({ summary: 'Get all scenario sessions for user' })
@@ -198,15 +309,55 @@ export class LearnController {
     return this.scenarioSessionService.getScenarioSession(id, tokenUser.id);
   }
 
+  @ApiOperation({ summary: 'Get scenario events' })
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_EVENTS])
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order',
+  })
+  @Get('scenarios/:id/events')
+  async getScenarioEvents(
+    @Param('id') id: number,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order?: 'ASC' | 'DESC',
+  ) {
+    return this.scenarioService.getScenarioEvents(id, {
+      limit,
+      offset,
+      sortBy: sortBy || 'createdAt',
+      order: order || SortOrder.DESC,
+    });
+  }
+
   @ApiOperation({ summary: 'Map events to scenario' })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_MAP_EVENTS])
   @Post('scenarios/map-events')
   async mapEventsToScenario(
     @Body() createScenarioEventsDto: CreateScenarioEventsDto,
   ) {
-    return this.scenarioSessionService.mapEventsToScenario(
-      createScenarioEventsDto,
-    );
+    return this.scenarioService.mapEventsToScenario(createScenarioEventsDto);
   }
 
   @ApiOperation({ summary: 'Delete scenario events' })
@@ -215,7 +366,7 @@ export class LearnController {
   async deleteScenarioEvents(
     @Body() deleteScenarioEventsDto: DeleteScenarioEventsDto,
   ) {
-    const rowsAffected = await this.scenarioSessionService.deleteScenarioEvents(
+    const rowsAffected = await this.scenarioService.deleteScenarioEvents(
       deleteScenarioEventsDto,
     );
     return rowsAffected != null && rowsAffected > 0;
@@ -306,5 +457,73 @@ export class LearnController {
         order,
       },
     );
+  }
+
+  @ApiOperation({ summary: 'Get all scenario voices' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ScenarioVoiceSortBy,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_VOICES])
+  @Get('scenario-voices')
+  async getScenarioVoices(
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order: SortOrder = SortOrder.ASC,
+  ) {
+    return this.scenarioService.getScenarioVoices({
+      limit,
+      offset,
+      sortBy,
+      order,
+    });
+  }
+
+  @ApiOperation({ summary: 'Create a scenario voice' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
+  @Post('scenarios/voices')
+  async createScenarioVoice(
+    @Body() createScenarioVoiceDto: CreateScenarioVoiceDto,
+  ) {
+    return this.scenarioService.createScenarioVoice(createScenarioVoiceDto);
+  }
+
+  @ApiOperation({ summary: 'Update a scenario voice' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
+  @Put('scenarios/voices/:id')
+  async updateScenarioVoice(
+    @Param('id') id: string,
+    @Body() updateScenarioVoiceDto: UpdateScenarioVoiceDto,
+  ) {
+    return this.scenarioService.updateScenarioVoice(id, updateScenarioVoiceDto);
+  }
+
+  @ApiOperation({ summary: 'Delete cover image' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @ApiBody({ type: DeleteCoverImageDto })
+  @Delete('cover-image')
+  async deleteCoverImage(@Body() deleteCoverImageDto: DeleteCoverImageDto) {
+    return this.scenarioService.deleteCoverImage(deleteCoverImageDto);
   }
 }

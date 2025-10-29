@@ -32,6 +32,16 @@ export class RoomFinishedHandler {
     this.logger.info(`Room finished: ${event.room?.name}`);
 
     try {
+      if (!event.room?.name) {
+        this.logger.warn('Room name is missing in room finished event');
+        return;
+      }
+
+      if (event.room.name.startsWith('preview-')) {
+        await this.scenarioSessionService.endPreviewScenario(event.room.name);
+        return;
+      }
+
       const scenarioSession =
         await this.scenarioSessionService.getScenarioSessionByRoomId(
           event.room.name,
