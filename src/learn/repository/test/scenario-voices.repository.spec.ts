@@ -192,24 +192,40 @@ describe('ScenarioVoicesRepository', () => {
       );
     });
 
-    it('should use default limit when not provided', async () => {
+    it('should not apply limit when not provided', async () => {
       queryBuilder.getMany.mockResolvedValue([]);
 
       await repository.getScenarioVoices({
         offset: 0,
       } as any);
 
+      expect(queryBuilder.limit).not.toHaveBeenCalled();
+      expect(queryBuilder.offset).toHaveBeenCalledWith(0);
+      expect(queryBuilder.getMany).toHaveBeenCalled();
+    });
+
+    it('should apply offset even when value is 0', async () => {
+      queryBuilder.getMany.mockResolvedValue([]);
+
+      await repository.getScenarioVoices({
+        limit: 10,
+        offset: 0,
+      } as any);
+
+      // offset(0) should be applied now (fixed bug)
+      expect(queryBuilder.offset).toHaveBeenCalledWith(0);
       expect(queryBuilder.limit).toHaveBeenCalledWith(10);
     });
 
-    it('should use default offset when not provided', async () => {
+    it('should not apply offset when not provided', async () => {
       queryBuilder.getMany.mockResolvedValue([]);
 
       await repository.getScenarioVoices({
         limit: 10,
       } as any);
 
-      expect(queryBuilder.offset).toHaveBeenCalledWith(0);
+      expect(queryBuilder.offset).not.toHaveBeenCalled();
+      expect(queryBuilder.limit).toHaveBeenCalledWith(10);
     });
   });
 });
