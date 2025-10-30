@@ -35,7 +35,7 @@ import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioSortBy } from '../enum/scenario-sort-by.enum';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { CreateScenarioVoiceDto } from '../dto/create-scenario-voice.dto';
+import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
 import { UpdateScenarioVoiceDto } from '../dto/update-scenario-voice.dto';
 import { ScenarioVoiceSortBy } from '../enum/scenario-voice-sort-by.enum';
 import { ScenarioImageUploadRequestDto } from '../dto/scenario-image-upload-request.dto';
@@ -500,13 +500,13 @@ export class LearnController {
     });
   }
 
-  @ApiOperation({ summary: 'Create a scenario voice' })
+  @ApiOperation({ summary: 'Create scenario voices' })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
   @Post('scenarios/voices')
-  async createScenarioVoice(
-    @Body() createScenarioVoiceDto: CreateScenarioVoiceDto,
+  async createScenarioVoices(
+    @Body() createScenarioVoicesDto: CreateScenarioVoicesDto,
   ) {
-    return this.scenarioService.createScenarioVoice(createScenarioVoiceDto);
+    return this.scenarioService.createScenarioVoices(createScenarioVoicesDto);
   }
 
   @ApiOperation({ summary: 'Update a scenario voice' })

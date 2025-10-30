@@ -150,6 +150,7 @@ describe('LearnController', () => {
       getScenarioEvents: jest.fn(),
       getScenarioVoices: jest.fn(),
       createScenarioVoice: jest.fn(),
+      createScenarioVoices: jest.fn(),
       updateScenarioVoice: jest.fn(),
       deleteCoverImage: jest.fn(),
     };
@@ -1104,29 +1105,94 @@ describe('LearnController', () => {
   });
 
   describe('createScenarioVoice', () => {
-    it('should create and return scenario voice', async () => {
+    it('should create and return multiple scenario voices', async () => {
       const createDto = {
-        name: 'New Voice',
-        voiceId: 'openai-new-voice',
-        provider: 'openai',
-        config: { model: 'gpt-4' },
+        voices: [
+          {
+            name: 'New Voice 1',
+            provider: 'openai',
+            config: { model: 'gpt-4', voiceId: 'voice-1' },
+          },
+          {
+            name: 'New Voice 2',
+            provider: 'deepgram',
+            config: { voiceId: 'voice-2' },
+          },
+        ],
       };
-      const createdVoice = {
-        id: 'new-voice-123',
-        ...createDto,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+      const createdVoices = [
+        {
+          id: 'new-voice-123',
+          name: 'New Voice 1',
+          provider: 'openai',
+          config: { model: 'gpt-4', voiceId: 'voice-1' },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: 'new-voice-456',
+          name: 'New Voice 2',
+          provider: 'deepgram',
+          config: { voiceId: 'voice-2' },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
 
-      scenarioService.createScenarioVoice.mockResolvedValue(
+      scenarioService.createScenarioVoices.mockResolvedValue(
+        createdVoices as any,
+      );
+
+      const result = await controller.createScenarioVoices(createDto);
+
+      expect(result).toEqual(createdVoices);
+      expect(scenarioService.createScenarioVoices).toHaveBeenCalledWith(
+        createDto,
+      );
+    });
+
+    it('should handle empty voices array', async () => {
+      const emptyDto = { voices: [] };
+      scenarioService.createScenarioVoices.mockResolvedValue([]);
+
+      const result = await controller.createScenarioVoices(emptyDto);
+
+      expect(result).toEqual([]);
+      expect(scenarioService.createScenarioVoices).toHaveBeenCalledWith(
+        emptyDto,
+      );
+    });
+
+    it('should handle single voice in array', async () => {
+      const singleVoiceDto = {
+        voices: [
+          {
+            name: 'Single Voice',
+            provider: 'openai',
+            config: { model: 'gpt-4', voiceId: 'voice-single' },
+          },
+        ],
+      };
+      const createdVoice = [
+        {
+          id: 'single-voice-123',
+          name: 'Single Voice',
+          provider: 'openai',
+          config: { model: 'gpt-4', voiceId: 'voice-single' },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      scenarioService.createScenarioVoices.mockResolvedValue(
         createdVoice as any,
       );
 
-      const result = await controller.createScenarioVoice(createDto);
+      const result = await controller.createScenarioVoices(singleVoiceDto);
 
       expect(result).toEqual(createdVoice);
-      expect(scenarioService.createScenarioVoice).toHaveBeenCalledWith(
-        createDto,
+      expect(scenarioService.createScenarioVoices).toHaveBeenCalledWith(
+        singleVoiceDto,
       );
     });
   });

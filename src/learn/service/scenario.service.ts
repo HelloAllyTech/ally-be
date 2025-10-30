@@ -11,7 +11,7 @@ import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { ScenariosRepository } from '../repository/scenario.repository';
 
 import { ScenarioVoices } from '../entity/scenario-voices.entity';
-import { CreateScenarioVoiceDto } from '../dto/create-scenario-voice.dto';
+import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
 import { UpdateScenarioVoiceDto } from '../dto/update-scenario-voice.dto';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -564,13 +564,13 @@ export class ScenarioService {
     return scenarioVoice;
   }
 
-  async createScenarioVoice(
-    createScenarioVoiceDto: CreateScenarioVoiceDto,
-  ): Promise<ScenarioVoices> {
-    const scenarioVoice = this.scenarioVoiceRepository.create(
-      createScenarioVoiceDto,
+  async createScenarioVoices(
+    createScenarioVoicesDto: CreateScenarioVoicesDto,
+  ): Promise<ScenarioVoices[]> {
+    const scenarioVoices = this.scenarioVoiceRepository.create(
+      createScenarioVoicesDto.voices,
     );
-    return this.scenarioVoiceRepository.save(scenarioVoice);
+    return this.scenarioVoiceRepository.save(scenarioVoices);
   }
 
   async updateScenarioVoice(
