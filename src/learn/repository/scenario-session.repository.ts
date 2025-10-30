@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 
 @Injectable()
 export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
@@ -183,6 +184,14 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'scenarioSessionEvent',
         '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id',
       )
+      .leftJoin(
+        SessionEvents,
+        'events',
+        'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
+      )
+      .setParameters({
+        visibilityType: SessionEventVisibilityType.ACTIVE,
+      })
       .select('COALESCE(SUM(scenarioSessionEvent.score), 0)', 'totalScore')
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
       .andWhere('scenarioSession.tenantId = :tenantId', {
