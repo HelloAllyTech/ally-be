@@ -137,7 +137,7 @@ export class ScenarioSessionService {
       );
 
     const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
-    // console.log('roomMetadata', JSON.stringify(roomMetadata));
+
     await this.livekitService.createRoom({
       name: `${scenarioSession.roomId}`,
       ttl: startScenarioSessionDto.ttl ?? DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
@@ -170,7 +170,7 @@ export class ScenarioSessionService {
 
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
-      promptData: JSON.parse(JSON.stringify(promptData)),
+      promptData,
     };
 
     const scenarioVoice = await this.scenarioService.getScenarioVoice(voiceId);
@@ -527,7 +527,7 @@ export class ScenarioSessionService {
     const { metadata, ...scenarioDataWithoutMetadata } = scenario;
     const flatScenario = {
       ...scenarioDataWithoutMetadata,
-      ...(metadata ? JSON.parse(JSON.stringify(metadata)) : {}),
+      ...(metadata ?? {}),
     };
 
     const missingFields = SCENARIO_MANDATORY_FIELDS.filter(

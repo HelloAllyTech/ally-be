@@ -359,17 +359,21 @@ export class ScenarioService {
       updatedBy: userId,
     };
 
-    // Update top-level fields if provided
-    if (updateScenarioDto.title !== undefined)
-      updateData.title = updateScenarioDto.title;
-    if (updateScenarioDto.description !== undefined)
-      updateData.description = updateScenarioDto.description;
-    if (updateScenarioDto.coverImageUrl !== undefined)
-      updateData.coverImageUrl = updateScenarioDto.coverImageUrl;
-    if (updateScenarioDto.status !== undefined)
-      updateData.status = updateScenarioDto.status;
-    if (updateScenarioDto.prompt !== undefined)
-      updateData.prompt = updateScenarioDto.prompt;
+    const updateScenarioObjectFields = [
+      'title',
+      'description',
+      'coverImageUrl',
+      'status',
+      'prompt',
+    ];
+
+    for (const field of updateScenarioObjectFields) {
+      if (updateScenarioDto[field as keyof UpdateScenarioDto] !== undefined) {
+        updateData[field as keyof Scenarios] = updateScenarioDto[
+          field as keyof UpdateScenarioDto
+        ] as any;
+      }
+    }
 
     // Handle metadata fields - merge with existing metadata
     const metadataUpdates: Record<string, any> = {};

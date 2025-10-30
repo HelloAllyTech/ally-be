@@ -3,6 +3,7 @@ import { SessionEvents } from '../entity/session-events.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { Injectable } from '@nestjs/common';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
+import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 
 @Injectable()
 export class SessionEventRepository extends Repository<SessionEvents> {
@@ -51,5 +52,24 @@ export class SessionEventRepository extends Repository<SessionEvents> {
     if (pagination?.offset) {
       query.offset(pagination.offset);
     }
+  }
+
+  async getSessionEventsByScenarioId(scenarioId: number) {
+    return this.createQueryBuilder('sessionEvents')
+      .leftJoinAndSelect(
+        ScenarioEvents,
+        'scenarioEvents',
+        'scenarioEvents.eventId = sessionEvents.id',
+      )
+      .where(
+        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
+        {
+          scenarioId,
+        },
+      )
+      .orWhere(
+        `sessionEvents.visibilityType = '${SessionEventVisibilityType.PASSIVE}'`,
+      )
+      .getRawMany();
   }
 }

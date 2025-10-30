@@ -35,23 +35,37 @@ export class SessionEventService {
   async getSessionEventsByScenarioId(
     scenarioId: number,
   ): Promise<SessionEvents[]> {
-    return this.sessionEventRepository
-      .createQueryBuilder('sessionEvents')
-      .leftJoin(
-        ScenarioEvents,
-        'scenarioEvents',
-        'scenarioEvents.eventId = sessionEvents.id',
-      )
-      .where(
-        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
-        {
-          scenarioId,
-        },
-      )
-      .orWhere(
-        `sessionEvents.visibilityType = '${SessionEventVisibilityType.PASSIVE}'`,
-      )
-      .getMany();
+    const events =
+      await this.sessionEventRepository.getSessionEventsByScenarioId(
+        scenarioId,
+      );
+
+    const sessionEvents = events.map((event) => {
+      return {
+        id: event.sessionEvents_id,
+        name: event.sessionEvents_name,
+        description: event.sessionEvents_description,
+        score: event.scenarioEvents_feedbackStatus
+          ? event.scenarioEvents_score
+          : event.sessionEvents_score,
+        emoji: event.scenarioEvents_feedbackStatus
+          ? event.scenarioEvents_emoji
+          : event.sessionEvents_emoji,
+        message: event.scenarioEvents_feedbackStatus
+          ? event.scenarioEvents_message
+          : event.sessionEvents_message,
+        branchInstruction: event.scenarioEvents_feedbackStatus
+          ? event.scenarioEvents_branchInstruction
+          : event.sessionEvents_branchInstruction,
+        detectionType: event.sessionEvents_detectionType,
+        visibilityType: event.sessionEvents_visibilityType,
+        sentences: event.sessionEvents_sentences,
+        speaker: event.sessionEvents_speaker,
+        createdAt: event.sessionEvents_createdAt,
+        updatedAt: event.sessionEvents_updatedAt,
+      };
+    });
+    return sessionEvents;
   }
 
   async updateSessionEvent(

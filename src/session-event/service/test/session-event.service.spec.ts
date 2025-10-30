@@ -68,6 +68,7 @@ describe('SessionEventService', () => {
       update: jest.fn(),
       createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
       getAllSessionEvents: jest.fn(),
+      getSessionEventsByScenarioId: jest.fn(),
     };
 
     const mockEntityManager = {
@@ -228,136 +229,6 @@ describe('SessionEventService', () => {
 
       expect(repository.save).toHaveBeenCalledWith([minimalEventDto]);
       expect(result).toEqual([createdEvent]);
-    });
-  });
-
-  describe('getSessionEventsByScenarioId', () => {
-    it('should get session events by scenario ID successfully', async () => {
-      const scenarioId = 123;
-      const expectedEvents = [mockSessionEvent];
-
-      mockQueryBuilder.getMany.mockResolvedValue(expectedEvents);
-
-      const result = await service.getSessionEventsByScenarioId(scenarioId);
-
-      expect(repository.createQueryBuilder).toHaveBeenCalledWith(
-        'sessionEvents',
-      );
-      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-        ScenarioEvents, // ScenarioEvents class
-        'scenarioEvents',
-        'scenarioEvents.eventId = sessionEvents.id',
-      );
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
-        { scenarioId: scenarioId },
-      );
-      expect(mockQueryBuilder.orWhere).toHaveBeenCalledWith(
-        `sessionEvents.visibilityType = '${SessionEventVisibilityType.PASSIVE}'`,
-      );
-      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
-      expect(result).toEqual(expectedEvents);
-    });
-
-    it('should return empty array when no events found for scenario', async () => {
-      const scenarioId = 999;
-      const expectedEvents: SessionEvents[] = [];
-
-      mockQueryBuilder.getMany.mockResolvedValue(expectedEvents);
-
-      const result = await service.getSessionEventsByScenarioId(scenarioId);
-
-      expect(repository.createQueryBuilder).toHaveBeenCalledWith(
-        'sessionEvents',
-      );
-      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-        ScenarioEvents,
-        'scenarioEvents',
-        'scenarioEvents.eventId = sessionEvents.id',
-      );
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
-        { scenarioId: scenarioId },
-      );
-      expect(mockQueryBuilder.orWhere).toHaveBeenCalledWith(
-        `sessionEvents.visibilityType = '${SessionEventVisibilityType.PASSIVE}'`,
-      );
-      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
-      expect(result).toEqual(expectedEvents);
-    });
-
-    it('should handle zero scenario ID', async () => {
-      const scenarioId = 0;
-      const expectedEvents = [mockSessionEvent];
-
-      mockQueryBuilder.getMany.mockResolvedValue(expectedEvents);
-
-      const result = await service.getSessionEventsByScenarioId(scenarioId);
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
-        { scenarioId: 0 },
-      );
-      expect(result).toEqual(expectedEvents);
-    });
-
-    it('should handle negative scenario ID', async () => {
-      const scenarioId = -1;
-      const expectedEvents: SessionEvents[] = [];
-
-      mockQueryBuilder.getMany.mockResolvedValue(expectedEvents);
-
-      const result = await service.getSessionEventsByScenarioId(scenarioId);
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
-        { scenarioId: -1 },
-      );
-      expect(result).toEqual(expectedEvents);
-    });
-
-    it('should handle query builder error', async () => {
-      const scenarioId = 123;
-      const error = new Error('Query failed');
-
-      mockQueryBuilder.getMany.mockRejectedValue(error);
-
-      await expect(
-        service.getSessionEventsByScenarioId(scenarioId),
-      ).rejects.toThrow('Query failed');
-      expect(repository.createQueryBuilder).toHaveBeenCalledWith(
-        'sessionEvents',
-      );
-    });
-
-    it('should handle very large scenario ID', async () => {
-      const scenarioId = Number.MAX_SAFE_INTEGER;
-      const expectedEvents = [mockSessionEvent];
-
-      mockQueryBuilder.getMany.mockResolvedValue(expectedEvents);
-
-      const result = await service.getSessionEventsByScenarioId(scenarioId);
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
-        { scenarioId: Number.MAX_SAFE_INTEGER },
-      );
-      expect(result).toEqual(expectedEvents);
-    });
-
-    it('should handle decimal scenario ID by converting to integer', async () => {
-      const scenarioId = 123.45;
-      const expectedEvents = [mockSessionEvent];
-
-      mockQueryBuilder.getMany.mockResolvedValue(expectedEvents);
-
-      const result = await service.getSessionEventsByScenarioId(scenarioId);
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
-        { scenarioId: 123.45 },
-      );
-      expect(result).toEqual(expectedEvents);
     });
   });
 
@@ -1051,6 +922,192 @@ describe('SessionEventService', () => {
       );
       expect(repository.find).toHaveBeenCalled();
       expect(mockTransaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getSessionEventsByScenarioId', () => {
+    const mockScenarioId = 1;
+
+    it('should return session events for a scenario with feedbackStatus true', async () => {
+      const mockRawEvents = [
+        {
+          sessionEvents_id: 'event-1',
+          sessionEvents_name: 'Event 1',
+          sessionEvents_description: 'Description 1',
+          sessionEvents_score: 80,
+          sessionEvents_emoji: '🎯',
+          sessionEvents_message: 'Default message',
+          sessionEvents_branchInstruction: 'Default branch',
+          scenarioEvents_feedbackStatus: true,
+          scenarioEvents_score: 90,
+          scenarioEvents_emoji: '🎉',
+          scenarioEvents_message: 'Custom message',
+          scenarioEvents_branchingStatus: true,
+          scenarioEvents_branchInstruction: 'Custom branch',
+        },
+      ];
+
+      repository.getSessionEventsByScenarioId.mockResolvedValue(
+        mockRawEvents as any,
+      );
+
+      const result = await service.getSessionEventsByScenarioId(mockScenarioId);
+
+      expect(result).toEqual([
+        {
+          id: 'event-1',
+          name: 'Event 1',
+          description: 'Description 1',
+          score: 90,
+          emoji: '🎉',
+          message: 'Custom message',
+          branchInstruction: 'Custom branch',
+        },
+      ]);
+      expect(repository.getSessionEventsByScenarioId).toHaveBeenCalledWith(
+        mockScenarioId,
+      );
+    });
+
+    it('should return session events with default values when feedbackStatus false', async () => {
+      const mockRawEvents = [
+        {
+          sessionEvents_id: 'event-2',
+          sessionEvents_name: 'Event 2',
+          sessionEvents_description: 'Description 2',
+          sessionEvents_score: 75,
+          sessionEvents_emoji: '✅',
+          sessionEvents_message: 'Default message 2',
+          sessionEvents_branchInstruction: 'Default branch 2',
+          scenarioEvents_feedbackStatus: false,
+          scenarioEvents_score: 85,
+          scenarioEvents_emoji: '🚀',
+          scenarioEvents_message: 'Custom message 2',
+          scenarioEvents_branchingStatus: false,
+          scenarioEvents_branchInstruction: 'Custom branch 2',
+        },
+      ];
+
+      repository.getSessionEventsByScenarioId.mockResolvedValue(
+        mockRawEvents as any,
+      );
+
+      const result = await service.getSessionEventsByScenarioId(mockScenarioId);
+
+      expect(result).toEqual([
+        {
+          id: 'event-2',
+          name: 'Event 2',
+          description: 'Description 2',
+          score: 75,
+          emoji: '✅',
+          message: 'Default message 2',
+          branchInstruction: 'Default branch 2',
+        },
+      ]);
+    });
+
+    it('should return empty array when no events found', async () => {
+      repository.getSessionEventsByScenarioId.mockResolvedValue([]);
+
+      const result = await service.getSessionEventsByScenarioId(mockScenarioId);
+
+      expect(result).toEqual([]);
+      expect(repository.getSessionEventsByScenarioId).toHaveBeenCalledWith(
+        mockScenarioId,
+      );
+    });
+
+    it('should handle multiple events with mixed feedbackStatus', async () => {
+      const mockRawEvents = [
+        {
+          sessionEvents_id: 'event-1',
+          sessionEvents_name: 'Event 1',
+          sessionEvents_description: 'Description 1',
+          sessionEvents_score: 80,
+          sessionEvents_emoji: '🎯',
+          sessionEvents_message: 'Default 1',
+          sessionEvents_branchInstruction: 'Default branch 1',
+          scenarioEvents_feedbackStatus: true,
+          scenarioEvents_score: 90,
+          scenarioEvents_emoji: '🎉',
+          scenarioEvents_message: 'Custom 1',
+          scenarioEvents_branchingStatus: true,
+          scenarioEvents_branchInstruction: 'Custom branch 1',
+        },
+        {
+          sessionEvents_id: 'event-2',
+          sessionEvents_name: 'Event 2',
+          sessionEvents_description: 'Description 2',
+          sessionEvents_score: 70,
+          sessionEvents_emoji: '✅',
+          sessionEvents_message: 'Default 2',
+          sessionEvents_branchInstruction: 'Default branch 2',
+          scenarioEvents_feedbackStatus: false,
+          scenarioEvents_score: null,
+          scenarioEvents_emoji: null,
+          scenarioEvents_message: null,
+          scenarioEvents_branchingStatus: false,
+          scenarioEvents_branchInstruction: null,
+        },
+      ];
+
+      repository.getSessionEventsByScenarioId.mockResolvedValue(
+        mockRawEvents as any,
+      );
+
+      const result = await service.getSessionEventsByScenarioId(mockScenarioId);
+
+      expect(result).toHaveLength(2);
+      expect(result[0].score).toBe(90); // Custom score
+      expect(result[1].score).toBe(70); // Default score
+    });
+
+    it('should handle repository errors', async () => {
+      const error = new Error('Repository error');
+      repository.getSessionEventsByScenarioId.mockRejectedValue(error);
+
+      await expect(
+        service.getSessionEventsByScenarioId(mockScenarioId),
+      ).rejects.toThrow('Repository error');
+    });
+
+    it('should handle null/undefined values in raw events', async () => {
+      const mockRawEvents = [
+        {
+          sessionEvents_id: 'event-3',
+          sessionEvents_name: null,
+          sessionEvents_description: null,
+          sessionEvents_score: null,
+          sessionEvents_emoji: null,
+          sessionEvents_message: null,
+          sessionEvents_branchInstruction: null,
+          scenarioEvents_feedbackStatus: false,
+          scenarioEvents_score: null,
+          scenarioEvents_emoji: null,
+          scenarioEvents_message: null,
+          scenarioEvents_branchingStatus: false,
+          scenarioEvents_branchInstruction: null,
+        },
+      ];
+
+      repository.getSessionEventsByScenarioId.mockResolvedValue(
+        mockRawEvents as any,
+      );
+
+      const result = await service.getSessionEventsByScenarioId(mockScenarioId);
+
+      expect(result).toEqual([
+        {
+          id: 'event-3',
+          name: null,
+          description: null,
+          score: null,
+          emoji: null,
+          message: null,
+          branchInstruction: null,
+        },
+      ]);
     });
   });
 });

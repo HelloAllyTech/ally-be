@@ -24,6 +24,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     statuses?: string,
   ) {
     const query = this.createQueryBuilder('scenarioSession')
+      .withDeleted()
       .leftJoinAndMapOne(
         'scenarioSession.scenario',
         Scenarios,
@@ -78,6 +79,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
 
   async getAdminScenarioSessions(options: Pagination, statuses?: string) {
     const query = this.createQueryBuilder('scenarioSession')
+      .withDeleted()
       .leftJoinAndMapOne(
         'scenarioSession.scenario',
         Scenarios,
@@ -135,6 +137,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     isAdmin: boolean = false,
   ) {
     const query = this.createQueryBuilder('scenarioSession')
+      .withDeleted()
       .leftJoinAndMapOne(
         'scenarioSession.scenario',
         Scenarios,
@@ -147,6 +150,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'scenarioSessionDetails',
         '"scenarioSessionDetails"."scenarioSessionId"::uuid = scenarioSession.id',
       )
+      .withDeleted()
       .leftJoinAndMapMany(
         'scenarioSession.events',
         ScenarioSessionEvents,

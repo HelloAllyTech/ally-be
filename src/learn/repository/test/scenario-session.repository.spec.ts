@@ -109,6 +109,7 @@ describe('ScenarioSessionRepository', () => {
       getMany: jest.fn(),
       getOne: jest.fn(),
       getRawOne: jest.fn(),
+      withDeleted: jest.fn().mockReturnThis(),
     } as any;
 
     mockEntityManager = {
