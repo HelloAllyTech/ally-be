@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import { SessionEventService } from '../service/session-event.service';
 import {
   ApiBearerAuth,
@@ -8,14 +17,17 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
 import { SessionEvents } from '../entity/session-events.entity';
 import { CreateSessionEventsDto } from '../dto/create-session-events.dto';
 import { UpdateSessionEventDto } from '../dto/update-session-event.dto';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { SessionEventSortBy } from '../enum/session-event-sort-by.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
+import { DeleteSessionEventsDto } from '../dto/delete-session-events.dto';
+
 @ApiTags('SessionEvents')
 @ApiBearerAuth()
 @ApiSecurity('access-token')
@@ -25,9 +37,9 @@ export class SessionEventController {
 
   @ApiOperation({ summary: 'Create session events' })
   @ApiBody({ type: CreateSessionEventsDto })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
   @Post()
-  createSessionEvents(
+  async createSessionEvents(
     @Body() createEventsDto: CreateSessionEventsDto,
   ): Promise<SessionEvents[]> {
     return this.sessionEventService.createSessionEvents(createEventsDto.events);
@@ -35,9 +47,9 @@ export class SessionEventController {
 
   @ApiOperation({ summary: 'Update Session Event by id' })
   @ApiBody({ type: UpdateSessionEventDto })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
   @Put('events/:id')
-  updateSessionEvents(
+  async updateSessionEvents(
     @Param('id') id: string,
     @Body() updateEventsDto: UpdateSessionEventDto,
   ): Promise<boolean> {
@@ -50,6 +62,12 @@ export class SessionEventController {
     required: false,
     enum: SessionEventVisibilityType,
     description: 'Filter by session event visibility type',
+  })
+  @ApiQuery({
+    name: 'searchName',
+    required: false,
+    type: String,
+    description: 'Search by session event name',
   })
   @ApiQuery({
     name: 'limit',
@@ -75,20 +93,37 @@ export class SessionEventController {
     enum: SortOrder,
     description: 'Sort order',
   })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_SESSION_EVENTS])
   @Get()
-  getAllSessionEvents(
+  async getAllSessionEvents(
     @Query('visibilityType') visibilityType?: SessionEventVisibilityType,
+    @Query('searchName') searchName?: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
     @Query('sortBy') sortBy: SessionEventSortBy = SessionEventSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<{ data: SessionEvents[] }> {
-    return this.sessionEventService.getAllSessionEvents(visibilityType, {
-      limit,
-      offset,
-      sortBy,
-      order,
-    });
+    return this.sessionEventService.getAllSessionEvents(
+      visibilityType,
+      searchName,
+      {
+        limit,
+        offset,
+        sortBy,
+        order,
+      },
+    );
+  }
+
+  @ApiOperation({ summary: 'Delete session events' })
+  @ApiBody({ type: DeleteSessionEventsDto })
+  @AuthPermissions([PERMISSIONS.DELETE_SESSION_EVENTS])
+  @Delete('events')
+  async deleteSessionEvents(
+    @Body() deleteEventsDto: DeleteSessionEventsDto,
+  ): Promise<boolean> {
+    return this.sessionEventService.deleteSessionEvents(
+      deleteEventsDto.eventIds,
+    );
   }
 }

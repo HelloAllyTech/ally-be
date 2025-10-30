@@ -1,4 +1,9 @@
-import { Logger, LogLevel, ValidationPipe } from '@nestjs/common';
+import {
+  Logger,
+  LogLevel,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as express from 'express';
@@ -46,6 +51,9 @@ async function bootstrap() {
     app.use(express.urlencoded({ limit: '1mb', extended: true }));
 
     app.setGlobalPrefix('api');
+    app.enableVersioning({
+      type: VersioningType.URI,
+    });
     app.useGlobalPipes(new ValidationPipe({ transform: true }));
     app.use(helmet());
     // remove x-powered-by header

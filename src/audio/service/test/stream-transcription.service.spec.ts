@@ -513,7 +513,6 @@ describe('StreamTranscriptionService', () => {
 
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '456',
-        'counselor',
         'tenant-123',
       );
     });

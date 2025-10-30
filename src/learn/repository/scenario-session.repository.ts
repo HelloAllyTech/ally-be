@@ -24,6 +24,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     statuses?: string,
   ) {
     const query = this.createQueryBuilder('scenarioSession')
+      .withDeleted()
       .leftJoinAndMapOne(
         'scenarioSession.scenario',
         Scenarios,
@@ -78,6 +79,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
 
   async getAdminScenarioSessions(options: Pagination, statuses?: string) {
     const query = this.createQueryBuilder('scenarioSession')
+      .withDeleted()
       .leftJoinAndMapOne(
         'scenarioSession.scenario',
         Scenarios,
@@ -135,6 +137,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     isAdmin: boolean = false,
   ) {
     const query = this.createQueryBuilder('scenarioSession')
+      .withDeleted()
       .leftJoinAndMapOne(
         'scenarioSession.scenario',
         Scenarios,
@@ -147,6 +150,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'scenarioSessionDetails',
         '"scenarioSessionDetails"."scenarioSessionId"::uuid = scenarioSession.id',
       )
+      .withDeleted()
       .leftJoinAndMapMany(
         'scenarioSession.events',
         ScenarioSessionEvents,
@@ -185,13 +189,13 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'events',
         'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
       )
-      .select('COALESCE(SUM(events.score), 0)', 'totalScore')
+      .setParameters({
+        visibilityType: SessionEventVisibilityType.ACTIVE,
+      })
+      .select('COALESCE(SUM(scenarioSessionEvent.score), 0)', 'totalScore')
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
       .andWhere('scenarioSession.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
-      })
-      .setParameters({
-        visibilityType: SessionEventVisibilityType.ACTIVE,
       })
       .getRawOne();
 

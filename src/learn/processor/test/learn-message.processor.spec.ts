@@ -130,6 +130,25 @@ describe('LearnMessageProcessor', () => {
       );
     });
 
+    it('should skip processing for preview scenario rooms', async () => {
+      const previewMessageData: LearnMessageAndEventMessage = {
+        ...mockMessageData,
+        room_id: 'preview-test-session-123',
+      };
+
+      await processor.process(previewMessageData);
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        `Processing learn message: ${JSON.stringify(previewMessageData)}`,
+      );
+      expect(
+        scenarioSessionService.getScenarioSessionByRoomId,
+      ).not.toHaveBeenCalled();
+      expect(
+        scenarioSessionService.addScenarioSessionMessage,
+      ).not.toHaveBeenCalled();
+    });
+
     it('should handle scenario session not found', async () => {
       scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
         null as any,

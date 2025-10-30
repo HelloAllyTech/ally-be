@@ -20,6 +20,11 @@ export class LearnEventProcessor extends BaseEventProcessor {
     this.logger.info(`Processing learn event: ${JSON.stringify(data)}`);
 
     const { room_id, data: learnData } = data;
+
+    if (room_id.startsWith('preview-')) {
+      return;
+    }
+
     const { event } = learnData;
 
     try {

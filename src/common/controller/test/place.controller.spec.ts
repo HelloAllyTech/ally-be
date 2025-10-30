@@ -3,6 +3,8 @@ import { BadRequestException } from '@nestjs/common';
 import { PlaceController } from '../place.controller';
 import { PlaceService } from '../../service/place.service';
 import { Place } from '../../entities/place.entity';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 describe('PlaceController', () => {
   let controller: PlaceController;
@@ -23,6 +25,10 @@ describe('PlaceController', () => {
     total: 1,
   };
 
+  const mockPermissionsService = {
+    getUserPermissions: jest.fn(),
+  };
+
   beforeEach(async () => {
     mockPlaceService = {
       searchCities: jest.fn(),
@@ -31,7 +37,13 @@ describe('PlaceController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [PlaceController],
-      providers: [{ provide: PlaceService, useValue: mockPlaceService }],
+      providers: [
+        { provide: PlaceService, useValue: mockPlaceService },
+        {
+          provide: PermissionsService,
+          useValue: mockPermissionsService,
+        },
+      ],
     }).compile();
 
     controller = module.get<PlaceController>(PlaceController);
@@ -86,6 +98,9 @@ describe('PlaceController', () => {
       const page = 1;
       const limit = 10;
       mockPlaceService.listPlaces.mockResolvedValue(mockListResponse);
+      mockPermissionsService.getUserPermissions.mockResolvedValue([
+        PERMISSIONS.VIEW_PLACES,
+      ]);
 
       const result = await controller.listPlaces(page, limit);
 

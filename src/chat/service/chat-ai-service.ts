@@ -25,7 +25,7 @@ import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.se
 import { Chat } from 'src/common/entities/chat.entity';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
-import { UserService } from 'src/user/user.service';
+import { UserService } from 'src/user/service/user.service';
 import { NotificationService } from 'src/notification/service/notification.service';
 
 @Injectable()
@@ -84,7 +84,6 @@ export class ChatAiService {
 
       this.setAuthContext({
         userId: chat.counselorId!,
-        role: UserRole.COUNSELOR,
         tenantId: chat.tenantId,
       });
 
@@ -129,9 +128,9 @@ export class ChatAiService {
 
       this.setAuthContext({
         userId: chat.counselorId!,
-        role: UserRole.COUNSELOR,
         tenantId: chat.tenantId,
       });
+
       const formattedMessages = messages.map(async (message) => {
         const encryptedContent = await this.cryptoService.encrypt(
           message.content,
@@ -201,14 +200,9 @@ export class ChatAiService {
     }
   }
 
-  setAuthContext(context: {
-    userId: number;
-    role: UserRole;
-    tenantId: string;
-  }) {
+  setAuthContext(context: { userId: number; tenantId: string }) {
     ExecutionManager.setAuthContext(
       context.userId.toString(),
-      context.role,
       context.tenantId,
     );
   }

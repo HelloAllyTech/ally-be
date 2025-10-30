@@ -19,7 +19,7 @@ import {
   UserRole,
 } from '../../common/constants/user.constants';
 import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
-import { UserService } from 'src/user/user.service';
+import { UserService } from 'src/user/service/user.service';
 import { EXOTEL_SAMPLE_RATE } from '../constants/audio-ingest.constants';
 
 @Injectable()
@@ -308,7 +308,6 @@ export class ExotelConferenceCallService implements AudioIngestInterface {
   setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
-      session.role,
       session.tenantId,
     );
   }

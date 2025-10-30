@@ -109,6 +109,7 @@ describe('ScenarioSessionRepository', () => {
       getMany: jest.fn(),
       getOne: jest.fn(),
       getRawOne: jest.fn(),
+      withDeleted: jest.fn().mockReturnThis(),
     } as any;
 
     mockEntityManager = {
@@ -644,13 +645,8 @@ describe('ScenarioSessionRepository', () => {
         'scenarioSessionEvent',
         '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id',
       );
-      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-        SessionEvents,
-        'events',
-        'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
-      );
       expect(mockQueryBuilder.select).toHaveBeenCalledWith(
-        'COALESCE(SUM(events.score), 0)',
+        'COALESCE(SUM(scenarioSessionEvent.score), 0)',
         'totalScore',
       );
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
@@ -661,9 +657,6 @@ describe('ScenarioSessionRepository', () => {
         'scenarioSession.tenantId = :tenantId',
         { tenantId: mockTenantId },
       );
-      expect(mockQueryBuilder.setParameters).toHaveBeenCalledWith({
-        visibilityType: SessionEventVisibilityType.ACTIVE,
-      });
     });
 
     it('should handle null score result', async () => {

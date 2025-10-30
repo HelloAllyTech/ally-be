@@ -34,6 +34,8 @@ import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -58,6 +60,7 @@ export class MicrophoneChatGateway
     private jwtService: JwtService,
     private configService: AppConfigService,
     private broadcastMessageService: BroadcastMessageService,
+    private permissionValidator: PermissionValidator,
   ) {}
 
   @WebSocketServer() server!: Server;
@@ -179,18 +182,21 @@ export class MicrophoneChatGateway
         secret: this.configService.jwt.accessToken.secret,
       });
 
-      if (payload.role !== UserRole.COUNSELOR) {
+      const userId = parseInt(payload.sub);
+      const hasAccess = await this.permissionValidator.validatePermissions(
+        userId,
+        [PERMISSIONS.START_MICROPHONE_CHAT],
+      );
+
+      if (!hasAccess) {
         throw new UnauthorizedException(
-          `User ${payload.sub} is not a counselor`,
+          `User ${payload.sub} does not have permission to start microphone chat`,
         );
       }
-
-      const userId = parseInt(payload.sub);
 
       const user = {
         id: userId,
         username: payload.username,
-        role: payload.role,
         tenantId: payload.tenantId,
       };
 
@@ -440,7 +446,6 @@ export class MicrophoneChatGateway
   setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
-      session.role,
       session.tenantId,
     );
   }
