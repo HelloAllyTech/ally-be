@@ -18,4 +18,13 @@ export class ScenarioSessionEvents extends BaseEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
+
+  @Column({ nullable: true })
+  score?: number;
+
+  @Column({ nullable: true })
+  emoji?: string;
+
+  @Column({ nullable: true })
+  message?: string;
 }

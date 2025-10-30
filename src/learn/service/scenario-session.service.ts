@@ -35,6 +35,7 @@ import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
 import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { ScenarioEvents } from '../entity/scenario-events.entity';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -457,6 +458,36 @@ export class ScenarioSessionService {
     event: LearnEventData,
   ) {
     await this.dataSource.transaction(async (entityManager) => {
+      const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
+      const scenarioEvent = await scenarioEventsRepo.findOne({
+        where: {
+          scenarioId: scenarioSession.scenarioId,
+          eventId: event.event_id,
+        },
+      });
+
+      const eventsRepo = entityManager.getRepository(SessionEvents);
+      const sessionEvent = await eventsRepo.findOne({
+        where: {
+          id: event.event_id,
+        },
+      });
+
+      let scenarioSessionEventData;
+      if (scenarioEvent?.feedbackStatus) {
+        scenarioSessionEventData = {
+          score: scenarioEvent.score,
+          emoji: scenarioEvent.emoji,
+          message: scenarioEvent.message,
+        };
+      } else {
+        scenarioSessionEventData = {
+          score: sessionEvent?.score,
+          emoji: sessionEvent?.emoji,
+          message: sessionEvent?.message,
+        };
+      }
+
       const scenarioSessionEventsRepo = entityManager.getRepository(
         ScenarioSessionEvents,
       );
@@ -465,22 +496,19 @@ export class ScenarioSessionService {
         eventId: event.event_id,
         occurredAt: event.timestamp,
         tenantId: scenarioSession.tenantId,
+        ...scenarioSessionEventData,
       });
       const savedScenarioSessionEvent =
         await scenarioSessionEventsRepo.save(scenarioSessionEvent);
 
-      if (scenarioSession.status === ScenarioSessionStatus.ENDED) {
-        const eventRepo = entityManager.getRepository(SessionEvents);
-        const sessionEvent = await eventRepo.findOne({
-          where: {
-            id: event.event_id,
-          },
-        });
-
+      if (
+        scenarioSession.status === ScenarioSessionStatus.ENDED &&
+        sessionEvent?.visibilityType === SessionEventVisibilityType.ACTIVE
+      ) {
         const scenrioSessionRepo =
           entityManager.getRepository(ScenarioSessions);
         await scenrioSessionRepo.update(scenarioSession.id, {
-          score: () => `score + ${sessionEvent?.score ?? 0}`,
+          score: () => `score + ${scenarioSessionEventData?.score ?? 0}`,
         });
       }
       return savedScenarioSessionEvent;
