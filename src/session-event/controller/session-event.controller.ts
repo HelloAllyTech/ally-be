@@ -64,6 +64,12 @@ export class SessionEventController {
     description: 'Filter by session event visibility type',
   })
   @ApiQuery({
+    name: 'searchName',
+    required: false,
+    type: String,
+    description: 'Search by session event name',
+  })
+  @ApiQuery({
     name: 'limit',
     required: false,
     type: Number,

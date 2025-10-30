@@ -84,7 +84,7 @@ describe('ScenarioVoicesRepository', () => {
         'scenarioVoice.createdAt',
         'ASC',
       );
-      expect(queryBuilder.offset).toHaveBeenCalledWith(0);
+      expect(queryBuilder.offset).not.toHaveBeenCalled();
       expect(queryBuilder.limit).toHaveBeenCalledWith(10);
       expect(queryBuilder.getMany).toHaveBeenCalled();
     });
@@ -200,7 +200,7 @@ describe('ScenarioVoicesRepository', () => {
       } as any);
 
       expect(queryBuilder.limit).not.toHaveBeenCalled();
-      expect(queryBuilder.offset).toHaveBeenCalledWith(0);
+      expect(queryBuilder.offset).not.toHaveBeenCalled();
       expect(queryBuilder.getMany).toHaveBeenCalled();
     });
 
@@ -212,8 +212,7 @@ describe('ScenarioVoicesRepository', () => {
         offset: 0,
       } as any);
 
-      // offset(0) should be applied now (fixed bug)
-      expect(queryBuilder.offset).toHaveBeenCalledWith(0);
+      expect(queryBuilder.offset).not.toHaveBeenCalled();
       expect(queryBuilder.limit).toHaveBeenCalledWith(10);
     });
 

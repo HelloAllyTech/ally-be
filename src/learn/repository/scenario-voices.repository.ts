@@ -30,10 +30,10 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     query: SelectQueryBuilder<ScenarioVoices>,
     options: Pagination,
   ) {
-    if (options.offset !== undefined && options.offset !== null) {
+    if (options.offset) {
       query.offset(options.offset);
     }
-    if (options.limit !== undefined && options.limit !== null) {
+    if (options.limit) {
       query.limit(options.limit);
     }
   }
