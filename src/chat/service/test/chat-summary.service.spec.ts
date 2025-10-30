@@ -9,13 +9,13 @@ import {
   ChatSummaryStatus,
 } from 'src/common/entities/chat.entity';
 import { TokenUser } from 'src/auth/type/auth.types';
-import { UserRole } from 'src/common/constants/user.constants';
 import {
   AudioChatProvider,
   AudioChatPlatform,
 } from 'src/common/constants/chat.constants';
 import { SettingsService } from 'src/settings/service/settings.service';
-import { UserService } from 'src/user/user.service';
+import { UserService } from 'src/user/service/user.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 describe('ChatSummaryService', () => {
   let service: ChatSummaryService;
@@ -28,11 +28,13 @@ describe('ChatSummaryService', () => {
   let mockUserService: {
     get: jest.Mock;
   };
+  let mockPermissionValidator: {
+    validatePermissions: jest.Mock;
+  };
 
   const mockTokenUser: TokenUser = {
     id: 2, // counselor ID
     username: 'testuser',
-    role: UserRole.COUNSELOR,
     tenantId: 'test-tenant',
   };
 
@@ -164,6 +166,10 @@ describe('ChatSummaryService', () => {
       }),
     };
 
+    mockPermissionValidator = {
+      validatePermissions: jest.fn().mockResolvedValue(true),
+    };
+
     const module = await Test.createTestingModule({
       providers: [
         ChatSummaryService,
@@ -179,6 +185,10 @@ describe('ChatSummaryService', () => {
           provide: UserService,
           useValue: mockUserService,
         },
+        {
+          provide: PermissionValidator,
+          useValue: mockPermissionValidator,
+        },
       ],
     }).compile();
 
@@ -187,6 +197,8 @@ describe('ChatSummaryService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    // Reset permission validator mock to return true by default
+    mockPermissionValidator.validatePermissions.mockResolvedValue(true);
   });
 
   describe('exportSummary', () => {
@@ -221,7 +233,6 @@ describe('ChatSummaryService', () => {
       const counselorUser: TokenUser = {
         ...mockTokenUser,
         id: 2,
-        role: UserRole.COUNSELOR,
       };
 
       mockChatService.getChatWithCallDetails.mockResolvedValue({
@@ -298,7 +309,6 @@ describe('ChatSummaryService', () => {
       const unauthorizedUser: TokenUser = {
         id: 999, // Different user ID
         username: 'unauthorized',
-        role: UserRole.COUNSELOR,
         tenantId: 'test-tenant',
       };
 
@@ -306,6 +316,9 @@ describe('ChatSummaryService', () => {
         ...mockChat,
         counselorId: 888, // Different counselor ID
       };
+
+      // Mock validatePermissions to return false for unauthorized user
+      mockPermissionValidator.validatePermissions.mockResolvedValue(false);
 
       mockChatService.getChatWithCallDetails.mockResolvedValue({
         chat: chatWithDifferentCounselor,
@@ -324,7 +337,6 @@ describe('ChatSummaryService', () => {
       const superAdminUser: TokenUser = {
         id: 999,
         username: 'superadmin',
-        role: UserRole.SUPER_ADMIN,
         tenantId: 'test-tenant',
       };
 
@@ -332,6 +344,9 @@ describe('ChatSummaryService', () => {
         ...mockChat,
         counselorId: 888, // Different counselor ID
       };
+
+      // Ensure validatePermissions returns true for super admin
+      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
 
       mockChatService.getChatWithCallDetails.mockResolvedValue({
         chat: chatWithDifferentCounselor,

@@ -1,4 +1,10 @@
-import { IsString, IsNotEmpty, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsArray,
+  ArrayNotEmpty,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '../../common/constants/user.constants';
 
@@ -36,4 +42,23 @@ export class RemoveUserRoleDto {
   @IsNumber()
   @IsNotEmpty()
   userId!: number;
+}
+export class ChangeUserRolesDto {
+  @ApiProperty({
+    description: 'User ID whose roles need to be changed',
+    example: 5,
+  })
+  @IsNotEmpty()
+  @IsNumber()
+  userId!: number;
+
+  @ApiProperty({
+    description: 'Array of group IDs (roles) to assign',
+    example: [1, 2],
+    type: [Number],
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsNumber({}, { each: true })
+  groupIds!: number[];
 }

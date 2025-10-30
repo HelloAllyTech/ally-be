@@ -8,8 +8,8 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { UserRole } from 'src/common/constants/user.constants';
-import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @ApiTags('LiveKit')
 @ApiBearerAuth()
@@ -19,28 +19,28 @@ export class LiveKitController {
   constructor(private readonly liveKitService: LiveKitService) {}
 
   @Post('token')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_LIVEKIT])
   @ApiOperation({ summary: 'Generate LiveKit token' })
   async generateToken(@Body() joinRoomDto: JoinRoomDto) {
     return this.liveKitService.generateAccessToken(joinRoomDto);
   }
 
   @Post('rooms')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_LIVEKIT])
   @ApiOperation({ summary: 'Create LiveKit room' })
   async createRoom(@Body() createRoomDto: CreateRoomDto) {
     return this.liveKitService.createRoom(createRoomDto);
   }
 
   @Get('rooms')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_LIVEKIT])
   @ApiOperation({ summary: 'List LiveKit rooms' })
   async listRooms() {
     return this.liveKitService.listRooms();
   }
 
   @Delete('rooms/:roomName')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_LIVEKIT])
   @ApiOperation({ summary: 'Delete LiveKit room' })
   async deleteRoom(@Param('roomName') roomName: string) {
     await this.liveKitService.deleteRoom(roomName);
@@ -48,14 +48,14 @@ export class LiveKitController {
   }
 
   @Get('rooms/:roomName/participants')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_LIVEKIT])
   @ApiOperation({ summary: 'List participants in a LiveKit room' })
   async listParticipants(@Param('roomName') roomName: string) {
     return this.liveKitService.listParticipants(roomName);
   }
 
   @Delete('rooms/:roomName/participants/:participantIdentity')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_LIVEKIT])
   @ApiOperation({ summary: 'Remove participant from LiveKit room' })
   async removeParticipant(
     @Param('roomName') roomName: string,
@@ -65,7 +65,7 @@ export class LiveKitController {
   }
 
   @Post('rooms/:roomName/agent-dispatch')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_LIVEKIT])
   @ApiOperation({ summary: 'Dispatch agent to LiveKit room' })
   async agentDispatch(
     @Param('roomName') roomName: string,

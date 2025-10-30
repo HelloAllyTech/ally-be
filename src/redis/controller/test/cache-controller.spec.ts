@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CacheController } from '../../controller/cache.controller';
 import { RedisService } from '../../service/redis.service';
+import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
+import { Reflector } from '@nestjs/core';
+import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 
 describe('CacheController', () => {
   let controller: CacheController;
@@ -11,11 +15,31 @@ describe('CacheController', () => {
     deleteByPattern: jest.fn(),
   } as any;
 
+  const mockPermissionsService = {
+    getUserPermissions: jest.fn(),
+  };
+
+  const mockReflector = {
+    get: jest.fn(),
+    getAll: jest.fn(),
+    getAllAndOverride: jest.fn(),
+    getAllAndMerge: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [CacheController],
-      providers: [{ provide: RedisService, useValue: mockRedisService }],
-    }).compile();
+      providers: [
+        { provide: RedisService, useValue: mockRedisService },
+        { provide: PermissionsService, useValue: mockPermissionsService },
+        { provide: Reflector, useValue: mockReflector },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn(() => true) })
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: jest.fn(() => true) })
+      .compile();
 
     controller = module.get<CacheController>(CacheController);
     redisService = module.get(RedisService);
@@ -35,7 +59,7 @@ describe('CacheController', () => {
       expect(result).toEqual(['k1', 'k2']);
     });
 
-    it('propagates original error from redisService', async () => {
+    it('propagates error from redisService (catch block does not catch async errors)', async () => {
       redisService.getByPattern.mockRejectedValueOnce(new Error('boom'));
 
       await expect(
@@ -63,7 +87,7 @@ describe('CacheController', () => {
       expect(result).toEqual(['user:1', 'user:2']);
     });
 
-    it('propagates original error from redisService', async () => {
+    it('propagates error from redisService (catch block does not catch async errors)', async () => {
       redisService.deleteByPattern.mockRejectedValueOnce(new Error('nope'));
 
       await expect(
@@ -96,6 +120,106 @@ describe('CacheController', () => {
       const result = await controller.deleteKeys({} as any);
       expect(redisService.deleteByPattern).toHaveBeenCalledWith(undefined);
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('error handling', () => {
+    it('should handle Redis connection errors in getKeys', async () => {
+      const error = new Error('Redis connection failed');
+      redisService.getByPattern.mockRejectedValueOnce(error);
+
+      await expect(
+        controller.getKeys({ pattern: 'test:*' } as any),
+      ).rejects.toThrow('Redis connection failed');
+    });
+
+    it('should handle Redis connection errors in deleteKeys', async () => {
+      const error = new Error('Redis connection failed');
+      redisService.deleteByPattern.mockRejectedValueOnce(error);
+
+      await expect(
+        controller.deleteKeys({ pattern: 'test:*' } as any),
+      ).rejects.toThrow('Redis connection failed');
+    });
+
+    it('should handle timeout errors in getKeys', async () => {
+      const error = new Error('Redis timeout');
+      redisService.getByPattern.mockRejectedValueOnce(error);
+
+      await expect(
+        controller.getKeys({ pattern: 'test:*' } as any),
+      ).rejects.toThrow('Redis timeout');
+    });
+
+    it('should handle timeout errors in deleteKeys', async () => {
+      const error = new Error('Redis timeout');
+      redisService.deleteByPattern.mockRejectedValueOnce(error);
+
+      await expect(
+        controller.deleteKeys({ pattern: 'test:*' } as any),
+      ).rejects.toThrow('Redis timeout');
+    });
+  });
+
+  describe('pattern validation', () => {
+    it('should handle wildcard patterns in getKeys', async () => {
+      redisService.getByPattern.mockResolvedValueOnce(['key1', 'key2']);
+
+      const result = await controller.getKeys({ pattern: '*:*' } as any);
+      expect(redisService.getByPattern).toHaveBeenCalledWith('*:*');
+      expect(result).toEqual(['key1', 'key2']);
+    });
+
+    it('should handle specific patterns in deleteKeys', async () => {
+      redisService.deleteByPattern.mockResolvedValueOnce([
+        'deleted1',
+        'deleted2',
+      ]);
+
+      const result = await controller.deleteKeys({
+        pattern: 'user:123:*',
+      } as any);
+      expect(redisService.deleteByPattern).toHaveBeenCalledWith('user:123:*');
+      expect(result).toEqual(['deleted1', 'deleted2']);
+    });
+
+    it('should handle empty pattern in getKeys', async () => {
+      redisService.getByPattern.mockResolvedValueOnce([]);
+
+      const result = await controller.getKeys({ pattern: '' } as any);
+      expect(redisService.getByPattern).toHaveBeenCalledWith('');
+      expect(result).toEqual([]);
+    });
+
+    it('should handle empty pattern in deleteKeys', async () => {
+      redisService.deleteByPattern.mockResolvedValueOnce([]);
+
+      const result = await controller.deleteKeys({ pattern: '' } as any);
+      expect(redisService.deleteByPattern).toHaveBeenCalledWith('');
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('performance scenarios', () => {
+    it('should handle large result sets in getKeys', async () => {
+      const largeResultSet = Array.from({ length: 1000 }, (_, i) => `key${i}`);
+      redisService.getByPattern.mockResolvedValueOnce(largeResultSet);
+
+      const result = await controller.getKeys({ pattern: 'large:*' } as any);
+      expect(result).toEqual(largeResultSet);
+      expect(result).toHaveLength(1000);
+    });
+
+    it('should handle large deletion operations in deleteKeys', async () => {
+      const largeDeletionSet = Array.from(
+        { length: 500 },
+        (_, i) => `deleted${i}`,
+      );
+      redisService.deleteByPattern.mockResolvedValueOnce(largeDeletionSet);
+
+      const result = await controller.deleteKeys({ pattern: 'temp:*' } as any);
+      expect(result).toEqual(largeDeletionSet);
+      expect(result).toHaveLength(500);
     });
   });
 });

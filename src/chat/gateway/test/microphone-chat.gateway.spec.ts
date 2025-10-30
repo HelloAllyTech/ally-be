@@ -19,6 +19,8 @@ import { MessageBrokerChannel } from '../../../common/constants/message-broker.c
 import { MessageType, Message } from '../../../common/entities/message.entity';
 import { UserChatSessionData } from '../../type/chat.type';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
+import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
 
 // Mock ExecutionManager
 jest.mock('../../../common/execution/execution-manager', () => ({
@@ -70,6 +72,8 @@ describe('MicrophoneChatGateway', () => {
   let mockPublisher: any;
   let mockJwtService: any;
   let mockBroadcastMessageService: any;
+  let mockPermissionsService: any;
+  let mockPermissionValidator: any;
   let mockSocket: any;
   let mockServer: any;
 
@@ -141,6 +145,14 @@ describe('MicrophoneChatGateway', () => {
       broadcastUserDisconnectedMessage: jest.fn(),
     };
 
+    mockPermissionsService = {
+      getUserPermissions: jest.fn(),
+    };
+
+    mockPermissionValidator = {
+      validatePermissions: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MicrophoneChatGateway,
@@ -173,6 +185,14 @@ describe('MicrophoneChatGateway', () => {
         {
           provide: BroadcastMessageService,
           useValue: mockBroadcastMessageService,
+        },
+        {
+          provide: PermissionsService,
+          useValue: mockPermissionsService,
+        },
+        {
+          provide: PermissionValidator,
+          useValue: mockPermissionValidator,
         },
       ],
     }).compile();
@@ -344,13 +364,14 @@ describe('MicrophoneChatGateway', () => {
       expect(mockSocket.disconnect).toHaveBeenCalled();
     });
 
-    it('should disconnect client when user is not a counselor', async () => {
+    it('should disconnect client when user does not have permission', async () => {
       mockJwtService.verifyAsync.mockResolvedValue({
         sub: '1',
         username: 'testuser',
         role: 'CLIENT',
         tenantId: 'tenant123',
       });
+      mockPermissionValidator.validatePermissions.mockResolvedValue(false);
 
       await gatewayPrivate.authenticateClient(mockSocket);
 
@@ -364,6 +385,7 @@ describe('MicrophoneChatGateway', () => {
         role: UserRole.COUNSELOR,
         tenantId: 'tenant123',
       });
+      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
 
       await gatewayPrivate.authenticateClient(mockSocket);
 
@@ -583,7 +605,6 @@ describe('MicrophoneChatGateway', () => {
 
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '1',
-        UserRole.COUNSELOR,
         'tenant123',
       );
     });

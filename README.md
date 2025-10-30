@@ -1,4 +1,3 @@
-
 # 📞 Helpline Counseling Platform
 
 A real-time mental health counseling platform built with NestJS that connects patients with counselors through voice communication. Now upgraded with AI-powered call transcription, live nudges, summaries, and analytics.
@@ -34,7 +33,7 @@ A real-time mental health counseling platform built with NestJS that connects pa
                               |
                               v
                      +--------+--------+
-                     | Signaling Server | 
+                     | Signaling Server |
                      +--------+--------+
                               |
                               v
@@ -59,7 +58,7 @@ A real-time mental health counseling platform built with NestJS that connects pa
                               |
                               v
                    +------------------------+          +-------------------+
-                   | Message and Nudge DB   |          |   Exceptions      | 
+                   | Message and Nudge DB   |          |   Exceptions      |
                    |      (Postgres)        |          |                   |
                    +----------+-------------+          +-------------------+
                               |                                  |
@@ -76,18 +75,18 @@ Slack alerts triggered from any component
 
 ## 🛠️ Technology Stack
 
-| Component         | Tech Used                               |
-|------------------|------------------------------------------|
-| Backend          | NestJS                                   |
-| Database         | PostgreSQL                               |
-| Caching          | Redis                                    |
-| Real-time Comm   | WebSocket (Socket.io), WebRTC, TURN/STUN |
-| Transcription    | Deepgram (WebSocket API)                 |
-| AI Engine        | LLM / internal models                    |
-| Authentication   | JWT, OTP (Twilio, MSG91, Knowlarity)     |
-| Analytics        | PostgreSQL + Metabase                    |
-| Observability    | Winston Logger + Slack alerts            |
-| Documentation    | Swagger/OpenAPI                          |
+| Component      | Tech Used                                |
+| -------------- | ---------------------------------------- |
+| Backend        | NestJS                                   |
+| Database       | PostgreSQL                               |
+| Caching        | Redis                                    |
+| Real-time Comm | WebSocket (Socket.io), WebRTC, TURN/STUN |
+| Transcription  | Deepgram (WebSocket API)                 |
+| AI Engine      | LLM / internal models                    |
+| Authentication | JWT, OTP (Twilio, MSG91, Knowlarity)     |
+| Analytics      | PostgreSQL + Metabase                    |
+| Observability  | Winston Logger + Slack alerts            |
+| Documentation  | Swagger/OpenAPI                          |
 
 ---
 
@@ -113,7 +112,7 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_USERNAME=postgres
 DB_PASSWORD=postgres
-DB_DATABASE=your_database 
+DB_DATABASE=your_database
 
 # AI Service
 AI_SERVICE_API_URL=http://localhost:3001
@@ -192,6 +191,9 @@ ALLOWED_ORIGINS=allowed-origins
 
 # APP base URL
 APP_BASE_URL=app-base-url
+
+# LEARN MEDIA UPLOAD BUCKET
+LEARN_MEDIA_PUBLIC_S3_BUCKET=learn-media-public-s3-bucket
 ```
 
 ---
@@ -209,18 +211,21 @@ APP_BASE_URL=app-base-url
 ## 🧭 Usage Guide
 
 ### Development
+
 ```bash
 npm install
 npm run start:dev
 ```
 
 ### Production
+
 ```bash
 npm run build
 npm run start:prod
 ```
 
 ### Migrations
+
 ```bash
 npm run migration:run
 ```
@@ -230,6 +235,7 @@ npm run migration:run
 ## 📊 Analytics with Metabase
 
 Call/chat metadata stored in PostgreSQL:
+
 - Call duration
 - Call source (WebRTC / Provider)
 - Keywords/topics
@@ -237,6 +243,7 @@ Call/chat metadata stored in PostgreSQL:
 - Sentiment scores (optional)
 
 Visual dashboards embedded via Metabase:
+
 - Call patterns
 - Nudge effectiveness
 - Error rates
@@ -263,6 +270,7 @@ npm run lint
 ```
 
 Follows:
+
 - NestJS best practices
 - Type safety
 - No unused imports
@@ -277,8 +285,8 @@ MIT
 
 ## 👥 Contributing
 
-1. Fork the repo  
-2. Branch: `feature/<your-name>/<feature>`  
-3. Code and lint: `npm run lint`  
-4. Commit and push  
+1. Fork the repo
+2. Branch: `feature/<your-name>/<feature>`
+3. Code and lint: `npm run lint`
+4. Commit and push
 5. Open a pull request

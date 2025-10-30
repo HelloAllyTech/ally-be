@@ -71,10 +71,14 @@ export const validationSchema = Joi.object({
   LIVEKIT_API_SECRET: Joi.string().required(),
   LIVEKIT_URL: Joi.string().required(),
 
+  SIMULATION_SESSION_SECONDS_PER_CREDIT: Joi.number().required(),
+
   SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: Joi.string().required(),
 
   // CORS ORIGINS
   ALLOWED_ORIGINS: Joi.string().required(),
 
   APP_BASE_URL: Joi.string().required(),
+
+  LEARN_MEDIA_PUBLIC_S3_BUCKET: Joi.string().required(),
 });

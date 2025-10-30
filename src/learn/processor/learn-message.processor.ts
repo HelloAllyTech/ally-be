@@ -22,6 +22,11 @@ export class LearnMessageProcessor extends BaseEventProcessor {
     this.logger.debug(`Processing learn message: ${JSON.stringify(data)}`);
 
     const { room_id, data: learnMessageData } = data;
+
+    if (room_id.startsWith('preview-')) {
+      return;
+    }
+
     const { chat_message } = learnMessageData;
 
     try {

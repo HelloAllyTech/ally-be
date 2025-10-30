@@ -102,6 +102,33 @@ describe('RoomFinishedHandler', () => {
       );
     });
 
+    it('should handle preview scenario room', async () => {
+      const previewEvent: RoomFinishedEvent = {
+        ...mockRoomFinishedEvent,
+        room: {
+          ...mockRoomFinishedEvent.room,
+          name: 'preview-test-session-123',
+        },
+      };
+
+      scenarioSessionService.endPreviewScenario = jest
+        .fn()
+        .mockResolvedValue(undefined);
+
+      await handler.handle(previewEvent);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Room finished: preview-test-session-123',
+      );
+      expect(scenarioSessionService.endPreviewScenario).toHaveBeenCalledWith(
+        'preview-test-session-123',
+      );
+      expect(
+        scenarioSessionService.getScenarioSessionByRoomId,
+      ).not.toHaveBeenCalled();
+      expect(scenarioSessionService.endScenarioSession).not.toHaveBeenCalled();
+    });
+
     it('should handle getScenarioSessionByRoomId error', async () => {
       const error = new Error('Scenario session not found');
       scenarioSessionService.getScenarioSessionByRoomId.mockRejectedValue(
@@ -219,19 +246,16 @@ describe('RoomFinishedHandler', () => {
         },
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
-        mockScenarioSession,
-      );
-      scenarioSessionService.endScenarioSession.mockResolvedValue({
-        message: 'Scenario session ended successfully',
-      });
-
       await handler.handle(eventWithNullRoomName);
 
       expect(mockLogger.info).toHaveBeenCalledWith('Room finished: null');
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Room name is missing in room finished event',
+      );
       expect(
         scenarioSessionService.getScenarioSessionByRoomId,
-      ).toHaveBeenCalledWith(null);
+      ).not.toHaveBeenCalled();
+      expect(scenarioSessionService.endScenarioSession).not.toHaveBeenCalled();
     });
 
     it('should handle room with undefined name', async () => {
@@ -243,19 +267,16 @@ describe('RoomFinishedHandler', () => {
         },
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
-        mockScenarioSession,
-      );
-      scenarioSessionService.endScenarioSession.mockResolvedValue({
-        message: 'Scenario session ended successfully',
-      });
-
       await handler.handle(eventWithUndefinedRoomName);
 
       expect(mockLogger.info).toHaveBeenCalledWith('Room finished: undefined');
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Room name is missing in room finished event',
+      );
       expect(
         scenarioSessionService.getScenarioSessionByRoomId,
-      ).toHaveBeenCalledWith(undefined);
+      ).not.toHaveBeenCalled();
+      expect(scenarioSessionService.endScenarioSession).not.toHaveBeenCalled();
     });
 
     it('should handle scenario session with all properties', async () => {

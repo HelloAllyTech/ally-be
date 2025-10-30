@@ -5,6 +5,7 @@ import { SettingsController } from '../settings.controller';
 import { SettingsService } from '../../service/settings.service';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { ChatTypes } from '../../../common/constants/chat.constants';
+import { PermissionsService } from '../../../authorization/service/permissions.service';
 
 describe('SettingsController', () => {
   let controller: SettingsController;
@@ -23,11 +24,16 @@ describe('SettingsController', () => {
 
   const allowGuard: CanActivate = { canActivate: () => true };
 
+  const mockPermissionsService = {
+    getUserPermissions: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SettingsController],
       providers: [
         { provide: SettingsService, useValue: mockService },
+        { provide: PermissionsService, useValue: mockPermissionsService },
         Reflector,
       ],
     })

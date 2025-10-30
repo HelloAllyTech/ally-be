@@ -1,4 +1,4 @@
-import { UserRole, UserStatus } from '../constants/user.constants';
+import { UserStatus } from '../constants/user.constants';
 import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 
@@ -19,9 +19,6 @@ export class User extends BaseEntity {
 
   @Column()
   name!: string;
-
-  @Column()
-  role!: UserRole;
 
   @Column()
   status!: UserStatus;

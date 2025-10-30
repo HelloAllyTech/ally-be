@@ -1,6 +1,7 @@
 import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtAuthGuard } from '../../guards/jwt-auth.guard';
+import { Observable, of } from 'rxjs';
 
 // Mock the parent AuthGuard constructor to return a class with a canActivate method on prototype
 const mockCanActivate = jest.fn();
@@ -9,7 +10,9 @@ jest.mock('@nestjs/passport', () => {
   return {
     AuthGuard: jest.fn().mockImplementation(() => {
       return class MockAuthGuard {
-        canActivate(context: any) {
+        canActivate(
+          context: any,
+        ): boolean | Promise<boolean> | Observable<boolean> {
           return mockCanActivate(context);
         }
       };
@@ -75,5 +78,37 @@ describe('JwtAuthGuard', () => {
 
     expect(mockCanActivate).toHaveBeenCalledWith(mockContext);
     expect(result).toBe(true);
+  });
+
+  it('should delegate to super.canActivate when route is not public (observable)', async () => {
+    mockReflector.getAllAndOverride.mockReturnValue(false);
+    const mockObservable = of(true);
+    mockCanActivate.mockReturnValue(mockObservable);
+
+    const result = guard.canActivate(mockContext);
+
+    expect(mockCanActivate).toHaveBeenCalledWith(mockContext);
+    expect(result).toBe(mockObservable);
+  });
+
+  it('should handle false return from super.canActivate', () => {
+    mockReflector.getAllAndOverride.mockReturnValue(false);
+    mockCanActivate.mockReturnValue(false);
+
+    const result = guard.canActivate(mockContext);
+
+    expect(mockCanActivate).toHaveBeenCalledWith(mockContext);
+    expect(result).toBe(false);
+  });
+
+  it('should handle promise rejection from super.canActivate', async () => {
+    mockReflector.getAllAndOverride.mockReturnValue(false);
+    const error = new Error('Authentication failed');
+    mockCanActivate.mockRejectedValue(error);
+
+    await expect(guard.canActivate(mockContext)).rejects.toThrow(
+      'Authentication failed',
+    );
+    expect(mockCanActivate).toHaveBeenCalledWith(mockContext);
   });
 });
