@@ -15,4 +15,22 @@ export class GroupPermissionsService {
 
     return permissions;
   }
+
+  async findByPermissionId(permissionId: number) {
+    return this.groupPermissionsRepository.findByPermissionId(permissionId);
+  }
+
+  async createGroupPermission(groupIds: number[], permissionId: number) {
+    return this.groupPermissionsRepository.createGroupPermission(
+      groupIds,
+      permissionId,
+    );
+  }
+
+  async deleteGroupPermissions(permissionId: number, groupIds?: number[]) {
+    return this.groupPermissionsRepository.deleteGroupPermissions(
+      permissionId,
+      groupIds,
+    );
+  }
 }

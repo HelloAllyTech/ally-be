@@ -116,9 +116,9 @@ describe('UserGroupRepository', () => {
     it('should find user roles using query builder', async () => {
       const userIds = [1, 2, 3];
       const expectedRoles = [
-        { userId: 1, roles: ['ADMIN', 'USER'] },
-        { userId: 2, roles: ['USER'] },
-        { userId: 3, roles: ['MODERATOR'] },
+        { userId: 1, roles: ['ADMIN', 'ADMIN'] },
+        { userId: 2, roles: ['ADMIN'] },
+        { userId: 3, roles: ['LEARNER'] },
       ];
 
       const mockQueryBuilder = {

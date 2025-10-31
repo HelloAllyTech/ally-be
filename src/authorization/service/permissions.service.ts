@@ -1,8 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GroupService } from 'src/authorization/service/group.service';
 import { GroupPermissionsService } from './group-permissions.service';
 import { UserGroupService } from './user-group.service';
+import { PermissionRepository } from '../repository/permissions.repository';
+import { Permission } from 'src/common/entities/permission.entity';
+import {
+  CreatePermissionDto,
+  DeletePermissionDto,
+  DeletePermissionGroupsDto,
+  GrantPermissionToRolesDto,
+} from '../dto/permissions.dto';
 
 @Injectable()
 export class PermissionsService {
@@ -11,6 +23,7 @@ export class PermissionsService {
     private readonly cache: RedisService,
     private readonly groupPermissionsService: GroupPermissionsService,
     private readonly userGroupService: UserGroupService,
+    private readonly permissionRepository: PermissionRepository,
   ) {}
 
   async getUserRoles(userId: number): Promise<string[]> {
@@ -92,5 +105,140 @@ export class PermissionsService {
     }
 
     return [...permissions];
+  }
+
+  async createPermission(
+    createPermissionDto: CreatePermissionDto,
+  ): Promise<Permission> {
+    const existingPermission =
+      await this.permissionRepository.getPermissionByName(
+        createPermissionDto.permissionName,
+      );
+    if (existingPermission) {
+      throw new ConflictException(
+        `Permission "${createPermissionDto.permissionName}" already exists`,
+      );
+    }
+    return this.permissionRepository.createPermission(
+      createPermissionDto.permissionName,
+    );
+  }
+
+  async grantPermissionToRoles(
+    grantPermissionToRolesDto: GrantPermissionToRolesDto,
+  ) {
+    const existingPermission =
+      await this.permissionRepository.getPermissionByName(
+        grantPermissionToRolesDto.permissionName,
+      );
+    if (!existingPermission) {
+      throw new NotFoundException(
+        `Permission "${grantPermissionToRolesDto.permissionName}" doesn't exists`,
+      );
+    }
+    const permissionId = existingPermission?.id;
+
+    const groups = await this.groupService.getGroupsByNames(
+      grantPermissionToRolesDto.roles,
+    );
+
+    //List of group IDs (roles) to which the permission will be granted
+    const groupIds = groups.map((gp) => gp.id);
+
+    const groupPermissions =
+      await this.groupPermissionsService.findByPermissionId(
+        existingPermission.id,
+      );
+    //List of group IDs (roles) that already have this permission
+    const existingGroupIds = groupPermissions.map((gp) => gp.groupId);
+
+    const missingGroupIds = groupIds.filter(
+      (id) => !existingGroupIds.includes(id),
+    );
+
+    if (missingGroupIds.length > 0) {
+      await this.groupPermissionsService.createGroupPermission(
+        missingGroupIds,
+        permissionId,
+      );
+      await Promise.all(
+        missingGroupIds.map((groupId) =>
+          this.cache.del(`group:permissions:${groupId}`),
+        ),
+      );
+    } else {
+      return {
+        message: `Permission "${grantPermissionToRolesDto.permissionName}" already granted to passed roles`,
+      };
+    }
+
+    return {
+      message: `Permission "${grantPermissionToRolesDto.permissionName}" granted to roles`,
+    };
+  }
+
+  async deletePermissionGroups(
+    deletePermissionGroupsDto: DeletePermissionGroupsDto,
+  ) {
+    const existingPermission =
+      await this.permissionRepository.getPermissionByName(
+        deletePermissionGroupsDto.permissionName,
+      );
+    if (!existingPermission) {
+      throw new NotFoundException(
+        `Permission "${deletePermissionGroupsDto.permissionName}" doesn't exists`,
+      );
+    }
+
+    const permissionId = existingPermission.id;
+
+    const groups = await this.groupService.getGroupsByNames(
+      deletePermissionGroupsDto.roles,
+    );
+    //List of group IDs (roles) to be deleted for corresponding to a permission
+    const groupIds = groups.map((gp) => gp.id);
+
+    await this.groupPermissionsService.deleteGroupPermissions(
+      permissionId,
+      groupIds,
+    );
+    await Promise.all(
+      groupIds.map((groupId) => this.cache.del(`group:permissions:${groupId}`)),
+    );
+
+    return {
+      Message: `Permission "${deletePermissionGroupsDto.permissionName}"deleted successfully`,
+    };
+  }
+
+  async deletePermission(deletePermissionDto: DeletePermissionDto) {
+    const existingPermission =
+      await this.permissionRepository.getPermissionByName(
+        deletePermissionDto.permissionName,
+      );
+
+    if (!existingPermission) {
+      throw new NotFoundException(
+        `Permission "${deletePermissionDto.permissionName}" doesn't exists`,
+      );
+    }
+    const permissionId = existingPermission.id;
+
+    const groupPermissions =
+      await this.groupPermissionsService.findByPermissionId(permissionId);
+
+    const groupIds = groupPermissions.map((gp) => gp.groupId);
+
+    await this.groupPermissionsService.deleteGroupPermissions(permissionId);
+
+    await Promise.all(
+      groupIds.map((groupId) => this.cache.del(`group:permissions:${groupId}`)),
+    );
+
+    await this.permissionRepository.deletePermissionById(permissionId);
+
+    return {
+      Message: `Permission "${deletePermissionDto.permissionName}"deleted successfully`,
+    };
   }
 }

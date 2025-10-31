@@ -16,6 +16,7 @@ import { RedisModule } from '../redis/redis.module';
 import { User } from 'src/common/entities/user.entity';
 import { PermissionValidator } from './service/permission-validator.service';
 import { UserModule } from '../user/user.module';
+import { PermissionRepository } from './repository/permissions.repository';
 
 @Global()
 @Module({
@@ -40,6 +41,7 @@ import { UserModule } from '../user/user.module';
     UserGroupRepository,
     GroupPermissionsRepository,
     PermissionValidator,
+    PermissionRepository,
   ],
   exports: [
     PermissionsService,

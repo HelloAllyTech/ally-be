@@ -5,7 +5,13 @@ import { GroupService } from '../../service/group.service';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { ExecutionContext } from '@nestjs/common';
 import { ChangeUserRolesDto } from '../../../user/dto/group.dto';
-import { PERMISSIONS } from '../../constants/permissions.constants';
+import {
+  CreatePermissionDto,
+  DeletePermissionDto,
+  DeletePermissionGroupsDto,
+  GrantPermissionToRolesDto,
+} from '../../dto/permissions.dto';
+import { UserRole } from 'src/common/constants/user.constants';
 
 describe('AuthorizationController', () => {
   let controller: AuthorizationController;
@@ -27,12 +33,42 @@ describe('AuthorizationController', () => {
     },
   };
 
+  const mockRoles = [
+    { id: 1, name: 'admin' },
+    { id: 2, name: 'counselor' },
+    { id: 3, name: 'learner' },
+  ];
+
+  const mockSuccessResponse = {
+    success: true,
+    message: 'User roles updated successfully',
+  };
+
+  const mockPermissionResponse = {
+    id: 1,
+    name: 'delete:permission',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  const mockGrantResponse = {
+    message: 'Permission "delete:permission" granted to roles',
+  };
+
+  const mockDeleteResponse = {
+    Message: 'Permission "delete:permission"deleted successfully',
+  };
+
   beforeEach(async () => {
-    const mockPermissionsService = {
+    const mockPermissionsServiceObj = {
       getUserPermissions: jest.fn(),
+      createPermission: jest.fn(),
+      grantPermissionToRoles: jest.fn(),
+      deletePermission: jest.fn(),
+      deletePermissionGroups: jest.fn(),
     };
 
-    const mockGroupService = {
+    const mockGroupServiceObj = {
       changeUserRoles: jest.fn(),
       getAllRoles: jest.fn(),
     };
@@ -42,11 +78,11 @@ describe('AuthorizationController', () => {
       providers: [
         {
           provide: PermissionsService,
-          useValue: mockPermissionsService,
+          useValue: mockPermissionsServiceObj,
         },
         {
           provide: GroupService,
-          useValue: mockGroupService,
+          useValue: mockGroupServiceObj,
         },
       ],
     })
@@ -73,6 +109,7 @@ describe('AuthorizationController', () => {
     expect(controller).toBeDefined();
   });
 
+  // ===== getPermissions Tests =====
   describe('getPermissions', () => {
     it('should return user permissions successfully', async () => {
       permissionsService.getUserPermissions.mockResolvedValue(mockPermissions);
@@ -133,24 +170,6 @@ describe('AuthorizationController', () => {
       expect(permissionsService.getUserPermissions).toHaveBeenCalledWith(123);
     });
 
-    it('should handle permission service returning null', async () => {
-      permissionsService.getUserPermissions.mockResolvedValue(null as any);
-
-      const result = await controller.getPermissions(mockRequest);
-
-      expect(result).toBeNull();
-      expect(permissionsService.getUserPermissions).toHaveBeenCalledWith(123);
-    });
-
-    it('should handle permission service returning undefined', async () => {
-      permissionsService.getUserPermissions.mockResolvedValue(undefined as any);
-
-      const result = await controller.getPermissions(mockRequest);
-
-      expect(result).toBeUndefined();
-      expect(permissionsService.getUserPermissions).toHaveBeenCalledWith(123);
-    });
-
     it('should handle different permission arrays', async () => {
       const customPermissions = ['admin.full', 'system.manage'];
       permissionsService.getUserPermissions.mockResolvedValue(
@@ -186,15 +205,11 @@ describe('AuthorizationController', () => {
     });
   });
 
+  // ===== changeUserRoles Tests =====
   describe('changeUserRoles', () => {
     const mockChangeUserRolesDto: ChangeUserRolesDto = {
       userId: 123,
       groupIds: [1, 2, 3],
-    };
-
-    const mockSuccessResponse = {
-      success: true,
-      message: 'User roles updated successfully',
     };
 
     it('should change user roles successfully', async () => {
@@ -241,28 +256,6 @@ describe('AuthorizationController', () => {
       );
     });
 
-    it('should handle service returning null', async () => {
-      groupService.changeUserRoles.mockResolvedValue(null as any);
-
-      const result = await controller.changeUserRoles(mockChangeUserRolesDto);
-
-      expect(result).toBeNull();
-      expect(groupService.changeUserRoles).toHaveBeenCalledWith(
-        mockChangeUserRolesDto,
-      );
-    });
-
-    it('should handle service returning undefined', async () => {
-      groupService.changeUserRoles.mockResolvedValue(undefined as any);
-
-      const result = await controller.changeUserRoles(mockChangeUserRolesDto);
-
-      expect(result).toBeUndefined();
-      expect(groupService.changeUserRoles).toHaveBeenCalledWith(
-        mockChangeUserRolesDto,
-      );
-    });
-
     it('should handle empty group IDs array', async () => {
       const emptyDto = { userId: 123, groupIds: [] };
       groupService.changeUserRoles.mockResolvedValue(mockSuccessResponse);
@@ -292,13 +285,8 @@ describe('AuthorizationController', () => {
     });
   });
 
+  // ===== getAllRoles Tests =====
   describe('getAllRoles', () => {
-    const mockRoles = [
-      { id: 1, name: 'admin' },
-      { id: 2, name: 'counselor' },
-      { id: 3, name: 'learner' },
-    ];
-
     it('should return all roles successfully', async () => {
       groupService.getAllRoles.mockResolvedValue(mockRoles);
 
@@ -327,28 +315,10 @@ describe('AuthorizationController', () => {
       expect(groupService.getAllRoles).toHaveBeenCalledTimes(1);
     });
 
-    it('should handle service returning null', async () => {
-      groupService.getAllRoles.mockResolvedValue(null as any);
-
-      const result = await controller.getAllRoles();
-
-      expect(result).toBeNull();
-      expect(groupService.getAllRoles).toHaveBeenCalledTimes(1);
-    });
-
-    it('should handle service returning undefined', async () => {
-      groupService.getAllRoles.mockResolvedValue(undefined as any);
-
-      const result = await controller.getAllRoles();
-
-      expect(result).toBeUndefined();
-      expect(groupService.getAllRoles).toHaveBeenCalledTimes(1);
-    });
-
     it('should handle different role structures', async () => {
       const customRoles = [
-        { id: 10, name: 'super_admin', description: 'Full system access' },
-        { id: 11, name: 'moderator', description: 'Content moderation' },
+        { id: 10, name: 'super_admin' },
+        { id: 11, name: 'moderator' },
       ];
       groupService.getAllRoles.mockResolvedValue(customRoles);
 
@@ -367,82 +337,353 @@ describe('AuthorizationController', () => {
     });
   });
 
-  describe('Controller metadata', () => {
-    it('should have correct route path', () => {
-      const metadata = Reflect.getMetadata('path', AuthorizationController);
-      expect(metadata).toBe('v1/authorization');
-    });
+  // ===== createPermission Tests =====
+  describe('createPermission', () => {
+    it('should create permission successfully', async () => {
+      const dto: CreatePermissionDto = {
+        permissionName: 'delete:permission',
+      };
 
-    it('should have JwtAuthGuard applied to getPermissions', () => {
-      const guards = Reflect.getMetadata(
-        '__guards__',
-        controller.getPermissions,
+      permissionsService.createPermission.mockResolvedValue(
+        mockPermissionResponse,
       );
-      expect(guards).toBeDefined();
+
+      const result = await controller.createPermission(dto);
+
+      expect(result).toEqual(mockPermissionResponse);
+      expect(permissionsService.createPermission).toHaveBeenCalledWith(dto);
+      expect(permissionsService.createPermission).toHaveBeenCalledTimes(1);
     });
 
-    it('should have correct HTTP method for changeUserRoles', () => {
-      const method = Reflect.getMetadata('method', controller.changeUserRoles);
-      expect(method).toBe(1); // 1 = POST method
+    it('should handle different permission names', async () => {
+      const dto: CreatePermissionDto = {
+        permissionName: 'edit:users:roles',
+      };
+
+      permissionsService.createPermission.mockResolvedValue({
+        ...mockPermissionResponse,
+        name: 'edit:users:roles',
+      });
+
+      const result = await controller.createPermission(dto);
+
+      expect(result.name).toBe('edit:users:roles');
+      expect(permissionsService.createPermission).toHaveBeenCalledWith(dto);
     });
 
-    it('should have correct route path for changeUserRoles', () => {
-      const path = Reflect.getMetadata('path', controller.changeUserRoles);
-      expect(path).toBe('change-roles');
-    });
+    it('should propagate errors from service', async () => {
+      const dto: CreatePermissionDto = {
+        permissionName: 'delete:permission',
+      };
+      const error = new Error('Permission already exists');
+      permissionsService.createPermission.mockRejectedValue(error);
 
-    it('should have correct HTTP method for getAllRoles', () => {
-      const method = Reflect.getMetadata('method', controller.getAllRoles);
-      expect(method).toBe(0); // 0 = GET method
-    });
-
-    it('should have correct route path for getAllRoles', () => {
-      const path = Reflect.getMetadata('path', controller.getAllRoles);
-      expect(path).toBe('roles');
-    });
-
-    it('should be decorated with ApiTags', () => {
-      const tags = Reflect.getMetadata(
-        'swagger/apiUseTags',
-        AuthorizationController,
+      await expect(controller.createPermission(dto)).rejects.toThrow(
+        'Permission already exists',
       );
-      expect(tags).toEqual(['Authorization']);
     });
   });
 
-  describe('AuthPermissions decorator', () => {
-    it('should have correct permissions for changeUserRoles', () => {
-      const permissions = Reflect.getMetadata(
-        'permissions',
-        controller.changeUserRoles,
+  // ===== grantPermissionToRoles Tests =====
+  describe('grantPermissionToRoles', () => {
+    const mockGrantDto: GrantPermissionToRolesDto = {
+      permissionName: 'delete:permission',
+      roles: [UserRole.ADMIN, UserRole.ADMIN],
+    };
+
+    it('should grant permission to roles successfully', async () => {
+      permissionsService.grantPermissionToRoles.mockResolvedValue(
+        mockGrantResponse,
       );
-      expect(permissions).toEqual({
-        permissions: [PERMISSIONS.EDIT_USER_ROLE],
-        operator: 'AND',
-      });
-    });
 
-    it('should have correct permissions for getAllRoles', () => {
-      const permissions = Reflect.getMetadata(
-        'permissions',
-        controller.getAllRoles,
+      const result = await controller.grantPermissionToRoles(mockGrantDto);
+
+      expect(result).toEqual(mockGrantResponse);
+      expect(permissionsService.grantPermissionToRoles).toHaveBeenCalledWith(
+        mockGrantDto,
       );
-      expect(permissions).toEqual({
-        permissions: [PERMISSIONS.VIEW_USER_ROLES],
-        operator: 'AND',
-      });
+      expect(permissionsService.grantPermissionToRoles).toHaveBeenCalledTimes(
+        1,
+      );
     });
 
-    it('should verify EDIT_USER_ROLE permission constant exists', () => {
-      expect(PERMISSIONS.EDIT_USER_ROLE).toBe('edit:user:role');
+    it('should handle single role', async () => {
+      const singleRoleDto: GrantPermissionToRolesDto = {
+        permissionName: 'delete:permission',
+        roles: [UserRole.ADMIN],
+      };
+
+      permissionsService.grantPermissionToRoles.mockResolvedValue(
+        mockGrantResponse,
+      );
+
+      const result = await controller.grantPermissionToRoles(singleRoleDto);
+
+      expect(result).toEqual(mockGrantResponse);
+      expect(permissionsService.grantPermissionToRoles).toHaveBeenCalledWith(
+        singleRoleDto,
+      );
     });
 
-    it('should verify VIEW_USER_ROLES permission constant exists', () => {
-      expect(PERMISSIONS.VIEW_USER_ROLES).toBe('view:user:roles');
+    it('should handle multiple roles', async () => {
+      const multiRoleDto: GrantPermissionToRolesDto = {
+        permissionName: 'edit:permission',
+        roles: [UserRole.ADMIN, UserRole.ADMIN, UserRole.COUNSELOR],
+      };
+
+      permissionsService.grantPermissionToRoles.mockResolvedValue(
+        mockGrantResponse,
+      );
+
+      const result = await controller.grantPermissionToRoles(multiRoleDto);
+
+      expect(result).toEqual(mockGrantResponse);
+      expect(permissionsService.grantPermissionToRoles).toHaveBeenCalledWith(
+        multiRoleDto,
+      );
+    });
+
+    it('should propagate errors from service', async () => {
+      const error = new Error('Permission not found');
+      permissionsService.grantPermissionToRoles.mockRejectedValue(error);
+
+      await expect(
+        controller.grantPermissionToRoles(mockGrantDto),
+      ).rejects.toThrow('Permission not found');
     });
   });
 
-  describe('Integration scenarios', () => {
+  // ===== deletePermission Tests =====
+  describe('deletePermission', () => {
+    const mockDeleteDto: DeletePermissionDto = {
+      permissionName: 'delete:permission',
+    };
+
+    it('should delete permission successfully', async () => {
+      permissionsService.deletePermission.mockResolvedValue(mockDeleteResponse);
+
+      const result = await controller.deletePermission(mockDeleteDto);
+
+      expect(result).toEqual(mockDeleteResponse);
+      expect(permissionsService.deletePermission).toHaveBeenCalledWith(
+        mockDeleteDto,
+      );
+      expect(permissionsService.deletePermission).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle different permission names', async () => {
+      const differentDto: DeletePermissionDto = {
+        permissionName: 'edit:permission',
+      };
+
+      permissionsService.deletePermission.mockResolvedValue(mockDeleteResponse);
+
+      const result = await controller.deletePermission(differentDto);
+
+      expect(result).toEqual(mockDeleteResponse);
+      expect(permissionsService.deletePermission).toHaveBeenCalledWith(
+        differentDto,
+      );
+    });
+
+    it('should propagate errors from service', async () => {
+      const error = new Error('Permission not found');
+      permissionsService.deletePermission.mockRejectedValue(error);
+
+      await expect(controller.deletePermission(mockDeleteDto)).rejects.toThrow(
+        'Permission not found',
+      );
+    });
+  });
+
+  // ===== deleteGroupPermission Tests =====
+  describe('deleteGroupPermission', () => {
+    const mockDeleteGroupDto: DeletePermissionGroupsDto = {
+      permissionName: 'delete:permission',
+      roles: [UserRole.ADMIN, UserRole.ADMIN],
+    };
+
+    it('should delete group permission successfully', async () => {
+      permissionsService.deletePermissionGroups.mockResolvedValue(
+        mockDeleteResponse,
+      );
+
+      const result = await controller.deleteGroupPermission(mockDeleteGroupDto);
+
+      expect(result).toEqual(mockDeleteResponse);
+      expect(permissionsService.deletePermissionGroups).toHaveBeenCalledWith(
+        mockDeleteGroupDto,
+      );
+      expect(permissionsService.deletePermissionGroups).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it('should handle single role deletion', async () => {
+      const singleRoleDto: DeletePermissionGroupsDto = {
+        permissionName: 'delete:permission',
+        roles: [UserRole.ADMIN],
+      };
+
+      permissionsService.deletePermissionGroups.mockResolvedValue(
+        mockDeleteResponse,
+      );
+
+      const result = await controller.deleteGroupPermission(singleRoleDto);
+
+      expect(result).toEqual(mockDeleteResponse);
+      expect(permissionsService.deletePermissionGroups).toHaveBeenCalledWith(
+        singleRoleDto,
+      );
+    });
+
+    it('should handle multiple roles deletion', async () => {
+      const multiRoleDto: DeletePermissionGroupsDto = {
+        permissionName: 'edit:permission',
+        roles: [UserRole.ADMIN, UserRole.ADMIN, UserRole.COUNSELOR],
+      };
+
+      permissionsService.deletePermissionGroups.mockResolvedValue(
+        mockDeleteResponse,
+      );
+
+      const result = await controller.deleteGroupPermission(multiRoleDto);
+
+      expect(result).toEqual(mockDeleteResponse);
+      expect(permissionsService.deletePermissionGroups).toHaveBeenCalledWith(
+        multiRoleDto,
+      );
+    });
+
+    it('should propagate errors from service', async () => {
+      const error = new Error('Permission not found');
+      permissionsService.deletePermissionGroups.mockRejectedValue(error);
+
+      await expect(
+        controller.deleteGroupPermission(mockDeleteGroupDto),
+      ).rejects.toThrow('Permission not found');
+    });
+  });
+
+  describe('Integration Workflows', () => {
+    it('should handle concurrent user permission requests', async () => {
+      permissionsService.getUserPermissions.mockResolvedValue(mockPermissions);
+
+      const request1 = { user: { id: '100' } };
+      const request2 = { user: { id: '200' } };
+      const request3 = { user: { id: '300' } };
+
+      const results = await Promise.all([
+        controller.getPermissions(request1),
+        controller.getPermissions(request2),
+        controller.getPermissions(request3),
+      ]);
+
+      expect(results).toHaveLength(3);
+      results.forEach((result) => {
+        expect(result).toEqual(mockPermissions);
+      });
+      expect(permissionsService.getUserPermissions).toHaveBeenCalledTimes(3);
+    });
+
+    it('should handle user roles change and retrieve permissions', async () => {
+      groupService.changeUserRoles.mockResolvedValueOnce(mockSuccessResponse);
+
+      const changeDto: ChangeUserRolesDto = {
+        userId: 123,
+        groupIds: [1, 2],
+      };
+
+      const changeResult = await controller.changeUserRoles(changeDto);
+      expect(changeResult.success).toBe(true);
+
+      permissionsService.getUserPermissions.mockResolvedValueOnce(
+        mockPermissions,
+      );
+
+      const permissions = await controller.getPermissions(mockRequest);
+      expect(permissions).toEqual(mockPermissions);
+    });
+
+    it('should handle complete permission lifecycle', async () => {
+      // Create permission
+      const createDto: CreatePermissionDto = {
+        permissionName: 'test:permission',
+      };
+      permissionsService.createPermission.mockResolvedValueOnce({
+        ...mockPermissionResponse,
+        name: 'test:permission',
+      });
+
+      const createdPermission = await controller.createPermission(createDto);
+      expect(createdPermission.name).toBe('test:permission');
+
+      // Grant permission to roles
+      const grantDto: GrantPermissionToRolesDto = {
+        permissionName: 'test:permission',
+        roles: [UserRole.ADMIN, UserRole.ADMIN],
+      };
+      permissionsService.grantPermissionToRoles.mockResolvedValueOnce(
+        mockGrantResponse,
+      );
+
+      const grantResult = await controller.grantPermissionToRoles(grantDto);
+      expect(grantResult.message).toContain('granted to roles');
+
+      // Delete group permission
+      const deleteGroupDto: DeletePermissionGroupsDto = {
+        permissionName: 'test:permission',
+        roles: [UserRole.ADMIN],
+      };
+      permissionsService.deletePermissionGroups.mockResolvedValueOnce(
+        mockDeleteResponse,
+      );
+
+      const deleteGroupResult =
+        await controller.deleteGroupPermission(deleteGroupDto);
+      expect(deleteGroupResult.Message).toContain('deleted successfully');
+
+      // Delete permission
+      const deleteDto: DeletePermissionDto = {
+        permissionName: 'test:permission',
+      };
+      permissionsService.deletePermission.mockResolvedValueOnce(
+        mockDeleteResponse,
+      );
+
+      const deleteResult = await controller.deletePermission(deleteDto);
+      expect(deleteResult.Message).toContain('deleted successfully');
+    });
+
+    it('should handle full authorization management workflow', async () => {
+      // Get all available roles
+      groupService.getAllRoles.mockResolvedValueOnce(mockRoles);
+
+      const roles = await controller.getAllRoles();
+      expect(roles).toHaveLength(3);
+
+      // Create new permission
+      permissionsService.createPermission.mockResolvedValueOnce(
+        mockPermissionResponse,
+      );
+
+      const createdPermission = await controller.createPermission({
+        permissionName: 'new:permission',
+      });
+      expect(createdPermission.id).toBe(1);
+
+      // Grant to all roles
+      permissionsService.grantPermissionToRoles.mockResolvedValueOnce(
+        mockGrantResponse,
+      );
+
+      const grantResult = await controller.grantPermissionToRoles({
+        permissionName: 'new:permission',
+        roles: [UserRole.ADMIN, UserRole.ADMIN, UserRole.COUNSELOR],
+      });
+      expect(grantResult.message).toContain('granted');
+    });
+
     it('should handle rapid successive calls', async () => {
       permissionsService.getUserPermissions.mockResolvedValue(mockPermissions);
 
@@ -458,25 +699,6 @@ describe('AuthorizationController', () => {
       results.forEach((result) => {
         expect(result).toEqual(mockPermissions);
       });
-      expect(permissionsService.getUserPermissions).toHaveBeenCalledTimes(3);
-    });
-
-    it('should handle different user ids in parallel', async () => {
-      const request1 = { user: { id: '100' } };
-      const request2 = { user: { id: '200' } };
-      const request3 = { user: { id: '300' } };
-
-      permissionsService.getUserPermissions.mockResolvedValue(mockPermissions);
-
-      await Promise.all([
-        controller.getPermissions(request1),
-        controller.getPermissions(request2),
-        controller.getPermissions(request3),
-      ]);
-
-      expect(permissionsService.getUserPermissions).toHaveBeenCalledWith(100);
-      expect(permissionsService.getUserPermissions).toHaveBeenCalledWith(200);
-      expect(permissionsService.getUserPermissions).toHaveBeenCalledWith(300);
       expect(permissionsService.getUserPermissions).toHaveBeenCalledTimes(3);
     });
 

@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Post,
   Body,
+  Delete,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import {
@@ -21,6 +22,12 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { PERMISSIONS } from '../constants/permissions.constants';
 import { ChangeUserRolesDto } from 'src/user/dto/group.dto';
 import { GroupService } from '../service/group.service';
+import {
+  CreatePermissionDto,
+  DeletePermissionDto,
+  DeletePermissionGroupsDto,
+  GrantPermissionToRolesDto,
+} from '../dto/permissions.dto';
 
 @ApiTags('Authorization')
 @Controller('v1/authorization')
@@ -89,5 +96,55 @@ export class AuthorizationController {
   @AuthPermissions([PERMISSIONS.VIEW_USER_ROLES])
   async getAllRoles() {
     return this.groupService.getAllRoles();
+  }
+
+  @ApiOperation({ summary: 'Create a new permission' })
+  @ApiResponse({ status: 201, description: 'Permission created successfully' })
+  @AuthPermissions([PERMISSIONS.EDIT_PERMISSION])
+  @Post('permission')
+  async createPermission(@Body() createPermissionDto: CreatePermissionDto) {
+    return this.permissionsService.createPermission(createPermissionDto);
+  }
+
+  @ApiOperation({ summary: 'Grant a permission to a role' })
+  @ApiResponse({
+    status: 201,
+    description: 'Permission successfully granted to role',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_GROUPS_PERMISSION])
+  @Post('grant-permission')
+  async grantPermissionToRoles(
+    @Body() grantPermissionToRolesDto: GrantPermissionToRolesDto,
+  ) {
+    return this.permissionsService.grantPermissionToRoles(
+      grantPermissionToRolesDto,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Delete a permission and its associated group permissions',
+  })
+  @ApiResponse({ status: 200, description: 'Permission deleted successfully' })
+  @AuthPermissions([PERMISSIONS.DELETE_PERMISSION])
+  @Delete('permission')
+  async deletePermission(@Body() deletePermissionDto: DeletePermissionDto) {
+    return await this.permissionsService.deletePermission(deletePermissionDto);
+  }
+
+  @ApiOperation({
+    summary: 'Delete group permissions',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Group permissions deleted successfully',
+  })
+  @Delete('permission-groups')
+  @AuthPermissions([PERMISSIONS.DELETE_GROUPS_PERMISSION])
+  async deleteGroupPermission(
+    @Body() deletePermissionGroupsDto: DeletePermissionGroupsDto,
+  ) {
+    return await this.permissionsService.deletePermissionGroups(
+      deletePermissionGroupsDto,
+    );
   }
 }

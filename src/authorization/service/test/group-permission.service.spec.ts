@@ -66,7 +66,7 @@ describe('GroupPermissionsService', () => {
       const groupIds = [1];
       const expectedPermissions = [
         { groupId: 1, permission: 'ADMIN' },
-        { groupId: 1, permission: 'USER' },
+        { groupId: 1, permission: 'ADMIN' },
       ];
 
       repository.findPermissionsByGroupId.mockResolvedValueOnce(

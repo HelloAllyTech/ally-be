@@ -234,7 +234,7 @@ describe('UserController', () => {
         UserSortBy.NAME,
         SortOrder.ASC,
         '1,2',
-        'ADMIN,USER',
+        'ADMIN,CLIENT',
         'active',
         'test',
       );
@@ -245,7 +245,7 @@ describe('UserController', () => {
         sortBy: UserSortBy.NAME,
         order: SortOrder.ASC,
         tenantIds: '1,2',
-        roles: 'ADMIN,USER',
+        roles: 'ADMIN,CLIENT',
         statuses: 'active',
         search: 'test',
       });

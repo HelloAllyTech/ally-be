@@ -39,6 +39,12 @@ export class GroupService {
     return groupNames.map((group) => group.name);
   }
 
+  async getGroupsByNames(groupNames: string[]): Promise<Group[]> {
+    return await this.groupRepository.getAll({
+      where: { name: In(groupNames) },
+    });
+  }
+
   async getUserGroupIds(userId: number): Promise<number[]> {
     const cachedUserGroups = await this.cache.get(`user:groups:${userId}`);
     if (cachedUserGroups) {
