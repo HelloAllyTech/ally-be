@@ -8,7 +8,7 @@ import { UserGroupService } from '../user-group.service';
 import { Permission } from 'src/common/entities/permission.entity';
 import { UserRole } from 'src/common/constants/user.constants';
 import { DeleteResult } from 'typeorm';
-import { PermissionRepository } from 'src/authorization/repository/permissions.repository';
+import { PermissionRepository } from 'src/authorization/repository/permission.repository';
 
 describe('PermissionsService', () => {
   let service: PermissionsService;
@@ -117,7 +117,7 @@ describe('PermissionsService', () => {
             getGroupPermissions: jest.fn(),
             findByPermissionId: jest.fn(),
             createGroupPermission: jest.fn(),
-            deleteGroupPermissions: jest.fn(),
+            deleteGroupsPermission: jest.fn(),
           },
         },
         {
@@ -243,7 +243,7 @@ describe('PermissionsService', () => {
       );
       groupService.getGroupsByNames.mockResolvedValue([mockGroups[0]]);
       groupPermissionsService.findByPermissionId.mockResolvedValue([]);
-      // Fixed: Return array instead of undefined
+
       groupPermissionsService.createGroupPermission.mockResolvedValue([
         mockGroupPermissions[0],
       ]);
@@ -291,7 +291,7 @@ describe('PermissionsService', () => {
       groupPermissionsService.findByPermissionId.mockResolvedValue([
         mockGroupPermissions[0],
       ]);
-      // Fixed: Return array instead of undefined
+
       groupPermissionsService.createGroupPermission.mockResolvedValue([
         mockGroupPermissions[1],
       ]);
@@ -309,26 +309,25 @@ describe('PermissionsService', () => {
     });
   });
 
-  describe('deletePermissionGroups', () => {
+  describe('deleteGroupsPermission', () => {
     it('should delete permission from roles successfully', async () => {
       permissionRepository.getPermissionByName.mockResolvedValue(
         mockPermission,
       );
       groupService.getGroupsByNames.mockResolvedValue([mockGroups[0]]);
-      // Fixed: Return DeleteResult instead of undefined
-      groupPermissionsService.deleteGroupPermissions.mockResolvedValue(
+      groupPermissionsService.deleteGroupsPermission.mockResolvedValue(
         deleteResultMock,
       );
       redisService.del.mockResolvedValue(undefined);
 
-      const result = await service.deletePermissionGroups({
+      const result = await service.deleteGroupsPermission({
         permissionName: 'delete:permission',
         roles: [UserRole.ADMIN],
       });
 
       expect(result.Message).toContain('deleted successfully');
       expect(
-        groupPermissionsService.deleteGroupPermissions,
+        groupPermissionsService.deleteGroupsPermission,
       ).toHaveBeenCalledWith(1, [10]);
       expect(redisService.del).toHaveBeenCalledWith(`group:permissions:10`);
     });
@@ -338,12 +337,12 @@ describe('PermissionsService', () => {
         mockPermission,
       );
       groupService.getGroupsByNames.mockResolvedValue(mockGroups);
-      groupPermissionsService.deleteGroupPermissions.mockResolvedValue(
+      groupPermissionsService.deleteGroupsPermission.mockResolvedValue(
         deleteResultMock,
       );
       redisService.del.mockResolvedValue(undefined);
 
-      const result = await service.deletePermissionGroups({
+      const result = await service.deleteGroupsPermission({
         permissionName: 'delete:permission',
         roles: [UserRole.ADMIN, UserRole.ADMIN],
       });
@@ -361,8 +360,8 @@ describe('PermissionsService', () => {
       groupPermissionsService.findByPermissionId.mockResolvedValue(
         mockGroupPermissions,
       );
-      // Fixed: Return DeleteResult instead of undefined
-      groupPermissionsService.deleteGroupPermissions.mockResolvedValue(
+
+      groupPermissionsService.deleteGroupsPermission.mockResolvedValue(
         deleteResultMock,
       );
       permissionRepository.deletePermissionById.mockResolvedValue(
@@ -383,7 +382,6 @@ describe('PermissionsService', () => {
 
   describe('Complete Workflow', () => {
     it('should create, grant, and delete permission in sequence', async () => {
-      // Step 1: Create permission
       permissionRepository.getPermissionByName.mockResolvedValueOnce(null);
       permissionRepository.createPermission.mockResolvedValueOnce(
         mockPermission,
@@ -394,7 +392,6 @@ describe('PermissionsService', () => {
       });
       expect(createResult.id).toBe(1);
 
-      // Step 2: Grant permission to roles
       permissionRepository.getPermissionByName.mockResolvedValueOnce(
         mockPermission,
       );
@@ -412,14 +409,13 @@ describe('PermissionsService', () => {
       });
       expect(grantResult.message).toContain('granted to roles');
 
-      // Step 3: Delete permission
       permissionRepository.getPermissionByName.mockResolvedValueOnce(
         mockPermission,
       );
       groupPermissionsService.findByPermissionId.mockResolvedValueOnce(
         mockGroupPermissions,
       );
-      groupPermissionsService.deleteGroupPermissions.mockResolvedValueOnce(
+      groupPermissionsService.deleteGroupsPermission.mockResolvedValueOnce(
         deleteResultMock,
       );
       permissionRepository.deletePermissionById.mockResolvedValueOnce(
@@ -436,7 +432,6 @@ describe('PermissionsService', () => {
     it('should get user permissions after granting to roles', async () => {
       const userId = 123;
 
-      // Get cached user permissions
       redisService.get
         .mockResolvedValueOnce(JSON.stringify([10, 20]))
         .mockResolvedValueOnce(

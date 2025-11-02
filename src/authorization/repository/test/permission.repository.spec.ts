@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Permission } from 'src/common/entities/permission.entity';
-import { PermissionRepository } from '../permissions.repository';
+import { PermissionRepository } from '../permission.repository';
 
 describe('PermissionRepository', () => {
   let permissionRepository: PermissionRepository;

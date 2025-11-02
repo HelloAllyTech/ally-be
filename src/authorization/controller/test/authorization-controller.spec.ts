@@ -7,8 +7,8 @@ import { ExecutionContext } from '@nestjs/common';
 import { ChangeUserRolesDto } from '../../../user/dto/group.dto';
 import {
   CreatePermissionDto,
+  DeleteGroupsPermissionDto,
   DeletePermissionDto,
-  DeletePermissionGroupsDto,
   GrantPermissionToRolesDto,
 } from '../../dto/permissions.dto';
 import { UserRole } from 'src/common/constants/user.constants';
@@ -65,7 +65,7 @@ describe('AuthorizationController', () => {
       createPermission: jest.fn(),
       grantPermissionToRoles: jest.fn(),
       deletePermission: jest.fn(),
-      deletePermissionGroups: jest.fn(),
+      deleteGroupsPermission: jest.fn(),
     };
 
     const mockGroupServiceObj = {
@@ -496,71 +496,72 @@ describe('AuthorizationController', () => {
     });
   });
 
-  // ===== deleteGroupPermission Tests =====
-  describe('deleteGroupPermission', () => {
-    const mockDeleteGroupDto: DeletePermissionGroupsDto = {
+  // ===== deleteGroupsPermission Tests =====
+  describe('deleteGroupsPermission', () => {
+    const mockDeleteGroupDto: DeleteGroupsPermissionDto = {
       permissionName: 'delete:permission',
       roles: [UserRole.ADMIN, UserRole.ADMIN],
     };
 
     it('should delete group permission successfully', async () => {
-      permissionsService.deletePermissionGroups.mockResolvedValue(
+      permissionsService.deleteGroupsPermission.mockResolvedValue(
         mockDeleteResponse,
       );
 
-      const result = await controller.deleteGroupPermission(mockDeleteGroupDto);
+      const result =
+        await controller.deleteGroupsPermission(mockDeleteGroupDto);
 
       expect(result).toEqual(mockDeleteResponse);
-      expect(permissionsService.deletePermissionGroups).toHaveBeenCalledWith(
+      expect(permissionsService.deleteGroupsPermission).toHaveBeenCalledWith(
         mockDeleteGroupDto,
       );
-      expect(permissionsService.deletePermissionGroups).toHaveBeenCalledTimes(
+      expect(permissionsService.deleteGroupsPermission).toHaveBeenCalledTimes(
         1,
       );
     });
 
     it('should handle single role deletion', async () => {
-      const singleRoleDto: DeletePermissionGroupsDto = {
+      const singleRoleDto: DeleteGroupsPermissionDto = {
         permissionName: 'delete:permission',
         roles: [UserRole.ADMIN],
       };
 
-      permissionsService.deletePermissionGroups.mockResolvedValue(
+      permissionsService.deleteGroupsPermission.mockResolvedValue(
         mockDeleteResponse,
       );
 
-      const result = await controller.deleteGroupPermission(singleRoleDto);
+      const result = await controller.deleteGroupsPermission(singleRoleDto);
 
       expect(result).toEqual(mockDeleteResponse);
-      expect(permissionsService.deletePermissionGroups).toHaveBeenCalledWith(
+      expect(permissionsService.deleteGroupsPermission).toHaveBeenCalledWith(
         singleRoleDto,
       );
     });
 
     it('should handle multiple roles deletion', async () => {
-      const multiRoleDto: DeletePermissionGroupsDto = {
+      const multiRoleDto: DeleteGroupsPermissionDto = {
         permissionName: 'edit:permission',
         roles: [UserRole.ADMIN, UserRole.ADMIN, UserRole.COUNSELOR],
       };
 
-      permissionsService.deletePermissionGroups.mockResolvedValue(
+      permissionsService.deleteGroupsPermission.mockResolvedValue(
         mockDeleteResponse,
       );
 
-      const result = await controller.deleteGroupPermission(multiRoleDto);
+      const result = await controller.deleteGroupsPermission(multiRoleDto);
 
       expect(result).toEqual(mockDeleteResponse);
-      expect(permissionsService.deletePermissionGroups).toHaveBeenCalledWith(
+      expect(permissionsService.deleteGroupsPermission).toHaveBeenCalledWith(
         multiRoleDto,
       );
     });
 
     it('should propagate errors from service', async () => {
       const error = new Error('Permission not found');
-      permissionsService.deletePermissionGroups.mockRejectedValue(error);
+      permissionsService.deleteGroupsPermission.mockRejectedValue(error);
 
       await expect(
-        controller.deleteGroupPermission(mockDeleteGroupDto),
+        controller.deleteGroupsPermission(mockDeleteGroupDto),
       ).rejects.toThrow('Permission not found');
     });
   });
@@ -631,16 +632,16 @@ describe('AuthorizationController', () => {
       expect(grantResult.message).toContain('granted to roles');
 
       // Delete group permission
-      const deleteGroupDto: DeletePermissionGroupsDto = {
+      const deleteGroupDto: DeleteGroupsPermissionDto = {
         permissionName: 'test:permission',
         roles: [UserRole.ADMIN],
       };
-      permissionsService.deletePermissionGroups.mockResolvedValueOnce(
+      permissionsService.deleteGroupsPermission.mockResolvedValueOnce(
         mockDeleteResponse,
       );
 
       const deleteGroupResult =
-        await controller.deleteGroupPermission(deleteGroupDto);
+        await controller.deleteGroupsPermission(deleteGroupDto);
       expect(deleteGroupResult.Message).toContain('deleted successfully');
 
       // Delete permission

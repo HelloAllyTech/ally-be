@@ -7,12 +7,12 @@ import { RedisService } from 'src/redis/service/redis.service';
 import { GroupService } from 'src/authorization/service/group.service';
 import { GroupPermissionsService } from './group-permissions.service';
 import { UserGroupService } from './user-group.service';
-import { PermissionRepository } from '../repository/permissions.repository';
+import { PermissionRepository } from '../repository/permission.repository';
 import { Permission } from 'src/common/entities/permission.entity';
 import {
   CreatePermissionDto,
+  DeleteGroupsPermissionDto,
   DeletePermissionDto,
-  DeletePermissionGroupsDto,
   GrantPermissionToRolesDto,
 } from '../dto/permissions.dto';
 
@@ -138,31 +138,30 @@ export class PermissionsService {
     }
     const permissionId = existingPermission?.id;
 
-    const groups = await this.groupService.getGroupsByNames(
+    const targetGroups = await this.groupService.getGroupsByNames(
       grantPermissionToRolesDto.roles,
     );
 
-    //List of group IDs (roles) to which the permission will be granted
-    const groupIds = groups.map((gp) => gp.id);
-
-    const groupPermissions =
+    // IDs of groups that should receive this permission
+    const targetGroupIds = targetGroups.map((gp) => gp.id);
+    const currentGroupPermissions =
       await this.groupPermissionsService.findByPermissionId(
         existingPermission.id,
       );
-    //List of group IDs (roles) that already have this permission
-    const existingGroupIds = groupPermissions.map((gp) => gp.groupId);
 
-    const missingGroupIds = groupIds.filter(
-      (id) => !existingGroupIds.includes(id),
+    // IDs of groups that already have this permission assigned
+    const assignedGroupIds = currentGroupPermissions.map((gp) => gp.groupId);
+
+    const unassignedGroupIds = targetGroupIds.filter(
+      (id) => !assignedGroupIds.includes(id),
     );
-
-    if (missingGroupIds.length > 0) {
+    if (unassignedGroupIds.length > 0) {
       await this.groupPermissionsService.createGroupPermission(
-        missingGroupIds,
+        unassignedGroupIds,
         permissionId,
       );
       await Promise.all(
-        missingGroupIds.map((groupId) =>
+        unassignedGroupIds.map((groupId) =>
           this.cache.del(`group:permissions:${groupId}`),
         ),
       );
@@ -171,43 +170,39 @@ export class PermissionsService {
         message: `Permission "${grantPermissionToRolesDto.permissionName}" already granted to passed roles`,
       };
     }
-
     return {
       message: `Permission "${grantPermissionToRolesDto.permissionName}" granted to roles`,
     };
   }
 
-  async deletePermissionGroups(
-    deletePermissionGroupsDto: DeletePermissionGroupsDto,
+  async deleteGroupsPermission(
+    deleteGroupsPermissionDto: DeleteGroupsPermissionDto,
   ) {
     const existingPermission =
       await this.permissionRepository.getPermissionByName(
-        deletePermissionGroupsDto.permissionName,
+        deleteGroupsPermissionDto.permissionName,
       );
     if (!existingPermission) {
       throw new NotFoundException(
-        `Permission "${deletePermissionGroupsDto.permissionName}" doesn't exists`,
+        `Permission "${deleteGroupsPermissionDto.permissionName}" doesn't exists`,
       );
     }
-
     const permissionId = existingPermission.id;
-
     const groups = await this.groupService.getGroupsByNames(
-      deletePermissionGroupsDto.roles,
+      deleteGroupsPermissionDto.roles,
     );
+
     //List of group IDs (roles) to be deleted for corresponding to a permission
     const groupIds = groups.map((gp) => gp.id);
-
-    await this.groupPermissionsService.deleteGroupPermissions(
+    await this.groupPermissionsService.deleteGroupsPermission(
       permissionId,
       groupIds,
     );
     await Promise.all(
       groupIds.map((groupId) => this.cache.del(`group:permissions:${groupId}`)),
     );
-
     return {
-      Message: `Permission "${deletePermissionGroupsDto.permissionName}"deleted successfully`,
+      Message: `Permission "${deleteGroupsPermissionDto.permissionName}"deleted successfully for given roles`,
     };
   }
 
@@ -216,27 +211,26 @@ export class PermissionsService {
       await this.permissionRepository.getPermissionByName(
         deletePermissionDto.permissionName,
       );
-
     if (!existingPermission) {
       throw new NotFoundException(
         `Permission "${deletePermissionDto.permissionName}" doesn't exists`,
       );
     }
     const permissionId = existingPermission.id;
-
     const groupPermissions =
       await this.groupPermissionsService.findByPermissionId(permissionId);
-
     const groupIds = groupPermissions.map((gp) => gp.groupId);
 
-    await this.groupPermissionsService.deleteGroupPermissions(permissionId);
-
-    await Promise.all(
-      groupIds.map((groupId) => this.cache.del(`group:permissions:${groupId}`)),
-    );
+    if (groupIds.length > 0) {
+      await this.groupPermissionsService.deleteGroupsPermission(permissionId);
+      await Promise.all(
+        groupIds.map((groupId) =>
+          this.cache.del(`group:permissions:${groupId}`),
+        ),
+      );
+    }
 
     await this.permissionRepository.deletePermissionById(permissionId);
-
     return {
       Message: `Permission "${deletePermissionDto.permissionName}"deleted successfully`,
     };

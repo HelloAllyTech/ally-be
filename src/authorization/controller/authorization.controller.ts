@@ -24,8 +24,8 @@ import { ChangeUserRolesDto } from 'src/user/dto/group.dto';
 import { GroupService } from '../service/group.service';
 import {
   CreatePermissionDto,
+  DeleteGroupsPermissionDto,
   DeletePermissionDto,
-  DeletePermissionGroupsDto,
   GrantPermissionToRolesDto,
 } from '../dto/permissions.dto';
 
@@ -106,10 +106,10 @@ export class AuthorizationController {
     return this.permissionsService.createPermission(createPermissionDto);
   }
 
-  @ApiOperation({ summary: 'Grant a permission to a role' })
+  @ApiOperation({ summary: 'Grant a permission to a roles' })
   @ApiResponse({
     status: 201,
-    description: 'Permission successfully granted to role',
+    description: 'Permission successfully granted to roles',
   })
   @AuthPermissions([PERMISSIONS.EDIT_GROUPS_PERMISSION])
   @Post('grant-permission')
@@ -128,23 +128,23 @@ export class AuthorizationController {
   @AuthPermissions([PERMISSIONS.DELETE_PERMISSION])
   @Delete('permission')
   async deletePermission(@Body() deletePermissionDto: DeletePermissionDto) {
-    return await this.permissionsService.deletePermission(deletePermissionDto);
+    return this.permissionsService.deletePermission(deletePermissionDto);
   }
 
   @ApiOperation({
-    summary: 'Delete group permissions',
+    summary: 'Delete groups permission',
   })
   @ApiResponse({
     status: 200,
-    description: 'Group permissions deleted successfully',
+    description: 'Groups permission deleted successfully',
   })
-  @Delete('permission-groups')
+  @Delete('groups-permission')
   @AuthPermissions([PERMISSIONS.DELETE_GROUPS_PERMISSION])
-  async deleteGroupPermission(
-    @Body() deletePermissionGroupsDto: DeletePermissionGroupsDto,
+  async deleteGroupsPermission(
+    @Body() deleteGroupsPermissionDto: DeleteGroupsPermissionDto,
   ) {
-    return await this.permissionsService.deletePermissionGroups(
-      deletePermissionGroupsDto,
+    return this.permissionsService.deleteGroupsPermission(
+      deleteGroupsPermissionDto,
     );
   }
 }

@@ -21,7 +21,7 @@ export class GrantPermissionToRolesDto {
   roles!: UserRole[];
 }
 
-export class DeletePermissionGroupsDto {
+export class DeleteGroupsPermissionDto {
   @ApiProperty({
     description: 'Name of the permission',
     example: 'edit:users:roles',

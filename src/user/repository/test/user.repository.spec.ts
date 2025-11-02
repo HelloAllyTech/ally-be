@@ -153,7 +153,7 @@ describe('UserRepository', () => {
 
     it('should apply roles filter', async () => {
       const filters: UserFilterOptions = {
-        roles: 'ADMIN,CLIENT',
+        roles: 'ADMIN,USER',
       };
       const mockUsers = [{ user_id: 1, role: 'ADMIN' }];
 
@@ -165,7 +165,7 @@ describe('UserRepository', () => {
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('g.name IN (:...roles)'),
         expect.objectContaining({
-          roles: ['ADMIN', 'CLIENT'],
+          roles: ['ADMIN', 'USER'],
           superAdminRole: 'SUPER_ADMIN',
         }),
       );

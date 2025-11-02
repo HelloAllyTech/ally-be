@@ -10,12 +10,18 @@ export class PermissionRepository {
     private readonly permissionRepository: Repository<Permission>,
   ) {}
 
-  async getPermissionByName(name: string): Promise<Permission | null> {
-    return this.permissionRepository.findOne({ where: { name } });
+  async getPermissionByName(
+    permissionName: string,
+  ): Promise<Permission | null> {
+    return this.permissionRepository.findOne({
+      where: { name: permissionName },
+    });
   }
 
-  async createPermission(name: string): Promise<Permission> {
-    const permission = this.permissionRepository.create({ name });
+  async createPermission(permissionName: string): Promise<Permission> {
+    const permission = this.permissionRepository.create({
+      name: permissionName,
+    });
     return this.permissionRepository.save(permission);
   }
 

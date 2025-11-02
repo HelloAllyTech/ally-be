@@ -16,7 +16,7 @@ import { RedisModule } from '../redis/redis.module';
 import { User } from 'src/common/entities/user.entity';
 import { PermissionValidator } from './service/permission-validator.service';
 import { UserModule } from '../user/user.module';
-import { PermissionRepository } from './repository/permissions.repository';
+import { PermissionRepository } from './repository/permission.repository';
 
 @Global()
 @Module({

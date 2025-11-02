@@ -27,15 +27,6 @@ export class GroupPermissionsRepository {
       .getRawMany();
   }
 
-  async findGroupPermission(groupId: number, permissionId: number) {
-    return this.groupPermissionsRepository.findOne({
-      where: {
-        groupId,
-        permissionId,
-      },
-    });
-  }
-
   async createGroupPermission(groupIds: number[], permissionId: number) {
     const groupPermissions = groupIds.map((groupId) =>
       this.groupPermissionsRepository.create({
@@ -43,7 +34,6 @@ export class GroupPermissionsRepository {
         permissionId,
       }),
     );
-
     return this.groupPermissionsRepository.save(groupPermissions);
   }
 
@@ -54,13 +44,11 @@ export class GroupPermissionsRepository {
     });
   }
 
-  async deleteGroupPermissions(permissionId: number, groupIds?: number[]) {
+  async deleteGroupsPermission(permissionId: number, groupIds?: number[]) {
     const where: any = { permissionId };
-
     if (groupIds?.length) {
       where.groupId = In(groupIds);
     }
-
     return this.groupPermissionsRepository.delete(where);
   }
 }

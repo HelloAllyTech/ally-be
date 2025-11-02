@@ -27,8 +27,8 @@ export class GroupPermissionsService {
     );
   }
 
-  async deleteGroupPermissions(permissionId: number, groupIds?: number[]) {
-    return this.groupPermissionsRepository.deleteGroupPermissions(
+  async deleteGroupsPermission(permissionId: number, groupIds?: number[]) {
+    return this.groupPermissionsRepository.deleteGroupsPermission(
       permissionId,
       groupIds,
     );
