@@ -1,4 +1,4 @@
-import { Controller, Get, Body, Put } from '@nestjs/common';
+import { Controller, Get, Body, Put, Query } from '@nestjs/common';
 import { SettingsService } from '../service/settings.service';
 import {
   ApiTags,
@@ -7,9 +7,15 @@ import {
   ApiBearerAuth,
   ApiSecurity,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import {
+  GetSummaryFieldsDto,
+  UpdateSummaryFieldsDto,
+} from '../dto/summary-fields.dto';
+import { GetChatTypesDto, UpdateChatTypesDto } from '../dto/chat-types.dto';
 
 @ApiTags('Settings')
 @ApiBearerAuth()
@@ -25,9 +31,15 @@ export class SettingsController {
     description: 'Returns the summary fields configuration',
     type: [String],
   })
+  @ApiQuery({
+    name: 'tenantId',
+    required: false,
+    type: String,
+    description: 'Tenant ID',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_SUMMARY_FIELDS])
-  getSummaryFields() {
-    return this.service.getSummaryFieldsConfig();
+  getSummaryFields(@Query() query?: GetSummaryFieldsDto) {
+    return this.service.getSummaryFieldsConfig(query || {});
   }
 
   @Put('summary-fields')
@@ -45,8 +57,8 @@ export class SettingsController {
     description: 'Summary fields updated successfully',
   })
   @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_SUMMARY_FIELDS])
-  updateSummaryFields(@Body() body: { hiddenFields: string[] }) {
-    return this.service.updateSummaryFields(body.hiddenFields);
+  updateSummaryFields(@Body() body: UpdateSummaryFieldsDto) {
+    return this.service.updateSummaryFields(body);
   }
 
   @Get('nudge-status')
@@ -85,9 +97,15 @@ export class SettingsController {
     status: 200,
     description: 'Returns the enabled chat types',
   })
+  @ApiQuery({
+    name: 'tenantId',
+    required: false,
+    type: String,
+    description: 'Tenant ID',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_CHAT_TYPES])
-  getChatTypes() {
-    return this.service.getChatTypes();
+  getChatTypes(@Query() query?: GetChatTypesDto) {
+    return this.service.getChatTypes(query || {});
   }
 
   @Put('chat-types')
@@ -105,7 +123,7 @@ export class SettingsController {
     description: 'Hidden chat types updated successfully',
   })
   @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_CHAT_TYPES])
-  updateHiddenChatTypes(@Body() body: { hiddenChatTypes: string[] }) {
-    return this.service.updateChatTypes(body.hiddenChatTypes);
+  updateHiddenChatTypes(@Body() body: UpdateChatTypesDto) {
+    return this.service.updateChatTypes(body);
   }
 }

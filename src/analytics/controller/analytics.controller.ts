@@ -15,8 +15,14 @@ import {
   DashboardIdParamDto,
   CounselorStatsQueryDto,
   CounselorStatsResponseDto,
-} from '../validation/analytics.validation';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+} from '../dto/analytics.dto';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiSecurity,
+} from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
@@ -24,6 +30,8 @@ import { UserRole } from 'src/common/constants/user.constants';
 
 @ApiTags('Analytics')
 @Controller('v1/analytics')
+@ApiBearerAuth()
+@ApiSecurity('access-token')
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 

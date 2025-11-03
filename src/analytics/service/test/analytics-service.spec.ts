@@ -9,7 +9,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { AnalyticsUtil } from 'src/analytics/util/analytics.util';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DashboardDto } from 'src/analytics/type/analytics.type';
+import { CreateDashboardDto } from '../../dto/analytics.dto';
 
 // Mock the static classes at the top level
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -238,13 +238,13 @@ describe('AnalyticsService', () => {
   });
 
   describe('createDashboard', () => {
-    const mockDashboardDto: DashboardDto = {
+    const mockDashboardDto: CreateDashboardDto = {
       name: 'New Dashboard',
       externalId: 'new-dashboard',
       groupId: '2',
       description: 'Test dashboard',
       order: 1,
-      organizationId: mockTenantId,
+      tenantId: mockTenantId,
     };
 
     it('it should create a dashboard when none exists', async () => {
