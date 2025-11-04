@@ -42,6 +42,9 @@ import { ScenarioImageUploadRequestDto } from '../dto/scenario-image-upload-requ
 import { ScenarioImageUploadResponseDto } from '../dto/scenario-image-upload-response.dto';
 import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
 import { DeleteCoverImageDto } from '../dto/delete-cover-image.dto';
+import { ScenarioVideoUploadResponseDto } from '../dto/scenario-video-upload-response.dto';
+import { ScenarioVideoUploadRequestDto } from '../dto/scenario-video-upload-request.dto';
+import { DeleteCoverVideoDto } from '../dto/delete-cover-video.dto';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -140,6 +143,25 @@ export class LearnController {
     return this.scenarioService.getPresignedUrlForScenarioCoverImage(
       scenarioImageUploadRequestDto,
     );
+  }
+
+  @ApiOperation({ summary: 'Get presigned URL for scenario cover video' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('scenarios/cover-video-url')
+  async getPresignedUrlForScenarioCoverVideo(
+    @Body() scenarioVideoUploadRequestDto: ScenarioVideoUploadRequestDto,
+  ): Promise<ScenarioVideoUploadResponseDto> {
+    return this.scenarioService.getPresignedUrlForScenarioCoverVideo(
+      scenarioVideoUploadRequestDto,
+    );
+  }
+
+  @ApiOperation({ summary: 'Delete cover video' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @ApiBody({ type: DeleteCoverVideoDto })
+  @Delete('cover-video')
+  async deleteCoverVideo(@Body() deleteCoverVideoDto: DeleteCoverVideoDto) {
+    return this.scenarioService.deleteCoverVideo(deleteCoverVideoDto);
   }
 
   @ApiOperation({ summary: 'Create multiple scenarios' })
