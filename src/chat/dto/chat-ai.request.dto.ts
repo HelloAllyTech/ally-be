@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNumber, IsArray, IsString } from 'class-validator';
-import { FlattenedSummaryNotePayload } from '../../common/entities/type/call.details.type';
+import { FlattenedSummaryNotePayload } from '../type/call.details.type';
 
 class MessageRequestDto {
   @ApiProperty({ description: 'The role of the message' })

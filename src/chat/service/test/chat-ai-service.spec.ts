@@ -7,17 +7,13 @@ import { S3Service } from 'src/aws/service/s3.service';
 import { AppConfigService } from 'src/config/config.service';
 import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
 import { CryptoService } from 'src/common/service/crypto.service';
-import { CallDetails } from 'src/common/entities/call.details.entity';
-import { Message } from 'src/common/entities/message.entity';
-import {
-  Chat,
-  ChatStatus,
-  ChatSummaryStatus,
-} from 'src/common/entities/chat.entity';
-import { MessageType } from 'src/common/entities/message.entity';
+import { CallDetails } from '../../entity/call.details.entity';
+import { Message } from '../../entity/message.entity';
+import { Chat, ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
+import { MessageType } from '../../entity/message.entity';
 import { UserRole } from 'src/common/constants/user.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
-import { FlattenedSummaryNotePayload } from 'src/common/entities/type/call.details.type';
+import { FlattenedSummaryNotePayload } from 'src/chat/type/call.details.type';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { NotificationService } from 'src/notification/service/notification.service';
 import { UserService } from 'src/user/service/user.service';

@@ -11,7 +11,7 @@ import {
   CloudTelephonyIntegrationResponseDto,
   CreateCloudTelephonyIntegrationDto,
 } from '../dto/cloud-telephony.dto';
-import { CloudTelephonyIntegration } from '../../common/entities/cloud-telephony-integration.entity';
+import { CloudTelephonyIntegration } from '../entity/cloud-telephony-integration.entity';
 import { AppConfigService } from 'src/config/config.service';
 
 @Injectable()

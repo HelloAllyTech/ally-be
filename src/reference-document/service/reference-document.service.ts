@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import {
   DocumentUploadStatus,
   ReferenceDocument,
-} from '../../common/entities/reference-document.entity';
+} from '../entity/reference-document.entity';
 import {
   AddDocumentDto,
   SearchDocumentsDto,

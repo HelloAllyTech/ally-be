@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ChatStatus } from '../../common/entities/chat.entity';
-import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
+import { ChatStatus } from '../entity/chat.entity';
+import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type';
 import {
   AudioChatPlatform,
   AudioChatProvider,

@@ -1,5 +1,5 @@
 import { Column, Entity, PrimaryColumn, DeleteDateColumn } from 'typeorm';
-import { BaseWithoutTenantEntity } from 'src/common/entities/base-without-tenant.entity';
+import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 
 @Entity('scenario_events')
 export class ScenarioEvents extends BaseWithoutTenantEntity {

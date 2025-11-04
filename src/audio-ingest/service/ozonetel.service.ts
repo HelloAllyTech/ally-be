@@ -11,7 +11,7 @@ import {
   AudioChatProvider,
   CloudTelephonyProvider,
 } from '../../common/constants/chat.constants';
-import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
+import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,
@@ -20,7 +20,7 @@ import {
   Chat,
   ChatStatus,
   ChatSummaryStatus,
-} from '../../common/entities/chat.entity';
+} from '../../chat/entity/chat.entity';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { checkAudioFileReady } from '../../common/util/audio.util';
 import {

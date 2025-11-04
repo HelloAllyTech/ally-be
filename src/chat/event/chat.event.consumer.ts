@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ChatService } from '../service/chat.service';
 import { OnEvent } from '@nestjs/event-emitter';
-import { Chat } from '../../common/entities/chat.entity';
+import { Chat } from '../entity/chat.entity';
 import { ChatEvents } from '../constants/chat.constants';
 
 @Injectable()

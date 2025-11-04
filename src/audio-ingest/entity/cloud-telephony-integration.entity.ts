@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
-import { BaseEntity } from './base.entity';
-import { CloudTelephonyProvider } from '../constants/chat.constants';
+import { BaseEntity } from '../../common/entity/base.entity';
+import { CloudTelephonyProvider } from '../../common/constants/chat.constants';
 import { IntegrationStatus } from '../../audio-ingest/type/cloud-telephony.type';
 
 @Entity('cloud_telephony_integrations')

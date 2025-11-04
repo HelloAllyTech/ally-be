@@ -7,7 +7,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PlaceService } from '../service/place.service';
-import { Place } from '../entities/place.entity';
+import { Place } from '../entity/place.entity';
 import {
   ApiOperation,
   ApiQuery,

@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
-import { BaseEntity } from './base.entity';
-import { FlattenedSummaryNotePayloadCamelCase } from './type/call.details.type';
+import { BaseEntity } from '../../common/entity/base.entity';
+import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type';
 import { CallInfo } from '../../chat/dto/call-log.response.dto';
 
 @Entity('call_details')

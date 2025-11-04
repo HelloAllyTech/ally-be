@@ -1,7 +1,7 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
-import { BaseEntity } from './base.entity';
-import { PreferenceValue } from '../type/common.type';
-import { PreferenceName } from '../constants/user.constants';
+import { BaseEntity } from '../../common/entity/base.entity';
+import { PreferenceValue } from '../../common/type/common.type';
+import { PreferenceName } from '../../common/constants/user.constants';
 
 @Entity()
 export class Preference extends BaseEntity {

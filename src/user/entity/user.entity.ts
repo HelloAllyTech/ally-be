@@ -1,6 +1,6 @@
-import { UserStatus } from '../constants/user.constants';
+import { UserStatus } from '../constants/user-status.constants';
 import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { BaseEntity } from '../../common/entity/base.entity';
 
 @Entity('users')
 @Index(['tenantId', 'externalId'], {

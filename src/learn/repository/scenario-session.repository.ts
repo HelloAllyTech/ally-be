@@ -4,7 +4,7 @@ import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { Pagination } from 'src/common/type/common.type';
 import { Scenarios } from '../entity/scenarios.entity';
-import { User } from 'src/common/entities/user.entity';
+import { User } from 'src/user/entity/user.entity';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
 import { v4 as uuidv4 } from 'uuid';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';

@@ -8,8 +8,8 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DataSource, EntityManager, In, SelectQueryBuilder } from 'typeorm';
-import { Message, MessageType } from '../../common/entities/message.entity';
-import { Chat, ChatStatus } from '../../common/entities/chat.entity';
+import { Message, MessageType } from '../entity/message.entity';
+import { Chat, ChatStatus } from '../entity/chat.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { CryptoService } from '../../common/service/crypto.service';
@@ -21,9 +21,9 @@ import {
   AudioChatProvider,
   QueueStatus,
 } from '../../common/constants/chat.constants';
-import { CallDetails } from '../../common/entities/call.details.entity';
-import { Feedback } from '../../common/entities/feedback.entity';
-import { User } from '../../common/entities/user.entity';
+import { CallDetails } from '../entity/call.details.entity';
+import { Feedback } from '../entity/feedback.entity';
+import { User } from '../../user/entity/user.entity';
 import { Pagination } from '../../common/type/common.type';
 import { UserService } from '../../user/service/user.service';
 import { ChatEvents } from '../constants/chat.constants';
@@ -40,7 +40,7 @@ import {
 import { RedisService } from '../../redis/service/redis.service';
 
 import { NotFoundException } from '@nestjs/common';
-import { MessageBrokerChannel } from 'src/common/constants/message-broker.constants';
+import { MessageBrokerChannel } from 'src/message-broker/constants/message-broker.constants';
 import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
@@ -50,7 +50,7 @@ import {
   ANONYMOUS_CLIENT_ID,
   UserRole,
 } from '../../common/constants/user.constants';
-import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
+import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
 import { CommonUtil } from '../../common/util/common.util';

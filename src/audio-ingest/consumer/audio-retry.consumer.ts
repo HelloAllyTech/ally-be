@@ -8,7 +8,7 @@ import { MAX_RETRY_COUNT } from '../constants/audio-retry-constants';
 import { AudioRetryProducer } from '../producer/audio-retry.producer';
 import { AiEventService } from '../../ai/service/ai-event.service';
 import { ChatService } from '../../chat/service/chat.service';
-import { ChatSummaryStatus } from '../../common/entities/chat.entity';
+import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
 
 @Injectable()
 export class AudioRetryConsumer {

@@ -4,7 +4,7 @@ import { SqsService } from '../../../aws/service/sqs.service';
 import { ChatService } from '../../../chat/service/chat.service';
 import { AppConfigService } from '../../../config/config.service';
 import { LoggerService } from '../../../logger/logger.service';
-import { ChatSummaryStatus } from '../../../common/entities/chat.entity';
+import { ChatSummaryStatus } from '../../../chat/entity/chat.entity';
 import { TranscribeAndSummarizeRequestMessage } from '../../dto/transcribe-and-summarize-request.model';
 
 describe('AiEventService', () => {

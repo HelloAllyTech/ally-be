@@ -13,8 +13,8 @@ import {
   UserRole,
   PLACEHOLDER_CHAT_ID,
 } from '../../../common/constants/user.constants';
-import { MessageBrokerChannel } from '../../../common/constants/message-broker.constants';
-import { Message } from '../../../common/entities/message.entity';
+import { MessageBrokerChannel } from '../../../message-broker/constants/message-broker.constants';
+import { Message } from '../../../chat/entity/message.entity';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
 

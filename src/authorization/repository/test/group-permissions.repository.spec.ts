@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { GroupPermissionsRepository } from '../group-permissions.repository';
-import { GroupPermission } from 'src/common/entities/group-permission.entity';
+import { GroupPermission } from 'src/authorization/entity/group-permission.entity';
 
 describe('GroupPermissionsRepository', () => {
   let repository: GroupPermissionsRepository;

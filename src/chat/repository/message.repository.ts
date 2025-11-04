@@ -1,6 +1,6 @@
 import { EntityManager, Repository, DataSource } from 'typeorm';
 import { Injectable } from '@nestjs/common';
-import { Message } from 'src/common/entities/message.entity';
+import { Message } from '../entity/message.entity';
 
 @Injectable()
 export class MessageRepository extends Repository<Message> {

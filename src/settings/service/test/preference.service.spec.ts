@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PreferenceService } from '../preference.service';
-import { Preference } from '../../entities/preference.entity';
+import { Preference } from '../../entity/preference.entity';
 import { RedisService } from '../../../redis/service/redis.service';
-import { PreferenceName } from '../../constants/user.constants';
+import { PreferenceName } from '../../../common/constants/user.constants';
 
 // Mock LoggerService
 const mockLoggerInstance = {

@@ -8,10 +8,7 @@ import { ChatService } from './chat.service';
 import { S3Service } from '../../aws/service/s3.service';
 import { AiEventService } from '../../ai/service/ai-event.service';
 import { ChatAudioUploadsService } from '../../audio/service/chat-audio-uploads.service';
-import {
-  ChatStatus,
-  ChatSummaryStatus,
-} from '../../common/entities/chat.entity';
+import { ChatStatus, ChatSummaryStatus } from '../entity/chat.entity';
 import {
   AudioUploadRequestDto,
   AudioUploadResponseDto,
@@ -25,7 +22,7 @@ import {
   SUPPORTED_AUDIO_FILE_TYPES,
   UPLOADED_AUDIO_FILE_SIZE_LIMIT,
 } from '../constants/chat.constants';
-import { ChatAudioUploadStatus } from 'src/common/entities/chat-audio-uploads.entity';
+import { ChatAudioUploadStatus } from '../../audio/entity/chat-audio-uploads.entity';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,

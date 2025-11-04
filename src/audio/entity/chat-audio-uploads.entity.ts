@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { BaseEntity } from '../../common/entity/base.entity';
 
 export enum ChatAudioUploadStatus {
   PENDING = 'pending',

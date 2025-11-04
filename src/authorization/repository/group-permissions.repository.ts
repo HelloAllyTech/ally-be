@@ -1,8 +1,8 @@
-import { GroupPermission } from 'src/common/entities/group-permission.entity';
+import { GroupPermission } from 'src/authorization/entity/group-permission.entity';
 import { Repository } from 'typeorm';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Permission } from 'src/common/entities/permission.entity';
+import { Permission } from 'src/authorization/entity/permission.entity';
 
 @Injectable()
 export class GroupPermissionsRepository {

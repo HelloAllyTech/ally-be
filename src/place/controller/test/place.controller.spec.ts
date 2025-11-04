@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { PlaceController } from '../place.controller';
 import { PlaceService } from '../../service/place.service';
-import { Place } from '../../entities/place.entity';
+import { Place } from '../../entity/place.entity';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 

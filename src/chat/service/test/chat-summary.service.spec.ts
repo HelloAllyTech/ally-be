@@ -2,12 +2,8 @@ import { Test } from '@nestjs/testing';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ChatSummaryService } from '../chat-summary.service';
 import { ChatService } from '../chat.service';
-import { CallDetails } from 'src/common/entities/call.details.entity';
-import {
-  Chat,
-  ChatStatus,
-  ChatSummaryStatus,
-} from 'src/common/entities/chat.entity';
+import { CallDetails } from '../../entity/call.details.entity';
+import { Chat, ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
 import { TokenUser } from 'src/auth/type/auth.types';
 import {
   AudioChatProvider,

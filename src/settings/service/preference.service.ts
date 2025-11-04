@@ -3,9 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
-import { PreferenceName } from '../constants/user.constants';
-import { Preference } from '../entities/preference.entity';
-import { PreferenceValue } from '../type/common.type';
+import { PreferenceName } from '../../common/constants/user.constants';
+import { Preference } from '../entity/preference.entity';
+import { PreferenceValue } from '../../common/type/common.type';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 
 @Injectable()

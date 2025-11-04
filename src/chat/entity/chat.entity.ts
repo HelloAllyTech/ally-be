@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { BaseEntity } from '../../common/entity/base.entity';
 
 // You'll need to create this enum to match the Python ChatStatus
 export enum ChatStatus {

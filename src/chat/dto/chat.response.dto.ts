@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { CallDetails } from './call-log.response.dto';
-import { ChatStatus } from '../../common/entities/chat.entity';
+import { ChatStatus } from '../entity/chat.entity';
 import { IsNotEmpty, IsString } from 'class-validator';
 
 export class ChatDto {

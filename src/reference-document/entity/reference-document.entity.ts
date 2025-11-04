@@ -1,5 +1,5 @@
 import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
-import { BaseWithoutTenantEntity } from './base-without-tenant.entity';
+import { BaseWithoutTenantEntity } from '../../common/entity/base-without-tenant.entity';
 
 export enum DocumentUploadStatus {
   PENDING = 'pending',

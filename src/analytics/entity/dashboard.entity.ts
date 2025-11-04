@@ -1,6 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
-import { BaseEntity } from './base.entity';
-import { DashboardData } from './type/dashboard.data.type';
+import { BaseEntity } from '../../common/entity/base.entity';
+import { DashboardData } from '../type/dashboard.data.type';
 
 @Entity()
 export class Dashboard extends BaseEntity {

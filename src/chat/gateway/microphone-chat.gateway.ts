@@ -26,9 +26,9 @@ import {
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
-import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
-import { Message, MessageType } from '../../common/entities/message.entity';
-import { ChatStatus } from '../../common/entities/chat.entity';
+import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
+import { Message, MessageType } from '../entity/message.entity';
+import { ChatStatus } from '../entity/chat.entity';
 import { JwtService } from '@nestjs/jwt';
 import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';

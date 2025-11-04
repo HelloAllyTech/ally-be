@@ -24,16 +24,13 @@ import { ChatAudioUploadsService } from '../../../audio/service/chat-audio-uploa
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { GroupService } from '../../../authorization/service/group.service';
 
-import { Message } from '../../../common/entities/message.entity';
-import { CallDetails } from '../../../common/entities/call.details.entity';
-import { User } from '../../../common/entities/user.entity';
-import {
-  Chat,
-  ChatStatus,
-  ChatSummaryStatus,
-} from '../../../common/entities/chat.entity';
-import { MessageType } from '../../../common/entities/message.entity';
-import { UserRole, UserStatus } from '../../../common/constants/user.constants';
+import { Message } from '../../entity/message.entity';
+import { CallDetails } from '../../entity/call.details.entity';
+import { User } from '../../../user/entity/user.entity';
+import { Chat, ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
+import { MessageType } from '../../entity/message.entity';
+import { UserRole } from '../../../common/constants/user.constants';
+import { UserStatus } from '../../../user/constants/user-status.constants';
 import {
   AudioChatProvider,
   AudioChatPlatform,
@@ -41,7 +38,7 @@ import {
 import { ChatEvents } from '../../constants/chat.constants';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { CallLogSortBy, SortOrder } from '../../dto/call-log.request.dto';
-import { FlattenedSummaryNotePayloadCamelCase } from 'src/common/entities/type/call.details.type';
+import { FlattenedSummaryNotePayloadCamelCase } from 'src/chat/type/call.details.type';
 import { CallInfoDto } from '../../dto/chat.response.dto';
 import { UserChatSessionData } from '../../type/chat.type';
 
