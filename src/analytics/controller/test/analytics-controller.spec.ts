@@ -4,12 +4,15 @@ import { AnalyticsService } from '../../service/analytics.service';
 import { NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
+import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
+import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
 import {
   CreateDashboardDto,
   DashboardIdParamDto,
   CounselorStatsQueryDto,
-} from '../../validation/analytics.validation';
+} from '../../dto/analytics.dto';
 
 describe('AnalyticsController', () => {
   let controller: AnalyticsController;
@@ -65,6 +68,13 @@ describe('AnalyticsController', () => {
           provide: PermissionsService,
           useValue: {
             getUserRoles: jest.fn().mockResolvedValue(['SUPER_ADMIN']),
+            getUserPermissions: jest
+              .fn()
+              .mockResolvedValue([
+                PERMISSIONS.EDIT_ANALYTICS_DASHBOARD,
+                PERMISSIONS.VIEW_ANALYTICS_DASHBOARD,
+                PERMISSIONS.VIEW_ANALYTICS_DASHBOARD_URL,
+              ]),
           },
         },
         {
@@ -73,9 +83,29 @@ describe('AnalyticsController', () => {
             canActivate: jest.fn().mockResolvedValue(true),
           },
         },
+        {
+          provide: PermissionsGuard,
+          useValue: {
+            canActivate: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
+          provide: JwtAuthGuard,
+          useValue: {
+            canActivate: jest.fn().mockResolvedValue(true),
+          },
+        },
       ],
     })
       .overrideGuard(RolesGuard)
+      .useValue({
+        canActivate: jest.fn().mockResolvedValue(true),
+      })
+      .overrideGuard(PermissionsGuard)
+      .useValue({
+        canActivate: jest.fn().mockResolvedValue(true),
+      })
+      .overrideGuard(JwtAuthGuard)
       .useValue({
         canActivate: jest.fn().mockResolvedValue(true),
       })
@@ -184,6 +214,7 @@ describe('AnalyticsController', () => {
         groupId: '2',
         description: 'Test dashboard',
         order: 1,
+        tenantId: 'tenant-123',
       };
 
       analyticsService.createDashboard.mockResolvedValue(mockDashboard);
@@ -202,6 +233,7 @@ describe('AnalyticsController', () => {
         name: 'New Dashboard',
         externalId: 'new-dashboard',
         groupId: '2',
+        tenantId: 'tenant-123',
       };
       const error = new Error('Creation failed');
 
@@ -222,6 +254,7 @@ describe('AnalyticsController', () => {
         name: 'Minimal Dashboard',
         externalId: 'minimal-dashboard',
         groupId: '1',
+        tenantId: 'tenant-123',
       };
 
       const minimalDashboard = {
