@@ -1,6 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AnalyticsInterface } from '../interface/analytics.interface';
-import { DashboardDto } from '../type/analytics.type';
 import { In, Repository } from 'typeorm';
 import { Dashboard } from '../../common/entities/dashboard.entity';
 import { Chat } from '../../common/entities/chat.entity';
@@ -11,7 +10,8 @@ import { AnalyticsUtil } from '../util/analytics.util';
 import {
   CounselorStatsQueryDto,
   CounselorStatsResponseDto,
-} from '../validation/analytics.validation';
+  CreateDashboardDto,
+} from '../dto/analytics.dto';
 import { UserRole } from 'src/common/constants/user.constants';
 
 @Injectable()
@@ -52,27 +52,22 @@ export class AnalyticsService {
     };
   }
 
-  async createDashboard(dashboard: DashboardDto) {
+  async createDashboard(dashboard: CreateDashboardDto) {
     const existingDashboard = await this.dashboardRepository.findOne({
       where: {
         externalId: dashboard.externalId,
-        tenantId: ExecutionManager.getTenantId(),
+        tenantId: dashboard.tenantId,
         groupId: dashboard.groupId,
       },
     });
     if (existingDashboard) {
       await this.dashboardRepository.update(
         { id: existingDashboard.id },
-        {
-          ...dashboard,
-        },
+        dashboard,
       );
       return existingDashboard;
     }
-    const dashboardEntity = this.dashboardRepository.create({
-      ...dashboard,
-      tenantId: ExecutionManager.getTenantId(),
-    });
+    const dashboardEntity = this.dashboardRepository.create(dashboard);
     return this.dashboardRepository.save(dashboardEntity);
   }
 
