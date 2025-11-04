@@ -26,9 +26,6 @@ export class Chat extends BaseEntity {
   id!: number;
 
   @Column()
-  roomId!: number;
-
-  @Column()
   clientId!: number;
 
   @Column({ nullable: true })

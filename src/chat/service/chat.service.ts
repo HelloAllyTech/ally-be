@@ -7,19 +7,11 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { InjectRepository } from '@nestjs/typeorm';
-import {
-  DataSource,
-  EntityManager,
-  In,
-  Repository,
-  SelectQueryBuilder,
-} from 'typeorm';
+import { DataSource, EntityManager, In, SelectQueryBuilder } from 'typeorm';
 import { Message, MessageType } from '../../common/entities/message.entity';
 import { Chat, ChatStatus } from '../../common/entities/chat.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
-import { ChatRoom } from '../../common/entities/chat-room.entity';
 import { CryptoService } from '../../common/service/crypto.service';
 import { QueueService } from '../../queue/service/queue.service';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
@@ -98,8 +90,6 @@ export class ChatService {
     private messageRepository: MessageRepository,
     private chatRepository: ChatRepository,
 
-    @InjectRepository(ChatRoom)
-    private chatRoomRepository: Repository<ChatRoom>,
     private callDetailsRepository: CallDetailsRepository,
     private summaryFeedbackRepository: SummaryFeedbackRepository,
     @Inject(forwardRef(() => QueueService))
@@ -180,9 +170,7 @@ export class ChatService {
         );
       }
 
-      const chatRoom = await this.getOrCreateChatRoom(userId, entityManager);
-
-      const chat = await this.createChat(userId, chatRoom.id, entityManager);
+      const chat = await this.createChat(userId, entityManager);
 
       return this.queueService.enqueue(
         {
@@ -198,8 +186,6 @@ export class ChatService {
   async addNewChatWithCounselor(counselorId: number, clientId: number) {
     return this.dataSource.transaction(async (entityManager) => {
       const chatRepo = entityManager.getRepository(Chat) || this.chatRepository;
-      const chatRoomRepo =
-        entityManager.getRepository(ChatRoom) || this.chatRoomRepository;
       const activeChats = await chatRepo.findOne({
         where: {
           clientId,
@@ -217,18 +203,9 @@ export class ChatService {
         );
       }
 
-      const newChatRoom = chatRoomRepo.create({
-        clientId,
-        counselorId,
-        tenantId: ExecutionManager.getTenantId(),
-      });
-
-      await chatRoomRepo.save(newChatRoom);
-
       const newChat = chatRepo.create({
         clientId,
         counselorId,
-        roomId: newChatRoom.id,
         tenantId: ExecutionManager.getTenantId(),
       });
 
@@ -236,17 +213,12 @@ export class ChatService {
     });
   }
 
-  async createChat(
-    userId: number,
-    roomId: number,
-    entityManager?: EntityManager,
-  ) {
+  async createChat(userId: number, entityManager?: EntityManager) {
     const repo = entityManager?.getRepository(Chat) || this.chatRepository;
     const callDetailsRepo =
       entityManager?.getRepository(CallDetails) || this.callDetailsRepository;
     const chatObject = repo.create({
       clientId: userId,
-      roomId: roomId,
       status: ChatStatus.PAUSED,
       tenantId: ExecutionManager.getTenantId(),
     });
@@ -289,18 +261,8 @@ export class ChatService {
       duration,
     } = params;
     const chatRepo = entityManager?.getRepository(Chat) || this.chatRepository;
-    const chatRoomRepo =
-      entityManager?.getRepository(ChatRoom) || this.chatRoomRepository;
     const callDetailsRepo =
       entityManager?.getRepository(CallDetails) || this.callDetailsRepository;
-
-    const newChatRoom = chatRoomRepo.create({
-      clientId,
-      counselorId,
-      tenantId: tenantId || ExecutionManager.getTenantId(),
-    });
-
-    await chatRoomRepo.save(newChatRoom);
 
     const createdBy = ExecutionManager.getUserId();
 
@@ -309,7 +271,6 @@ export class ChatService {
     const chat = chatRepo.create({
       clientId,
       counselorId,
-      roomId: newChatRoom.id,
       status: status || ChatStatus.ACTIVE,
       startedAt: startTime,
       ...(endedAt ? { endedAt } : {}),
@@ -362,28 +323,6 @@ export class ChatService {
     );
 
     return chat;
-  }
-
-  async getOrCreateChatRoom(userId: number, entityManager?: EntityManager) {
-    const repo =
-      entityManager?.getRepository(ChatRoom) || this.chatRoomRepository;
-    const chatRoom = await repo.findOne({
-      where: {
-        clientId: userId,
-        tenantId: ExecutionManager.getTenantId(),
-      },
-    });
-
-    if (chatRoom) {
-      return chatRoom;
-    }
-
-    const newChatRoom = repo.create({
-      clientId: userId,
-      tenantId: ExecutionManager.getTenantId(),
-    });
-
-    return repo.save(newChatRoom);
   }
 
   async getChatsByUserIds(

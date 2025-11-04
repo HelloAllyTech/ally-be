@@ -85,7 +85,6 @@ describe('ChatAiService', () => {
     id: 1,
     clientId: 1,
     counselorId: 2,
-    roomId: 1,
     status: ChatStatus.ACTIVE,
     summaryStatus: ChatSummaryStatus.PENDING,
     startedAt: new Date(),

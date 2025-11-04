@@ -8,12 +8,6 @@ export class ChatDto {
   id!: number;
 
   @ApiProperty({
-    example: 1001,
-    description: 'Room identifier associated with the chat',
-  })
-  roomId?: number;
-
-  @ApiProperty({
     example: 5001,
     description: 'Client identifier participating in the chat',
   })

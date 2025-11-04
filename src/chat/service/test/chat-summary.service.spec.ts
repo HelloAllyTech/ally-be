@@ -42,7 +42,6 @@ describe('ChatSummaryService', () => {
     id: 1,
     clientId: 1,
     counselorId: 2,
-    roomId: 1,
     status: ChatStatus.ENDED,
     summaryStatus: ChatSummaryStatus.SUCCESS,
     startedAt: new Date('2023-01-01T10:00:00Z'),

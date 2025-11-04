@@ -126,7 +126,6 @@ export class UserService {
         chat: chat
           ? {
               chatId: chat.id,
-              roomId: chat.roomId,
               clientId: chat.clientId,
               counselorId: chat.counselorId,
               status: chat.status,

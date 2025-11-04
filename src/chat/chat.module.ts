@@ -1,7 +1,6 @@
 import { forwardRef, Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Chat } from '../common/entities/chat.entity';
-import { ChatRoom } from '../common/entities/chat-room.entity';
 import { Message } from '../common/entities/message.entity';
 import { ChatService } from './service/chat.service';
 import { ChatSummaryService } from './service/chat-summary.service';
@@ -35,13 +34,7 @@ import { AudioUploadDlqConsumer } from './consumer/audio-upload-dlq.consumer';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      Message,
-      ChatRoom,
-      Feedback,
-      CallDetails,
-      SummaryFeedback,
-    ]),
+    TypeOrmModule.forFeature([Message, Feedback, CallDetails, SummaryFeedback]),
     TypeOrmModule.forFeature([Chat, ChatRepository]),
     UserModule,
     QueueModule,
