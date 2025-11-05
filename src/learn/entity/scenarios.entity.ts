@@ -24,6 +24,9 @@ export class Scenarios extends BaseWithoutTenantEntity {
   @Column({ nullable: true })
   coverImageUrl?: string;
 
+  @Column({ nullable: true })
+  coverVideoUrl?: string;
+
   @Column({ enum: ScenarioStatus, default: ScenarioStatus.DRAFT })
   status!: ScenarioStatus;
 

@@ -123,6 +123,7 @@ export class LearnController {
       'scenario',
       'description',
       'coverImageUrl',
+      'coverVideoUrl',
       'status',
     ]);
   }

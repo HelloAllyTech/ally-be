@@ -261,6 +261,7 @@ describe('ScenarioService', () => {
           'scenario',
           'description',
           'coverImageUrl',
+          'coverVideoUrl',
           'status',
         ],
         where: {

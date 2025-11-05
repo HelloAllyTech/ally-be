@@ -36,6 +36,14 @@ export class UpdateScenarioDto {
   coverImageUrl?: string;
 
   @ApiProperty({
+    description: 'Cover video URL of the scenario',
+    example: 'https://example.com/cover-video.mp4',
+  })
+  @IsString()
+  @IsOptional()
+  coverVideoUrl?: string;
+
+  @ApiProperty({
     description: 'Status of the scenario (only DRAFT or ACTIVE allowed)',
     example: 'ACTIVE',
     enum: [ScenarioStatus.DRAFT, ScenarioStatus.ACTIVE],
