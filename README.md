@@ -122,12 +122,6 @@ DEEPGRAM_API_KEY=your_deepgram_api_key_here
 REDIS_URL=redis://localhost:6379
 REDIS_PREFIX=your_redis_prefix_here
 
-# SMS
-SMS_INTEGRATION=msg91
-MSG91_API_KEY=your_msg91_api_key_here
-MSG91_TEMPLATE_ID=your_msg91_template_id_here
-MSG91_API_URL=https://control.msg91.com/api/v5/flow
-
 # AUDIO_INGEST_INTEGRATION
 AUDIO_INGEST_INTEGRATION=EXOTEL
 
@@ -149,9 +143,6 @@ AWS_REGION=aws-region
 AWS_ACCESS_KEY_ID=aws-access-key-id
 AWS_SECRET_ACCESS_KEY=aws-secret-access-key
 AWS_SESSION_TOKEN=aws-session-token
-
-# EMAIL
-EMAIL_INTEGRATION=aws-ses
 
 # AWS-SES
 SOURCE_EMAIL=source-email
