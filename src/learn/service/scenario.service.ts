@@ -76,6 +76,7 @@ export class ScenarioService {
         'scenario',
         'description',
         'coverImageUrl',
+        'coverVideoUrl',
         'status',
       ],
       where: {
@@ -101,6 +102,7 @@ export class ScenarioService {
         scenario: item.scenario_scenario,
         description: item.scenario_description,
         coverImageUrl: item.scenario_coverImageUrl,
+        coverVideoUrl: item.scenario_coverVideoUrl,
         createdBy: item.user_name,
         status: item.scenario_status,
         usage: item.usage,
@@ -365,6 +367,7 @@ export class ScenarioService {
           scenario: '',
           description: scenario.description,
           coverImageUrl: scenario.coverImageUrl,
+          coverVideoUrl: scenario.coverVideoUrl,
           status: scenario.status,
           prompt: scenario.prompt,
           metadata: {
@@ -450,6 +453,7 @@ export class ScenarioService {
       'title',
       'description',
       'coverImageUrl',
+      'coverVideoUrl',
       'status',
       'prompt',
     ];

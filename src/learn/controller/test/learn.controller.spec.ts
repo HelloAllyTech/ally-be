@@ -243,6 +243,7 @@ describe('LearnController', () => {
           description:
             'A scenario for learning how to mediate conflicts between two clients.',
           coverImageUrl: 'https://example.com/conflict.png',
+          coverVideoUrl: 'https://example.com/conflict.mp4',
           createdBy: 'user1',
           status: 'ACTIVE',
           usage: '2',
@@ -257,6 +258,7 @@ describe('LearnController', () => {
           description:
             'Simulates a client meeting to practice delivering a persuasive sales pitch.',
           coverImageUrl: 'https://example.com/sales.png',
+          coverVideoUrl: 'https://example.com/conflict.mp4',
           createdBy: 'Jane Smith',
           status: 'DRAFT',
           usage: '1',
@@ -406,6 +408,7 @@ describe('LearnController', () => {
         'scenario',
         'description',
         'coverImageUrl',
+        'coverVideoUrl',
         'status',
       ]);
     });
@@ -422,6 +425,7 @@ describe('LearnController', () => {
         'scenario',
         'description',
         'coverImageUrl',
+        'coverVideoUrl',
         'status',
       ]);
     });

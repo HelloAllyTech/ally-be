@@ -95,17 +95,6 @@ export class AppConfigService {
     };
   }
 
-  get sms() {
-    return {
-      integration: this.configService.get<string>('SMS_INTEGRATION'),
-      msg91: {
-        apiKey: this.configService.get<string>('MSG91_API_KEY')!,
-        templateId: this.configService.get<string>('MSG91_TEMPLATE_ID')!,
-        apiUrl: this.configService.get<string>('MSG91_API_URL')!,
-      },
-    };
-  }
-
   get aws() {
     return {
       region: this.configService.get<string>('AWS_REGION'),
@@ -117,7 +106,6 @@ export class AppConfigService {
 
   get email() {
     return {
-      integration: this.configService.get<string>('EMAIL_INTEGRATION'),
       sourceEmail: this.configService.get<string>('SOURCE_EMAIL'),
       ses: {
         region: this.configService.get<string>('SMTP_REGION'),

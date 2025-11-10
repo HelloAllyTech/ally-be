@@ -20,7 +20,7 @@ export class EmailService {
       this.eventEmitter.emit('exception', {
         statusCode: 200,
         timestamp: new Date().toISOString(),
-        path: '/api/v1/sms/otp',
+        path: '/api/v1/email/otp',
         message: 'OTP sent to ' + params.to + ' - ' + params.otp,
         type: 'EMAIL OTP',
         channel: 'C08T402E3K5',
