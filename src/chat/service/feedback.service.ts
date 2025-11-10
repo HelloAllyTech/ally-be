@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Feedback } from '../../common/entities/feedback.entity';
@@ -38,15 +34,14 @@ export class FeedbackService {
     updateFeedbackDto: Partial<Feedback>,
   ): Promise<Feedback> {
     const feedback = await this.feedbackRepository.findOne({
-      where: { feedbackId: id, tenantId: ExecutionManager.getTenantId() },
+      where: {
+        feedbackId: id,
+        tenantId: ExecutionManager.getTenantId(),
+        userId: Number(ExecutionManager.getUserId()),
+      },
     });
     if (!feedback) {
       throw new NotFoundException(`Feedback with ID ${id} not found`);
-    }
-    if (feedback.userId !== Number(ExecutionManager.getUserId())) {
-      throw new ForbiddenException(
-        'You can only update your own feedback. This feedback was created by another user.',
-      );
     }
     Object.assign(feedback, updateFeedbackDto);
     return await this.feedbackRepository.save(feedback);

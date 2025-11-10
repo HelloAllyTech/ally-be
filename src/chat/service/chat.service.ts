@@ -1120,17 +1120,13 @@ export class ChatService {
     this.logger.debug(`generateSummary - chatId:${chatId}`);
     const chat = await this.chatRepository.findOne({
       where: {
+        counselorId: Number(ExecutionManager.getUserId()),
         id: chatId,
         tenantId: ExecutionManager.getTenantId(),
       },
     });
     if (!chat) {
-      throw new NotFoundException(
-        `Chat with ID ${chatId} not found or does not belong to your organization`,
-      );
-    }
-    if (chat.counselorId !== ExecutionManager.getUserId()) {
-      throw new ForbiddenException('You are not allowed to generate summary');
+      throw new NotFoundException(`Chat not found`);
     }
     const messageRequests: MessageRequest[] =
       await this.getChatHistoryForAIService(chatId, {
@@ -1216,10 +1212,6 @@ export class ChatService {
   }
 
   async getCallLogs(user: TokenUser, options: Pagination) {
-    const userRoles = await this.groupService
-      .getUserRolesByUserId(user.id)
-      .then((roles) => roles.map((role) => role.name));
-    console.log('userRoles', userRoles);
     const query = this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndMapOne(
@@ -1470,25 +1462,15 @@ export class ChatService {
     summary: FlattenedSummaryNotePayloadCamelCase,
   ) {
     const chat = await this.chatRepository.findOne({
-      where: { id: chatId, tenantId: ExecutionManager.getTenantId() },
+      where: {
+        id: chatId,
+        tenantId: ExecutionManager.getTenantId(),
+        counselorId: Number(ExecutionManager.getUserId()),
+      },
     });
     if (!chat) {
       throw new NotFoundException('Chat not found');
     }
-    const currentUserId = ExecutionManager.getUserId();
-    if (!currentUserId) {
-      throw new ForbiddenException('User not authenticated');
-    }
-    const isAdmin = await this.permissionValidator.validatePermissions(
-      parseInt(currentUserId),
-      [PERMISSIONS.ORGANIZATION_ACCESS],
-    );
-
-    // If user is a counselor, verify they own this chat
-    if (!isAdmin && chat.counselorId !== Number(currentUserId)) {
-      throw new ForbiddenException('You can only update your own call details');
-    }
-
     if (summary.sessionSummary) {
       summary.sessionSummary = await this.cryptoService.encrypt(
         summary.sessionSummary,
@@ -1889,12 +1871,15 @@ export class ChatService {
     chatId: number,
     createNoteDto: AddNoteDto,
   ): Promise<AddNotesResponse> {
-    const chat = await this.getChatById(chatId);
+    const chat = await this.chatRepository.findOne({
+      where: {
+        counselorId: Number(ExecutionManager.getUserId()),
+        id: chatId,
+        tenantId: ExecutionManager.getTenantId(),
+      },
+    });
     if (!chat) {
-      throw new NotFoundException(`Chat with ID ${chatId} not found`);
-    }
-    if (chat.counselorId != ExecutionManager.getUserId()) {
-      throw new ForbiddenException('You are not authorized to add notes');
+      throw new NotFoundException('Chat not Found');
     }
     const callDetails = await this.callDetailsRepository.findOne({
       where: { chatId, tenantId: ExecutionManager.getTenantId() },
@@ -1923,12 +1908,15 @@ export class ChatService {
     summaryFeedbackDto: SummaryFeedbackDto,
   ): Promise<SummaryFeedbackResponse> {
     return this.dataSource.transaction(async (entityManager) => {
-      const chat = await this.getChatById(chatId);
+      const chat = await this.chatRepository.findOne({
+        where: {
+          counselorId: Number(ExecutionManager.getUserId()),
+          id: chatId,
+          tenantId: ExecutionManager.getTenantId(),
+        },
+      });
       if (!chat) {
-        throw new NotFoundException(`Chat with ID ${chatId} not found`);
-      }
-      if (chat.counselorId != ExecutionManager.getUserId()) {
-        throw new ForbiddenException('You are not authorized to add feedback');
+        throw new NotFoundException(`Chat not found`);
       }
       const callDetailsRepo =
         entityManager.getRepository(CallDetails) || this.callDetailsRepository;

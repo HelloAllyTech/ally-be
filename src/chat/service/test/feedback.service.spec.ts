@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { FeedbackService } from '../feedback.service';
 import { Feedback } from 'src/common/entities/feedback.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -148,7 +148,7 @@ describe('FeedbackService', () => {
 
       expect(result).toEqual(updatedFeedback);
       expect(mockFeedbackRepository.findOne).toHaveBeenCalledWith({
-        where: { feedbackId: 1, tenantId: 'test-tenant' },
+        where: { feedbackId: 1, tenantId: 'test-tenant', userId: 2 },
       });
       expect(mockFeedbackRepository.save).toHaveBeenCalledWith({
         ...mockFeedback,
@@ -260,21 +260,20 @@ describe('FeedbackService', () => {
       await service.update(1, mockUpdateFeedbackDto);
 
       expect(mockFeedbackRepository.findOne).toHaveBeenCalledWith({
-        where: { feedbackId: 1, tenantId: 'different-tenant' },
+        where: { feedbackId: 1, tenantId: 'different-tenant', userId: 2 },
       });
     });
   });
 
   describe('authorization', () => {
     it('should throw ForbiddenException when updating feedback from different user', async () => {
-      const otherUserFeedback = { ...mockFeedback, userId: 999 };
-      mockFeedbackRepository.findOne.mockResolvedValue(otherUserFeedback);
+      mockFeedbackRepository.findOne.mockResolvedValue(null);
 
       await expect(service.update(1, mockUpdateFeedbackDto)).rejects.toThrow(
-        ForbiddenException,
+        NotFoundException,
       );
       await expect(service.update(1, mockUpdateFeedbackDto)).rejects.toThrow(
-        'You can only update your own feedback',
+        'Feedback with ID 1 not found',
       );
     });
 

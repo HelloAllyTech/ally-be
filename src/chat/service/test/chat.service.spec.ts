@@ -2348,17 +2348,18 @@ describe('ChatService', () => {
 
   describe('addNoteToSession', () => {
     it('should add note to session', async () => {
-      const mockCallDetailsForNote = { ...mockCallDetails, callInfo: {} };
+      const mockCallDetailsForNote = {
+        ...mockCallDetails,
+        callInfo: {},
+      };
       const noteDto = { content: 'Test note' };
-
-      // FIX: Mock chat with counselorId as NUMBER matching ExecutionManager.getUserId()
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('2');
       const mockChatForNote = {
         ...mockChat,
-        counselorId: 1, // CHANGED from string '1' to number 1
+        counselorId: 2,
       };
-
       jest
-        .spyOn(service, 'getChatById')
+        .spyOn(chatRepository, 'findOne')
         .mockResolvedValue(mockChatForNote as any);
       jest
         .spyOn(callDetailsRepository, 'findOne')
@@ -2368,10 +2369,20 @@ describe('ChatService', () => {
       const result = await service.addNoteToSession(1, noteDto);
 
       expect(result).toEqual({ notes: 'Test note' });
+      expect(chatRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          counselorId: 2,
+          id: 1,
+          tenantId: 'test-tenant',
+        },
+      });
       expect(callDetailsRepository.update).toHaveBeenCalledWith(
         { chatId: 1, tenantId: 'test-tenant' },
         {
-          callInfo: { ...mockCallDetailsForNote.callInfo, notes: 'Test note' },
+          callInfo: {
+            ...mockCallDetailsForNote.callInfo,
+            notes: 'Test note',
+          },
         },
       );
     });
@@ -3278,16 +3289,6 @@ describe('ChatService', () => {
       },
     };
 
-    const mockCallDetails = {
-      id: 1,
-      chatId: 1,
-      callInfo: {
-        provider: AudioChatProvider.WEBRTC,
-        platform: AudioChatPlatform.WEB,
-      },
-      tenantId: 'test-tenant',
-    };
-
     const mockFeedback = {
       id: 1,
       chatId: 1,
@@ -3308,14 +3309,15 @@ describe('ChatService', () => {
         }),
       };
 
-      // FIX: Mock chat with counselorId as NUMBER matching ExecutionManager.getUserId()
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('2');
+
       const mockChatForFeedback = {
         ...mockChat,
-        counselorId: 1, // CHANGED from string '1' to number 1
+        counselorId: 2,
       };
 
       jest
-        .spyOn(service, 'getChatById')
+        .spyOn(chatRepository, 'findOne')
         .mockResolvedValue(mockChatForFeedback as any);
 
       jest
@@ -3329,6 +3331,13 @@ describe('ChatService', () => {
         .mockResolvedValue(mockFeedback as any);
 
       const result = await service.addFeedbackToChat(1, mockSummaryFeedbackDto);
+      expect(chatRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          counselorId: 2,
+          id: 1,
+          tenantId: 'test-tenant',
+        },
+      });
 
       expect(dataSource.transaction).toHaveBeenCalled();
       expect(mockEntityManager.getRepository).toHaveBeenCalledWith(CallDetails);
