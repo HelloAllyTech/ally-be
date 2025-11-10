@@ -1,10 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import {
-  DocumentUploadStatus,
-  ReferenceDocument,
-} from '../entity/reference-document.entity';
+import { DocumentUploadStatus } from '../entity/reference-document.entity';
 import {
   AddDocumentDto,
   SearchDocumentsDto,
@@ -24,6 +19,7 @@ import { OrganizationRequiredException } from '../../exception/custom.exception'
 import { parseCsvBuffer } from '../../common/util/csv.util';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { ReferenceDocumentRepository } from '../repository/reference-document.repository';
 
 @Injectable()
 export class ReferenceDocumentService {
@@ -32,8 +28,7 @@ export class ReferenceDocumentService {
   );
 
   constructor(
-    @InjectRepository(ReferenceDocument)
-    private referenceDocumentRepository: Repository<ReferenceDocument>,
+    private referenceDocumentRepository: ReferenceDocumentRepository,
     private aiService: AiService,
     private permissionValidator: PermissionValidator,
   ) {}
@@ -51,14 +46,14 @@ export class ReferenceDocumentService {
       throw new OrganizationRequiredException();
     }
 
-    const document = this.referenceDocumentRepository.create({
-      ...dto,
-      createdBy: userId,
-      uploadStatus: DocumentUploadStatus.PENDING,
-      organizationId: dto.isPublic ? undefined : organizationId,
-    });
-
-    const savedDocument = await this.referenceDocumentRepository.save(document);
+    const savedDocument = await this.referenceDocumentRepository.createDocument(
+      {
+        ...dto,
+        createdBy: userId,
+        uploadStatus: DocumentUploadStatus.PENDING,
+        organizationId: dto.isPublic ? undefined : organizationId,
+      },
+    );
 
     const request: AddReferenceDocumentRequest = {
       document_id: savedDocument.id,
@@ -86,7 +81,7 @@ export class ReferenceDocumentService {
     }
 
     try {
-      await this.referenceDocumentRepository.update(savedDocument.id, {
+      await this.referenceDocumentRepository.updateDocument(savedDocument.id, {
         uploadStatus: savedDocument.uploadStatus,
       });
     } catch (error) {
@@ -105,14 +100,8 @@ export class ReferenceDocumentService {
   }
 
   async searchPublicDocuments(searchDto: SearchDocumentsDto) {
-    const documents = await this.referenceDocumentRepository.find({
-      select: ['id'],
-      where: {
-        isPublic: true,
-        isArchived: false,
-        uploadStatus: DocumentUploadStatus.SUCCESS,
-      },
-    });
+    const documents =
+      await this.referenceDocumentRepository.findPublicSuccessfulDocuments();
 
     return this.searchDocumentsByIds(
       searchDto,
@@ -127,21 +116,10 @@ export class ReferenceDocumentService {
       throw new OrganizationRequiredException();
     }
 
-    const documents = await this.referenceDocumentRepository.find({
-      select: ['id'],
-      where: [
-        {
-          isPublic: true,
-          uploadStatus: DocumentUploadStatus.SUCCESS,
-          isArchived: false,
-        },
-        {
-          organizationId,
-          uploadStatus: DocumentUploadStatus.SUCCESS,
-          isArchived: false,
-        },
-      ],
-    });
+    const documents =
+      await this.referenceDocumentRepository.findTenantSuccessfulDocuments(
+        organizationId,
+      );
 
     return this.searchDocumentsByIds(
       searchDto,
@@ -255,7 +233,7 @@ export class ReferenceDocumentService {
   }
 
   async updateReferenceDocument(id: string, dto: UpdateReferenceDocumentDto) {
-    const document = await this.referenceDocumentRepository.findOneBy({ id });
+    const document = await this.referenceDocumentRepository.findById(id);
 
     if (!document) {
       this.logger.error(`Reference document with ID ${id} not found`);
@@ -263,7 +241,7 @@ export class ReferenceDocumentService {
     }
 
     let uploadStatus = DocumentUploadStatus.PENDING;
-    await this.referenceDocumentRepository.update(id, {
+    await this.referenceDocumentRepository.updateDocument(id, {
       ...dto,
       uploadStatus,
       updatedAt: new Date(),
@@ -273,13 +251,13 @@ export class ReferenceDocumentService {
       const response = await this.aiService.updateReferenceDocument(id, dto);
       if (response.id) {
         uploadStatus = DocumentUploadStatus.SUCCESS;
-        await this.referenceDocumentRepository.update(id, {
+        await this.referenceDocumentRepository.updateDocument(id, {
           uploadStatus,
         });
       }
     } catch (error) {
       uploadStatus = DocumentUploadStatus.FAILED;
-      await this.referenceDocumentRepository.update(id, {
+      await this.referenceDocumentRepository.updateDocument(id, {
         uploadStatus,
       });
     }
@@ -337,16 +315,7 @@ export class ReferenceDocumentService {
   }
 
   async getDistinctCategories() {
-    const categories = await this.referenceDocumentRepository
-      .createQueryBuilder('document')
-      .select('document.category', 'category')
-      .addSelect('COUNT(document.category)', 'count')
-      .where('document.category IS NOT NULL')
-      .groupBy('document.category')
-      .orderBy('count', 'DESC')
-      .getRawMany();
-
-    return categories.map((cat) => cat.category);
+    return this.referenceDocumentRepository.getDistinctCategories();
   }
 
   async getReferenceDocument(id: string) {
@@ -364,11 +333,7 @@ export class ReferenceDocumentService {
   }
 
   async getPublicReferenceDocument(id: string) {
-    const document = await this.referenceDocumentRepository.findOneBy({
-      id,
-      isPublic: true,
-      uploadStatus: DocumentUploadStatus.SUCCESS,
-    });
+    const document = await this.referenceDocumentRepository.findPublicById(id);
 
     if (!document) {
       this.logger.error(`Public reference document with ID ${id} not found`);
@@ -398,11 +363,10 @@ export class ReferenceDocumentService {
       throw new OrganizationRequiredException();
     }
 
-    const document = await this.referenceDocumentRepository.findOneBy({
+    const document = await this.referenceDocumentRepository.findPrivateById(
       id,
       organizationId,
-      uploadStatus: DocumentUploadStatus.SUCCESS,
-    });
+    );
 
     if (!document) {
       this.logger.error(`Reference document with ID ${id} not found`);
@@ -430,7 +394,7 @@ export class ReferenceDocumentService {
   }
 
   async deleteReferenceDocument(id: string) {
-    const document = await this.referenceDocumentRepository.findOneBy({ id });
+    const document = await this.referenceDocumentRepository.findById(id);
 
     if (!document) {
       this.logger.error(`Reference document with ID ${id} not found`);
@@ -439,7 +403,7 @@ export class ReferenceDocumentService {
 
     try {
       await this.aiService.deleteReferenceDocument(id);
-      await this.referenceDocumentRepository.delete(id);
+      await this.referenceDocumentRepository.deleteDocument(id);
       return { success: true };
     } catch (error) {
       this.logger.error(
@@ -450,7 +414,7 @@ export class ReferenceDocumentService {
   }
 
   async archiveReferenceDocument(id: string) {
-    const document = await this.referenceDocumentRepository.findOneBy({ id });
+    const document = await this.referenceDocumentRepository.findById(id);
 
     if (!document) {
       this.logger.error(`Reference document with ID ${id} not found`);
@@ -463,10 +427,7 @@ export class ReferenceDocumentService {
     }
 
     try {
-      await this.referenceDocumentRepository.update(id, {
-        isArchived: true,
-        archivedAt: new Date(),
-      });
+      await this.referenceDocumentRepository.archiveDocument(id);
 
       this.logger.info(
         `Reference document with ID ${id} archived successfully`,
@@ -481,7 +442,7 @@ export class ReferenceDocumentService {
   }
 
   async unarchiveReferenceDocument(id: string) {
-    const document = await this.referenceDocumentRepository.findOneBy({ id });
+    const document = await this.referenceDocumentRepository.findById(id);
 
     if (!document) {
       this.logger.error(`Reference document with ID ${id} not found`);
@@ -494,10 +455,7 @@ export class ReferenceDocumentService {
     }
 
     try {
-      await this.referenceDocumentRepository.update(id, {
-        isArchived: false,
-        archivedAt: undefined,
-      });
+      await this.referenceDocumentRepository.unarchiveDocument(id);
 
       this.logger.info(
         `Reference document with ID ${id} unarchived successfully`,

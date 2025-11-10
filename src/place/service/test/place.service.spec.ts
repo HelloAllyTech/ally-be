@@ -1,12 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { PlaceService } from '../../../place/service/place.service';
 import { Place } from '../../../place/entity/place.entity';
+import { PlaceRepository } from '../../repository/place.repository';
 
 describe('PlaceService', () => {
   let service: PlaceService;
-  let mockPlaceRepository: any;
-  let mockQueryBuilder: any;
+  let mockPlaceRepository: jest.Mocked<PlaceRepository>;
 
   const mockPlace: Place = {
     id: 1,
@@ -17,24 +16,17 @@ describe('PlaceService', () => {
   } as Place;
 
   beforeEach(async () => {
-    mockQueryBuilder = {
-      where: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      getMany: jest.fn(),
-    };
-
     mockPlaceRepository = {
-      createQueryBuilder: jest.fn(() => mockQueryBuilder),
-      findAndCount: jest.fn(),
-      create: jest.fn(),
-      save: jest.fn(),
-    };
+      searchCities: jest.fn(),
+      listPlaces: jest.fn(),
+      createPlace: jest.fn(),
+    } as any;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PlaceService,
         {
-          provide: getRepositoryToken(Place),
+          provide: PlaceRepository,
           useValue: mockPlaceRepository,
         },
       ],
@@ -47,41 +39,28 @@ describe('PlaceService', () => {
     it('should search cities with query', async () => {
       const query = 'New York';
       const expectedPlaces = [mockPlace];
-      mockQueryBuilder.getMany.mockResolvedValue(expectedPlaces);
+      mockPlaceRepository.searchCities.mockResolvedValue(expectedPlaces);
 
       const result = await service.searchCities(query);
 
-      expect(mockPlaceRepository.createQueryBuilder).toHaveBeenCalledWith(
-        'place',
-      );
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'LOWER(place.city) LIKE LOWER(:query)',
-        { query: `%${query.trim()}%` },
-      );
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'place.city',
-        'ASC',
-      );
-      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
+      expect(mockPlaceRepository.searchCities).toHaveBeenCalledWith(query);
       expect(result).toEqual(expectedPlaces);
     });
 
-    it('should trim whitespace from search query', async () => {
+    it('should return result from repository', async () => {
       const query = '  Los Angeles  ';
       const expectedPlaces = [mockPlace];
-      mockQueryBuilder.getMany.mockResolvedValue(expectedPlaces);
+      mockPlaceRepository.searchCities.mockResolvedValue(expectedPlaces);
 
-      await service.searchCities(query);
+      const result = await service.searchCities(query);
 
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'LOWER(place.city) LIKE LOWER(:query)',
-        { query: '%Los Angeles%' },
-      );
+      expect(mockPlaceRepository.searchCities).toHaveBeenCalledWith(query);
+      expect(result).toEqual(expectedPlaces);
     });
 
     it('should return empty array when no cities match', async () => {
       const query = 'NonexistentCity';
-      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockPlaceRepository.searchCities.mockResolvedValue([]);
 
       const result = await service.searchCities(query);
 
@@ -90,14 +69,11 @@ describe('PlaceService', () => {
 
     it('should handle empty string query', async () => {
       const query = '';
-      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockPlaceRepository.searchCities.mockResolvedValue([]);
 
       await service.searchCities(query);
 
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'LOWER(place.city) LIKE LOWER(:query)',
-        { query: '%%' },
-      );
+      expect(mockPlaceRepository.searchCities).toHaveBeenCalledWith(query);
     });
   });
 
@@ -107,41 +83,33 @@ describe('PlaceService', () => {
       const limit = 5;
       const expectedData = [mockPlace];
       const expectedTotal = 10;
-      mockPlaceRepository.findAndCount.mockResolvedValue([
-        expectedData,
-        expectedTotal,
-      ]);
+      mockPlaceRepository.listPlaces.mockResolvedValue({
+        data: expectedData,
+        total: expectedTotal,
+      });
 
       const result = await service.listPlaces(page, limit);
 
-      expect(mockPlaceRepository.findAndCount).toHaveBeenCalledWith({
-        order: { city: 'ASC' },
-        skip: (page - 1) * limit,
-        take: limit,
-      });
+      expect(mockPlaceRepository.listPlaces).toHaveBeenCalledWith(page, limit);
       expect(result).toEqual({ data: expectedData, total: expectedTotal });
     });
 
     it('should list places with default pagination parameters', async () => {
       const expectedData = [mockPlace];
       const expectedTotal = 10;
-      mockPlaceRepository.findAndCount.mockResolvedValue([
-        expectedData,
-        expectedTotal,
-      ]);
+      mockPlaceRepository.listPlaces.mockResolvedValue({
+        data: expectedData,
+        total: expectedTotal,
+      });
 
       const result = await service.listPlaces();
 
-      expect(mockPlaceRepository.findAndCount).toHaveBeenCalledWith({
-        order: { city: 'ASC' },
-        skip: 0, // (1 - 1) * 10
-        take: 10,
-      });
+      expect(mockPlaceRepository.listPlaces).toHaveBeenCalledWith(1, 10);
       expect(result).toEqual({ data: expectedData, total: expectedTotal });
     });
 
     it('should return empty result when no places exist', async () => {
-      mockPlaceRepository.findAndCount.mockResolvedValue([[], 0]);
+      mockPlaceRepository.listPlaces.mockResolvedValue({ data: [], total: 0 });
 
       const result = await service.listPlaces();
 
@@ -153,33 +121,25 @@ describe('PlaceService', () => {
       const limit = 20;
       const expectedData = [mockPlace];
       const expectedTotal = 5;
-      mockPlaceRepository.findAndCount.mockResolvedValue([
-        expectedData,
-        expectedTotal,
-      ]);
+      mockPlaceRepository.listPlaces.mockResolvedValue({
+        data: expectedData,
+        total: expectedTotal,
+      });
 
       const result = await service.listPlaces(page, limit);
 
-      expect(mockPlaceRepository.findAndCount).toHaveBeenCalledWith({
-        order: { city: 'ASC' },
-        skip: 0,
-        take: 20,
-      });
+      expect(mockPlaceRepository.listPlaces).toHaveBeenCalledWith(page, limit);
       expect(result).toEqual({ data: expectedData, total: expectedTotal });
     });
 
     it('should calculate correct offset for page 3', async () => {
       const page = 3;
       const limit = 15;
-      mockPlaceRepository.findAndCount.mockResolvedValue([[], 0]);
+      mockPlaceRepository.listPlaces.mockResolvedValue({ data: [], total: 0 });
 
       await service.listPlaces(page, limit);
 
-      expect(mockPlaceRepository.findAndCount).toHaveBeenCalledWith({
-        order: { city: 'ASC' },
-        skip: 30, // (3 - 1) * 15
-        take: 15,
-      });
+      expect(mockPlaceRepository.listPlaces).toHaveBeenCalledWith(page, limit);
     });
   });
 
@@ -188,20 +148,15 @@ describe('PlaceService', () => {
       const city = '  Los Angeles  ';
       const state = '  CA  ';
       const createdPlace = { ...mockPlace, city: 'Los Angeles', state: 'CA' };
-      mockPlaceRepository.create.mockReturnValue(createdPlace);
-      mockPlaceRepository.save.mockResolvedValue(createdPlace);
+      mockPlaceRepository.createPlace.mockResolvedValue(createdPlace);
 
       const result = await service.createPlace(city, state);
 
-      expect(mockPlaceRepository.create).toHaveBeenCalledWith({
-        city: city.trim(),
-        state: state.trim(),
-      });
-      expect(mockPlaceRepository.save).toHaveBeenCalledWith(createdPlace);
+      expect(mockPlaceRepository.createPlace).toHaveBeenCalledWith(city, state);
       expect(result).toEqual(createdPlace);
     });
 
-    it('should trim whitespace from city and state before creating', async () => {
+    it('should delegate to repository for creating places', async () => {
       const city = '  San Francisco  ';
       const state = '  California  ';
       const createdPlace = {
@@ -209,30 +164,23 @@ describe('PlaceService', () => {
         city: 'San Francisco',
         state: 'California',
       };
-      mockPlaceRepository.create.mockReturnValue(createdPlace);
-      mockPlaceRepository.save.mockResolvedValue(createdPlace);
+      mockPlaceRepository.createPlace.mockResolvedValue(createdPlace);
 
-      await service.createPlace(city, state);
+      const result = await service.createPlace(city, state);
 
-      expect(mockPlaceRepository.create).toHaveBeenCalledWith({
-        city: 'San Francisco',
-        state: 'California',
-      });
+      expect(mockPlaceRepository.createPlace).toHaveBeenCalledWith(city, state);
+      expect(result).toEqual(createdPlace);
     });
 
     it('should create place with no whitespace', async () => {
       const city = 'Chicago';
       const state = 'IL';
       const createdPlace = { ...mockPlace, city, state };
-      mockPlaceRepository.create.mockReturnValue(createdPlace);
-      mockPlaceRepository.save.mockResolvedValue(createdPlace);
+      mockPlaceRepository.createPlace.mockResolvedValue(createdPlace);
 
       const result = await service.createPlace(city, state);
 
-      expect(mockPlaceRepository.create).toHaveBeenCalledWith({
-        city,
-        state,
-      });
+      expect(mockPlaceRepository.createPlace).toHaveBeenCalledWith(city, state);
       expect(result).toEqual(createdPlace);
     });
   });

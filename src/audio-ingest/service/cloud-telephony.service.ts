@@ -70,7 +70,7 @@ export class CloudTelephonyService {
         this.configService.cloudTelephony?.credentialsEncryptionKey,
       );
 
-      const response = await this.cloudTelephonyRepository.create({
+      const response = await this.cloudTelephonyRepository.createIntegration({
         credentials: encryptedCredentials,
         code: data.code,
         tenantId: data.tenantId,

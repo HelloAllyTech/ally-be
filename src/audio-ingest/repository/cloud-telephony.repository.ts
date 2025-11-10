@@ -1,40 +1,71 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { CloudTelephonyIntegration } from '../entity/cloud-telephony-integration.entity';
 
 @Injectable()
-export class CloudTelephonyRepository {
-  constructor(
-    @InjectRepository(CloudTelephonyIntegration)
-    private readonly cloudTelephonyRepository: Repository<CloudTelephonyIntegration>,
-  ) {}
+export class CloudTelephonyRepository extends Repository<CloudTelephonyIntegration> {
+  constructor(private dataSource: DataSource) {
+    super(CloudTelephonyIntegration, dataSource.createEntityManager());
+  }
 
-  async create(
+  async createIntegration(
     data: Partial<CloudTelephonyIntegration>,
+    em?: EntityManager,
   ): Promise<CloudTelephonyIntegration> {
-    const integration = await this.cloudTelephonyRepository.create(data);
-    return await this.cloudTelephonyRepository.save(integration);
+    const repo = em
+      ? em.getRepository(CloudTelephonyIntegration)
+      : this.dataSource.getRepository(CloudTelephonyIntegration);
+
+    const integration = repo.create(data);
+    return repo.save(integration);
   }
 
-  async findById(id: string): Promise<CloudTelephonyIntegration | null> {
-    return await this.cloudTelephonyRepository.findOne({ where: { id } });
+  async findById(
+    id: string,
+    em?: EntityManager,
+  ): Promise<CloudTelephonyIntegration | null> {
+    const repo = em ? em.getRepository(CloudTelephonyIntegration) : this;
+
+    return repo.findOne({ where: { id } });
   }
 
-  async findByCode(code: string): Promise<CloudTelephonyIntegration | null> {
-    return await this.cloudTelephonyRepository.findOne({ where: { code } });
+  async findByCode(
+    code: string,
+    em?: EntityManager,
+  ): Promise<CloudTelephonyIntegration | null> {
+    const repo = em ? em.getRepository(CloudTelephonyIntegration) : this;
+
+    return repo.findOne({ where: { code } });
   }
 
   async findByTenantId(
     tenantId: string,
+    em?: EntityManager,
   ): Promise<CloudTelephonyIntegration | null> {
-    return await this.cloudTelephonyRepository.findOne({ where: { tenantId } });
+    const repo = em ? em.getRepository(CloudTelephonyIntegration) : this;
+
+    return repo.findOne({ where: { tenantId } });
   }
 
   async updateById(
     id: string,
     data: Partial<CloudTelephonyIntegration>,
-  ): Promise<void> {
-    await this.cloudTelephonyRepository.update(id, data);
+    em?: EntityManager,
+  ): Promise<boolean> {
+    const repo = em
+      ? em.getRepository(CloudTelephonyIntegration)
+      : this.dataSource.getRepository(CloudTelephonyIntegration);
+
+    const result = await repo.update(id, data);
+    return result.affected !== 0;
+  }
+
+  async deleteById(id: string, em?: EntityManager): Promise<boolean> {
+    const repo = em
+      ? em.getRepository(CloudTelephonyIntegration)
+      : this.dataSource.getRepository(CloudTelephonyIntegration);
+
+    const result = await repo.delete(id);
+    return result.affected !== 0;
   }
 }

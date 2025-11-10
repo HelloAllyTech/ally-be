@@ -1,7 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { ReferenceDocumentService } from '../reference-document.service';
 import {
   DocumentUploadStatus,
@@ -19,6 +17,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { OrganizationRequiredException } from 'src/exception/custom.exception';
 import { parseCsvBuffer } from 'src/common/util/csv.util';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { ReferenceDocumentRepository } from '../../repository/reference-document.repository';
 
 import {
   AddReferenceDocumentResponse,
@@ -35,7 +34,7 @@ jest.mock('src/common/util/csv.util');
 
 describe('ReferenceDocumentService', () => {
   let service: ReferenceDocumentService;
-  let repo: jest.Mocked<Repository<ReferenceDocument>>;
+  let repo: jest.Mocked<ReferenceDocumentRepository>;
   let ai: jest.Mocked<AiService>;
   let permissionValidator: jest.Mocked<PermissionValidator>;
 
@@ -58,14 +57,18 @@ describe('ReferenceDocumentService', () => {
   };
 
   const mockRepo = {
-    create: jest.fn(),
-    save: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-    find: jest.fn(),
-    findOneBy: jest.fn(),
-    createQueryBuilder: jest.fn(),
-  } as unknown as jest.Mocked<Repository<ReferenceDocument>>;
+    createDocument: jest.fn(),
+    findPublicSuccessfulDocuments: jest.fn(),
+    findTenantSuccessfulDocuments: jest.fn(),
+    findById: jest.fn(),
+    findPublicById: jest.fn(),
+    findPrivateById: jest.fn(),
+    updateDocument: jest.fn(),
+    deleteDocument: jest.fn(),
+    archiveDocument: jest.fn(),
+    unarchiveDocument: jest.fn(),
+    getDistinctCategories: jest.fn(),
+  } as unknown as jest.Mocked<ReferenceDocumentRepository>;
 
   const mockAi: jest.Mocked<AiService> = {
     addReferenceDocument: jest.fn(),
@@ -93,14 +96,14 @@ describe('ReferenceDocumentService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReferenceDocumentService,
-        { provide: getRepositoryToken(ReferenceDocument), useValue: mockRepo },
+        { provide: ReferenceDocumentRepository, useValue: mockRepo },
         { provide: AiService, useValue: mockAi },
         { provide: PermissionValidator, useValue: mockPermissionValidator },
       ],
     }).compile();
 
     service = module.get(ReferenceDocumentService);
-    repo = module.get(getRepositoryToken(ReferenceDocument));
+    repo = module.get(ReferenceDocumentRepository);
     ai = module.get(AiService);
     permissionValidator = module.get(PermissionValidator);
   });
@@ -120,8 +123,7 @@ describe('ReferenceDocumentService', () => {
         organizationId: undefined,
         id: 'new-id',
       };
-      repo.create.mockReturnValue(saved as any);
-      repo.save.mockResolvedValue(saved as any);
+      repo.createDocument.mockResolvedValue(saved as any);
 
       ai.addReferenceDocument.mockResolvedValue({
         id: 'ai-id',
@@ -132,19 +134,19 @@ describe('ReferenceDocumentService', () => {
         tenant_id: '',
       } as unknown as AddReferenceDocumentResponse);
 
-      repo.update.mockResolvedValue({} as any);
+      repo.updateDocument.mockResolvedValue();
 
       permissionValidator.validatePermissions.mockResolvedValue(true);
       const res = await service.addReferenceDocument(100, dto);
 
-      expect(repo.create).toHaveBeenCalledWith({
+      expect(repo.createDocument).toHaveBeenCalledWith({
         ...dto,
         createdBy: 100,
         uploadStatus: DocumentUploadStatus.PENDING,
         organizationId: undefined,
       });
       expect(ai.addReferenceDocument).toHaveBeenCalled();
-      expect(repo.update).toHaveBeenCalledWith('new-id', {
+      expect(repo.updateDocument).toHaveBeenCalledWith('new-id', {
         uploadStatus: DocumentUploadStatus.SUCCESS,
       });
       expect(res).toEqual({
@@ -167,8 +169,8 @@ describe('ReferenceDocumentService', () => {
         organizationId: 'org-ADMIN',
         isPublic: false,
       };
-      repo.create.mockReturnValue(saved as any);
-      repo.save.mockResolvedValue(saved as any);
+      repo.createDocument.mockReturnValue(saved as any);
+      repo.createDocument.mockResolvedValue(saved as any);
 
       ai.addReferenceDocument.mockResolvedValue({
         id: 'ai-id',
@@ -179,11 +181,11 @@ describe('ReferenceDocumentService', () => {
         tenant_id: 'org-ADMIN',
       } as unknown as AddReferenceDocumentResponse);
 
-      repo.update.mockResolvedValue({} as any);
+      repo.updateDocument.mockResolvedValue({} as any);
 
       permissionValidator.validatePermissions.mockResolvedValue(true);
       const res = await service.addReferenceDocument(5, dto);
-      expect(repo.create).toHaveBeenCalledWith({
+      expect(repo.createDocument).toHaveBeenCalledWith({
         ...dto,
         createdBy: 5,
         uploadStatus: DocumentUploadStatus.PENDING,
@@ -219,13 +221,13 @@ describe('ReferenceDocumentService', () => {
         isPublic: true,
         organizationId: undefined,
       };
-      repo.create.mockReturnValue(saved as any);
-      repo.save.mockResolvedValue(saved as any);
+      repo.createDocument.mockReturnValue(saved as any);
+      repo.createDocument.mockResolvedValue(saved as any);
 
       ai.addReferenceDocument.mockRejectedValue(new Error('AI fail'));
 
       permissionValidator.validatePermissions.mockResolvedValue(true);
-      repo.update.mockRejectedValueOnce(new Error('DB update fail'));
+      repo.updateDocument.mockRejectedValueOnce(new Error('DB update fail'));
       await expect(service.addReferenceDocument(1, dto)).rejects.toThrow(
         DocumentUpdateFailedException,
       );
@@ -244,14 +246,14 @@ describe('ReferenceDocumentService', () => {
         isPublic: true,
         organizationId: undefined,
       };
-      repo.create.mockReturnValue(saved as any);
-      repo.save.mockResolvedValue(saved as any);
+      repo.createDocument.mockReturnValue(saved as any);
+      repo.createDocument.mockResolvedValue(saved as any);
 
       ai.addReferenceDocument.mockResolvedValue(
         {} as unknown as AddReferenceDocumentResponse,
       );
 
-      repo.update.mockResolvedValue({} as any);
+      repo.updateDocument.mockResolvedValue({} as any);
 
       permissionValidator.validatePermissions.mockResolvedValue(true);
       const res = await service.addReferenceDocument(1, dto);
@@ -264,13 +266,16 @@ describe('ReferenceDocumentService', () => {
 
   describe('searchPublicDocuments', () => {
     it('returns empty when none available', async () => {
-      repo.find.mockResolvedValue([]);
+      repo.findPublicSuccessfulDocuments.mockResolvedValue([]);
       const res = await service.searchPublicDocuments({ query: 'q' } as any);
       expect(res).toEqual({ documents: [], total: 0, categories: {} });
     });
 
     it('searches when available and not excluded', async () => {
-      repo.find.mockResolvedValue([{ id: 'a' }, { id: 'b' }] as any);
+      repo.findPublicSuccessfulDocuments.mockResolvedValue([
+        { id: 'a' },
+        { id: 'b' },
+      ] as any);
 
       ai.searchReferenceDocuments.mockResolvedValue({
         documents: [
@@ -298,7 +303,10 @@ describe('ReferenceDocumentService', () => {
     });
 
     it('skips when all excluded', async () => {
-      repo.find.mockResolvedValue([{ id: 'a' }, { id: 'b' }] as any);
+      repo.findPublicSuccessfulDocuments.mockResolvedValue([
+        { id: 'a' },
+        { id: 'b' },
+      ] as any);
       const res = await service.searchPublicDocuments({
         query: 'q',
         excludedIds: ['a', 'b'],
@@ -307,7 +315,9 @@ describe('ReferenceDocumentService', () => {
     });
 
     it('bubbles SearchOperationFailedException on AI error', async () => {
-      repo.find.mockResolvedValue([{ id: 'a' }] as any);
+      repo.findPublicSuccessfulDocuments.mockResolvedValue([
+        { id: 'a' },
+      ] as any);
       ai.searchReferenceDocuments.mockRejectedValue(new Error('AI search'));
       await expect(
         service.searchPublicDocuments({ query: 'q' } as any),
@@ -325,7 +335,10 @@ describe('ReferenceDocumentService', () => {
 
     it('searches with union of public + org', async () => {
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('org-1');
-      repo.find.mockResolvedValue([{ id: 'a' }, { id: 'b' }] as any);
+      repo.findTenantSuccessfulDocuments.mockResolvedValue([
+        { id: 'a' },
+        { id: 'b' },
+      ] as any);
 
       ai.searchReferenceDocuments.mockResolvedValue({
         documents: [
@@ -350,7 +363,9 @@ describe('ReferenceDocumentService', () => {
 
   describe('buildSearchRequest + mapDocument via public search', () => {
     it('passes filters/sort into ai request and maps score', async () => {
-      repo.find.mockResolvedValue([{ id: 'd1' }] as any);
+      repo.findPublicSuccessfulDocuments.mockResolvedValue([
+        { id: 'd1' },
+      ] as any);
 
       ai.searchReferenceDocuments.mockResolvedValue({
         documents: [
@@ -397,15 +412,15 @@ describe('ReferenceDocumentService', () => {
 
   describe('updateReferenceDocument', () => {
     it('throws NotFound if missing', async () => {
-      repo.findOneBy.mockResolvedValue(null);
+      repo.findById.mockResolvedValue(null);
       await expect(
         service.updateReferenceDocument('nope', { heading: 'X' } as any),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('success -> AI returns id -> SUCCESS then update', async () => {
-      repo.findOneBy.mockResolvedValue(baseDocument as any);
-      repo.update.mockResolvedValue({} as any);
+      repo.findById.mockResolvedValue(baseDocument as any);
+      repo.updateDocument.mockResolvedValue({} as any);
 
       ai.updateReferenceDocument.mockResolvedValue({
         id: 'ai-id',
@@ -419,7 +434,7 @@ describe('ReferenceDocumentService', () => {
       const res = await service.updateReferenceDocument('doc-1', {
         heading: 'X',
       } as any);
-      expect(repo.update).toHaveBeenCalledTimes(2);
+      expect(repo.updateDocument).toHaveBeenCalledTimes(2);
       expect(res).toEqual({
         id: 'doc-1',
         uploadStatus: DocumentUploadStatus.SUCCESS,
@@ -427,8 +442,8 @@ describe('ReferenceDocumentService', () => {
     });
 
     it('ai throws -> FAILED persists', async () => {
-      repo.findOneBy.mockResolvedValue(baseDocument as any);
-      repo.update.mockResolvedValue({} as any);
+      repo.findById.mockResolvedValue(baseDocument as any);
+      repo.updateDocument.mockResolvedValue({} as any);
       ai.updateReferenceDocument.mockRejectedValue(new Error('AI fail'));
       const res = await service.updateReferenceDocument('doc-1', {
         heading: 'X',
@@ -472,17 +487,7 @@ describe('ReferenceDocumentService', () => {
 
   describe('getDistinctCategories', () => {
     it('returns mapped categories', async () => {
-      const qb = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest
-          .fn()
-          .mockResolvedValue([{ category: 'A' }, { category: 'B' }]),
-      };
-      (repo.createQueryBuilder as jest.Mock).mockReturnValue(qb as any);
+      repo.getDistinctCategories.mockResolvedValue(['A', 'B']);
 
       const res = await service.getDistinctCategories();
       expect(res).toEqual(['A', 'B']);
@@ -520,14 +525,14 @@ describe('ReferenceDocumentService', () => {
 
   describe('getPublicReferenceDocument', () => {
     it('throws NotFound if not found', async () => {
-      repo.findOneBy.mockResolvedValue(null);
+      repo.findById.mockResolvedValue(null);
       await expect(service.getPublicReferenceDocument('x')).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('returns ai doc when present', async () => {
-      repo.findOneBy.mockResolvedValue({
+      repo.findPublicById.mockResolvedValue({
         ...baseDocument,
         isPublic: true,
         uploadStatus: DocumentUploadStatus.SUCCESS,
@@ -554,7 +559,7 @@ describe('ReferenceDocumentService', () => {
     });
 
     it('throws NotFound when AI fails', async () => {
-      repo.findOneBy.mockResolvedValue({
+      repo.findPublicById.mockResolvedValue({
         ...baseDocument,
         isPublic: true,
         uploadStatus: DocumentUploadStatus.SUCCESS,
@@ -576,7 +581,7 @@ describe('ReferenceDocumentService', () => {
 
     it('throws NotFound if not found', async () => {
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('org-1');
-      repo.findOneBy.mockResolvedValue(null);
+      repo.findById.mockResolvedValue(null);
       await expect(service.getPrivateReferenceDocument('x')).rejects.toThrow(
         NotFoundException,
       );
@@ -584,7 +589,7 @@ describe('ReferenceDocumentService', () => {
 
     it('throws NotFound if access denied by org mismatch', async () => {
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('org-2');
-      repo.findOneBy.mockResolvedValue({
+      repo.findById.mockResolvedValue({
         ...baseDocument,
         organizationId: 'org-1',
         isPublic: false,
@@ -596,7 +601,7 @@ describe('ReferenceDocumentService', () => {
 
     it('returns ai doc when ok', async () => {
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('org-1');
-      repo.findOneBy.mockResolvedValue({
+      repo.findPrivateById.mockResolvedValue({
         ...baseDocument,
         organizationId: 'org-1',
       } as any);
@@ -623,7 +628,7 @@ describe('ReferenceDocumentService', () => {
 
     it('throws NotFound when AI fails', async () => {
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('org-1');
-      repo.findOneBy.mockResolvedValue({
+      repo.findPrivateById.mockResolvedValue({
         ...baseDocument,
         organizationId: 'org-1',
       } as any);
@@ -636,24 +641,24 @@ describe('ReferenceDocumentService', () => {
 
   describe('deleteReferenceDocument', () => {
     it('throws NotFound when doc missing', async () => {
-      repo.findOneBy.mockResolvedValue(null);
+      repo.findById.mockResolvedValue(null);
       await expect(service.deleteReferenceDocument('x')).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('happy delete', async () => {
-      repo.findOneBy.mockResolvedValue(baseDocument as any);
+      repo.findById.mockResolvedValue(baseDocument as any);
       ai.deleteReferenceDocument.mockResolvedValue({
         success: true,
       } as unknown as DeleteReferenceDocumentResponse);
-      repo.delete.mockResolvedValue({} as any);
+      repo.deleteDocument.mockResolvedValue({} as any);
       const res = await service.deleteReferenceDocument('x');
       expect(res).toEqual({ success: true });
     });
 
     it('throws generic Error when AI/delete fails', async () => {
-      repo.findOneBy.mockResolvedValue(baseDocument as any);
+      repo.findById.mockResolvedValue(baseDocument as any);
       ai.deleteReferenceDocument.mockRejectedValue(new Error('AI fail'));
       await expect(service.deleteReferenceDocument('x')).rejects.toThrow(
         'Failed to delete reference document with ID x',
@@ -663,14 +668,14 @@ describe('ReferenceDocumentService', () => {
 
   describe('archiveReferenceDocument', () => {
     it('throws NotFound when missing', async () => {
-      repo.findOneBy.mockResolvedValue(null);
+      repo.findById.mockResolvedValue(null);
       await expect(service.archiveReferenceDocument('x')).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('returns already archived', async () => {
-      repo.findOneBy.mockResolvedValue({
+      repo.findById.mockResolvedValue({
         ...baseDocument,
         isArchived: true,
       } as any);
@@ -682,16 +687,13 @@ describe('ReferenceDocumentService', () => {
     });
 
     it('happy archive', async () => {
-      repo.findOneBy.mockResolvedValue({
+      repo.findById.mockResolvedValue({
         ...baseDocument,
         isArchived: false,
       } as any);
-      repo.update.mockResolvedValue({} as any);
+      repo.archiveDocument.mockResolvedValue();
       const res = await service.archiveReferenceDocument('x');
-      expect(repo.update).toHaveBeenCalledWith('x', {
-        isArchived: true,
-        archivedAt: expect.any(Date),
-      });
+      expect(repo.archiveDocument).toHaveBeenCalledWith('x');
       expect(res).toEqual({
         success: true,
         message: 'Document archived successfully',
@@ -699,11 +701,11 @@ describe('ReferenceDocumentService', () => {
     });
 
     it('throws DocumentArchiveFailedException when repo fails', async () => {
-      repo.findOneBy.mockResolvedValue({
+      repo.findById.mockResolvedValue({
         ...baseDocument,
         isArchived: false,
       } as any);
-      repo.update.mockRejectedValue(new Error('fail'));
+      repo.archiveDocument.mockRejectedValue(new Error('fail'));
       await expect(service.archiveReferenceDocument('x')).rejects.toThrow(
         DocumentArchiveFailedException,
       );
@@ -712,14 +714,14 @@ describe('ReferenceDocumentService', () => {
 
   describe('unarchiveReferenceDocument', () => {
     it('throws NotFound when missing', async () => {
-      repo.findOneBy.mockResolvedValue(null);
+      repo.findById.mockResolvedValue(null);
       await expect(service.unarchiveReferenceDocument('x')).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('returns not archived', async () => {
-      repo.findOneBy.mockResolvedValue({
+      repo.findById.mockResolvedValue({
         ...baseDocument,
         isArchived: false,
       } as any);
@@ -731,16 +733,13 @@ describe('ReferenceDocumentService', () => {
     });
 
     it('happy unarchive', async () => {
-      repo.findOneBy.mockResolvedValue({
+      repo.findById.mockResolvedValue({
         ...baseDocument,
         isArchived: true,
       } as any);
-      repo.update.mockResolvedValue({} as any);
+      repo.unarchiveDocument.mockResolvedValue();
       const res = await service.unarchiveReferenceDocument('x');
-      expect(repo.update).toHaveBeenCalledWith('x', {
-        isArchived: false,
-        archivedAt: undefined,
-      });
+      expect(repo.unarchiveDocument).toHaveBeenCalledWith('x');
       expect(res).toEqual({
         success: true,
         message: 'Document unarchived successfully',
@@ -748,11 +747,11 @@ describe('ReferenceDocumentService', () => {
     });
 
     it('throws DocumentUnarchiveFailedException when repo fails', async () => {
-      repo.findOneBy.mockResolvedValue({
+      repo.findById.mockResolvedValue({
         ...baseDocument,
         isArchived: true,
       } as any);
-      repo.update.mockRejectedValue(new Error('fail'));
+      repo.unarchiveDocument.mockRejectedValue(new Error('fail'));
       await expect(service.unarchiveReferenceDocument('x')).rejects.toThrow(
         DocumentUnarchiveFailedException,
       );
@@ -761,17 +760,7 @@ describe('ReferenceDocumentService', () => {
 
   describe('getDistinctCategories', () => {
     it('returns mapped categories', async () => {
-      const qb = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest
-          .fn()
-          .mockResolvedValue([{ category: 'A' }, { category: 'B' }]),
-      };
-      (repo.createQueryBuilder as jest.Mock).mockReturnValue(qb as any);
+      repo.getDistinctCategories.mockResolvedValue(['A', 'B']);
 
       const res = await service.getDistinctCategories();
       expect(res).toEqual(['A', 'B']);

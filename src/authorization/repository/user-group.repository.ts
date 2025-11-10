@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { UserGroup } from 'src/authorization/entity/user-group.entity';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 
 @Injectable()
 export class UserGroupRepository extends Repository<UserGroup> {
@@ -8,8 +8,12 @@ export class UserGroupRepository extends Repository<UserGroup> {
     super(UserGroup, dataSource.createEntityManager());
   }
 
-  async getUserGroupsByUserIds(userIds: number[]) {
-    const roles = await this.dataSource
+  async getUserGroupsByUserIds(
+    userIds: number[],
+    entityManager?: EntityManager,
+  ) {
+    const queryRunner = entityManager || this.dataSource;
+    const roles = await queryRunner
       .createQueryBuilder(UserGroup, 'ug')
       .innerJoin('groups', 'g', 'g.id = ug."groupId"')
       .where('ug."userId" IN (:...userIds)', { userIds })

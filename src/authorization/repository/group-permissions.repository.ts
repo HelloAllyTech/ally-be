@@ -1,20 +1,23 @@
 import { GroupPermission } from 'src/authorization/entity/group-permission.entity';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { Permission } from 'src/authorization/entity/permission.entity';
 
 @Injectable()
-export class GroupPermissionsRepository {
-  constructor(
-    @InjectRepository(GroupPermission)
-    private readonly groupPermissionsRepository: Repository<GroupPermission>,
-  ) {}
+export class GroupPermissionsRepository extends Repository<GroupPermission> {
+  constructor(private dataSource: DataSource) {
+    super(GroupPermission, dataSource.createEntityManager());
+  }
 
   async findPermissionsByGroupId(
     groupIds: number[],
+    entityManager?: EntityManager,
   ): Promise<{ groupId: number; permission: string }[]> {
-    return this.groupPermissionsRepository
+    const repository = entityManager
+      ? entityManager.getRepository(GroupPermission)
+      : this;
+
+    return repository
       .createQueryBuilder('group_permissions')
       .leftJoin(
         Permission,

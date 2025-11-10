@@ -3,6 +3,7 @@ import { PreferenceService } from '../preference.service';
 import { Preference } from '../../entity/preference.entity';
 import { RedisService } from '../../../redis/service/redis.service';
 import { PreferenceName } from '../../../common/constants/user.constants';
+import { PreferenceRepository } from '../../repository/preference.repository';
 
 // Mock LoggerService
 const mockLoggerInstance = {
@@ -32,10 +33,11 @@ describe('PreferenceService', () => {
 
   beforeEach(async () => {
     mockPreferenceRepository = {
-      save: jest.fn(),
-      findOne: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
+      createPreference: jest.fn(),
+      findPreference: jest.fn(),
+      findPreferenceById: jest.fn(),
+      updatePreference: jest.fn(),
+      deletePreference: jest.fn(),
     };
 
     mockPreferenceCache = {
@@ -48,7 +50,7 @@ describe('PreferenceService', () => {
       providers: [
         PreferenceService,
         {
-          provide: 'PreferenceRepository', // getRepositoryToken(Preference)
+          provide: PreferenceRepository,
           useValue: mockPreferenceRepository,
         },
         { provide: RedisService, useValue: mockPreferenceCache },
@@ -61,11 +63,13 @@ describe('PreferenceService', () => {
   describe('createPreference', () => {
     it('should create a new preference', async () => {
       const preferenceData = { name: PreferenceName.NUDGE_STATUS };
-      mockPreferenceRepository.save.mockResolvedValue(mockPreference);
+      mockPreferenceRepository.createPreference.mockResolvedValue(
+        mockPreference,
+      );
 
       const result = await service.createPreference(preferenceData);
 
-      expect(mockPreferenceRepository.save).toHaveBeenCalledWith(
+      expect(mockPreferenceRepository.createPreference).toHaveBeenCalledWith(
         preferenceData,
       );
       expect(result).toEqual(mockPreference);
@@ -88,7 +92,7 @@ describe('PreferenceService', () => {
       );
 
       expect(mockPreferenceCache.get).toHaveBeenCalledWith(cacheKey);
-      expect(mockPreferenceRepository.findOne).not.toHaveBeenCalled();
+      expect(mockPreferenceRepository.findPreference).not.toHaveBeenCalled();
       expect(result).toEqual(JSON.parse(cachedData));
     });
 
@@ -98,7 +102,7 @@ describe('PreferenceService', () => {
       const relatedEntity = 'User';
       const cacheKey = `preference:${name}:${relatedId}:${relatedEntity}`;
       mockPreferenceCache.get.mockResolvedValue(null);
-      mockPreferenceRepository.findOne.mockResolvedValue(mockPreference);
+      mockPreferenceRepository.findPreference.mockResolvedValue(mockPreference);
 
       const result = await service.getPreference(
         name,
@@ -107,9 +111,11 @@ describe('PreferenceService', () => {
       );
 
       expect(mockPreferenceCache.get).toHaveBeenCalledWith(cacheKey);
-      expect(mockPreferenceRepository.findOne).toHaveBeenCalledWith({
-        where: { name, relatedId, relatedEntity },
-      });
+      expect(mockPreferenceRepository.findPreference).toHaveBeenCalledWith(
+        name,
+        relatedId,
+        relatedEntity,
+      );
       expect(mockPreferenceCache.set).toHaveBeenCalledWith(
         cacheKey,
         JSON.stringify(mockPreference),
@@ -122,7 +128,7 @@ describe('PreferenceService', () => {
       const relatedId = 'user-123';
       const relatedEntity = 'User';
       mockPreferenceCache.get.mockResolvedValue(null);
-      mockPreferenceRepository.findOne.mockResolvedValue(null);
+      mockPreferenceRepository.findPreference.mockResolvedValue(null);
 
       const result = await service.getPreference(
         name,
@@ -130,9 +136,11 @@ describe('PreferenceService', () => {
         relatedEntity,
       );
 
-      expect(mockPreferenceRepository.findOne).toHaveBeenCalledWith({
-        where: { name, relatedId, relatedEntity },
-      });
+      expect(mockPreferenceRepository.findPreference).toHaveBeenCalledWith(
+        name,
+        relatedId,
+        relatedEntity,
+      );
       expect(mockPreferenceCache.set).not.toHaveBeenCalled();
       expect(result).toBeNull();
     });
@@ -143,17 +151,20 @@ describe('PreferenceService', () => {
       const id = 'pref-123';
       const value = { status: false };
       const updatedPreference = { ...mockPreference, value };
-      mockPreferenceRepository.update.mockResolvedValue({ affected: 1 });
-      mockPreferenceRepository.findOne.mockResolvedValue(updatedPreference);
+      mockPreferenceRepository.updatePreference.mockResolvedValue(undefined);
+      mockPreferenceRepository.findPreferenceById.mockResolvedValue(
+        updatedPreference,
+      );
 
       const result = await service.updatePreference(id, value);
 
-      expect(mockPreferenceRepository.update).toHaveBeenCalledWith(id, {
+      expect(mockPreferenceRepository.updatePreference).toHaveBeenCalledWith(
+        id,
         value,
-      });
-      expect(mockPreferenceRepository.findOne).toHaveBeenCalledWith({
-        where: { id },
-      });
+      );
+      expect(mockPreferenceRepository.findPreferenceById).toHaveBeenCalledWith(
+        id,
+      );
       expect(mockPreferenceCache.set).toHaveBeenCalledWith(
         `preference:${updatedPreference.name}:${updatedPreference.relatedId}:${updatedPreference.relatedEntity}`,
         JSON.stringify(updatedPreference),
@@ -164,17 +175,18 @@ describe('PreferenceService', () => {
     it('should return null when preference not found', async () => {
       const id = 'pref-123';
       const value = { status: false };
-      mockPreferenceRepository.update.mockResolvedValue({ affected: 0 });
-      mockPreferenceRepository.findOne.mockResolvedValue(null);
+      mockPreferenceRepository.updatePreference.mockResolvedValue(undefined);
+      mockPreferenceRepository.findPreferenceById.mockResolvedValue(null);
 
       const result = await service.updatePreference(id, value);
 
-      expect(mockPreferenceRepository.update).toHaveBeenCalledWith(id, {
+      expect(mockPreferenceRepository.updatePreference).toHaveBeenCalledWith(
+        id,
         value,
-      });
-      expect(mockPreferenceRepository.findOne).toHaveBeenCalledWith({
-        where: { id },
-      });
+      );
+      expect(mockPreferenceRepository.findPreferenceById).toHaveBeenCalledWith(
+        id,
+      );
       expect(mockPreferenceCache.set).not.toHaveBeenCalled();
       expect(result).toBeNull();
     });
@@ -183,16 +195,20 @@ describe('PreferenceService', () => {
   describe('deletePreference', () => {
     it('should delete preference and cache successfully', async () => {
       const id = 'pref-123';
-      mockPreferenceRepository.findOne.mockResolvedValue(mockPreference);
-      mockPreferenceRepository.delete.mockResolvedValue({ affected: 1 });
+      mockPreferenceRepository.findPreferenceById.mockResolvedValue(
+        mockPreference,
+      );
+      mockPreferenceRepository.deletePreference.mockResolvedValue(undefined);
       mockPreferenceCache.del.mockResolvedValue(1);
 
       const result = await service.deletePreference(id);
 
-      expect(mockPreferenceRepository.findOne).toHaveBeenCalledWith({
-        where: { id },
-      });
-      expect(mockPreferenceRepository.delete).toHaveBeenCalledWith(id);
+      expect(mockPreferenceRepository.findPreferenceById).toHaveBeenCalledWith(
+        id,
+      );
+      expect(mockPreferenceRepository.deletePreference).toHaveBeenCalledWith(
+        id,
+      );
       expect(mockPreferenceCache.del).toHaveBeenCalledWith(
         `preference:${mockPreference.name}:${mockPreference.relatedId}:${mockPreference.relatedEntity}`,
       );
@@ -201,14 +217,14 @@ describe('PreferenceService', () => {
 
     it('should return null when preference not found', async () => {
       const id = 'pref-123';
-      mockPreferenceRepository.findOne.mockResolvedValue(null);
+      mockPreferenceRepository.findPreferenceById.mockResolvedValue(null);
 
       const result = await service.deletePreference(id);
 
-      expect(mockPreferenceRepository.findOne).toHaveBeenCalledWith({
-        where: { id },
-      });
-      expect(mockPreferenceRepository.delete).not.toHaveBeenCalled();
+      expect(mockPreferenceRepository.findPreferenceById).toHaveBeenCalledWith(
+        id,
+      );
+      expect(mockPreferenceRepository.deletePreference).not.toHaveBeenCalled();
       expect(mockPreferenceCache.del).not.toHaveBeenCalled();
       expect(result).toBeNull();
     });
@@ -216,16 +232,20 @@ describe('PreferenceService', () => {
     it('should handle cache deletion error gracefully', async () => {
       const id = 'pref-123';
       const cacheError = new Error('Cache error');
-      mockPreferenceRepository.findOne.mockResolvedValue(mockPreference);
-      mockPreferenceRepository.delete.mockResolvedValue({ affected: 1 });
+      mockPreferenceRepository.findPreferenceById.mockResolvedValue(
+        mockPreference,
+      );
+      mockPreferenceRepository.deletePreference.mockResolvedValue(undefined);
       mockPreferenceCache.del.mockRejectedValue(cacheError);
 
       const result = await service.deletePreference(id);
 
-      expect(mockPreferenceRepository.findOne).toHaveBeenCalledWith({
-        where: { id },
-      });
-      expect(mockPreferenceRepository.delete).toHaveBeenCalledWith(id);
+      expect(mockPreferenceRepository.findPreferenceById).toHaveBeenCalledWith(
+        id,
+      );
+      expect(mockPreferenceRepository.deletePreference).toHaveBeenCalledWith(
+        id,
+      );
       expect(mockPreferenceCache.del).toHaveBeenCalledWith(
         `preference:${mockPreference.name}:${mockPreference.relatedId}:${mockPreference.relatedEntity}`,
       );

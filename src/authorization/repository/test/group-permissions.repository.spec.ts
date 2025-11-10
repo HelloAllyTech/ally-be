@@ -1,31 +1,37 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository, SelectQueryBuilder } from 'typeorm';
+import { DataSource, SelectQueryBuilder } from 'typeorm';
 import { GroupPermissionsRepository } from '../group-permissions.repository';
 import { GroupPermission } from 'src/authorization/entity/group-permission.entity';
 
 describe('GroupPermissionsRepository', () => {
   let repository: GroupPermissionsRepository;
-  let mockRepo: jest.Mocked<Repository<GroupPermission>>;
+  let dataSource: jest.Mocked<DataSource>;
+
+  const mockQueryBuilder: Partial<SelectQueryBuilder<GroupPermission>> = {
+    leftJoin: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    getRawMany: jest.fn(),
+  };
 
   beforeEach(async () => {
-    // Create mock query builder
-    const mockQueryBuilder: Partial<SelectQueryBuilder<GroupPermission>> = {
-      leftJoin: jest.fn().mockReturnThis(),
-      select: jest.fn().mockReturnThis(),
-      addSelect: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      getRawMany: jest.fn(),
+    const mockEntityManager = {
+      getRepository: jest.fn().mockReturnValue({
+        createQueryBuilder: jest.fn(() => mockQueryBuilder),
+      }),
     };
+
+    dataSource = {
+      createEntityManager: jest.fn().mockReturnValue(mockEntityManager),
+    } as any;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GroupPermissionsRepository,
         {
-          provide: getRepositoryToken(GroupPermission),
-          useValue: {
-            createQueryBuilder: jest.fn(() => mockQueryBuilder),
-          },
+          provide: DataSource,
+          useValue: dataSource,
         },
       ],
     }).compile();
@@ -33,7 +39,15 @@ describe('GroupPermissionsRepository', () => {
     repository = module.get<GroupPermissionsRepository>(
       GroupPermissionsRepository,
     );
-    mockRepo = module.get(getRepositoryToken(GroupPermission));
+
+    // Spy on inherited Repository methods
+    jest
+      .spyOn(repository, 'createQueryBuilder')
+      .mockReturnValue(mockQueryBuilder as any);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
   describe('findPermissionsByGroupId', () => {
@@ -45,20 +59,14 @@ describe('GroupPermissionsRepository', () => {
         { groupId: 2, permission: 'READ_POST' },
       ];
 
-      const mockQueryBuilder = {
-        leftJoin: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValueOnce(expectedPermissions),
-      };
-
-      mockRepo.createQueryBuilder.mockReturnValueOnce(mockQueryBuilder as any);
+      (mockQueryBuilder.getRawMany as jest.Mock).mockResolvedValueOnce(
+        expectedPermissions,
+      );
 
       const result = await repository.findPermissionsByGroupId(groupIds);
 
       expect(result).toEqual(expectedPermissions);
-      expect(mockRepo.createQueryBuilder).toHaveBeenCalledWith(
+      expect(repository.createQueryBuilder).toHaveBeenCalledWith(
         'group_permissions',
       );
       expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
@@ -84,15 +92,7 @@ describe('GroupPermissionsRepository', () => {
     it('should return empty array when no permissions found', async () => {
       const groupIds = [999];
 
-      const mockQueryBuilder = {
-        leftJoin: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValueOnce([]),
-      };
-
-      mockRepo.createQueryBuilder.mockReturnValueOnce(mockQueryBuilder as any);
+      (mockQueryBuilder.getRawMany as jest.Mock).mockResolvedValueOnce([]);
 
       const result = await repository.findPermissionsByGroupId(groupIds);
 
@@ -110,15 +110,9 @@ describe('GroupPermissionsRepository', () => {
         { groupId: 5, permission: 'WRITE_POST' },
       ];
 
-      const mockQueryBuilder = {
-        leftJoin: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValueOnce(expectedPermissions),
-      };
-
-      mockRepo.createQueryBuilder.mockReturnValueOnce(mockQueryBuilder as any);
+      (mockQueryBuilder.getRawMany as jest.Mock).mockResolvedValueOnce(
+        expectedPermissions,
+      );
 
       const result = await repository.findPermissionsByGroupId(groupIds);
 
@@ -136,15 +130,9 @@ describe('GroupPermissionsRepository', () => {
         { groupId: 1, permission: 'WRITE_USER' },
       ];
 
-      const mockQueryBuilder = {
-        leftJoin: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValueOnce(expectedPermissions),
-      };
-
-      mockRepo.createQueryBuilder.mockReturnValueOnce(mockQueryBuilder as any);
+      (mockQueryBuilder.getRawMany as jest.Mock).mockResolvedValueOnce(
+        expectedPermissions,
+      );
 
       const result = await repository.findPermissionsByGroupId(groupIds);
 
@@ -154,19 +142,12 @@ describe('GroupPermissionsRepository', () => {
 
     it('should call all query builder methods in correct order', async () => {
       const groupIds = [1];
-      const mockQueryBuilder = {
-        leftJoin: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValueOnce([]),
-      };
 
-      mockRepo.createQueryBuilder.mockReturnValueOnce(mockQueryBuilder as any);
+      (mockQueryBuilder.getRawMany as jest.Mock).mockResolvedValueOnce([]);
 
       await repository.findPermissionsByGroupId(groupIds);
 
-      expect(mockRepo.createQueryBuilder).toHaveBeenCalledTimes(1);
+      expect(repository.createQueryBuilder).toHaveBeenCalledTimes(1);
       expect(mockQueryBuilder.leftJoin).toHaveBeenCalledTimes(1);
       expect(mockQueryBuilder.select).toHaveBeenCalledTimes(1);
       expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(1);
@@ -178,15 +159,9 @@ describe('GroupPermissionsRepository', () => {
       const groupIds = [1];
       const expectedPermissions = [{ groupId: 1, permission: 'ADMIN' }];
 
-      const mockQueryBuilder = {
-        leftJoin: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValueOnce(expectedPermissions),
-      };
-
-      mockRepo.createQueryBuilder.mockReturnValueOnce(mockQueryBuilder as any);
+      (mockQueryBuilder.getRawMany as jest.Mock).mockResolvedValueOnce(
+        expectedPermissions,
+      );
 
       const result = await repository.findPermissionsByGroupId(groupIds);
 
@@ -194,6 +169,44 @@ describe('GroupPermissionsRepository', () => {
       expect(result[0]).toHaveProperty('permission');
       expect(typeof result[0].groupId).toBe('number');
       expect(typeof result[0].permission).toBe('string');
+    });
+
+    it('should use entity manager if provided', async () => {
+      const groupIds = [1, 2];
+      const expectedPermissions = [
+        { groupId: 1, permission: 'READ_USER' },
+        { groupId: 2, permission: 'WRITE_USER' },
+      ];
+
+      const mockEmQueryBuilder = {
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValueOnce(expectedPermissions),
+      };
+
+      const emRepository = {
+        createQueryBuilder: jest.fn().mockReturnValue(mockEmQueryBuilder),
+      };
+
+      const mockEntityManager = {
+        getRepository: jest.fn().mockReturnValue(emRepository),
+      } as any;
+
+      const result = await repository.findPermissionsByGroupId(
+        groupIds,
+        mockEntityManager,
+      );
+
+      expect(result).toEqual(expectedPermissions);
+      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(
+        GroupPermission,
+      );
+      expect(emRepository.createQueryBuilder).toHaveBeenCalledWith(
+        'group_permissions',
+      );
+      expect(mockEmQueryBuilder.getRawMany).toHaveBeenCalled();
     });
   });
 });

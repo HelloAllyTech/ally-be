@@ -43,7 +43,7 @@ describe('CloudTelephonyService', () => {
 
   beforeEach(async () => {
     const mockCloudTelephonyRepository = {
-      create: jest.fn(),
+      createIntegration: jest.fn(),
       findById: jest.fn(),
       findByCode: jest.fn(),
       findByTenantId: jest.fn(),
@@ -250,7 +250,7 @@ describe('CloudTelephonyService', () => {
       };
 
       cryptoService.encrypt.mockResolvedValue(encryptedCredentials);
-      cloudTelephonyRepository.create.mockResolvedValue(
+      cloudTelephonyRepository.createIntegration.mockResolvedValue(
         mockCloudTelephonyIntegration,
       );
 
@@ -261,7 +261,7 @@ describe('CloudTelephonyService', () => {
         JSON.stringify(mockOzonetelCredentials),
         undefined, // encryption key from config
       );
-      expect(cloudTelephonyRepository.create).toHaveBeenCalledWith({
+      expect(cloudTelephonyRepository.createIntegration).toHaveBeenCalledWith({
         credentials: encryptedCredentials,
         code: mockCreateDto.code,
         tenantId: mockCreateDto.tenantId,
@@ -284,7 +284,7 @@ describe('CloudTelephonyService', () => {
     it('should throw BadRequestException when repository fails', async () => {
       const encryptedCredentials = 'encrypted-credentials-string';
       cryptoService.encrypt.mockResolvedValue(encryptedCredentials);
-      cloudTelephonyRepository.create.mockRejectedValue(
+      cloudTelephonyRepository.createIntegration.mockRejectedValue(
         new Error('Database error'),
       );
 
@@ -487,7 +487,7 @@ describe('CloudTelephonyService', () => {
       cloudTelephonyRepository.findById.mockResolvedValue(
         mockCloudTelephonyIntegration,
       );
-      cloudTelephonyRepository.updateById.mockResolvedValue(undefined);
+      cloudTelephonyRepository.updateById.mockResolvedValue(true);
 
       await service.updateCloudTelephonyIntegration('test-id-123', updateData);
 
@@ -536,7 +536,7 @@ describe('CloudTelephonyService', () => {
       cloudTelephonyRepository.findById.mockResolvedValue(
         mockCloudTelephonyIntegration,
       );
-      cloudTelephonyRepository.updateById.mockResolvedValue(undefined);
+      cloudTelephonyRepository.updateById.mockResolvedValue(true);
 
       await service.updateCloudTelephonyIntegration('test-id-123', updateData);
 
@@ -554,7 +554,7 @@ describe('CloudTelephonyService', () => {
       cloudTelephonyRepository.findById.mockResolvedValue(
         mockCloudTelephonyIntegration,
       );
-      cloudTelephonyRepository.updateById.mockResolvedValue(undefined);
+      cloudTelephonyRepository.updateById.mockResolvedValue(true);
 
       await service.updateCloudTelephonyIntegration('test-id-123', updateData);
 
@@ -573,7 +573,7 @@ describe('CloudTelephonyService', () => {
       // Create integration
       const encryptedCredentials = 'encrypted-credentials-string';
       cryptoService.encrypt.mockResolvedValue(encryptedCredentials);
-      cloudTelephonyRepository.create.mockResolvedValue(
+      cloudTelephonyRepository.createIntegration.mockResolvedValue(
         mockCloudTelephonyIntegration,
       );
 
@@ -604,7 +604,7 @@ describe('CloudTelephonyService', () => {
       cloudTelephonyRepository.findById.mockResolvedValue(
         mockCloudTelephonyIntegration,
       );
-      cloudTelephonyRepository.updateById.mockResolvedValue(undefined);
+      cloudTelephonyRepository.updateById.mockResolvedValue(true);
 
       await service.updateCloudTelephonyIntegration('test-id-123', {
         status: IntegrationStatus.INACTIVE,

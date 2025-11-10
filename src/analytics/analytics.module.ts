@@ -8,6 +8,8 @@ import { UserModule } from '../user/user.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Chat } from '../chat/entity/chat.entity';
 import { Dashboard } from './entity/dashboard.entity';
+import { DashboardRepository } from './repository/dashboard.repository';
+import { AnalyticsRepository } from './repository/analytics.repository';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { Dashboard } from './entity/dashboard.entity';
     AnalyticsService,
     MetabaseService,
     ProviderFactory.getAnalyticsFactory(),
+    DashboardRepository,
+    AnalyticsRepository,
   ],
 })
 export class AnalyticsModule {}

@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { CloudTelephonyRepository } from '../cloud-telephony.repository';
 import { CloudTelephonyIntegration } from '../../entity/cloud-telephony-integration.entity';
 import { CloudTelephonyProvider } from '../../../common/constants/chat.constants';
@@ -8,7 +7,9 @@ import { IntegrationStatus } from '../../type/cloud-telephony.type';
 
 describe('CloudTelephonyRepository', () => {
   let repository: CloudTelephonyRepository;
-  let typeOrmRepository: jest.Mocked<Repository<CloudTelephonyIntegration>>;
+  let dataSource: jest.Mocked<DataSource>;
+  let entityManager: jest.Mocked<EntityManager>;
+  let mockRepository: jest.Mocked<Repository<CloudTelephonyIntegration>>;
 
   const mockCloudTelephonyIntegration: CloudTelephonyIntegration = {
     id: 'test-id-123',
@@ -32,43 +33,74 @@ describe('CloudTelephonyRepository', () => {
   };
 
   beforeEach(async () => {
-    const mockTypeOrmRepository = {
+    mockRepository = {
       create: jest.fn(),
       save: jest.fn(),
       findOne: jest.fn(),
       update: jest.fn(),
-    };
+      delete: jest.fn(),
+    } as any;
+
+    const mockEntityManager = {
+      getRepository: jest.fn().mockReturnValue(mockRepository),
+    } as any;
+
+    const mockDataSource = {
+      createEntityManager: jest.fn().mockReturnValue(mockEntityManager),
+      getRepository: jest.fn().mockReturnValue(mockRepository),
+    } as any;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CloudTelephonyRepository,
         {
-          provide: getRepositoryToken(CloudTelephonyIntegration),
-          useValue: mockTypeOrmRepository,
+          provide: DataSource,
+          useValue: mockDataSource,
         },
       ],
     }).compile();
 
     repository = module.get<CloudTelephonyRepository>(CloudTelephonyRepository);
-    typeOrmRepository = module.get(
-      getRepositoryToken(CloudTelephonyIntegration),
-    );
+    dataSource = module.get(DataSource);
+    entityManager = mockEntityManager;
+
+    // Spy on inherited Repository methods
+    jest.spyOn(repository, 'create').mockImplementation(mockRepository.create);
+    jest.spyOn(repository, 'save').mockImplementation(mockRepository.save);
+    jest
+      .spyOn(repository, 'findOne')
+      .mockImplementation(mockRepository.findOne);
+    jest.spyOn(repository, 'update').mockImplementation(mockRepository.update);
+    jest.spyOn(repository, 'delete').mockImplementation(mockRepository.delete);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('create', () => {
+  describe('constructor', () => {
+    it('should be defined', () => {
+      expect(repository).toBeDefined();
+    });
+
+    it('should extend Repository', () => {
+      expect(repository).toBeInstanceOf(Repository);
+    });
+  });
+
+  describe('createIntegration', () => {
     it('should create and save a new cloud telephony integration', async () => {
       const createdEntity = { ...mockCloudTelephonyIntegration };
-      typeOrmRepository.create.mockReturnValue(createdEntity);
-      typeOrmRepository.save.mockResolvedValue(mockCloudTelephonyIntegration);
+      mockRepository.create.mockReturnValue(createdEntity);
+      mockRepository.save.mockResolvedValue(mockCloudTelephonyIntegration);
 
-      const result = await repository.create(mockCreateData);
+      const result = await repository.createIntegration(mockCreateData);
 
-      expect(typeOrmRepository.create).toHaveBeenCalledWith(mockCreateData);
-      expect(typeOrmRepository.save).toHaveBeenCalledWith(createdEntity);
+      expect(dataSource.getRepository).toHaveBeenCalledWith(
+        CloudTelephonyIntegration,
+      );
+      expect(mockRepository.create).toHaveBeenCalledWith(mockCreateData);
+      expect(mockRepository.save).toHaveBeenCalledWith(createdEntity);
       expect(result).toEqual(mockCloudTelephonyIntegration);
     });
 
@@ -83,13 +115,13 @@ describe('CloudTelephonyRepository', () => {
         ...mockCloudTelephonyIntegration,
         ...minimalData,
       };
-      typeOrmRepository.create.mockReturnValue(createdEntity);
-      typeOrmRepository.save.mockResolvedValue(createdEntity);
+      mockRepository.create.mockReturnValue(createdEntity);
+      mockRepository.save.mockResolvedValue(createdEntity);
 
-      const result = await repository.create(minimalData);
+      const result = await repository.createIntegration(minimalData);
 
-      expect(typeOrmRepository.create).toHaveBeenCalledWith(minimalData);
-      expect(typeOrmRepository.save).toHaveBeenCalledWith(createdEntity);
+      expect(mockRepository.create).toHaveBeenCalledWith(minimalData);
+      expect(mockRepository.save).toHaveBeenCalledWith(createdEntity);
       expect(result).toEqual(createdEntity);
     });
 
@@ -102,85 +134,109 @@ describe('CloudTelephonyRepository', () => {
         ...mockCloudTelephonyIntegration,
         config: undefined,
       };
-      typeOrmRepository.create.mockReturnValue(createdEntity);
-      typeOrmRepository.save.mockResolvedValue(createdEntity);
+      mockRepository.create.mockReturnValue(createdEntity);
+      mockRepository.save.mockResolvedValue(createdEntity);
 
-      const result = await repository.create(dataWithUndefinedConfig);
-
-      expect(typeOrmRepository.create).toHaveBeenCalledWith(
+      const result = await repository.createIntegration(
         dataWithUndefinedConfig,
       );
-      expect(typeOrmRepository.save).toHaveBeenCalledWith(createdEntity);
+
+      expect(mockRepository.create).toHaveBeenCalledWith(
+        dataWithUndefinedConfig,
+      );
+      expect(mockRepository.save).toHaveBeenCalledWith(createdEntity);
       expect(result).toEqual(createdEntity);
     });
 
     it('should handle TypeORM create errors', async () => {
       const error = new Error('TypeORM create error');
-      typeOrmRepository.create.mockImplementation(() => {
+      mockRepository.create.mockImplementation(() => {
         throw error;
       });
 
-      await expect(repository.create(mockCreateData)).rejects.toThrow(error);
-      expect(typeOrmRepository.create).toHaveBeenCalledWith(mockCreateData);
-      expect(typeOrmRepository.save).not.toHaveBeenCalled();
+      await expect(
+        repository.createIntegration(mockCreateData),
+      ).rejects.toThrow(error);
+      expect(mockRepository.create).toHaveBeenCalledWith(mockCreateData);
+      expect(mockRepository.save).not.toHaveBeenCalled();
     });
 
     it('should handle TypeORM save errors', async () => {
       const createdEntity = { ...mockCloudTelephonyIntegration };
       const error = new Error('TypeORM save error');
-      typeOrmRepository.create.mockReturnValue(createdEntity);
-      typeOrmRepository.save.mockRejectedValue(error);
+      mockRepository.create.mockReturnValue(createdEntity);
+      mockRepository.save.mockRejectedValue(error);
 
-      await expect(repository.create(mockCreateData)).rejects.toThrow(error);
-      expect(typeOrmRepository.create).toHaveBeenCalledWith(mockCreateData);
-      expect(typeOrmRepository.save).toHaveBeenCalledWith(createdEntity);
+      await expect(
+        repository.createIntegration(mockCreateData),
+      ).rejects.toThrow(error);
+      expect(mockRepository.create).toHaveBeenCalledWith(mockCreateData);
+      expect(mockRepository.save).toHaveBeenCalledWith(createdEntity);
     });
 
     it('should create integration with empty object', async () => {
       const emptyData = {};
       const createdEntity = { ...mockCloudTelephonyIntegration };
-      typeOrmRepository.create.mockReturnValue(createdEntity);
-      typeOrmRepository.save.mockResolvedValue(createdEntity);
+      mockRepository.create.mockReturnValue(createdEntity);
+      mockRepository.save.mockResolvedValue(createdEntity);
 
-      const result = await repository.create(emptyData);
+      const result = await repository.createIntegration(emptyData);
 
-      expect(typeOrmRepository.create).toHaveBeenCalledWith(emptyData);
-      expect(typeOrmRepository.save).toHaveBeenCalledWith(createdEntity);
+      expect(mockRepository.create).toHaveBeenCalledWith(emptyData);
+      expect(mockRepository.save).toHaveBeenCalledWith(createdEntity);
       expect(result).toEqual(createdEntity);
     });
   });
 
   describe('findById', () => {
     it('should find cloud telephony integration by id', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(
-        mockCloudTelephonyIntegration,
-      );
+      jest
+        .spyOn(repository, 'findOne')
+        .mockResolvedValue(mockCloudTelephonyIntegration);
 
       const result = await repository.findById('test-id-123');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: 'test-id-123' },
       });
       expect(result).toEqual(mockCloudTelephonyIntegration);
     });
 
     it('should return null when integration is not found', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(null);
+      jest.spyOn(repository, 'findOne').mockResolvedValue(null);
 
       const result = await repository.findById('non-existent-id');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: 'non-existent-id' },
       });
       expect(result).toBeNull();
     });
 
+    it('should use entity manager if provided', async () => {
+      const emRepository = {
+        findOne: jest.fn().mockResolvedValue(mockCloudTelephonyIntegration),
+      } as any;
+
+      entityManager.getRepository.mockReturnValue(emRepository);
+
+      const result = await repository.findById('test-id-123', entityManager);
+
+      expect(entityManager.getRepository).toHaveBeenCalledWith(
+        CloudTelephonyIntegration,
+      );
+      expect(emRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'test-id-123' },
+      });
+      expect(result).toEqual(mockCloudTelephonyIntegration);
+    });
+
     it('should handle empty string id', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(null);
+      mockRepository.findOne.mockResolvedValue(null);
 
       const result = await repository.findById('');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { id: '' },
       });
       expect(result).toBeNull();
@@ -188,21 +244,21 @@ describe('CloudTelephonyRepository', () => {
 
     it('should handle TypeORM errors', async () => {
       const error = new Error('Database connection error');
-      typeOrmRepository.findOne.mockRejectedValue(error);
+      mockRepository.findOne.mockRejectedValue(error);
 
       await expect(repository.findById('test-id-123')).rejects.toThrow(error);
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { id: 'test-id-123' },
       });
     });
 
     it('should handle special characters in id', async () => {
       const specialId = 'test-id-with-special-chars-!@#$%^&*()';
-      typeOrmRepository.findOne.mockResolvedValue(null);
+      mockRepository.findOne.mockResolvedValue(null);
 
       const result = await repository.findById(specialId);
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { id: specialId },
       });
       expect(result).toBeNull();
@@ -211,46 +267,44 @@ describe('CloudTelephonyRepository', () => {
 
   describe('findByCode', () => {
     it('should find cloud telephony integration by code', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(
-        mockCloudTelephonyIntegration,
-      );
+      mockRepository.findOne.mockResolvedValue(mockCloudTelephonyIntegration);
 
       const result = await repository.findByCode('TEST_CODE');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { code: 'TEST_CODE' },
       });
       expect(result).toEqual(mockCloudTelephonyIntegration);
     });
 
     it('should return null when integration is not found by code', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(null);
+      mockRepository.findOne.mockResolvedValue(null);
 
       const result = await repository.findByCode('NON_EXISTENT_CODE');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { code: 'NON_EXISTENT_CODE' },
       });
       expect(result).toBeNull();
     });
 
     it('should handle empty string code', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(null);
+      mockRepository.findOne.mockResolvedValue(null);
 
       const result = await repository.findByCode('');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { code: '' },
       });
       expect(result).toBeNull();
     });
 
     it('should handle whitespace-only code', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(null);
+      mockRepository.findOne.mockResolvedValue(null);
 
       const result = await repository.findByCode('   ');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { code: '   ' },
       });
       expect(result).toBeNull();
@@ -258,34 +312,32 @@ describe('CloudTelephonyRepository', () => {
 
     it('should handle TypeORM errors', async () => {
       const error = new Error('Database query error');
-      typeOrmRepository.findOne.mockRejectedValue(error);
+      mockRepository.findOne.mockRejectedValue(error);
 
       await expect(repository.findByCode('TEST_CODE')).rejects.toThrow(error);
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { code: 'TEST_CODE' },
       });
     });
 
     it('should handle special characters in code', async () => {
       const specialCode = 'TEST_CODE_WITH_SPECIAL_CHARS-!@#$%^&*()';
-      typeOrmRepository.findOne.mockResolvedValue(
-        mockCloudTelephonyIntegration,
-      );
+      mockRepository.findOne.mockResolvedValue(mockCloudTelephonyIntegration);
 
       const result = await repository.findByCode(specialCode);
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { code: specialCode },
       });
       expect(result).toEqual(mockCloudTelephonyIntegration);
     });
 
     it('should handle case-sensitive code search', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(null);
+      mockRepository.findOne.mockResolvedValue(null);
 
       const result = await repository.findByCode('test_code');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { code: 'test_code' },
       });
       expect(result).toBeNull();
@@ -294,46 +346,44 @@ describe('CloudTelephonyRepository', () => {
 
   describe('findByTenantId', () => {
     it('should find cloud telephony integration by tenant id', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(
-        mockCloudTelephonyIntegration,
-      );
+      mockRepository.findOne.mockResolvedValue(mockCloudTelephonyIntegration);
 
       const result = await repository.findByTenantId('tenant-123');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { tenantId: 'tenant-123' },
       });
       expect(result).toEqual(mockCloudTelephonyIntegration);
     });
 
     it('should return null when integration is not found by tenant id', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(null);
+      mockRepository.findOne.mockResolvedValue(null);
 
       const result = await repository.findByTenantId('non-existent-tenant');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { tenantId: 'non-existent-tenant' },
       });
       expect(result).toBeNull();
     });
 
     it('should handle empty string tenant id', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(null);
+      mockRepository.findOne.mockResolvedValue(null);
 
       const result = await repository.findByTenantId('');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { tenantId: '' },
       });
       expect(result).toBeNull();
     });
 
     it('should handle whitespace-only tenant id', async () => {
-      typeOrmRepository.findOne.mockResolvedValue(null);
+      mockRepository.findOne.mockResolvedValue(null);
 
       const result = await repository.findByTenantId('   ');
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { tenantId: '   ' },
       });
       expect(result).toBeNull();
@@ -341,25 +391,23 @@ describe('CloudTelephonyRepository', () => {
 
     it('should handle TypeORM errors', async () => {
       const error = new Error('Database connection error');
-      typeOrmRepository.findOne.mockRejectedValue(error);
+      mockRepository.findOne.mockRejectedValue(error);
 
       await expect(repository.findByTenantId('tenant-123')).rejects.toThrow(
         error,
       );
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { tenantId: 'tenant-123' },
       });
     });
 
     it('should handle special characters in tenant id', async () => {
       const specialTenantId = 'tenant-with-special-chars-!@#$%^&*()';
-      typeOrmRepository.findOne.mockResolvedValue(
-        mockCloudTelephonyIntegration,
-      );
+      mockRepository.findOne.mockResolvedValue(mockCloudTelephonyIntegration);
 
       const result = await repository.findByTenantId(specialTenantId);
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { tenantId: specialTenantId },
       });
       expect(result).toEqual(mockCloudTelephonyIntegration);
@@ -367,13 +415,11 @@ describe('CloudTelephonyRepository', () => {
 
     it('should handle UUID format tenant id', async () => {
       const uuidTenantId = '550e8400-e29b-41d4-a716-446655440000';
-      typeOrmRepository.findOne.mockResolvedValue(
-        mockCloudTelephonyIntegration,
-      );
+      mockRepository.findOne.mockResolvedValue(mockCloudTelephonyIntegration);
 
       const result = await repository.findByTenantId(uuidTenantId);
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { tenantId: uuidTenantId },
       });
       expect(result).toEqual(mockCloudTelephonyIntegration);
@@ -381,25 +427,67 @@ describe('CloudTelephonyRepository', () => {
   });
 
   describe('updateById', () => {
-    it('should update cloud telephony integration by id', async () => {
+    it('should update cloud telephony integration by id and return true', async () => {
       const updateData = { status: IntegrationStatus.INACTIVE };
-      typeOrmRepository.update.mockResolvedValue({
+      mockRepository.update.mockResolvedValue({
         affected: 1,
         generatedMaps: [],
         raw: [],
       });
 
-      await repository.updateById('test-id-123', updateData);
+      const result = await repository.updateById('test-id-123', updateData);
 
-      expect(typeOrmRepository.update).toHaveBeenCalledWith(
+      expect(dataSource.getRepository).toHaveBeenCalledWith(
+        CloudTelephonyIntegration,
+      );
+      expect(mockRepository.update).toHaveBeenCalledWith(
         'test-id-123',
         updateData,
       );
+      expect(result).toBe(true);
+    });
+
+    it('should return false when no records are affected', async () => {
+      const updateData = { status: IntegrationStatus.INACTIVE };
+      mockRepository.update.mockResolvedValue({
+        affected: 0,
+        generatedMaps: [],
+        raw: [],
+      });
+
+      const result = await repository.updateById('test-id-123', updateData);
+
+      expect(result).toBe(false);
+    });
+
+    it('should use entity manager if provided', async () => {
+      const emRepository = {
+        update: jest.fn().mockResolvedValue({ affected: 1, raw: {} }),
+      } as any;
+
+      entityManager.getRepository.mockReturnValue(emRepository);
+
+      const updateData = { status: IntegrationStatus.INACTIVE };
+      const result = await repository.updateById(
+        'test-id-123',
+        updateData,
+        entityManager,
+      );
+
+      expect(entityManager.getRepository).toHaveBeenCalledWith(
+        CloudTelephonyIntegration,
+      );
+      expect(emRepository.update).toHaveBeenCalledWith(
+        'test-id-123',
+        updateData,
+      );
+      expect(result).toBe(true);
+      expect(dataSource.getRepository).not.toHaveBeenCalled();
     });
 
     it('should update with partial data', async () => {
       const updateData = { config: { callEventsEnabled: false } };
-      typeOrmRepository.update.mockResolvedValue({
+      mockRepository.update.mockResolvedValue({
         affected: 1,
         generatedMaps: [],
         raw: [],
@@ -407,7 +495,7 @@ describe('CloudTelephonyRepository', () => {
 
       await repository.updateById('test-id-123', updateData);
 
-      expect(typeOrmRepository.update).toHaveBeenCalledWith(
+      expect(mockRepository.update).toHaveBeenCalledWith(
         'test-id-123',
         updateData,
       );
@@ -415,7 +503,7 @@ describe('CloudTelephonyRepository', () => {
 
     it('should update with empty object', async () => {
       const updateData = {};
-      typeOrmRepository.update.mockResolvedValue({
+      mockRepository.update.mockResolvedValue({
         affected: 0,
         generatedMaps: [],
         raw: [],
@@ -423,7 +511,7 @@ describe('CloudTelephonyRepository', () => {
 
       await repository.updateById('test-id-123', updateData);
 
-      expect(typeOrmRepository.update).toHaveBeenCalledWith(
+      expect(mockRepository.update).toHaveBeenCalledWith(
         'test-id-123',
         updateData,
       );
@@ -438,7 +526,7 @@ describe('CloudTelephonyRepository', () => {
         },
         credentials: 'new-encrypted-credentials',
       };
-      typeOrmRepository.update.mockResolvedValue({
+      mockRepository.update.mockResolvedValue({
         affected: 1,
         generatedMaps: [],
         raw: [],
@@ -446,7 +534,7 @@ describe('CloudTelephonyRepository', () => {
 
       await repository.updateById('test-id-123', updateData);
 
-      expect(typeOrmRepository.update).toHaveBeenCalledWith(
+      expect(mockRepository.update).toHaveBeenCalledWith(
         'test-id-123',
         updateData,
       );
@@ -455,12 +543,12 @@ describe('CloudTelephonyRepository', () => {
     it('should handle TypeORM errors', async () => {
       const updateData = { status: IntegrationStatus.INACTIVE };
       const error = new Error('Database update error');
-      typeOrmRepository.update.mockRejectedValue(error);
+      mockRepository.update.mockRejectedValue(error);
 
       await expect(
         repository.updateById('test-id-123', updateData),
       ).rejects.toThrow(error);
-      expect(typeOrmRepository.update).toHaveBeenCalledWith(
+      expect(mockRepository.update).toHaveBeenCalledWith(
         'test-id-123',
         updateData,
       );
@@ -468,7 +556,7 @@ describe('CloudTelephonyRepository', () => {
 
     it('should handle empty string id', async () => {
       const updateData = { status: IntegrationStatus.INACTIVE };
-      typeOrmRepository.update.mockResolvedValue({
+      mockRepository.update.mockResolvedValue({
         affected: 0,
         generatedMaps: [],
         raw: [],
@@ -476,13 +564,13 @@ describe('CloudTelephonyRepository', () => {
 
       await repository.updateById('', updateData);
 
-      expect(typeOrmRepository.update).toHaveBeenCalledWith('', updateData);
+      expect(mockRepository.update).toHaveBeenCalledWith('', updateData);
     });
 
     it('should handle special characters in id', async () => {
       const specialId = 'test-id-with-special-chars-!@#$%^&*()';
       const updateData = { status: IntegrationStatus.INACTIVE };
-      typeOrmRepository.update.mockResolvedValue({
+      mockRepository.update.mockResolvedValue({
         affected: 1,
         generatedMaps: [],
         raw: [],
@@ -490,10 +578,7 @@ describe('CloudTelephonyRepository', () => {
 
       await repository.updateById(specialId, updateData);
 
-      expect(typeOrmRepository.update).toHaveBeenCalledWith(
-        specialId,
-        updateData,
-      );
+      expect(mockRepository.update).toHaveBeenCalledWith(specialId, updateData);
     });
 
     it('should handle undefined values in update data', async () => {
@@ -501,7 +586,7 @@ describe('CloudTelephonyRepository', () => {
         config: undefined,
         status: IntegrationStatus.ACTIVE,
       };
-      typeOrmRepository.update.mockResolvedValue({
+      mockRepository.update.mockResolvedValue({
         affected: 1,
         generatedMaps: [],
         raw: [],
@@ -509,10 +594,71 @@ describe('CloudTelephonyRepository', () => {
 
       await repository.updateById('test-id-123', updateData);
 
-      expect(typeOrmRepository.update).toHaveBeenCalledWith(
+      expect(mockRepository.update).toHaveBeenCalledWith(
         'test-id-123',
         updateData,
       );
+    });
+  });
+
+  describe('deleteById', () => {
+    it('should delete cloud telephony integration by id and return true', async () => {
+      mockRepository.delete.mockResolvedValue({
+        affected: 1,
+        raw: {},
+      } as any);
+
+      const result = await repository.deleteById('test-id-123');
+
+      expect(dataSource.getRepository).toHaveBeenCalledWith(
+        CloudTelephonyIntegration,
+      );
+      expect(mockRepository.delete).toHaveBeenCalledWith('test-id-123');
+      expect(result).toBe(true);
+    });
+
+    it('should return false when no records are affected', async () => {
+      mockRepository.delete.mockResolvedValue({
+        affected: 0,
+        raw: {},
+      } as any);
+
+      const result = await repository.deleteById('test-id-123');
+
+      expect(result).toBe(false);
+    });
+
+    it('should use entity manager if provided', async () => {
+      const emRepository = {
+        delete: jest.fn().mockResolvedValue({ affected: 1, raw: {} }),
+      } as any;
+
+      entityManager.getRepository.mockReturnValue(emRepository);
+
+      const result = await repository.deleteById('test-id-123', entityManager);
+
+      expect(entityManager.getRepository).toHaveBeenCalledWith(
+        CloudTelephonyIntegration,
+      );
+      expect(emRepository.delete).toHaveBeenCalledWith('test-id-123');
+      expect(result).toBe(true);
+      expect(dataSource.getRepository).not.toHaveBeenCalled();
+    });
+
+    it('should return true when affected is undefined', async () => {
+      mockRepository.delete.mockResolvedValue({ raw: {} } as any);
+
+      const result = await repository.deleteById('test-id-123');
+
+      expect(result).toBe(true);
+    });
+
+    it('should handle deletion errors', async () => {
+      const error = new Error('Database deletion error');
+      mockRepository.delete.mockRejectedValue(error);
+
+      await expect(repository.deleteById('test-id-123')).rejects.toThrow(error);
+      expect(mockRepository.delete).toHaveBeenCalledWith('test-id-123');
     });
   });
 
@@ -520,16 +666,14 @@ describe('CloudTelephonyRepository', () => {
     it('should handle complete CRUD operations flow', async () => {
       // Create
       const createdEntity = { ...mockCloudTelephonyIntegration };
-      typeOrmRepository.create.mockReturnValue(createdEntity);
-      typeOrmRepository.save.mockResolvedValue(mockCloudTelephonyIntegration);
+      mockRepository.create.mockReturnValue(createdEntity);
+      mockRepository.save.mockResolvedValue(mockCloudTelephonyIntegration);
 
-      const createResult = await repository.create(mockCreateData);
+      const createResult = await repository.createIntegration(mockCreateData);
       expect(createResult).toEqual(mockCloudTelephonyIntegration);
 
       // Find by ID
-      typeOrmRepository.findOne.mockResolvedValue(
-        mockCloudTelephonyIntegration,
-      );
+      mockRepository.findOne.mockResolvedValue(mockCloudTelephonyIntegration);
       const findByIdResult = await repository.findById('test-id-123');
       expect(findByIdResult).toEqual(mockCloudTelephonyIntegration);
 
@@ -543,25 +687,25 @@ describe('CloudTelephonyRepository', () => {
 
       // Update
       const updateData = { status: IntegrationStatus.INACTIVE };
-      typeOrmRepository.update.mockResolvedValue({
+      mockRepository.update.mockResolvedValue({
         affected: 1,
         generatedMaps: [],
         raw: [],
       });
       await repository.updateById('test-id-123', updateData);
 
-      expect(typeOrmRepository.create).toHaveBeenCalledWith(mockCreateData);
-      expect(typeOrmRepository.save).toHaveBeenCalledWith(createdEntity);
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.create).toHaveBeenCalledWith(mockCreateData);
+      expect(mockRepository.save).toHaveBeenCalledWith(createdEntity);
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { id: 'test-id-123' },
       });
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { code: 'TEST_CODE' },
       });
-      expect(typeOrmRepository.findOne).toHaveBeenCalledWith({
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
         where: { tenantId: 'tenant-123' },
       });
-      expect(typeOrmRepository.update).toHaveBeenCalledWith(
+      expect(mockRepository.update).toHaveBeenCalledWith(
         'test-id-123',
         updateData,
       );
@@ -569,12 +713,12 @@ describe('CloudTelephonyRepository', () => {
 
     it('should handle concurrent operations', async () => {
       // Mock multiple concurrent operations
-      typeOrmRepository.findOne
+      mockRepository.findOne
         .mockResolvedValueOnce(mockCloudTelephonyIntegration) // findById
         .mockResolvedValueOnce(mockCloudTelephonyIntegration) // findByCode
         .mockResolvedValueOnce(mockCloudTelephonyIntegration); // findByTenantId
 
-      typeOrmRepository.update.mockResolvedValue({
+      mockRepository.update.mockResolvedValue({
         affected: 1,
         generatedMaps: [],
         raw: [],
@@ -597,15 +741,15 @@ describe('CloudTelephonyRepository', () => {
         status: IntegrationStatus.INACTIVE,
       });
 
-      expect(typeOrmRepository.findOne).toHaveBeenCalledTimes(3);
-      expect(typeOrmRepository.update).toHaveBeenCalledTimes(1);
+      expect(mockRepository.findOne).toHaveBeenCalledTimes(3);
+      expect(mockRepository.update).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('Error Handling and Edge Cases', () => {
     it('should handle database connection timeout', async () => {
       const timeoutError = new Error('Connection timeout');
-      typeOrmRepository.findOne.mockRejectedValue(timeoutError);
+      mockRepository.findOne.mockRejectedValue(timeoutError);
 
       await expect(repository.findById('test-id-123')).rejects.toThrow(
         timeoutError,
@@ -614,12 +758,12 @@ describe('CloudTelephonyRepository', () => {
 
     it('should handle constraint violation errors', async () => {
       const constraintError = new Error('Unique constraint violation');
-      typeOrmRepository.create.mockReturnValue(mockCloudTelephonyIntegration);
-      typeOrmRepository.save.mockRejectedValue(constraintError);
+      mockRepository.create.mockReturnValue(mockCloudTelephonyIntegration);
+      mockRepository.save.mockRejectedValue(constraintError);
 
-      await expect(repository.create(mockCreateData)).rejects.toThrow(
-        constraintError,
-      );
+      await expect(
+        repository.createIntegration(mockCreateData),
+      ).rejects.toThrow(constraintError);
     });
 
     it('should handle malformed data gracefully', async () => {
@@ -634,10 +778,10 @@ describe('CloudTelephonyRepository', () => {
         ...mockCloudTelephonyIntegration,
         ...malformedData,
       };
-      typeOrmRepository.create.mockReturnValue(createdEntity);
-      typeOrmRepository.save.mockResolvedValue(createdEntity);
+      mockRepository.create.mockReturnValue(createdEntity);
+      mockRepository.save.mockResolvedValue(createdEntity);
 
-      const result = await repository.create(malformedData);
+      const result = await repository.createIntegration(malformedData);
       expect(result).toEqual(createdEntity);
     });
 
@@ -653,10 +797,10 @@ describe('CloudTelephonyRepository', () => {
         ...mockCloudTelephonyIntegration,
         ...dataWithLongString,
       };
-      typeOrmRepository.create.mockReturnValue(createdEntity);
-      typeOrmRepository.save.mockResolvedValue(createdEntity);
+      mockRepository.create.mockReturnValue(createdEntity);
+      mockRepository.save.mockResolvedValue(createdEntity);
 
-      const result = await repository.create(dataWithLongString);
+      const result = await repository.createIntegration(dataWithLongString);
       expect(result).toEqual(createdEntity);
     });
   });
