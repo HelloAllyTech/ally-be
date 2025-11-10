@@ -5,7 +5,7 @@ import { FeedbackService } from '../../service/feedback.service';
 import { ChatSummaryService } from '../../service/chat-summary.service';
 import { TokenUser } from '../../../auth/type/auth.types';
 import { UserRole } from '../../../common/constants/user.constants';
-import { ChatStatus } from '../../../common/entities/chat.entity';
+import { ChatStatus } from '../../entity/chat.entity';
 import { CallLogSortBy, SortOrder } from '../../dto/call-log.request.dto';
 import { CreateFeedbackDto } from '../../dto/create-feedback.dto';
 import { AddNoteDto } from '../../dto/notes.dto';

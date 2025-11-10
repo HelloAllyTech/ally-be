@@ -1,14 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EntityManager } from 'typeorm';
 import { ChatAudioUploadsService } from '../chat-audio-uploads.service';
-import {
-  ChatAudioUploads,
-  ChatAudioUploadStatus,
-} from '../../../common/entities/chat-audio-uploads.entity';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { ChatAudioUploadRepository } from '../../repository/chat-audio-upload.repository';
 import { S3Service } from '../../../aws/service/s3.service';
 import { AppConfigService } from '../../../config/config.service';
+import {
+  ChatAudioUploads,
+  ChatAudioUploadStatus,
+} from 'src/audio/entity/chat-audio-uploads.entity';
 
 // Mock the static class
 jest.mock('../../../common/execution/execution-manager', () => ({

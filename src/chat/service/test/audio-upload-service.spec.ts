@@ -8,7 +8,7 @@ import {
   AudioChatPlatform,
   AudioChatProvider,
 } from 'src/common/constants/chat.constants';
-import { ChatAudioUploadStatus } from 'src/common/entities/chat-audio-uploads.entity';
+import { ChatAudioUploadStatus } from '../../../audio/entity/chat-audio-uploads.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { UserRole } from 'src/common/constants/user.constants';
 import { AiEventService } from 'src/ai/service/ai-event.service';
@@ -18,7 +18,7 @@ import {
   AudioUploadRequestDto,
   CancelUploadRequestDto,
 } from 'src/chat/dto/audio-upload.dto';
-import { ChatStatus, ChatSummaryStatus } from 'src/common/entities/chat.entity';
+import { ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
 
 import { UserService } from 'src/user/service/user.service';
 import { AudioUploadService } from '../audio-upload.service';
@@ -35,6 +35,9 @@ jest.mock('src/common/execution/execution-manager', () => ({
       role: 'ADMIN',
       tenantId: 1,
     })),
+    getExecutionId: jest.fn(() => 'mock-execution-id'),
+    getTenantId: jest.fn(() => 1),
+    getUserId: jest.fn(() => '1'),
   },
 }));
 
@@ -73,6 +76,7 @@ describe('AudioUploadService', () => {
           useValue: {
             generatePresignedUrl: jest.fn(),
             getHeadObject: jest.fn(),
+            sanitizeFileName: jest.fn(),
           },
         },
         {
@@ -144,6 +148,7 @@ describe('AudioUploadService', () => {
       chatService.createChatForAnonymousClient.mockResolvedValue(
         mockChat as any,
       );
+      s3Service.sanitizeFileName.mockReturnValue(validRequestDto.fileName);
       s3Service.generatePresignedUrl.mockResolvedValue(mockPresignedUrl);
 
       const result = await service.createChatWithUploadUrl(validRequestDto);
@@ -157,6 +162,9 @@ describe('AudioUploadService', () => {
         endedAt: expect.any(Date),
         platform: validRequestDto.platform,
       });
+      expect(s3Service.sanitizeFileName).toHaveBeenCalledWith(
+        validRequestDto.fileName,
+      );
       expect(s3Service.generatePresignedUrl).toHaveBeenCalledWith({
         bucket: 'test-bucket',
         key: expect.stringContaining(

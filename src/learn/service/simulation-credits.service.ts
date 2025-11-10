@@ -120,7 +120,7 @@ export class SimulationCreditsService {
     );
 
     if (!success) {
-      throw new BadRequestException('Insufficient credits or user not found');
+      throw new BadRequestException('Error consuming credits');
     }
 
     return true;

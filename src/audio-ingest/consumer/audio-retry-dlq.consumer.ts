@@ -3,7 +3,7 @@ import { Message } from '@aws-sdk/client-sqs';
 import { SqsDlqListener } from '../../aws/decorators/sqs-listener.decorator';
 import { LoggerService } from '../../logger/logger.service';
 import { ChatService } from '../../chat/service/chat.service';
-import { ChatSummaryStatus } from '../../common/entities/chat.entity';
+import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
 
 @Injectable()
 export class AudioRetryDlqConsumer {

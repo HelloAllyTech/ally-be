@@ -15,8 +15,8 @@ import {
   AudioChatPlatform,
 } from '../../../common/constants/chat.constants';
 import { ChatEvents } from '../../constants/chat.constants';
-import { MessageBrokerChannel } from '../../../common/constants/message-broker.constants';
-import { MessageType, Message } from '../../../common/entities/message.entity';
+import { MessageBrokerChannel } from '../../../message-broker/constants/message-broker.constants';
+import { MessageType, Message } from '../../entity/message.entity';
 import { UserChatSessionData } from '../../type/chat.type';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { PermissionsService } from '../../../authorization/service/permissions.service';

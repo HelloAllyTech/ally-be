@@ -1,8 +1,7 @@
 import { forwardRef, Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Chat } from '../common/entities/chat.entity';
-import { ChatRoom } from '../common/entities/chat-room.entity';
-import { Message } from '../common/entities/message.entity';
+import { Chat } from './entity/chat.entity';
+import { Message } from './entity/message.entity';
 import { ChatService } from './service/chat.service';
 import { ChatSummaryService } from './service/chat-summary.service';
 import { AudioUploadService } from './service/audio-upload.service';
@@ -11,9 +10,9 @@ import { ChatController } from './controller/chat.controller';
 import { AudioUploadController } from './controller/audio-upload.controller';
 import { ChatGateway } from './gateway/chat.gateway';
 import { UserModule } from '../user/user.module';
-import { Feedback } from '../common/entities/feedback.entity';
+import { Feedback } from './entity/feedback.entity';
 import { FeedbackService } from './service/feedback.service';
-import { CallDetails } from '../common/entities/call.details.entity';
+import { CallDetails } from './entity/call.details.entity';
 import { ChatEventConsumer } from './event/chat.event.consumer';
 import { BrokerModule } from '../message-broker/broker.module';
 import { SettingsModule } from '../settings/settings.module';
@@ -35,13 +34,7 @@ import { AudioUploadDlqConsumer } from './consumer/audio-upload-dlq.consumer';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      Message,
-      ChatRoom,
-      Feedback,
-      CallDetails,
-      SummaryFeedback,
-    ]),
+    TypeOrmModule.forFeature([Message, Feedback, CallDetails, SummaryFeedback]),
     TypeOrmModule.forFeature([Chat, ChatRepository]),
     UserModule,
     QueueModule,

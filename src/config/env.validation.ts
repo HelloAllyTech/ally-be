@@ -79,4 +79,6 @@ export const validationSchema = Joi.object({
   ALLOWED_ORIGINS: Joi.string().required(),
 
   APP_BASE_URL: Joi.string().required(),
+
+  LEARN_MEDIA_PUBLIC_S3_BUCKET: Joi.string().required(),
 });

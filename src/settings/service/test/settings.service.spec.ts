@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { SettingsService } from '../settings.service';
-import { PreferenceService } from '../../../common/service/preference.service';
+import { PreferenceService } from '../preference.service';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { CommonUtil } from '../../../common/util/common.util';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
@@ -16,10 +16,17 @@ import {
 } from '../../constants/settings.constants';
 import { SummaryPreferenceValue } from '../../../common/type/common.type';
 import { ChatTypes } from '../../../common/constants/chat.constants';
+import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
+import {
+  GetSummaryFieldsDto,
+  UpdateSummaryFieldsDto,
+} from '../../dto/summary-fields.dto';
+import { UpdateChatTypesDto } from '../../dto/chat-types.dto';
 
 describe('SettingsService', () => {
   let service: SettingsService;
   let preferenceService: jest.Mocked<PreferenceService>;
+  let permissionValidator: jest.Mocked<PermissionValidator>;
 
   const mockTenantId = 'test-tenant-id';
   const mockUserId = 'test-user-id';
@@ -94,16 +101,23 @@ describe('SettingsService', () => {
 
     service = module.get<SettingsService>(SettingsService);
     preferenceService = module.get(PreferenceService);
+    permissionValidator = module.get(PermissionValidator);
 
     // Mock ExecutionManager static methods
     jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(mockTenantId);
     jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(mockUserId);
 
-    // Mock PermissionValidator to return true for admin permissions by default
-    const permissionValidator = module.get(PermissionValidator);
+    // Mock PermissionValidator to return false for SYSTEM_ACCESS by default (counselor)
     jest
       .spyOn(permissionValidator, 'validatePermissions')
-      .mockResolvedValue(true);
+      .mockImplementation(async (userId, permissions) => {
+        // Default: no system access (counselor)
+        if (permissions.includes(PERMISSIONS.SYSTEM_ACCESS)) {
+          return false;
+        }
+        // Default: has organization access for admin operations
+        return true;
+      });
   });
 
   afterEach(() => {
@@ -111,13 +125,18 @@ describe('SettingsService', () => {
   });
 
   describe('getSummaryFieldsConfig', () => {
-    it('should return visible fields when both org and counselor preferences exist', async () => {
+    it('should return visible fields for counselor (no system access) with org and counselor preferences', async () => {
       preferenceService.getPreference
         .mockResolvedValueOnce(mockOrgPreference)
         .mockResolvedValueOnce(mockCounselorPreference);
 
-      const result = await service.getSummaryFieldsConfig();
+      const getSummaryFieldsDto: GetSummaryFieldsDto = {};
+      const result = await service.getSummaryFieldsConfig(getSummaryFieldsDto);
 
+      expect(permissionValidator.validatePermissions).toHaveBeenCalledWith(
+        parseInt(mockUserId),
+        [PERMISSIONS.SYSTEM_ACCESS],
+      );
       expect(preferenceService.getPreference).toHaveBeenCalledTimes(2);
       expect(preferenceService.getPreference).toHaveBeenCalledWith(
         PreferenceName.SUMMARY_HIDDEN_FIELDS,
@@ -137,12 +156,69 @@ describe('SettingsService', () => {
       expect(result).toEqual(expectedVisibleFields);
     });
 
-    it('should return visible fields when only org preference exists', async () => {
+    it('should return visible fields for system access user with selected tenantId', async () => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+
+      const selectedTenantId = 'selected-tenant-id';
+      preferenceService.getPreference.mockResolvedValueOnce(mockOrgPreference);
+
+      const getSummaryFieldsDto: GetSummaryFieldsDto = {
+        tenantId: selectedTenantId,
+      };
+      const result = await service.getSummaryFieldsConfig(getSummaryFieldsDto);
+
+      expect(permissionValidator.validatePermissions).toHaveBeenCalledWith(
+        parseInt(mockUserId),
+        [PERMISSIONS.SYSTEM_ACCESS],
+      );
+      expect(preferenceService.getPreference).toHaveBeenCalledTimes(1);
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.SUMMARY_HIDDEN_FIELDS,
+        selectedTenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
+
+      const hiddenFields = ['callId', 'callDuration'];
+      const expectedVisibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
+        (field) => !hiddenFields.includes(field),
+      );
+      expect(result).toEqual(expectedVisibleFields);
+    });
+
+    it('should return visible fields for system access user with tenantId in DTO', async () => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+
+      preferenceService.getPreference.mockResolvedValueOnce(mockOrgPreference);
+
+      const getSummaryFieldsDto: GetSummaryFieldsDto = {
+        tenantId: mockTenantId,
+      };
+      const result = await service.getSummaryFieldsConfig(getSummaryFieldsDto);
+
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.SUMMARY_HIDDEN_FIELDS,
+        mockTenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
+
+      const hiddenFields = ['callId', 'callDuration'];
+      const expectedVisibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
+        (field) => !hiddenFields.includes(field),
+      );
+      expect(result).toEqual(expectedVisibleFields);
+    });
+
+    it('should return visible fields when only org preference exists (counselor)', async () => {
       preferenceService.getPreference
         .mockResolvedValueOnce(mockOrgPreference)
         .mockResolvedValueOnce(null);
 
-      const result = await service.getSummaryFieldsConfig();
+      const getSummaryFieldsDto: GetSummaryFieldsDto = {};
+      const result = await service.getSummaryFieldsConfig(getSummaryFieldsDto);
 
       const hiddenFields = ['callId', 'callDuration'];
       const expectedVisibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
@@ -156,7 +232,8 @@ describe('SettingsService', () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(mockCounselorPreference);
 
-      const result = await service.getSummaryFieldsConfig();
+      const getSummaryFieldsDto: GetSummaryFieldsDto = {};
+      const result = await service.getSummaryFieldsConfig(getSummaryFieldsDto);
 
       const hiddenFields = ['clientId'];
       const expectedVisibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
@@ -170,7 +247,8 @@ describe('SettingsService', () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
 
-      const result = await service.getSummaryFieldsConfig();
+      const getSummaryFieldsDto: GetSummaryFieldsDto = {};
+      const result = await service.getSummaryFieldsConfig(getSummaryFieldsDto);
 
       expect(result).toEqual(DEFAULT_SUMMARY_FIELDS_ARRAY);
     });
@@ -189,25 +267,40 @@ describe('SettingsService', () => {
         .mockResolvedValueOnce(emptyOrgPreference)
         .mockResolvedValueOnce(emptyCounselorPreference);
 
-      const result = await service.getSummaryFieldsConfig();
+      const getSummaryFieldsDto: GetSummaryFieldsDto = {};
+      const result = await service.getSummaryFieldsConfig(getSummaryFieldsDto);
 
       expect(result).toEqual(DEFAULT_SUMMARY_FIELDS_ARRAY);
-    });
-
-    it('should throw BadRequestException when tenantId is missing', async () => {
-      jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(undefined);
-
-      await expect(service.getSummaryFieldsConfig()).rejects.toThrow(
-        new BadRequestException('Tenant ID and User ID are required'),
-      );
     });
 
     it('should throw BadRequestException when userId is missing', async () => {
       jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
 
-      await expect(service.getSummaryFieldsConfig()).rejects.toThrow(
-        new BadRequestException('Tenant ID and User ID are required'),
-      );
+      const getSummaryFieldsDto: GetSummaryFieldsDto = {};
+      await expect(
+        service.getSummaryFieldsConfig(getSummaryFieldsDto),
+      ).rejects.toThrow(new BadRequestException('User ID is required'));
+    });
+
+    it('should throw BadRequestException when tenantId is missing for counselor', async () => {
+      jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(undefined);
+
+      const getSummaryFieldsDto: GetSummaryFieldsDto = {};
+      await expect(
+        service.getSummaryFieldsConfig(getSummaryFieldsDto),
+      ).rejects.toThrow(new BadRequestException('Tenant ID is required'));
+    });
+
+    it('should throw BadRequestException when tenantId is missing for system access user without tenantId in DTO', async () => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+      jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(undefined);
+
+      const getSummaryFieldsDto: GetSummaryFieldsDto = {};
+      await expect(
+        service.getSummaryFieldsConfig(getSummaryFieldsDto),
+      ).rejects.toThrow(new BadRequestException('Tenant ID is required'));
     });
   });
 
@@ -255,13 +348,17 @@ describe('SettingsService', () => {
 
   describe('updateSummaryFields', () => {
     const validFields = ['callId', 'callDuration'];
+    const updateDto: UpdateSummaryFieldsDto = {
+      hiddenFields: validFields,
+      tenantId: mockTenantId,
+    };
 
-    it('should update existing preference for admin role', async () => {
+    it('should update existing preference', async () => {
       jest.spyOn(CommonUtil, 'getInvalidKeysFromSet').mockReturnValue([]);
       preferenceService.getPreference.mockResolvedValue(mockOrgPreference);
       preferenceService.updatePreference.mockResolvedValue(mockOrgPreference);
 
-      const result = await service.updateSummaryFields(validFields);
+      const result = await service.updateSummaryFields(updateDto);
 
       expect(CommonUtil.getInvalidKeysFromSet).toHaveBeenCalledWith(
         DEFAULT_SUMMARY_FIELDS_SET,
@@ -279,12 +376,12 @@ describe('SettingsService', () => {
       expect(result).toEqual(mockOrgPreference);
     });
 
-    it('should create new preference for admin role when none exists', async () => {
+    it('should create new preference when none exists', async () => {
       jest.spyOn(CommonUtil, 'getInvalidKeysFromSet').mockReturnValue([]);
       preferenceService.getPreference.mockResolvedValue(null);
       preferenceService.createPreference.mockResolvedValue(mockOrgPreference);
 
-      const result = await service.updateSummaryFields(validFields);
+      const result = await service.updateSummaryFields(updateDto);
 
       expect(preferenceService.createPreference).toHaveBeenCalledWith({
         name: PreferenceName.SUMMARY_HIDDEN_FIELDS,
@@ -296,86 +393,20 @@ describe('SettingsService', () => {
       expect(result).toEqual(mockOrgPreference);
     });
 
-    it('should update existing preference for counselor role', async () => {
-      jest.spyOn(CommonUtil, 'getInvalidKeysFromSet').mockReturnValue([]);
-      // Mock PermissionValidator to return false for counselor permissions
-      const permissionValidator = service['permissionValidator'];
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(false);
-      preferenceService.getPreference.mockResolvedValue(
-        mockCounselorPreference,
-      );
-      preferenceService.updatePreference.mockResolvedValue(
-        mockCounselorPreference,
-      );
-
-      const result = await service.updateSummaryFields(validFields);
-
-      expect(preferenceService.getPreference).toHaveBeenCalledWith(
-        PreferenceName.SUMMARY_HIDDEN_FIELDS,
-        mockUserId,
-        PreferenceRelatedEntity.COUNSELOR,
-      );
-      expect(preferenceService.updatePreference).toHaveBeenCalledWith(
-        mockPreferenceId,
-        { fields: validFields },
-      );
-      expect(result).toEqual(mockCounselorPreference);
-    });
-
-    it('should create new preference for counselor role when none exists', async () => {
-      jest.spyOn(CommonUtil, 'getInvalidKeysFromSet').mockReturnValue([]);
-      // Mock PermissionValidator to return false for counselor permissions
-      const permissionValidator = service['permissionValidator'];
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(false);
-      preferenceService.getPreference.mockResolvedValue(null);
-      preferenceService.createPreference.mockResolvedValue(
-        mockCounselorPreference,
-      );
-
-      const result = await service.updateSummaryFields(validFields);
-
-      expect(preferenceService.createPreference).toHaveBeenCalledWith({
-        name: PreferenceName.SUMMARY_HIDDEN_FIELDS,
-        relatedId: mockUserId,
-        relatedEntity: PreferenceRelatedEntity.COUNSELOR,
-        value: { fields: validFields },
-        tenantId: mockTenantId,
-      });
-      expect(result).toEqual(mockCounselorPreference);
-    });
-
     it('should throw BadRequestException for invalid fields', async () => {
       const invalidFields = ['invalidField1', 'invalidField2'];
+      const invalidDto: UpdateSummaryFieldsDto = {
+        hiddenFields: invalidFields,
+        tenantId: mockTenantId,
+      };
       jest
         .spyOn(CommonUtil, 'getInvalidKeysFromSet')
         .mockReturnValue(invalidFields);
 
-      await expect(service.updateSummaryFields(invalidFields)).rejects.toThrow(
+      await expect(service.updateSummaryFields(invalidDto)).rejects.toThrow(
         new BadRequestException(
           `Invalid summary fields - ${invalidFields.join(', ')}`,
         ),
-      );
-    });
-
-    it('should throw BadRequestException when userId is missing', async () => {
-      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
-      jest.spyOn(CommonUtil, 'getInvalidKeysFromSet').mockReturnValue([]);
-
-      await expect(service.updateSummaryFields(validFields)).rejects.toThrow(
-        new BadRequestException('User ID is required'),
-      );
-    });
-
-    it('should throw BadRequestException when relatedId is missing', async () => {
-      jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(undefined);
-      jest.spyOn(CommonUtil, 'getInvalidKeysFromSet').mockReturnValue([]);
-
-      await expect(service.updateSummaryFields(validFields)).rejects.toThrow(
-        new BadRequestException('Related ID or Entity is required'),
       );
     });
   });
@@ -620,6 +651,10 @@ describe('SettingsService', () => {
 
   describe('updateChatTypes', () => {
     const validChatTypes = [ChatTypes.MICROPHONE_CHAT, ChatTypes.WEBRTC_CHAT];
+    const updateDto: UpdateChatTypesDto = {
+      hiddenChatTypes: validChatTypes,
+      tenantId: mockTenantId,
+    };
 
     it('should update existing preference with valid chat types', async () => {
       preferenceService.getPreference.mockResolvedValue(
@@ -629,7 +664,7 @@ describe('SettingsService', () => {
         mockChatTypesPreference,
       );
 
-      const result = await service.updateChatTypes(validChatTypes);
+      const result = await service.updateChatTypes(updateDto);
 
       expect(preferenceService.getPreference).toHaveBeenCalledWith(
         PreferenceName.HIDDEN_CHAT_TYPES,
@@ -649,7 +684,7 @@ describe('SettingsService', () => {
         mockChatTypesPreference,
       );
 
-      const result = await service.updateChatTypes(validChatTypes);
+      const result = await service.updateChatTypes(updateDto);
 
       expect(preferenceService.createPreference).toHaveBeenCalledWith({
         name: PreferenceName.HIDDEN_CHAT_TYPES,
@@ -663,20 +698,36 @@ describe('SettingsService', () => {
 
     it('should throw BadRequestException for invalid chat types', async () => {
       const invalidChatTypes = ['INVALID_TYPE1', 'INVALID_TYPE2'];
+      const invalidDto: UpdateChatTypesDto = {
+        hiddenChatTypes: invalidChatTypes,
+        tenantId: mockTenantId,
+      };
 
-      await expect(service.updateChatTypes(invalidChatTypes)).rejects.toThrow(
+      await expect(service.updateChatTypes(invalidDto)).rejects.toThrow(
         new BadRequestException(
           `Invalid chat types - ${invalidChatTypes.join(', ')}`,
         ),
       );
     });
 
-    it('should throw BadRequestException when tenantId is missing', async () => {
-      jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(undefined);
-
-      await expect(service.updateChatTypes(validChatTypes)).rejects.toThrow(
-        new BadRequestException('Tenant ID is required'),
+    it('should handle undefined tenantId without throwing error', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+      preferenceService.createPreference.mockResolvedValue(
+        mockChatTypesPreference,
       );
+      const dtoWithoutTenantId: UpdateChatTypesDto = {
+        hiddenChatTypes: validChatTypes,
+        tenantId: undefined as any,
+      };
+
+      const result = await service.updateChatTypes(dtoWithoutTenantId);
+
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.HIDDEN_CHAT_TYPES,
+        undefined,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
+      expect(result).toEqual(mockChatTypesPreference);
     });
 
     it('should handle empty array of chat types', async () => {
@@ -684,8 +735,12 @@ describe('SettingsService', () => {
       preferenceService.createPreference.mockResolvedValue(
         mockChatTypesPreference,
       );
+      const emptyDto: UpdateChatTypesDto = {
+        hiddenChatTypes: [],
+        tenantId: mockTenantId,
+      };
 
-      const result = await service.updateChatTypes([]);
+      const result = await service.updateChatTypes(emptyDto);
 
       expect(preferenceService.createPreference).toHaveBeenCalledWith({
         name: PreferenceName.HIDDEN_CHAT_TYPES,

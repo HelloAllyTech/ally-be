@@ -1,4 +1,4 @@
-import { BaseEntity } from 'src/common/entities/base.entity';
+import { BaseEntity } from 'src/common/entity/base.entity';
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Index('scenario_session_events_scenario_session_id_idx', ['scenarioSessionId'])
@@ -18,4 +18,13 @@ export class ScenarioSessionEvents extends BaseEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
+
+  @Column({ nullable: true })
+  score?: number;
+
+  @Column({ nullable: true })
+  emoji?: string;
+
+  @Column({ nullable: true })
+  message?: string;
 }

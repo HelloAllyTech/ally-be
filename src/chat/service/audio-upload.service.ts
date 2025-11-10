@@ -8,10 +8,7 @@ import { ChatService } from './chat.service';
 import { S3Service } from '../../aws/service/s3.service';
 import { AiEventService } from '../../ai/service/ai-event.service';
 import { ChatAudioUploadsService } from '../../audio/service/chat-audio-uploads.service';
-import {
-  ChatStatus,
-  ChatSummaryStatus,
-} from '../../common/entities/chat.entity';
+import { ChatStatus, ChatSummaryStatus } from '../entity/chat.entity';
 import {
   AudioUploadRequestDto,
   AudioUploadResponseDto,
@@ -25,7 +22,7 @@ import {
   SUPPORTED_AUDIO_FILE_TYPES,
   UPLOADED_AUDIO_FILE_SIZE_LIMIT,
 } from '../constants/chat.constants';
-import { ChatAudioUploadStatus } from 'src/common/entities/chat-audio-uploads.entity';
+import { ChatAudioUploadStatus } from '../../audio/entity/chat-audio-uploads.entity';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,
@@ -128,7 +125,7 @@ export class AudioUploadService {
       throw new InternalServerErrorException('Failed to create chat');
     }
 
-    const sanitizedFileName = this.sanitizeFileName(fileName);
+    const sanitizedFileName = this.s3Service.sanitizeFileName(fileName);
 
     const s3Key = generateAudioStorageKey({
       key: `${Date.now()}-${chat.id}-${sanitizedFileName}`,
@@ -322,14 +319,5 @@ export class AudioUploadService {
         provider: AudioChatProvider.AUDIO_UPLOAD,
       },
     });
-  }
-
-  private sanitizeFileName(fileName: string) {
-    return fileName
-      .trim()
-      .replace(/\s+/g, '-') // Replace spaces with hyphens
-      .replace(/[^a-zA-Z0-9._-]/g, '') // Remove special characters
-      .replace(/\.+/g, '.') // Replace multiple dots with single dot
-      .replace(/-+/g, '-'); // Replace multiple hyphens with single hyphen
   }
 }

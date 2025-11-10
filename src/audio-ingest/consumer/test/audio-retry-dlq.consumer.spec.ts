@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Message } from '@aws-sdk/client-sqs';
 import { AudioRetryDlqConsumer } from '../audio-retry-dlq.consumer';
 import { ChatService } from '../../../chat/service/chat.service';
-import { ChatSummaryStatus } from '../../../common/entities/chat.entity';
+import { ChatSummaryStatus } from '../../../chat/entity/chat.entity';
 import { LoggerService } from '../../../logger/logger.service';
 
 describe('AudioRetryDlqConsumer', () => {

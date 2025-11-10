@@ -4,7 +4,7 @@ import { AudioRetryConsumer } from '../audio-retry.consumer';
 import { AudioRetryProducer } from '../../producer/audio-retry.producer';
 import { AiEventService } from '../../../ai/service/ai-event.service';
 import { ChatService } from '../../../chat/service/chat.service';
-import { ChatSummaryStatus } from '../../../common/entities/chat.entity';
+import { ChatSummaryStatus } from '../../../chat/entity/chat.entity';
 import { LoggerService } from '../../../logger/logger.service';
 import { checkAudioFileReady } from '../../../common/util/audio.util';
 import { MAX_RETRY_COUNT } from '../../constants/audio-retry-constants';

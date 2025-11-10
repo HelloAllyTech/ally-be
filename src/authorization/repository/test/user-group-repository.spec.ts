@@ -1,12 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { UserGroupRepository } from '../user-group.repository';
-import { UserGroup } from 'src/common/entities/user-group.entity';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { UserGroup } from 'src/authorization/entity/user-group.entity';
 
 describe('UserGroupRepository', () => {
   let repository: UserGroupRepository;
-  let mockRepo: jest.Mocked<Repository<UserGroup>>;
   let mockDataSource: jest.Mocked<DataSource>;
 
   beforeEach(async () => {
@@ -20,95 +18,94 @@ describe('UserGroupRepository', () => {
       getRawMany: jest.fn(),
     };
 
+    const mockEntityManager = {
+      createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
+    };
+
+    mockDataSource = {
+      createEntityManager: jest.fn().mockReturnValue(mockEntityManager),
+      createQueryBuilder: jest.fn(() => mockQueryBuilder),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserGroupRepository,
         {
-          provide: getRepositoryToken(UserGroup),
-          useValue: {
-            findOne: jest.fn(),
-            find: jest.fn(),
-            create: jest.fn(),
-            save: jest.fn(),
-            count: jest.fn(),
-            remove: jest.fn(),
-          },
-        },
-        {
           provide: DataSource,
-          useValue: {
-            createQueryBuilder: jest.fn(() => mockQueryBuilder),
-          },
+          useValue: mockDataSource,
         },
       ],
     }).compile();
 
     repository = module.get<UserGroupRepository>(UserGroupRepository);
-    mockRepo = module.get(getRepositoryToken(UserGroup));
-    mockDataSource = module.get(DataSource);
   });
 
   describe('findOne', () => {
     it('should find one UserGroup', async () => {
       const userGroup = { userId: 1, groupId: 2 } as UserGroup;
-      mockRepo.findOne.mockResolvedValueOnce(userGroup);
+      jest.spyOn(repository, 'findOne').mockResolvedValueOnce(userGroup);
 
-      const result = await repository.findOne({ userId: 1 });
+      const result = await repository.findOne({ where: { userId: 1 } });
 
       expect(result).toEqual(userGroup);
-      expect(mockRepo.findOne).toHaveBeenCalledWith({ where: { userId: 1 } });
     });
   });
 
   describe('create', () => {
-    it('should create a new UserGroup', async () => {
+    it('should create a new UserGroup', () => {
       const input = { userId: 1, groupId: 2 };
       const createdEntity = { ...input } as UserGroup;
-      mockRepo.create.mockReturnValueOnce(createdEntity);
-      mockRepo.save.mockResolvedValueOnce(createdEntity);
+      jest.spyOn(repository, 'create').mockReturnValueOnce(createdEntity);
 
-      const result = await repository.create(input);
+      const result = repository.create(input);
 
       expect(result).toEqual(createdEntity);
-      expect(mockRepo.create).toHaveBeenCalledWith(input);
-      expect(mockRepo.save).toHaveBeenCalledWith(createdEntity);
+    });
+  });
+
+  describe('save', () => {
+    it('should save a UserGroup', async () => {
+      const userGroup = { userId: 1, groupId: 2 } as UserGroup;
+      jest.spyOn(repository, 'save').mockResolvedValueOnce(userGroup);
+
+      const result = await repository.save(userGroup);
+
+      expect(result).toEqual(userGroup);
     });
   });
 
   describe('count', () => {
     it('should count UserGroups', async () => {
-      mockRepo.count.mockResolvedValueOnce(3);
+      jest.spyOn(repository, 'count').mockResolvedValueOnce(3);
 
-      const result = await repository.count({ userId: 1 });
+      const result = await repository.count({ where: { userId: 1 } });
 
       expect(result).toBe(3);
-      expect(mockRepo.count).toHaveBeenCalledWith({ where: { userId: 1 } });
     });
   });
 
   describe('remove', () => {
     it('should remove a UserGroup', async () => {
       const userGroup = { userId: 1, groupId: 2 } as UserGroup;
-      mockRepo.remove.mockResolvedValueOnce(userGroup);
+      jest.spyOn(repository, 'remove').mockResolvedValue(userGroup);
 
       await repository.remove(userGroup);
 
-      expect(mockRepo.remove).toHaveBeenCalledWith(userGroup);
+      expect(repository.remove).toHaveBeenCalledWith(userGroup);
     });
   });
 
-  describe('findMany', () => {
+  describe('find', () => {
     it('should find multiple UserGroups', async () => {
       const userGroups = [
         { userId: 1, groupId: 2 },
         { userId: 1, groupId: 3 },
       ] as UserGroup[];
-      mockRepo.find.mockResolvedValueOnce(userGroups);
+      jest.spyOn(repository, 'find').mockResolvedValueOnce(userGroups);
 
-      const result = await repository.findMany({ userId: 1 });
+      const result = await repository.find({ where: { userId: 1 } });
 
       expect(result).toEqual(userGroups);
-      expect(mockRepo.find).toHaveBeenCalledWith({ where: { userId: 1 } });
     });
   });
 

@@ -6,7 +6,7 @@ import { ReferenceDocumentService } from '../reference-document.service';
 import {
   DocumentUploadStatus,
   ReferenceDocument,
-} from 'src/common/entities/reference-document.entity';
+} from '../../entity/reference-document.entity';
 import { AiService } from 'src/ai/service/ai.service';
 import {
   SearchOperationFailedException,

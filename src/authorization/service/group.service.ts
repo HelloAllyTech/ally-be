@@ -1,4 +1,4 @@
-import { Group } from 'src/common/entities/group.entity';
+import { Group } from 'src/authorization/entity/group.entity';
 import {
   BadRequestException,
   Injectable,
@@ -14,7 +14,6 @@ import {
 import { In, DataSource } from 'typeorm';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from '../repository/user-group.repository';
-
 import { UserRepository } from 'src/user/repository/user.repository';
 
 @Injectable()
@@ -64,15 +63,14 @@ export class GroupService {
 
   async assignRole(assignUserRoleDto: AssignUserRoleDto): Promise<boolean> {
     const { role, userId } = assignUserRoleDto;
-    const group = await this.groupRepository.findOne({ name: role });
+    const group = await this.groupRepository.findOne({ where: { name: role } });
     if (!group) {
       this.logger.error(`Role not found: ${role} for user ${userId}`);
       throw new NotFoundException('Role not found');
     }
     // Check if user group already exists
     const existingUserGroup = await this.userGroupRepository.findOne({
-      groupId: group.id,
-      userId,
+      where: { groupId: group.id, userId },
     });
 
     if (existingUserGroup) {
@@ -81,10 +79,11 @@ export class GroupService {
       );
       throw new BadRequestException('User is already assigned to this role');
     }
-    await this.userGroupRepository.create({
+    const newUserGroup = this.userGroupRepository.create({
       groupId: group.id,
       userId,
     });
+    await this.userGroupRepository.save(newUserGroup);
     await this.cache.del(`user:groups:${userId}`);
     await this.cache.del(`user:roles:${userId}`);
     return true;
@@ -93,16 +92,16 @@ export class GroupService {
   async removeRole(removeUserRoleDto: RemoveUserRoleDto): Promise<boolean> {
     const { role, userId } = removeUserRoleDto;
     const group = await this.groupRepository.findOne({
-      name: role,
+      where: { name: role },
     });
     if (!group) {
       this.logger.error(`Role not found: ${role}`);
       throw new NotFoundException('Role not found');
     }
     const userGroup = await this.userGroupRepository.findOne({
-      groupId: group.id,
-      userId,
+      where: { groupId: group.id, userId },
     });
+
     if (!userGroup) {
       this.logger.error(`User role not found: ${role} for user ${userId}`);
       throw new NotFoundException('User role not found');
@@ -110,7 +109,7 @@ export class GroupService {
 
     // Check if user has more than one group
     const userGroupsCount = await this.userGroupRepository.count({
-      userId,
+      where: { userId },
     });
 
     if (userGroupsCount <= 1) {
@@ -148,8 +147,8 @@ export class GroupService {
     }
     try {
       // Get current user-group mappings
-      const currentUserGroups = await this.userGroupRepository.findMany({
-        userId: changeUserRolesDto.userId,
+      const currentUserGroups = await this.userGroupRepository.find({
+        where: { userId: changeUserRolesDto.userId },
       });
       const currentGroupIds = currentUserGroups.map((group) => group.groupId);
 
@@ -171,13 +170,15 @@ export class GroupService {
         }
         if (groupIdsToAdd.length > 0) {
           for (const groupId of groupIdsToAdd) {
-            await this.userGroupRepository.create({
+            const newUserGroup = this.userGroupRepository.create({
               userId: changeUserRolesDto.userId,
               groupId,
             });
+            await this.userGroupRepository.save(newUserGroup);
           }
         }
       });
+
       this.cache.del(`user:groups:${changeUserRolesDto.userId}`);
       this.cache.del(`user:roles:${changeUserRolesDto.userId}`);
       return {

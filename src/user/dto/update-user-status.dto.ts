@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum, IsNotEmpty } from 'class-validator';
-import { UserStatus } from 'src/common/constants/user.constants';
+import { UserStatus } from '../constants/user-status.constants';
 
 export class UpdateUserStatusDto {
   @ApiProperty({

@@ -1,4 +1,4 @@
-import { BaseEntity } from 'src/common/entities/base.entity';
+import { BaseEntity } from 'src/common/entity/base.entity';
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import { ScenarioSessionMessageType } from '../enum/scenario-session-message.type.enum';
 

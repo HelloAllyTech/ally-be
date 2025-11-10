@@ -4,7 +4,7 @@ import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { Pagination } from 'src/common/type/common.type';
 import { Scenarios } from '../entity/scenarios.entity';
-import { User } from 'src/common/entities/user.entity';
+import { User } from 'src/user/entity/user.entity';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
 import { v4 as uuidv4 } from 'uuid';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
@@ -24,6 +24,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     statuses?: string,
   ) {
     const query = this.createQueryBuilder('scenarioSession')
+      .withDeleted()
       .leftJoinAndMapOne(
         'scenarioSession.scenario',
         Scenarios,
@@ -78,6 +79,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
 
   async getAdminScenarioSessions(options: Pagination, statuses?: string) {
     const query = this.createQueryBuilder('scenarioSession')
+      .withDeleted()
       .leftJoinAndMapOne(
         'scenarioSession.scenario',
         Scenarios,
@@ -135,6 +137,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     isAdmin: boolean = false,
   ) {
     const query = this.createQueryBuilder('scenarioSession')
+      .withDeleted()
       .leftJoinAndMapOne(
         'scenarioSession.scenario',
         Scenarios,
@@ -147,6 +150,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'scenarioSessionDetails',
         '"scenarioSessionDetails"."scenarioSessionId"::uuid = scenarioSession.id',
       )
+      .withDeleted()
       .leftJoinAndMapMany(
         'scenarioSession.events',
         ScenarioSessionEvents,
@@ -185,13 +189,13 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'events',
         'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
       )
-      .select('COALESCE(SUM(events.score), 0)', 'totalScore')
+      .setParameters({
+        visibilityType: SessionEventVisibilityType.ACTIVE,
+      })
+      .select('COALESCE(SUM(scenarioSessionEvent.score), 0)', 'totalScore')
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
       .andWhere('scenarioSession.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
-      })
-      .setParameters({
-        visibilityType: SessionEventVisibilityType.ACTIVE,
       })
       .getRawOne();
 

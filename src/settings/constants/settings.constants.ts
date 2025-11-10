@@ -1,5 +1,5 @@
 import { ChatTypes } from '../../common/constants/chat.constants';
-import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
+import { FlattenedSummaryNotePayloadCamelCase } from '../../chat/type/call.details.type';
 function defineAllFields<T>() {
   return <K extends (keyof T)[]>(
     keys: [...K] &

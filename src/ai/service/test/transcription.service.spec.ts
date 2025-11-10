@@ -7,6 +7,7 @@ import { DeepgramTranscriptionOptions } from '../../type/transcription.type';
 describe('TranscriptionService', () => {
   let service: TranscriptionService;
   let mockTranscriptionService: jest.Mocked<ITranscriptionService>;
+  let module: TestingModule;
 
   const mockUserSession: UserChatSessionData = {
     id: 'session-123',
@@ -41,7 +42,7 @@ describe('TranscriptionService', () => {
       handleAudioChatMuted: jest.fn(),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       providers: [
         TranscriptionService,
         {
@@ -54,8 +55,12 @@ describe('TranscriptionService', () => {
     service = module.get<TranscriptionService>(TranscriptionService);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     jest.clearAllMocks();
+    jest.clearAllTimers();
+    if (module) {
+      await module.close();
+    }
   });
 
   describe('startLiveTranscription', () => {

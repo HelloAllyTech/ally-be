@@ -4,6 +4,7 @@ import { SessionEventRepository } from '../session-event.repository';
 import { SessionEvents } from '../../entity/session-events.entity';
 import { SessionEventVisibilityType } from '../../enum/session-event-visibility-type.enum';
 import { Pagination } from 'src/common/type/common.type';
+import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
 
 describe('SessionEventRepository', () => {
   let repository: SessionEventRepository;
@@ -21,11 +22,13 @@ describe('SessionEventRepository', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
+    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   beforeEach(async () => {
     queryBuilder = {
       andWhere: jest.fn().mockReturnThis(),
+      setParameters: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       offset: jest.fn().mockReturnThis(),
@@ -112,6 +115,7 @@ describe('SessionEventRepository', () => {
 
       const result = await repository.getAllSessionEvents(
         undefined,
+        undefined,
         pagination,
       );
 
@@ -141,6 +145,7 @@ describe('SessionEventRepository', () => {
 
       const result = await repository.getAllSessionEvents(
         visibilityType,
+        undefined,
         pagination,
       );
 
@@ -184,6 +189,7 @@ describe('SessionEventRepository', () => {
 
       const result = await repository.getAllSessionEvents(
         undefined,
+        undefined,
         pagination,
       );
 
@@ -204,6 +210,7 @@ describe('SessionEventRepository', () => {
 
       const result = await repository.getAllSessionEvents(
         undefined,
+        undefined,
         pagination,
       );
 
@@ -222,6 +229,7 @@ describe('SessionEventRepository', () => {
       queryBuilder.getMany.mockResolvedValue(expectedEvents);
 
       const result = await repository.getAllSessionEvents(
+        undefined,
         undefined,
         pagination,
       );
@@ -250,6 +258,164 @@ describe('SessionEventRepository', () => {
       const result = await repository.getAllSessionEvents();
 
       expect(queryBuilder.getMany).toHaveBeenCalled();
+      expect(result).toEqual(expectedEvents);
+    });
+
+    it('should filter by searchName', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const searchName = 'Test';
+      queryBuilder.getMany.mockResolvedValue(expectedEvents);
+
+      const result = await repository.getAllSessionEvents(
+        undefined,
+        searchName,
+        undefined,
+      );
+
+      expect(repository.createQueryBuilder).toHaveBeenCalledWith(
+        'sessionEvent',
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'sessionEvent.name ILIKE :searchName',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        searchName: '%Test%',
+      });
+      expect(queryBuilder.getMany).toHaveBeenCalled();
+      expect(result).toEqual(expectedEvents);
+    });
+
+    it('should filter by both visibility type and searchName', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const visibilityType = SessionEventVisibilityType.ACTIVE;
+      const searchName = 'Event';
+      queryBuilder.getMany.mockResolvedValue(expectedEvents);
+
+      const result = await repository.getAllSessionEvents(
+        visibilityType,
+        searchName,
+        undefined,
+      );
+
+      expect(repository.createQueryBuilder).toHaveBeenCalledWith(
+        'sessionEvent',
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'sessionEvent.visibilityType = :visibilityType',
+        { visibilityType: visibilityType },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'sessionEvent.name ILIKE :searchName',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        searchName: '%Event%',
+      });
+      expect(queryBuilder.getMany).toHaveBeenCalled();
+      expect(result).toEqual(expectedEvents);
+    });
+
+    it('should filter by searchName with pagination', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const searchName = 'Test';
+      const pagination: Pagination = {
+        limit: 10,
+        offset: 5,
+        sortBy: 'name',
+        order: 'ASC',
+      };
+      queryBuilder.getMany.mockResolvedValue(expectedEvents);
+
+      const result = await repository.getAllSessionEvents(
+        undefined,
+        searchName,
+        pagination,
+      );
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'sessionEvent.name ILIKE :searchName',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        searchName: '%Test%',
+      });
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        'sessionEvent.name',
+        'ASC',
+      );
+      expect(queryBuilder.limit).toHaveBeenCalledWith(10);
+      expect(queryBuilder.offset).toHaveBeenCalledWith(5);
+      expect(result).toEqual(expectedEvents);
+    });
+
+    it('should handle all filters together: visibilityType, searchName, and pagination', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const visibilityType = SessionEventVisibilityType.PASSIVE;
+      const searchName = 'Great';
+      const pagination: Pagination = {
+        limit: 20,
+        offset: 10,
+        sortBy: 'score',
+        order: 'DESC',
+      };
+      queryBuilder.getMany.mockResolvedValue(expectedEvents);
+
+      const result = await repository.getAllSessionEvents(
+        visibilityType,
+        searchName,
+        pagination,
+      );
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'sessionEvent.visibilityType = :visibilityType',
+        { visibilityType: visibilityType },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'sessionEvent.name ILIKE :searchName',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        searchName: '%Great%',
+      });
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        'sessionEvent.score',
+        'DESC',
+      );
+      expect(queryBuilder.limit).toHaveBeenCalledWith(20);
+      expect(queryBuilder.offset).toHaveBeenCalledWith(10);
+      expect(result).toEqual(expectedEvents);
+    });
+
+    it('should handle empty searchName string', async () => {
+      const expectedEvents = [mockSessionEvent];
+      queryBuilder.getMany.mockResolvedValue(expectedEvents);
+
+      const result = await repository.getAllSessionEvents(
+        undefined,
+        '',
+        undefined,
+      );
+
+      // Empty string is falsy, so andWhere for searchName should not be called
+      expect(queryBuilder.andWhere).not.toHaveBeenCalled();
+      expect(queryBuilder.setParameters).not.toHaveBeenCalled();
+      expect(result).toEqual(expectedEvents);
+    });
+
+    it('should handle searchName with special characters', async () => {
+      const expectedEvents = [mockSessionEvent];
+      const searchName = "Test's Event";
+      queryBuilder.getMany.mockResolvedValue(expectedEvents);
+
+      const result = await repository.getAllSessionEvents(
+        undefined,
+        searchName,
+        undefined,
+      );
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'sessionEvent.name ILIKE :searchName',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        searchName: "%Test's Event%",
+      });
       expect(result).toEqual(expectedEvents);
     });
   });

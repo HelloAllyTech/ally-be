@@ -1,10 +1,6 @@
 import { ChatUtil } from '../chat.util';
-import { FlattenedSummaryNotePayloadCamelCase } from '../../../common/entities/type/call.details.type';
-import {
-  Chat,
-  ChatStatus,
-  ChatSummaryStatus,
-} from '../../../common/entities/chat.entity';
+import { FlattenedSummaryNotePayloadCamelCase } from '../../type/call.details.type';
+import { Chat, ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
 
 describe('ChatUtil', () => {
   describe('isValidSummary', () => {

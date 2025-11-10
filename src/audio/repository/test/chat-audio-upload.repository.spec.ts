@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { ChatAudioUploadRepository } from '../chat-audio-upload.repository';
-import { ChatAudioUploads } from '../../../common/entities/chat-audio-uploads.entity';
+import { ChatAudioUploads } from '../../entity/chat-audio-uploads.entity';
 
 describe('ChatAudioUploadRepository', () => {
   let repository: ChatAudioUploadRepository;

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { TenantStatus } from 'src/common/entities/tenant.entity';
+import { TenantStatus } from 'src/tenant/entity/tenant.entity';
 
 export class TenantWithUserCountDto {
   @ApiProperty({ example: '1e5a76d2-4b3c-44b5-8af0-4a9b6e593b09' })

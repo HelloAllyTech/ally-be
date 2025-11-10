@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { HttpException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -25,17 +24,13 @@ import { ChatAudioUploadsService } from '../../../audio/service/chat-audio-uploa
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { GroupService } from '../../../authorization/service/group.service';
 
-import { Message } from '../../../common/entities/message.entity';
-import { ChatRoom } from '../../../common/entities/chat-room.entity';
-import { CallDetails } from '../../../common/entities/call.details.entity';
-import { User } from '../../../common/entities/user.entity';
-import {
-  Chat,
-  ChatStatus,
-  ChatSummaryStatus,
-} from '../../../common/entities/chat.entity';
-import { MessageType } from '../../../common/entities/message.entity';
-import { UserRole, UserStatus } from '../../../common/constants/user.constants';
+import { Message } from '../../entity/message.entity';
+import { CallDetails } from '../../entity/call.details.entity';
+import { User } from '../../../user/entity/user.entity';
+import { Chat, ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
+import { MessageType } from '../../entity/message.entity';
+import { UserRole } from '../../../common/constants/user.constants';
+import { UserStatus } from '../../../user/constants/user-status.constants';
 import {
   AudioChatProvider,
   AudioChatPlatform,
@@ -50,7 +45,6 @@ describe('ChatService', () => {
   let service: ChatService;
   let messageRepository: Repository<Message>;
   let chatRepository: ChatRepository;
-  let chatRoomRepository: Repository<ChatRoom>;
   let callDetailsRepository: Repository<CallDetails>;
   let queueService: QueueService;
   let userService: UserService;
@@ -65,7 +59,6 @@ describe('ChatService', () => {
     id: 1,
     clientId: 1,
     counselorId: 2,
-    roomId: 1,
     status: ChatStatus.ACTIVE,
     summaryStatus: ChatSummaryStatus.PENDING,
     startedAt: new Date(),
@@ -169,14 +162,6 @@ describe('ChatService', () => {
               getMany: jest.fn(),
               getCount: jest.fn(),
             })),
-          },
-        },
-        {
-          provide: getRepositoryToken(ChatRoom),
-          useValue: {
-            create: jest.fn(),
-            save: jest.fn(),
-            findOne: jest.fn(),
           },
         },
         {
@@ -332,9 +317,6 @@ describe('ChatService', () => {
     service = module.get<ChatService>(ChatService);
     messageRepository = module.get<MessageRepository>(MessageRepository);
     chatRepository = module.get<ChatRepository>(ChatRepository);
-    chatRoomRepository = module.get<Repository<ChatRoom>>(
-      getRepositoryToken(ChatRoom),
-    );
     callDetailsRepository = module.get<CallDetailsRepository>(
       CallDetailsRepository,
     );
@@ -536,24 +518,10 @@ describe('ChatService', () => {
 
   describe('requestChat', () => {
     it('should create a new chat when no active chats exist', async () => {
-      const mockChatRoom = {
-        id: 1,
-        clientId: 1,
-        tenantId: 'test-tenant',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
       const mockNewChat = { ...mockChat, id: 2 };
       const mockQueueEntry = { entryId: 1, chatId: 2 };
 
       jest.spyOn(chatRepository, 'findOne').mockResolvedValue(null);
-      jest.spyOn(chatRoomRepository, 'findOne').mockResolvedValue(mockChatRoom);
-      jest
-        .spyOn(chatRoomRepository, 'create')
-        .mockReturnValue(mockChatRoom as any);
-      jest
-        .spyOn(chatRoomRepository, 'save')
-        .mockResolvedValue(mockChatRoom as any);
       jest.spyOn(chatRepository, 'create').mockReturnValue(mockNewChat as any);
       jest.spyOn(chatRepository, 'save').mockResolvedValue(mockNewChat as any);
       jest
@@ -604,21 +572,9 @@ describe('ChatService', () => {
 
   describe('addNewChatWithCounselor', () => {
     it('should create a new chat with counselor', async () => {
-      const mockNewChatRoom = {
-        id: 2,
-        clientId: 1,
-        counselorId: 2,
-        tenantId: 'test-tenant',
-      };
       const mockNewChat = { ...mockChat, id: 2, counselorId: 2 };
 
       jest.spyOn(chatRepository, 'findOne').mockResolvedValue(null);
-      jest
-        .spyOn(chatRoomRepository, 'create')
-        .mockReturnValue(mockNewChatRoom as any);
-      jest
-        .spyOn(chatRoomRepository, 'save')
-        .mockResolvedValue(mockNewChatRoom as any);
       jest.spyOn(chatRepository, 'create').mockReturnValue(mockNewChat as any);
       jest.spyOn(chatRepository, 'save').mockResolvedValue(mockNewChat as any);
 
@@ -1321,12 +1277,11 @@ describe('ChatService', () => {
         .spyOn(callDetailsRepository, 'save')
         .mockResolvedValue(mockCallDetails as any);
 
-      const result = await service.createChat(1, 1);
+      const result = await service.createChat(1, undefined);
 
       expect(result).toEqual(mockNewChat);
       expect(chatRepository.create).toHaveBeenCalledWith({
         clientId: 1,
-        roomId: 1,
         status: ChatStatus.PAUSED,
         tenantId: 'test-tenant',
       });
@@ -1342,15 +1297,8 @@ describe('ChatService', () => {
 
   describe('createChatWithClientAndCounselor', () => {
     it('should create chat with client and counselor', async () => {
-      const mockNewChatRoom = { id: 2, clientId: 1, counselorId: 2 };
       const mockNewChat = { ...mockChat, id: 2, counselorId: 2 };
 
-      jest
-        .spyOn(chatRoomRepository, 'create')
-        .mockReturnValue(mockNewChatRoom as any);
-      jest
-        .spyOn(chatRoomRepository, 'save')
-        .mockResolvedValue(mockNewChatRoom as any);
       jest.spyOn(chatRepository, 'create').mockReturnValue(mockNewChat as any);
       jest.spyOn(chatRepository, 'save').mockResolvedValue(mockNewChat as any);
       jest
@@ -1368,11 +1316,6 @@ describe('ChatService', () => {
       });
 
       expect(result).toEqual(mockNewChat);
-      expect(chatRoomRepository.create).toHaveBeenCalledWith({
-        clientId: 1,
-        counselorId: 2,
-        tenantId: 'test-tenant',
-      });
     });
   });
 
@@ -1405,44 +1348,6 @@ describe('ChatService', () => {
         },
         undefined,
       );
-    });
-  });
-
-  describe('getOrCreateChatRoom', () => {
-    it('should return existing chat room', async () => {
-      const mockChatRoom = { id: 1, clientId: 1, tenantId: 'test-tenant' };
-      jest
-        .spyOn(chatRoomRepository, 'findOne')
-        .mockResolvedValue(mockChatRoom as any);
-
-      const result = await service.getOrCreateChatRoom(1);
-
-      expect(result).toEqual(mockChatRoom);
-      expect(chatRoomRepository.findOne).toHaveBeenCalledWith({
-        where: {
-          clientId: 1,
-          tenantId: 'test-tenant',
-        },
-      });
-    });
-
-    it('should create new chat room when not found', async () => {
-      const mockNewChatRoom = { id: 2, clientId: 1, tenantId: 'test-tenant' };
-      jest.spyOn(chatRoomRepository, 'findOne').mockResolvedValue(null);
-      jest
-        .spyOn(chatRoomRepository, 'create')
-        .mockReturnValue(mockNewChatRoom as any);
-      jest
-        .spyOn(chatRoomRepository, 'save')
-        .mockResolvedValue(mockNewChatRoom as any);
-
-      const result = await service.getOrCreateChatRoom(1);
-
-      expect(result).toEqual(mockNewChatRoom);
-      expect(chatRoomRepository.create).toHaveBeenCalledWith({
-        clientId: 1,
-        tenantId: 'test-tenant',
-      });
     });
   });
 

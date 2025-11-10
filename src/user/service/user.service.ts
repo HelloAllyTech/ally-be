@@ -7,10 +7,11 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { User } from '../../common/entities/user.entity';
+import { User } from '../entity/user.entity';
 import { QueueService } from '../../queue/service/queue.service';
-import { Chat, ChatStatus } from '../../common/entities/chat.entity';
-import { UserRole, UserStatus } from '../../common/constants/user.constants';
+import { Chat, ChatStatus } from '../../chat/entity/chat.entity';
+import { UserRole } from '../../common/constants/user.constants';
+import { UserStatus } from '../constants/user-status.constants';
 import { RedisService } from '../../redis/service/redis.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
@@ -19,8 +20,8 @@ import { UserFilterOptions } from '../interface/user-filter-options.interface';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { UserRepository } from '../repository/user.repository';
 import { TenantService } from 'src/tenant/service/tenant.service';
-import { UserGroup } from 'src/common/entities/user-group.entity';
-import { Group } from 'src/common/entities/group.entity';
+import { UserGroup } from 'src/authorization/entity/user-group.entity';
+import { Group } from 'src/authorization/entity/group.entity';
 import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { GroupService } from 'src/authorization/service/group.service';
 import {
@@ -30,8 +31,10 @@ import {
 } from '../dto/user-response.dto';
 import { SimulationCreditsService } from 'src/learn/service/simulation-credits.service';
 import { AddUserResponseDto } from '../dto/user-add-response.dto';
-import { AddUserDto } from '../dto/user-add.dto';
 import { UserGroupService } from 'src/authorization/service/user-group.service';
+import { AddUserDto } from '../dto/add-user.dto';
+import { GroupRepository } from 'src/authorization/repository/group.repository';
+import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
 
 @Injectable()
 export class UserService {
@@ -42,10 +45,8 @@ export class UserService {
     private userRepository: Repository<User>,
     private queueService: QueueService,
     private readonly cache: RedisService,
-    @InjectRepository(Group)
-    private groupRepository: Repository<Group>,
-    @InjectRepository(UserGroup)
-    private userGroupRepository: Repository<UserGroup>,
+    private groupRepository: GroupRepository,
+    private userGroupRepository: UserGroupRepository,
     private readonly tenantService: TenantService,
     private readonly usersRepository: UserRepository,
     private readonly groupService: GroupService,
@@ -126,7 +127,6 @@ export class UserService {
         chat: chat
           ? {
               chatId: chat.id,
-              roomId: chat.roomId,
               clientId: chat.clientId,
               counselorId: chat.counselorId,
               status: chat.status,
@@ -297,6 +297,17 @@ export class UserService {
       }
     }
     const updated = await this.userRepository.update(id, body as Partial<User>);
+    const updatedUser = await this.userRepository.findOne({ where: { id } });
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.USER_UPDATED,
+      tenantId: updatedUser?.tenantId,
+      userId: user.id,
+      details: {
+        username: updatedUser?.username,
+        email: updatedUser?.email,
+        phone: updatedUser?.phone,
+      },
+    });
 
     return { success: updated.affected !== 0 };
   }
@@ -316,10 +327,8 @@ export class UserService {
         `User with ID ${id} is already ${newStatus.toLowerCase()}`,
       );
     }
-
     user.status = newStatus;
     await this.userRepository.save(user);
-
     return { success: true };
   }
 
@@ -369,7 +378,7 @@ export class UserService {
       email: userData.email,
       password: hashedPassword,
       name: userData.name,
-      status: userData.status || UserStatus.ACTIVE,
+      status: UserStatus.ACTIVE,
       metadata: {},
       username: userData.username || userData.email,
       phone: userData.phone,
@@ -402,7 +411,7 @@ export class UserService {
     }
 
     this.auditLogger.log({
-      eventType: AUDIT_EVENTS.USER_SIGNUP,
+      eventType: AUDIT_EVENTS.USER_CREATED,
       tenantId: savedUser.tenantId,
       userId: savedUser.id,
       details: {

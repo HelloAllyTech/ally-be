@@ -1,0 +1,1 @@
+export const DEFAULT_SCENARIO_SESSION_TTL_SECONDS = 1200; // 20 minutes

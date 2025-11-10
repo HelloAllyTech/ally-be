@@ -3,7 +3,7 @@ import { DataSource, SelectQueryBuilder } from 'typeorm';
 import { ScenarioSessionRepository } from '../scenario-session.repository';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
 import { Scenarios } from '../../entity/scenarios.entity';
-import { User } from 'src/common/entities/user.entity';
+import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessionDetails } from '../../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../../entity/scenario-session-events.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
@@ -12,7 +12,8 @@ import { StartScenarioSessionRequestDto } from '../../dto/start-scenario-session
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionStatus } from '../../enum/scenario-session-status.enum';
 import { ScenarioStatus } from '../../enum/scenario.status.enum';
-import { UserRole, UserStatus } from 'src/common/constants/user.constants';
+import { UserRole } from 'src/common/constants/user.constants';
+import { UserStatus } from 'src/user/constants/user-status.constants';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -109,6 +110,7 @@ describe('ScenarioSessionRepository', () => {
       getMany: jest.fn(),
       getOne: jest.fn(),
       getRawOne: jest.fn(),
+      withDeleted: jest.fn().mockReturnThis(),
     } as any;
 
     mockEntityManager = {
@@ -644,13 +646,8 @@ describe('ScenarioSessionRepository', () => {
         'scenarioSessionEvent',
         '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id',
       );
-      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-        SessionEvents,
-        'events',
-        'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
-      );
       expect(mockQueryBuilder.select).toHaveBeenCalledWith(
-        'COALESCE(SUM(events.score), 0)',
+        'COALESCE(SUM(scenarioSessionEvent.score), 0)',
         'totalScore',
       );
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
@@ -661,9 +658,6 @@ describe('ScenarioSessionRepository', () => {
         'scenarioSession.tenantId = :tenantId',
         { tenantId: mockTenantId },
       );
-      expect(mockQueryBuilder.setParameters).toHaveBeenCalledWith({
-        visibilityType: SessionEventVisibilityType.ACTIVE,
-      });
     });
 
     it('should handle null score result', async () => {

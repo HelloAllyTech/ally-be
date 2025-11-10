@@ -122,4 +122,104 @@ describe('CacheController', () => {
       expect(result).toEqual([]);
     });
   });
+
+  describe('error handling', () => {
+    it('should handle Redis connection errors in getKeys', async () => {
+      const error = new Error('Redis connection failed');
+      redisService.getByPattern.mockRejectedValueOnce(error);
+
+      await expect(
+        controller.getKeys({ pattern: 'test:*' } as any),
+      ).rejects.toThrow('Redis connection failed');
+    });
+
+    it('should handle Redis connection errors in deleteKeys', async () => {
+      const error = new Error('Redis connection failed');
+      redisService.deleteByPattern.mockRejectedValueOnce(error);
+
+      await expect(
+        controller.deleteKeys({ pattern: 'test:*' } as any),
+      ).rejects.toThrow('Redis connection failed');
+    });
+
+    it('should handle timeout errors in getKeys', async () => {
+      const error = new Error('Redis timeout');
+      redisService.getByPattern.mockRejectedValueOnce(error);
+
+      await expect(
+        controller.getKeys({ pattern: 'test:*' } as any),
+      ).rejects.toThrow('Redis timeout');
+    });
+
+    it('should handle timeout errors in deleteKeys', async () => {
+      const error = new Error('Redis timeout');
+      redisService.deleteByPattern.mockRejectedValueOnce(error);
+
+      await expect(
+        controller.deleteKeys({ pattern: 'test:*' } as any),
+      ).rejects.toThrow('Redis timeout');
+    });
+  });
+
+  describe('pattern validation', () => {
+    it('should handle wildcard patterns in getKeys', async () => {
+      redisService.getByPattern.mockResolvedValueOnce(['key1', 'key2']);
+
+      const result = await controller.getKeys({ pattern: '*:*' } as any);
+      expect(redisService.getByPattern).toHaveBeenCalledWith('*:*');
+      expect(result).toEqual(['key1', 'key2']);
+    });
+
+    it('should handle specific patterns in deleteKeys', async () => {
+      redisService.deleteByPattern.mockResolvedValueOnce([
+        'deleted1',
+        'deleted2',
+      ]);
+
+      const result = await controller.deleteKeys({
+        pattern: 'user:123:*',
+      } as any);
+      expect(redisService.deleteByPattern).toHaveBeenCalledWith('user:123:*');
+      expect(result).toEqual(['deleted1', 'deleted2']);
+    });
+
+    it('should handle empty pattern in getKeys', async () => {
+      redisService.getByPattern.mockResolvedValueOnce([]);
+
+      const result = await controller.getKeys({ pattern: '' } as any);
+      expect(redisService.getByPattern).toHaveBeenCalledWith('');
+      expect(result).toEqual([]);
+    });
+
+    it('should handle empty pattern in deleteKeys', async () => {
+      redisService.deleteByPattern.mockResolvedValueOnce([]);
+
+      const result = await controller.deleteKeys({ pattern: '' } as any);
+      expect(redisService.deleteByPattern).toHaveBeenCalledWith('');
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('performance scenarios', () => {
+    it('should handle large result sets in getKeys', async () => {
+      const largeResultSet = Array.from({ length: 1000 }, (_, i) => `key${i}`);
+      redisService.getByPattern.mockResolvedValueOnce(largeResultSet);
+
+      const result = await controller.getKeys({ pattern: 'large:*' } as any);
+      expect(result).toEqual(largeResultSet);
+      expect(result).toHaveLength(1000);
+    });
+
+    it('should handle large deletion operations in deleteKeys', async () => {
+      const largeDeletionSet = Array.from(
+        { length: 500 },
+        (_, i) => `deleted${i}`,
+      );
+      redisService.deleteByPattern.mockResolvedValueOnce(largeDeletionSet);
+
+      const result = await controller.deleteKeys({ pattern: 'temp:*' } as any);
+      expect(result).toEqual(largeDeletionSet);
+      expect(result).toHaveLength(500);
+    });
+  });
 });
