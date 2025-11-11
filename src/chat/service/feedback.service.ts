@@ -20,11 +20,15 @@ export class FeedbackService {
   }
 
   async findByMessageId(messageId: number): Promise<Feedback[]> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new NotFoundException('User not found');
+    }
     return await this.feedbackRepository.find({
       where: {
         messageId,
         tenantId: ExecutionManager.getTenantId(),
-        userId: Number(ExecutionManager.getUserId()),
+        userId: userId,
       },
     });
   }
@@ -33,11 +37,15 @@ export class FeedbackService {
     id: number,
     updateFeedbackDto: Partial<Feedback>,
   ): Promise<Feedback> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new NotFoundException('User not found');
+    }
     const feedback = await this.feedbackRepository.findOne({
       where: {
         feedbackId: id,
         tenantId: ExecutionManager.getTenantId(),
-        userId: Number(ExecutionManager.getUserId()),
+        userId: userId,
       },
     });
     if (!feedback) {

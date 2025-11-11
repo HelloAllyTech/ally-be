@@ -1057,9 +1057,13 @@ export class ChatService {
     chatId: number,
   ): Promise<FlattenedSummaryNotePayloadCamelCase | undefined> {
     this.logger.debug(`generateSummary - chatId:${chatId}`);
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new NotFoundException('User not found');
+    }
     const chat = await this.chatRepository.findOne({
       where: {
-        counselorId: Number(ExecutionManager.getUserId()),
+        counselorId: userId,
         id: chatId,
         tenantId: ExecutionManager.getTenantId(),
       },
@@ -1400,11 +1404,15 @@ export class ChatService {
     chatId: number,
     summary: FlattenedSummaryNotePayloadCamelCase,
   ) {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new NotFoundException('User not found');
+    }
     const chat = await this.chatRepository.findOne({
       where: {
         id: chatId,
         tenantId: ExecutionManager.getTenantId(),
-        counselorId: Number(ExecutionManager.getUserId()),
+        counselorId: userId,
       },
     });
     if (!chat) {
@@ -1435,18 +1443,7 @@ export class ChatService {
       throw new ForbiddenException('User not authenticated');
     }
 
-    // Check if user has admin permissions to update any call info
-    const canAccessOthersCallInfo =
-      await this.permissionValidator.validatePermissions(
-        parseInt(currentUserId),
-        [PERMISSIONS.ORGANIZATION_ACCESS],
-      );
-
-    // If not admin, check if user is the counselor assigned to this chat
-    if (
-      !canAccessOthersCallInfo &&
-      chat.counselorId != parseInt(currentUserId)
-    ) {
+    if (chat.counselorId !== parseInt(currentUserId)) {
       throw new ForbiddenException(
         'You are not authorized to update call info for this chat',
       );
@@ -1810,9 +1807,13 @@ export class ChatService {
     chatId: number,
     createNoteDto: AddNoteDto,
   ): Promise<AddNotesResponse> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new NotFoundException('User not found');
+    }
     const chat = await this.chatRepository.findOne({
       where: {
-        counselorId: Number(ExecutionManager.getUserId()),
+        counselorId: userId,
         id: chatId,
         tenantId: ExecutionManager.getTenantId(),
       },
@@ -1846,10 +1847,14 @@ export class ChatService {
     chatId: number,
     summaryFeedbackDto: SummaryFeedbackDto,
   ): Promise<SummaryFeedbackResponse> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new NotFoundException('User not found');
+    }
     return this.dataSource.transaction(async (entityManager) => {
       const chat = await this.chatRepository.findOne({
         where: {
-          counselorId: Number(ExecutionManager.getUserId()),
+          counselorId: userId,
           id: chatId,
           tenantId: ExecutionManager.getTenantId(),
         },
