@@ -59,7 +59,7 @@ export class SessionEventService {
           : event.sessionEvents_branchInstruction,
         detectionType: event.sessionEvents_detectionType,
         visibilityType: event.sessionEvents_visibilityType,
-        sentences: event.sessionEvents_sentences,
+        detectionData: event.sessionEvents_detectionData,
         speaker: event.sessionEvents_speaker,
         createdAt: event.sessionEvents_createdAt,
         updatedAt: event.sessionEvents_updatedAt,
@@ -68,6 +68,8 @@ export class SessionEventService {
     return sessionEvents;
   }
 
+  // TODO: updateEventDto to not pass directly and select the necessary values only
+  // passing something will be saved directly to DB(even if it is not expected but is present in DB)
   async updateSessionEvent(
     id: string,
     updateEventDto: UpdateSessionEventDto,

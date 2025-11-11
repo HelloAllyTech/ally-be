@@ -42,7 +42,9 @@ describe('SessionEventController', () => {
     branchInstruction: 'Continue with next step',
     detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
     visibilityType: SessionEventVisibilityType.ACTIVE,
-    sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    detectionData: {
+      sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    },
     speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
@@ -178,7 +180,9 @@ describe('SessionEventController', () => {
         message: 'Basic message',
         detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
         visibilityType: SessionEventVisibilityType.ACTIVE,
-        sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        detectionData: {
+          sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        },
         speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const minimalEventsDto: CreateSessionEventsDto = {
@@ -219,7 +223,9 @@ describe('SessionEventController', () => {
         branchInstruction: 'Proceed to final stage',
         detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
         visibilityType: SessionEventVisibilityType.ACTIVE,
-        sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        detectionData: {
+          sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        },
         speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const fullEventsDto: CreateSessionEventsDto = {

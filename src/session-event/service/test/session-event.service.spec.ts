@@ -39,7 +39,9 @@ describe('SessionEventService', () => {
     branchInstruction: 'Continue with next step',
     detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
     visibilityType: SessionEventVisibilityType.ACTIVE,
-    sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    detectionData: {
+      sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    },
     speaker: SessionEventSpeaker.CARE_GIVER,
   };
 

@@ -1,17 +1,18 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsEnum,
+  ValidateNested,
+} from 'class-validator';
 import { SessionEventDetectionType } from '../enum/session-event-detection-type.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 import { SessionEventSpeaker } from '../enum/session-event-speaker.enum';
+import { DetectionDataDto } from './create-session-event.dto';
+import { Type } from 'class-transformer';
 
 export class UpdateSessionEventDto {
-  @ApiProperty({
-    description: 'ID for the event',
-    example: 'event-1',
-  })
-  @IsOptional()
-  @IsString()
-  id?: string;
   @ApiProperty({
     description: 'The name of the event',
     example: 'Event 1',
@@ -77,12 +78,16 @@ export class UpdateSessionEventDto {
   visibilityType?: SessionEventVisibilityType;
 
   @ApiProperty({
-    description: 'The sentences of the event',
-    example: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    description: 'The detection data of the event',
+    type: DetectionDataDto,
+    example: {
+      sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    },
   })
+  @ValidateNested()
+  @Type(() => DetectionDataDto)
   @IsOptional()
-  @IsString({ each: true })
-  sentences?: string[];
+  detectionData?: DetectionDataDto;
 
   @ApiProperty({
     description: 'The speaker of the event',

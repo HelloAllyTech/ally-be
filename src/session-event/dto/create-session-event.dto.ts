@@ -6,10 +6,23 @@ import {
   IsArray,
   IsEnum,
   IsNotEmpty,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { SessionEventDetectionType } from '../enum/session-event-detection-type.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 import { SessionEventSpeaker } from '../enum/session-event-speaker.enum';
+
+export class DetectionDataDto {
+  @ApiProperty({
+    description: 'The sentences of the event',
+    example: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  sentences?: string[];
+}
 
 export class CreateSessionEventDto {
   @ApiProperty({
@@ -81,13 +94,16 @@ export class CreateSessionEventDto {
     SessionEventVisibilityType.ACTIVE;
 
   @ApiProperty({
-    description: 'The sentences of the event',
-    example: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    description: 'The detection data of the event',
+    type: DetectionDataDto,
+    example: {
+      sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    },
   })
-  @IsArray()
-  @IsString({ each: true })
+  @ValidateNested()
+  @Type(() => DetectionDataDto)
   @IsOptional()
-  sentences?: string[];
+  detectionData?: DetectionDataDto;
 
   @ApiProperty({
     description: 'The speaker of the event',

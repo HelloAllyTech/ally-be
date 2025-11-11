@@ -39,9 +39,6 @@ export class SessionEvents extends BaseWithoutTenantEntity {
   })
   visibilityType!: SessionEventVisibilityType;
 
-  @Column('text', { array: true, nullable: true })
-  sentences?: string[];
-
   @Column({
     enum: SessionEventSpeaker,
     default: SessionEventSpeaker.CARE_GIVER,
@@ -50,4 +47,7 @@ export class SessionEvents extends BaseWithoutTenantEntity {
 
   @DeleteDateColumn()
   deletedAt?: Date;
+
+  @Column({ type: 'jsonb', nullable: true })
+  detectionData?: Record<string, any>;
 }
