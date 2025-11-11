@@ -170,7 +170,9 @@ Start PostgreSQL, Redis, LocalStack and SQS using Docker Compose:
 ```bash
 docker-compose up
 ```
+make sure the SQS URLs in your .env file match the ones shown in the Docker output.
 Note: The app in Docker will not start automatically at the moment — it requires manual execution. The steps for running it manually are detailed in the following sections.
+
 
 ### Step 5: Run Database Migrations
 
@@ -428,18 +430,7 @@ MIT
 
 ## 👥 Contributing
 
-We welcome contributions! Please follow these steps:
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/your-name/feature-name`
-3. **Make your changes** following the code standards
-4. **Run linting**: `npm run lint`
-5. **Run tests**: `npm run test`
-6. **Commit your changes**: `git commit -m "Add: your feature description"`
-7. **Push to your fork**: `git push origin feature/your-name/feature-name`
-8. **Open a Pull Request** with a clear description
-
-For more contributing guidelines, refer to `Contributing.md` file
+For contributing guidelines, refer to `CONTRIBUTING.md` file
 
 ---
 

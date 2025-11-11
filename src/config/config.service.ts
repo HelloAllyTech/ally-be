@@ -6,7 +6,7 @@ export class AppConfigService {
   constructor(private configService: ConfigService) {}
 
   get port(): number {
-    return this.configService.get<number>('PORT', 3000);
+    return this.configService.get<number>('PORT', 8001);
   }
 
   get nodeEnv(): string {
