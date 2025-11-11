@@ -10,8 +10,8 @@ Before you begin, ensure you have the following installed:
 
 ### Required Software
 
-- **Node.js** (v18 or higher) - [Download](https://nodejs.org/)
-- **npm** (v9 or higher) - Comes with Node.js
+- **Node.js** (v18) - [Download](https://nodejs.org/)
+- **npm** - Comes with Node.js
 - **Docker** (v20.10 or higher) - [Download](https://www.docker.com/get-started)
 - **Docker Compose** (v2.0 or higher) - Usually included with Docker Desktop
 - **PostgreSQL** (v14 or higher) - For local development (optional, Docker recommended)
@@ -26,97 +26,6 @@ Before you begin, ensure you have the following installed:
 - **Metabase** (optional) - For analytics dashboards
 - **Slack** (optional) - For exception alerts
 
-### System Requirements
-
-- **RAM**: Minimum 4GB, Recommended 8GB+
-- **Disk Space**: At least 2GB free
-- **OS**: macOS, Linux, or Windows (with WSL2 for Docker)
-
----
-
-## 🚀 Features
-
-### Core Features
-- 💬 **Real-time Chat** - WebSocket-based messaging using Socket.io
-- 📞 **Voice/Video Calls** - WebRTC peer-to-peer communication via LiveKit
-- 🔁 **Third-party Call Integration** - Support for Exotel, Ozonetel, and other telephony providers
-- 🧠 **AI-Powered Transcription** - Real-time speech-to-text using Deepgram
-- 💡 **Live Nudges** - Real-time AI-powered suggestions during calls
-- 📋 **Post-Call Summaries** - Automated conversation summaries and analysis
-- 📊 **Analytics** - Call and chat analytics with Metabase integration
-- 🧾 **Message History** - Paginated message history with search
-- 🧠 **Sentiment Analysis** - Optional sentiment tracking and analysis
-
-### Platform Features
-- 🛡️ **Authentication** - JWT-based auth with OTP support (Email/SMS)
-- 👥 **Multi-tenant Support** - Tenant isolation and management
-- 🔐 **Authorization** - Role-based access control (RBAC)
-- 🗃️ **Redis Caching** - Session and data caching
-- 📁 **File Management** - Audio file storage and reference document management
-- 🎓 **Learning Module** - Training scenarios and reference materials
-- 📍 **Place Management** - Location-based features
-- ⚙️ **Settings Management** - Configurable system settings
-- 📝 **Session Events** - Event tracking and logging
-- 🔔 **Notifications** - Event-driven notification system
-
-### Infrastructure
-- 🐳 **Docker Support** - Full Docker Compose setup for local development
-- 📄 **API Documentation** - Swagger/OpenAPI at `/api-docs`
-- 🏥 **Health Checks** - Application health monitoring
-- 📊 **CloudWatch Integration** - HIPAA-compliant audit logging
-- 🛠️ **Exception Handling** - Custom exception filters with Slack alerts
-- 🔄 **Message Broker** - SQS-based async message processing
-
----
-
-## 🧩 System Architecture
-
-```
-                   +----------------------+
-                   |   Auth Service       |
-                   | (Email/OTP Login)    |
-                   +----------+-----------+
-                              |
-                              v
-                     +--------+--------+
-                     | Signaling Server |
-                     +--------+--------+
-                              |
-                              v
-                     +--------+--------+                         +------------------+
-+-----------------+  |  Audio Stream    |  <-------------------> | Third-party API  |
-| WebRTC Client   |  |  Receiver (WS)   |     (via WebSocket)    | (Twilio, etc.)   |
-| (Web/App)       |  +--------+--------+                         +------------------+
-+-----------------+           |
-                              v
-                     +--------+--------+
-                     |  Transcription   |
-                     |   Engine (WS)    |
-                     |   Deepgram API   |
-                     +--------+--------+
-                              |
-                              v
-                       +------+------+
-                       | AI Engine    |
-                       | (Nudges,     |
-                       |  Summary)    |
-                       +------+------+
-                              |
-                              v
-                   +------------------------+          +-------------------+
-                   | Message and Nudge DB   |          |   Exceptions      |
-                   |      (Postgres)        |          |                   |
-                   +----------+-------------+          +-------------------+
-                              |                                  |
-                              v                                  v
-                   +------------------------+
-                   |  Metabase Dashboards   |          +-------------------+
-                   |                        |          |       Slack       |
-                   +------------------------+          +-------------------+
-
-Slack alerts triggered from any component
-```
-
 ---
 
 ## 🛠️ Technology Stack
@@ -126,10 +35,8 @@ Slack alerts triggered from any component
 | Backend        | NestJS                                   |
 | Database       | PostgreSQL                               |
 | Caching        | Redis                                    |
-| Real-time Comm | WebSocket (Socket.io), WebRTC, TURN/STUN |
-| Transcription  | Deepgram (WebSocket API)                 |
-| AI Engine      | LLM / internal models                    |
-| Authentication | JWT, OTP (Twilio, MSG91, Knowlarity)     |
+| Real-time Comm | WebSocket (Socket.io)                    |
+| Authentication | JWT, OTP                                 |
 | Analytics      | PostgreSQL + Metabase                    |
 | Observability  | Winston Logger + Slack alerts            |
 | Documentation  | Swagger/OpenAPI                          |
@@ -160,9 +67,7 @@ Create a `.env` file in the root directory. This file is used by all Docker serv
 ### Testing
 
 - ✅ **Jest** - Unit and integration testing framework
-- ✅ **Supertest** - HTTP endpoint testing
 - ✅ **Test Coverage** - Coverage reports with `npm run test:cov`
-- ✅ **E2E Tests** - End-to-end testing support
 
 ### Logging
 
@@ -173,9 +78,8 @@ Create a `.env` file in the root directory. This file is used by all Docker serv
 ### Monitoring
 
 - 📊 **Health Checks** - Built-in health check endpoints
-- 📈 **Metabase Dashboards** - Analytics and insights
 - 🛠️ **Slack Alerts** - Exception and error notifications
-- 📉 **Custom Metrics** - Application-specific metrics
+- 🛠️ **Cloudwatch Logs**
 
 ### Log Levels
 
@@ -207,9 +111,10 @@ npm install
 1. Copy the sample environment file:
    ```bash
    cp docker.env.example docker.env
+   cp .env.example .env
    ```
 
-2. Edit `docker.env` and fill in all required variables (see [Environment Configuration](#-environment-configuration) above)
+2. Edit `docker.env` and `.env` and fill in all required variables (see [Environment Configuration](#-environment-configuration) above)
 
 ### Step 4: Start Docker Services
 
@@ -218,6 +123,9 @@ Start PostgreSQL, Redis, LocalStack and SQS using Docker Compose:
 ```bash
 docker-compose up
 ```
+make sure the SQS URLs in your .env file match the ones shown in the Docker output.
+Note: The app in Docker will not start automatically at the moment — it requires manual execution. The steps for running it manually are detailed in the following sections.
+
 
 ### Step 5: Run Database Migrations
 
@@ -276,40 +184,6 @@ npm run migration:show
 
 ---
 
-## 📊 Analytics with Metabase
-
-### Data Collection
-
-The platform collects and stores the following metadata in PostgreSQL:
-
-- **Call Metrics**: Duration, source (WebRTC/Provider), timestamps
-- **Transcription Data**: Full transcripts, speaker identification
-- **AI Insights**: Keywords, topics, sentiment scores
-- **Nudge Analytics**: Nudges triggered, effectiveness
-- **User Activity**: Login patterns, session data
-- **Performance Metrics**: Response times, error rates
-
-### Metabase Integration
-
-Configure Metabase integration via environment variables:
-
-```env
-ANALYTICS_INTEGRATION=METABASE
-METABASE_URL=https://your-metabase-instance.com
-METABASE_API_KEY=your_metabase_api_key
-```
-
-### Available Dashboards
-
-- 📈 **Call Patterns** - Call volume, duration trends
-- 💡 **Nudge Effectiveness** - Nudge usage and impact
-- ⚠️ **Error Rates** - System errors and exceptions
-- 👥 **Counselor Performance** - Counselor activity and metrics
-- 📊 **User Engagement** - User activity and retention
-- 🎯 **Session Analytics** - Session quality and outcomes
-
----
-
 ## 🐛 Troubleshooting
 
 ### Common Issues
@@ -353,8 +227,8 @@ docker-compose restart sqs-setup
 #### Port Already in Use
 
 ```bash
-# Find process using port 3000
-lsof -i :3000
+# Find process using port 8001
+lsof -i :8001
 
 # Kill the process or change PORT in docker.env
 ```
@@ -377,19 +251,6 @@ Enable debug logging:
 LOG_LEVEL=debug
 NODE_ENV=development
 ```
-
----
-
-## 💡 Future Enhancements
-
-- 🌍 **Multi-language Transcription** - Support for multiple languages
-- 📼 **Call Recording & Downloads** - Record and download call audio
-- 🤝 **CRM Integrations** - HubSpot, Salesforce integrations
-- 📤 **Webhook-based Exports** - Real-time data exports via webhooks
-- 🧠 **AI Feedback for Counselors** - AI-powered counselor coaching
-- 📱 **Mobile SDK** - Native mobile app support
-- 🔐 **Enhanced Security** - Additional security features and compliance
-- 📊 **Advanced Analytics** - More detailed analytics and reporting
 
 ---
 
@@ -424,31 +285,16 @@ npm run test:watch
 # Run tests with coverage
 npm run test:cov
 
-# Run e2e tests
-npm run test:e2e
 ```
-
-### Code Standards
-
-The project follows:
-- ✅ NestJS best practices and conventions
-- ✅ TypeScript strict mode
-- ✅ ESLint + Prettier configuration
-- ✅ No unused imports
-- ✅ Comprehensive error handling
-- ✅ Type-safe DTOs with class-validator
-- ✅ Modular architecture
-
----
 
 ## 📚 API Documentation
 
 Once the application is running, access the interactive API documentation:
 
-- **Swagger UI**: http://localhost:3000/api-docs
+- **Swagger UI**: http://localhost:8001/api-docs
 
 The API is versioned and accessible at:
-- **v1**: `http://localhost:3000/api/v1/...`
+- **v1**: `http://localhost:8001/api/v1/...`
 
 ### Authentication
 
@@ -467,26 +313,9 @@ Authorization: Bearer <your-access-token>
 
 ---
 
-## 📜 License
-
-MIT
-
----
-
 ## 👥 Contributing
 
-We welcome contributions! Please follow these steps:
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/your-name/feature-name`
-3. **Make your changes** following the code standards
-4. **Run linting**: `npm run lint`
-5. **Run tests**: `npm run test`
-6. **Commit your changes**: `git commit -m "Add: your feature description"`
-7. **Push to your fork**: `git push origin feature/your-name/feature-name`
-8. **Open a Pull Request** with a clear description
-
-For more contributing guidelines, refer to `Contributing.md` file
+For contributing guidelines, refer to `CONTRIBUTING.md` file
 
 ---
 
@@ -498,7 +327,3 @@ For issues, questions, or contributions:
 - Check the API documentation at `/api-docs`
 
 ---
-
-## 📜 License
-
-MIT License - see LICENSE file for details
