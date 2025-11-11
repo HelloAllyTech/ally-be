@@ -10,8 +10,8 @@ Before you begin, ensure you have the following installed:
 
 ### Required Software
 
-- **Node.js** (v18 or higher) - [Download](https://nodejs.org/)
-- **npm** (v9 or higher) - Comes with Node.js
+- **Node.js** (v18) - [Download](https://nodejs.org/)
+- **npm** - Comes with Node.js
 - **Docker** (v20.10 or higher) - [Download](https://www.docker.com/get-started)
 - **Docker Compose** (v2.0 or higher) - Usually included with Docker Desktop
 - **PostgreSQL** (v14 or higher) - For local development (optional, Docker recommended)
@@ -26,49 +26,6 @@ Before you begin, ensure you have the following installed:
 - **Metabase** (optional) - For analytics dashboards
 - **Slack** (optional) - For exception alerts
 
-### System Requirements
-
-- **RAM**: Minimum 4GB, Recommended 8GB+
-- **Disk Space**: At least 2GB free
-- **OS**: macOS, Linux, or Windows (with WSL2 for Docker)
-
----
-
-## 🚀 Features
-
-### Core Features
-- 💬 **Real-time Chat** - WebSocket-based messaging using Socket.io
-- 📞 **Voice/Video Calls** - WebRTC peer-to-peer communication via LiveKit
-- 🔁 **Third-party Call Integration** - Support for Exotel, Ozonetel, and other telephony providers
-- 🧠 **AI-Powered Transcription** - Real-time speech-to-text using Deepgram
-- 💡 **Live Feedback messages** - Real-time AI-powered suggestions during calls
-- 📋 **Post-Call Summaries** - Automated conversation summaries and analysis
-- 📊 **Analytics** - Call and chat analytics with Metabase integration
-- 🧾 **Message History** - Paginated message history with search
-- 🧠 **Sentiment Analysis** - Optional sentiment tracking and analysis
-
-### Platform Features
-- 🛡️ **Authentication** - JWT-based auth with OTP support (Email/SMS)
-- 👥 **Multi-tenant Support** - Tenant isolation and management
-- 🔐 **Authorization** - Role-based access control (RBAC)
-- 🗃️ **Redis Caching** - Session and data caching
-- 📁 **File Management** - Audio file storage and reference document management
-- 🎓 **Learning Module** - Training scenarios and reference materials
-- 📍 **Place Management** - Location-based features
-- ⚙️ **Settings Management** - Configurable system settings
-- 📝 **Session Events** - Event tracking and logging
-- 🔔 **Notifications** - Event-driven notification system
-
-### Infrastructure
-- 🐳 **Docker Support** - Full Docker Compose setup for local development
-- 📄 **API Documentation** - Swagger/OpenAPI at `/api-docs`
-- 🏥 **Health Checks** - Application health monitoring
-- 📊 **CloudWatch Integration** - HIPAA-compliant audit logging
-- 🛠️ **Exception Handling** - Custom exception filters with Slack alerts
-- 🔄 **Message Broker** - SQS-based async message processing
-
----
-
 ---
 
 ## 🛠️ Technology Stack
@@ -79,7 +36,6 @@ Before you begin, ensure you have the following installed:
 | Database       | PostgreSQL                               |
 | Caching        | Redis                                    |
 | Real-time Comm | WebSocket (Socket.io)                    |
-| AI Engine      | LLM / internal models                    |
 | Authentication | JWT, OTP                                 |
 | Analytics      | PostgreSQL + Metabase                    |
 | Observability  | Winston Logger + Slack alerts            |
@@ -111,9 +67,7 @@ Create a `.env` file in the root directory. This file is used by all Docker serv
 ### Testing
 
 - ✅ **Jest** - Unit and integration testing framework
-- ✅ **Supertest** - HTTP endpoint testing
 - ✅ **Test Coverage** - Coverage reports with `npm run test:cov`
-- ✅ **E2E Tests** - End-to-end testing support
 
 ### Logging
 
@@ -124,9 +78,8 @@ Create a `.env` file in the root directory. This file is used by all Docker serv
 ### Monitoring
 
 - 📊 **Health Checks** - Built-in health check endpoints
-- 📈 **Metabase Dashboards** - Analytics and insights
 - 🛠️ **Slack Alerts** - Exception and error notifications
-- 📉 **Custom Metrics** - Application-specific metrics
+- 🛠️ **Cloudwatch Logs**
 
 ### Log Levels
 
@@ -231,40 +184,6 @@ npm run migration:show
 
 ---
 
-## 📊 Analytics with Metabase
-
-### Data Collection
-
-The platform collects and stores the following metadata in PostgreSQL:
-
-- **Call Metrics**: Duration, source (WebRTC/Provider), timestamps
-- **Transcription Data**: Full transcripts, speaker identification
-- **AI Insights**: Keywords, topics, sentiment scores
-- **Nudge Analytics**: Nudges triggered, effectiveness
-- **User Activity**: Login patterns, session data
-- **Performance Metrics**: Response times, error rates
-
-### Metabase Integration
-
-Configure Metabase integration via environment variables:
-
-```env
-ANALYTICS_INTEGRATION=METABASE
-METABASE_URL=https://your-metabase-instance.com
-METABASE_API_KEY=your_metabase_api_key
-```
-
-### Available Dashboards
-
-- 📈 **Call Patterns** - Call volume, duration trends
-- 💡 **Nudge Effectiveness** - Nudge usage and impact
-- ⚠️ **Error Rates** - System errors and exceptions
-- 👥 **Counselor Performance** - Counselor activity and metrics
-- 📊 **User Engagement** - User activity and retention
-- 🎯 **Session Analytics** - Session quality and outcomes
-
----
-
 ## 🐛 Troubleshooting
 
 ### Common Issues
@@ -335,19 +254,6 @@ NODE_ENV=development
 
 ---
 
-## 💡 Future Enhancements
-
-- 🌍 **Multi-language Transcription** - Support for multiple languages
-- 📼 **Call Recording & Downloads** - Record and download call audio
-- 🤝 **CRM Integrations** - HubSpot, Salesforce integrations
-- 📤 **Webhook-based Exports** - Real-time data exports via webhooks
-- 🧠 **AI Feedback for Counselors** - AI-powered counselor coaching
-- 📱 **Mobile SDK** - Native mobile app support
-- 🔐 **Enhanced Security** - Additional security features and compliance
-- 📊 **Advanced Analytics** - More detailed analytics and reporting
-
----
-
 ## 🧹 Code Quality
 
 ### Linting
@@ -379,22 +285,7 @@ npm run test:watch
 # Run tests with coverage
 npm run test:cov
 
-# Run e2e tests
-npm run test:e2e
 ```
-
-### Code Standards
-
-The project follows:
-- ✅ NestJS best practices and conventions
-- ✅ TypeScript strict mode
-- ✅ ESLint + Prettier configuration
-- ✅ No unused imports
-- ✅ Comprehensive error handling
-- ✅ Type-safe DTOs with class-validator
-- ✅ Modular architecture
-
----
 
 ## 📚 API Documentation
 
@@ -422,12 +313,6 @@ Authorization: Bearer <your-access-token>
 
 ---
 
-## 📜 License
-
-MIT
-
----
-
 ## 👥 Contributing
 
 For contributing guidelines, refer to `CONTRIBUTING.md` file
@@ -442,7 +327,3 @@ For issues, questions, or contributions:
 - Check the API documentation at `/api-docs`
 
 ---
-
-## 📜 License
-
-MIT License - see LICENSE file for details
