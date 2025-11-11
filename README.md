@@ -41,7 +41,7 @@ Before you begin, ensure you have the following installed:
 - 📞 **Voice/Video Calls** - WebRTC peer-to-peer communication via LiveKit
 - 🔁 **Third-party Call Integration** - Support for Exotel, Ozonetel, and other telephony providers
 - 🧠 **AI-Powered Transcription** - Real-time speech-to-text using Deepgram
-- 💡 **Live Nudges** - Real-time AI-powered suggestions during calls
+- 💡 **Live Feedback messages** - Real-time AI-powered suggestions during calls
 - 📋 **Post-Call Summaries** - Automated conversation summaries and analysis
 - 📊 **Analytics** - Call and chat analytics with Metabase integration
 - 🧾 **Message History** - Paginated message history with search
@@ -69,54 +69,6 @@ Before you begin, ensure you have the following installed:
 
 ---
 
-## 🧩 System Architecture
-
-```
-                   +----------------------+
-                   |   Auth Service       |
-                   | (Email/OTP Login)    |
-                   +----------+-----------+
-                              |
-                              v
-                     +--------+--------+
-                     | Signaling Server |
-                     +--------+--------+
-                              |
-                              v
-                     +--------+--------+                         +------------------+
-+-----------------+  |  Audio Stream    |  <-------------------> | Third-party API  |
-| WebRTC Client   |  |  Receiver (WS)   |     (via WebSocket)    | (Twilio, etc.)   |
-| (Web/App)       |  +--------+--------+                         +------------------+
-+-----------------+           |
-                              v
-                     +--------+--------+
-                     |  Transcription   |
-                     |   Engine (WS)    |
-                     |   Deepgram API   |
-                     +--------+--------+
-                              |
-                              v
-                       +------+------+
-                       | AI Engine    |
-                       | (Nudges,     |
-                       |  Summary)    |
-                       +------+------+
-                              |
-                              v
-                   +------------------------+          +-------------------+
-                   | Message and Nudge DB   |          |   Exceptions      |
-                   |      (Postgres)        |          |                   |
-                   +----------+-------------+          +-------------------+
-                              |                                  |
-                              v                                  v
-                   +------------------------+
-                   |  Metabase Dashboards   |          +-------------------+
-                   |                        |          |       Slack       |
-                   +------------------------+          +-------------------+
-
-Slack alerts triggered from any component
-```
-
 ---
 
 ## 🛠️ Technology Stack
@@ -126,10 +78,9 @@ Slack alerts triggered from any component
 | Backend        | NestJS                                   |
 | Database       | PostgreSQL                               |
 | Caching        | Redis                                    |
-| Real-time Comm | WebSocket (Socket.io), WebRTC, TURN/STUN |
-| Transcription  | Deepgram (WebSocket API)                 |
+| Real-time Comm | WebSocket (Socket.io)                    |
 | AI Engine      | LLM / internal models                    |
-| Authentication | JWT, OTP (Twilio, MSG91, Knowlarity)     |
+| Authentication | JWT, OTP                                 |
 | Analytics      | PostgreSQL + Metabase                    |
 | Observability  | Winston Logger + Slack alerts            |
 | Documentation  | Swagger/OpenAPI                          |
@@ -207,9 +158,10 @@ npm install
 1. Copy the sample environment file:
    ```bash
    cp docker.env.example docker.env
+   cp .env.example .env
    ```
 
-2. Edit `docker.env` and fill in all required variables (see [Environment Configuration](#-environment-configuration) above)
+2. Edit `docker.env` and `.env` and fill in all required variables (see [Environment Configuration](#-environment-configuration) above)
 
 ### Step 4: Start Docker Services
 
@@ -218,6 +170,7 @@ Start PostgreSQL, Redis, LocalStack and SQS using Docker Compose:
 ```bash
 docker-compose up
 ```
+Note: The app in Docker will not start automatically at the moment — it requires manual execution. The steps for running it manually are detailed in the following sections.
 
 ### Step 5: Run Database Migrations
 
@@ -353,8 +306,8 @@ docker-compose restart sqs-setup
 #### Port Already in Use
 
 ```bash
-# Find process using port 3000
-lsof -i :3000
+# Find process using port 8001
+lsof -i :8001
 
 # Kill the process or change PORT in docker.env
 ```
@@ -445,10 +398,10 @@ The project follows:
 
 Once the application is running, access the interactive API documentation:
 
-- **Swagger UI**: http://localhost:3000/api-docs
+- **Swagger UI**: http://localhost:8001/api-docs
 
 The API is versioned and accessible at:
-- **v1**: `http://localhost:3000/api/v1/...`
+- **v1**: `http://localhost:8001/api/v1/...`
 
 ### Authentication
 
