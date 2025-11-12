@@ -489,16 +489,15 @@ export class ScenarioService {
         scenarioId,
         eventId: id,
         tenantId: ExecutionManager.getTenantId(),
+        score,
         ...(feedbackStatus
           ? {
               feedbackStatus,
-              score,
               emoji,
               message,
             }
           : {
               feedbackStatus: false,
-              score: undefined,
               emoji: undefined,
               message: undefined,
             }),
