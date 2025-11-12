@@ -7,7 +7,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { DataSource, EntityManager, In, SelectQueryBuilder } from 'typeorm';
+import { DataSource, EntityManager, In } from 'typeorm';
 import { Message, MessageType } from '../entity/message.entity';
 import { Chat, ChatStatus } from '../entity/chat.entity';
 import { LoggerService } from '../../logger/logger.service';
@@ -22,7 +22,6 @@ import {
   QueueStatus,
 } from '../../common/constants/chat.constants';
 import { CallDetails } from '../entity/call.details.entity';
-import { Feedback } from '../entity/feedback.entity';
 import { User } from '../../user/entity/user.entity';
 import { Pagination } from '../../common/type/common.type';
 import { UserService } from '../../user/service/user.service';
@@ -30,7 +29,6 @@ import { ChatEvents } from '../constants/chat.constants';
 import { ChatGateway } from '../gateway/chat.gateway';
 import {
   DeepgramTranscriptMetadata,
-  MessageWithFeedback,
   NudgeResponse,
   SendMessageWebSocketData,
   UpdateChatInput,
@@ -45,29 +43,18 @@ import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
 import { TokenUser } from '../../auth/type/auth.types';
-import { TIME } from '../../common/constants/time.constants';
 import {
   ANONYMOUS_CLIENT_ID,
   UserRole,
 } from '../../common/constants/user.constants';
 import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type';
 import { ExecutionManager } from '../../common/execution/execution-manager';
-import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
-import { CommonUtil } from '../../common/util/common.util';
 import { CallInfoDto, DeleteChatResponseDto } from '../dto/chat.response.dto';
-import {
-  CallInfo,
-  SummaryFeedbackResponse,
-} from '../dto/call-log.response.dto';
-import { StringUtil } from '../../common/util/string.util';
+import { SummaryFeedbackResponse } from '../dto/call-log.response.dto';
 import { ForbiddenException } from '../../exception/custom.exception';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { SettingsService } from '../../settings/service/settings.service';
-import {
-  CallLogFilters,
-  CallLogSortBy,
-  SortOrder,
-} from '../dto/call-log.request.dto';
+import { CallLogFilters } from '../dto/call-log.request.dto';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { ChatRepository } from '../repository/chat.repository';
 import { AppConfigService } from 'src/config/config.service';
@@ -81,6 +68,11 @@ import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.se
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { GroupService } from 'src/authorization/service/group.service';
+import { MessageService } from './message.service';
+import { CallDetailsService } from './call-details.service';
+import { CallLogService } from './call-log.service';
+import { AiChatIntegrationService } from './ai-chat-integration.service';
+import { ChatFeedbackService } from './chat-feedback.service';
 
 @Injectable()
 export class ChatService {
@@ -89,6 +81,11 @@ export class ChatService {
   constructor(
     private messageRepository: MessageRepository,
     private chatRepository: ChatRepository,
+    private messageService: MessageService,
+    private callDetailsService: CallDetailsService,
+    private callLogService: CallLogService,
+    private aiChatIntegrationService: AiChatIntegrationService,
+    private chatFeedbackService: ChatFeedbackService,
 
     private callDetailsRepository: CallDetailsRepository,
     private summaryFeedbackRepository: SummaryFeedbackRepository,
@@ -150,6 +147,7 @@ export class ChatService {
     return chat;
   }
 
+  // TODO: remove
   async requestChat(userId: number) {
     this.logger.debug(`requestChat - userId:${userId}`);
     return this.dataSource.transaction(async (entityManager) => {
@@ -444,6 +442,7 @@ export class ChatService {
     return userIdRoleMapping;
   }
 
+  // TODO: will be decprecated
   async startCall(participantPhoneNumbers: string[]) {
     if (!participantPhoneNumbers || participantPhoneNumbers?.length < 2) {
       throw new HttpException('Need at least 2 participants', 400);
@@ -497,6 +496,7 @@ export class ChatService {
     return chat;
   }
 
+  // TODO: will be decprecated
   async accept(councilorId: number, chatId: number) {
     return this.dataSource.transaction(async (entityManager) => {
       const activeChats = await this.getChatsByCouncilorId(
@@ -538,6 +538,7 @@ export class ChatService {
     });
   }
 
+  // TODO: will be decprecated
   async handleDeepgramTranscript(
     session: UserChatSessionData,
     chatId: number,
@@ -550,69 +551,6 @@ export class ChatService {
       transcript,
       metadata,
     );
-  }
-
-  async getMessageByChatId(
-    chatId: number,
-    filter?: {
-      type?: MessageType;
-      limit?: number;
-      offset?: number;
-      sortBy?: string;
-      order?: 'ASC' | 'DESC';
-    },
-    entityManager?: EntityManager,
-  ) {
-    const repo =
-      entityManager?.getRepository(Message) || this.messageRepository;
-    const query = repo
-      .createQueryBuilder('message')
-      .where('message.chatId = :chatId', { chatId })
-      .leftJoinAndMapOne(
-        'message.feedback',
-        Feedback,
-        'feedback',
-        'feedback.messageId = message.id',
-      );
-
-    query.orderBy(
-      `message.${filter?.sortBy || 'createdAt'}`,
-      filter?.order || 'DESC',
-    );
-
-    if (filter?.type) {
-      query.andWhere('message.type = :type', { type: filter.type });
-    }
-    if (filter?.limit) {
-      query.limit(filter.limit);
-    }
-    if (filter?.offset) {
-      query.offset(filter.offset);
-    }
-    query.andWhere('message.tenantId = :tenantId', {
-      tenantId: ExecutionManager.getTenantId(),
-    });
-    const [messages, count] = await query.getManyAndCount();
-    const decryptedMessages = await this.decryptMessages(messages);
-    return {
-      messages: decryptedMessages,
-      count,
-    };
-  }
-
-  formatMessage(message: MessageWithFeedback) {
-    return {
-      messageId: message.id,
-      chatId: message.chatId,
-      senderId: message.senderId,
-      messageType: message.type,
-      content: message.content,
-      context: message.context,
-      createdAt: message.createdAt.toISOString(),
-      feedback: message.feedback,
-      startSeconds: message.startSeconds,
-      endSeconds: message.endSeconds,
-    };
   }
 
   async saveMessage(
@@ -628,27 +566,11 @@ export class ChatService {
       parentMessageId?: number;
     },
   ) {
-    const encryptedContent = await this.cryptoService.encrypt(
-      data.content,
-      this.config.phiData?.phiDataEncryptionKey,
-    );
-    const message = this.messageRepository.create({
-      chatId,
-      senderId,
-      content: encryptedContent,
-      context: data.context,
-      type: data.messageType || MessageType.TEXT,
-      tenantId: ExecutionManager.getTenantId(),
-      parentMessageId: data.parentMessageId,
-      createdAt: data.createdAt,
-      startSeconds: data.startSeconds,
-      endSeconds: data.endSeconds,
-    });
-    return this.messageRepository.save(message);
+    return this.messageService.saveMessage(chatId, senderId, data);
   }
 
   async save(message: Message) {
-    return this.messageRepository.save(message);
+    return this.messageService.save(message);
   }
 
   async getMessageObject(
@@ -656,18 +578,7 @@ export class ChatService {
     senderId: number,
     data: { content: string; context?: string; messageType?: MessageType },
   ) {
-    const encryptedContent = await this.cryptoService.encrypt(
-      data.content,
-      this.config.phiData?.phiDataEncryptionKey,
-    );
-    return this.messageRepository.create({
-      chatId,
-      senderId,
-      content: encryptedContent,
-      context: data.context,
-      type: data.messageType || MessageType.TEXT,
-      tenantId: ExecutionManager.getTenantId(),
-    });
+    return this.messageService.getMessageObject(chatId, senderId, data);
   }
 
   async getCounselorChat(id: number) {
@@ -695,7 +606,7 @@ export class ChatService {
     const counselor = chat.counselorId
       ? await this.userService.get(chat.counselorId)
       : null;
-    const { messages } = await this.getMessageByChatId(
+    const { messages } = await this.messageService.getMessageByChatId(
       chat.id,
       undefined,
       entityManager,
@@ -774,13 +685,6 @@ export class ChatService {
       sortOrder?: 'ASC' | 'DESC';
     },
   ) {
-    const {
-      limit = 10,
-      offset = 0,
-      sortBy = 'createdAt',
-      sortOrder = 'DESC',
-    } = options;
-
     const chat = await this.chatRepository.findOne({
       where: {
         id: chatId,
@@ -792,280 +696,36 @@ export class ChatService {
       throw new HttpException('Chat not found', 404);
     }
 
-    // Check if user has permission to view messages or is the participant of this chat
-    const canViewMessages = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.VIEW_MESSAGES],
-    );
-    // Does client has permission to view messages?
-
-    if (
-      !canViewMessages &&
-      chat.clientId !== userId &&
-      chat.counselorId !== userId
-    ) {
-      throw new HttpException(
-        'You are not authorized to access this chat',
-        403,
-      );
-    }
-
-    const { messages, count } = await this.getMessageByChatId(chatId, {
-      limit,
-      offset,
-      sortBy,
-      order: sortOrder,
-      type: MessageType.TEXT,
-    });
-
-    this.auditLogger.log({
-      eventType: AUDIT_EVENTS.ACCESS_TRANSCRIPT,
-      details: {
-        chatId: chatId.toString(),
-      },
-    });
-
-    return {
-      data: messages.map((message) => this.formatMessage(message)),
-      count,
-    };
+    return this.messageService.getMessages(chatId, userId, chat, options);
   }
 
   async handleChatEnded(chat: Chat) {
-    this.logger.debug(`handleChatEnded - chatId: ${chat.id}`);
-    const callDetails = await this.callDetailsRepository.findOne({
-      where: { chatId: chat.id, tenantId: ExecutionManager.getTenantId() },
-    });
-    const provider = callDetails?.callInfo?.provider;
-
-    const channel = findMessageBrokerChannelUsingProvider(provider!);
-    let participants;
-
-    this.logger.debug(
-      `handleChatEnded - chatId: ${chat.id} | provider: ${provider}`,
-    );
-
-    if (provider === AudioChatProvider.WEBRTC) {
-      participants = [chat.counselorId!, chat.clientId];
-      await Promise.allSettled([
-        this.updateSummaryAndTags(chat),
-        this.updateMessageStatistics(chat, callDetails),
-      ]);
-    } else if (
-      provider === AudioChatProvider.MICROPHONE ||
-      provider === AudioChatProvider.EXOTEL_CONFERENCE_CALL
-    ) {
-      participants = [chat.counselorId!];
-      await this.streamFileProcessorService.endCallStream({
-        chatId: chat.id,
-        provider,
-      });
-    } else if (provider === AudioChatProvider.OZONETEL) {
-      participants = [chat.counselorId!];
-    }
-    if (channel && participants) {
-      this.broadcastMessageService.broadcastChatEndedEvent(channel, {
-        participants,
-        chatId: chat.id,
-      });
-    }
+    return this.callDetailsService.handleChatEnded(chat);
   }
 
   async updateSummaryAndTags(chat: Chat) {
-    const summary: any = (await this.generateSummary(chat.id)) || {};
-
-    if (summary && summary.sessionSummary) {
-      summary.sessionSummary = await this.cryptoService.encrypt(
-        summary.sessionSummary,
-        this.config.phiData?.phiDataEncryptionKey,
-      );
-    }
-
-    await this.callDetailsRepository.update(
-      { chatId: chat.id },
-      {
-        summary,
-      },
-    );
+    return this.callDetailsService.updateSummaryAndTags(chat);
   }
 
   async updateCallMetadata(chatId: number, duration?: number) {
-    this.logger.debug(`updateCallDetails:Start - chatId:${chatId}`);
-    try {
-      const chat = await this.getChatById(chatId);
-      if (!chat) {
-        this.logger.error(
-          `updateCallMetadata - chatId:${chatId} - chat not found`,
-        );
-        return;
-      }
-
-      const callDetails = await this.callDetailsRepository.findOne({
-        where: { chatId, tenantId: ExecutionManager.getTenantId() },
-      });
-
-      let callDurationInSeconds;
-      const endDate = chat.endedAt || new Date();
-
-      if (duration) {
-        callDurationInSeconds = duration;
-      } else {
-        const startDate = chat.startedAt || new Date();
-
-        callDurationInSeconds = ChatUtil.getCallDurationInSeconds(
-          startDate,
-          endDate,
-        );
-      }
-
-      if (callDetails) {
-        const updates = {
-          endTime: endDate,
-          callDuration: callDurationInSeconds,
-        };
-        await this.callDetailsRepository.update({ chatId }, updates);
-      }
-    } catch (err) {
-      this.logger.error(`updateCallMetadata - chatId:${chatId} - error:${err}`);
+    const chat = await this.getChatById(chatId);
+    if (!chat) {
+      this.logger.error(
+        `updateCallMetadata - chatId:${chatId} - chat not found`,
+      );
+      return;
     }
+    return this.callDetailsService.updateCallMetadata(chat, duration);
   }
 
   async updateMessageStatistics(chat: Chat, callDetails?: CallDetails | null) {
-    this.logger.debug(
-      `updateMessageStatistics:Start - chatId:${chat.id} | startedAt:${chat.startedAt} | endedAt:${chat.endedAt}`,
-    );
-    try {
-      const chatId = chat.id;
-      const { messages } = await this.getMessageByChatId(chatId, {
-        sortBy: 'createdAt',
-        order: 'ASC',
-      });
-      const startDate = chat.startedAt || new Date();
-      const endDate = chat.endedAt || new Date();
-
-      const callDurationInSeconds = ChatUtil.getCallDurationInSeconds(
-        startDate,
-        endDate,
-      );
-
-      // get word count by language
-      const wordCountByLanguage = await this.getWordCountByLanguage(chat.id);
-
-      let noOfNudges = 0;
-      let noOfStages = 0;
-      let clientWordCount = 0;
-      let counselorWordCount = 0;
-      //format transcript also get the client talking percentage
-      let transcript = '';
-      let currentStage = '';
-
-      messages.forEach((message) => {
-        if (message.type === MessageType.NUDGE) {
-          noOfNudges++;
-        }
-        if (
-          message.type === MessageType.STAGE &&
-          currentStage !== message.content
-        ) {
-          noOfStages++;
-          currentStage = message.content;
-        }
-        if (message.type !== MessageType.TEXT) {
-          return;
-        }
-        if (message.senderId == chat.clientId) {
-          clientWordCount += StringUtil.wordCount(message.content);
-          transcript += `Client: ${message.content}\n`;
-        } else {
-          counselorWordCount += StringUtil.wordCount(message.content);
-          transcript += `Counselor: ${message.content}\n`;
-        }
-      });
-      const clientTalkingPercentage =
-        clientWordCount > 0
-          ? parseFloat(
-              (
-                clientWordCount /
-                (clientWordCount + counselorWordCount)
-              ).toFixed(3),
-            )
-          : 0;
-      const counselorTalkingPercentage =
-        counselorWordCount > 0
-          ? parseFloat(
-              (
-                counselorWordCount /
-                (clientWordCount + counselorWordCount)
-              ).toFixed(3),
-            )
-          : 0;
-
-      if (!callDetails) {
-        callDetails = await this.callDetailsRepository.findOne({
-          where: { chatId, tenantId: ExecutionManager.getTenantId() },
-        });
-      }
-
-      const existingCallInfo = callDetails?.callInfo || {};
-
-      const encryptedTranscript = await this.cryptoService.encrypt(
-        transcript,
-        this.config.phiData?.phiDataEncryptionKey,
-      );
-
-      const updates = {
-        noOfNudges,
-        noOfStages,
-        transcript: encryptedTranscript,
-        callInfo: {
-          ...existingCallInfo,
-          clientTalkingPercentage: clientTalkingPercentage,
-          counselorTalkingPercentage: counselorTalkingPercentage,
-          clientTalkingTime: clientTalkingPercentage * callDurationInSeconds,
-          counselorTalkingTime:
-            counselorTalkingPercentage * callDurationInSeconds,
-          ...(!existingCallInfo.summaryName
-            ? { summaryName: ChatUtil.getSummaryName(chat) }
-            : {}),
-          wordCountByLanguage,
-          clientWordCount,
-          counselorWordCount,
-        } as CallInfo,
-        endTime: endDate,
-        callDuration: callDurationInSeconds,
-      };
-      this.logger.debug(
-        `updateMessageStatistics:updates:${JSON.stringify(updates)}`,
-      );
-      const details = await this.callDetailsRepository.update(
-        { chatId },
-        updates,
-      );
-      // delete the word count from cache
-      await this.deleteWordCountByLanguage(chat.id);
-      this.logger.debug(`updateMessageStatistics:End - chatId:${chat.id}`);
-      return details;
-    } catch (err) {
-      this.logger.error(
-        `updateMessageStatistics - chatId:${chat.id} - error:${err}`,
-      );
-    }
+    return this.callDetailsService.updateMessageStatistics(chat, callDetails);
   }
 
   async generateSummary(
     chatId: number,
   ): Promise<FlattenedSummaryNotePayloadCamelCase | undefined> {
-    this.logger.debug(`generateSummary - chatId:${chatId}`);
-    const messageRequests: MessageRequest[] =
-      await this.getChatHistoryForAIService(chatId, {
-        sortBy: 'createdAt',
-        order: 'ASC',
-      });
-    const aiResponse =
-      await this.aiService.generateSummaryAndTags(messageRequests);
-    const convertedResponse = CommonUtil.convertToCamelCase(
-      aiResponse,
-    ) as FlattenedSummaryNotePayloadCamelCase;
+    const summary = await this.callDetailsService.generateSummary(chatId);
 
     this.auditLogger.log({
       eventType: AUDIT_EVENTS.SUMMARY_GENERATED,
@@ -1074,332 +734,33 @@ export class ChatService {
       },
     });
 
-    return convertedResponse;
+    return summary;
   }
 
   async generateSummaryForMessage(
     messageRequests: MessageRequest[],
   ): Promise<GenerateSummaryResponse | undefined> {
-    const aiResponse =
-      await this.aiService.generateSummaryAndTags(messageRequests);
-    if (aiResponse) {
-      this.auditLogger.log({
-        eventType: AUDIT_EVENTS.SUMMARY_GENERATED_FROM_MESSAGES,
-        details: {
-          messageRequests,
-        },
-      });
-      return aiResponse;
-    }
-    return;
-  }
-
-  async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {
-    const query = this.messageRepository
-      .createQueryBuilder('message')
-      .leftJoinAndMapOne(
-        'message.sender',
-        User,
-        'sender',
-        'sender.id = message.senderId',
-      )
-      .where('message.chatId = :chatId', { chatId })
-      .andWhere('message.type = :type', { type: MessageType.TEXT })
-      .orderBy('message.createdAt', 'DESC');
-
-    if (pagination) {
-      query.offset(pagination.offset).limit(pagination.limit);
-    }
-
-    if (pagination?.sortBy) {
-      query.orderBy(
-        `message.${pagination.sortBy}`,
-        pagination.order as 'ASC' | 'DESC',
-      );
-    }
-    query.andWhere('message.tenantId = :tenantId', {
-      tenantId: ExecutionManager.getTenantId(),
-    });
-
-    const messages = await query.getMany();
-
-    const decryptedMessages = await this.decryptMessages(messages);
-
-    const messageRequests: MessageRequest[] = decryptedMessages.map(
-      (message: any) => ({
-        role:
-          message.senderId === ANONYMOUS_CLIENT_ID
-            ? 'CLIENT'
-            : message.sender?.role,
-        content: message.content,
-        start_time: message.startSeconds,
-        end_time: message.endSeconds,
-      }),
+    return this.aiChatIntegrationService.generateSummaryForMessage(
+      messageRequests,
     );
-    return messageRequests;
   }
 
   async getCallLogs(user: TokenUser, options: Pagination) {
-    const query = this.chatRepository
-      .createQueryBuilder('chat')
-      .leftJoinAndMapOne(
-        'chat.details',
-        CallDetails,
-        'details',
-        'details.chatId = chat.id',
-      )
-      .leftJoinAndMapOne(
-        'chat.client',
-        User,
-        'client',
-        'client.id = chat.clientId',
-      );
-    query.where('chat.counselorId = :counselorId', { counselorId: user.id });
-    if (options.limit) {
-      query.limit(options.limit);
-    }
-    if (options.offset) {
-      query.offset(options.offset);
-    }
-    if (options.sortBy) {
-      query.orderBy(
-        `details.${options.sortBy}`,
-        options.order as 'ASC' | 'DESC',
-      );
-    }
-    query.andWhere('chat.tenantId = :tenantId', {
-      tenantId: ExecutionManager.getTenantId(),
-    });
-    query.andWhere('chat.status = :status', { status: ChatStatus.ENDED });
-    const [callLogs, count] = await query.getManyAndCount();
-
-    const decryptedCallLogs = await Promise.all(
-      callLogs.map(async (callLog: any) => ({
-        ...callLog,
-        details:
-          (await this.decryptCallDetails(callLog.details)) ??
-          ({} as CallDetails),
-      })),
-    );
-    return {
-      data: decryptedCallLogs,
-      count,
-    };
+    return this.callLogService.getCallLogs(user, options);
   }
+
   async getAdminCallLogs(filters: CallLogFilters) {
-    const query = this.chatRepository
-      .createQueryBuilder('chat')
-      .leftJoinAndMapOne(
-        'chat.details',
-        CallDetails,
-        'details',
-        'details.chatId = chat.id',
-      )
-      .leftJoinAndMapOne(
-        'chat.client',
-        User,
-        'client',
-        'client.id = chat.clientId',
-      )
-      .leftJoinAndMapOne(
-        'chat.counselor',
-        User,
-        'counselor',
-        'counselor.id = chat.counselorId',
-      );
-
-    // Only show ENDED calls for admin call logs
-    query.andWhere('chat.status = :status', { status: ChatStatus.ENDED });
-
-    this.applyStringFilters(query, filters);
-    this.applyIdFilters(query, filters);
-    this.applyDateFilters(query, filters);
-    this.applyDurationFilters(query, filters);
-    this.applyQualityFilters(query, filters);
-    this.applyTagFilters(query, filters);
-
-    query.andWhere('chat.tenant_id = :tenantId', {
-      tenantId: ExecutionManager.getTenantId(),
-    });
-
-    if (filters.limit) query.limit(filters.limit);
-    if (filters.offset) query.offset(filters.offset);
-
-    this.applySorting(
-      query,
-      (filters.sortBy as CallLogSortBy) || CallLogSortBy.START_DATE,
-      (filters.order as SortOrder) || SortOrder.DESC,
-    );
-
-    const [callLogs, count] = await query.getManyAndCount();
-    const decryptedCallLogs = await Promise.all(
-      callLogs.map(async (callLog: any) => ({
-        ...callLog,
-        details:
-          (await this.decryptCallDetails(callLog.details)) ??
-          ({} as CallDetails),
-      })),
-    );
-    return { data: decryptedCallLogs, count };
-  }
-
-  private applyStringFilters(
-    query: SelectQueryBuilder<Chat>,
-    filters: CallLogFilters,
-  ) {
-    if (filters.counselorName) {
-      query.andWhere('counselor.name ILIKE :counselorName', {
-        counselorName: `%${filters.counselorName}%`,
-      });
-    }
-  }
-
-  private applyIdFilters(
-    query: SelectQueryBuilder<Chat>,
-    filters: CallLogFilters,
-  ) {
-    if (filters.counselorIds) {
-      const ids = filters.counselorIds
-        .split(',')
-        .map((id) => parseInt(id.trim()))
-        .filter((id) => !isNaN(id));
-
-      if (ids.length > 0) {
-        query.andWhere('chat.counselorId IN (:...counselorIds)', {
-          counselorIds: ids,
-        });
-      }
-    }
-  }
-
-  private applyDateFilters(
-    query: SelectQueryBuilder<Chat>,
-    filters: CallLogFilters,
-  ) {
-    if (filters.startDate) {
-      query.andWhere('chat.startedAt >= :startDate', {
-        startDate: new Date(filters.startDate),
-      });
-    }
-    if (filters.endDate) {
-      query.andWhere('chat.startedAt <= :endDate', {
-        endDate: new Date(filters.endDate),
-      });
-    }
-  }
-
-  private applyDurationFilters(
-    query: SelectQueryBuilder<Chat>,
-    filters: CallLogFilters,
-  ) {
-    if (filters.minDuration !== undefined) {
-      query.andWhere('details.callDuration >= :minDuration', {
-        minDuration: filters.minDuration,
-      });
-    }
-    if (filters.maxDuration !== undefined) {
-      query.andWhere('details.callDuration <= :maxDuration', {
-        maxDuration: filters.maxDuration,
-      });
-    }
-  }
-
-  private applyQualityFilters(
-    query: SelectQueryBuilder<Chat>,
-    filters: CallLogFilters,
-  ) {
-    if (filters.minQualityScore !== undefined) {
-      query.andWhere(
-        "CAST(details.summary->>'callQuality' AS NUMERIC) >= :minQualityScore",
-        {
-          minQualityScore: filters.minQualityScore,
-        },
-      );
-    }
-    if (filters.maxQualityScore !== undefined) {
-      query.andWhere(
-        "CAST(details.summary->>'callQuality' AS NUMERIC) <= :maxQualityScore",
-        {
-          maxQualityScore: filters.maxQualityScore,
-        },
-      );
-    }
-  }
-
-  private applyTagFilters(
-    query: SelectQueryBuilder<Chat>,
-    filters: CallLogFilters,
-  ) {
-    query.andWhere(
-      "(details.summary->'tags' IS NULL OR jsonb_typeof(details.summary->'tags') = 'array')",
-    );
-
-    if (filters.tags) {
-      const tags = filters.tags.split(',').map((tag) => tag.trim());
-      query.andWhere(
-        "EXISTS (SELECT 1 FROM jsonb_array_elements(details.summary->'tags') AS tag WHERE tag->>'tag' = ANY(:tags))",
-        { tags },
-      );
-    }
-  }
-
-  private applySorting(
-    query: any,
-    sortBy: CallLogSortBy,
-    order: SortOrder = SortOrder.DESC,
-  ) {
-    const sortOrder = order as 'ASC' | 'DESC';
-
-    switch (sortBy) {
-      case CallLogSortBy.ID:
-        query.orderBy('chat.id', sortOrder);
-        break;
-      case CallLogSortBy.COUNSELOR_NAME:
-        query.orderBy('counselor.name', sortOrder);
-        break;
-      case CallLogSortBy.CLIENT_ID:
-        query.orderBy('chat.clientId', sortOrder);
-        break;
-      case CallLogSortBy.CALL_DURATION:
-        query.orderBy('details.callDuration', sortOrder);
-        break;
-      case CallLogSortBy.START_DATE:
-        query.orderBy('chat.startedAt', sortOrder);
-        break;
-      case CallLogSortBy.QUALITY_SCORE:
-        query.orderBy(
-          "CAST(details.summary->>'callQuality' AS NUMERIC)",
-          sortOrder,
-        );
-        break;
-      case CallLogSortBy.TAGS:
-        query.orderBy("details.summary->'tags'->0->>'tag'", sortOrder);
-        break;
-      case CallLogSortBy.CREATED_AT:
-      default:
-        query.orderBy('chat.createdAt', sortOrder);
-        break;
-    }
+    return this.callLogService.getAdminCallLogs(filters);
   }
   async enhance(summary: string) {
-    return this.aiService.enhance(summary);
+    return this.aiChatIntegrationService.enhance(summary);
   }
 
   async updateCallDetails(
     chatId: number,
     summary: FlattenedSummaryNotePayloadCamelCase,
   ) {
-    if (summary.sessionSummary) {
-      summary.sessionSummary = await this.cryptoService.encrypt(
-        summary.sessionSummary,
-        this.config.phiData?.phiDataEncryptionKey,
-      );
-    }
-
-    await this.callDetailsRepository.update(
-      { chatId, tenantId: ExecutionManager.getTenantId() },
-      { summary },
-    );
+    await this.callDetailsService.updateCallDetails(chatId, summary);
     return this.getChat(chatId);
   }
 
@@ -1409,72 +770,22 @@ export class ChatService {
       throw new NotFoundException(`Chat with ID ${chatId} not found`);
     }
 
-    const currentUserId = ExecutionManager.getUserId();
-    if (!currentUserId) {
-      throw new ForbiddenException('User not authenticated');
-    }
-
-    if (chat.counselorId !== parseInt(currentUserId)) {
-      throw new ForbiddenException(
-        'You are not authorized to update call info for this chat',
-      );
-    }
-    const callDetails = await this.callDetailsRepository.findOne({
-      where: { chatId, tenantId: ExecutionManager.getTenantId() },
-    });
-    if (!callDetails) {
-      throw new NotFoundException(`Call details not found for chat ${chatId}`);
-    }
-    await this.callDetailsRepository.update(
-      { chatId, tenantId: ExecutionManager.getTenantId() },
-      { callInfo: { ...callDetails.callInfo, summaryName: body.summaryName } },
-    );
+    await this.callDetailsService.updateCallInfo(chatId, body, chat);
     return this.getChat(chatId);
   }
 
   getNudge(newMessage: string, messageRequests: MessageRequest[]) {
-    return this.aiService.getNudge(newMessage, messageRequests);
+    return this.aiChatIntegrationService.getNudge(newMessage, messageRequests);
   }
 
   async tagPositivityRatings(tags: string[]) {
-    const aiResponse = await this.aiService.generateTagPositivityRatings(tags);
-    return aiResponse.tags;
+    return this.aiChatIntegrationService.tagPositivityRatings(tags);
   }
 
   async decryptCallDetails(
     callDetails: CallDetails | null,
   ): Promise<CallDetails | undefined> {
-    if (!callDetails) return undefined;
-
-    const decryptedCallDetails = { ...callDetails };
-
-    try {
-      if (decryptedCallDetails.transcript) {
-        decryptedCallDetails.transcript = await this.cryptoService.decrypt(
-          decryptedCallDetails.transcript,
-          this.config.phiData?.phiDataEncryptionKey,
-        );
-      }
-
-      if (decryptedCallDetails.summary?.sessionSummary) {
-        const decryptedSummary = await this.cryptoService.decrypt(
-          decryptedCallDetails.summary.sessionSummary,
-          this.config.phiData?.phiDataEncryptionKey,
-        );
-        decryptedCallDetails.summary.sessionSummary = decryptedSummary;
-      }
-
-      return decryptedCallDetails;
-    } catch (error) {
-      this.logger.error(
-        `Failed to decrypt call details: ${JSON.stringify(error)}`,
-      );
-      decryptedCallDetails.transcript = '';
-      if (decryptedCallDetails.summary?.sessionSummary) {
-        decryptedCallDetails.summary.sessionSummary = '';
-      }
-      return decryptedCallDetails;
-    }
+    return this.callDetailsService.decryptCallDetails(callDetails);
   }
 
   async getChatWithCallDetails(
@@ -1490,50 +801,11 @@ export class ChatService {
   }
 
   async pauseOrResumeChat(chatId: number, pause: boolean) {
-    const callDetails = await this.callDetailsRepository.findOne({
-      where: {
-        chatId,
-        tenantId: ExecutionManager.getTenantId(),
-      },
-    });
-
-    if (!callDetails) {
-      throw new NotFoundException(`Call details not found for chat ${chatId}`);
-    }
-
-    const updatedCallInfo = {
-      ...callDetails.callInfo,
-      pauseChat: pause,
-    };
-
-    await this.callDetailsRepository.update(
-      { chatId, tenantId: ExecutionManager.getTenantId() },
-      { callInfo: updatedCallInfo },
-    );
-    await this.cache.set(
-      `chat-paused-${chatId}`,
-      String(pause),
-      TIME.DAY_IN_SECONDS,
-    );
+    return this.callDetailsService.pauseOrResumeChat(chatId, pause);
   }
 
   async isChatPaused(chatId: number) {
-    const cachedValue = await this.cache.get(`chat-paused-${chatId}`);
-    if (cachedValue) {
-      return cachedValue === 'true';
-    }
-    const callDetails = await this.callDetailsRepository.findOne({
-      where: { chatId, tenantId: ExecutionManager.getTenantId() },
-    });
-    const isPaused = callDetails?.callInfo?.pauseChat;
-    if (isPaused !== undefined) {
-      await this.cache.set(
-        `chat-paused-${chatId}`,
-        String(isPaused),
-        TIME.DAY_IN_SECONDS,
-      );
-    }
-    return isPaused;
+    return this.callDetailsService.isChatPaused(chatId);
   }
 
   async triggerNudge(
@@ -1542,39 +814,13 @@ export class ChatService {
     chatId: number,
     channel: string,
   ) {
-    const isChatPaused = await this.isChatPaused(chatId);
-    if (isChatPaused) {
-      this.logger.debug(`Chat is paused for chatId ${chatId}`);
-      return;
-    }
-    const isNudgeEnabled = await this.settingsService.getNudgeStatus();
-    if (!isNudgeEnabled) {
-      this.logger.debug(`Nudge is disabled for chatId ${chatId}`);
-      return;
-    }
-    const messages = await this.getChatHistoryForAIService(chatId, {
-      sortBy: 'createdAt',
-      order: 'DESC',
-      limit: 4,
-    });
-
-    const formattedNewMessage = `${session.role}: ${newMessage.content}`;
-
-    this.aiService
-      .getNudge(formattedNewMessage, messages)
-      .then((nudge) => {
-        this.logger.debug(
-          `Nudge:${newMessage.content} | chatId :${chatId} | ${nudge?.nudge} | stage: ${nudge?.stage}`,
-        );
-        if (nudge) {
-          this.handleNudge(nudge, session, newMessage, channel);
-        }
-      })
-      .catch((error) => {
-        this.logger.error(
-          `AI Nudge Error: ${error.message} | chatId : ${chatId} | userId : ${session.userId}`,
-        );
-      });
+    return this.aiChatIntegrationService.triggerNudge(
+      newMessage,
+      session,
+      chatId,
+      channel,
+      (nudge, sess, msg, ch) => this.handleNudge(nudge, sess, msg, ch),
+    );
   }
 
   incrementWordCountByLanguage(
@@ -1582,29 +828,11 @@ export class ChatService {
     language: string,
     count: number,
   ) {
-    const key = this.getWordCountKey(chatId);
-    return this.cache.hincrBy(key, language, count);
-  }
-
-  private async getWordCountByLanguage(chatId: number) {
-    const key = this.getWordCountKey(chatId);
-    const rawCounts = await this.cache.hgetAll(key);
-    return Object.entries(rawCounts).reduce(
-      (acc, [lang, count]) => {
-        acc[lang] = parseInt(count, 10);
-        return acc;
-      },
-      {} as Record<string, number>,
+    return this.callDetailsService.incrementWordCountByLanguage(
+      chatId,
+      language,
+      count,
     );
-  }
-
-  private async deleteWordCountByLanguage(chatId: number) {
-    const key = this.getWordCountKey(chatId);
-    await this.cache.del(key);
-  }
-
-  private getWordCountKey(chatId: number) {
-    return `call:${chatId}:word-count`;
   }
 
   async handleNudge(
@@ -1613,40 +841,14 @@ export class ChatService {
     parentMessage: { content: string; chatId: number; id: number },
     channel: string,
   ) {
-    this.logger.debug(
-      `handleNudge - nudge :${nudgeResponse.nudge} | stage :${nudgeResponse.stage}`,
+    return this.aiChatIntegrationService.handleNudge(
+      nudgeResponse,
+      session,
+      parentMessage,
+      channel,
+      (sess, data, opts, ch) =>
+        this.persistAndBroadcastMessage(sess, data, opts, ch),
     );
-    const { nudge, stage } = nudgeResponse;
-    if (nudge) {
-      await this.persistAndBroadcastMessage(
-        session,
-        {
-          chatId: parentMessage.chatId,
-          content: nudge,
-          messageType: MessageType.NUDGE,
-          parentMessageId: parentMessage.id,
-        },
-        {
-          event: ChatEvents.NUDGE,
-        },
-        channel,
-      );
-    }
-    if (stage) {
-      await this.persistAndBroadcastMessage(
-        session,
-        {
-          chatId: parentMessage.chatId,
-          content: stage,
-          messageType: MessageType.STAGE,
-          parentMessageId: parentMessage.id,
-        },
-        {
-          event: ChatEvents.STAGE,
-        },
-        channel,
-      );
-    }
   }
 
   async persistAndBroadcastMessage(
@@ -1659,73 +861,28 @@ export class ChatService {
     },
     channel: string = MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
   ) {
-    const chatId = data.chatId;
-    const senderId = session.userId;
-    const message = await this.saveMessage(chatId, senderId, data);
-    const chat = await this.getChatById(chatId);
-    // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
-    const participants = [chat?.counselorId!];
-    if (
-      broadCastOptions.event != ChatEvents.NUDGE &&
-      broadCastOptions.event != ChatEvents.STAGE
-    ) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
-      participants.push(chat?.clientId!);
+    const chat = await this.getChatById(data.chatId);
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
     }
-
-    this.publisher.publish(channel, {
-      participants,
-      message,
+    return this.messageService.persistAndBroadcastMessage(
+      session,
+      data,
+      chat,
       broadCastOptions,
-    });
-    return message;
+      channel,
+    );
   }
 
   async getCounselorNames(limit?: number, offset?: number, search?: string) {
-    return this.userService.getCounselorNames(limit, offset, search);
+    return this.callLogService.getCounselorNames(limit, offset, search);
   }
 
   async getAllTags(limit?: number, offset?: number, search?: string) {
-    const query = this.callDetailsRepository
-      .createQueryBuilder('details')
-      .select(
-        "DISTINCT jsonb_array_elements(details.summary->'tags')->>'tag'",
-        'tag',
-      )
-      .where("details.summary->'tags' IS NOT NULL")
-      .andWhere("jsonb_typeof(details.summary->'tags') = 'array'")
-      .andWhere('details.tenant_id = :tenantId', {
-        tenantId: ExecutionManager.getTenantId(),
-      })
-      .orderBy('tag', 'ASC');
-
-    if (search && search.trim()) {
-      query.andWhere(
-        "jsonb_array_elements(details.summary->'tags')->>'tag' ILIKE :search",
-        {
-          search: `%${search.trim()}%`,
-        },
-      );
-    }
-
-    if (limit) {
-      query.limit(limit);
-    }
-    if (offset) {
-      query.offset(offset);
-    }
-
-    const tags = await query.getRawMany();
-    const count = await query.getCount();
-
-    return {
-      data: tags
-        .map((item) => item.tag)
-        .filter((tag) => tag && tag.trim() !== ''),
-      count,
-    };
+    return this.callLogService.getAllTags(limit, offset, search);
   }
 
+  // TODO: will be decprecated
   async cancelCallByClient(userId: number, chatId: number) {
     const chat = await this.chatRepository.findOne({
       where: { id: chatId, tenantId: ExecutionManager.getTenantId() },
@@ -1778,64 +935,17 @@ export class ChatService {
     chatId: number,
     createNoteDto: AddNoteDto,
   ): Promise<AddNotesResponse> {
-    const callDetails = await this.callDetailsRepository.findOne({
-      where: { chatId, tenantId: ExecutionManager.getTenantId() },
-    });
-
-    if (!callDetails) {
-      throw new NotFoundException(`Call details not found for chat ${chatId}`);
-    }
-
-    const existingCallInfo = callDetails.callInfo || {};
-    const updatedCallInfo = {
-      ...existingCallInfo,
-      notes: createNoteDto.content,
-    };
-
-    await this.callDetailsRepository.update(
-      { chatId, tenantId: ExecutionManager.getTenantId() },
-      { callInfo: updatedCallInfo },
-    );
-
-    return { notes: createNoteDto.content };
+    return this.addNoteToSession(chatId, createNoteDto);
   }
 
   async addFeedbackToChat(
     chatId: number,
     summaryFeedbackDto: SummaryFeedbackDto,
   ): Promise<SummaryFeedbackResponse> {
-    return this.dataSource.transaction(async (entityManager) => {
-      const callDetailsRepo =
-        entityManager.getRepository(CallDetails) || this.callDetailsRepository;
-      const summaryFeedbackRepo = this.summaryFeedbackRepository;
-      const callDetails = await callDetailsRepo.findOne({
-        where: { chatId, tenantId: ExecutionManager.getTenantId() },
-      });
-      if (!callDetails) {
-        this.logger.error(`Call details not found for chat ${chatId}`);
-        throw new NotFoundException(
-          `Call details not found for chat ${chatId}`,
-        );
-      }
-      const existingCallInfo = callDetails.callInfo || {};
-      const updatedCallInfo = {
-        ...existingCallInfo,
-        isSummaryFeedbackAdded: true,
-      };
-
-      const feedback = await summaryFeedbackRepo.createSummaryFeedback(
-        chatId,
-        summaryFeedbackDto.rating,
-        summaryFeedbackDto.feedback,
-        entityManager,
-      );
-
-      await callDetailsRepo.update(
-        { chatId, tenantId: ExecutionManager.getTenantId() },
-        { callInfo: updatedCallInfo },
-      );
-      return { message: 'Feedback added successfully', feedback };
-    });
+    return this.chatFeedbackService.addFeedbackToChat(
+      chatId,
+      summaryFeedbackDto,
+    );
   }
 
   async getChatByExternalId(externalId: string): Promise<Chat | null> {
@@ -1847,20 +957,6 @@ export class ChatService {
 
   async updateChat(chatId: number, input: UpdateChatInput) {
     await this.chatRepository.updateChat(chatId, input);
-  }
-
-  private async decryptMessages(messages: Message[]) {
-    return await Promise.all(
-      messages.map(async (message) => {
-        return {
-          ...message,
-          content: await this.cryptoService.decrypt(
-            message.content,
-            this.config.phiData?.phiDataEncryptionKey,
-          ),
-        };
-      }),
-    );
   }
 
   async deleteChat(chatId: number): Promise<DeleteChatResponseDto> {

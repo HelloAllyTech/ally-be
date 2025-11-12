@@ -36,11 +36,11 @@ export class S3Service {
     const s3Config: S3ClientConfig = {
       region,
     };
-    if (accessKeyId && secretAccessKey && sessionToken) {
+    if (accessKeyId && secretAccessKey) {
       s3Config.credentials = {
         accessKeyId,
         secretAccessKey,
-        sessionToken,
+        ...(sessionToken && { sessionToken }),
       };
     }
     this.s3 = new S3Client(s3Config);
