@@ -45,20 +45,23 @@ export class SessionEventService {
         id: event.sessionEvents_id,
         name: event.sessionEvents_name,
         description: event.sessionEvents_description,
-        score: event.scenarioEvents_feedbackStatus
-          ? event.scenarioEvents_score
-          : event.sessionEvents_score,
-        emoji: event.scenarioEvents_feedbackStatus
-          ? event.scenarioEvents_emoji
-          : event.sessionEvents_emoji,
-        message: event.scenarioEvents_feedbackStatus
-          ? event.scenarioEvents_message
-          : event.sessionEvents_message,
-        branchInstruction: event.scenarioEvents_feedbackStatus
-          ? event.scenarioEvents_branchInstruction
-          : event.sessionEvents_branchInstruction,
+        score: event.scenarioEvents_score ?? event.sessionEvents_score,
+        emoji:
+          (event.scenarioEvents_feedbackStatus ?? true)
+            ? event.scenarioEvents_emoji
+            : event.sessionEvents_emoji,
+        message:
+          (event.scenarioEvents_feedbackStatus ?? true)
+            ? event.scenarioEvents_message
+            : event.sessionEvents_message,
+        branchInstruction:
+          (event.scenarioEvents_branchingStatus ?? true)
+            ? (event.scenarioEvents_branchInstruction ??
+              event.sessionEvents_branchInstruction)
+            : null,
         detectionType: event.sessionEvents_detectionType,
         visibilityType: event.sessionEvents_visibilityType,
+        feedbackStatus: event.scenarioEvents_feedbackStatus,
         sentences: event.sessionEvents_sentences,
         speaker: event.sessionEvents_speaker,
         createdAt: event.sessionEvents_createdAt,
