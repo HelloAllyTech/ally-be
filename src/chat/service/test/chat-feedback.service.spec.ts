@@ -90,139 +90,123 @@ describe('ChatFeedbackService', () => {
     jest.clearAllMocks();
   });
 
-  describe('addNoteToSession', () => {
-    it('should add note to session successfully', async () => {
-      const noteDto = { content: 'Test note content' };
-
-      jest
-        .spyOn(callDetailsRepository, 'findOne')
-        .mockResolvedValue(mockCallDetails);
-      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
-
-      const result = await service.addNoteToSession(1, noteDto);
-
-      expect(callDetailsRepository.findOne).toHaveBeenCalledWith({
-        where: { chatId: 1, tenantId: 'test-tenant' },
-      });
-      expect(callDetailsRepository.update).toHaveBeenCalledWith(
-        { chatId: 1, tenantId: 'test-tenant' },
-        {
-          callInfo: {
-            ...mockCallDetails.callInfo,
-            notes: 'Test note content',
-          },
+  describe('addFeedbackToChat', () => {
+    it('should add feedback to chat successfully', async () => {
+      const summaryFeedbackDto = {
+        rating: 5,
+        feedback: {
+          comment: 'Great session!',
+          issues: [],
         },
-      );
-      expect(result).toEqual({ notes: 'Test note content' });
-    });
-
-    it('should update existing notes', async () => {
-      const noteDto = { content: 'Updated note content' };
-
-      jest
-        .spyOn(callDetailsRepository, 'findOne')
-        .mockResolvedValue(mockCallDetails);
-      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
-
-      const result = await service.addNoteToSession(1, noteDto);
-
-      expect(callDetailsRepository.update).toHaveBeenCalledWith(
-        { chatId: 1, tenantId: 'test-tenant' },
-        {
-          callInfo: {
-            ...mockCallDetails.callInfo,
-            notes: 'Updated note content',
-          },
-        },
-      );
-      expect(result).toEqual({ notes: 'Updated note content' });
-    });
-
-    it('should handle call details with empty callInfo', async () => {
-      const callDetailsWithoutInfo = {
-        ...mockCallDetails,
-        callInfo: undefined,
       };
-      const noteDto = { content: 'New note' };
 
-      jest
-        .spyOn(callDetailsRepository, 'findOne')
-        .mockResolvedValue(callDetailsWithoutInfo as any);
-      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
+      const mockCallDetailsRepo = {
+        findOne: jest.fn().mockResolvedValue(mockCallDetails),
+        update: jest.fn().mockResolvedValue({}),
+      };
 
-      const result = await service.addNoteToSession(1, noteDto);
+      const mockEntityManager = {
+        getRepository: jest.fn((entity) => {
+          if (entity === CallDetails) {
+            return mockCallDetailsRepo;
+          }
+          return callDetailsRepository;
+        }),
+      };
 
-      expect(callDetailsRepository.update).toHaveBeenCalledWith(
-        { chatId: 1, tenantId: 'test-tenant' },
-        {
-          callInfo: {
-            notes: 'New note',
-          },
+      (dataSource.transaction as jest.Mock).mockImplementation(
+        async (callback) => {
+          return callback(mockEntityManager);
         },
       );
-      expect(result).toEqual({ notes: 'New note' });
+
+      jest
+        .spyOn(summaryFeedbackRepository, 'createSummaryFeedback')
+        .mockResolvedValue(mockFeedback as any);
+
+      const result = await service.addFeedbackToChat(1, summaryFeedbackDto);
+
+      expect(result.message).toEqual('Feedback added successfully');
+      expect(result.feedback).toEqual(mockFeedback);
     });
 
     it('should throw NotFoundException when call details not found', async () => {
-      const noteDto = { content: 'Test note' };
-
-      jest.spyOn(callDetailsRepository, 'findOne').mockResolvedValue(null);
-
-      await expect(service.addNoteToSession(1, noteDto)).rejects.toThrow(
-        NotFoundException,
-      );
-      await expect(service.addNoteToSession(1, noteDto)).rejects.toThrow(
-        'Call details not found for chat 1',
-      );
-
-      expect(callDetailsRepository.update).not.toHaveBeenCalled();
-    });
-
-    it('should handle empty note content', async () => {
-      const noteDto = { content: '' };
-
-      jest
-        .spyOn(callDetailsRepository, 'findOne')
-        .mockResolvedValue(mockCallDetails);
-      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
-
-      const result = await service.addNoteToSession(1, noteDto);
-
-      expect(result).toEqual({ notes: '' });
-    });
-
-    it('should preserve other callInfo properties', async () => {
-      const noteDto = { content: 'Test note' };
-      const callDetailsWithExtraInfo = {
-        ...mockCallDetails,
-        callInfo: {
-          ...mockCallDetails.callInfo,
-          summaryName: 'Session 1',
-          clientTalkingPercentage: 0.6,
+      const summaryFeedbackDto = {
+        rating: 5,
+        feedback: {
+          comment: 'Great session!',
+          issues: [],
         },
       };
 
-      jest
-        .spyOn(callDetailsRepository, 'findOne')
-        .mockResolvedValue(callDetailsWithExtraInfo as any);
-      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
+      const mockEntityManager = {
+        getRepository: jest.fn(() => ({
+          findOne: jest.fn().mockResolvedValue(null),
+        })),
+      };
 
-      await service.addNoteToSession(1, noteDto);
-
-      expect(callDetailsRepository.update).toHaveBeenCalledWith(
-        { chatId: 1, tenantId: 'test-tenant' },
-        {
-          callInfo: {
-            ...callDetailsWithExtraInfo.callInfo,
-            notes: 'Test note',
-          },
+      (dataSource.transaction as jest.Mock).mockImplementation(
+        async (callback) => {
+          return callback(mockEntityManager);
         },
       );
-    });
-  });
 
-  describe('addFeedbackToChat', () => {
-    it('should add feedback to chat successfully', async () => {
+      await expect(
+        service.addFeedbackToChat(1, summaryFeedbackDto),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.addFeedbackToChat(1, summaryFeedbackDto),
+      ).rejects.toThrow('Call details not found for chat 1');
+    });
+
+    it('should update callInfo with feedback flag', async () => {
+      const summaryFeedbackDto = {
+        rating: 4,
+        feedback: {
+          comment: 'Good session',
+          issues: [],
+        },
+      };
+
+      const mockCallDetailsRepo = {
+        findOne: jest.fn().mockResolvedValue(mockCallDetails),
+        update: jest.fn().mockResolvedValue({}),
+      };
+
+      const mockEntityManager = {
+        getRepository: jest.fn((entity) => {
+          if (entity === CallDetails) {
+            return mockCallDetailsRepo;
+          }
+          return callDetailsRepository;
+        }),
+      };
+
+      (dataSource.transaction as jest.Mock).mockImplementation(
+        async (callback) => {
+          return callback(mockEntityManager);
+        },
+      );
+
+      jest
+        .spyOn(summaryFeedbackRepository, 'createSummaryFeedback')
+        .mockResolvedValue(mockFeedback as any);
+      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
+
+      await service.addFeedbackToChat(1, summaryFeedbackDto);
+
+      expect(mockCallDetailsRepo.update).toHaveBeenCalled();
+      expect(
+        summaryFeedbackRepository.createSummaryFeedback,
+      ).toHaveBeenCalledWith(
+        1,
+        4,
+        { comment: 'Good session', issues: [] },
+        mockEntityManager,
+      );
+    });
+
+    it('should add feedback to chat with transaction', async () => {
       const summaryFeedbackDto = {
         rating: 5,
         feedback: {
