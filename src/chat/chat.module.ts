@@ -31,6 +31,11 @@ import { MessageRepository } from './repository/message.repository';
 import { CallDetailsRepository } from './repository/call-details.repository';
 import { AudioUploadConsumer } from './consumer/audio-upload.consumer';
 import { AudioUploadDlqConsumer } from './consumer/audio-upload-dlq.consumer';
+import { MessageService } from './service/message.service';
+import { CallDetailsService } from './service/call-details.service';
+import { CallLogService } from './service/call-log.service';
+import { AiChatIntegrationService } from './service/ai-chat-integration.service';
+import { ChatFeedbackService } from './service/chat-feedback.service';
 
 @Module({
   imports: [
@@ -59,12 +64,22 @@ import { AudioUploadDlqConsumer } from './consumer/audio-upload-dlq.consumer';
     ChatRepository,
     SummaryFeedbackRepository,
     MessageRepository,
+    MessageService,
     CallDetailsRepository,
+    CallDetailsService,
+    CallLogService,
+    AiChatIntegrationService,
+    ChatFeedbackService,
     AudioUploadConsumer,
     AudioUploadDlqConsumer,
   ],
   exports: [
     ChatService,
+    MessageService,
+    CallDetailsService,
+    CallLogService,
+    AiChatIntegrationService,
+    ChatFeedbackService,
     FeedbackService,
     ChatGateway,
     ChatAiService,
