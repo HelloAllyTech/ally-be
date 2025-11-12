@@ -14,7 +14,7 @@ import {
   SortOrder,
 } from '../dto/call-log.request.dto';
 import { User } from 'src/user/entity/user.entity';
-import { CallDetails } from '../dto/call-log.response.dto';
+import { CallDetails } from '../entity/call.details.entity';
 import { ChatStatus, Chat } from '../entity/chat.entity';
 
 @Injectable()
