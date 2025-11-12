@@ -708,7 +708,14 @@ export class ChatService {
   }
 
   async updateCallMetadata(chatId: number, duration?: number) {
-    return this.callDetailsService.updateCallMetadata(chatId, duration);
+    const chat = await this.getChatById(chatId);
+    if (!chat) {
+      this.logger.error(
+        `updateCallMetadata - chatId:${chatId} - chat not found`,
+      );
+      return;
+    }
+    return this.callDetailsService.updateCallMetadata(chat, duration);
   }
 
   async updateMessageStatistics(chat: Chat, callDetails?: CallDetails | null) {
@@ -928,7 +935,7 @@ export class ChatService {
     chatId: number,
     createNoteDto: AddNoteDto,
   ): Promise<AddNotesResponse> {
-    return this.chatFeedbackService.addNoteToSession(chatId, createNoteDto);
+    return this.addNoteToSession(chatId, createNoteDto);
   }
 
   async addFeedbackToChat(

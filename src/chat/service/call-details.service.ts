@@ -22,6 +22,7 @@ import { MessageType } from '../entity/message.entity';
 import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type';
 import { CallInfo } from '../dto/call-log.response.dto';
 import { CallDetails } from '../entity/call.details.entity';
+import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 
 @Injectable()
 export class CallDetailsService {
@@ -97,19 +98,37 @@ export class CallDetailsService {
     );
   }
 
-  async updateCallMetadata(chatId: number, duration?: number) {
-    this.logger.debug(`updateCallDetails:Start - chatId:${chatId}`);
-    try {
-      const chat = await this.getChatById(chatId);
-      if (!chat) {
-        this.logger.error(
-          `updateCallMetadata - chatId:${chatId} - chat not found`,
-        );
-        return;
-      }
+  async addNoteToSession(
+    chatId: number,
+    createNoteDto: AddNoteDto,
+  ): Promise<AddNotesResponse> {
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
 
+    if (!callDetails) {
+      throw new NotFoundException(`Call details not found for chat ${chatId}`);
+    }
+
+    const existingCallInfo = callDetails.callInfo || {};
+    const updatedCallInfo = {
+      ...existingCallInfo,
+      notes: createNoteDto.content,
+    };
+
+    await this.callDetailsRepository.update(
+      { chatId, tenantId: ExecutionManager.getTenantId() },
+      { callInfo: updatedCallInfo },
+    );
+
+    return { notes: createNoteDto.content };
+  }
+
+  async updateCallMetadata(chat: Chat, duration?: number) {
+    this.logger.debug(`updateCallDetails:Start - chatId:${chat.id}`);
+    try {
       const callDetails = await this.callDetailsRepository.findOne({
-        where: { chatId, tenantId: ExecutionManager.getTenantId() },
+        where: { chatId: chat.id, tenantId: ExecutionManager.getTenantId() },
       });
 
       let callDurationInSeconds;
@@ -131,10 +150,12 @@ export class CallDetailsService {
           endTime: endDate,
           callDuration: callDurationInSeconds,
         };
-        await this.callDetailsRepository.update({ chatId }, updates);
+        await this.callDetailsRepository.update({ chatId: chat.id }, updates);
       }
     } catch (err) {
-      this.logger.error(`updateCallMetadata - chatId:${chatId} - error:${err}`);
+      this.logger.error(
+        `updateCallMetadata - chatId:${chat.id} - error:${err}`,
+      );
     }
   }
 
