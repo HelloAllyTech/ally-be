@@ -5,3 +5,11 @@ export enum SessionEventDetectionType {
   SCORE = 'SCORE',
   COMBINATION = 'COMBINATION',
 }
+
+export enum SessionEventDetectionCondition {
+  LT = 'LT',
+  GT = 'GT',
+  EQ = 'EQ',
+  LTE = 'LTE',
+  GTE = 'GTE',
+}

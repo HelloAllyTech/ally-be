@@ -6,7 +6,7 @@ import {
   IsEnum,
   ValidateNested,
 } from 'class-validator';
-import { SessionEventDetectionType } from '../enum/session-event-detection-type.enum';
+import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 import { SessionEventSpeaker } from '../enum/session-event-speaker.enum';
 import { DetectionDataDto } from './create-session-event.dto';

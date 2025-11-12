@@ -9,7 +9,7 @@ import { SessionEvents } from '../../entity/session-events.entity';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
-import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection-type.enum';
+import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventSortBy } from 'src/session-event/enum/session-event-sort-by.enum';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';

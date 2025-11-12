@@ -9,19 +9,51 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { SessionEventDetectionType } from '../enum/session-event-detection-type.enum';
+import {
+  SessionEventDetectionCondition,
+  SessionEventDetectionType,
+} from '../enum/session-event-detection.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 import { SessionEventSpeaker } from '../enum/session-event-speaker.enum';
 
 export class DetectionDataDto {
   @ApiProperty({
-    description: 'The sentences of the event',
+    description:
+      'The sentences of the event (for SENTENCE_SIMILARITY and SEMANTIC_SIMILARITY types)',
     example: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    required: false,
   })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
   sentences?: string[];
+
+  @ApiProperty({
+    description: 'The score value (for SCORE type)',
+    example: 85,
+    required: false,
+  })
+  @IsNumber()
+  @IsOptional()
+  score?: number;
+
+  @ApiProperty({
+    description: 'The time value in seconds (for TIME type)',
+    example: 120,
+    required: false,
+  })
+  @IsNumber()
+  @IsOptional()
+  time?: number;
+
+  @ApiProperty({
+    description: 'The operator for comparison (for SCORE and TIME types)',
+    example: SessionEventDetectionCondition.GTE,
+    required: false,
+  })
+  @IsEnum(SessionEventDetectionCondition)
+  @IsOptional()
+  condition?: SessionEventDetectionCondition;
 }
 
 export class CreateSessionEventDto {
@@ -80,8 +112,7 @@ export class CreateSessionEventDto {
   })
   @IsEnum(SessionEventDetectionType)
   @IsOptional()
-  detectionType?: SessionEventDetectionType =
-    SessionEventDetectionType.SENTENCE_SIMILARITY;
+  detectionType?: SessionEventDetectionType;
 
   @ApiProperty({
     description: 'The visibility type of the event',
@@ -94,7 +125,8 @@ export class CreateSessionEventDto {
     SessionEventVisibilityType.ACTIVE;
 
   @ApiProperty({
-    description: 'The detection data of the event',
+    description:
+      'The detection data of the event. Structure depends on detectionType',
     type: DetectionDataDto,
     example: {
       sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
