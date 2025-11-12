@@ -1,8 +1,8 @@
 {
-  "name": "lifeline-chat-be",
+  "name": "ally-be",
   "version": "0.0.1",
-  "description": "Lifeline Chat Backend",
-  "author": "antony.v@keyvalue.systems",
+  "description": "Ally Backend",
+  "author": "developer@helloally.ai",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {

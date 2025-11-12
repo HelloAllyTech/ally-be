@@ -33,11 +33,11 @@ export class SqsService {
       region,
     };
 
-    if (accessKeyId && secretAccessKey && sessionToken) {
+    if (accessKeyId && secretAccessKey) {
       sqsConfig.credentials = {
         accessKeyId,
         secretAccessKey,
-        sessionToken,
+        ...(sessionToken && { sessionToken }),
       };
     }
 
