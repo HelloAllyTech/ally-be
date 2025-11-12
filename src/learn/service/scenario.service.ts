@@ -138,16 +138,15 @@ export class ScenarioService {
       eventId: item.eventId,
       name: item.sessionEvent?.name,
       feedbackStatus: item.feedbackStatus,
+      score: item.score,
       ...(item.feedbackStatus
         ? {
             emoji: item.emoji,
             message: item.message,
-            score: item.score,
           }
         : {
             emoji: item.sessionEvent?.emoji,
             message: item.sessionEvent?.message,
-            score: item.sessionEvent?.score,
           }),
       branchingStatus: item.branchingStatus,
       ...(item.branchingStatus
