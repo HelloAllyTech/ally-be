@@ -1,17 +1,91 @@
 import { Injectable } from '@nestjs/common';
-import { Tenant } from 'src/tenant/entity/tenant.entity';
+import { Tenant, TenantStatus } from 'src/tenant/entity/tenant.entity';
 import { Pagination } from 'src/common/type/common.type';
-import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  FindManyOptions,
+  FindOneOptions,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 
 @Injectable()
 export class TenantsRepository extends Repository<Tenant> {
-  tenantRepository: any;
   constructor(private dataSource: DataSource) {
     super(Tenant, dataSource.createEntityManager());
   }
 
-  async getallTenants(search?: string, options?: Pagination) {
-    const query = this.createQueryBuilder('tenant').select(['tenant']);
+  async findAll(
+    options?: FindManyOptions<Tenant>,
+    entityManager?: EntityManager,
+  ): Promise<Tenant[]> {
+    const repository = entityManager
+      ? entityManager.getRepository(Tenant)
+      : this;
+    return repository.find(options || {});
+  }
+
+  async findOneByOptions(
+    options: FindOneOptions<Tenant>,
+    entityManager?: EntityManager,
+  ): Promise<Tenant | null> {
+    const repository = entityManager
+      ? entityManager.getRepository(Tenant)
+      : this;
+    return repository.findOne(options);
+  }
+
+  async createTenant(
+    tenantData: Partial<Tenant>,
+    entityManager?: EntityManager,
+  ): Promise<Tenant> {
+    const repository = entityManager
+      ? entityManager.getRepository(Tenant)
+      : this;
+    const tenant = repository.create(tenantData);
+    return repository.save(tenant);
+  }
+
+  async updateTenant(
+    id: string,
+    data: Partial<Tenant>,
+    entityManager?: EntityManager,
+  ): Promise<boolean> {
+    const repository = entityManager
+      ? entityManager.getRepository(Tenant)
+      : this;
+    const result = await repository.update(id, data);
+    return result.affected !== 0;
+  }
+
+  async updateStatusAndReturn(
+    id: string,
+    status: TenantStatus,
+    entityManager?: EntityManager,
+  ): Promise<Tenant | null> {
+    const repository = entityManager
+      ? entityManager.getRepository(Tenant)
+      : this;
+    const result = await repository
+      .createQueryBuilder()
+      .update(Tenant)
+      .set({ status })
+      .where('id = :id', { id })
+      .returning('*')
+      .execute();
+    return result.affected ? result.raw[0] : null;
+  }
+
+  async getallTenants(
+    search?: string,
+    options?: Pagination,
+    entityManager?: EntityManager,
+  ) {
+    const repository = entityManager
+      ? entityManager.getRepository(Tenant)
+      : this;
+    const query = repository.createQueryBuilder('tenant').select(['tenant']);
 
     this.applySearchFilter(query, search);
 

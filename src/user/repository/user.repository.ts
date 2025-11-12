@@ -2,7 +2,13 @@ import { Tenant } from 'src/tenant/entity/tenant.entity';
 import { User } from 'src/user/entity/user.entity';
 import { Repository } from 'typeorm/repository/Repository.js';
 import { UserFilterOptions } from '../interface/user-filter-options.interface';
-import { DataSource, SelectQueryBuilder } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  FindManyOptions,
+  FindOneOptions,
+  SelectQueryBuilder,
+} from 'typeorm';
 import { Injectable } from '@nestjs/common';
 import { SimulationCredits } from 'src/learn/entity/simulation-credits.entity';
 
@@ -10,6 +16,54 @@ import { SimulationCredits } from 'src/learn/entity/simulation-credits.entity';
 export class UserRepository extends Repository<User> {
   constructor(private dataSource: DataSource) {
     super(User, dataSource.createEntityManager());
+  }
+
+  async findOneByOptions(
+    options: FindOneOptions<User>,
+    entityManager?: EntityManager,
+  ): Promise<User | null> {
+    const repository = entityManager ? entityManager.getRepository(User) : this;
+    return repository.findOne(options);
+  }
+
+  async findUsers(
+    options: FindManyOptions<User>,
+    entityManager?: EntityManager,
+  ): Promise<User[]> {
+    const repository = entityManager ? entityManager.getRepository(User) : this;
+    return repository.find(options);
+  }
+
+  async createUser(
+    userData: Partial<User>,
+    entityManager?: EntityManager,
+  ): Promise<User> {
+    const repository = entityManager ? entityManager.getRepository(User) : this;
+    const user = repository.create(userData);
+    return repository.save(user);
+  }
+
+  async saveUser(user: User, entityManager?: EntityManager): Promise<User> {
+    const repository = entityManager ? entityManager.getRepository(User) : this;
+    return repository.save(user);
+  }
+
+  async updateUser(
+    id: number,
+    data: Partial<User>,
+    entityManager?: EntityManager,
+  ): Promise<{ affected: number }> {
+    const repository = entityManager ? entityManager.getRepository(User) : this;
+    const result = await repository.update(id, data);
+    return { affected: result.affected || 0 };
+  }
+
+  async userExists(
+    options: FindOneOptions<User>,
+    entityManager?: EntityManager,
+  ): Promise<boolean> {
+    const repository = entityManager ? entityManager.getRepository(User) : this;
+    return repository.exists(options);
   }
 
   async getAllUsers(

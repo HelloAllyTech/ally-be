@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { ScenarioSessionService } from '../scenario-session.service';
 import { ScenarioSessionRepository } from '../../repository/scenario-session.repository';
 import { ScenarioSessionMessagesRepository } from '../../repository/scenario-session-messages.repository';
@@ -11,7 +11,6 @@ import { SessionEventService } from 'src/session-event/service/session-event.ser
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { AiService } from 'src/ai/service/ai.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
-import { ScenarioSessionFeedbacks } from '../../entity/scenario-session-feedbacks.entity';
 import { ScenarioSessionEvents } from '../../entity/scenario-session-events.entity';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
 import { ScenarioSessionMessages } from '../../entity/scenario-session-messages.entity';
@@ -32,6 +31,7 @@ import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
+import { ScenarioSessionFeedbacksRepository } from '../../repository/scenario-session-feedbacks.repository';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -50,9 +50,7 @@ describe('ScenarioSessionService', () => {
   let livekitService: jest.Mocked<LiveKitService>;
   let sessionEventService: jest.Mocked<SessionEventService>;
   let aiService: jest.Mocked<AiService>;
-  let scenarioSessionFeedbacksRepository: jest.Mocked<
-    Repository<ScenarioSessionFeedbacks>
-  >;
+  let scenarioSessionFeedbacksRepository: jest.Mocked<ScenarioSessionFeedbacksRepository>;
   let dataSource: jest.Mocked<DataSource>;
   let mockEntityManager: any;
   let permissionValidatorService: jest.Mocked<PermissionValidator>;
@@ -162,9 +160,8 @@ describe('ScenarioSessionService', () => {
     };
 
     const mockFeedbackRepo = {
-      findOne: jest.fn(),
-      create: jest.fn(),
-      save: jest.fn(),
+      findByScenarioSessionId: jest.fn(),
+      createFeedback: jest.fn(),
     };
 
     const mockSessionEventsRepo = {
@@ -249,7 +246,7 @@ describe('ScenarioSessionService', () => {
           useValue: mockPermissionsService,
         },
         {
-          provide: getRepositoryToken(ScenarioSessionFeedbacks),
+          provide: ScenarioSessionFeedbacksRepository,
           useValue: mockFeedbackRepo,
         },
         {
@@ -297,7 +294,7 @@ describe('ScenarioSessionService', () => {
     sessionEventService = module.get(SessionEventService);
     aiService = module.get(AiService);
     scenarioSessionFeedbacksRepository = module.get(
-      getRepositoryToken(ScenarioSessionFeedbacks),
+      ScenarioSessionFeedbacksRepository,
     );
     dataSource = module.get(DataSource);
     permissionValidatorService = module.get(PermissionValidator);
@@ -393,7 +390,7 @@ describe('ScenarioSessionService', () => {
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockScenarioSession,
       );
-      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(
+      scenarioSessionFeedbacksRepository.findByScenarioSessionId.mockResolvedValue(
         mockFeedback as any,
       );
 
@@ -415,7 +412,9 @@ describe('ScenarioSessionService', () => {
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockScenarioSession,
       );
-      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+      scenarioSessionFeedbacksRepository.findByScenarioSessionId.mockResolvedValue(
+        null,
+      );
 
       const result = await service.getScenarioSession(
         mockScenarioSessionId,
@@ -465,7 +464,9 @@ describe('ScenarioSessionService', () => {
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockSessionWithMixedEvents as any,
       );
-      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+      scenarioSessionFeedbacksRepository.findByScenarioSessionId.mockResolvedValue(
+        null,
+      );
 
       const result = await service.getScenarioSession(
         mockScenarioSessionId,
@@ -505,7 +506,9 @@ describe('ScenarioSessionService', () => {
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockSessionWithPassiveEvents as any,
       );
-      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+      scenarioSessionFeedbacksRepository.findByScenarioSessionId.mockResolvedValue(
+        null,
+      );
 
       const result = await service.getScenarioSession(
         mockScenarioSessionId,
@@ -526,7 +529,9 @@ describe('ScenarioSessionService', () => {
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockSessionWithNoEvents as any,
       );
-      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+      scenarioSessionFeedbacksRepository.findByScenarioSessionId.mockResolvedValue(
+        null,
+      );
 
       const result = await service.getScenarioSession(
         mockScenarioSessionId,
@@ -542,7 +547,9 @@ describe('ScenarioSessionService', () => {
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
         mockScenarioSession,
       );
-      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+      scenarioSessionFeedbacksRepository.findByScenarioSessionId.mockResolvedValue(
+        null,
+      );
 
       const result = await service.getScenarioSession(
         mockScenarioSessionId,
@@ -1132,7 +1139,7 @@ describe('ScenarioSessionService', () => {
       };
       const existingFeedback = { id: 'feedback-1' };
       scenarioSessionRepository.findOne.mockResolvedValue(endedSession);
-      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(
+      scenarioSessionFeedbacksRepository.findByScenarioSessionId.mockResolvedValue(
         existingFeedback as any,
       );
 
@@ -1156,11 +1163,10 @@ describe('ScenarioSessionService', () => {
       };
       const mockCreatedFeedback = { id: 'feedback-1', ...mockFeedbackDto };
       scenarioSessionRepository.findOne.mockResolvedValue(endedSession);
-      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
-      scenarioSessionFeedbacksRepository.create.mockReturnValue(
-        mockCreatedFeedback as any,
+      scenarioSessionFeedbacksRepository.findByScenarioSessionId.mockResolvedValue(
+        null,
       );
-      scenarioSessionFeedbacksRepository.save.mockResolvedValue(
+      scenarioSessionFeedbacksRepository.createFeedback.mockResolvedValue(
         mockCreatedFeedback as any,
       );
 
@@ -1171,7 +1177,9 @@ describe('ScenarioSessionService', () => {
       );
 
       expect(result).toEqual(mockCreatedFeedback);
-      expect(scenarioSessionFeedbacksRepository.create).toHaveBeenCalledWith({
+      expect(
+        scenarioSessionFeedbacksRepository.createFeedback,
+      ).toHaveBeenCalledWith({
         scenarioSessionId: mockScenarioSessionId,
         rating: mockFeedbackDto.rating,
         feedback: mockFeedbackDto.feedback,

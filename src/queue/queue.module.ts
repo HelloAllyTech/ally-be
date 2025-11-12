@@ -1,16 +1,12 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { QueueService } from './service/queue.service';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { QueueEntry } from './entity/queue-entry.entity';
 import { QueueController } from './controller/queue.controller';
 import { ChatModule } from '../chat/chat.module';
+import { QueueRepository } from './repository/queue.repository';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([QueueEntry]),
-    forwardRef(() => ChatModule),
-  ],
-  providers: [QueueService],
+  imports: [forwardRef(() => ChatModule)],
+  providers: [QueueService, QueueRepository],
   exports: [QueueService],
   controllers: [QueueController],
 })

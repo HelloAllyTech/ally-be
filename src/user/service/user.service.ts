@@ -4,8 +4,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Not, Repository } from 'typeorm';
+import { In, Not } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../entity/user.entity';
 import { QueueService } from '../../queue/service/queue.service';
@@ -41,8 +40,6 @@ export class UserService {
   private readonly auditLogger = AuditLoggerService.getInstance();
 
   constructor(
-    @InjectRepository(User)
-    private userRepository: Repository<User>,
     private queueService: QueueService,
     private readonly cache: RedisService,
     private groupRepository: GroupRepository,
@@ -56,7 +53,7 @@ export class UserService {
   ) {}
 
   async get(id: number): Promise<User | null> {
-    const user = await this.userRepository.findOne({
+    const user = await this.usersRepository.findOneByOptions({
       where: { id, tenantId: ExecutionManager.getTenantId() },
     });
     this.auditLogger.log({
@@ -70,7 +67,7 @@ export class UserService {
     if (cachedUser) {
       return JSON.parse(cachedUser);
     }
-    const user = await this.userRepository.findOne({
+    const user = await this.usersRepository.findOneByOptions({
       where: { phone: phoneNumber },
     });
     if (user) {
@@ -81,7 +78,7 @@ export class UserService {
   }
 
   async getUsersByPhoneNumbers(phoneNumbers: string[]): Promise<User[] | null> {
-    return this.userRepository.find({
+    return this.usersRepository.findUsers({
       where: {
         phone: In(phoneNumbers),
         tenantId: ExecutionManager.getTenantId(),
@@ -90,7 +87,7 @@ export class UserService {
   }
 
   async getUsersByIds(ids: number[]): Promise<User[]> {
-    return this.userRepository.find({
+    return this.usersRepository.findUsers({
       where: {
         id: In(ids),
         tenantId: ExecutionManager.getTenantId(),
@@ -102,7 +99,7 @@ export class UserService {
     const waitingClients = await this.queueService.getWaitingClients();
     const clientIds = new Set(waitingClients.map((queue) => queue.clientId));
     if (!clientIds.size) return { total_waiting: clientIds.size, clients: [] };
-    const data = await this.userRepository
+    const data = await this.usersRepository
       .createQueryBuilder('user')
       .where('user.id IN (:...clientIds)', { clientIds: Array.from(clientIds) })
       .andWhere('user.tenantId = :tenantId', {
@@ -171,7 +168,7 @@ export class UserService {
     tenantId?: string;
   }) {
     // TODO: Add phone number to the user table and update this query
-    const user = this.userRepository.create({
+    return this.usersRepository.createUser({
       phone: phoneNumber,
       name: name || 'Anonymous user',
       email: email || `${phoneNumber}@placeholder.com`,
@@ -179,11 +176,10 @@ export class UserService {
       username: username || `${phoneNumber}_user`,
       tenantId: tenantId || 'anonyumous_tenant',
     });
-    return this.userRepository.save(user);
   }
 
   async getCounselorNames(limit?: number, offset?: number, search?: string) {
-    const query = this.userRepository
+    const query = this.usersRepository
       .createQueryBuilder('user')
       .select('user.id', 'id')
       .addSelect('user.name', 'name')
@@ -221,7 +217,7 @@ export class UserService {
   }
 
   async getUserByExternalId(externalId: string): Promise<User | null> {
-    return this.userRepository.findOne({
+    return this.usersRepository.findOneByOptions({
       where: { externalId, tenantId: ExecutionManager.getTenantId() },
     });
   }
@@ -262,13 +258,13 @@ export class UserService {
     id: number,
     body: UpdateUserDto,
   ): Promise<UserUpdateResponseDto> {
-    const user = await this.userRepository.findOne({ where: { id } });
+    const user = await this.usersRepository.findOneByOptions({ where: { id } });
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
     if (body.email && body.email !== user.email) {
       // Email is different from current - check uniqueness
-      const existingUser = await this.userRepository.findOne({
+      const existingUser = await this.usersRepository.findOneByOptions({
         where: {
           email: body.email,
           id: Not(id),
@@ -282,13 +278,14 @@ export class UserService {
       }
     }
     if (body.externalId && body.externalId !== user.externalId) {
-      const existingUserWithExternalId = await this.userRepository.findOne({
-        where: {
-          tenantId: user.tenantId,
-          externalId: body.externalId,
-          id: Not(id), // Exclude current user
-        },
-      });
+      const existingUserWithExternalId =
+        await this.usersRepository.findOneByOptions({
+          where: {
+            tenantId: user.tenantId,
+            externalId: body.externalId,
+            id: Not(id), // Exclude current user
+          },
+        });
 
       if (existingUserWithExternalId) {
         throw new BadRequestException(
@@ -296,8 +293,13 @@ export class UserService {
         );
       }
     }
-    const updated = await this.userRepository.update(id, body as Partial<User>);
-    const updatedUser = await this.userRepository.findOne({ where: { id } });
+    const updated = await this.usersRepository.updateUser(
+      id,
+      body as Partial<User>,
+    );
+    const updatedUser = await this.usersRepository.findOneByOptions({
+      where: { id },
+    });
     this.auditLogger.log({
       eventType: AUDIT_EVENTS.USER_UPDATED,
       tenantId: updatedUser?.tenantId,
@@ -316,7 +318,7 @@ export class UserService {
     id: number,
     newStatus: UserStatus,
   ): Promise<UserUpdateResponseDto> {
-    const user = await this.userRepository.findOne({ where: { id } });
+    const user = await this.usersRepository.findOneByOptions({ where: { id } });
 
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -328,13 +330,13 @@ export class UserService {
       );
     }
     user.status = newStatus;
-    await this.userRepository.save(user);
+    await this.usersRepository.saveUser(user);
     return { success: true };
   }
 
   async addUser(userData: AddUserDto): Promise<AddUserResponseDto> {
     // Check if user with email or phone already exists
-    const existingUser = await this.userRepository.findOne({
+    const existingUser = await this.usersRepository.findOneByOptions({
       where: [{ email: userData.email }, { phone: userData.phone }],
       select: ['email', 'phone'],
     });
@@ -355,7 +357,7 @@ export class UserService {
       }
     }
     if (userData.externalId) {
-      const existingExternalId = await this.userRepository.findOne({
+      const existingExternalId = await this.usersRepository.findOneByOptions({
         where: {
           tenantId: userData.tenantId,
           externalId: userData.externalId,
@@ -374,7 +376,8 @@ export class UserService {
       ? await bcrypt.hash(userData.password, 10)
       : undefined;
 
-    const newUser = this.userRepository.create({
+    // Save user
+    const savedUser = await this.usersRepository.createUser({
       email: userData.email,
       password: hashedPassword,
       name: userData.name,
@@ -385,9 +388,6 @@ export class UserService {
       tenantId: userData.tenantId,
       externalId: userData.externalId,
     });
-
-    // Save user
-    const savedUser = await this.userRepository.save(newUser);
 
     const groups = await this.groupRepository.find({
       where: { name: In(userData.roles) },
@@ -454,6 +454,6 @@ export class UserService {
   }
 
   async isValidUser(id: number): Promise<boolean> {
-    return this.userRepository.exists({ where: { id } });
+    return this.usersRepository.userExists({ where: { id } });
   }
 }

@@ -8,7 +8,6 @@ import { ScenarioSessions } from './entity/scenario-sessions.entity';
 import { ScenarioSessionRepository } from './repository/scenario-session.repository';
 import { ScenarioSessionMessagesRepository } from './repository/scenario-session-messages.repository';
 import { LiveKitModule } from 'src/livekit/livekit.module';
-import { ScenarioSessionFeedbacks } from './entity/scenario-session-feedbacks.entity';
 import { ScenarioEvents } from './entity/scenario-events.entity';
 import { SessionEventModule } from 'src/session-event/session-event.module';
 import { AiModule } from 'src/ai/ai.module';
@@ -28,6 +27,7 @@ import { PermissionValidator } from 'src/authorization/service/permission-valida
 import { UserModule } from 'src/user/user.module';
 import { AwsModule } from 'src/aws/aws.module';
 import { ScenarioEventsRepository } from './repository/scenario-events.repository';
+import { ScenarioSessionFeedbacksRepository } from './repository/scenario-session-feedbacks.repository';
 
 @Module({
   imports: [
@@ -35,7 +35,6 @@ import { ScenarioEventsRepository } from './repository/scenario-events.repositor
       Scenarios,
       ScenarioSessions,
       ScenarioEvents,
-      ScenarioSessionFeedbacks,
       ScenarioSessionMessages,
       ScenarioSessionEvents,
       ScenarioVoices,
@@ -62,6 +61,7 @@ import { ScenarioEventsRepository } from './repository/scenario-events.repositor
     SimulationCreditsRepository,
     PermissionValidator,
     ScenarioEventsRepository,
+    ScenarioSessionFeedbacksRepository,
   ],
   exports: [
     LearnMessageProcessor,

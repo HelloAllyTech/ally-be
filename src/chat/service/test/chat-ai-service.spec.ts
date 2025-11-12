@@ -1,5 +1,4 @@
 import { Test } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { ValidationException } from 'src/exception/custom.exception';
 import { ChatAiService } from '../chat-ai-service';
 import { ChatService } from '../chat.service';
@@ -7,8 +6,6 @@ import { S3Service } from 'src/aws/service/s3.service';
 import { AppConfigService } from 'src/config/config.service';
 import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
 import { CryptoService } from 'src/common/service/crypto.service';
-import { CallDetails } from '../../entity/call.details.entity';
-import { Message } from '../../entity/message.entity';
 import { Chat, ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
 import { MessageType } from '../../entity/message.entity';
 import { UserRole } from 'src/common/constants/user.constants';
@@ -17,6 +14,8 @@ import { FlattenedSummaryNotePayload } from 'src/chat/type/call.details.type';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { NotificationService } from 'src/notification/service/notification.service';
 import { UserService } from 'src/user/service/user.service';
+import { CallDetailsRepository } from '../../repository/call-details.repository';
+import { MessageRepository } from '../../repository/message.repository';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -44,11 +43,10 @@ jest.mock('src/audit/service/audit-logger.service', () => ({
 describe('ChatAiService', () => {
   let service: ChatAiService;
   let mockCallDetailsRepository: {
-    update: jest.Mock;
+    updateByChatId: jest.Mock;
   };
   let mockMessageRepository: {
-    create: jest.Mock;
-    save: jest.Mock;
+    createBulkMessages: jest.Mock;
   };
   let mockChatService: {
     updateMessageStatistics: jest.Mock;
@@ -167,12 +165,11 @@ describe('ChatAiService', () => {
   beforeEach(async () => {
     // Create mock functions
     mockCallDetailsRepository = {
-      update: jest.fn(),
+      updateByChatId: jest.fn(),
     };
 
     mockMessageRepository = {
-      create: jest.fn(),
-      save: jest.fn(),
+      createBulkMessages: jest.fn(),
     };
 
     mockChatService = {
@@ -214,11 +211,11 @@ describe('ChatAiService', () => {
       providers: [
         ChatAiService,
         {
-          provide: getRepositoryToken(CallDetails),
+          provide: CallDetailsRepository,
           useValue: mockCallDetailsRepository,
         },
         {
-          provide: getRepositoryToken(Message),
+          provide: MessageRepository,
           useValue: mockMessageRepository,
         },
         {
@@ -261,7 +258,7 @@ describe('ChatAiService', () => {
 
   describe('addSummary', () => {
     it('should add summary successfully', async () => {
-      mockCallDetailsRepository.update.mockResolvedValue({});
+      mockCallDetailsRepository.updateByChatId.mockResolvedValue({});
       mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
       mockUserService.get.mockResolvedValue(mockCounselor);
       mockChatService.getChatWithCallDetails.mockResolvedValue({
@@ -275,23 +272,20 @@ describe('ChatAiService', () => {
 
       expect(result).toBe(true);
       expect(mockChatService.getChatByIdForServiceCall).toHaveBeenCalledWith(1);
-      expect(mockCallDetailsRepository.update).toHaveBeenCalledWith(
-        { chatId: 1 },
-        {
-          summary: expect.objectContaining({
-            callId: 'test-call-1',
-            callDuration: 3600,
-            callDate: '2023-01-01',
-            callTime: '10:00:00',
-            callType: 'audio',
-            clientId: '1',
-            counsellor: 'Jane Smith',
-            sessionSummary: 'Test summary',
-            callQuality: 5,
-            tags: [{ tag: 'urgent', positivity_rating: 0.2 }],
-          }),
-        },
-      );
+      expect(mockCallDetailsRepository.updateByChatId).toHaveBeenCalledWith(1, {
+        summary: expect.objectContaining({
+          callId: 'test-call-1',
+          callDuration: 3600,
+          callDate: '2023-01-01',
+          callTime: '10:00:00',
+          callType: 'audio',
+          clientId: '1',
+          counsellor: 'Jane Smith',
+          sessionSummary: 'Test summary',
+          callQuality: 5,
+          tags: [{ tag: 'urgent', positivity_rating: 0.2 }],
+        }),
+      });
       expect(mockUserService.get).toHaveBeenCalledWith(2);
       expect(mockChatService.getChatWithCallDetails).toHaveBeenCalledWith(1);
       expect(
@@ -315,7 +309,7 @@ describe('ChatAiService', () => {
     });
 
     it('should handle missing counselor gracefully', async () => {
-      mockCallDetailsRepository.update.mockResolvedValue({});
+      mockCallDetailsRepository.updateByChatId.mockResolvedValue({});
       mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
       mockUserService.get.mockResolvedValue(null);
 
@@ -330,7 +324,7 @@ describe('ChatAiService', () => {
 
     it('should throw ValidationException when counselorId is null', async () => {
       const chatWithoutCounselor = { ...mockChat, counselorId: null };
-      mockCallDetailsRepository.update.mockResolvedValue({});
+      mockCallDetailsRepository.updateByChatId.mockResolvedValue({});
       mockChatService.getChatByIdForServiceCall.mockResolvedValue(
         chatWithoutCounselor,
       );
@@ -346,7 +340,7 @@ describe('ChatAiService', () => {
     it('should throw ValidationException on database error', async () => {
       const dbError = new Error('Database connection failed');
       mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
-      mockCallDetailsRepository.update.mockRejectedValue(dbError);
+      mockCallDetailsRepository.updateByChatId.mockRejectedValue(dbError);
 
       await expect(service.addSummary(1, mockSummary)).rejects.toThrow(
         ValidationException,
@@ -358,7 +352,7 @@ describe('ChatAiService', () => {
 
     it('should handle empty summary data', async () => {
       const emptySummary = {} as FlattenedSummaryNotePayload;
-      mockCallDetailsRepository.update.mockResolvedValue({});
+      mockCallDetailsRepository.updateByChatId.mockResolvedValue({});
       mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
       mockUserService.get.mockResolvedValue(mockCounselor);
       mockChatService.getChatWithCallDetails.mockResolvedValue({
@@ -371,10 +365,9 @@ describe('ChatAiService', () => {
       const result = await service.addSummary(1, emptySummary);
 
       expect(result).toBe(true);
-      expect(mockCallDetailsRepository.update).toHaveBeenCalledWith(
-        { chatId: 1 },
-        { summary: {} },
-      );
+      expect(mockCallDetailsRepository.updateByChatId).toHaveBeenCalledWith(1, {
+        summary: {},
+      });
     });
   });
 
@@ -403,11 +396,7 @@ describe('ChatAiService', () => {
         },
       ];
 
-      // Mock the async message creation pattern
-      mockMessageRepository.create
-        .mockReturnValueOnce(mockMessages[0])
-        .mockReturnValueOnce(mockMessages[1]);
-      mockMessageRepository.save.mockResolvedValue(mockMessages);
+      mockMessageRepository.createBulkMessages.mockResolvedValue(mockMessages);
       mockChatService.updateMessageStatistics.mockResolvedValue(undefined);
       mockChatAudioUploadsService.getAudioUpload.mockResolvedValue(
         mockAudioUpload,
@@ -422,8 +411,15 @@ describe('ChatAiService', () => {
         '2',
         'test-tenant',
       );
-      expect(mockMessageRepository.create).toHaveBeenCalledTimes(2);
-      expect(mockMessageRepository.save).toHaveBeenCalledWith(mockMessages);
+      expect(mockMessageRepository.createBulkMessages).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            chatId: 1,
+            type: MessageType.TEXT,
+            tenantId: 'test-tenant',
+          }),
+        ]),
+      );
       expect(mockChatService.updateMessageStatistics).toHaveBeenCalledWith(
         mockChat,
       );
@@ -442,8 +438,7 @@ describe('ChatAiService', () => {
 
     it('should add transcript successfully in development without S3 cleanup', async () => {
       mockConfig.isDevelopment = true;
-      mockMessageRepository.create.mockReturnValue({});
-      mockMessageRepository.save.mockResolvedValue([]);
+      mockMessageRepository.createBulkMessages.mockResolvedValue([]);
       mockChatService.updateMessageStatistics.mockResolvedValue(undefined);
       mockChatAudioUploadsService.getAudioUpload.mockResolvedValue(
         mockAudioUpload,
@@ -459,8 +454,7 @@ describe('ChatAiService', () => {
     });
 
     it('should add transcript when no audio upload exists', async () => {
-      mockMessageRepository.create.mockReturnValue({});
-      mockMessageRepository.save.mockResolvedValue([]);
+      mockMessageRepository.createBulkMessages.mockResolvedValue([]);
       mockChatService.updateMessageStatistics.mockResolvedValue(undefined);
       mockChatAudioUploadsService.getAudioUpload.mockResolvedValue(null);
 
@@ -472,8 +466,7 @@ describe('ChatAiService', () => {
 
     it('should add transcript when audio upload has no storage key', async () => {
       const audioUploadWithoutKey = { ...mockAudioUpload, storageKey: null };
-      mockMessageRepository.create.mockReturnValue({});
-      mockMessageRepository.save.mockResolvedValue([]);
+      mockMessageRepository.createBulkMessages.mockResolvedValue([]);
       mockChatService.updateMessageStatistics.mockResolvedValue(undefined);
       mockChatAudioUploadsService.getAudioUpload.mockResolvedValue(
         audioUploadWithoutKey,
@@ -487,8 +480,7 @@ describe('ChatAiService', () => {
 
     it('should throw ValidationException ', async () => {
       const dbError = new Error('Database connection failed');
-      mockMessageRepository.create.mockReturnValue({});
-      mockMessageRepository.save.mockRejectedValue(dbError);
+      mockMessageRepository.createBulkMessages.mockRejectedValue(dbError);
 
       await expect(
         service.addTranscript(mockChat, mockMessageRequests),

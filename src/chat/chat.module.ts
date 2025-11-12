@@ -1,7 +1,4 @@
 import { forwardRef, Module, OnModuleInit } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { Chat } from './entity/chat.entity';
-import { Message } from './entity/message.entity';
 import { ChatService } from './service/chat.service';
 import { ChatSummaryService } from './service/chat-summary.service';
 import { AudioUploadService } from './service/audio-upload.service';
@@ -10,9 +7,7 @@ import { ChatController } from './controller/chat.controller';
 import { AudioUploadController } from './controller/audio-upload.controller';
 import { ChatGateway } from './gateway/chat.gateway';
 import { UserModule } from '../user/user.module';
-import { Feedback } from './entity/feedback.entity';
 import { FeedbackService } from './service/feedback.service';
-import { CallDetails } from './entity/call.details.entity';
 import { ChatEventConsumer } from './event/chat.event.consumer';
 import { BrokerModule } from '../message-broker/broker.module';
 import { SettingsModule } from '../settings/settings.module';
@@ -25,10 +20,10 @@ import { AiModule } from '../ai/ai.module';
 import { AwsModule } from 'src/aws/aws.module';
 import { NotificationModule } from '../notification/notification.module';
 import { ChatRepository } from './repository/chat.repository';
-import { SummaryFeedback } from './entity/summary-feedback.entity';
 import { SummaryFeedbackRepository } from './repository/summary-feedback.repository';
 import { MessageRepository } from './repository/message.repository';
 import { CallDetailsRepository } from './repository/call-details.repository';
+import { FeedbackRepository } from './repository/feedback.repository';
 import { AudioUploadConsumer } from './consumer/audio-upload.consumer';
 import { AudioUploadDlqConsumer } from './consumer/audio-upload-dlq.consumer';
 import { MessageService } from './service/message.service';
@@ -39,8 +34,6 @@ import { ChatFeedbackService } from './service/chat-feedback.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Message, Feedback, CallDetails, SummaryFeedback]),
-    TypeOrmModule.forFeature([Chat, ChatRepository]),
     UserModule,
     QueueModule,
     forwardRef(() => AiModule),
@@ -70,6 +63,7 @@ import { ChatFeedbackService } from './service/chat-feedback.service';
     CallLogService,
     AiChatIntegrationService,
     ChatFeedbackService,
+    FeedbackRepository,
     AudioUploadConsumer,
     AudioUploadDlqConsumer,
   ],

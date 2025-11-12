@@ -8,6 +8,29 @@ export class MessageRepository extends Repository<Message> {
     super(Message, dataSource.createEntityManager());
   }
 
+  async createMessage(
+    data: Partial<Message>,
+    em?: EntityManager,
+  ): Promise<Message> {
+    const messageRepo = em
+      ? em.getRepository(Message)
+      : this.dataSource.getRepository(Message);
+
+    const message = messageRepo.create(data);
+    return message;
+  }
+
+  async createBulkMessages(
+    messages: Partial<Message>[],
+    em?: EntityManager,
+  ): Promise<Message[]> {
+    const messageRepo = em
+      ? em.getRepository(Message)
+      : this.dataSource.getRepository(Message);
+
+    return messageRepo.save(messages);
+  }
+
   async deleteMessageByChatId(
     chatId: number,
     tenantId: string,

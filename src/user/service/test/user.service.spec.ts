@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { UserService } from '../user.service';
 import { User } from 'src/user/entity/user.entity';
 import { QueueService } from 'src/queue/service/queue.service';
@@ -35,7 +34,6 @@ jest.mock('src/audit/service/audit-logger.service', () => ({
 
 describe('UserService', () => {
   let service: UserService;
-  let mockUserRepository: any;
   let mockGroupRepository: any;
   let mockUserGroupRepository: any;
   let mockQueueService: any;
@@ -90,17 +88,6 @@ describe('UserService', () => {
       getCount: jest.fn(),
     };
 
-    mockUserRepository = {
-      findOne: jest.fn(),
-      find: jest.fn(),
-      create: jest.fn(),
-      save: jest.fn(),
-      update: jest.fn(),
-      exists: jest.fn(),
-      createQueryBuilder: jest.fn(() => mockQueryBuilder),
-      query: jest.fn(),
-    };
-
     mockGroupRepository = {
       find: jest.fn(),
     };
@@ -128,8 +115,15 @@ describe('UserService', () => {
     };
 
     mockUsersRepository = {
+      findOneByOptions: jest.fn(),
+      findUsers: jest.fn(),
+      createUser: jest.fn(),
+      saveUser: jest.fn(),
+      updateUser: jest.fn(),
+      userExists: jest.fn(),
       getAllUsers: jest.fn(),
       getUserCountByTenantIds: jest.fn(),
+      createQueryBuilder: jest.fn(() => mockQueryBuilder),
     };
 
     mockUsersGroupService = {
@@ -143,7 +137,6 @@ describe('UserService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
-        { provide: getRepositoryToken(User), useValue: mockUserRepository },
         { provide: GroupRepository, useValue: mockGroupRepository },
         { provide: UserGroupRepository, useValue: mockUserGroupRepository },
         { provide: QueueService, useValue: mockQueueService },
@@ -169,16 +162,16 @@ describe('UserService', () => {
 
   describe('get', () => {
     it('should return user when found', async () => {
-      mockUserRepository.findOne.mockResolvedValue(mockUser);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(mockUser);
       const result = await service.get(1);
       expect(result).toEqual(mockUser);
-      expect(mockUserRepository.findOne).toHaveBeenCalledWith({
+      expect(mockUsersRepository.findOneByOptions).toHaveBeenCalledWith({
         where: { id: 1, tenantId: 'test-tenant' },
       });
     });
 
     it('should return null when user not found', async () => {
-      mockUserRepository.findOne.mockResolvedValue(null);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(null);
       const result = await service.get(1);
       expect(result).toBeNull();
     });
@@ -194,7 +187,7 @@ describe('UserService', () => {
 
     it('should return user from database and cache it when not in cache', async () => {
       mockCache.get.mockResolvedValue(null);
-      mockUserRepository.findOne.mockResolvedValue(mockUser);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(mockUser);
       const result = await service.getUserByPhoneNumber('+1234567890');
       expect(result).toEqual(mockUser);
       expect(mockCache.set).toHaveBeenCalledWith(
@@ -205,7 +198,7 @@ describe('UserService', () => {
 
     it('should return null when user not found in cache or database', async () => {
       mockCache.get.mockResolvedValue(null);
-      mockUserRepository.findOne.mockResolvedValue(null);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(null);
       const result = await service.getUserByPhoneNumber('+1234567890');
       expect(result).toBeNull();
     });
@@ -215,10 +208,10 @@ describe('UserService', () => {
     it('should return users by phone numbers', async () => {
       const phoneNumbers = ['+1234567890', '+0987654321'];
       const users = [mockUser];
-      mockUserRepository.find.mockResolvedValue(users);
+      mockUsersRepository.findUsers.mockResolvedValue(users);
       const result = await service.getUsersByPhoneNumbers(phoneNumbers);
       expect(result).toEqual(users);
-      expect(mockUserRepository.find).toHaveBeenCalledWith({
+      expect(mockUsersRepository.findUsers).toHaveBeenCalledWith({
         where: {
           phone: expect.any(Object),
           tenantId: 'test-tenant',
@@ -231,10 +224,10 @@ describe('UserService', () => {
     it('should return users by ids', async () => {
       const ids = [1, 2];
       const users = [mockUser];
-      mockUserRepository.find.mockResolvedValue(users);
+      mockUsersRepository.findUsers.mockResolvedValue(users);
       const result = await service.getUsersByIds(ids);
       expect(result).toEqual(users);
-      expect(mockUserRepository.find).toHaveBeenCalledWith({
+      expect(mockUsersRepository.findUsers).toHaveBeenCalledWith({
         where: {
           id: expect.any(Object),
           tenantId: 'test-tenant',
@@ -311,11 +304,11 @@ describe('UserService', () => {
         ...userData,
         phone: userData.phoneNumber,
       };
-      mockUserRepository.create.mockReturnValue(createdUser);
-      mockUserRepository.save.mockResolvedValue(createdUser);
+      mockUsersRepository.createUser.mockReturnValue(createdUser);
+      mockUsersRepository.saveUser.mockResolvedValue(createdUser);
       const result = await service.createUser(userData);
       expect(result).toEqual(createdUser);
-      expect(mockUserRepository.create).toHaveBeenCalledWith({
+      expect(mockUsersRepository.createUser).toHaveBeenCalledWith({
         phone: userData.phoneNumber,
         name: userData.name,
         email: userData.email,
@@ -327,10 +320,10 @@ describe('UserService', () => {
 
     it('should create user with default values when optional params not provided', async () => {
       const userData = { phoneNumber: '+1234567890' };
-      mockUserRepository.create.mockReturnValue(mockUser);
-      mockUserRepository.save.mockResolvedValue(mockUser);
+      mockUsersRepository.createUser.mockReturnValue(mockUser);
+      mockUsersRepository.saveUser.mockResolvedValue(mockUser);
       await service.createUser(userData);
-      expect(mockUserRepository.create).toHaveBeenCalledWith({
+      expect(mockUsersRepository.createUser).toHaveBeenCalledWith({
         phone: userData.phoneNumber,
         name: 'Anonymous user',
         email: `${userData.phoneNumber}@placeholder.com`,
@@ -394,10 +387,10 @@ describe('UserService', () => {
 
   describe('getUserByExternalId', () => {
     it('should return user by external id', async () => {
-      mockUserRepository.findOne.mockResolvedValue(mockUser);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(mockUser);
       const result = await service.getUserByExternalId('ext-123');
       expect(result).toEqual(mockUser);
-      expect(mockUserRepository.findOne).toHaveBeenCalledWith({
+      expect(mockUsersRepository.findOneByOptions).toHaveBeenCalledWith({
         where: { externalId: 'ext-123', tenantId: 'test-tenant' },
       });
     });
@@ -459,14 +452,14 @@ describe('UserService', () => {
 
   describe('updateUser', () => {
     it('should update user successfully', async () => {
-      mockUserRepository.findOne.mockResolvedValue(mockUser);
-      mockUserRepository.update.mockResolvedValue({ affected: 1 });
+      mockUsersRepository.findOneByOptions.mockResolvedValue(mockUser);
+      mockUsersRepository.updateUser.mockResolvedValue({ affected: 1 });
       const result = await service.updateUser(1, { name: 'Updated' } as any);
       expect(result).toEqual({ success: true });
     });
 
     it('should throw NotFoundException when user not found', async () => {
-      mockUserRepository.findOne.mockResolvedValue(null);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(null);
       await expect(
         service.updateUser(1, { name: 'Updated' } as any),
       ).rejects.toThrow('User with ID 1 not found');
@@ -474,7 +467,7 @@ describe('UserService', () => {
 
     it('should throw BadRequestException when email already exists', async () => {
       const existingUser = { ...mockUser, id: 2 };
-      mockUserRepository.findOne
+      mockUsersRepository.findOneByOptions
         .mockResolvedValueOnce(mockUser)
         .mockResolvedValueOnce(existingUser);
       await expect(
@@ -489,7 +482,7 @@ describe('UserService', () => {
         externalId: 'existing-ext',
       };
 
-      mockUserRepository.findOne
+      mockUsersRepository.findOneByOptions
         .mockResolvedValueOnce(mockUser)
         .mockResolvedValueOnce(existingUserWithExternalId);
 
@@ -499,30 +492,30 @@ describe('UserService', () => {
     });
 
     it('should allow updating email to same value', async () => {
-      mockUserRepository.findOne.mockReset();
-      mockUserRepository.findOne.mockResolvedValueOnce(mockUser);
-      mockUserRepository.update.mockResolvedValue({ affected: 1 });
+      mockUsersRepository.findOneByOptions.mockReset();
+      mockUsersRepository.findOneByOptions.mockResolvedValueOnce(mockUser);
+      mockUsersRepository.updateUser.mockResolvedValue({ affected: 1 });
 
       const result = await service.updateUser(1, {
         email: mockUser.email,
       } as any);
 
       expect(result).toEqual({ success: true });
-      expect(mockUserRepository.findOne).toHaveBeenCalledTimes(2);
+      expect(mockUsersRepository.findOneByOptions).toHaveBeenCalledTimes(2);
     });
 
     it('should allow updating externalId to same value', async () => {
-      mockUserRepository.findOne.mockReset();
-      mockUserRepository.findOne.mockResolvedValueOnce(mockUser);
-      mockUserRepository.update.mockResolvedValue({ affected: 1 });
+      mockUsersRepository.findOneByOptions.mockReset();
+      mockUsersRepository.findOneByOptions.mockResolvedValueOnce(mockUser);
+      mockUsersRepository.updateUser.mockResolvedValue({ affected: 1 });
 
       const result = await service.updateUser(1, {
         externalId: mockUser.externalId,
       } as any);
 
       expect(result).toEqual({ success: true });
-      expect(mockUserRepository.findOne).toHaveBeenCalledTimes(2);
-      expect(mockUserRepository.findOne).toHaveBeenCalledWith({
+      expect(mockUsersRepository.findOneByOptions).toHaveBeenCalledTimes(2);
+      expect(mockUsersRepository.findOneByOptions).toHaveBeenCalledWith({
         where: { id: 1 },
       });
     });
@@ -530,8 +523,8 @@ describe('UserService', () => {
 
   describe('updateUserStatus', () => {
     it('should update user status successfully', async () => {
-      mockUserRepository.findOne.mockResolvedValue(mockUser);
-      mockUserRepository.save.mockResolvedValue({
+      mockUsersRepository.findOneByOptions.mockResolvedValue(mockUser);
+      mockUsersRepository.saveUser.mockResolvedValue({
         ...mockUser,
         status: UserStatus.SUSPENDED,
       });
@@ -540,14 +533,14 @@ describe('UserService', () => {
     });
 
     it('should throw NotFoundException when user not found', async () => {
-      mockUserRepository.findOne.mockResolvedValue(null);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(null);
       await expect(
         service.updateUserStatus(1, UserStatus.SUSPENDED),
       ).rejects.toThrow('User with ID 1 not found');
     });
 
     it('should throw BadRequestException when status is same', async () => {
-      mockUserRepository.findOne.mockResolvedValue({
+      mockUsersRepository.findOneByOptions.mockResolvedValue({
         ...mockUser,
         status: UserStatus.ACTIVE,
       });
@@ -570,10 +563,10 @@ describe('UserService', () => {
         username: 'newuser',
       };
       const savedUser = { ...mockUser, id: 2, ...userData };
-      mockUserRepository.findOne.mockResolvedValue(null);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(null);
       mockTenantService.findById.mockResolvedValue({ id: 'test-tenant' });
-      mockUserRepository.create.mockReturnValue(savedUser);
-      mockUserRepository.save.mockResolvedValue(savedUser);
+      mockUsersRepository.createUser.mockReturnValue(savedUser);
+      mockUsersRepository.saveUser.mockResolvedValue(savedUser);
       mockGroupRepository.find.mockResolvedValue([
         { id: 1, name: UserRole.CLIENT },
       ]);
@@ -604,10 +597,10 @@ describe('UserService', () => {
         simulationCreditLimit: 100,
       };
       const savedUser = { ...mockUser, id: 2, ...userData };
-      mockUserRepository.findOne.mockResolvedValue(null);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(null);
       mockTenantService.findById.mockResolvedValue({ id: 'test-tenant' });
-      mockUserRepository.create.mockReturnValue(savedUser);
-      mockUserRepository.save.mockResolvedValue(savedUser);
+      mockUsersRepository.createUser.mockReturnValue(savedUser);
+      mockUsersRepository.saveUser.mockResolvedValue(savedUser);
       mockGroupRepository.find.mockResolvedValue([
         { id: 1, name: UserRole.CLIENT },
       ]);
@@ -631,14 +624,14 @@ describe('UserService', () => {
     });
 
     it('should throw BadRequestException when email already exists', async () => {
-      mockUserRepository.findOne.mockResolvedValue(mockUser);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(mockUser);
       await expect(
         service.addUser({ email: 'test@example.com' } as any),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException when phone already exists', async () => {
-      mockUserRepository.findOne.mockResolvedValue({
+      mockUsersRepository.findOneByOptions.mockResolvedValue({
         ...mockUser,
         email: 'different@example.com',
       });
@@ -651,14 +644,14 @@ describe('UserService', () => {
     });
 
     it('should throw BadRequestException when tenant is not provided', async () => {
-      mockUserRepository.findOne.mockResolvedValue(null);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(null);
       await expect(
         service.addUser({ email: 'test@example.com' } as any),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException when tenant is invalid', async () => {
-      mockUserRepository.findOne.mockResolvedValue(null);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(null);
       mockTenantService.findById.mockResolvedValue(null);
       await expect(
         service.addUser({
@@ -669,7 +662,7 @@ describe('UserService', () => {
     });
 
     it('should throw BadRequestException when externalId already exists in tenant', async () => {
-      mockUserRepository.findOne
+      mockUsersRepository.findOneByOptions
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(mockUser);
       mockTenantService.findById.mockResolvedValue({ id: 'test-tenant' });
@@ -691,10 +684,10 @@ describe('UserService', () => {
         tenantId: 'test-tenant',
       };
       const savedUser = { ...mockUser, id: 2, username: userData.email };
-      mockUserRepository.findOne.mockResolvedValue(null);
+      mockUsersRepository.findOneByOptions.mockResolvedValue(null);
       mockTenantService.findById.mockResolvedValue({ id: 'test-tenant' });
-      mockUserRepository.create.mockReturnValue(savedUser);
-      mockUserRepository.save.mockResolvedValue(savedUser);
+      mockUsersRepository.createUser.mockReturnValue(savedUser);
+      mockUsersRepository.saveUser.mockResolvedValue(savedUser);
       mockGroupRepository.find.mockResolvedValue([
         { id: 1, name: UserRole.CLIENT },
       ]);
@@ -705,7 +698,7 @@ describe('UserService', () => {
 
       await service.addUser(userData as any);
 
-      expect(mockUserRepository.create).toHaveBeenCalledWith(
+      expect(mockUsersRepository.createUser).toHaveBeenCalledWith(
         expect.objectContaining({
           username: userData.email,
         }),
@@ -715,19 +708,19 @@ describe('UserService', () => {
 
   describe('isValidUser', () => {
     it('should return true when user exists', async () => {
-      mockUserRepository.exists.mockResolvedValue(true);
+      mockUsersRepository.userExists.mockResolvedValue(true);
       const result = await service.isValidUser(1);
       expect(result).toBe(true);
-      expect(mockUserRepository.exists).toHaveBeenCalledWith({
+      expect(mockUsersRepository.userExists).toHaveBeenCalledWith({
         where: { id: 1 },
       });
     });
 
     it('should return false when user does not exist', async () => {
-      mockUserRepository.exists.mockResolvedValue(false);
+      mockUsersRepository.userExists.mockResolvedValue(false);
       const result = await service.isValidUser(999);
       expect(result).toBe(false);
-      expect(mockUserRepository.exists).toHaveBeenCalledWith({
+      expect(mockUsersRepository.userExists).toHaveBeenCalledWith({
         where: { id: 999 },
       });
     });

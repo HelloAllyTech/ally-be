@@ -1,6 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository, UpdateResult } from 'typeorm';
 import { TenantService } from '../tenant.service';
 import { Tenant, TenantStatus } from 'src/tenant/entity/tenant.entity';
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
@@ -26,7 +24,6 @@ jest.mock('../../../logger/logger.service', () => ({
 
 describe('TenantService', () => {
   let service: TenantService;
-  let tenantRepository: jest.Mocked<Repository<Tenant>>;
   let tenantsRepository: jest.Mocked<TenantsRepository>;
   let userRepository: jest.Mocked<UserRepository>;
 
@@ -52,16 +49,12 @@ describe('TenantService', () => {
   };
 
   beforeEach(async () => {
-    const mockRepository = {
-      create: jest.fn(),
-      save: jest.fn(),
-      find: jest.fn(),
-      findOne: jest.fn(),
-      update: jest.fn(),
-      createQueryBuilder: jest.fn(),
-    };
-
     const mockTenantsRepository = {
+      findAll: jest.fn(),
+      findOneByOptions: jest.fn(),
+      createTenant: jest.fn(),
+      updateTenant: jest.fn(),
+      updateStatusAndReturn: jest.fn(),
       getallTenants: jest.fn(),
     };
 
@@ -72,10 +65,6 @@ describe('TenantService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
-        {
-          provide: getRepositoryToken(Tenant),
-          useValue: mockRepository,
-        },
         {
           provide: TenantsRepository,
           useValue: mockTenantsRepository,
@@ -88,7 +77,6 @@ describe('TenantService', () => {
     }).compile();
 
     service = module.get<TenantService>(TenantService);
-    tenantRepository = module.get(getRepositoryToken(Tenant));
     tenantsRepository = module.get(TenantsRepository);
     userRepository = module.get(UserRepository);
   });
@@ -100,16 +88,16 @@ describe('TenantService', () => {
   describe('findAll', () => {
     it('should return all tenants', async () => {
       const mockTenants = [mockTenant, { ...mockTenant, id: 'tenant-2' }];
-      tenantRepository.find.mockResolvedValue(mockTenants);
+      tenantsRepository.findAll.mockResolvedValue(mockTenants);
 
       const result = await service.findAll();
 
-      expect(tenantRepository.find).toHaveBeenCalled();
+      expect(tenantsRepository.findAll).toHaveBeenCalled();
       expect(result).toEqual(mockTenants);
     });
 
     it('should return empty array when no tenants exist', async () => {
-      tenantRepository.find.mockResolvedValue([]);
+      tenantsRepository.findAll.mockResolvedValue([]);
 
       const result = await service.findAll();
 
@@ -118,7 +106,7 @@ describe('TenantService', () => {
 
     it('should handle repository errors', async () => {
       const error = new Error('Database error');
-      tenantRepository.find.mockRejectedValue(error);
+      tenantsRepository.findAll.mockRejectedValue(error);
 
       await expect(service.findAll()).rejects.toThrow('Database error');
     });
@@ -127,22 +115,20 @@ describe('TenantService', () => {
   describe('create', () => {
     it('should create and save a new tenant successfully', async () => {
       const createdTenant = { ...mockTenant, ...mockCreateTenantData };
-      tenantRepository.findOne.mockResolvedValue(null);
-      tenantRepository.create.mockReturnValue(createdTenant as any);
-      tenantRepository.save.mockResolvedValue(createdTenant);
+      tenantsRepository.findOneByOptions.mockResolvedValue(null);
+      tenantsRepository.createTenant.mockResolvedValue(createdTenant);
 
       const result = await service.create(mockCreateTenantData);
 
-      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+      expect(tenantsRepository.findOneByOptions).toHaveBeenCalledWith({
         where: [
           { name: mockCreateTenantData.name },
           { code: mockCreateTenantData.code },
         ],
       });
-      expect(tenantRepository.create).toHaveBeenCalledWith(
+      expect(tenantsRepository.createTenant).toHaveBeenCalledWith(
         mockCreateTenantData,
       );
-      expect(tenantRepository.save).toHaveBeenCalledWith(createdTenant);
       expect(result).toEqual(createdTenant);
     });
 
@@ -151,7 +137,7 @@ describe('TenantService', () => {
         ...mockTenant,
         name: mockCreateTenantData.name,
       };
-      tenantRepository.findOne.mockResolvedValue(existingTenant);
+      tenantsRepository.findOneByOptions.mockResolvedValue(existingTenant);
 
       await expect(service.create(mockCreateTenantData)).rejects.toThrow(
         ConflictException,
@@ -167,7 +153,7 @@ describe('TenantService', () => {
         name: 'Different Name',
         code: mockCreateTenantData.code,
       };
-      tenantRepository.findOne.mockResolvedValue(existingTenant);
+      tenantsRepository.findOneByOptions.mockResolvedValue(existingTenant);
 
       await expect(service.create(mockCreateTenantData)).rejects.toThrow(
         ConflictException,
@@ -179,9 +165,8 @@ describe('TenantService', () => {
 
     it('should handle repository errors during tenant creation', async () => {
       const error = new Error('Database error');
-      tenantRepository.findOne.mockResolvedValue(null);
-      tenantRepository.create.mockReturnValue(mockTenant as any);
-      tenantRepository.save.mockRejectedValue(error);
+      tenantsRepository.findOneByOptions.mockResolvedValue(null);
+      tenantsRepository.createTenant.mockRejectedValue(error);
 
       await expect(service.create(mockCreateTenantData)).rejects.toThrow(
         'Database error',
@@ -191,22 +176,22 @@ describe('TenantService', () => {
 
   describe('findById', () => {
     it('should return tenant when found by ID', async () => {
-      tenantRepository.findOne.mockResolvedValue(mockTenant);
+      tenantsRepository.findOneByOptions.mockResolvedValue(mockTenant);
 
       const result = await service.findById('test-tenant-id');
 
-      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+      expect(tenantsRepository.findOneByOptions).toHaveBeenCalledWith({
         where: { id: 'test-tenant-id' },
       });
       expect(result).toEqual(mockTenant);
     });
 
     it('should return null when tenant not found by ID', async () => {
-      tenantRepository.findOne.mockResolvedValue(null);
+      tenantsRepository.findOneByOptions.mockResolvedValue(null);
 
       const result = await service.findById('non-existent-id');
 
-      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+      expect(tenantsRepository.findOneByOptions).toHaveBeenCalledWith({
         where: { id: 'non-existent-id' },
       });
       expect(result).toBeNull();
@@ -214,7 +199,7 @@ describe('TenantService', () => {
 
     it('should handle repository errors during findById', async () => {
       const error = new Error('Database error');
-      tenantRepository.findOne.mockRejectedValue(error);
+      tenantsRepository.findOneByOptions.mockRejectedValue(error);
 
       await expect(service.findById('test-tenant-id')).rejects.toThrow(
         'Database error',
@@ -224,22 +209,22 @@ describe('TenantService', () => {
 
   describe('findByCode', () => {
     it('should return tenant when found by code', async () => {
-      tenantRepository.findOne.mockResolvedValue(mockTenant);
+      tenantsRepository.findOneByOptions.mockResolvedValue(mockTenant);
 
       const result = await service.findByCode('test-tenant');
 
-      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+      expect(tenantsRepository.findOneByOptions).toHaveBeenCalledWith({
         where: { code: 'test-tenant' },
       });
       expect(result).toEqual(mockTenant);
     });
 
     it('should return null when tenant not found by code', async () => {
-      tenantRepository.findOne.mockResolvedValue(null);
+      tenantsRepository.findOneByOptions.mockResolvedValue(null);
 
       const result = await service.findByCode('non-existent-code');
 
-      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+      expect(tenantsRepository.findOneByOptions).toHaveBeenCalledWith({
         where: { code: 'non-existent-code' },
       });
       expect(result).toBeNull();
@@ -247,7 +232,7 @@ describe('TenantService', () => {
 
     it('should handle repository errors during findByCode', async () => {
       const error = new Error('Database error');
-      tenantRepository.findOne.mockRejectedValue(error);
+      tenantsRepository.findOneByOptions.mockRejectedValue(error);
 
       await expect(service.findByCode('test-tenant')).rejects.toThrow(
         'Database error',
@@ -257,59 +242,23 @@ describe('TenantService', () => {
 
   describe('updateStatus', () => {
     it('should update tenant status and return updated tenant when successful', async () => {
-      const mockQueryBuilder = {
-        update: jest.fn().mockReturnThis(),
-        set: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        returning: jest.fn().mockReturnThis(),
-        execute: jest.fn(),
-      };
-      const mockUpdateResult: UpdateResult = {
-        affected: 1,
-        raw: [{ ...mockTenant, status: TenantStatus.INACTIVE }],
-        generatedMaps: [],
-      };
-
-      tenantRepository.createQueryBuilder.mockReturnValue(
-        mockQueryBuilder as any,
-      );
-      mockQueryBuilder.execute.mockResolvedValue(mockUpdateResult);
+      const updatedTenant = { ...mockTenant, status: TenantStatus.INACTIVE };
+      tenantsRepository.updateStatusAndReturn.mockResolvedValue(updatedTenant);
 
       const result = await service.updateStatus(
         'test-tenant-id',
         TenantStatus.INACTIVE,
       );
 
-      expect(tenantRepository.createQueryBuilder).toHaveBeenCalled();
-      expect(mockQueryBuilder.update).toHaveBeenCalledWith(Tenant);
-      expect(mockQueryBuilder.set).toHaveBeenCalledWith({
-        status: TenantStatus.INACTIVE,
-      });
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith('id = :id', {
-        id: 'test-tenant-id',
-      });
-      expect(mockQueryBuilder.returning).toHaveBeenCalledWith('*');
-      expect(result).toEqual({ ...mockTenant, status: TenantStatus.INACTIVE });
+      expect(tenantsRepository.updateStatusAndReturn).toHaveBeenCalledWith(
+        'test-tenant-id',
+        TenantStatus.INACTIVE,
+      );
+      expect(result).toEqual(updatedTenant);
     });
 
     it('should return null when no tenant is affected by status update', async () => {
-      const mockQueryBuilder = {
-        update: jest.fn().mockReturnThis(),
-        set: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        returning: jest.fn().mockReturnThis(),
-        execute: jest.fn(),
-      };
-      const mockUpdateResult: UpdateResult = {
-        affected: 0,
-        raw: [],
-        generatedMaps: [],
-      };
-
-      tenantRepository.createQueryBuilder.mockReturnValue(
-        mockQueryBuilder as any,
-      );
-      mockQueryBuilder.execute.mockResolvedValue(mockUpdateResult);
+      tenantsRepository.updateStatusAndReturn.mockResolvedValue(null);
 
       const result = await service.updateStatus(
         'non-existent-id',
@@ -321,17 +270,7 @@ describe('TenantService', () => {
 
     it('should handle repository errors during status update', async () => {
       const error = new Error('Database error');
-      const mockQueryBuilder = {
-        update: jest.fn().mockReturnThis(),
-        set: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        returning: jest.fn().mockReturnThis(),
-        execute: jest.fn().mockRejectedValue(error),
-      };
-
-      tenantRepository.createQueryBuilder.mockReturnValue(
-        mockQueryBuilder as any,
-      );
+      tenantsRepository.updateStatusAndReturn.mockRejectedValue(error);
 
       await expect(
         service.updateStatus('test-tenant-id', TenantStatus.INACTIVE),
@@ -344,11 +283,7 @@ describe('TenantService', () => {
       const newSettings = { newSetting: 'newValue' };
       const updatedTenant = { ...mockTenant, settings: newSettings };
 
-      tenantRepository.update.mockResolvedValue({
-        affected: 1,
-        raw: [],
-        generatedMaps: [],
-      });
+      tenantsRepository.updateTenant.mockResolvedValue(true);
       jest.spyOn(service, 'findById').mockResolvedValue(updatedTenant);
 
       const result = await service.updateSettings(
@@ -356,9 +291,12 @@ describe('TenantService', () => {
         newSettings,
       );
 
-      expect(tenantRepository.update).toHaveBeenCalledWith('test-tenant-id', {
-        settings: newSettings,
-      });
+      expect(tenantsRepository.updateTenant).toHaveBeenCalledWith(
+        'test-tenant-id',
+        {
+          settings: newSettings,
+        },
+      );
       expect(service.findById).toHaveBeenCalledWith('test-tenant-id');
       expect(result).toEqual(updatedTenant);
     });
@@ -366,11 +304,7 @@ describe('TenantService', () => {
     it('should return null when tenant not found after settings update', async () => {
       const newSettings = { newSetting: 'newValue' };
 
-      tenantRepository.update.mockResolvedValue({
-        affected: 1,
-        raw: [],
-        generatedMaps: [],
-      });
+      tenantsRepository.updateTenant.mockResolvedValue(true);
       jest.spyOn(service, 'findById').mockResolvedValue(null);
 
       const result = await service.updateSettings(
@@ -383,7 +317,7 @@ describe('TenantService', () => {
 
     it('should handle repository errors during settings update', async () => {
       const error = new Error('Database error');
-      tenantRepository.update.mockRejectedValue(error);
+      tenantsRepository.updateTenant.mockRejectedValue(error);
 
       await expect(
         service.updateSettings('test-tenant-id', {}),
@@ -396,11 +330,7 @@ describe('TenantService', () => {
       const newMetadata = { newKey: 'newValue' };
       const updatedTenant = { ...mockTenant, metadata: newMetadata };
 
-      tenantRepository.update.mockResolvedValue({
-        affected: 1,
-        raw: [],
-        generatedMaps: [],
-      });
+      tenantsRepository.updateTenant.mockResolvedValue(true);
       jest.spyOn(service, 'findById').mockResolvedValue(updatedTenant);
 
       const result = await service.updateMetadata(
@@ -408,9 +338,12 @@ describe('TenantService', () => {
         newMetadata,
       );
 
-      expect(tenantRepository.update).toHaveBeenCalledWith('test-tenant-id', {
-        metadata: newMetadata,
-      });
+      expect(tenantsRepository.updateTenant).toHaveBeenCalledWith(
+        'test-tenant-id',
+        {
+          metadata: newMetadata,
+        },
+      );
       expect(service.findById).toHaveBeenCalledWith('test-tenant-id');
       expect(result).toEqual(updatedTenant);
     });
@@ -418,11 +351,7 @@ describe('TenantService', () => {
     it('should return null when tenant not found after metadata update', async () => {
       const newMetadata = { newKey: 'newValue' };
 
-      tenantRepository.update.mockResolvedValue({
-        affected: 1,
-        raw: [],
-        generatedMaps: [],
-      });
+      tenantsRepository.updateTenant.mockResolvedValue(true);
       jest.spyOn(service, 'findById').mockResolvedValue(null);
 
       const result = await service.updateMetadata(
@@ -435,7 +364,7 @@ describe('TenantService', () => {
 
     it('should handle repository errors during metadata update', async () => {
       const error = new Error('Database error');
-      tenantRepository.update.mockRejectedValue(error);
+      tenantsRepository.updateTenant.mockRejectedValue(error);
 
       await expect(
         service.updateMetadata('test-tenant-id', {}),
@@ -617,20 +546,16 @@ describe('TenantService', () => {
         .spyOn(service, 'findById')
         .mockResolvedValueOnce(mockTenant)
         .mockResolvedValueOnce(updatedTenant);
-      tenantRepository.update.mockResolvedValue({
-        affected: 1,
-        raw: [],
-        generatedMaps: [],
-      });
+      tenantsRepository.updateTenant.mockResolvedValue(true);
 
       const result = await service.updateTenant('test-tenant-id', updateDto);
 
       expect(service.findById).toHaveBeenCalledWith('test-tenant-id');
-      expect(tenantRepository.update).toHaveBeenCalledWith(
+      expect(tenantsRepository.updateTenant).toHaveBeenCalledWith(
         'test-tenant-id',
         updateDto,
       );
-      expect(tenantRepository.findOne).not.toHaveBeenCalled();
+      expect(tenantsRepository.findOneByOptions).not.toHaveBeenCalled();
       expect(result).toEqual(updatedTenant);
     });
 
@@ -654,7 +579,7 @@ describe('TenantService', () => {
       };
 
       jest.spyOn(service, 'findById').mockResolvedValue(mockTenant);
-      tenantRepository.findOne.mockResolvedValue(existingTenant);
+      tenantsRepository.findOneByOptions.mockResolvedValue(existingTenant);
 
       await expect(
         service.updateTenant('test-tenant-id', updateDto),
@@ -663,7 +588,7 @@ describe('TenantService', () => {
         service.updateTenant('test-tenant-id', updateDto),
       ).rejects.toThrow('Tenant with name "Existing Tenant" already exists');
 
-      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+      expect(tenantsRepository.findOneByOptions).toHaveBeenCalledWith({
         where: [
           { name: updateDto.name, id: expect.anything() },
           { code: undefined, id: expect.anything() },
@@ -680,7 +605,7 @@ describe('TenantService', () => {
       };
 
       jest.spyOn(service, 'findById').mockResolvedValue(mockTenant);
-      tenantRepository.findOne.mockResolvedValue(existingTenant);
+      tenantsRepository.findOneByOptions.mockResolvedValue(existingTenant);
 
       await expect(
         service.updateTenant('test-tenant-id', updateDto),
@@ -689,7 +614,7 @@ describe('TenantService', () => {
         service.updateTenant('test-tenant-id', updateDto),
       ).rejects.toThrow('Tenant with code "existing-code" already exists');
 
-      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+      expect(tenantsRepository.findOneByOptions).toHaveBeenCalledWith({
         where: [
           { name: undefined, id: expect.anything() },
           { code: updateDto.code, id: expect.anything() },
@@ -712,15 +637,11 @@ describe('TenantService', () => {
         .spyOn(service, 'findById')
         .mockResolvedValueOnce(mockTenant)
         .mockResolvedValueOnce(updatedTenant);
-      tenantRepository.update.mockResolvedValue({
-        affected: 1,
-        raw: [],
-        generatedMaps: [],
-      });
+      tenantsRepository.updateTenant.mockResolvedValue(true);
 
       const result = await service.updateTenant('test-tenant-id', updateDto);
 
-      expect(tenantRepository.findOne).not.toHaveBeenCalled();
+      expect(tenantsRepository.findOneByOptions).not.toHaveBeenCalled();
       expect(result).toEqual(updatedTenant);
     });
 
@@ -729,7 +650,7 @@ describe('TenantService', () => {
       const updateDto = { description: 'Updated' };
 
       jest.spyOn(service, 'findById').mockResolvedValue(mockTenant);
-      tenantRepository.update.mockRejectedValue(error);
+      tenantsRepository.updateTenant.mockRejectedValue(error);
 
       await expect(
         service.updateTenant('test-tenant-id', updateDto),
@@ -744,22 +665,18 @@ describe('TenantService', () => {
         .spyOn(service, 'findById')
         .mockResolvedValueOnce(mockTenant)
         .mockResolvedValueOnce(updatedTenant);
-      tenantRepository.findOne.mockResolvedValue(null);
-      tenantRepository.update.mockResolvedValue({
-        affected: 1,
-        raw: [],
-        generatedMaps: [],
-      });
+      tenantsRepository.findOneByOptions.mockResolvedValue(null);
+      tenantsRepository.updateTenant.mockResolvedValue(true);
 
       const result = await service.updateTenant('test-tenant-id', updateDto);
 
-      expect(tenantRepository.findOne).toHaveBeenCalledWith({
+      expect(tenantsRepository.findOneByOptions).toHaveBeenCalledWith({
         where: [
           { name: updateDto.name, id: expect.anything() },
           { code: updateDto.code, id: expect.anything() },
         ],
       });
-      expect(tenantRepository.update).toHaveBeenCalledWith(
+      expect(tenantsRepository.updateTenant).toHaveBeenCalledWith(
         'test-tenant-id',
         updateDto,
       );

@@ -1,16 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { Repository } from 'typeorm';
-import { CallDetails } from '../entity/call.details.entity';
 import {
   FlattenedSummaryNotePayload,
   FlattenedSummaryNotePayloadCamelCase,
 } from '../type/call.details.type';
 import { CommonUtil } from '../../common/util/common.util';
 import { ChatService } from './chat.service';
-import { Message, MessageType } from '../entity/message.entity';
+import { MessageType } from '../entity/message.entity';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { UserRole } from '../../common/constants/user.constants';
-import { InjectRepository } from '@nestjs/typeorm';
 import { LoggerService } from '../../logger/logger.service';
 import { ValidationException } from '../../exception/custom.exception';
 import { CryptoService } from '../../common/service/crypto.service';
@@ -27,14 +24,14 @@ import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { UserService } from 'src/user/service/user.service';
 import { NotificationService } from 'src/notification/service/notification.service';
+import { CallDetailsRepository } from '../repository/call-details.repository';
+import { MessageRepository } from '../repository/message.repository';
 
 @Injectable()
 export class ChatAiService {
   constructor(
-    @InjectRepository(CallDetails)
-    private readonly callDetailsRepository: Repository<CallDetails>,
-    @InjectRepository(Message)
-    private readonly messageRepository: Repository<Message>,
+    private readonly callDetailsRepository: CallDetailsRepository,
+    private readonly messageRepository: MessageRepository,
     private readonly chatService: ChatService,
     private readonly s3Service: S3Service,
     private readonly config: AppConfigService,
@@ -75,12 +72,9 @@ export class ChatAiService {
         );
       }
 
-      await this.callDetailsRepository.update(
-        { chatId },
-        {
-          summary: convertedResponse,
-        },
-      );
+      await this.callDetailsRepository.updateByChatId(chatId, {
+        summary: convertedResponse,
+      });
 
       this.setAuthContext({
         userId: chat.counselorId!,
@@ -131,24 +125,27 @@ export class ChatAiService {
         tenantId: chat.tenantId,
       });
 
-      const formattedMessages = messages.map(async (message) => {
-        const encryptedContent = await this.cryptoService.encrypt(
-          message.content,
-          this.config.phiData?.phiDataEncryptionKey,
-        );
-        return this.messageRepository.create({
-          chatId: chat.id,
-          senderId:
-            message.role === UserRole.CLIENT ? chat.clientId : chat.counselorId,
-          type: MessageType.TEXT,
-          content: encryptedContent,
-          startSeconds: message.start_time,
-          endSeconds: message.end_time,
-          tenantId: ExecutionManager.getTenantId(),
-        });
-      });
-      const createdMessages = await Promise.all(formattedMessages);
-      await this.messageRepository.save(createdMessages);
+      const formattedMessages = await Promise.all(
+        messages.map(async (message) => {
+          const encryptedContent = await this.cryptoService.encrypt(
+            message.content,
+            this.config.phiData?.phiDataEncryptionKey,
+          );
+          return {
+            chatId: chat.id,
+            senderId:
+              message.role === UserRole.CLIENT
+                ? chat.clientId
+                : chat.counselorId,
+            type: MessageType.TEXT,
+            content: encryptedContent,
+            startSeconds: message.start_time,
+            endSeconds: message.end_time,
+            tenantId: ExecutionManager.getTenantId(),
+          };
+        }),
+      );
+      await this.messageRepository.createBulkMessages(formattedMessages);
       // update message statistics
       this.chatService.updateMessageStatistics(chat);
 

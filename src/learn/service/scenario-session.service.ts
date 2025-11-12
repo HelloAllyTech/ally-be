@@ -9,10 +9,10 @@ import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
-import { DataSource, Repository } from 'typeorm';
-import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
-import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
+import { ScenarioSessionFeedbacksRepository } from '../repository/scenario-session-feedbacks.repository';
+import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import { ScenarioSessionMessages } from '../entity/scenario-session-messages.entity';
 import { ScenarioSessionMessageType } from '../enum/scenario-session-message.type.enum';
 import { AiService } from 'src/ai/service/ai.service';
@@ -46,8 +46,7 @@ export class ScenarioSessionService {
     private scenarioService: ScenarioService,
     private livekitService: LiveKitService,
     private sessionEventService: SessionEventService,
-    @InjectRepository(ScenarioSessionFeedbacks)
-    private scenarioSessionFeedbacksRepository: Repository<ScenarioSessionFeedbacks>,
+    private scenarioSessionFeedbacksRepository: ScenarioSessionFeedbacksRepository,
     private dataSource: DataSource,
     private aiService: AiService,
     private permissionsService: PermissionsService,
@@ -107,9 +106,10 @@ export class ScenarioSessionService {
       );
     }
 
-    const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
-      where: { scenarioSessionId },
-    });
+    const feedback =
+      await this.scenarioSessionFeedbacksRepository.findByScenarioSessionId(
+        scenarioSessionId,
+      );
 
     const hasFeedback = !!feedback;
 
@@ -386,9 +386,10 @@ export class ScenarioSessionService {
       );
     }
 
-    const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
-      where: { scenarioSessionId },
-    });
+    const feedback =
+      await this.scenarioSessionFeedbacksRepository.findByScenarioSessionId(
+        scenarioSessionId,
+      );
 
     if (feedback) {
       throw new BadRequestException(
@@ -396,17 +397,12 @@ export class ScenarioSessionService {
       );
     }
 
-    const scenarioSessionFeedback =
-      this.scenarioSessionFeedbacksRepository.create({
-        scenarioSessionId,
-        rating: addFeedbackToScenarioSessionDto.rating,
-        feedback: addFeedbackToScenarioSessionDto.feedback,
-        tenantId: ExecutionManager.getTenantId(),
-      });
-
-    return this.scenarioSessionFeedbacksRepository.save(
-      scenarioSessionFeedback,
-    );
+    return this.scenarioSessionFeedbacksRepository.createFeedback({
+      scenarioSessionId,
+      rating: addFeedbackToScenarioSessionDto.rating,
+      feedback: addFeedbackToScenarioSessionDto.feedback,
+      tenantId: ExecutionManager.getTenantId(),
+    });
   }
 
   async getScenarioSessionByRoomId(roomId: string) {

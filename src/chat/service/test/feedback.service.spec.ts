@@ -1,17 +1,16 @@
 import { Test } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { FeedbackService } from '../feedback.service';
 import { Feedback } from 'src/chat/entity/feedback.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { FeedbackRepository } from 'src/chat/repository/feedback.repository';
 
 describe('FeedbackService', () => {
   let service: FeedbackService;
   let mockFeedbackRepository: {
-    create: jest.Mock;
-    save: jest.Mock;
-    find: jest.Mock;
-    findOne: jest.Mock;
+    createFeedback: jest.Mock;
+    findByMessageId: jest.Mock;
+    updateFeedback: jest.Mock;
   };
   let mockGetTenantId: jest.SpyInstance;
 
@@ -41,10 +40,9 @@ describe('FeedbackService', () => {
   beforeEach(async () => {
     // Create mock functions
     mockFeedbackRepository = {
-      create: jest.fn(),
-      save: jest.fn(),
-      find: jest.fn(),
-      findOne: jest.fn(),
+      createFeedback: jest.fn(),
+      findByMessageId: jest.fn(),
+      updateFeedback: jest.fn(),
     };
 
     // Mock ExecutionManager
@@ -56,7 +54,7 @@ describe('FeedbackService', () => {
       providers: [
         FeedbackService,
         {
-          provide: getRepositoryToken(Feedback),
+          provide: FeedbackRepository,
           useValue: mockFeedbackRepository,
         },
       ],
@@ -71,17 +69,15 @@ describe('FeedbackService', () => {
 
   describe('create', () => {
     it('should create feedback successfully', async () => {
-      mockFeedbackRepository.create.mockReturnValue(mockFeedback);
-      mockFeedbackRepository.save.mockResolvedValue(mockFeedback);
+      mockFeedbackRepository.createFeedback.mockResolvedValue(mockFeedback);
 
       const result = await service.create(mockCreateFeedbackDto);
 
       expect(result).toEqual(mockFeedback);
-      expect(mockFeedbackRepository.create).toHaveBeenCalledWith({
+      expect(mockFeedbackRepository.createFeedback).toHaveBeenCalledWith({
         ...mockCreateFeedbackDto,
         tenantId: 'test-tenant',
       });
-      expect(mockFeedbackRepository.save).toHaveBeenCalledWith(mockFeedback);
     });
 
     it('should create feedback with minimal data', async () => {
@@ -96,13 +92,12 @@ describe('FeedbackService', () => {
         comment: undefined,
       };
 
-      mockFeedbackRepository.create.mockReturnValue(expectedFeedback);
-      mockFeedbackRepository.save.mockResolvedValue(expectedFeedback);
+      mockFeedbackRepository.createFeedback.mockResolvedValue(expectedFeedback);
 
       const result = await service.create(minimalDto);
 
       expect(result).toEqual(expectedFeedback);
-      expect(mockFeedbackRepository.create).toHaveBeenCalledWith({
+      expect(mockFeedbackRepository.createFeedback).toHaveBeenCalledWith({
         ...minimalDto,
         tenantId: 'test-tenant',
       });
@@ -112,49 +107,47 @@ describe('FeedbackService', () => {
   describe('findByMessageId', () => {
     it('should return feedbacks for a message', async () => {
       const mockFeedbacks = [mockFeedback];
-      mockFeedbackRepository.find.mockResolvedValue(mockFeedbacks);
+      mockFeedbackRepository.findByMessageId.mockResolvedValue(mockFeedbacks);
 
       const result = await service.findByMessageId(1);
 
       expect(result).toEqual(mockFeedbacks);
-      expect(mockFeedbackRepository.find).toHaveBeenCalledWith({
-        where: { messageId: 1, tenantId: 'test-tenant' },
-      });
+      expect(mockFeedbackRepository.findByMessageId).toHaveBeenCalledWith(
+        1,
+        'test-tenant',
+      );
     });
 
     it('should return empty array when no feedbacks found', async () => {
-      mockFeedbackRepository.find.mockResolvedValue([]);
+      mockFeedbackRepository.findByMessageId.mockResolvedValue([]);
 
       const result = await service.findByMessageId(999);
 
       expect(result).toEqual([]);
-      expect(mockFeedbackRepository.find).toHaveBeenCalledWith({
-        where: { messageId: 999, tenantId: 'test-tenant' },
-      });
+      expect(mockFeedbackRepository.findByMessageId).toHaveBeenCalledWith(
+        999,
+        'test-tenant',
+      );
     });
   });
 
   describe('update', () => {
     it('should update feedback successfully', async () => {
       const updatedFeedback = { ...mockFeedback, ...mockUpdateFeedbackDto };
-
-      mockFeedbackRepository.findOne.mockResolvedValue(mockFeedback);
-      mockFeedbackRepository.save.mockResolvedValue(updatedFeedback);
+      mockFeedbackRepository.updateFeedback.mockResolvedValue(updatedFeedback);
 
       const result = await service.update(1, mockUpdateFeedbackDto);
 
       expect(result).toEqual(updatedFeedback);
-      expect(mockFeedbackRepository.findOne).toHaveBeenCalledWith({
-        where: { feedbackId: 1, tenantId: 'test-tenant' },
-      });
-      expect(mockFeedbackRepository.save).toHaveBeenCalledWith({
-        ...mockFeedback,
-        ...mockUpdateFeedbackDto,
-      });
+      expect(mockFeedbackRepository.updateFeedback).toHaveBeenCalledWith(
+        1,
+        mockUpdateFeedbackDto,
+        'test-tenant',
+      );
     });
 
     it('should throw NotFoundException when feedback not found', async () => {
-      mockFeedbackRepository.findOne.mockResolvedValue(null);
+      mockFeedbackRepository.updateFeedback.mockResolvedValue(null);
 
       await expect(service.update(999, mockUpdateFeedbackDto)).rejects.toThrow(
         NotFoundException,
@@ -167,37 +160,37 @@ describe('FeedbackService', () => {
     it('should update feedback with partial data', async () => {
       const partialUpdateDto = { rating: 4 };
       const updatedFeedback = { ...mockFeedback, rating: 4 };
-
-      mockFeedbackRepository.findOne.mockResolvedValue(mockFeedback);
-      mockFeedbackRepository.save.mockResolvedValue(updatedFeedback);
+      mockFeedbackRepository.updateFeedback.mockResolvedValue(updatedFeedback);
 
       const result = await service.update(1, partialUpdateDto);
 
       expect(result).toEqual(updatedFeedback);
-      expect(mockFeedbackRepository.save).toHaveBeenCalledWith({
-        ...mockFeedback,
-        rating: 4,
-      });
+      expect(mockFeedbackRepository.updateFeedback).toHaveBeenCalledWith(
+        1,
+        partialUpdateDto,
+        'test-tenant',
+      );
     });
 
     it('should update feedback with empty update data', async () => {
       const emptyUpdateDto = {};
-
-      mockFeedbackRepository.findOne.mockResolvedValue(mockFeedback);
-      mockFeedbackRepository.save.mockResolvedValue(mockFeedback);
+      mockFeedbackRepository.updateFeedback.mockResolvedValue(mockFeedback);
 
       const result = await service.update(1, emptyUpdateDto);
 
       expect(result).toEqual(mockFeedback);
-      expect(mockFeedbackRepository.save).toHaveBeenCalledWith(mockFeedback);
+      expect(mockFeedbackRepository.updateFeedback).toHaveBeenCalledWith(
+        1,
+        emptyUpdateDto,
+        'test-tenant',
+      );
     });
   });
 
   describe('error handling', () => {
     it('should handle database errors in create', async () => {
       const dbError = new Error('Database connection failed');
-      mockFeedbackRepository.create.mockReturnValue(mockFeedback);
-      mockFeedbackRepository.save.mockRejectedValue(dbError);
+      mockFeedbackRepository.createFeedback.mockRejectedValue(dbError);
 
       await expect(service.create(mockCreateFeedbackDto)).rejects.toThrow(
         'Database connection failed',
@@ -206,7 +199,7 @@ describe('FeedbackService', () => {
 
     it('should handle database errors in findByMessageId', async () => {
       const dbError = new Error('Database connection failed');
-      mockFeedbackRepository.find.mockRejectedValue(dbError);
+      mockFeedbackRepository.findByMessageId.mockRejectedValue(dbError);
 
       await expect(service.findByMessageId(1)).rejects.toThrow(
         'Database connection failed',
@@ -215,8 +208,7 @@ describe('FeedbackService', () => {
 
     it('should handle database errors in update', async () => {
       const dbError = new Error('Database connection failed');
-      mockFeedbackRepository.findOne.mockResolvedValue(mockFeedback);
-      mockFeedbackRepository.save.mockRejectedValue(dbError);
+      mockFeedbackRepository.updateFeedback.mockRejectedValue(dbError);
 
       await expect(service.update(1, mockUpdateFeedbackDto)).rejects.toThrow(
         'Database connection failed',
@@ -227,12 +219,11 @@ describe('FeedbackService', () => {
   describe('tenant isolation', () => {
     it('should use correct tenant ID in create', async () => {
       mockGetTenantId.mockReturnValue('different-tenant');
-      mockFeedbackRepository.create.mockReturnValue(mockFeedback);
-      mockFeedbackRepository.save.mockResolvedValue(mockFeedback);
+      mockFeedbackRepository.createFeedback.mockResolvedValue(mockFeedback);
 
       await service.create(mockCreateFeedbackDto);
 
-      expect(mockFeedbackRepository.create).toHaveBeenCalledWith({
+      expect(mockFeedbackRepository.createFeedback).toHaveBeenCalledWith({
         ...mockCreateFeedbackDto,
         tenantId: 'different-tenant',
       });
@@ -240,25 +231,27 @@ describe('FeedbackService', () => {
 
     it('should use correct tenant ID in findByMessageId', async () => {
       mockGetTenantId.mockReturnValue('different-tenant');
-      mockFeedbackRepository.find.mockResolvedValue([]);
+      mockFeedbackRepository.findByMessageId.mockResolvedValue([]);
 
       await service.findByMessageId(1);
 
-      expect(mockFeedbackRepository.find).toHaveBeenCalledWith({
-        where: { messageId: 1, tenantId: 'different-tenant' },
-      });
+      expect(mockFeedbackRepository.findByMessageId).toHaveBeenCalledWith(
+        1,
+        'different-tenant',
+      );
     });
 
     it('should use correct tenant ID in update', async () => {
       mockGetTenantId.mockReturnValue('different-tenant');
-      mockFeedbackRepository.findOne.mockResolvedValue(mockFeedback);
-      mockFeedbackRepository.save.mockResolvedValue(mockFeedback);
+      mockFeedbackRepository.updateFeedback.mockResolvedValue(mockFeedback);
 
       await service.update(1, mockUpdateFeedbackDto);
 
-      expect(mockFeedbackRepository.findOne).toHaveBeenCalledWith({
-        where: { feedbackId: 1, tenantId: 'different-tenant' },
-      });
+      expect(mockFeedbackRepository.updateFeedback).toHaveBeenCalledWith(
+        1,
+        mockUpdateFeedbackDto,
+        'different-tenant',
+      );
     });
   });
 });

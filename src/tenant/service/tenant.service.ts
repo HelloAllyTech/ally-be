@@ -6,8 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { Not } from 'typeorm';
 import { Tenant, TenantStatus } from '../entity/tenant.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { TenantsRepository } from '../repository/tenant.repository';
@@ -21,17 +20,15 @@ export class TenantService {
   private readonly logger = LoggerService.getInstance(TenantService.name);
 
   constructor(
-    @InjectRepository(Tenant)
-    private readonly tenantRepository: Repository<Tenant>,
     private readonly tenantsRepository: TenantsRepository,
     @Inject(forwardRef(() => UserRepository))
     private readonly userRepository: UserRepository,
   ) {}
   async findAll(): Promise<Tenant[]> {
-    return this.tenantRepository.find();
+    return this.tenantsRepository.findAll();
   }
   async create(tenantData: Partial<Tenant>): Promise<Tenant> {
-    const existingTenant = await this.tenantRepository.findOne({
+    const existingTenant = await this.tenantsRepository.findOneByOptions({
       where: [{ name: tenantData.name }, { code: tenantData.code }],
     });
     if (existingTenant?.name == tenantData.name) {
@@ -45,34 +42,26 @@ export class TenantService {
       );
     }
 
-    const tenant = this.tenantRepository.create(tenantData);
-    return this.tenantRepository.save(tenant);
+    return this.tenantsRepository.createTenant(tenantData);
   }
 
   async findById(id: string): Promise<Tenant | null> {
-    return this.tenantRepository.findOne({ where: { id } });
+    return this.tenantsRepository.findOneByOptions({ where: { id } });
   }
 
   async findByCode(code: string): Promise<Tenant | null> {
-    return this.tenantRepository.findOne({ where: { code } });
+    return this.tenantsRepository.findOneByOptions({ where: { code } });
   }
 
   async updateStatus(id: string, status: TenantStatus): Promise<Tenant | null> {
-    const result = await this.tenantRepository
-      .createQueryBuilder()
-      .update(Tenant)
-      .set({ status })
-      .where('id = :id', { id })
-      .returning('*')
-      .execute();
-    return result.affected ? result.raw[0] : null;
+    return this.tenantsRepository.updateStatusAndReturn(id, status);
   }
 
   async updateSettings(
     id: string,
     settings: Record<string, any>,
   ): Promise<Tenant | null> {
-    await this.tenantRepository.update(id, { settings });
+    await this.tenantsRepository.updateTenant(id, { settings });
     return this.findById(id);
   }
 
@@ -80,7 +69,7 @@ export class TenantService {
     id: string,
     metadata: Record<string, any>,
   ): Promise<Tenant | null> {
-    await this.tenantRepository.update(id, { metadata });
+    await this.tenantsRepository.updateTenant(id, { metadata });
     return this.findById(id);
   }
 
@@ -133,7 +122,7 @@ export class TenantService {
       (updateTenantDto.name && updateTenantDto.name !== tenant.name) ||
       (updateTenantDto.code && updateTenantDto.code !== tenant.code)
     ) {
-      const existingTenant = await this.tenantRepository.findOne({
+      const existingTenant = await this.tenantsRepository.findOneByOptions({
         where: [
           { name: updateTenantDto.name, id: Not(id) },
           { code: updateTenantDto.code, id: Not(id) },
@@ -150,7 +139,10 @@ export class TenantService {
         );
       }
     }
-    await this.tenantRepository.update(id, updateTenantDto as Partial<Tenant>);
+    await this.tenantsRepository.updateTenant(
+      id,
+      updateTenantDto as Partial<Tenant>,
+    );
     return this.findById(id);
   }
 }
