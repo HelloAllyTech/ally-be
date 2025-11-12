@@ -7,6 +7,7 @@ import {
   IsNumber,
   IsUUID,
   IsArray,
+  IsBoolean,
 } from 'class-validator';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
@@ -208,4 +209,28 @@ export class CreateScenarioDto {
   @IsUUID()
   @IsOptional()
   voiceId?: string;
+
+  @ApiProperty({
+    description: 'AutoTermination status',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  autoTerminationStatus?: boolean;
+
+  @ApiProperty({
+    description: 'Termination message',
+    example: 'Termination message',
+  })
+  @IsOptional()
+  @IsString()
+  terminationMessage?: string;
+
+  @ApiProperty({
+    description: 'Termination event ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  @IsString()
+  terminationEventId?: string;
 }

@@ -51,6 +51,9 @@ interface ScenarioData {
   age?: number;
   gender?: string;
   currentLocation?: string;
+  autoTerminationStatus?: boolean;
+  terminationMessage?: string;
+  terminationEventId?: string;
   [key: string]: any;
 }
 
@@ -194,11 +197,25 @@ export class ScenarioService {
   }
 
   async getAdminScenario(id: number): Promise<Scenarios> {
-    const scenario = await this.scenariosRepository.findOne({ where: { id } });
-    if (!scenario) {
+    const result = await this.scenariosRepository.getAdminScenarioById(id);
+
+    if (!result) {
       throw new NotFoundException('Scenario not found');
     }
-    return scenario;
+
+    // Extract name from terminationEventDetails and add to terminationEvent, then remove terminationEventDetails
+    if (
+      result &&
+      (result as any).terminationEventDetails?.name &&
+      (result as any).terminationEvent
+    ) {
+      (result as any).terminationEvent.name = (
+        result as any
+      ).terminationEventDetails.name;
+      delete (result as any).terminationEventDetails;
+    }
+
+    return result;
   }
 
   async getPresignedUrlForScenarioCoverImage(
@@ -394,8 +411,36 @@ export class ScenarioService {
       }),
     );
 
-    const scenarios = this.scenariosRepository.create(createScenarioDtos);
-    return this.scenariosRepository.save(scenarios);
+    const savedScenarios = await this.dataSource.transaction(
+      async (entityManager) => {
+        const scenariosRepo = entityManager.getRepository(Scenarios);
+        const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
+        const scenarios = scenariosRepo.create(createScenarioDtos);
+        const savedScenarios = await scenariosRepo.save(scenarios);
+
+        // Map saved scenarios to their corresponding DTOs and create scenario events
+        const scenarioTerminationEvents = scenarioEventsRepo.create(
+          savedScenarios
+            .map((savedScenario, index) => {
+              const correspondingDto = createScenariosDto.scenarios[index];
+              return {
+                scenarioId: savedScenario.id,
+                eventId: correspondingDto.terminationEventId,
+                autoTerminationStatus: correspondingDto.autoTerminationStatus,
+                message: correspondingDto.terminationMessage,
+              };
+            })
+            .filter((event) => event.eventId && event.autoTerminationStatus), // Only create events if terminationEventId exists and autoTerminationStatus is true
+        );
+
+        if (scenarioTerminationEvents.length > 0) {
+          await scenarioEventsRepo.save(scenarioTerminationEvents);
+        }
+
+        return savedScenarios;
+      },
+    );
+    return savedScenarios;
   }
 
   async validateCreateScenario(
@@ -425,6 +470,15 @@ export class ScenarioService {
 
     // Validate ACTIVE: all required fields must be present
     if (status === ScenarioStatus.ACTIVE) {
+      if (
+        data.autoTerminationStatus &&
+        (!data.terminationEventId || !data.terminationMessage)
+      ) {
+        throw new BadRequestException(
+          'Termination event and message are required for enabling auto termination',
+        );
+      }
+
       const missingFields = SCENARIO_MANDATORY_FIELDS.filter(
         (field) => !data[field],
       );
@@ -505,8 +559,34 @@ export class ScenarioService {
       };
     }
 
-    const updated = await this.scenariosRepository.update(id, updateData);
-    return updated.affected !== 0;
+    const updatedScenario = await this.dataSource.transaction(
+      async (entityManager) => {
+        const updatedScenario = await entityManager
+          .getRepository(Scenarios)
+          .update(id, updateData);
+        if (updateScenarioDto.autoTerminationStatus) {
+          await entityManager.getRepository(ScenarioEvents).update(id, {
+            autoTerminationStatus: updateScenarioDto.autoTerminationStatus,
+            message: updateScenarioDto.terminationMessage,
+          });
+        } else {
+          const scenarioTerminationEvent = await entityManager
+            .getRepository(ScenarioEvents)
+            .findOne({
+              where: { scenarioId: id, autoTerminationStatus: true },
+            });
+          if (scenarioTerminationEvent) {
+            await entityManager.getRepository(ScenarioEvents).delete({
+              scenarioId: id,
+              eventId: scenarioTerminationEvent.eventId,
+              autoTerminationStatus: true,
+            });
+          }
+        }
+        return updatedScenario;
+      },
+    );
+    return updatedScenario.affected !== 0;
   }
 
   async validateUpdateScenario(
