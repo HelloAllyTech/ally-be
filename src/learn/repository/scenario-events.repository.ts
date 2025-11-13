@@ -24,7 +24,7 @@ export class ScenarioEventsRepository extends Repository<ScenarioEvents> {
         SessionEvents,
         'sessionEvent',
         'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
-        { autoTerminationStatus: true },
+        { autoTerminationStatus: false },
       )
       .where(
         `(scenarioEvent.scenarioId = :scenarioId AND scenarioEvent.deletedAt IS NULL)`,
