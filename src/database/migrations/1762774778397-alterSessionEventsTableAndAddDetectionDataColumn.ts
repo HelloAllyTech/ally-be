@@ -11,7 +11,7 @@ export class AlterSessionEventsTableAndAddDetectionDataColumn1762774778397
       `ALTER TABLE "session_events" ADD "detectionData" jsonb`,
     );
 
-    // Migrate data from sentences column (text array) to detectionData.sentenceList
+    // Migrate data from sentences column (text array) to detectionData.sentences
     // Only update rows where sentences is not null and has data
     await queryRunner.query(`
       UPDATE "session_events"
@@ -31,8 +31,8 @@ export class AlterSessionEventsTableAndAddDetectionDataColumn1762774778397
       `ALTER TABLE "session_events" ADD "sentences" text array`,
     );
 
-    // Migrate data from detectionData.sentenceList back to sentences column
-    // Only update rows where detectionData.sentenceList exists
+    // Migrate data from detectionData.sentences back to sentences column
+    // Only update rows where detectionData.sentences exists
     await queryRunner.query(`
       UPDATE "session_events"
       SET "sentences" = (
