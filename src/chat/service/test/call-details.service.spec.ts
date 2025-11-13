@@ -771,6 +771,9 @@ describe('CallDetailsService', () => {
       const encryptedCallDetails = {
         ...mockCallDetails,
         transcript: 'encrypted_Test transcript',
+        summary: {
+          sessionSummary: 'encrypted_Test summary',
+        },
       };
 
       jest
@@ -781,7 +784,9 @@ describe('CallDetailsService', () => {
         encryptedCallDetails as any,
       );
 
-      expect(result?.transcript).toBe('');
+      // New behavior: keeps original data when decryption fails
+      expect(result?.transcript).toBe('encrypted_Test transcript');
+      expect(result?.summary?.sessionSummary).toBe('encrypted_Test summary');
     });
   });
 
