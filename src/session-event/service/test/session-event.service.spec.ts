@@ -5,7 +5,7 @@ import { SessionEventService } from '../session-event.service';
 import { SessionEvents } from '../../entity/session-events.entity';
 import { CreateSessionEventDto } from '../../dto/create-session-event.dto';
 import { UpdateSessionEventDto } from '../../dto/update-session-event.dto';
-import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection-type.enum';
+import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { SessionEventRepository } from '../../repository/session-event.repository';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
@@ -39,7 +39,9 @@ describe('SessionEventService', () => {
     branchInstruction: 'Continue with next step',
     detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
     visibilityType: SessionEventVisibilityType.ACTIVE,
-    sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    detectionData: {
+      sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    },
     speaker: SessionEventSpeaker.CARE_GIVER,
   };
 

@@ -9,7 +9,7 @@ import { SessionEvents } from '../../entity/session-events.entity';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
-import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection-type.enum';
+import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventSortBy } from 'src/session-event/enum/session-event-sort-by.enum';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
@@ -42,7 +42,9 @@ describe('SessionEventController', () => {
     branchInstruction: 'Continue with next step',
     detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
     visibilityType: SessionEventVisibilityType.ACTIVE,
-    sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    detectionData: {
+      sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    },
     speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
@@ -178,7 +180,9 @@ describe('SessionEventController', () => {
         message: 'Basic message',
         detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
         visibilityType: SessionEventVisibilityType.ACTIVE,
-        sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        detectionData: {
+          sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        },
         speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const minimalEventsDto: CreateSessionEventsDto = {
@@ -219,7 +223,9 @@ describe('SessionEventController', () => {
         branchInstruction: 'Proceed to final stage',
         detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
         visibilityType: SessionEventVisibilityType.ACTIVE,
-        sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        detectionData: {
+          sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        },
         speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const fullEventsDto: CreateSessionEventsDto = {
