@@ -16,10 +16,10 @@ export class SimulationCredits {
   @Column()
   userId!: number;
 
-  @Column()
+  @Column({ default: 0 })
   creditLimit!: number;
 
-  @Column()
+  @Column({ default: 0 })
   consumedCredits!: number;
 
   @CreateDateColumn()

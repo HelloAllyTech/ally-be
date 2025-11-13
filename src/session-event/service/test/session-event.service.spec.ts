@@ -940,6 +940,15 @@ describe('SessionEventService', () => {
           sessionEvents_emoji: '🎯',
           sessionEvents_message: 'Default message',
           sessionEvents_branchInstruction: 'Default branch',
+          sessionEvents_detectionType:
+            SessionEventDetectionType.SENTENCE_SIMILARITY,
+          sessionEvents_visibilityType: SessionEventVisibilityType.ACTIVE,
+          sessionEvents_detectionData: {
+            sentences: ['Sentence 1', 'Sentence 2'],
+          },
+          sessionEvents_speaker: SessionEventSpeaker.CARE_GIVER,
+          sessionEvents_createdAt: new Date('2024-01-01T10:00:00Z'),
+          sessionEvents_updatedAt: new Date('2024-01-01T10:00:00Z'),
           scenarioEvents_feedbackStatus: true,
           scenarioEvents_score: 90,
           scenarioEvents_emoji: '🎉',
@@ -964,6 +973,15 @@ describe('SessionEventService', () => {
           emoji: '🎉',
           message: 'Custom message',
           branchInstruction: 'Custom branch',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          feedbackStatus: true,
+          detectionData: {
+            sentences: ['Sentence 1', 'Sentence 2'],
+          },
+          speaker: SessionEventSpeaker.CARE_GIVER,
+          createdAt: new Date('2024-01-01T10:00:00Z'),
+          updatedAt: new Date('2024-01-01T10:00:00Z'),
         },
       ]);
       expect(repository.getSessionEventsByScenarioId).toHaveBeenCalledWith(
@@ -981,6 +999,15 @@ describe('SessionEventService', () => {
           sessionEvents_emoji: '✅',
           sessionEvents_message: 'Default message 2',
           sessionEvents_branchInstruction: 'Default branch 2',
+          sessionEvents_detectionType:
+            SessionEventDetectionType.SENTENCE_SIMILARITY,
+          sessionEvents_visibilityType: SessionEventVisibilityType.PASSIVE,
+          sessionEvents_detectionData: {
+            sentences: ['Sentence A', 'Sentence B'],
+          },
+          sessionEvents_speaker: SessionEventSpeaker.CARE_GIVER,
+          sessionEvents_createdAt: new Date('2024-01-02T10:00:00Z'),
+          sessionEvents_updatedAt: new Date('2024-01-02T10:00:00Z'),
           scenarioEvents_feedbackStatus: false,
           scenarioEvents_score: 85,
           scenarioEvents_emoji: '🚀',
@@ -1001,10 +1028,19 @@ describe('SessionEventService', () => {
           id: 'event-2',
           name: 'Event 2',
           description: 'Description 2',
-          score: 75,
+          score: 85, // Uses scenarioEvents_score via ?? operator
           emoji: '✅',
           message: 'Default message 2',
-          branchInstruction: 'Default branch 2',
+          branchInstruction: null, // null when scenarioEvents_branchingStatus is false
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.PASSIVE,
+          feedbackStatus: false,
+          detectionData: {
+            sentences: ['Sentence A', 'Sentence B'],
+          },
+          speaker: SessionEventSpeaker.CARE_GIVER,
+          createdAt: new Date('2024-01-02T10:00:00Z'),
+          updatedAt: new Date('2024-01-02T10:00:00Z'),
         },
       ]);
     });
@@ -1084,6 +1120,12 @@ describe('SessionEventService', () => {
           sessionEvents_emoji: null,
           sessionEvents_message: null,
           sessionEvents_branchInstruction: null,
+          sessionEvents_detectionType: undefined,
+          sessionEvents_visibilityType: undefined,
+          sessionEvents_sentences: undefined,
+          sessionEvents_speaker: undefined,
+          sessionEvents_createdAt: undefined,
+          sessionEvents_updatedAt: undefined,
           scenarioEvents_feedbackStatus: false,
           scenarioEvents_score: null,
           scenarioEvents_emoji: null,
@@ -1108,8 +1150,74 @@ describe('SessionEventService', () => {
           emoji: null,
           message: null,
           branchInstruction: null,
+          detectionType: undefined,
+          visibilityType: undefined,
+          feedbackStatus: false,
+          sentences: undefined,
+          speaker: undefined,
+          createdAt: undefined,
+          updatedAt: undefined,
         },
       ]);
+    });
+
+    it('should use fallback branchInstruction when scenarioEvents_branchInstruction is null', async () => {
+      const mockRawEvents = [
+        {
+          sessionEvents_id: 'event-4',
+          sessionEvents_name: 'Event 4',
+          sessionEvents_description: 'Description 4',
+          sessionEvents_score: 70,
+          sessionEvents_emoji: '✨',
+          sessionEvents_message: 'Default message 4',
+          sessionEvents_branchInstruction: 'Fallback branch instruction',
+          sessionEvents_detectionType:
+            SessionEventDetectionType.SENTENCE_SIMILARITY,
+          sessionEvents_visibilityType: SessionEventVisibilityType.ACTIVE,
+          sessionEvents_detectionData: {
+            sentences: ['Test sentence'],
+          },
+          sessionEvents_speaker: SessionEventSpeaker.CARE_GIVER,
+          sessionEvents_createdAt: new Date('2024-01-03T10:00:00Z'),
+          sessionEvents_updatedAt: new Date('2024-01-03T10:00:00Z'),
+          scenarioEvents_feedbackStatus: true,
+          scenarioEvents_score: 80,
+          scenarioEvents_emoji: '💡',
+          scenarioEvents_message: 'Custom message 4',
+          scenarioEvents_branchingStatus: true,
+          scenarioEvents_branchInstruction: null, // null, so should use fallback
+        },
+      ];
+
+      repository.getSessionEventsByScenarioId.mockResolvedValue(
+        mockRawEvents as any,
+      );
+
+      const result = await service.getSessionEventsByScenarioId(mockScenarioId);
+
+      expect(result).toEqual([
+        {
+          id: 'event-4',
+          name: 'Event 4',
+          description: 'Description 4',
+          score: 80,
+          emoji: '💡',
+          message: 'Custom message 4',
+          branchInstruction: 'Fallback branch instruction', // Uses fallback via ?? operator
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          feedbackStatus: true,
+          detectionData: {
+            sentences: ['Test sentence'],
+          },
+          speaker: SessionEventSpeaker.CARE_GIVER,
+          createdAt: new Date('2024-01-03T10:00:00Z'),
+          updatedAt: new Date('2024-01-03T10:00:00Z'),
+        },
+      ]);
+      expect(repository.getSessionEventsByScenarioId).toHaveBeenCalledWith(
+        mockScenarioId,
+      );
     });
   });
 });
