@@ -5,6 +5,9 @@ import { LoggerService } from 'src/logger/logger.service';
 import { LearnMessageAndEventMessage } from '../../interface/learn-message.interface';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
 import { ScenarioSessionStatus } from '../../enum/scenario-session-status.enum';
+import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection-type.enum';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
+import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
 
 // Mock LoggerService
 jest.mock('src/logger/logger.service', () => ({
@@ -48,8 +51,22 @@ describe('LearnEventProcessor', () => {
     room_id: mockRoomId,
     data: {
       event: {
-        event_id: 'event-123',
         timestamp: new Date(),
+        event_data: {
+          id: 'event-123',
+          name: 'Event 1',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          speaker: SessionEventSpeaker.CARE_GIVER,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          message: 'Hello, world!',
+          score: 100,
+          emoji: '👍',
+          description: 'This is a test event',
+          branchInstruction: 'This is a test branch instruction',
+          sentences: ['This is a test sentence', 'This is a test sentence 2'],
+        },
       },
     },
   };
@@ -342,8 +359,17 @@ describe('LearnEventProcessor', () => {
         room_id: mockRoomId,
         data: {
           event: {
-            event_id: 'complex-event-123',
             timestamp: new Date(),
+            event_data: {
+              id: 'complex-event-123',
+              name: 'Complex Event',
+              detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+              visibilityType: SessionEventVisibilityType.ACTIVE,
+              message: 'Hello, world!',
+              speaker: SessionEventSpeaker.CARE_GIVER,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
           },
         },
       };

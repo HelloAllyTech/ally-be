@@ -1,4 +1,5 @@
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
+import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 
 export interface LearnMessageAndEventMessage {
   message_type: string;
@@ -13,6 +14,6 @@ export interface LearnData {
 }
 
 export interface LearnEventData {
-  event_id: string;
   timestamp: Date;
+  event_data: SessionEvents;
 }
