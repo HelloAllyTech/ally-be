@@ -5,20 +5,20 @@ services:
       dockerfile: Dockerfile
     ports:
       # Map container port to host based on app PORT (.env). Default PORT=8001.
-      - "8001:8001"
+      - '8001:8001'
     env_file:
       - .env
     environment:
       # When running the app inside docker-compose, use the redis service name
-      REDIS_URL: "redis://redis:6379"
+      REDIS_URL: ${REDIS_URL}
       # Ensure the app's config resolution for host/port based envs
-      REDIS_HOST: "redis"
-      REDIS_PORT: "6379"
-      DB_HOST: "postgres"
-      DB_PORT: "5432"
+      REDIS_HOST: 'redis'
+      REDIS_PORT: '6379'
+      DB_HOST: 'postgres'
+      DB_PORT: '5432'
       # When running inside docker-compose, point AWS/SQS endpoints to localstack service
-      AWS_ENDPOINT_URL: "http://localstack:4566"
-      AWS_REGION: "us-east-1"
+      AWS_ENDPOINT_URL: 'http://localstack:4566'
+      AWS_REGION: ${AWS_REGION}
       # Override SQS queue URLs so the app container talks to the localstack container (Docker DNS)
       SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-request-queue"
       SQS_TRANSCRIPTION_REQUEST_DLQ_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-request-dlq"
@@ -39,7 +39,7 @@ services:
   postgres:
     image: postgres:14-alpine
     ports:
-      - "5477:5432"
+      - '5477:5432'
     env_file:
       - docker.env
     volumes:
@@ -50,10 +50,9 @@ services:
   redis:
     image: redis:latest
     ports:
-      - "6379:6379"
+      - '6379:6379'
     networks:
       - app-network
-
 
   localstack:
     image: localstack/localstack:latest
@@ -70,7 +69,7 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:4566/_localstack/health']
       interval: 10s
       timeout: 5s
       retries: 5

@@ -162,10 +162,10 @@ export class SqsService {
 
       await this.sqsClient.send(command);
       this.logger.debug(`Deleted message ${message.MessageId}`);
-    } catch (error) {
+    } catch (err) {
       this.logger.error(
         `Failed to delete message ${message.MessageId} with error ${JSON.stringify(
-          error,
+          err,
         )}`,
       );
     }

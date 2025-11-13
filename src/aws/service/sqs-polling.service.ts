@@ -159,7 +159,7 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
           messages.map((message) => this.processMessage(poller, message)),
         );
       }
-    } catch (error: any) {
+    } catch (error) {
       this.logger.error(
         `Error receiving messages from queue ${poller.queueUrl} with error ${JSON.stringify(
           error,
