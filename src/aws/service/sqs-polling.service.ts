@@ -132,14 +132,11 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
     while (poller.isPolling) {
       try {
         await this.pollMessages(poller);
-      } catch (error: any) {
-        const formatted =
-          error instanceof Error
-            ? `${error.message}${error.stack ? '\n' + error.stack : ''}`
-            : JSON.stringify(error);
-
+      } catch (error) {
         this.logger.error(
-          `Error during polling for queue ${poller.queueUrl} with error ${formatted}`,
+          `Error during polling for queue ${poller.queueUrl} with error ${JSON.stringify(
+            error,
+          )}`,
         );
       }
 
@@ -163,13 +160,10 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
         );
       }
     } catch (error: any) {
-      const formatted =
-        error instanceof Error
-          ? `${error.message}${error.stack ? '\n' + error.stack : ''}`
-          : JSON.stringify(error);
-
       this.logger.error(
-        `Error receiving messages from queue ${poller.queueUrl} with error ${formatted}`,
+        `Error receiving messages from queue ${poller.queueUrl} with error ${JSON.stringify(
+          error,
+        )}`,
       );
     }
   }
@@ -203,14 +197,11 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
 
         // If one handler succeeds, break out of the loop
         break;
-      } catch (error: any) {
-        const formatted =
-          error instanceof Error
-            ? `${error.message}${error.stack ? '\n' + error.stack : ''}`
-            : JSON.stringify(error);
-
+      } catch (error) {
         this.logger.error(
-          `Handler ${handler.target.constructor.name}.${handler.methodName} failed to process message ${message.MessageId} with error ${formatted}`,
+          `Handler ${handler.target.constructor.name}.${handler.methodName} failed to process message ${message.MessageId} with error ${JSON.stringify(
+            error,
+          )}`,
         );
         // Continue to next handler (if any)
       }
@@ -223,14 +214,11 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
         this.logger.debug(
           `Deleted message ${message.MessageId} from queue ${poller.queueUrl}`,
         );
-      } catch (error: any) {
-        const formatted =
-          error instanceof Error
-            ? `${error.message}${error.stack ? '\n' + error.stack : ''}`
-            : JSON.stringify(error);
-
+      } catch (error) {
         this.logger.error(
-          `Failed to delete message ${message.MessageId} from queue ${poller.queueUrl} with error ${formatted}`,
+          `Failed to delete message ${message.MessageId} from queue ${poller.queueUrl} with error ${JSON.stringify(
+            error,
+          )}`,
         );
       }
     } else {

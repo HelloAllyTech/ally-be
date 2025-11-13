@@ -116,14 +116,11 @@ export class SqsService {
       await this.sqsClient.send(command);
 
       this.logger.debug('Message sent to SQS successfully');
-    } catch (error: any) {
-      const formatted =
-        error instanceof Error
-          ? `${error.message}${error.stack ? '\n' + error.stack : ''}`
-          : JSON.stringify(error);
-
+    } catch (error) {
       this.logger.error(
-        `Failed to send message to SQS queue: ${queueUrl} with error ${formatted}`,
+        `Failed to send message to SQS queue: ${queueUrl} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw error;
     }
@@ -145,13 +142,10 @@ export class SqsService {
       const response = await this.sqsClient.send(command);
       return response.Messages || [];
     } catch (error) {
-      const formatted =
-        error instanceof Error
-          ? `${error.message}${error.stack ? '\n' + error.stack : ''}`
-          : JSON.stringify(error);
-
       this.logger.error(
-        `Failed to receive response message from SQS queue: ${queueUrl} with error ${formatted}`,
+        `Failed to receive response message from SQS queue: ${queueUrl} with error ${JSON.stringify(
+          error,
+        )}`,
       );
       throw error;
     }
@@ -169,12 +163,10 @@ export class SqsService {
       await this.sqsClient.send(command);
       this.logger.debug(`Deleted message ${message.MessageId}`);
     } catch (error) {
-      const formatted = error?.message
-        ? `${error.message}${error.stack ? '\n' + error.stack : ''}`
-        : JSON.stringify(error);
-
       this.logger.error(
-        `Failed to delete message ${message.MessageId} with error ${formatted}`,
+        `Failed to delete message ${message.MessageId} with error ${JSON.stringify(
+          error,
+        )}`,
       );
     }
   }
