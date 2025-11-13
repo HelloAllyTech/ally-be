@@ -1999,7 +1999,13 @@ describe('ScenarioService', () => {
             score: 85,
             branchingStatus: true,
             branchInstruction: 'Continue with next step',
-            sessionEvent: null,
+            sessionEvent: {
+              name: 'Event 1',
+              emoji: '👍',
+              message: 'Great job!',
+              score: 85,
+              branchInstruction: 'Continue with next step',
+            },
           },
         ],
         count: 1,
@@ -2009,6 +2015,7 @@ describe('ScenarioService', () => {
         data: [
           {
             eventId: 'event-1',
+            name: 'Event 1',
             feedbackStatus: true,
             emoji: '👍',
             message: 'Great job!',
@@ -2044,12 +2051,13 @@ describe('ScenarioService', () => {
           {
             eventId: 'event-1',
             feedbackStatus: false,
-            emoji: undefined,
-            message: undefined,
-            score: undefined,
+            emoji: '🎯',
+            message: 'Default message',
+            score: 15,
             branchingStatus: false,
             branchInstruction: undefined,
             sessionEvent: {
+              name: 'Event 1',
               emoji: '🎯',
               message: 'Default message',
               score: 10,
@@ -2064,10 +2072,11 @@ describe('ScenarioService', () => {
         data: [
           {
             eventId: 'event-1',
+            name: 'Event 1',
             feedbackStatus: false,
             emoji: '🎯',
             message: 'Default message',
-            score: 10,
+            score: 15,
             branchingStatus: false,
             branchInstruction: 'Default instruction',
           },
@@ -2100,17 +2109,24 @@ describe('ScenarioService', () => {
             score: 85,
             branchingStatus: true,
             branchInstruction: 'Continue with next step',
-            sessionEvent: null,
+            sessionEvent: {
+              name: 'Event 1',
+              emoji: '👍',
+              message: 'Great job!',
+              score: 85,
+              branchInstruction: 'Continue with next step',
+            },
           },
           {
             eventId: 'event-2',
             feedbackStatus: false,
             emoji: undefined,
             message: undefined,
-            score: undefined,
+            score: 10,
             branchingStatus: false,
             branchInstruction: undefined,
             sessionEvent: {
+              name: 'Event 2',
               emoji: '🎯',
               message: 'Default message',
               score: 10,
@@ -2125,6 +2141,7 @@ describe('ScenarioService', () => {
         data: [
           {
             eventId: 'event-1',
+            name: 'Event 1',
             feedbackStatus: true,
             emoji: '👍',
             message: 'Great job!',
@@ -2134,6 +2151,7 @@ describe('ScenarioService', () => {
           },
           {
             eventId: 'event-2',
+            name: 'Event 2',
             feedbackStatus: false,
             emoji: '🎯',
             message: 'Default message',

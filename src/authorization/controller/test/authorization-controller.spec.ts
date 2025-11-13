@@ -294,9 +294,14 @@ describe('AuthorizationController', () => {
 
   describe('getAllRoles', () => {
     const mockRoles = [
-      { id: 1, name: 'admin' },
-      { id: 2, name: 'counselor' },
-      { id: 3, name: 'learner' },
+      { id: 1, name: 'admin', createdAt: new Date(), updatedAt: new Date() },
+      {
+        id: 2,
+        name: 'counselor',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      { id: 3, name: 'learner', createdAt: new Date(), updatedAt: new Date() },
     ];
 
     it('should return all roles successfully', async () => {
@@ -347,8 +352,20 @@ describe('AuthorizationController', () => {
 
     it('should handle different role structures', async () => {
       const customRoles = [
-        { id: 10, name: 'super_admin', description: 'Full system access' },
-        { id: 11, name: 'moderator', description: 'Content moderation' },
+        {
+          id: 10,
+          name: 'super_admin',
+          description: 'Full system access',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: 11,
+          name: 'moderator',
+          description: 'Content moderation',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
       ];
       groupService.getAllRoles.mockResolvedValue(customRoles);
 
