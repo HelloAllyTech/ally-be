@@ -14,8 +14,8 @@ export type SummaryFeedbackContent = {
 @Entity('summary_feedback')
 @Index('uq_summary_feedback_chatId_idx', ['chatId'], { unique: true })
 export class SummaryFeedback extends BaseEntity {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
+  @PrimaryGeneratedColumn()
+  id!: number;
 
   @Column({ type: 'int' })
   chatId!: number;
