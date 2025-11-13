@@ -5,16 +5,12 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { PermissionsGuard } from './guards/permissions.guard';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
-import { RefreshToken } from './entity/refresh-token.entity';
-import { User } from '../user/entity/user.entity';
 
 @Global()
 @Module({
   imports: [
     JwtModule.register({}), // Empty config since we're using different configs for access and refresh tokens
-    TypeOrmModule.forFeature([User, RefreshToken]),
     ConfigModule,
   ],
   providers: [AuthService, JwtStrategy, JwtRefreshStrategy, PermissionsGuard],

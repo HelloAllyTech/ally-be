@@ -62,10 +62,12 @@ async function bootstrap() {
     const port = appConfigService.port;
 
     const config = new DocumentBuilder()
-      .setTitle('Lifeline API')
-      .setDescription('The Lifeline API description')
+      .setTitle('Ally API')
+      .setDescription(
+        'RESTful API for Ally - A mental health counseling platform with real-time chat, ' +
+          'audio support, analytics, and scenario-based training for counselors.',
+      )
       .setVersion('1.0')
-      .addTag('lifeline')
       .addBearerAuth(
         {
           type: 'http',

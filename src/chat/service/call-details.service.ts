@@ -379,33 +379,44 @@ export class CallDetailsService {
 
     const decryptedCallDetails = { ...callDetails };
 
-    try {
-      if (decryptedCallDetails.transcript) {
-        decryptedCallDetails.transcript = await this.cryptoService.decrypt(
-          decryptedCallDetails.transcript,
-          this.config.phiData?.phiDataEncryptionKey,
-        );
-      }
-
-      if (decryptedCallDetails.summary?.sessionSummary) {
-        const decryptedSummary = await this.cryptoService.decrypt(
-          decryptedCallDetails.summary.sessionSummary,
-          this.config.phiData?.phiDataEncryptionKey,
-        );
-        decryptedCallDetails.summary.sessionSummary = decryptedSummary;
-      }
-
-      return decryptedCallDetails as CallDetails;
-    } catch (error) {
-      this.logger.error(
-        `Failed to decrypt call details: ${JSON.stringify(error)}`,
-      );
-      decryptedCallDetails.transcript = '';
-      if (decryptedCallDetails.summary?.sessionSummary) {
-        decryptedCallDetails.summary.sessionSummary = '';
-      }
+    // Check if encryption key is configured
+    if (!this.config.phiData?.phiDataEncryptionKey) {
+      this.logger.warn('PHI_DATA_ENCRYPTION_KEY not configured');
       return decryptedCallDetails as CallDetails;
     }
+
+    // Try to decrypt transcript
+    if (decryptedCallDetails.transcript) {
+      try {
+        decryptedCallDetails.transcript = await this.cryptoService.decrypt(
+          decryptedCallDetails.transcript,
+          this.config.phiData.phiDataEncryptionKey,
+        );
+      } catch (error) {
+        // Data might not be encrypted - keep original
+        this.logger.debug(
+          `Transcript not encrypted or wrong key for chat ${callDetails.chatId}`,
+        );
+      }
+    }
+
+    // Try to decrypt summary
+    if (decryptedCallDetails.summary?.sessionSummary) {
+      try {
+        decryptedCallDetails.summary.sessionSummary =
+          await this.cryptoService.decrypt(
+            decryptedCallDetails.summary.sessionSummary,
+            this.config.phiData.phiDataEncryptionKey,
+          );
+      } catch (error) {
+        // Data might not be encrypted - keep original
+        this.logger.debug(
+          `Summary not encrypted or wrong key for chat ${callDetails.chatId}`,
+        );
+      }
+    }
+
+    return decryptedCallDetails as CallDetails;
   }
 
   async pauseOrResumeChat(chatId: number, pause: boolean) {

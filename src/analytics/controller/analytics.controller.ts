@@ -22,6 +22,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiSecurity,
+  ApiParam,
 } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
@@ -37,12 +38,34 @@ export class AnalyticsController {
 
   @Get('dashboard/:dashboardId')
   @AuthPermissions([PERMISSIONS.VIEW_ANALYTICS_DASHBOARD_URL])
+  @ApiParam({
+    name: 'dashboardId',
+    description: 'The ID of the dashboard',
+    type: 'string',
+    required: true,
+  })
+  @ApiOperation({ summary: 'Get dashboard URL' })
+  @ApiResponse({
+    status: 200,
+    description: 'Dashboard URL retrieved successfully',
+  })
   getDashboardUrl(@Param() { dashboardId }: DashboardIdParamDto) {
     return this.analyticsService.getDashboardUrl(dashboardId);
   }
 
   @Post('dashboard/:dashboardId/refresh')
   @UseGuards(JwtAuthGuard)
+  @ApiParam({
+    name: 'dashboardId',
+    description: 'The ID of the dashboard to refresh',
+    type: 'string',
+    required: true,
+  })
+  @ApiOperation({ summary: 'Refresh dashboard URL' })
+  @ApiResponse({
+    status: 200,
+    description: 'Dashboard URL refreshed successfully',
+  })
   refreshDashboardUrl(@Param() { dashboardId }: DashboardIdParamDto) {
     return this.analyticsService.refreshDashboardUrl(dashboardId);
   }

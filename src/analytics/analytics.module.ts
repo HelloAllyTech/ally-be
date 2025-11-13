@@ -5,18 +5,11 @@ import { MetabaseService } from './service/metabase.service';
 import { AppConfigModule } from '../config/config.module';
 import { ProviderFactory } from '../factory/provider.factory';
 import { UserModule } from '../user/user.module';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { Chat } from '../chat/entity/chat.entity';
-import { Dashboard } from './entity/dashboard.entity';
 import { DashboardRepository } from './repository/dashboard.repository';
 import { AnalyticsRepository } from './repository/analytics.repository';
 
 @Module({
-  imports: [
-    AppConfigModule,
-    UserModule,
-    TypeOrmModule.forFeature([Dashboard, Chat]),
-  ],
+  imports: [AppConfigModule, UserModule],
   controllers: [AnalyticsController],
   providers: [
     AnalyticsService,
