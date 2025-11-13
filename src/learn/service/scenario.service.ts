@@ -563,24 +563,44 @@ export class ScenarioService {
         const updatedScenario = await entityManager
           .getRepository(Scenarios)
           .update(id, updateData);
-        if (updateScenarioDto.autoTerminationStatus) {
-          await entityManager.getRepository(ScenarioEvents).update(id, {
-            autoTerminationStatus: updateScenarioDto.autoTerminationStatus,
+        const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
+        const existingScenarioTerminationEvent =
+          await scenarioEventsRepo.findOne({
+            where: { scenarioId: id, autoTerminationStatus: true },
+          });
+        // The already existing termination event is not the one in update query or the autoterminationstatus is set to false- delete the event
+        if (
+          existingScenarioTerminationEvent &&
+          (!updateScenarioDto.autoTerminationStatus ||
+            existingScenarioTerminationEvent.eventId !==
+              updateScenarioDto.terminationEventId)
+        ) {
+          await scenarioEventsRepo.delete({
+            scenarioId: id,
+            eventId: existingScenarioTerminationEvent.eventId,
+            autoTerminationStatus: true,
+          });
+        }
+        // If the input termination event id is the same as the existing one - update the message
+        if (
+          existingScenarioTerminationEvent?.eventId ===
+          updateScenarioDto.terminationEventId
+        ) {
+          await scenarioEventsRepo.update(
+            {
+              scenarioId: id,
+              eventId: updateScenarioDto.terminationEventId,
+              autoTerminationStatus: true,
+            },
+            { message: updateScenarioDto.terminationMessage },
+          );
+        } else if (updateScenarioDto.autoTerminationStatus) {
+          await scenarioEventsRepo.create({
+            scenarioId: id,
+            eventId: updateScenarioDto.terminationEventId,
+            autoTerminationStatus: true,
             message: updateScenarioDto.terminationMessage,
           });
-        } else {
-          const scenarioTerminationEvent = await entityManager
-            .getRepository(ScenarioEvents)
-            .findOne({
-              where: { scenarioId: id, autoTerminationStatus: true },
-            });
-          if (scenarioTerminationEvent) {
-            await entityManager.getRepository(ScenarioEvents).delete({
-              scenarioId: id,
-              eventId: scenarioTerminationEvent.eventId,
-              autoTerminationStatus: true,
-            });
-          }
         }
         return updatedScenario;
       },

@@ -1184,6 +1184,7 @@ describe('ScenarioService', () => {
       const updateDto: UpdateScenarioDto = {
         title: 'Updated Title',
         autoTerminationStatus: true,
+        terminationEventId: 'event-1',
         terminationMessage: 'New termination message',
       };
 
@@ -1193,8 +1194,15 @@ describe('ScenarioService', () => {
         raw: {},
       };
 
+      const mockTerminationEvent = {
+        scenarioId: 1,
+        eventId: 'event-1',
+        autoTerminationStatus: true,
+      };
+
       scenariosRepository.findOne.mockResolvedValue(mockScenario);
       mockScenariosRepo.update.mockResolvedValue(updateResult);
+      mockScenarioEventsRepo.findOne.mockResolvedValue(mockTerminationEvent);
       mockScenarioEventsRepo.update.mockResolvedValue({ affected: 1 });
 
       const result = await service.updateScenario(
@@ -1205,10 +1213,16 @@ describe('ScenarioService', () => {
 
       expect(result).toBe(true);
       expect(mockScenariosRepo.update).toHaveBeenCalled();
-      expect(mockScenarioEventsRepo.update).toHaveBeenCalledWith(scenarioId, {
-        autoTerminationStatus: true,
-        message: 'New termination message',
-      });
+      expect(mockScenarioEventsRepo.update).toHaveBeenCalledWith(
+        {
+          scenarioId,
+          eventId: 'event-1',
+          autoTerminationStatus: true,
+        },
+        {
+          message: 'New termination message',
+        },
+      );
     });
 
     it('should delete scenario events when autoTerminationStatus is false', async () => {

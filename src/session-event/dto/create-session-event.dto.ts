@@ -130,6 +130,9 @@ export class CreateSessionEventDto {
     type: DetectionDataDto,
     example: {
       sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+      score: 85,
+      time: 120,
+      condition: SessionEventDetectionCondition.GTE,
     },
   })
   @ValidateNested()
