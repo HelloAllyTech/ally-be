@@ -45,21 +45,24 @@ export class SessionEventService {
         id: event.sessionEvents_id,
         name: event.sessionEvents_name,
         description: event.sessionEvents_description,
-        score: event.scenarioEvents_feedbackStatus
-          ? event.scenarioEvents_score
-          : event.sessionEvents_score,
-        emoji: event.scenarioEvents_feedbackStatus
-          ? event.scenarioEvents_emoji
-          : event.sessionEvents_emoji,
-        message: event.scenarioEvents_feedbackStatus
-          ? event.scenarioEvents_message
-          : event.sessionEvents_message,
-        branchInstruction: event.scenarioEvents_feedbackStatus
-          ? event.scenarioEvents_branchInstruction
-          : event.sessionEvents_branchInstruction,
+        score: event.scenarioEvents_score ?? event.sessionEvents_score,
+        emoji:
+          (event.scenarioEvents_feedbackStatus ?? true)
+            ? event.scenarioEvents_emoji
+            : event.sessionEvents_emoji,
+        message:
+          (event.scenarioEvents_feedbackStatus ?? true)
+            ? event.scenarioEvents_message
+            : event.sessionEvents_message,
+        branchInstruction:
+          (event.scenarioEvents_branchingStatus ?? true)
+            ? (event.scenarioEvents_branchInstruction ??
+              event.sessionEvents_branchInstruction)
+            : null,
         detectionType: event.sessionEvents_detectionType,
         visibilityType: event.sessionEvents_visibilityType,
-        sentences: event.sessionEvents_sentences,
+        detectionData: event.sessionEvents_detectionData,
+        feedbackStatus: event.scenarioEvents_feedbackStatus,
         speaker: event.sessionEvents_speaker,
         createdAt: event.sessionEvents_createdAt,
         updatedAt: event.sessionEvents_updatedAt,
@@ -68,6 +71,8 @@ export class SessionEventService {
     return sessionEvents;
   }
 
+  // TODO: updateEventDto to not pass directly and select the necessary values only
+  // passing something will be saved directly to DB(even if it is not expected but is present in DB)
   async updateSessionEvent(
     id: string,
     updateEventDto: UpdateSessionEventDto,

@@ -1,7 +1,7 @@
 import { Column, DeleteDateColumn, Entity, PrimaryColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from '../../common/entity/base-without-tenant.entity';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
-import { SessionEventDetectionType } from '../enum/session-event-detection-type.enum';
+import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
 import { SessionEventSpeaker } from '../enum/session-event-speaker.enum';
 
 @Entity('session_events')
@@ -39,9 +39,6 @@ export class SessionEvents extends BaseWithoutTenantEntity {
   })
   visibilityType!: SessionEventVisibilityType;
 
-  @Column('text', { array: true, nullable: true })
-  sentences?: string[];
-
   @Column({
     enum: SessionEventSpeaker,
     default: SessionEventSpeaker.CARE_GIVER,
@@ -50,4 +47,7 @@ export class SessionEvents extends BaseWithoutTenantEntity {
 
   @DeleteDateColumn()
   deletedAt?: Date;
+
+  @Column({ type: 'jsonb', nullable: true })
+  detectionData?: Record<string, any>;
 }
