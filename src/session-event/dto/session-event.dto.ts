@@ -1,62 +1,85 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
-  IsString,
-  IsOptional,
-  IsNumber,
-  IsArray,
   IsEnum,
   IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
 import {
+  CombinationExpressionRequestType,
+  CombinationExpressionType,
   SessionEventDetectionCondition,
   SessionEventDetectionType,
 } from '../enum/session-event-detection.enum';
-import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 import { SessionEventSpeaker } from '../enum/session-event-speaker.enum';
+import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 
-export class DetectionDataDto {
-  @ApiProperty({
-    description:
-      'The sentences of the event (for SENTENCE_SIMILARITY and SEMANTIC_SIMILARITY types)',
-    example: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
-    required: false,
-  })
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  sentences?: string[];
+export class CombinationExpressionDto {
+  @ApiProperty({ required: true })
+  @IsEnum(CombinationExpressionType)
+  type!: CombinationExpressionType;
 
-  @ApiProperty({
-    description: 'The score value (for SCORE type)',
-    example: 85,
-    required: false,
-  })
-  @IsNumber()
-  @IsOptional()
-  score?: number;
+  @ApiProperty({ required: false })
+  left?: CombinationExpressionDto;
 
-  @ApiProperty({
-    description: 'The time value in seconds (for TIME type)',
-    example: 120,
-    required: false,
-  })
-  @IsNumber()
-  @IsOptional()
-  time?: number;
+  @ApiProperty({ required: false })
+  right?: CombinationExpressionDto;
 
-  @ApiProperty({
-    description: 'The operator for comparison (for SCORE and TIME types)',
-    example: SessionEventDetectionCondition.GTE,
-    required: false,
-  })
-  @IsEnum(SessionEventDetectionCondition)
-  @IsOptional()
-  condition?: SessionEventDetectionCondition;
+  @ApiProperty({ required: false })
+  operand?: CombinationExpressionDto;
+
+  @ApiProperty({ required: false })
+  id?: string;
 }
 
-export class CreateSessionEventDto {
+export class CombinationExpressionRequestDto {
+  @ApiProperty({ required: false })
+  @IsEnum(CombinationExpressionRequestType)
+  @IsOptional()
+  type?: CombinationExpressionRequestType;
+
+  @ApiProperty({ required: false })
+  @ValidateNested()
+  @Type(() => CombinationExpressionRequestDto)
+  @IsOptional()
+  left?: CombinationExpressionRequestDto;
+
+  @ApiProperty({ required: false })
+  @ValidateNested()
+  @Type(() => CombinationExpressionRequestDto)
+  @IsOptional()
+  right?: CombinationExpressionRequestDto;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  id?: string;
+}
+
+export class DetectionDataDto<T> {
+  @ApiProperty({ required: false })
+  sentences?: string[];
+
+  @ApiProperty({ required: false })
+  score?: number;
+
+  @ApiProperty({ required: false })
+  time?: number;
+
+  @ApiProperty({ required: false })
+  condition?: SessionEventDetectionCondition;
+
+  @ApiProperty({ required: false })
+  expression?: T;
+}
+
+export class DetectionDataRequestDto extends DetectionDataDto<CombinationExpressionRequestDto> {}
+
+export class SessionEventDto<T> {
   @ApiProperty({
     description: 'The name of the event',
     example: 'Event 1',
@@ -127,15 +150,24 @@ export class CreateSessionEventDto {
   @ApiProperty({
     description:
       'The detection data of the event. Structure depends on detectionType',
-    type: DetectionDataDto,
     example: {
       sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+      expression: {
+        type: CombinationExpressionRequestType.AND,
+        left: {
+          id: 'eventId-1',
+        },
+        right: {
+          type: CombinationExpressionRequestType.NOT,
+          left: { id: 'eventId-2' },
+        },
+      },
     },
   })
   @ValidateNested()
   @Type(() => DetectionDataDto)
   @IsOptional()
-  detectionData?: DetectionDataDto;
+  detectionData?: DetectionDataDto<T>;
 
   @ApiProperty({
     description: 'The speaker of the event',
@@ -146,3 +178,9 @@ export class CreateSessionEventDto {
   @IsNotEmpty()
   speaker!: SessionEventSpeaker;
 }
+
+export class CreateSessionEventDto extends SessionEventDto<CombinationExpressionRequestDto> {}
+
+export class UpdateSessionEventDto extends SessionEventDto<CombinationExpressionRequestDto> {}
+
+export class SessionEventResponseDto extends SessionEventDto<CombinationExpressionRequestDto> {}
