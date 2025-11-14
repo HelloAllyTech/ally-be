@@ -22,8 +22,23 @@ services:
       DB_PORT: "5432"
       # When running inside docker-compose, point AWS/SQS endpoints to localstack service
       AWS_ENDPOINT_URL: "http://localstack:4566"
-      # Add Comment Here
-      # Override SQS queue URLs so the app container talks to the localstack container (Docker DNS)
+      # These SQS URLs use "http://localstack:4566" instead of the DNS-style regional
+      # hostnames (e.g., sqs.us-east-1.localhost.localstack.cloud) because:
+      #
+      # 1. Inside Docker, the app container must reach LocalStack using Docker's internal DNS.
+      #    The hostname "localstack" correctly resolves to the LocalStack container, while the
+      #    public DNS-style hostnames only work on the host machine and do NOT resolve inside containers.
+      #
+      # 2. We do NOT include a region in the URL because LocalStack exposes all AWS services on a
+      #    single edge endpoint (http://localstack:4566). The AWS SDK determines the region from
+      #    the AWS_REGION environment variable, not from the URL.
+      #
+      # 3. Our environment uses "us-east-1" as the default region, which matches LocalStack’s
+      #    own default. Because the region is already provided via AWS_REGION, it does not need
+      #    to be encoded in the SQS endpoint URL.
+      #
+      # This setup keeps the configuration simple, reliable inside Docker, and consistent with
+      # how the AWS SDK resolves regions.
       SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-request-queue"
       SQS_TRANSCRIPTION_REQUEST_DLQ_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-request-dlq"
       SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-response-queue"
