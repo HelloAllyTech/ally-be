@@ -32,6 +32,8 @@ import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
+import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
+import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -57,6 +59,7 @@ describe('ScenarioSessionService', () => {
   let mockEntityManager: any;
   let permissionValidatorService: jest.Mocked<PermissionValidator>;
   let simulationCreditsService: jest.Mocked<SimulationCreditsService>;
+  let mockConfigService: any;
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
   const mockCounselorId = 123;
@@ -198,7 +201,7 @@ describe('ScenarioSessionService', () => {
       consumeCredits: jest.fn(),
     };
 
-    const mockConfigService = {
+    mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
       },
@@ -801,6 +804,60 @@ describe('ScenarioSessionService', () => {
       ).toHaveBeenCalledWith(mockCounselorId);
     });
 
+    it('should use default 60 when lifespanSecondsPerCredit is undefined', async () => {
+      // Temporarily set config to return undefined
+      const originalValue =
+        mockConfigService.simulationCredits.lifespanSecondsPerCredit;
+      mockConfigService.simulationCredits.lifespanSecondsPerCredit = undefined;
+
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        creditLimit: 100,
+        consumedCredits: 50,
+        secondsAllowedPerCredit: 60,
+      });
+
+      // With undefined lifespanSecondsPerCredit, it should use default 60
+      // 50 + (1200 / 60) = 50 + 20 = 70 < 100, so should not throw
+      const mockScenarioWithMetadata = {
+        ...mockScenario,
+        metadata: {
+          difficulty: 'intermediate',
+          tags: ['anxiety'],
+          lifeHistory: { age: 25, background: 'test' },
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const mockTokenResponse = {
+        token: 'access-token-123',
+        roomName: mockRoomId,
+        serverUrl: 'https://livekit.example.com',
+      };
+
+      scenarioService.getScenario.mockResolvedValue(mockScenarioWithMetadata);
+      sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue(
+        mockScenarioSession,
+      );
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue(mockTokenResponse);
+
+      const result = await service.startScenarioSession(
+        mockCounselorId,
+        mockStartDto,
+      );
+
+      expect(result).toBeDefined();
+      expect(result.scenarioSession).toEqual(mockScenarioSession);
+
+      // Restore original value
+      mockConfigService.simulationCredits.lifespanSecondsPerCredit =
+        originalValue;
+    });
+
     it('should successfully start scenario session when user has sufficient credits', async () => {
       const mockTokenResponse = {
         token: 'access-token-123',
@@ -1047,6 +1104,144 @@ describe('ScenarioSessionService', () => {
 
       // Restore original Date
       global.Date = originalDate;
+    });
+
+    it('should consume correct credits when remaining seconds < 30 (no additional credit)', async () => {
+      const mockScore = 85.5;
+      const startTime = new Date('2024-01-01T10:00:00Z');
+      // 2 minutes 15 seconds = 135 seconds
+      // 135 / 60 = 2 full credits, 15 remaining seconds
+      // Since 15 < 30, no additional credit
+      const endTime = new Date('2024-01-01T10:02:15Z');
+      const sessionWithDuration = {
+        ...mockScenarioSession,
+        startedAt: startTime,
+        endedAt: endTime,
+      };
+
+      const originalDate = global.Date;
+      const mockDate = jest.fn(() => endTime);
+      (global as any).Date = mockDate;
+
+      scenarioSessionRepository.findOne.mockResolvedValue(sessionWithDuration);
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(
+        mockScore,
+      );
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      const result = await service.endScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect(result).toEqual({
+        message: 'Scenario session ended successfully',
+      });
+      // 135 seconds: 2 full credits (135/60=2.25) + 0 additional (15 < 30) = 2 credits
+      expect(simulationCreditsService.consumeCredits).toHaveBeenCalledWith(
+        mockCounselorId,
+        2,
+      );
+
+      global.Date = originalDate;
+    });
+
+    it('should consume correct credits when remaining seconds >= 30 (with additional credit)', async () => {
+      const mockScore = 85.5;
+      const startTime = new Date('2024-01-01T10:00:00Z');
+      // 2 minutes 45 seconds = 165 seconds
+      // 165 / 60 = 2 full credits, 45 remaining seconds
+      // Since 45 >= 30, add 1 additional credit
+      const endTime = new Date('2024-01-01T10:02:45Z');
+      const sessionWithDuration = {
+        ...mockScenarioSession,
+        startedAt: startTime,
+        endedAt: endTime,
+      };
+
+      const originalDate = global.Date;
+      const mockDate = jest.fn(() => endTime);
+      (global as any).Date = mockDate;
+
+      scenarioSessionRepository.findOne.mockResolvedValue(sessionWithDuration);
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(
+        mockScore,
+      );
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      const result = await service.endScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect(result).toEqual({
+        message: 'Scenario session ended successfully',
+      });
+      // 165 seconds: 2 full credits (165/60=2.75) + 1 additional (45 >= 30) = 3 credits
+      expect(simulationCreditsService.consumeCredits).toHaveBeenCalledWith(
+        mockCounselorId,
+        3,
+      );
+
+      global.Date = originalDate;
+    });
+
+    it('should use default 60 when lifespanSecondsPerCredit is undefined in consumeCredits', async () => {
+      // Temporarily set config to return undefined
+      const originalValue =
+        mockConfigService.simulationCredits.lifespanSecondsPerCredit;
+      mockConfigService.simulationCredits.lifespanSecondsPerCredit = undefined;
+
+      const mockScore = 85.5;
+      const startTime = new Date('2024-01-01T10:00:00Z');
+      const endTime = new Date('2024-01-01T10:02:00Z'); // 2 minutes = 120 seconds
+      const sessionWithDuration = {
+        ...mockScenarioSession,
+        startedAt: startTime,
+        endedAt: endTime,
+      };
+
+      const originalDate = global.Date;
+      const mockDate = jest.fn(() => endTime);
+      (global as any).Date = mockDate;
+
+      scenarioSessionRepository.findOne.mockResolvedValue(sessionWithDuration);
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(
+        mockScore,
+      );
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      const result = await service.endScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect(result).toEqual({
+        message: 'Scenario session ended successfully',
+      });
+      // With undefined, should use default 60
+      // 120 seconds / 60 = 2 credits
+      expect(simulationCreditsService.consumeCredits).toHaveBeenCalledWith(
+        mockCounselorId,
+        2,
+      );
+
+      global.Date = originalDate;
+      // Restore original value
+      mockConfigService.simulationCredits.lifespanSecondsPerCredit =
+        originalValue;
     });
   });
 
@@ -1322,8 +1517,17 @@ describe('ScenarioSessionService', () => {
   describe('addScenarioSessionEvent', () => {
     it('should add scenario session event for active session', async () => {
       const mockEvent: LearnEventData = {
-        event_id: 'event-123',
         timestamp: new Date('2024-01-01T12:00:00Z'),
+        event_data: {
+          id: 'event-123',
+          name: 'Event 1',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          message: 'Hello, world!',
+          speaker: SessionEventSpeaker.CARE_GIVER,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
       };
       const mockCreatedEvent = { id: 1, eventId: 'event-123' };
       const mockActiveSession = {
@@ -1369,31 +1573,28 @@ describe('ScenarioSessionService', () => {
 
     it('should add scenario session event and update score for ended session', async () => {
       const mockEvent: LearnEventData = {
-        event_id: 'event-123',
         timestamp: new Date('2024-01-01T12:00:00Z'),
+        event_data: {
+          id: 'event-123',
+          name: 'Event 1',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          message: 'Hello, world!',
+          speaker: SessionEventSpeaker.CARE_GIVER,
+          score: 15,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
       };
       const mockCreatedEvent = { id: 1, eventId: 'event-123' };
       const mockEndedSession = {
         ...mockScenarioSession,
         status: ScenarioSessionStatus.ENDED,
       };
-      const mockSessionEvent = {
-        id: 'event-123',
-        score: 10,
-        visibilityType: SessionEventVisibilityType.ACTIVE,
-      };
 
       const mockScenarioSessionEventsRepo = {
         create: jest.fn().mockReturnValue(mockCreatedEvent),
         save: jest.fn().mockResolvedValue(mockCreatedEvent),
-      };
-
-      const mockScenarioEventsRepo = {
-        findOne: jest.fn().mockResolvedValue(null),
-      };
-
-      const mockEventRepo = {
-        findOne: jest.fn().mockResolvedValue(mockSessionEvent),
       };
 
       const mockScenarioSessionRepo = {
@@ -1404,12 +1605,7 @@ describe('ScenarioSessionService', () => {
         if (entity === ScenarioSessionEvents) {
           return mockScenarioSessionEventsRepo;
         }
-        if (entity === ScenarioEvents) {
-          return mockScenarioEventsRepo;
-        }
-        if (entity === SessionEvents) {
-          return mockEventRepo;
-        }
+
         if (entity === ScenarioSessions) {
           return mockScenarioSessionRepo;
         }
@@ -1424,16 +1620,31 @@ describe('ScenarioSessionService', () => {
 
       expect(mockScenarioSessionEventsRepo.create).toHaveBeenCalled();
       expect(mockScenarioSessionEventsRepo.save).toHaveBeenCalled();
-      expect(mockEventRepo.findOne).toHaveBeenCalledWith({
-        where: { id: mockEvent.event_id },
-      });
-      expect(mockScenarioSessionRepo.update).toHaveBeenCalled();
+      expect(mockScenarioSessionRepo.update).toHaveBeenCalledWith(
+        mockEndedSession.id,
+        { score: expect.any(Function) },
+      );
+
+      // Verify the arrow function executes correctly
+      const updateCall = mockScenarioSessionRepo.update.mock.calls[0];
+      const scoreFunction = updateCall[1].score;
+      expect(scoreFunction()).toBe('score + 15');
     });
 
-    it('should handle ended session with event that has no score', async () => {
+    it('should handle ended session with PASSIVE event (no score update)', async () => {
       const mockEvent: LearnEventData = {
-        event_id: 'event-123',
         timestamp: new Date('2024-01-01T12:00:00Z'),
+        event_data: {
+          id: 'event-123',
+          name: 'Event 1',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.PASSIVE,
+          message: 'Hello, world!',
+          speaker: SessionEventSpeaker.CARE_GIVER,
+          score: 10,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
       };
       const mockCreatedEvent = { id: 1, eventId: 'event-123' };
       const mockEndedSession = {
@@ -1446,14 +1657,6 @@ describe('ScenarioSessionService', () => {
         save: jest.fn().mockResolvedValue(mockCreatedEvent),
       };
 
-      const mockScenarioEventsRepo = {
-        findOne: jest.fn().mockResolvedValue(null),
-      };
-
-      const mockEventRepo = {
-        findOne: jest.fn().mockResolvedValue(null),
-      };
-
       const mockScenarioSessionRepo = {
         update: jest.fn().mockResolvedValue({ affected: 1 }),
       };
@@ -1462,12 +1665,7 @@ describe('ScenarioSessionService', () => {
         if (entity === ScenarioSessionEvents) {
           return mockScenarioSessionEventsRepo;
         }
-        if (entity === ScenarioEvents) {
-          return mockScenarioEventsRepo;
-        }
-        if (entity === SessionEvents) {
-          return mockEventRepo;
-        }
+
         if (entity === ScenarioSessions) {
           return mockScenarioSessionRepo;
         }
@@ -1482,11 +1680,70 @@ describe('ScenarioSessionService', () => {
 
       expect(mockScenarioSessionEventsRepo.create).toHaveBeenCalled();
       expect(mockScenarioSessionEventsRepo.save).toHaveBeenCalled();
-      expect(mockEventRepo.findOne).toHaveBeenCalledWith({
-        where: { id: mockEvent.event_id },
-      });
-      // Should not update score when sessionEvent is null
+
+      // Should not update score for PASSIVE events
       expect(mockScenarioSessionRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('should handle ended session with ACTIVE event but no score (updates with 0)', async () => {
+      const mockEvent: LearnEventData = {
+        timestamp: new Date('2024-01-01T12:00:00Z'),
+        event_data: {
+          id: 'event-124',
+          name: 'Event 2',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          message: 'Hello, world!',
+          speaker: SessionEventSpeaker.CARE_GIVER,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      };
+      const mockCreatedEvent = { id: 2, eventId: 'event-124' };
+      const mockEndedSession = {
+        ...mockScenarioSession,
+        status: ScenarioSessionStatus.ENDED,
+      };
+
+      const mockScenarioSessionEventsRepo = {
+        create: jest.fn().mockReturnValue(mockCreatedEvent),
+        save: jest.fn().mockResolvedValue(mockCreatedEvent),
+      };
+
+      const mockScenarioSessionRepo = {
+        update: jest.fn().mockResolvedValue({ affected: 1 }),
+      };
+
+      mockEntityManager.getRepository.mockImplementation((entity: any) => {
+        if (entity === ScenarioSessionEvents) {
+          return mockScenarioSessionEventsRepo;
+        }
+
+        if (entity === ScenarioSessions) {
+          return mockScenarioSessionRepo;
+        }
+        return {};
+      });
+
+      dataSource.transaction.mockImplementation(async (callback: any) =>
+        callback(mockEntityManager),
+      );
+
+      await service.addScenarioSessionEvent(mockEndedSession, mockEvent);
+
+      expect(mockScenarioSessionEventsRepo.create).toHaveBeenCalled();
+      expect(mockScenarioSessionEventsRepo.save).toHaveBeenCalled();
+
+      // Should update score with 0 when event has no score
+      expect(mockScenarioSessionRepo.update).toHaveBeenCalledWith(
+        mockEndedSession.id,
+        { score: expect.any(Function) },
+      );
+
+      // Verify the arrow function executes correctly with 0 when no score
+      const updateCall = mockScenarioSessionRepo.update.mock.calls[0];
+      const scoreFunction = updateCall[1].score;
+      expect(scoreFunction()).toBe('score + 0');
     });
   });
 
@@ -1606,6 +1863,65 @@ describe('ScenarioSessionService', () => {
       );
       expect(mockScenarioSessionDetailsRepo.save).toHaveBeenCalled();
     });
+
+    it('should use empty string when agentGoal is undefined', async () => {
+      const mockMessages = [
+        {
+          senderId: mockCounselorId,
+          content: 'Hello',
+          startSeconds: 10.5,
+          endSeconds: 15.2,
+        },
+      ];
+      const mockSummary = 'AI generated summary';
+      const mockScenarioSessionMessagesRepo = {
+        find: jest.fn().mockResolvedValue(mockMessages),
+      };
+      const mockScenarioSessionDetailsRepo = {
+        create: jest.fn().mockReturnValue({ id: 'details-1' }),
+        save: jest.fn().mockResolvedValue({ id: 'details-1' }),
+      };
+
+      mockEntityManager.getRepository
+        .mockReturnValueOnce(mockScenarioSessionMessagesRepo)
+        .mockReturnValueOnce(mockScenarioSessionDetailsRepo);
+
+      dataSource.transaction.mockImplementation(async (callback: any) =>
+        callback(mockEntityManager),
+      );
+      aiService.getScenarioSessionSummary.mockResolvedValue(mockSummary);
+
+      const mockScore = 85.5;
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(
+        mockScore,
+      );
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+
+      // Mock getScenario with no agentGoal
+      const mockScenarioForSummary = {
+        id: mockScenarioId,
+        metadata: {
+          // No agentGoal property
+        },
+      };
+      scenarioService.getScenario.mockResolvedValue(
+        mockScenarioForSummary as any,
+      );
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+
+      // Add a small delay to allow the async method to execute
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(aiService.getScenarioSessionSummary).toHaveBeenCalledWith(
+        expect.any(Array),
+        '', // Should use empty string as fallback
+      );
+    });
   });
 
   describe('previewScenario', () => {
@@ -1673,6 +1989,75 @@ describe('ScenarioSessionService', () => {
         roomName: expect.stringMatching(/^preview-\d+-/),
         participantName: mockUserId.toString(),
       });
+    });
+
+    it('should throw BadRequestException for scenario with invalid status', async () => {
+      const previewDto = { scenarioId: mockScenarioId };
+      const mockInvalidScenario = {
+        ...mockScenario,
+        status: ScenarioStatus.ARCHIVED,
+      };
+
+      scenarioService.getScenario.mockResolvedValue(mockInvalidScenario);
+
+      await expect(
+        service.previewScenario(previewDto as any, mockUserId),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'Scenario should be draft or active for preview',
+        ),
+      );
+    });
+
+    it('should throw BadRequestException for scenario with missing mandatory fields', async () => {
+      const previewDto = { scenarioId: mockScenarioId };
+      const mockIncompleteScenario = {
+        ...mockScenario,
+        status: ScenarioStatus.DRAFT,
+        title: 'Test Scenario',
+        description: 'Test Description',
+        coverImageUrl: 'https://example.com/cover.jpg',
+        metadata: {
+          agentGoal: 'Help the client',
+          // Missing other mandatory fields
+        },
+      };
+
+      scenarioService.getScenario.mockResolvedValue(mockIncompleteScenario);
+
+      await expect(
+        service.previewScenario(previewDto as any, mockUserId),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.previewScenario(previewDto as any, mockUserId),
+      ).rejects.toThrow(
+        /The following required fields are missing for preview scenario/,
+      );
+    });
+
+    it('should handle scenario with null metadata', async () => {
+      const previewDto = { scenarioId: mockScenarioId };
+      const mockScenarioWithNullMetadata = {
+        ...mockScenario,
+        status: ScenarioStatus.DRAFT,
+        title: 'Test Scenario',
+        description: 'Test Description',
+        coverImageUrl: 'https://example.com/cover.jpg',
+        metadata: null,
+      };
+
+      scenarioService.getScenario.mockResolvedValue(
+        mockScenarioWithNullMetadata as any,
+      );
+
+      await expect(
+        service.previewScenario(previewDto as any, mockUserId),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.previewScenario(previewDto as any, mockUserId),
+      ).rejects.toThrow(
+        /The following required fields are missing for preview scenario/,
+      );
     });
   });
 

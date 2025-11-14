@@ -35,6 +35,7 @@ export const validationSchema = Joi.object({
   AWS_ACCESS_KEY_ID: Joi.string().optional(),
   AWS_SECRET_ACCESS_KEY: Joi.string().optional(),
   AWS_SESSION_TOKEN: Joi.string().optional(),
+  AWS_ENDPOINT_URL: Joi.string().optional(),
 
   // SOURCE EMAIL
   SOURCE_EMAIL: Joi.string().required(),
