@@ -87,19 +87,6 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
         `Initialized poller for queue: ${queueUrl} with ${queueHandlers.length} handler(s)`,
       );
     }
-
-    // Ensure queues exist before we start polling to avoid tight error loops
-    for (const queueUrl of handlersByQueue.keys()) {
-      try {
-        // Wait up to 30s per queue for creation (sqs-setup should have created them)
-        await this.sqsService.waitForQueue(queueUrl, 30000, 1000);
-        this.logger.debug(`Confirmed existence of queue: ${queueUrl}`);
-      } catch (err: any) {
-        this.logger.warn(
-          `Timeout waiting for queue ${queueUrl}. Polling will still start but may receive QueueDoesNotExist errors until the queue is created. Error: ${err?.message || err}`,
-        );
-      }
-    }
   }
 
   private async startAllPollers(): Promise<void> {
