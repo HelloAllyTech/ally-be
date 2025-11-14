@@ -152,6 +152,9 @@ export class SessionEventDto<T> {
       'The detection data of the event. Structure depends on detectionType',
     example: {
       sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+      score: 50,
+      time: 120,
+      condition: SessionEventDetectionCondition.LT,
       expression: {
         type: CombinationExpressionRequestType.AND,
         left: {
