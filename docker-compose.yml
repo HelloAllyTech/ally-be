@@ -22,6 +22,7 @@ services:
       DB_PORT: "5432"
       # When running inside docker-compose, point AWS/SQS endpoints to localstack service
       AWS_ENDPOINT_URL: "http://localstack:4566"
+      # Add Comment Here
       # Override SQS queue URLs so the app container talks to the localstack container (Docker DNS)
       SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-request-queue"
       SQS_TRANSCRIPTION_REQUEST_DLQ_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-request-dlq"
@@ -39,6 +40,11 @@ services:
       - localstack
     networks:
       - app-network
+    volumes:
+      # 1) Mount source for live reload
+      - .:/app
+      # 2) Keep container's node_modules (Linux) instead of host's
+      - /app/node_modules
   postgres:
     image: postgres:14-alpine
     ports:
