@@ -40,6 +40,11 @@ import {
   UPLOADED_VIDEO_FILE_DURATION_LIMIT,
   UPLOADED_VIDEO_FILE_SIZE_LIMIT,
 } from '../constants/scenario-cover-video.constants';
+import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import {
+  formatAutoTerminationEventsList,
+  mapCreateScenarioRequestToEntity,
+} from '../util/scenario.util';
 
 interface ScenarioData {
   status?: ScenarioStatus;
@@ -195,23 +200,18 @@ export class ScenarioService {
     return scenario;
   }
 
-  async getAdminScenario(id: number): Promise<Scenarios> {
+  async getAdminScenario(id: number): Promise<GetAdminScenarioDto> {
     const result = await this.scenariosRepository.getAdminScenarioById(id);
 
     if (!result) {
       throw new NotFoundException('Scenario not found');
     }
 
-    // Extract name from terminationEventDetails and add to terminationEvent, then remove terminationEventDetails
-    if (
-      result &&
-      (result as any).terminationEventDetails?.name &&
-      (result as any).terminationEvent
-    ) {
-      (result as any).terminationEvent.name = (
-        result as any
-      ).terminationEventDetails.name;
-      delete (result as any).terminationEventDetails;
+    if (result?.terminationEvent?.eventId) {
+      const eventDetails = await this.sessionEventService.findSessionEventById(
+        result.terminationEvent.eventId,
+      );
+      result.terminationEvent.name = eventDetails?.name;
     }
 
     return result;
@@ -375,38 +375,7 @@ export class ScenarioService {
     const createScenarioDtos = await Promise.all(
       createScenariosDto.scenarios.map(async (scenario) => {
         await this.validateCreateScenario(scenario);
-
-        return {
-          createdBy: userId,
-          updatedBy: userId,
-          title: scenario.title,
-          scenario: '',
-          description: scenario.description,
-          coverImageUrl: scenario.coverImageUrl,
-          coverVideoUrl: scenario.coverVideoUrl,
-          status: scenario.status,
-          prompt: scenario.prompt,
-          metadata: {
-            agentGoal: scenario.agentGoal,
-            lifeHistory: scenario.lifeHistory,
-            voiceId: scenario.voiceId,
-            name: scenario.name,
-            age: scenario.age,
-            gender: scenario.gender,
-            genderIdentity: scenario.genderIdentity,
-            sexualOrientation: scenario.sexualOrientation,
-            currentLocation: scenario.currentLocation,
-            profession: scenario.profession,
-            context: scenario.context,
-            sessionBehaviorGuidelines: scenario.sessionBehaviorGuidelines,
-            coreMemories: scenario.coreMemories,
-            personality: scenario.personality,
-            startingState: scenario.startingState,
-            emotionalNeeds: scenario.emotionalNeeds,
-            tone: scenario.tone,
-            openingStatements: scenario.openingStatements,
-          },
-        };
+        return mapCreateScenarioRequestToEntity(scenario, userId);
       }),
     );
 
@@ -417,19 +386,12 @@ export class ScenarioService {
         const scenarios = scenariosRepo.create(createScenarioDtos);
         const savedScenarios = await scenariosRepo.save(scenarios);
 
-        // Map saved scenarios to their corresponding DTOs and create scenario events
+        const autoTerminationEventList = formatAutoTerminationEventsList(
+          createScenariosDto,
+          savedScenarios,
+        );
         const scenarioTerminationEvents = scenarioEventsRepo.create(
-          savedScenarios
-            .map((savedScenario, index) => {
-              const correspondingDto = createScenariosDto.scenarios[index];
-              return {
-                scenarioId: savedScenario.id,
-                eventId: correspondingDto.terminationEventId,
-                autoTerminationStatus: correspondingDto.autoTerminationStatus,
-                message: correspondingDto.terminationMessage,
-              };
-            })
-            .filter((event) => event.eventId && event.autoTerminationStatus), // Only create events if terminationEventId exists and autoTerminationStatus is true
+          autoTerminationEventList,
         );
 
         if (scenarioTerminationEvents.length > 0) {

@@ -138,6 +138,7 @@ describe('ScenarioService', () => {
 
     const mockSessionEventService = {
       findByIds: jest.fn(),
+      findSessionEventById: jest.fn(),
     };
 
     const mockScenarioVoiceRepository = {
@@ -2286,15 +2287,16 @@ describe('ScenarioService', () => {
           autoTerminationStatus: true,
           message: 'Termination message',
         },
-        terminationEventDetails: {
-          id: 'event-1',
-          name: 'Termination Event Name',
-        },
       };
 
       scenariosRepository.getAdminScenarioById.mockResolvedValue(
         scenarioWithTerminationEvent,
       );
+
+      sessionEventService.findSessionEventById.mockResolvedValue({
+        id: 'event-1',
+        name: 'Termination Event Name',
+      } as any);
 
       const result = await service.getAdminScenario(scenarioId);
 
@@ -2304,6 +2306,9 @@ describe('ScenarioService', () => {
       expect((result as any).terminationEventDetails).toBeUndefined();
       expect(scenariosRepository.getAdminScenarioById).toHaveBeenCalledWith(
         scenarioId,
+      );
+      expect(sessionEventService.findSessionEventById).toHaveBeenCalledWith(
+        'event-1',
       );
     });
 
@@ -2321,10 +2326,15 @@ describe('ScenarioService', () => {
         scenarioWithoutDetails,
       );
 
+      sessionEventService.findSessionEventById.mockResolvedValue(null);
+
       const result = await service.getAdminScenario(scenarioId);
 
       expect((result as any).terminationEvent.name).toBeUndefined();
       expect((result as any).terminationEventDetails).toBeUndefined();
+      expect(sessionEventService.findSessionEventById).toHaveBeenCalledWith(
+        'event-1',
+      );
     });
 
     it('should not modify terminationEvent when terminationEvent is missing', async () => {
