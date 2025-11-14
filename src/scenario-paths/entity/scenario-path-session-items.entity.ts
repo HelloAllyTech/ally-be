@@ -19,7 +19,7 @@ export class ScenarioPathSessionItem extends BaseWithoutTenantEntity {
   userId!: number;
 
   @Column()
-  scenarioPathId!: string;
+  scenarioPathItemId!: string;
 
   @Column({
     enum: SessionItemStatus,
