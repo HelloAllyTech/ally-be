@@ -93,6 +93,8 @@ Configure log level via `LOG_LEVEL` environment variable:
 
 ## 🧭 Getting Started
 
+### Docker Setup
+
 ### Step 1: Clone the Repository
 
 ```bash
@@ -100,13 +102,7 @@ git clone <repository-url>
 cd ally-be
 ```
 
-### Step 2: Install Dependencies
-
-```bash
-npm install
-```
-
-### Step 3: Configure Environment
+### Step 2: Configure Environment
 
 1. Copy the sample environment file:
    ```bash
@@ -116,7 +112,7 @@ npm install
 
 2. Edit `docker.env` and `.env` and fill in all required variables (see [Environment Configuration](#-environment-configuration) above)
 
-### Step 4: Start Docker Services
+### Step 3: Start Docker Services
 
 Start PostgreSQL, Redis, LocalStack and SQS using Docker Compose:
 
@@ -127,24 +123,39 @@ make sure the SQS URLs in your .env file match the ones shown in the Docker outp
 Note: The app in Docker will not start automatically at the moment — it requires manual execution. The steps for running it manually are detailed in the following sections.
 
 
-### Step 5: Run Database Migrations
+### Step 4: Run Database Migrations
 
 ```bash
 npm run migration:run
 ```
 
-### Step 6: Start the Application
+The application will be available at:
+- **Swagger Docs**: http://localhost:8001/api-docs
+- **Health Check**: http://localhost:8001/api/health
 
-#### Development Mode (with hot-reload)
+### Alternative Setup (instead of using the app service in Docker Compose)
+
+### Step 1: Install Dependencies
+
+```bash
+npm install
+```
+
+### Step 2: Run Database Migrations
+
+```bash
+npm run migration:run
+```
+
+### Step 3: Start the Application
 
 ```bash
 npm run start:dev
 ```
 
 The application will be available at:
-- **API**: http://localhost:8000/api
-- **Swagger Docs**: http://localhost:8000/api-docs
-- **Health Check**: http://localhost:8000/api/health
+- **Swagger Docs**: http://localhost:8001/api-docs
+- **Health Check**: http://localhost:8001/api/health
 
 #### Production Mode
 
