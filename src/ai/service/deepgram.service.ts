@@ -392,7 +392,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
 
     try {
       this.processPendingAudioQueue(session, clientSession);
-      clientSession.liveClient.send(audio as unknown as Blob);
+      clientSession.liveClient.send(audio);
     } catch (error) {
       this.logger.error(
         `Failed to send audio for userId: ${session.userId} | sessionId: ${session.id}`,
@@ -409,7 +409,7 @@ export class DeepgramService implements ITranscriptionService, OnModuleDestroy {
     const audioQueue = this.pendingAudioQueue.get(session.id);
     if (audioQueue) {
       for (const audio of audioQueue) {
-        clientSession.liveClient.send(audio as unknown as Blob);
+        clientSession.liveClient.send(audio);
       }
       this.pendingAudioQueue.delete(session.id);
     }
