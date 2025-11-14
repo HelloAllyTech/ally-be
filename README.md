@@ -133,7 +133,7 @@ The application will be available at:
 - **Swagger Docs**: http://localhost:8001/api-docs
 - **Health Check**: http://localhost:8001/api/health
 
-### Alternative Setup
+### Alternative Setup (instead of using the app service in Docker Compose)
 
 ### Step 1: Install Dependencies
 
