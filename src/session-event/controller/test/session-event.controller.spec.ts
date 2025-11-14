@@ -10,6 +10,9 @@ import { PermissionsService } from '../../../authorization/service/permissions.s
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection-type.enum';
+import { SessionEventSortBy } from 'src/session-event/enum/session-event-sort-by.enum';
+import { SortOrder } from 'src/chat/dto/call-log.request.dto';
+import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
 
 describe('SessionEventController', () => {
   let controller: SessionEventController;
@@ -27,16 +30,20 @@ describe('SessionEventController', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
+    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockCreateSessionEventDto: CreateSessionEventDto = {
-    id: 'event-1',
     name: 'Test Event',
     description: 'Test event description',
     score: 85,
     emoji: '👍',
     message: 'Great job!',
     branchInstruction: 'Continue with next step',
+    detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+    visibilityType: SessionEventVisibilityType.ACTIVE,
+    sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockCreateSessionEventsDto: CreateSessionEventsDto = {
@@ -56,6 +63,8 @@ describe('SessionEventController', () => {
     const mockSessionEventService = {
       createSessionEvents: jest.fn(),
       updateSessionEvent: jest.fn(),
+      getAllSessionEvents: jest.fn(),
+      deleteSessionEvents: jest.fn(),
     };
 
     const mockPermissionsService = {
@@ -127,7 +136,6 @@ describe('SessionEventController', () => {
           mockCreateSessionEventDto,
           {
             ...mockCreateSessionEventDto,
-            id: 'event-2',
             name: 'Second Event',
           },
         ],
@@ -163,12 +171,15 @@ describe('SessionEventController', () => {
 
     it('should create session events with minimal required fields', async () => {
       const minimalEventDto: CreateSessionEventDto = {
-        id: 'minimal-event',
         name: 'Minimal Event',
         description: 'Minimal description',
         score: 50,
         emoji: '⭐',
         message: 'Basic message',
+        detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+        visibilityType: SessionEventVisibilityType.ACTIVE,
+        sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const minimalEventsDto: CreateSessionEventsDto = {
         events: [minimalEventDto],
@@ -200,13 +211,16 @@ describe('SessionEventController', () => {
 
     it('should create session events with all optional fields', async () => {
       const fullEventDto: CreateSessionEventDto = {
-        id: 'full-event',
         name: 'Full Event',
         description: 'Complete description',
         score: 100,
         emoji: '🏆',
         message: 'Perfect execution!',
         branchInstruction: 'Proceed to final stage',
+        detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+        visibilityType: SessionEventVisibilityType.ACTIVE,
+        sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const fullEventsDto: CreateSessionEventsDto = {
         events: [fullEventDto],
@@ -255,13 +269,12 @@ describe('SessionEventController', () => {
       const largeEventsDto: CreateSessionEventsDto = {
         events: Array.from({ length: 50 }, (_, i) => ({
           ...mockCreateSessionEventDto,
-          id: `event-${i + 1}`,
           name: `Event ${i + 1}`,
         })),
       };
-      const expectedResult = largeEventsDto.events.map((event) => ({
+      const expectedResult = largeEventsDto.events.map((event, i) => ({
         ...mockSessionEvent,
-        id: event.id,
+        id: `event-${i + 1}`,
         name: event.name,
       }));
 
@@ -278,9 +291,9 @@ describe('SessionEventController', () => {
     it('should create events with different score ranges', async () => {
       const scoreVariationsDto: CreateSessionEventsDto = {
         events: [
-          { ...mockCreateSessionEventDto, id: 'low-score', score: 0 },
-          { ...mockCreateSessionEventDto, id: 'mid-score', score: 50 },
-          { ...mockCreateSessionEventDto, id: 'high-score', score: 100 },
+          { ...mockCreateSessionEventDto, score: 0 },
+          { ...mockCreateSessionEventDto, score: 50 },
+          { ...mockCreateSessionEventDto, score: 100 },
         ],
       };
       const expectedResult = [
@@ -304,7 +317,6 @@ describe('SessionEventController', () => {
         events: [
           {
             ...mockCreateSessionEventDto,
-            id: 'special-chars-event',
             name: 'Event with "quotes" & symbols',
             description: 'Description with émojis 🎉 and spëcial chars',
             emoji: '🌟',
@@ -582,6 +594,311 @@ describe('SessionEventController', () => {
         unicodeUpdate,
       );
       expect(result).toBe(true);
+    });
+  });
+
+  describe('getAllSessionEvents', () => {
+    const mockResult = { data: [mockSessionEvent] };
+
+    it('should get all session events without filters', async () => {
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents();
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should get session events with visibility type filter', async () => {
+      const visibilityType = SessionEventVisibilityType.ACTIVE;
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(visibilityType);
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        visibilityType,
+        undefined,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should get session events with searchName filter', async () => {
+      const searchName = 'Test Event';
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(
+        undefined,
+        searchName,
+      );
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        searchName,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should get session events with pagination parameters', async () => {
+      const limit = 10;
+      const offset = 5;
+      const sortBy = SessionEventSortBy.NAME;
+      const order = SortOrder.ASC;
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(
+        undefined,
+        undefined,
+        limit,
+        offset,
+        sortBy,
+        order,
+      );
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        {
+          limit,
+          offset,
+          sortBy,
+          order,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should get session events with all parameters', async () => {
+      const visibilityType = SessionEventVisibilityType.PASSIVE;
+      const searchName = 'Event Name';
+      const limit = 20;
+      const offset = 10;
+      const sortBy = SessionEventSortBy.SCORE;
+      const order = SortOrder.DESC;
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(
+        visibilityType,
+        searchName,
+        limit,
+        offset,
+        sortBy,
+        order,
+      );
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        visibilityType,
+        searchName,
+        {
+          limit,
+          offset,
+          sortBy,
+          order,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should handle empty result from service', async () => {
+      const emptyResult = { data: [] };
+      sessionEventService.getAllSessionEvents.mockResolvedValue(emptyResult);
+
+      const result = await controller.getAllSessionEvents();
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+      expect(result).toEqual(emptyResult);
+    });
+
+    it('should handle service error', async () => {
+      const error = new Error('Service error');
+      sessionEventService.getAllSessionEvents.mockRejectedValue(error);
+
+      await expect(controller.getAllSessionEvents()).rejects.toThrow(
+        'Service error',
+      );
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+    });
+
+    it('should use default sort parameters when not provided', async () => {
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(
+        SessionEventVisibilityType.ACTIVE,
+        undefined,
+        10,
+        0,
+      );
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        SessionEventVisibilityType.ACTIVE,
+        undefined,
+        {
+          limit: 10,
+          offset: 0,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should handle zero limit and offset', async () => {
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(
+        undefined,
+        undefined,
+        0,
+        0,
+        SessionEventSortBy.NAME,
+        SortOrder.ASC,
+      );
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        {
+          limit: 0,
+          offset: 0,
+          sortBy: SessionEventSortBy.NAME,
+          order: SortOrder.ASC,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should handle visibility type and searchName together', async () => {
+      const visibilityType = SessionEventVisibilityType.ACTIVE;
+      const searchName = 'Test';
+      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+
+      const result = await controller.getAllSessionEvents(
+        visibilityType,
+        searchName,
+      );
+
+      expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
+        visibilityType,
+        searchName,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: SessionEventSortBy.CREATED_AT,
+          order: SortOrder.DESC,
+        },
+      );
+      expect(result).toEqual(mockResult);
+    });
+  });
+
+  describe('deleteSessionEvents', () => {
+    it('should delete session events and return true', async () => {
+      const deleteDto = {
+        eventIds: ['event-1', 'event-2', 'event-3'],
+      };
+      sessionEventService.deleteSessionEvents.mockResolvedValue(true);
+
+      const result = await controller.deleteSessionEvents(deleteDto);
+
+      expect(sessionEventService.deleteSessionEvents).toHaveBeenCalledWith(
+        deleteDto.eventIds,
+      );
+      expect(result).toBe(true);
+    });
+
+    it('should return false when no events are deleted', async () => {
+      const deleteDto = {
+        eventIds: ['non-existent-id'],
+      };
+      sessionEventService.deleteSessionEvents.mockResolvedValue(false);
+
+      const result = await controller.deleteSessionEvents(deleteDto);
+
+      expect(sessionEventService.deleteSessionEvents).toHaveBeenCalledWith(
+        deleteDto.eventIds,
+      );
+      expect(result).toBe(false);
+    });
+
+    it('should handle single event deletion', async () => {
+      const deleteDto = {
+        eventIds: ['event-1'],
+      };
+      sessionEventService.deleteSessionEvents.mockResolvedValue(true);
+
+      const result = await controller.deleteSessionEvents(deleteDto);
+
+      expect(sessionEventService.deleteSessionEvents).toHaveBeenCalledWith(
+        deleteDto.eventIds,
+      );
+      expect(result).toBe(true);
+    });
+
+    it('should handle empty event ids array', async () => {
+      const deleteDto = {
+        eventIds: [],
+      };
+      sessionEventService.deleteSessionEvents.mockResolvedValue(false);
+
+      const result = await controller.deleteSessionEvents(deleteDto);
+
+      expect(sessionEventService.deleteSessionEvents).toHaveBeenCalledWith(
+        deleteDto.eventIds,
+      );
+      expect(result).toBe(false);
+    });
+
+    it('should handle service error during deletion', async () => {
+      const deleteDto = {
+        eventIds: ['event-1', 'event-2'],
+      };
+      const error = new Error('Deletion failed');
+      sessionEventService.deleteSessionEvents.mockRejectedValue(error);
+
+      await expect(controller.deleteSessionEvents(deleteDto)).rejects.toThrow(
+        'Deletion failed',
+      );
+      expect(sessionEventService.deleteSessionEvents).toHaveBeenCalledWith(
+        deleteDto.eventIds,
+      );
     });
   });
 });

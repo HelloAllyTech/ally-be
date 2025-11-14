@@ -13,9 +13,10 @@ import {
   UserRole,
   PLACEHOLDER_CHAT_ID,
 } from '../../../common/constants/user.constants';
-import { MessageBrokerChannel } from '../../../common/constants/message-broker.constants';
-import { Message } from '../../../common/entities/message.entity';
+import { MessageBrokerChannel } from '../../../message-broker/constants/message-broker.constants';
+import { Message } from '../../../chat/entity/message.entity';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
+import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -47,6 +48,10 @@ describe('CloudTelephonyGateway', () => {
   let mockServer: jest.Mocked<Server>;
   let mockSocket: jest.Mocked<Socket>;
   let mockLogger: any;
+
+  const mockPermissionValidator = {
+    validatePermissions: jest.fn().mockResolvedValue(true),
+  } as any;
 
   const mockJwtPayload = {
     sub: '123',
@@ -144,6 +149,10 @@ describe('CloudTelephonyGateway', () => {
           provide: BroadcastMessageService,
           useValue: mockBroadcastMessageService,
         },
+        {
+          provide: PermissionValidator,
+          useValue: mockPermissionValidator,
+        },
       ],
     }).compile();
 
@@ -156,23 +165,42 @@ describe('CloudTelephonyGateway', () => {
 
     // Set up the WebSocket server mock
     gateway.server = mockServer;
+
+    // Set up default mocks for ChatService (will be set up in individual tests as needed)
+    // chatService mocks are set up in individual tests
+
+    // Set up default mocks for PermissionValidator (already set in mock definition)
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+
+    // Reset PermissionValidator mock to return true by default (user has permission)
+    mockPermissionValidator.validatePermissions.mockResolvedValue(true);
   });
 
   describe('handleConnection', () => {
     it('should authenticate client and set up session on successful connection', async () => {
       jwtService.verifyAsync.mockResolvedValue(mockJwtPayload);
 
+      // Mock permission validation to return true (user has permission)
+      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
+
+      // Call handleConnection
       await gateway.handleConnection(mockSocket);
 
+      // Verify JWT verification was called
       expect(jwtService.verifyAsync).toHaveBeenCalledWith('valid-jwt-token', {
         secret: 'test-secret',
       });
+
+      // Verify socket joined the room
       expect(mockSocket.join).toHaveBeenCalledWith('user-123');
+
+      // Verify session was created
       expect(gateway['sessions']['socket-123']).toEqual(mockSession);
+
+      // Verify log messages
       expect(mockLogger.info).toHaveBeenCalledWith(
         'Client connected to cloud telephony chat: socket-123',
       );
@@ -204,11 +232,14 @@ describe('CloudTelephonyGateway', () => {
       expect(mockSocket.disconnect).toHaveBeenCalled();
     });
 
-    it('should disconnect client when user is not a counselor', async () => {
+    it('should disconnect client when user does not have required permission', async () => {
       jwtService.verifyAsync.mockResolvedValue({
         ...mockJwtPayload,
         role: UserRole.CLIENT,
       });
+
+      // Mock permission validation to return false (user does NOT have permission)
+      mockPermissionValidator.validatePermissions.mockResolvedValue(false);
 
       await gateway.handleConnection(mockSocket);
 
@@ -372,7 +403,6 @@ describe('CloudTelephonyGateway', () => {
 
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '123',
-        UserRole.COUNSELOR,
         'tenant-123',
       );
       expect(chatService.pauseOrResumeChat).toHaveBeenCalledWith(chatId, true);
@@ -406,7 +436,6 @@ describe('CloudTelephonyGateway', () => {
 
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '123',
-        UserRole.COUNSELOR,
         'tenant-123',
       );
       expect(chatService.pauseOrResumeChat).toHaveBeenCalledWith(chatId, false);
@@ -465,7 +494,6 @@ describe('CloudTelephonyGateway', () => {
 
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         '123',
-        UserRole.COUNSELOR,
         'tenant-123',
       );
     });
@@ -475,6 +503,9 @@ describe('CloudTelephonyGateway', () => {
     it('should handle complete connection lifecycle', async () => {
       // Mock successful authentication
       jwtService.verifyAsync.mockResolvedValue(mockJwtPayload);
+
+      // Mock permission validation to return true (user has permission)
+      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
 
       // Handle connection
       await gateway.handleConnection(mockSocket);

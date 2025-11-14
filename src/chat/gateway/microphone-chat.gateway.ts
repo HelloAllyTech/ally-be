@@ -27,13 +27,14 @@ import {
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
-import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
-import { Message, MessageType } from '../../common/entities/message.entity';
-import { ChatStatus } from '../../common/entities/chat.entity';
+import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
+import { Message, MessageType } from '../entity/message.entity';
+import { ChatStatus } from '../entity/chat.entity';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { WebSocketAuthMiddleware } from 'src/auth/middlewares/ws-auth.middleware';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -57,6 +58,7 @@ export class MicrophoneChatGateway
     private publisher: MessageBrokerService,
     private broadcastMessageService: BroadcastMessageService,
     private webSocketAuthMiddleware: WebSocketAuthMiddleware,
+    private permissionValidator: PermissionValidator,
   ) {}
 
   @WebSocketServer() server!: Server;
@@ -417,7 +419,6 @@ export class MicrophoneChatGateway
   setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
-      session.role,
       session.tenantId,
     );
   }

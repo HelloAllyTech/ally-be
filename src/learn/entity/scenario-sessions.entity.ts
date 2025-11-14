@@ -1,5 +1,5 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
-import { BaseEntity } from 'src/common/entities/base.entity';
+import { BaseEntity } from 'src/common/entity/base.entity';
 import { ScenarioSessionStatus } from '../enum/scenario-session-status.enum';
 
 @Index('scenario_sessions_counselor_id_idx', ['counselorId'])

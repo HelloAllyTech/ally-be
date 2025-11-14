@@ -7,8 +7,8 @@ import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
-import { RefreshToken } from '../common/entities/refresh-token.entity';
-import { User } from '../common/entities/user.entity';
+import { RefreshToken } from './entity/refresh-token.entity';
+import { User } from '../user/entity/user.entity';
 
 @Global()
 @Module({

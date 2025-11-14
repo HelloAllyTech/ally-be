@@ -36,11 +36,11 @@ export class S3Service {
     const s3Config: S3ClientConfig = {
       region,
     };
-    if (accessKeyId && secretAccessKey && sessionToken) {
+    if (accessKeyId && secretAccessKey) {
       s3Config.credentials = {
         accessKeyId,
         secretAccessKey,
-        sessionToken,
+        ...(sessionToken && { sessionToken }),
       };
     }
     this.s3 = new S3Client(s3Config);
@@ -190,5 +190,19 @@ export class S3Service {
     } catch (error) {
       throw new Error(`Failed to get head object: ${error.message}`);
     }
+  }
+
+  sanitizeFileName(fileName: string, maxLength: number = 128): string {
+    // Remove any path traversal attempts and dangerous characters
+    return fileName
+      .trim()
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/[^a-zA-Z0-9._-]/g, '') // Remove special characters
+      .replace(/\.+/g, '.') // Replace multiple dots with single dot
+      .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
+      .replace(/\.{2,}/g, '.') // Prevent directory traversal
+      .replace(/^\.+/, '') // Remove leading dots
+      .toLowerCase()
+      .substring(0, maxLength); // Limit length
   }
 }

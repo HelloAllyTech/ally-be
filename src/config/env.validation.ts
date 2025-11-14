@@ -36,6 +36,9 @@ export const validationSchema = Joi.object({
   AWS_SECRET_ACCESS_KEY: Joi.string().optional(),
   AWS_SESSION_TOKEN: Joi.string().optional(),
 
+  // SOURCE EMAIL
+  SOURCE_EMAIL: Joi.string().required(),
+
   // SQS
   SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: Joi.string().required(),
   SQS_TRANSCRIPTION_REQUEST_DLQ_URL: Joi.string().required(),
@@ -68,8 +71,14 @@ export const validationSchema = Joi.object({
   LIVEKIT_API_SECRET: Joi.string().required(),
   LIVEKIT_URL: Joi.string().required(),
 
+  SIMULATION_SESSION_SECONDS_PER_CREDIT: Joi.number().required(),
+
   SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: Joi.string().required(),
 
   // CORS ORIGINS
   ALLOWED_ORIGINS: Joi.string().required(),
+
+  APP_BASE_URL: Joi.string().required(),
+
+  LEARN_MEDIA_PUBLIC_S3_BUCKET: Joi.string().required(),
 });

@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CloudTelephonyRepository } from '../cloud-telephony.repository';
-import { CloudTelephonyIntegration } from '../../../common/entities/cloud-telephony-integration.entity';
+import { CloudTelephonyIntegration } from '../../entity/cloud-telephony-integration.entity';
 import { CloudTelephonyProvider } from '../../../common/constants/chat.constants';
 import { IntegrationStatus } from '../../type/cloud-telephony.type';
 

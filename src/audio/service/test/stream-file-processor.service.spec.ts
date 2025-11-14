@@ -1,3 +1,9 @@
+// CRITICAL: Mock bcrypt FIRST to prevent import issues
+jest.mock('bcrypt', () => ({
+  compare: jest.fn(),
+  hash: jest.fn(),
+}));
+
 // CRITICAL: Mock @nestjs/typeorm FIRST
 jest.mock('@nestjs/typeorm', () => ({
   InjectRepository: jest.fn(() => jest.fn()),
@@ -9,14 +15,14 @@ jest.mock('@nestjs/typeorm', () => ({
 }));
 
 // Mock entity files that are actually imported - adjust paths based on your project structure
-jest.mock('../../../common/entities/base.entity', () => ({
+jest.mock('../../../common/entity/base.entity', () => ({
   BaseEntity: class BaseEntity {
     createdAt?: Date;
     updatedAt?: Date;
   },
 }));
 
-jest.mock('../../../common/entities/chat.entity', () => ({
+jest.mock('../../../chat/entity/chat.entity', () => ({
   ChatStatus: {
     STARTED: 'STARTED',
     ENDED: 'ENDED',
@@ -32,7 +38,7 @@ jest.mock('../../../common/entities/chat.entity', () => ({
   Chat: class Chat {},
 }));
 
-jest.mock('../../../common/entities/chat-audio-uploads.entity', () => ({
+jest.mock('../../../audio/entity/chat-audio-uploads.entity', () => ({
   ChatAudioUploadStatus: {
     PENDING: 'PENDING',
     SUCCESS: 'SUCCESS',
@@ -166,7 +172,7 @@ import {
 import {
   ChatStatus,
   ChatSummaryStatus,
-} from '../../../common/entities/chat.entity';
+} from '../../../chat/entity/chat.entity';
 import {
   PLACEHOLDER_CHAT_ID,
   UserRole,
@@ -325,7 +331,6 @@ describe('StreamFileProcessorService', () => {
       service.setAuthContext(mockSession);
       expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
         mockSession.userId.toString(),
-        mockSession.role,
         mockSession.tenantId,
       );
     });

@@ -4,7 +4,11 @@ import { Reflector } from '@nestjs/core';
 import { SettingsController } from '../settings.controller';
 import { SettingsService } from '../../service/settings.service';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
+import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
+import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { ChatTypes } from '../../../common/constants/chat.constants';
+import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
 
 describe('SettingsController', () => {
   let controller: SettingsController;
@@ -23,15 +27,33 @@ describe('SettingsController', () => {
 
   const allowGuard: CanActivate = { canActivate: () => true };
 
+  const mockPermissionsService = {
+    getUserPermissions: jest
+      .fn()
+      .mockResolvedValue([
+        PERMISSIONS.VIEW_SETTINGS_SUMMARY_FIELDS,
+        PERMISSIONS.EDIT_SETTINGS_SUMMARY_FIELDS,
+        PERMISSIONS.VIEW_SETTINGS_NUDGE_STATUS,
+        PERMISSIONS.EDIT_SETTINGS_NUDGE_STATUS,
+        PERMISSIONS.VIEW_SETTINGS_CHAT_TYPES,
+        PERMISSIONS.EDIT_SETTINGS_CHAT_TYPES,
+      ]),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SettingsController],
       providers: [
         { provide: SettingsService, useValue: mockService },
+        { provide: PermissionsService, useValue: mockPermissionsService },
         Reflector,
       ],
     })
       .overrideGuard(RolesGuard)
+      .useValue(allowGuard)
+      .overrideGuard(PermissionsGuard)
+      .useValue(allowGuard)
+      .overrideGuard(JwtAuthGuard)
       .useValue(allowGuard)
       .compile();
 
@@ -44,13 +66,26 @@ describe('SettingsController', () => {
   });
 
   describe('getSummaryFields', () => {
-    it('should return summary fields configuration', async () => {
+    it('should return summary fields configuration without DTO', async () => {
       const mockFields = ['callId', 'callDuration', 'clientId'] as any;
       service.getSummaryFieldsConfig.mockResolvedValue(mockFields);
 
       const result = await controller.getSummaryFields();
 
-      expect(service.getSummaryFieldsConfig).toHaveBeenCalledTimes(1);
+      expect(service.getSummaryFieldsConfig).toHaveBeenCalledWith({});
+      expect(result).toEqual(mockFields);
+    });
+
+    it('should return summary fields configuration with DTO', async () => {
+      const mockFields = ['callId', 'callDuration', 'clientId'] as any;
+      const getSummaryFieldsDto = { tenantId: 'test-tenant-id' };
+      service.getSummaryFieldsConfig.mockResolvedValue(mockFields);
+
+      const result = await controller.getSummaryFields(getSummaryFieldsDto);
+
+      expect(service.getSummaryFieldsConfig).toHaveBeenCalledWith(
+        getSummaryFieldsDto,
+      );
       expect(result).toEqual(mockFields);
     });
 
@@ -64,7 +99,10 @@ describe('SettingsController', () => {
 
   describe('updateSummaryFields', () => {
     it('should update summary fields with valid hidden fields', async () => {
-      const requestBody = { hiddenFields: ['callId', 'callDuration'] };
+      const requestBody = {
+        hiddenFields: ['callId', 'callDuration'],
+        tenantId: 'tenant-id',
+      };
       const mockResult = {
         id: 'pref-id',
         name: 'SUMMARY_HIDDEN_FIELDS',
@@ -79,14 +117,12 @@ describe('SettingsController', () => {
 
       const result = await controller.updateSummaryFields(requestBody);
 
-      expect(service.updateSummaryFields).toHaveBeenCalledWith(
-        requestBody.hiddenFields,
-      );
+      expect(service.updateSummaryFields).toHaveBeenCalledWith(requestBody);
       expect(result).toEqual(mockResult);
     });
 
     it('should update summary fields with empty hidden fields array', async () => {
-      const requestBody = { hiddenFields: [] };
+      const requestBody = { hiddenFields: [], tenantId: 'tenant-id' };
       const mockResult = {
         id: 'pref-id',
         name: 'SUMMARY_HIDDEN_FIELDS',
@@ -101,12 +137,15 @@ describe('SettingsController', () => {
 
       const result = await controller.updateSummaryFields(requestBody);
 
-      expect(service.updateSummaryFields).toHaveBeenCalledWith([]);
+      expect(service.updateSummaryFields).toHaveBeenCalledWith(requestBody);
       expect(result).toEqual(mockResult);
     });
 
     it('should handle service errors', async () => {
-      const requestBody = { hiddenFields: ['invalidField'] };
+      const requestBody = {
+        hiddenFields: ['invalidField'],
+        tenantId: 'tenant-id',
+      };
       const error = new Error('Invalid fields');
       service.updateSummaryFields.mockRejectedValue(error);
 
@@ -228,50 +267,9 @@ describe('SettingsController', () => {
 
   describe('updateHiddenChatTypes', () => {
     it('should update hidden chat types with valid types', async () => {
-      const requestBody = { hiddenChatTypes: [ChatTypes.MICROPHONE_CHAT] };
-      const mockResult = {
-        id: 'pref-id',
-        name: 'HIDDEN_CHAT_TYPES',
-        relatedId: 'tenant-id',
-        relatedEntity: 'ORGANIZATION',
-        value: requestBody.hiddenChatTypes,
-        tenantId: 'tenant-id',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any;
-      service.updateChatTypes.mockResolvedValue(mockResult);
-
-      const result = await controller.updateHiddenChatTypes(requestBody);
-
-      expect(service.updateChatTypes).toHaveBeenCalledWith(
-        requestBody.hiddenChatTypes,
-      );
-      expect(result).toEqual(mockResult);
-    });
-
-    it('should update hidden chat types with empty array', async () => {
-      const requestBody = { hiddenChatTypes: [] };
-      const mockResult = {
-        id: 'pref-id',
-        name: 'HIDDEN_CHAT_TYPES',
-        relatedId: 'tenant-id',
-        relatedEntity: 'ORGANIZATION',
-        value: [],
-        tenantId: 'tenant-id',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any;
-      service.updateChatTypes.mockResolvedValue(mockResult);
-
-      const result = await controller.updateHiddenChatTypes(requestBody);
-
-      expect(service.updateChatTypes).toHaveBeenCalledWith([]);
-      expect(result).toEqual(mockResult);
-    });
-
-    it('should update hidden chat types with multiple types', async () => {
       const requestBody = {
-        hiddenChatTypes: [ChatTypes.MICROPHONE_CHAT, ChatTypes.WEBRTC_CHAT],
+        hiddenChatTypes: [ChatTypes.MICROPHONE_CHAT],
+        tenantId: 'tenant-id',
       };
       const mockResult = {
         id: 'pref-id',
@@ -287,14 +285,58 @@ describe('SettingsController', () => {
 
       const result = await controller.updateHiddenChatTypes(requestBody);
 
-      expect(service.updateChatTypes).toHaveBeenCalledWith(
-        requestBody.hiddenChatTypes,
-      );
+      expect(service.updateChatTypes).toHaveBeenCalledWith(requestBody);
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should update hidden chat types with empty array', async () => {
+      const requestBody = { hiddenChatTypes: [], tenantId: 'tenant-id' };
+      const mockResult = {
+        id: 'pref-id',
+        name: 'HIDDEN_CHAT_TYPES',
+        relatedId: 'tenant-id',
+        relatedEntity: 'ORGANIZATION',
+        value: [],
+        tenantId: 'tenant-id',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any;
+      service.updateChatTypes.mockResolvedValue(mockResult);
+
+      const result = await controller.updateHiddenChatTypes(requestBody);
+
+      expect(service.updateChatTypes).toHaveBeenCalledWith(requestBody);
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should update hidden chat types with multiple types', async () => {
+      const requestBody = {
+        hiddenChatTypes: [ChatTypes.MICROPHONE_CHAT, ChatTypes.WEBRTC_CHAT],
+        tenantId: 'tenant-id',
+      };
+      const mockResult = {
+        id: 'pref-id',
+        name: 'HIDDEN_CHAT_TYPES',
+        relatedId: 'tenant-id',
+        relatedEntity: 'ORGANIZATION',
+        value: requestBody.hiddenChatTypes,
+        tenantId: 'tenant-id',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any;
+      service.updateChatTypes.mockResolvedValue(mockResult);
+
+      const result = await controller.updateHiddenChatTypes(requestBody);
+
+      expect(service.updateChatTypes).toHaveBeenCalledWith(requestBody);
       expect(result).toEqual(mockResult);
     });
 
     it('should handle service errors', async () => {
-      const requestBody = { hiddenChatTypes: ['invalidType'] };
+      const requestBody = {
+        hiddenChatTypes: ['invalidType'],
+        tenantId: 'tenant-id',
+      };
       const error = new Error('Invalid chat types');
       service.updateChatTypes.mockRejectedValue(error);
 

@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChatRepository } from '../chat.repository';
 import { DataSource, EntityManager, Repository } from 'typeorm';
-import { Chat } from '../../../common/entities/chat.entity';
+import { Chat } from '../../entity/chat.entity';
 import { UpdateChatInput } from '../../type/chat.type';
-import { ChatSummaryStatus } from '../../../common/entities/chat.entity';
+import { ChatSummaryStatus } from '../../entity/chat.entity';
 
 describe('ChatRepository', () => {
   let repository: ChatRepository;

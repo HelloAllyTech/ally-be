@@ -6,7 +6,7 @@ import { ReferenceDocumentService } from '../reference-document.service';
 import {
   DocumentUploadStatus,
   ReferenceDocument,
-} from 'src/common/entities/reference-document.entity';
+} from '../../entity/reference-document.entity';
 import { AiService } from 'src/ai/service/ai.service';
 import {
   SearchOperationFailedException,
@@ -18,7 +18,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { OrganizationRequiredException } from 'src/exception/custom.exception';
 import { parseCsvBuffer } from 'src/common/util/csv.util';
-import { UserRole } from 'src/common/constants/user.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 import {
   AddReferenceDocumentResponse,
@@ -37,6 +37,7 @@ describe('ReferenceDocumentService', () => {
   let service: ReferenceDocumentService;
   let repo: jest.Mocked<Repository<ReferenceDocument>>;
   let ai: jest.Mocked<AiService>;
+  let permissionValidator: jest.Mocked<PermissionValidator>;
 
   const now = new Date();
 
@@ -74,6 +75,10 @@ describe('ReferenceDocumentService', () => {
     deleteReferenceDocument: jest.fn(),
   } as any;
 
+  const mockPermissionValidator: jest.Mocked<PermissionValidator> = {
+    validatePermissions: jest.fn(),
+  } as any;
+
   beforeEach(async () => {
     jest.resetAllMocks();
 
@@ -90,12 +95,14 @@ describe('ReferenceDocumentService', () => {
         ReferenceDocumentService,
         { provide: getRepositoryToken(ReferenceDocument), useValue: mockRepo },
         { provide: AiService, useValue: mockAi },
+        { provide: PermissionValidator, useValue: mockPermissionValidator },
       ],
     }).compile();
 
     service = module.get(ReferenceDocumentService);
     repo = module.get(getRepositoryToken(ReferenceDocument));
     ai = module.get(AiService);
+    permissionValidator = module.get(PermissionValidator);
   });
 
   describe('addReferenceDocument', () => {
@@ -127,7 +134,8 @@ describe('ReferenceDocumentService', () => {
 
       repo.update.mockResolvedValue({} as any);
 
-      const res = await service.addReferenceDocument(100, dto, UserRole.ADMIN);
+      permissionValidator.validatePermissions.mockResolvedValue(true);
+      const res = await service.addReferenceDocument(100, dto);
 
       expect(repo.create).toHaveBeenCalledWith({
         ...dto,
@@ -173,7 +181,8 @@ describe('ReferenceDocumentService', () => {
 
       repo.update.mockResolvedValue({} as any);
 
-      const res = await service.addReferenceDocument(5, dto, UserRole.ADMIN);
+      permissionValidator.validatePermissions.mockResolvedValue(true);
+      const res = await service.addReferenceDocument(5, dto);
       expect(repo.create).toHaveBeenCalledWith({
         ...dto,
         createdBy: 5,
@@ -191,9 +200,10 @@ describe('ReferenceDocumentService', () => {
         isPublic: false,
       };
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(undefined);
-      await expect(
-        service.addReferenceDocument(1, dto, UserRole.ADMIN),
-      ).rejects.toThrow(OrganizationRequiredException);
+      permissionValidator.validatePermissions.mockResolvedValue(false);
+      await expect(service.addReferenceDocument(1, dto)).rejects.toThrow(
+        OrganizationRequiredException,
+      );
     });
 
     it('marks FAILED when AI throws, and rethrows if repo update fails second phase', async () => {
@@ -214,6 +224,7 @@ describe('ReferenceDocumentService', () => {
 
       ai.addReferenceDocument.mockRejectedValue(new Error('AI fail'));
 
+      permissionValidator.validatePermissions.mockResolvedValue(true);
       repo.update.mockRejectedValueOnce(new Error('DB update fail'));
       await expect(service.addReferenceDocument(1, dto)).rejects.toThrow(
         DocumentUpdateFailedException,
@@ -242,6 +253,7 @@ describe('ReferenceDocumentService', () => {
 
       repo.update.mockResolvedValue({} as any);
 
+      permissionValidator.validatePermissions.mockResolvedValue(true);
       const res = await service.addReferenceDocument(1, dto);
       expect(res).toEqual({
         id: 'k1',

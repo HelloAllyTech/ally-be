@@ -21,11 +21,13 @@ import {
 } from '../../common/decorator/execution.context.decorator';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
-import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
-import { Message } from '../../common/entities/message.entity';
+import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
+import { Message } from '../../chat/entity/message.entity';
 import { JwtService } from '@nestjs/jwt';
 import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -47,6 +49,7 @@ export class CloudTelephonyGateway
     private jwtService: JwtService,
     private configService: AppConfigService,
     private broadcastMessageService: BroadcastMessageService,
+    private permissionValidator: PermissionValidator,
   ) {}
 
   @WebSocketServer() server!: Server;
@@ -54,7 +57,7 @@ export class CloudTelephonyGateway
   async handleConnection(client: Socket) {
     this.logger.info(`Client connected to cloud telephony chat: ${client.id}`);
 
-    this.authenticateClient(client);
+    await this.authenticateClient(client);
 
     client.on('connect_error', (err) => {
       this.logger.error(
@@ -131,9 +134,14 @@ export class CloudTelephonyGateway
         secret: this.configService.jwt.accessToken.secret,
       });
 
-      if (payload.role !== UserRole.COUNSELOR) {
+      const hasAccess = await this.permissionValidator.validatePermissions(
+        payload.sub,
+        [PERMISSIONS.START_CLOUD_TELEPHONY_CHAT],
+      );
+
+      if (!hasAccess) {
         throw new UnauthorizedException(
-          `User ${payload.sub} is not a counselor`,
+          `User ${payload.sub} does not have access to cloud telephony`,
         );
       }
       const userId = parseInt(payload.sub);
@@ -217,7 +225,6 @@ export class CloudTelephonyGateway
   setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
-      session.role,
       session.tenantId,
     );
   }

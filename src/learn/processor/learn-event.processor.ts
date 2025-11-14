@@ -20,6 +20,11 @@ export class LearnEventProcessor extends BaseEventProcessor {
     this.logger.info(`Processing learn event: ${JSON.stringify(data)}`);
 
     const { room_id, data: learnData } = data;
+
+    if (room_id.startsWith('preview-')) {
+      return;
+    }
+
     const { event } = learnData;
 
     try {
@@ -37,9 +42,8 @@ export class LearnEventProcessor extends BaseEventProcessor {
       }
 
       await this.scenarioSessionService.addScenarioSessionEvent(
-        scenarioSession.id,
+        scenarioSession,
         event,
-        scenarioSession.tenantId,
       );
 
       this.logger.info(`Scenario session event added: ${scenarioSession.id}`);

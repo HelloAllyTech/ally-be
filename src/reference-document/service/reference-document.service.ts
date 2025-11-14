@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import {
   DocumentUploadStatus,
   ReferenceDocument,
-} from '../../common/entities/reference-document.entity';
+} from '../entity/reference-document.entity';
 import {
   AddDocumentDto,
   SearchDocumentsDto,
@@ -22,7 +22,8 @@ import { LoggerService } from '../../logger/logger.service';
 import { AddReferenceDocumentRequest } from '../../ai/dto/ai.request.dto';
 import { OrganizationRequiredException } from '../../exception/custom.exception';
 import { parseCsvBuffer } from '../../common/util/csv.util';
-import { UserRole } from '../../common/constants/user.constants';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @Injectable()
 export class ReferenceDocumentService {
@@ -34,17 +35,17 @@ export class ReferenceDocumentService {
     @InjectRepository(ReferenceDocument)
     private referenceDocumentRepository: Repository<ReferenceDocument>,
     private aiService: AiService,
+    private permissionValidator: PermissionValidator,
   ) {}
 
-  async addReferenceDocument(
-    userId: number,
-    dto: AddDocumentDto,
-    role?: UserRole,
-  ) {
-    const organizationId =
-      role === UserRole.ADMIN
-        ? ExecutionManager.getTenantId()
-        : dto.organisationId;
+  async addReferenceDocument(userId: number, dto: AddDocumentDto) {
+    const hasAdminAccess = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.ORGANIZATION_ACCESS],
+    );
+    const organizationId = hasAdminAccess
+      ? ExecutionManager.getTenantId()
+      : dto.organisationId;
 
     if (!dto.isPublic && !organizationId) {
       throw new OrganizationRequiredException();

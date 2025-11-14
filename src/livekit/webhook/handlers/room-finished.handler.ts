@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.enum';
 import { ScenarioSessionService } from 'src/learn/service/scenario-session.service';
 import { LoggerService } from 'src/logger/logger.service';
 
@@ -31,14 +32,27 @@ export class RoomFinishedHandler {
     this.logger.info(`Room finished: ${event.room?.name}`);
 
     try {
+      if (!event.room?.name) {
+        this.logger.warn('Room name is missing in room finished event');
+        return;
+      }
+
+      if (event.room.name.startsWith('preview-')) {
+        await this.scenarioSessionService.endPreviewScenario(event.room.name);
+        return;
+      }
+
       const scenarioSession =
         await this.scenarioSessionService.getScenarioSessionByRoomId(
           event.room.name,
         );
-      await this.scenarioSessionService.endScenarioSession(
-        scenarioSession.id,
-        scenarioSession.counselorId,
-      );
+
+      if (scenarioSession.status !== ScenarioSessionStatus.ENDED) {
+        await this.scenarioSessionService.endScenarioSession(
+          scenarioSession.id,
+          scenarioSession.counselorId,
+        );
+      }
     } catch (error) {
       this.logger.error(
         `Failed to handle room finished: ${JSON.stringify(error.message)}`,

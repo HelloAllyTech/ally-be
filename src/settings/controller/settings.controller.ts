@@ -1,4 +1,4 @@
-import { Controller, Get, Body, Put } from '@nestjs/common';
+import { Controller, Get, Body, Put, Query } from '@nestjs/common';
 import { SettingsService } from '../service/settings.service';
 import {
   ApiTags,
@@ -7,9 +7,15 @@ import {
   ApiBearerAuth,
   ApiSecurity,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
-import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import {
+  GetSummaryFieldsDto,
+  UpdateSummaryFieldsDto,
+} from '../dto/summary-fields.dto';
+import { GetChatTypesDto, UpdateChatTypesDto } from '../dto/chat-types.dto';
 
 @ApiTags('Settings')
 @ApiBearerAuth()
@@ -25,9 +31,15 @@ export class SettingsController {
     description: 'Returns the summary fields configuration',
     type: [String],
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
-  getSummaryFields() {
-    return this.service.getSummaryFieldsConfig();
+  @ApiQuery({
+    name: 'tenantId',
+    required: false,
+    type: String,
+    description: 'Tenant ID',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_SUMMARY_FIELDS])
+  getSummaryFields(@Query() query?: GetSummaryFieldsDto) {
+    return this.service.getSummaryFieldsConfig(query || {});
   }
 
   @Put('summary-fields')
@@ -44,9 +56,9 @@ export class SettingsController {
     status: 200,
     description: 'Summary fields updated successfully',
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
-  updateSummaryFields(@Body() body: { hiddenFields: string[] }) {
-    return this.service.updateSummaryFields(body.hiddenFields);
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_SUMMARY_FIELDS])
+  updateSummaryFields(@Body() body: UpdateSummaryFieldsDto) {
+    return this.service.updateSummaryFields(body);
   }
 
   @Get('nudge-status')
@@ -55,7 +67,7 @@ export class SettingsController {
     status: 200,
     description: 'Returns the nudge status',
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_NUDGE_STATUS])
   getNudgeStatus() {
     return this.service.getNudgeStatus();
   }
@@ -74,7 +86,7 @@ export class SettingsController {
     status: 200,
     description: 'Nudge status updated successfully',
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.ADMIN)
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_NUDGE_STATUS])
   updateNudgeStatus(@Body() body: { status: boolean }) {
     return this.service.updateNudgeStatus(body.status);
   }
@@ -85,9 +97,15 @@ export class SettingsController {
     status: 200,
     description: 'Returns the enabled chat types',
   })
-  @AuthRoles(UserRole.COUNSELOR, UserRole.SUPER_ADMIN, UserRole.ADMIN)
-  getChatTypes() {
-    return this.service.getChatTypes();
+  @ApiQuery({
+    name: 'tenantId',
+    required: false,
+    type: String,
+    description: 'Tenant ID',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_CHAT_TYPES])
+  getChatTypes(@Query() query?: GetChatTypesDto) {
+    return this.service.getChatTypes(query || {});
   }
 
   @Put('chat-types')
@@ -104,8 +122,8 @@ export class SettingsController {
     status: 200,
     description: 'Hidden chat types updated successfully',
   })
-  @AuthRoles(UserRole.ADMIN)
-  updateHiddenChatTypes(@Body() body: { hiddenChatTypes: string[] }) {
-    return this.service.updateChatTypes(body.hiddenChatTypes);
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_CHAT_TYPES])
+  updateHiddenChatTypes(@Body() body: UpdateChatTypesDto) {
+    return this.service.updateChatTypes(body);
   }
 }

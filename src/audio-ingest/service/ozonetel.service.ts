@@ -11,8 +11,7 @@ import {
   AudioChatProvider,
   CloudTelephonyProvider,
 } from '../../common/constants/chat.constants';
-import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
-import { UserRole } from '../../common/constants/user.constants';
+import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,
@@ -21,7 +20,7 @@ import {
   Chat,
   ChatStatus,
   ChatSummaryStatus,
-} from '../../common/entities/chat.entity';
+} from '../../chat/entity/chat.entity';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { checkAudioFileReady } from '../../common/util/audio.util';
 import {
@@ -31,7 +30,7 @@ import {
 } from '../../common/util/date.util';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
-import { UserService } from '../../user/user.service';
+import { UserService } from '../../user/service/user.service';
 import { AudioRetryProducer } from '../producer/audio-retry.producer';
 import { CloudTelephonyService } from '../service/cloud-telephony.service';
 import {
@@ -41,10 +40,15 @@ import {
   OzonetelCallStatus,
   OzonetelEventTypes,
 } from '../type/ozonetel.type';
+import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @Injectable()
 export class OzonetelService {
   private readonly logger = LoggerService.getInstance(OzonetelService.name);
+  private readonly auditLogger = AuditLoggerService.getInstance();
   constructor(
     private chatService: ChatService,
     private userService: UserService,
@@ -53,6 +57,7 @@ export class OzonetelService {
     private aiEventService: AiEventService,
     private broadcastMessageService: BroadcastMessageService,
     private audioRetryProducer: AudioRetryProducer,
+    private permissionValidatorService: PermissionValidator,
   ) {}
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
@@ -120,15 +125,18 @@ export class OzonetelService {
         `Processing Ozonetel call detail for agent with phone ${AgentID} | monitorUCID: ${monitorUCID}`,
       );
 
-      ExecutionManager.setAuthContext(
-        '',
-        UserRole.COUNSELOR,
-        cloudTelephonyIntegration.tenantId,
-      );
+      ExecutionManager.setAuthContext('', cloudTelephonyIntegration.tenantId);
 
       const counselor = await this.userService.getUserByExternalId(AgentID);
 
-      if (!counselor || counselor.role !== UserRole.COUNSELOR) {
+      const hasAccess = counselor?.id
+        ? await this.permissionValidatorService.validatePermissions(
+            counselor.id,
+            [PERMISSIONS.PROCESS_OZONETEL_WEBHOOK],
+          )
+        : false;
+
+      if (!counselor || !hasAccess) {
         throw new Error(
           `Counselor not found for AgentId: ${AgentID} | monitorUCID: ${monitorUCID}`,
         );
@@ -136,7 +144,6 @@ export class OzonetelService {
 
       ExecutionManager.setAuthContext(
         counselor.id.toString(),
-        counselor.role,
         counselor.tenantId,
       );
 
@@ -216,6 +223,14 @@ export class OzonetelService {
             audio_url: AudioFile,
             chat_id: chat.id,
           });
+          this.auditLogger.log({
+            eventType: AUDIT_EVENTS.AUDIO_TRANSCRIPT_REQUEST_SENT,
+            details: {
+              purpose: 'Audio transcript request sent to AI service',
+              chatId: chat.id,
+              provider: AudioChatProvider.OZONETEL,
+            },
+          });
         } else {
           this.audioRetryProducer.sendAudioFileRetryMessage({
             audioUrl: AudioFile,
@@ -233,6 +248,13 @@ export class OzonetelService {
         );
       }
     } catch (error) {
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.AUDIO_PROCESSING_FAILED,
+        details: {
+          error: `Ozonetel call detail webhook error: ${error.message}`,
+          provider: AudioChatProvider.OZONETEL,
+        },
+      });
       this.logger.error(`Ozonetel call detail webhook error: ${error.message}`);
     }
   }
@@ -281,11 +303,7 @@ export class OzonetelService {
         return;
       }
 
-      ExecutionManager.setAuthContext(
-        '',
-        UserRole.COUNSELOR,
-        cloudTelephonyIntegration.tenantId,
-      );
+      ExecutionManager.setAuthContext('', cloudTelephonyIntegration.tenantId);
 
       if (data.action === OzonetelCallAction.Disconnect && monitor_ucid) {
         const chat = await this.chatService.getChatByExternalId(monitor_ucid);
@@ -314,7 +332,14 @@ export class OzonetelService {
 
       const counselor = await this.userService.getUserByExternalId(agent_id);
 
-      if (!counselor || counselor.role !== UserRole.COUNSELOR) {
+      const hasAccess = counselor?.id
+        ? await this.permissionValidatorService.validatePermissions(
+            counselor.id,
+            [PERMISSIONS.PROCESS_OZONETEL_WEBHOOK],
+          )
+        : false;
+
+      if (!counselor || !hasAccess) {
         throw new Error(
           `Counselor not found for agent id ${agent_id} | monitorUCID: ${monitor_ucid}`,
         );
@@ -322,7 +347,6 @@ export class OzonetelService {
 
       ExecutionManager.setAuthContext(
         counselor.id.toString(),
-        counselor.role,
         cloudTelephonyIntegration.tenantId,
       );
       const chat = await this.chatService.createChatForAnonymousClient({

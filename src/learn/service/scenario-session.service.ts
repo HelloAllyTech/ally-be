@@ -9,7 +9,7 @@ import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
@@ -20,15 +20,21 @@ import { ScenarioSessionDetails } from '../entity/scenario-session-details.entit
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../interface/learn-message.interface';
-import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
-import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
-import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
-import { UserRole } from 'src/common/constants/user.constants';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { Scenarios } from '../entity/scenarios.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
+import { v4 } from 'uuid';
+import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from '../constants/scenario-session.constants';
+import { SimulationCreditsService } from './simulation-credits.service';
+import { AppConfigService } from 'src/config/config.service';
+import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
+import { ScenarioStatus } from '../enum/scenario.status.enum';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -43,11 +49,10 @@ export class ScenarioSessionService {
     private scenarioSessionFeedbacksRepository: Repository<ScenarioSessionFeedbacks>,
     private dataSource: DataSource,
     private aiService: AiService,
-    @InjectRepository(ScenarioSessionEvents)
-    private scenarioSessionEventsRepository: Repository<ScenarioSessionEvents>,
-    @InjectRepository(ScenarioEvents)
-    private scenarioEventsRepository: Repository<ScenarioEvents>,
     private permissionsService: PermissionsService,
+    private permissionValidatorService: PermissionValidator,
+    private simulationCreditsService: SimulationCreditsService,
+    private configService: AppConfigService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -78,16 +83,27 @@ export class ScenarioSessionService {
   }
 
   async getScenarioSession(scenarioSessionId: string, counselorId: number) {
-    const userRoles = await this.permissionsService.getUserRoles(counselorId);
+    const hasAdminAccess =
+      await this.permissionValidatorService.validatePermissions(counselorId, [
+        PERMISSIONS.ORGANIZATION_ACCESS,
+      ]);
     const scenarioSession =
       await this.scenarioSessionRepository.getScenarioSession(
         scenarioSessionId,
         counselorId,
-        userRoles.includes(UserRole.ADMIN),
+        hasAdminAccess,
       );
 
     if (!scenarioSession) {
       throw new BadRequestException('Scenario session not found');
+    }
+
+    // Filter events to only include ACTIVE ones
+    if ((scenarioSession as any).events) {
+      (scenarioSession as any).events = (scenarioSession as any).events.filter(
+        (event: any) =>
+          event.events?.visibilityType === SessionEventVisibilityType.ACTIVE,
+      );
     }
 
     const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
@@ -120,10 +136,11 @@ export class ScenarioSessionService {
         startScenarioSessionDto,
       );
 
-    const roomMetadata = this.createRoomMetadata(scenario, sessionEvents);
+    const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
+
     await this.livekitService.createRoom({
       name: `${scenarioSession.roomId}`,
-      ttl: startScenarioSessionDto.ttl ?? 1800,
+      ttl: startScenarioSessionDto.ttl ?? DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
       metadata: roomMetadata,
     });
 
@@ -135,7 +152,7 @@ export class ScenarioSessionService {
     return { scenarioSession, accessToken };
   }
 
-  private createRoomMetadata(
+  private async createRoomMetadata(
     scenario: Scenarios,
     sessionEvents: SessionEvents[],
   ) {
@@ -148,63 +165,25 @@ export class ScenarioSessionService {
       );
     }
 
-    const { lifeHistory, ...metadataWithoutLifeHistory } = scenario.metadata;
-    scenario.metadata = JSON.parse(JSON.stringify(metadataWithoutLifeHistory));
+    const { metadata, ...scenarioDataWithoutMetadata } = scenario;
+    const { voiceId, ...promptData } = metadata;
+
+    const scenarioData = {
+      ...scenarioDataWithoutMetadata,
+      promptData,
+    };
+
+    const scenarioVoice = await this.scenarioService.getScenarioVoice(voiceId);
 
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
       scenario: {
-        ...scenario,
-        lifeHistory: JSON.parse(JSON.stringify(lifeHistory)),
+        ...scenarioData,
+        voice: scenarioVoice,
         events: sessionEvents,
       },
     };
-  }
-
-  async mapEventsToScenario(createScenarioEventsDto: CreateScenarioEventsDto) {
-    const { scenarioId, eventIds } = createScenarioEventsDto;
-
-    if (eventIds.length === 0) {
-      throw new BadRequestException('Event IDs array cannot be empty');
-    }
-
-    await this.scenarioService.getScenario(scenarioId);
-    // Validate events exist
-    const validEvents = await this.sessionEventService.findByIds(eventIds);
-    const validIdsSet = new Set(validEvents.map((e) => e.id));
-    const invalidEventIds = eventIds.filter((id) => !validIdsSet.has(id));
-    if (invalidEventIds.length > 0) {
-      throw new BadRequestException(`Invalid event IDs: ${invalidEventIds}`);
-    }
-    // Create an array of ScenarioEvents entities to be saved
-    const scenarioEvents = eventIds.map((id) => ({
-      scenarioId: scenarioId,
-      eventId: id,
-      tenantId: ExecutionManager.getTenantId(),
-    }));
-
-    // Save the scenario events to the database
-    await this.scenarioEventsRepository.save(scenarioEvents);
-    return scenarioEvents;
-  }
-
-  async deleteScenarioEvents(scenarioEvents: DeleteScenarioEventsDto) {
-    const { scenarioId, eventIds } = scenarioEvents;
-    if (eventIds.length === 0) {
-      throw new BadRequestException('Event IDs array cannot be empty');
-    }
-
-    await this.scenarioService.getScenario(scenarioId);
-
-    const result = await this.scenarioEventsRepository.delete({
-      eventId: In(eventIds),
-      scenarioId,
-    });
-    if (result.affected === 0) {
-      throw new BadRequestException('No scenario events found to delete');
-    }
-    return result.affected;
   }
 
   private async validateStartScenarioSession(counselorId: number) {
@@ -221,6 +200,19 @@ export class ScenarioSessionService {
       throw new EntityOperationException(
         `You already have an active scenario session ${activeScenarioSessions.data[0].id}`,
         activeScenarioSessions.data[0].id,
+      );
+    }
+    const credits =
+      await this.simulationCreditsService.getSimulationCredits(counselorId);
+    const lifespanSecondsPerCredit =
+      this.configService.simulationCredits.lifespanSecondsPerCredit ?? 60;
+    if (
+      credits.consumedCredits +
+        DEFAULT_SCENARIO_SESSION_TTL_SECONDS / lifespanSecondsPerCredit >
+      credits.creditLimit
+    ) {
+      throw new BadRequestException(
+        'You have insufficient credits to start a new scenario session',
       );
     }
   }
@@ -242,7 +234,7 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario session is not active');
     }
 
-    const endedAt = new Date();
+    const endedAt = scenarioSession.endedAt ?? new Date();
     const score = await this.calculateScenarioSessionScore(scenarioSessionId);
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
@@ -252,7 +244,7 @@ export class ScenarioSessionService {
     });
 
     let callDuration = 0;
-    if (scenarioSession.startedAt && scenarioSession.endedAt) {
+    if (scenarioSession.startedAt && endedAt) {
       callDuration =
         endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
     }
@@ -271,12 +263,37 @@ export class ScenarioSessionService {
       );
     }
 
+    await this.consumeSimulationCredits(
+      scenarioSession.counselorId,
+      callDuration,
+    );
+
     return { message: 'Scenario session ended successfully' };
   }
 
   private async calculateScenarioSessionScore(scenarioSessionId: string) {
     return this.scenarioSessionRepository.getScenarioSessionScore(
       scenarioSessionId,
+    );
+  }
+
+  private async consumeSimulationCredits(userId: number, callDuration: number) {
+    const callDurationInSeconds = callDuration / 1000;
+    const secondsPerCredit =
+      this.configService.simulationCredits.lifespanSecondsPerCredit ?? 60;
+
+    // Calculate full credits and remaining seconds
+    const fullCredits = Math.floor(callDurationInSeconds / secondsPerCredit);
+    const remainingSeconds = callDurationInSeconds % secondsPerCredit;
+
+    // If remaining seconds >= 30, charge 1 additional credit, otherwise 0
+    const additionalCredit = remainingSeconds >= 30 ? 1 : 0;
+    const totalCreditsToConsume = fullCredits + additionalCredit;
+
+    if (totalCreditsToConsume <= 0) return;
+    await this.simulationCreditsService.consumeCredits(
+      userId,
+      totalCreditsToConsume,
     );
   }
 
@@ -313,13 +330,13 @@ export class ScenarioSessionService {
 
       const scenario = await this.scenarioService.getScenario(
         scenarioId,
-        ['id', 'title', 'description'],
+        ['id', 'metadata'],
         entityManager,
       );
 
       const summary = await this.aiService.getScenarioSessionSummary(
         messages,
-        scenario.description,
+        scenario.metadata?.agentGoal ?? '',
       );
 
       const scenarioSessionDetailsRepo = entityManager.getRepository(
@@ -436,16 +453,93 @@ export class ScenarioSessionService {
   }
 
   async addScenarioSessionEvent(
-    scenarioSessionId: string,
+    scenarioSession: ScenarioSessions,
     event: LearnEventData,
-    tenantId: string,
   ) {
-    const scenarioSessionEvent = this.scenarioSessionEventsRepository.create({
-      scenarioSessionId,
-      eventId: event.event_id,
-      occurredAt: event.timestamp,
-      tenantId,
+    await this.dataSource.transaction(async (entityManager) => {
+      const scenarioSessionEventsRepo = entityManager.getRepository(
+        ScenarioSessionEvents,
+      );
+      const scenarioSessionEvent = scenarioSessionEventsRepo.create({
+        scenarioSessionId: scenarioSession.id,
+        eventId: event.event_data.id,
+        occurredAt: event.timestamp,
+        tenantId: scenarioSession.tenantId,
+        score: event.event_data.score,
+        emoji: event.event_data.emoji,
+        message: event.event_data.message,
+      });
+      const savedScenarioSessionEvent =
+        await scenarioSessionEventsRepo.save(scenarioSessionEvent);
+
+      if (
+        scenarioSession.status === ScenarioSessionStatus.ENDED &&
+        event.event_data.visibilityType === SessionEventVisibilityType.ACTIVE
+      ) {
+        const scenrioSessionRepo =
+          entityManager.getRepository(ScenarioSessions);
+        await scenrioSessionRepo.update(scenarioSession.id, {
+          score: () => `score + ${event.event_data.score ?? 0}`,
+        });
+      }
+      return savedScenarioSessionEvent;
     });
-    return this.scenarioSessionEventsRepository.save(scenarioSessionEvent);
+  }
+
+  async previewScenario(
+    previewScenarioDto: PreviewScenarioDto,
+    userId: number,
+  ) {
+    const { scenarioId } = previewScenarioDto;
+    const scenario = await this.scenarioService.getScenario(scenarioId);
+
+    await this.validatePreviewScenario(scenario);
+
+    const sessionEvents =
+      await this.sessionEventService.getSessionEventsByScenarioId(scenarioId);
+
+    const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
+    const roomName = `preview-${scenarioId}-${v4()}`;
+
+    await this.livekitService.createRoom({
+      name: roomName,
+      metadata: roomMetadata,
+    });
+
+    const accessToken = await this.livekitService.generateAccessToken({
+      roomName,
+      participantName: userId.toString(),
+    });
+
+    return { roomName, accessToken };
+  }
+
+  private async validatePreviewScenario(scenario: Scenarios) {
+    if (
+      ![ScenarioStatus.DRAFT, ScenarioStatus.ACTIVE].includes(scenario.status)
+    ) {
+      throw new BadRequestException(
+        'Scenario should be draft or active for preview',
+      );
+    }
+
+    const { metadata, ...scenarioDataWithoutMetadata } = scenario;
+    const flatScenario = {
+      ...scenarioDataWithoutMetadata,
+      ...(metadata ?? {}),
+    };
+
+    const missingFields = SCENARIO_MANDATORY_FIELDS.filter(
+      (field) => !flatScenario[field as keyof typeof flatScenario],
+    );
+    if (missingFields.length > 0) {
+      throw new BadRequestException(
+        `The following required fields are missing for preview scenario: ${missingFields.join(', ')}`,
+      );
+    }
+  }
+
+  async endPreviewScenario(roomName: string) {
+    await this.livekitService.deleteRoom(roomName);
   }
 }

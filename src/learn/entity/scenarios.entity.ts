@@ -1,5 +1,10 @@
-import { BaseWithoutTenantEntity } from 'src/common/entities/base-without-tenant.entity';
-import { Column, PrimaryGeneratedColumn, Entity } from 'typeorm';
+import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import {
+  Column,
+  PrimaryGeneratedColumn,
+  Entity,
+  DeleteDateColumn,
+} from 'typeorm';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
 
 @Entity('scenarios')
@@ -7,17 +12,20 @@ export class Scenarios extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column()
-  title!: string;
+  @Column({ nullable: true })
+  title?: string;
 
-  @Column()
-  scenario!: string;
+  @Column({ nullable: true })
+  scenario?: string;
 
-  @Column()
-  description!: string;
+  @Column({ nullable: true })
+  description?: string;
 
-  @Column()
-  coverImageUrl!: string;
+  @Column({ nullable: true })
+  coverImageUrl?: string;
+
+  @Column({ nullable: true })
+  coverVideoUrl?: string;
 
   @Column({ enum: ScenarioStatus, default: ScenarioStatus.DRAFT })
   status!: ScenarioStatus;
@@ -27,4 +35,13 @@ export class Scenarios extends BaseWithoutTenantEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
+
+  @Column({ nullable: true })
+  createdBy?: number;
+
+  @Column({ nullable: true })
+  updatedBy?: number;
+
+  @DeleteDateColumn()
+  deletedAt?: Date;
 }

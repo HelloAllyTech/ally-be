@@ -1,6 +1,6 @@
 import { isNil } from 'lodash';
-import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
-import { Chat } from '../../common/entities/chat.entity';
+import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type';
+import { Chat } from '../entity/chat.entity';
 
 export class ChatUtil {
   private static isValidSummary(

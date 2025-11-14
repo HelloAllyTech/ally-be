@@ -8,7 +8,7 @@ import {
   AudioChatPlatform,
   AudioChatProvider,
 } from 'src/common/constants/chat.constants';
-import { ChatAudioUploadStatus } from 'src/common/entities/chat-audio-uploads.entity';
+import { ChatAudioUploadStatus } from '../../../audio/entity/chat-audio-uploads.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { UserRole } from 'src/common/constants/user.constants';
 import { AiEventService } from 'src/ai/service/ai-event.service';
@@ -18,9 +18,9 @@ import {
   AudioUploadRequestDto,
   CancelUploadRequestDto,
 } from 'src/chat/dto/audio-upload.dto';
-import { ChatStatus, ChatSummaryStatus } from 'src/common/entities/chat.entity';
+import { ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
 
-import { UserService } from 'src/user/user.service';
+import { UserService } from 'src/user/service/user.service';
 import { AudioUploadService } from '../audio-upload.service';
 import { ChatService } from '../chat.service';
 import { LoggerService } from 'src/logger/logger.service';
@@ -35,6 +35,9 @@ jest.mock('src/common/execution/execution-manager', () => ({
       role: 'ADMIN',
       tenantId: 1,
     })),
+    getExecutionId: jest.fn(() => 'mock-execution-id'),
+    getTenantId: jest.fn(() => 1),
+    getUserId: jest.fn(() => '1'),
   },
 }));
 
@@ -73,6 +76,7 @@ describe('AudioUploadService', () => {
           useValue: {
             generatePresignedUrl: jest.fn(),
             getHeadObject: jest.fn(),
+            sanitizeFileName: jest.fn(),
           },
         },
         {
@@ -144,6 +148,7 @@ describe('AudioUploadService', () => {
       chatService.createChatForAnonymousClient.mockResolvedValue(
         mockChat as any,
       );
+      s3Service.sanitizeFileName.mockReturnValue(validRequestDto.fileName);
       s3Service.generatePresignedUrl.mockResolvedValue(mockPresignedUrl);
 
       const result = await service.createChatWithUploadUrl(validRequestDto);
@@ -157,6 +162,9 @@ describe('AudioUploadService', () => {
         endedAt: expect.any(Date),
         platform: validRequestDto.platform,
       });
+      expect(s3Service.sanitizeFileName).toHaveBeenCalledWith(
+        validRequestDto.fileName,
+      );
       expect(s3Service.generatePresignedUrl).toHaveBeenCalledWith({
         bucket: 'test-bucket',
         key: expect.stringContaining(
@@ -274,11 +282,7 @@ describe('AudioUploadService', () => {
         key: s3Key,
       });
       expect(chatService.getChatByIdForServiceCall).toHaveBeenCalledWith(123);
-      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
-        '1',
-        UserRole.ADMIN,
-        1,
-      );
+      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith('1', 1);
       expect(chatService.updateChat).toHaveBeenCalledWith(mockChat.id, {
         status: ChatStatus.ENDED,
       });
@@ -475,11 +479,7 @@ describe('AudioUploadService', () => {
 
       await service.processAudioUpload(s3Key);
 
-      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
-        '',
-        UserRole.ADMIN,
-        1,
-      );
+      expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith('', 1);
     });
   });
 

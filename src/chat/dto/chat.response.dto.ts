@@ -1,17 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { CallDetails } from './call-log.response.dto';
-import { ChatStatus } from '../../common/entities/chat.entity';
+import { ChatStatus } from '../entity/chat.entity';
 import { IsNotEmpty, IsString } from 'class-validator';
 
 export class ChatDto {
   @ApiProperty({ example: 1, description: 'Unique identifier for the chat' })
   id!: number;
-
-  @ApiProperty({
-    example: 1001,
-    description: 'Room identifier associated with the chat',
-  })
-  roomId?: number;
 
   @ApiProperty({
     example: 5001,

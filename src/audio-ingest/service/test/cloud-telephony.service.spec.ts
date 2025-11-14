@@ -6,7 +6,7 @@ import { CryptoService } from '../../../common/service/crypto.service';
 import { AppConfigService } from '../../../config/config.service';
 import { CloudTelephonyProvider } from '../../../common/constants/chat.constants';
 import { IntegrationStatus } from '../../type/cloud-telephony.type';
-import { CloudTelephonyIntegration } from '../../../common/entities/cloud-telephony-integration.entity';
+import { CloudTelephonyIntegration } from '../../entity/cloud-telephony-integration.entity';
 import {
   CreateCloudTelephonyIntegrationDto,
   CloudTelephonyIntegrationResponseDto,

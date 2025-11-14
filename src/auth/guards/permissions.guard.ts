@@ -16,7 +16,6 @@ export class PermissionsGuard implements CanActivate {
       operator: 'AND' | 'OR';
     }>(PERMISSIONS_KEY, [context.getHandler(), context.getClass()]);
 
-    console.log('requiredPermissions', requiredPermissions);
     if (!requiredPermissions || requiredPermissions.permissions.length === 0) {
       return true;
     }

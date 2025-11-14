@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
-import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
-import { MessageType } from '../../common/entities/message.entity';
+import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
+import { MessageType } from '../../chat/entity/message.entity';
 import { ChatEvents } from '../../chat/constants/chat.constants';
 
 @Injectable()

@@ -34,11 +34,10 @@ export class ExecutionManager {
     return this.storage.run(contextData, fn);
   }
 
-  static setAuthContext(userId: string, role: string, tenantId: string): void {
+  static setAuthContext(userId: string, tenantId: string): void {
     const context = this.storage.getStore();
     if (context) {
       context.userId = userId;
-      context.role = role;
       context.tenantId = tenantId;
     }
   }
@@ -49,10 +48,6 @@ export class ExecutionManager {
 
   static getUserId(): string | undefined {
     return this.storage.getStore()?.userId;
-  }
-
-  static getRole(): string | undefined {
-    return this.storage.getStore()?.role;
   }
 
   static getTenantId(): string | undefined {

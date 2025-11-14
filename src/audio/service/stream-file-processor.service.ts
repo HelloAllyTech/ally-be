@@ -2,13 +2,13 @@ import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import { WriteStream } from 'fs';
 import * as path from 'path';
-import { ChatSummaryStatus } from 'src/common/entities/chat.entity';
+import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
 import { DataSource, EntityManager } from 'typeorm';
 import { AiEventService } from '../../ai/service/ai-event.service';
 import { LoggerService } from '../../logger/logger.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
-import { ChatAudioUploadStatus } from '../../common/entities/chat-audio-uploads.entity';
+import { ChatAudioUploadStatus } from '../entity/chat-audio-uploads.entity';
 import {
   AudioChatProvider,
   AudioChatPlatform,
@@ -27,7 +27,7 @@ import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-ty
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { AudioEncryptionUtil } from '../utils/audio-encryption.util';
 import { CipherGCM } from 'crypto';
-import { Chat } from 'src/common/entities/chat.entity';
+import { Chat } from '../../chat/entity/chat.entity';
 import { ChatAudioUploadsService } from './chat-audio-uploads.service';
 
 @Injectable()
@@ -359,6 +359,7 @@ export class StreamFileProcessorService {
       details: {
         chatId,
         partNumber: activeCallStream.partNumber,
+        provider,
       },
     });
 
@@ -386,6 +387,7 @@ export class StreamFileProcessorService {
       details: {
         chatId,
         partNumber: activeCallStream.partNumber,
+        provider,
       },
     });
 
@@ -569,6 +571,7 @@ export class StreamFileProcessorService {
           eventType: AUDIT_EVENTS.AUDIO_S3_MULTIPART_UPLOAD_COMPLETED,
           details: {
             chatId,
+            provider,
           },
         });
       } else {
@@ -584,6 +587,7 @@ export class StreamFileProcessorService {
             eventType: AUDIT_EVENTS.AUDIO_S3_MULTIPART_UPLOAD_ABORTED,
             details: {
               chatId,
+              provider,
             },
           });
 
@@ -625,6 +629,7 @@ export class StreamFileProcessorService {
           details: {
             chatId,
             partNumber: activeCallStream.partNumber,
+            provider,
           },
         });
 
@@ -645,6 +650,7 @@ export class StreamFileProcessorService {
         details: {
           chatId,
           partNumber: activeCallStream.partNumber,
+          provider,
         },
       });
 
@@ -668,6 +674,15 @@ export class StreamFileProcessorService {
         operation: 'get',
       });
 
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.PRESIGNED_URL_GENERATED,
+        details: {
+          purpose: 'Audio presigned url generated',
+          chatId,
+          provider,
+        },
+      });
+
       this.aiEventService.publishTranscribeAudioEvent({
         message_type: 'transcribe_and_summarize_request',
         timestamp: Date.now(),
@@ -677,11 +692,11 @@ export class StreamFileProcessorService {
       });
 
       this.auditLogger.log({
-        eventType: AUDIT_EVENTS.PRESIGNED_URL_GENERATED,
+        eventType: AUDIT_EVENTS.AUDIO_TRANSCRIPT_REQUEST_SENT,
         details: {
-          purpose: 'audio_url',
-          chatId,
-          url: audioUrl,
+          purpose: 'Audio transcript request sent to AI service',
+          chatId: chatId,
+          provider,
         },
       });
 
@@ -710,7 +725,6 @@ export class StreamFileProcessorService {
   setAuthContext(session: UserChatSessionData) {
     ExecutionManager.setAuthContext(
       session.userId.toString(),
-      session.role,
       session.tenantId,
     );
   }

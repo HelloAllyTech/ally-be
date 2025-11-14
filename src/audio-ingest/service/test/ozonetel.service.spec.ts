@@ -3,7 +3,7 @@ import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import axios from 'axios';
 import { OzonetelService } from '../ozonetel.service';
 import { ChatService } from '../../../chat/service/chat.service';
-import { UserService } from '../../../user/user.service';
+import { UserService } from '../../../user/service/user.service';
 import { CloudTelephonyService } from '../cloud-telephony.service';
 import { AppConfigService } from '../../../config/config.service';
 import { AiEventService } from '../../../ai/service/ai-event.service';
@@ -13,13 +13,13 @@ import {
   AudioChatProvider,
   CloudTelephonyProvider,
 } from '../../../common/constants/chat.constants';
-import { MessageBrokerChannel } from '../../../common/constants/message-broker.constants';
+import { MessageBrokerChannel } from '../../../message-broker/constants/message-broker.constants';
 import { UserRole } from '../../../common/constants/user.constants';
 import {
   Chat,
   ChatStatus,
   ChatSummaryStatus,
-} from '../../../common/entities/chat.entity';
+} from '../../../chat/entity/chat.entity';
 import {
   OzonetelCallAction,
   OzonetelCallDetails,
@@ -33,6 +33,7 @@ import {
   convertIstStringToUtc,
   subtractDurationFromDate,
 } from '../../../common/util/date.util';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 // Mock external dependencies
 jest.mock('axios');
@@ -61,7 +62,7 @@ describe('OzonetelService', () => {
   let aiEventService: jest.Mocked<AiEventService>;
   let broadcastMessageService: jest.Mocked<BroadcastMessageService>;
   let audioRetryProducer: jest.Mocked<AudioRetryProducer>;
-
+  let permissionValidatorService: jest.Mocked<PermissionValidator>;
   const mockCloudTelephonyIntegration = {
     id: 'integration-id-123',
     provider: CloudTelephonyProvider.OZONETEL,
@@ -166,6 +167,10 @@ describe('OzonetelService', () => {
       sendAudioFileRetryMessage: jest.fn(),
     };
 
+    const mockPermissionValidatorService = {
+      validatePermissions: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OzonetelService,
@@ -197,6 +202,10 @@ describe('OzonetelService', () => {
           provide: AudioRetryProducer,
           useValue: mockAudioRetryProducer,
         },
+        {
+          provide: PermissionValidator,
+          useValue: mockPermissionValidatorService,
+        },
       ],
     }).compile();
 
@@ -207,7 +216,7 @@ describe('OzonetelService', () => {
     aiEventService = module.get(AiEventService);
     broadcastMessageService = module.get(BroadcastMessageService);
     audioRetryProducer = module.get(AudioRetryProducer);
-
+    permissionValidatorService = module.get(PermissionValidator);
     // Setup default mocks
     mockedConvertIstStringToUtc.mockReturnValue(
       new Date('2024-01-01T10:00:00Z'),
@@ -230,6 +239,7 @@ describe('OzonetelService', () => {
       userService.getUserByExternalId.mockResolvedValue(mockCounselor);
       chatService.getChatByExternalId.mockResolvedValue(mockChat);
       mockedCheckAudioFileReady.mockResolvedValue(true);
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
     });
 
     it('should process call detail successfully with existing chat', async () => {
@@ -362,7 +372,7 @@ describe('OzonetelService', () => {
 
     it('should handle error gracefully when counselor not found', async () => {
       userService.getUserByExternalId.mockResolvedValue(null);
-
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
       await expect(
         service.processOzonetelCallDetail(mockCallDetail, 'TEST_CODE'),
       ).resolves.not.toThrow('Counselor not found');
@@ -373,7 +383,7 @@ describe('OzonetelService', () => {
         ...mockCounselor,
         role: UserRole.ADMIN,
       } as any);
-
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
       await expect(
         service.processOzonetelCallDetail(mockCallDetail, 'TEST_CODE'),
       ).resolves.not.toThrow('Counselor not found');
@@ -384,7 +394,7 @@ describe('OzonetelService', () => {
         ...mockCallDetail,
         AudioFile: undefined,
       };
-
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
       await expect(
         service.processOzonetelCallDetail(invalidCallDetail, 'TEST_CODE'),
       ).resolves.not.toThrow('There is no audio file');
@@ -407,7 +417,7 @@ describe('OzonetelService', () => {
     it('should handle chat creation failure', async () => {
       chatService.getChatByExternalId.mockResolvedValue(null);
       chatService.createChatForAnonymousClient.mockResolvedValue(null);
-
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
       await expect(
         service.processOzonetelCallDetail(mockCallDetail, 'TEST_CODE'),
       ).resolves.not.toThrow('Chat was not created');
@@ -420,7 +430,7 @@ describe('OzonetelService', () => {
       };
       chatService.getChatByExternalId.mockResolvedValue(null);
       chatService.createChatForAnonymousClient.mockResolvedValue(mockChat);
-
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
       await expect(
         service.processOzonetelCallDetail(callDetailWithoutAudio, 'TEST_CODE'),
       ).resolves.not.toThrow('Audio file is required');
@@ -434,6 +444,7 @@ describe('OzonetelService', () => {
       );
       userService.getUserByExternalId.mockResolvedValue(mockCounselor);
       chatService.createChatForAnonymousClient.mockResolvedValue(mockChat);
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
     });
 
     it('should handle answered call event successfully', async () => {
@@ -551,7 +562,7 @@ describe('OzonetelService', () => {
 
     it('should handle error gracefully when counselor not found', async () => {
       userService.getUserByExternalId.mockResolvedValue(null);
-
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
       await expect(
         service.handleOzonetelCallEvents(mockCallEventsData, 'TEST_CODE'),
       ).resolves.not.toThrow('Counselor not found');
@@ -562,7 +573,7 @@ describe('OzonetelService', () => {
         ...mockCounselor,
         role: UserRole.ADMIN,
       } as any);
-
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
       await expect(
         service.handleOzonetelCallEvents(mockCallEventsData, 'TEST_CODE'),
       ).resolves.not.toThrow('Counselor not found');
@@ -576,7 +587,7 @@ describe('OzonetelService', () => {
           action: 'InvalidAction',
         },
       };
-
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
       await expect(
         service.handleOzonetelCallEvents(invalidEventData, 'TEST_CODE'),
       ).resolves.not.toThrow('Invalid action');
@@ -876,7 +887,7 @@ describe('OzonetelService', () => {
       );
       userService.getUserByExternalId.mockResolvedValue(mockCounselor);
       chatService.createChatForAnonymousClient.mockResolvedValue(mockChat);
-
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
       await service.handleOzonetelCallEvents(mockCallEventsData, 'TEST_CODE');
 
       expect(chatService.createChatForAnonymousClient).toHaveBeenCalled();

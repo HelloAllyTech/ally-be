@@ -3,7 +3,7 @@ import { DataSource, SelectQueryBuilder } from 'typeorm';
 import { ScenarioSessionRepository } from '../scenario-session.repository';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
 import { Scenarios } from '../../entity/scenarios.entity';
-import { User } from 'src/common/entities/user.entity';
+import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessionDetails } from '../../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../../entity/scenario-session-events.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
@@ -12,7 +12,9 @@ import { StartScenarioSessionRequestDto } from '../../dto/start-scenario-session
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionStatus } from '../../enum/scenario-session-status.enum';
 import { ScenarioStatus } from '../../enum/scenario.status.enum';
-import { UserRole, UserStatus } from 'src/common/constants/user.constants';
+import { UserRole } from 'src/common/constants/user.constants';
+import { UserStatus } from 'src/user/constants/user-status.constants';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { v4 as uuidv4 } from 'uuid';
 
 // Mock static classes
@@ -104,9 +106,11 @@ describe('ScenarioSessionRepository', () => {
       limit: jest.fn().mockReturnThis(),
       offset: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
+      setParameters: jest.fn().mockReturnThis(),
       getMany: jest.fn(),
       getOne: jest.fn(),
       getRawOne: jest.fn(),
+      withDeleted: jest.fn().mockReturnThis(),
     } as any;
 
     mockEntityManager = {
@@ -492,8 +496,16 @@ describe('ScenarioSessionRepository', () => {
         { scenarioSessionId: mockScenarioSessionId },
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioSession.tenantId = :tenantId',
+        { tenantId: mockTenantId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         'scenarioSession.counselorId = :counselorId',
         { counselorId: mockCounselorId },
+      );
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'scenarioSessionEvent.occurredAt',
+        'ASC',
       );
     });
 
@@ -514,6 +526,14 @@ describe('ScenarioSessionRepository', () => {
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
         'scenarioSession.id = :scenarioSessionId',
         { scenarioSessionId: mockScenarioSessionId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioSession.tenantId = :tenantId',
+        { tenantId: mockTenantId },
+      );
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'scenarioSessionEvent.occurredAt',
+        'ASC',
       );
       // Should not filter by counselorId for admin
       expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
@@ -555,6 +575,57 @@ describe('ScenarioSessionRepository', () => {
         'events.id = scenarioSessionEvent.eventId',
       );
     });
+
+    it('should return scenario session with all events (including PASSIVE)', async () => {
+      const mockSessionWithMixedEvents = {
+        ...mockScenarioSession,
+        scenario: mockScenario,
+        events: [
+          {
+            id: 'session-event-1',
+            events: {
+              id: 'event-1',
+              visibilityType: SessionEventVisibilityType.ACTIVE,
+            },
+          },
+          {
+            id: 'session-event-2',
+            events: {
+              id: 'event-2',
+              visibilityType: SessionEventVisibilityType.PASSIVE,
+            },
+          },
+        ],
+      };
+      mockQueryBuilder.getOne.mockResolvedValue(mockSessionWithMixedEvents);
+
+      const result = await repository.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect(result).toBeDefined();
+      // Repository should return all events without filtering
+      expect((result as any).events).toHaveLength(2);
+    });
+
+    it('should return scenario session with empty events array when session has no events', async () => {
+      const mockSessionWithNoEvents = {
+        ...mockScenarioSession,
+        scenario: mockScenario,
+        events: [],
+      };
+      mockQueryBuilder.getOne.mockResolvedValue(mockSessionWithNoEvents);
+
+      const result = await repository.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect(result).toBeDefined();
+      expect(result?.id).toEqual(mockScenarioSessionId);
+      expect((result as any).events).toEqual([]);
+    });
   });
 
   describe('getScenarioSessionScore', () => {
@@ -575,18 +646,17 @@ describe('ScenarioSessionRepository', () => {
         'scenarioSessionEvent',
         '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id',
       );
-      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-        SessionEvents,
-        'events',
-        'events.id = scenarioSessionEvent.eventId',
-      );
       expect(mockQueryBuilder.select).toHaveBeenCalledWith(
-        'COALESCE(SUM(events.score), 0)',
+        'COALESCE(SUM(scenarioSessionEvent.score), 0)',
         'totalScore',
       );
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
         'scenarioSession.id = :scenarioSessionId',
         { scenarioSessionId: mockScenarioSessionId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioSession.tenantId = :tenantId',
+        { tenantId: mockTenantId },
       );
     });
 

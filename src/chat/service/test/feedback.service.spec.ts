@@ -2,7 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { FeedbackService } from '../feedback.service';
-import { Feedback } from 'src/common/entities/feedback.entity';
+import { Feedback } from 'src/chat/entity/feedback.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 describe('FeedbackService', () => {
