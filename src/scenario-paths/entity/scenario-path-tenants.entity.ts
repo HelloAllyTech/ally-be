@@ -1,5 +1,10 @@
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  DeleteDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 
 @Entity('scenario_path_tenants')
 export class ScenarioPathTenants extends BaseWithoutTenantEntity {
@@ -11,4 +16,7 @@ export class ScenarioPathTenants extends BaseWithoutTenantEntity {
 
   @Column()
   tenantId!: string;
+
+  @DeleteDateColumn()
+  deletedAt?: Date;
 }

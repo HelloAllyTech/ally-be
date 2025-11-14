@@ -1,5 +1,10 @@
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  DeleteDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { ScenarioPathStatus } from '../type/scenario-paths.type';
 
 @Entity('scenario_paths')
@@ -8,7 +13,7 @@ export class ScenarioPaths extends BaseWithoutTenantEntity {
   id!: string;
 
   @Column({ nullable: true })
-  name!: string;
+  title!: string;
 
   @Column({ nullable: true })
   description?: string;
@@ -24,4 +29,13 @@ export class ScenarioPaths extends BaseWithoutTenantEntity {
 
   @Column({ type: 'int', default: 0 })
   totalScenarios!: number;
+
+  @Column({ nullable: true })
+  createdBy?: number;
+
+  @Column({ nullable: true })
+  updatedBy?: number;
+
+  @DeleteDateColumn()
+  deletedAt?: Date;
 }

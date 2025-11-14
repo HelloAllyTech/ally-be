@@ -28,6 +28,7 @@ import { PermissionValidator } from 'src/authorization/service/permission-valida
 import { UserModule } from 'src/user/user.module';
 import { AwsModule } from 'src/aws/aws.module';
 import { ScenarioEventsRepository } from './repository/scenario-events.repository';
+import { ScenarioUtil } from './util/scenario.util';
 
 @Module({
   imports: [
@@ -62,12 +63,14 @@ import { ScenarioEventsRepository } from './repository/scenario-events.repositor
     SimulationCreditsRepository,
     PermissionValidator,
     ScenarioEventsRepository,
+    ScenarioUtil,
   ],
   exports: [
     LearnMessageProcessor,
     LearnEventProcessor,
     ScenarioSessionService,
     SimulationCreditsService,
+    ScenarioUtil,
   ],
 })
 export class LearnModule {}
