@@ -1,20 +1,21 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { UserService } from '../user.service';
-import { User } from 'src/common/entities/user.entity';
+import { User } from 'src/user/entity/user.entity';
 import { QueueService } from 'src/queue/service/queue.service';
 import { RedisService } from 'src/redis/service/redis.service';
-import { UserRole, UserStatus } from 'src/common/constants/user.constants';
-import { ChatStatus } from 'src/common/entities/chat.entity';
+import { UserRole } from 'src/common/constants/user.constants';
+import { UserStatus } from 'src/user/constants/user-status.constants';
+import { ChatStatus } from 'src/chat/entity/chat.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
-import { Group } from 'src/common/entities/group.entity';
-import { UserGroup } from 'src/common/entities/user-group.entity';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { UserRepository } from 'src/user/repository/user.repository';
 import { GroupService } from 'src/authorization/service/group.service';
 import { SimulationCreditsService } from 'src/learn/service/simulation-credits.service';
 import { BadRequestException } from '@nestjs/common';
 import { UserGroupService } from 'src/authorization/service/user-group.service';
+import { GroupRepository } from 'src/authorization/repository/group.repository';
+import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -143,11 +144,8 @@ describe('UserService', () => {
       providers: [
         UserService,
         { provide: getRepositoryToken(User), useValue: mockUserRepository },
-        { provide: getRepositoryToken(Group), useValue: mockGroupRepository },
-        {
-          provide: getRepositoryToken(UserGroup),
-          useValue: mockUserGroupRepository,
-        },
+        { provide: GroupRepository, useValue: mockGroupRepository },
+        { provide: UserGroupRepository, useValue: mockUserGroupRepository },
         { provide: QueueService, useValue: mockQueueService },
         { provide: RedisService, useValue: mockCache },
         { provide: TenantService, useValue: mockTenantService },

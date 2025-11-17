@@ -6,7 +6,7 @@ import { ChatService } from '../../../chat/service/chat.service';
 import { AppConfigService } from '../../../config/config.service';
 import { LoggerService } from '../../../logger/logger.service';
 import { TranscribeAndSummarizeResponseMessage } from '../../dto/transcribe-and-summarize-response.model';
-import { ChatSummaryStatus } from '../../../common/entities/chat.entity';
+import { ChatSummaryStatus } from '../../../chat/entity/chat.entity';
 import { FailedDependencyException } from '../../../exception/custom.exception';
 
 // Mock axios

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Tenant } from 'src/common/entities/tenant.entity';
+import { Tenant } from 'src/tenant/entity/tenant.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 

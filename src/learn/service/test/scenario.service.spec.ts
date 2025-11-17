@@ -30,6 +30,9 @@ import {
 } from 'typeorm';
 import { S3Service } from 'src/aws/service/s3.service';
 import { AppConfigService } from 'src/config/config.service';
+import { DeleteCoverVideoDto } from 'src/learn/dto/delete-cover-video.dto';
+import { ScenarioVideoUploadRequestDto } from 'src/learn/dto/scenario-video-upload-request.dto';
+import { ScenarioVideoUploadContentType } from 'src/learn/enum/scenario-video-upload-content-type';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -258,6 +261,7 @@ describe('ScenarioService', () => {
           'scenario',
           'description',
           'coverImageUrl',
+          'coverVideoUrl',
           'status',
         ],
         where: {
@@ -2396,6 +2400,391 @@ describe('ScenarioService', () => {
       expect(mockS3Service.deleteObject).toHaveBeenCalledWith({
         bucket: 'test-bucket', // Uses configured bucket, not URL bucket
         key: 'scenario-cover-images/test.jpg',
+      });
+    });
+  });
+  describe('getPresignedUrlForScenarioCoverVideo', () => {
+    let mockConfigService: any;
+    let mockS3Service: any;
+
+    beforeEach(() => {
+      mockConfigService = (service as any).configService;
+      mockS3Service = (service as any).s3Service;
+
+      mockConfigService.s3 = {
+        learnMediaPublicBucket: 'test-bucket',
+      };
+      mockConfigService.aws = {
+        region: 'us-east-1',
+      };
+
+      mockS3Service.sanitizeFileName = jest.fn((fileName) => fileName);
+      mockS3Service.generatePresignedUrl = jest
+        .fn()
+        .mockResolvedValue('https://presigned-url.com');
+    });
+
+    it('should generate presigned URL for valid video upload', async () => {
+      const requestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'test-video.mp4',
+        fileSize: 5 * 1024 * 1024, // 5 MB
+        contentType: ScenarioVideoUploadContentType.MP4,
+        duration: 8,
+      };
+
+      const result =
+        await service.getPresignedUrlForScenarioCoverVideo(requestDto);
+
+      expect(result).toEqual({
+        presignedUrl: 'https://presigned-url.com',
+        coverVideoUrl: expect.stringMatching(
+          /^https:\/\/test-bucket\.s3\.us-east-1\.amazonaws\.com\/scenario-cover-videos\/\d+-test-video\.mp4$/,
+        ),
+      });
+      expect(mockS3Service.sanitizeFileName).toHaveBeenCalledWith(
+        'test-video.mp4',
+      );
+      expect(mockS3Service.generatePresignedUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bucket: 'test-bucket',
+          operation: 'put',
+          expiresIn: 600,
+          contentType: ScenarioVideoUploadContentType.MP4,
+        }),
+      );
+    });
+
+    it('should throw error when S3 bucket is not defined', async () => {
+      mockConfigService.s3.learnMediaPublicBucket = undefined;
+
+      const requestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'test-video.mp4',
+        fileSize: 1024,
+        contentType: ScenarioVideoUploadContentType.MP4,
+        duration: 5,
+      };
+
+      await expect(
+        service.getPresignedUrlForScenarioCoverVideo(requestDto),
+      ).rejects.toThrow(
+        'S3 bucket name for learnMediaPublicBucket is not defined',
+      );
+    });
+
+    it('should throw BadRequestException for invalid content type', async () => {
+      const requestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'test-video.avi',
+        fileSize: 1024 * 1024,
+        contentType: 'video/avi' as any,
+        duration: 5,
+      };
+
+      await expect(
+        service.getPresignedUrlForScenarioCoverVideo(requestDto),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.getPresignedUrlForScenarioCoverVideo(requestDto),
+      ).rejects.toThrow('Invalid file type');
+    });
+
+    it('should throw BadRequestException when file size exceeds limit', async () => {
+      const requestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'large-video.mp4',
+        fileSize: 100 * 1024 * 1024, // 100 MB
+        contentType: ScenarioVideoUploadContentType.MP4,
+        duration: 10,
+      };
+
+      await expect(
+        service.getPresignedUrlForScenarioCoverVideo(requestDto),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.getPresignedUrlForScenarioCoverVideo(requestDto),
+      ).rejects.toThrow(/File size must be less than/);
+    });
+
+    it('should throw BadRequestException when duration exceeds limit', async () => {
+      const requestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'long-video.mp4',
+        fileSize: 5 * 1024 * 1024,
+        contentType: ScenarioVideoUploadContentType.MP4,
+        duration: 120, // Assuming limit is less than 120
+      };
+
+      await expect(
+        service.getPresignedUrlForScenarioCoverVideo(requestDto),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.getPresignedUrlForScenarioCoverVideo(requestDto),
+      ).rejects.toThrow(/File duration must be less than/);
+    });
+
+    it('should handle MOV content type', async () => {
+      const requestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'test-video.mov',
+        fileSize: 5 * 1024 * 1024,
+        contentType: ScenarioVideoUploadContentType.MOV,
+        duration: 8,
+      };
+
+      const result =
+        await service.getPresignedUrlForScenarioCoverVideo(requestDto);
+
+      expect(result).toEqual({
+        presignedUrl: 'https://presigned-url.com',
+        coverVideoUrl: expect.stringMatching(
+          /^https:\/\/test-bucket\.s3\.us-east-1\.amazonaws\.com\/scenario-cover-videos\/\d+-test-video\.mov$/,
+        ),
+      });
+      expect(mockS3Service.generatePresignedUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentType: ScenarioVideoUploadContentType.MOV,
+        }),
+      );
+    });
+
+    it('should handle WEBM content type', async () => {
+      const requestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'test-video.webm',
+        fileSize: 5 * 1024 * 1024,
+        contentType: ScenarioVideoUploadContentType.WEBM,
+        duration: 8,
+      };
+
+      const result =
+        await service.getPresignedUrlForScenarioCoverVideo(requestDto);
+
+      expect(result).toEqual({
+        presignedUrl: 'https://presigned-url.com',
+        coverVideoUrl: expect.stringMatching(
+          /^https:\/\/test-bucket\.s3\.us-east-1\.amazonaws\.com\/scenario-cover-videos\/\d+-test-video\.webm$/,
+        ),
+      });
+      expect(mockS3Service.generatePresignedUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentType: ScenarioVideoUploadContentType.WEBM,
+        }),
+      );
+    });
+
+    it('should sanitize file name before generating URL', async () => {
+      const requestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'test video with spaces.mp4',
+        fileSize: 5 * 1024 * 1024,
+        contentType: ScenarioVideoUploadContentType.MP4,
+        duration: 8,
+      };
+
+      mockS3Service.sanitizeFileName.mockReturnValue(
+        'test_video_with_spaces.mp4',
+      );
+
+      await service.getPresignedUrlForScenarioCoverVideo(requestDto);
+
+      expect(mockS3Service.sanitizeFileName).toHaveBeenCalledWith(
+        'test video with spaces.mp4',
+      );
+    });
+  });
+
+  describe('deleteCoverVideo', () => {
+    let mockConfigService: any;
+    let mockS3Service: any;
+    let mockLogger: any;
+
+    beforeEach(() => {
+      mockConfigService = (service as any).configService;
+      mockS3Service = (service as any).s3Service;
+      mockLogger = (service as any).logger;
+
+      mockConfigService.s3 = {
+        learnMediaPublicBucket: 'test-bucket',
+      };
+
+      mockS3Service.deleteObject = jest.fn().mockResolvedValue(true);
+      mockLogger.warn = jest.fn();
+      mockLogger.error = jest.fn();
+    });
+
+    it('should successfully delete cover video and return { success: true }', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl:
+          'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-videos/12345-test.mp4',
+      };
+
+      const result = await service.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(result).toEqual({ success: true });
+      expect(mockS3Service.deleteObject).toHaveBeenCalledWith({
+        bucket: 'test-bucket',
+        key: 'scenario-cover-videos/12345-test.mp4',
+      });
+      expect(mockLogger.warn).not.toHaveBeenCalled();
+      expect(mockLogger.error).not.toHaveBeenCalled();
+    });
+
+    it('should throw error when S3 bucket is not defined', async () => {
+      mockConfigService.s3.learnMediaPublicBucket = undefined;
+
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl:
+          'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-videos/12345-test.mp4',
+      };
+
+      await expect(
+        service.deleteCoverVideo(deleteCoverVideoDto),
+      ).rejects.toThrow(
+        'S3 bucket name for learnMediaPublicBucket is not defined',
+      );
+    });
+
+    it('should return { success: false } and log warning for invalid S3 URL format', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl: 'https://invalid-url.com/test.mp4',
+      };
+
+      const result = await service.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(result).toEqual({ success: false });
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Invalid or unrecognized S3 URL: https://invalid-url.com/test.mp4',
+      );
+      expect(mockS3Service.deleteObject).not.toHaveBeenCalled();
+    });
+
+    it('should return { success: false } and log warning for malformed S3 URL', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl: 'not-a-valid-url',
+      };
+
+      const result = await service.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(result).toEqual({ success: false });
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Invalid or unrecognized S3 URL: not-a-valid-url',
+      );
+    });
+
+    it('should return { success: false } and log error when S3 deletion fails', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl:
+          'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-videos/12345-test.mp4',
+      };
+
+      const s3Error = new Error('S3 deletion failed');
+      mockS3Service.deleteObject.mockRejectedValue(s3Error);
+
+      const result = await service.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(result).toEqual({ success: false });
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Failed to delete uploaded cover video with error',
+        ),
+      );
+      expect(mockS3Service.deleteObject).toHaveBeenCalledWith({
+        bucket: 'test-bucket',
+        key: 'scenario-cover-videos/12345-test.mp4',
+      });
+    });
+
+    it('should handle different S3 URL formats correctly', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl:
+          'https://another-bucket.s3.eu-west-1.amazonaws.com/videos/video.webm',
+      };
+
+      const result = await service.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(result).toEqual({ success: true });
+      expect(mockS3Service.deleteObject).toHaveBeenCalledWith({
+        bucket: 'test-bucket',
+        key: 'videos/video.webm',
+      });
+    });
+
+    it('should extract storage key correctly from S3 URL with nested paths', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl:
+          'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-videos/subfolder/12345-test.mov',
+      };
+
+      const result = await service.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(result).toEqual({ success: true });
+      expect(mockS3Service.deleteObject).toHaveBeenCalledWith({
+        bucket: 'test-bucket',
+        key: 'scenario-cover-videos/subfolder/12345-test.mov',
+      });
+    });
+
+    it('should return { success: false } for empty cover video URL', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl: '',
+      };
+
+      const result = await service.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(result).toEqual({ success: false });
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Invalid or unrecognized S3 URL: ',
+      );
+    });
+
+    it('should handle S3 URL with special characters in key', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl:
+          'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-videos/test%20video%20(1).mp4',
+      };
+
+      const result = await service.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(result).toEqual({ success: true });
+      expect(mockS3Service.deleteObject).toHaveBeenCalledWith({
+        bucket: 'test-bucket',
+        key: 'scenario-cover-videos/test%20video%20(1).mp4',
+      });
+    });
+
+    it('should log error with stringified error object', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl:
+          'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-videos/12345-test.mp4',
+      };
+
+      const s3Error = { code: 'NoSuchKey', message: 'Key not found' };
+      mockS3Service.deleteObject.mockRejectedValue(s3Error);
+
+      await service.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        `Failed to delete uploaded cover video with error ${JSON.stringify(s3Error)}`,
+      );
+    });
+
+    it('should return { success: false } for S3 URL without storage key', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl: 'https://test-bucket.s3.us-east-1.amazonaws.com/',
+      };
+
+      const result = await service.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(result).toEqual({ success: false });
+      expect(mockLogger.warn).toHaveBeenCalled();
+    });
+
+    it('should handle bucket name mismatch gracefully', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl:
+          'https://different-bucket.s3.us-east-1.amazonaws.com/scenario-cover-videos/test.mp4',
+      };
+
+      const result = await service.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(result).toEqual({ success: true });
+      expect(mockS3Service.deleteObject).toHaveBeenCalledWith({
+        bucket: 'test-bucket', // Uses configured bucket, not URL bucket
+        key: 'scenario-cover-videos/test.mp4',
       });
     });
   });

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { UserRepository } from '../user.repository';
-import { User } from 'src/common/entities/user.entity';
+import { User } from 'src/user/entity/user.entity';
 import { UserSortBy, SortOrder } from 'src/user/enum/user.enum';
 import { UserFilterOptions } from 'src/user/interface/user-filter-options.interface';
 

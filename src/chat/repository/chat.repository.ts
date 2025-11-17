@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Chat } from 'src/common/entities/chat.entity';
+import { Chat } from '../entity/chat.entity';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { UpdateChatInput } from '../type/chat.type';
 

@@ -2,7 +2,7 @@ import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { LoggerService } from '../../logger/logger.service';
 import { SqsService } from '../../aws/service/sqs.service';
 import { ChatService } from '../../chat/service/chat.service';
-import { ChatSummaryStatus } from '../../common/entities/chat.entity';
+import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
 import { TranscribeAndSummarizeRequestMessage } from '../dto/transcribe-and-summarize-request.model';
 import { AppConfigService } from 'src/config/config.service';
 

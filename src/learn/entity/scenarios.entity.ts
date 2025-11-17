@@ -1,4 +1,4 @@
-import { BaseWithoutTenantEntity } from 'src/common/entities/base-without-tenant.entity';
+import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import {
   Column,
   PrimaryGeneratedColumn,
@@ -23,6 +23,9 @@ export class Scenarios extends BaseWithoutTenantEntity {
 
   @Column({ nullable: true })
   coverImageUrl?: string;
+
+  @Column({ nullable: true })
+  coverVideoUrl?: string;
 
   @Column({ enum: ScenarioStatus, default: ScenarioStatus.DRAFT })
   status!: ScenarioStatus;

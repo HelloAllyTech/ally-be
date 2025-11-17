@@ -16,7 +16,7 @@ import {
 import { ChatEvents } from '../constants/chat.constants';
 import { ChatService } from '../service/chat.service';
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { Message, MessageType } from '../../common/entities/message.entity';
+import { Message, MessageType } from '../entity/message.entity';
 import { AppConfigService } from '../../config/config.service';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { TranscriptionService } from '../../ai/service/transcription.service';
@@ -26,7 +26,7 @@ import {
 } from '../../common/decorator/execution.context.decorator';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { AudioChatProvider } from '../../common/constants/chat.constants';
-import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
+import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
 import { JwtService } from '@nestjs/jwt';
 
 @WebSocketGateway({

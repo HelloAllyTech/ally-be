@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { CloudTelephonyIntegration } from '../../common/entities/cloud-telephony-integration.entity';
+import { CloudTelephonyIntegration } from '../entity/cloud-telephony-integration.entity';
 
 @Injectable()
 export class CloudTelephonyRepository {

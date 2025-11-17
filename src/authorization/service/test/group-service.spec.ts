@@ -3,13 +3,14 @@ import { RedisService } from 'src/redis/service/redis.service';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
 import { GroupService } from '../group.service';
-import { Group } from 'src/common/entities/group.entity';
+import { Group } from 'src/authorization/entity/group.entity';
 import { LoggerService } from 'src/logger/logger.service';
 import { UserRole } from 'src/common/constants/user.constants';
 import { DataSource } from 'typeorm';
-import { User } from 'src/common/entities/user.entity';
+import { User } from 'src/user/entity/user.entity';
 import { UserRepository } from 'src/user/repository/user.repository';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { UserGroup } from 'src/authorization/entity/user-group.entity';
 
 describe('GroupService', () => {
   let service: GroupService;
@@ -55,8 +56,9 @@ describe('GroupService', () => {
           provide: UserGroupRepository,
           useValue: {
             findOne: jest.fn(),
-            findMany: jest.fn(),
+            find: jest.fn(),
             create: jest.fn(),
+            save: jest.fn(),
             count: jest.fn(),
             remove: jest.fn(),
           },
@@ -206,9 +208,15 @@ describe('GroupService', () => {
 
   describe('assignRole', () => {
     it('should successfully assign a role to user', async () => {
+      const mockUserGroup = {
+        groupId: 2,
+        userId: 1,
+      } as UserGroup;
+
       groupRepo.findOne.mockResolvedValue({ id: 2, name: 'ADMIN' } as Group);
       userGroupRepo.findOne.mockResolvedValue(null);
-      userGroupRepo.create.mockResolvedValue({
+      userGroupRepo.create.mockReturnValue(mockUserGroup);
+      userGroupRepo.save.mockResolvedValue({
         id: 1,
         groupId: 2,
         userId: 1,
@@ -224,6 +232,7 @@ describe('GroupService', () => {
         groupId: 2,
         userId: 1,
       });
+      expect(userGroupRepo.save).toHaveBeenCalledWith(mockUserGroup);
       expect(redisService.del).toHaveBeenCalledWith('user:groups:1');
       expect(redisService.del).toHaveBeenCalledWith('user:roles:1');
       expect(redisService.del).toHaveBeenCalledTimes(2);
@@ -276,7 +285,7 @@ describe('GroupService', () => {
       groupRepo.findOne.mockResolvedValue({ id: 1, name: 'ADMIN' } as Group);
       userGroupRepo.findOne.mockResolvedValue(mockUserGroup as any);
       userGroupRepo.count.mockResolvedValue(2);
-      userGroupRepo.remove.mockResolvedValue(undefined);
+      userGroupRepo.remove.mockResolvedValue(mockUserGroup as any);
 
       const result = await service.removeRole({
         role: UserRole.ADMIN,
@@ -419,8 +428,8 @@ describe('GroupService', () => {
 
       userRepository.findOne.mockResolvedValue(mockUser);
       groupRepo.getAll.mockResolvedValue(mockGroups);
-      userGroupRepo.findMany.mockResolvedValue([]);
-      userGroupRepo.create.mockResolvedValue({} as any);
+      userGroupRepo.find.mockResolvedValue([]);
+      userGroupRepo.save.mockResolvedValue({} as any);
 
       const result = await service.changeUserRoles({
         userId: 1,
@@ -432,6 +441,7 @@ describe('GroupService', () => {
         message: 'User roles updated successfully',
       });
       expect(userGroupRepo.create).toHaveBeenCalledTimes(2);
+      expect(userGroupRepo.save).toHaveBeenCalledTimes(2);
       expect(redisService.del).toHaveBeenCalledWith('user:groups:1');
       expect(redisService.del).toHaveBeenCalledWith('user:roles:1');
     });
@@ -446,9 +456,13 @@ describe('GroupService', () => {
 
       userRepository.findOne.mockResolvedValue(mockUser);
       groupRepo.getAll.mockResolvedValue(mockGroups);
-      userGroupRepo.findMany.mockResolvedValue(mockCurrentUserGroups as any);
-      userGroupRepo.remove.mockResolvedValue(undefined);
-      userGroupRepo.create.mockResolvedValue({} as any);
+      userGroupRepo.find.mockResolvedValue(mockCurrentUserGroups as any);
+      userGroupRepo.remove.mockResolvedValue({
+        id: 1,
+        groupId: 1,
+        userId: 1,
+      } as UserGroup);
+      userGroupRepo.save.mockResolvedValue({} as any);
 
       const result = await service.changeUserRoles({
         userId: 1,
@@ -461,6 +475,7 @@ describe('GroupService', () => {
       });
       expect(userGroupRepo.remove).toHaveBeenCalledTimes(1);
       expect(userGroupRepo.create).toHaveBeenCalledTimes(2);
+      expect(userGroupRepo.save).toHaveBeenCalledTimes(2);
       expect(dataSource.transaction).toHaveBeenCalled();
     });
 
@@ -471,7 +486,7 @@ describe('GroupService', () => {
 
       userRepository.findOne.mockResolvedValue(mockUser);
       groupRepo.getAll.mockResolvedValue(mockGroups);
-      userGroupRepo.findMany.mockResolvedValue(mockCurrentUserGroups as any);
+      userGroupRepo.find.mockResolvedValue(mockCurrentUserGroups as any);
 
       const result = await service.changeUserRoles({
         userId: 1,
@@ -494,8 +509,8 @@ describe('GroupService', () => {
 
       userRepository.findOne.mockResolvedValue(mockUser);
       groupRepo.getAll.mockResolvedValue(mockGroups);
-      userGroupRepo.findMany.mockResolvedValue([]);
-      userGroupRepo.create.mockRejectedValue(new Error('DB Error'));
+      userGroupRepo.find.mockResolvedValue([]);
+      userGroupRepo.save.mockRejectedValue(new Error('DB Error'));
 
       await expect(
         service.changeUserRoles({

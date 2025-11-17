@@ -10,12 +10,12 @@ import {
   DeepgramTranscriptMetadata,
 } from '../../type/chat.type';
 import { ChatEvents } from '../../constants/chat.constants';
-import { MessageType } from '../../../common/entities/message.entity';
+import { MessageType } from '../../entity/message.entity';
 import { AudioChatProvider } from '../../../common/constants/chat.constants';
-import { MessageBrokerChannel } from '../../../common/constants/message-broker.constants';
+import { MessageBrokerChannel } from '../../../message-broker/constants/message-broker.constants';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { UserRole } from '../../../common/constants/user.constants';
-import { ChatStatus } from '../../../common/entities/chat.entity';
+import { ChatStatus } from '../../entity/chat.entity';
 
 describe('ChatGateway', () => {
   let gateway: ChatGateway;

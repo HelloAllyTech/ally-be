@@ -18,7 +18,7 @@ import { CloudTelephonyController } from './controller/cloud-telephony.controlle
 import { CloudTelephonyRepository } from './repository/cloud-telephony.repository';
 import { OzonetelController } from './controller/ozonetel.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CloudTelephonyIntegration } from '../common/entities/cloud-telephony-integration.entity';
+import { CloudTelephonyIntegration } from './entity/cloud-telephony-integration.entity';
 import { AudioRetryProducer } from './producer/audio-retry.producer';
 import { AudioRetryConsumer } from './consumer/audio-retry.consumer';
 import { AudioRetryDlqConsumer } from './consumer/audio-retry-dlq.consumer';

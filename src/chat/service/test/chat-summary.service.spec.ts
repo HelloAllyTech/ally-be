@@ -2,12 +2,8 @@ import { Test } from '@nestjs/testing';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ChatSummaryService } from '../chat-summary.service';
 import { ChatService } from '../chat.service';
-import { CallDetails } from 'src/common/entities/call.details.entity';
-import {
-  Chat,
-  ChatStatus,
-  ChatSummaryStatus,
-} from 'src/common/entities/chat.entity';
+import { CallDetails } from '../../entity/call.details.entity';
+import { Chat, ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
 import { TokenUser } from 'src/auth/type/auth.types';
 import {
   AudioChatProvider,
@@ -42,7 +38,6 @@ describe('ChatSummaryService', () => {
     id: 1,
     clientId: 1,
     counselorId: 2,
-    roomId: 1,
     status: ChatStatus.ENDED,
     summaryStatus: ChatSummaryStatus.SUCCESS,
     startedAt: new Date('2023-01-01T10:00:00Z'),

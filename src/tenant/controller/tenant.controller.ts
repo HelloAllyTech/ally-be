@@ -1,4 +1,4 @@
-import { Tenant, TenantStatus } from '../../common/entities/tenant.entity';
+import { Tenant, TenantStatus } from '../entity/tenant.entity';
 import {
   ApiBearerAuth,
   ApiOperation,

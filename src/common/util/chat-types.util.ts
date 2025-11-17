@@ -1,5 +1,5 @@
 import { AudioChatProvider } from '../constants/chat.constants';
-import { MessageBrokerChannel } from '../constants/message-broker.constants';
+import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
 
 export function findMessageBrokerChannelUsingProvider(
   provider: AudioChatProvider,

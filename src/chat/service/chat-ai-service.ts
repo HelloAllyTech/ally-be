@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { CallDetails } from '../../common/entities/call.details.entity';
+import { CallDetails } from '../entity/call.details.entity';
 import {
   FlattenedSummaryNotePayload,
   FlattenedSummaryNotePayloadCamelCase,
-} from '../../common/entities/type/call.details.type';
+} from '../type/call.details.type';
 import { CommonUtil } from '../../common/util/common.util';
 import { ChatService } from './chat.service';
-import { Message, MessageType } from '../../common/entities/message.entity';
+import { Message, MessageType } from '../entity/message.entity';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { UserRole } from '../../common/constants/user.constants';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -22,7 +22,7 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { S3Service } from '../../aws/service/s3.service';
 import { AppConfigService } from '../../config/config.service';
 import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
-import { Chat } from 'src/common/entities/chat.entity';
+import { Chat } from '../entity/chat.entity';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { UserService } from 'src/user/service/user.service';

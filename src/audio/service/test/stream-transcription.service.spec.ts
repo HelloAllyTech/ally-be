@@ -9,7 +9,7 @@ import { BroadcastMessageService } from '../broadcast-message.service';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { ANONYMOUS_CLIENT_ID } from '../../../common/constants/user.constants';
 import { AudioChatProvider } from '../../../common/constants/chat.constants';
-import { MessageType } from '../../../common/entities/message.entity';
+import { MessageType } from '../../../chat/entity/message.entity';
 
 // Mock the static class
 jest.mock('../../../common/execution/execution-manager', () => ({

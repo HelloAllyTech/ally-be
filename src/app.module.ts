@@ -29,6 +29,7 @@ import { LiveKitModule } from './livekit/livekit.module';
 import { LearnModule } from './learn/learn.module';
 import { SessionEventModule } from './session-event/session-event.module';
 import { AuthorizationModule } from './authorization/authorization.module';
+import { PlaceModule } from './place/place.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { AuthorizationModule } from './authorization/authorization.module';
     LiveKitModule,
     SessionEventModule,
     AuthorizationModule,
+    PlaceModule,
   ],
   controllers: [],
   providers: [

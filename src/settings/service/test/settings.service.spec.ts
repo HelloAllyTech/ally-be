@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { SettingsService } from '../settings.service';
-import { PreferenceService } from '../../../common/service/preference.service';
+import { PreferenceService } from '../preference.service';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { CommonUtil } from '../../../common/util/common.util';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';

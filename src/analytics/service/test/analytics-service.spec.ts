@@ -1,7 +1,7 @@
-import { Dashboard } from 'src/common/entities/dashboard.entity';
+import { Dashboard } from '../../entity/dashboard.entity';
 import { AnalyticsService } from '../analytics.service';
 import { In, Repository } from 'typeorm';
-import { Chat } from 'src/common/entities/chat.entity';
+import { Chat } from '../../../chat/entity/chat.entity';
 import { AnalyticsInterface } from 'src/analytics/interface/analytics.interface';
 import { GroupService } from 'src/authorization/service/group.service';
 import { NotFoundException } from '@nestjs/common';

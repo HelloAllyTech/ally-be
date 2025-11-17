@@ -112,7 +112,7 @@ describe('EmailService', () => {
       expect(mockEventEmitter.emit).toHaveBeenCalledWith('exception', {
         statusCode: 200,
         timestamp: expect.any(String),
-        path: '/api/v1/sms/otp',
+        path: '/api/v1/email/otp',
         message: 'OTP sent to test@example.com - 123456',
         type: 'EMAIL OTP',
         channel: 'C08T402E3K5',

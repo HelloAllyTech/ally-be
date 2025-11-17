@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from '../../logger/logger.service';
-import { Chat } from '../../common/entities/chat.entity';
-import { User } from '../../common/entities/user.entity';
-import { FlattenedSummaryNotePayloadCamelCase } from '../../common/entities/type/call.details.type';
+import { Chat } from '../entity/chat.entity';
+import { User } from '../../user/entity/user.entity';
+import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type';
 import { TokenUser } from '../../auth/type/auth.types';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ChatUtil } from '../util/chat.util';

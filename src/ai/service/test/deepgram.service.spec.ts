@@ -24,6 +24,7 @@ describe('DeepgramService', () => {
   let mockDeepgramClient: jest.Mocked<DeepgramClient>;
   let mockLiveClient: jest.Mocked<LiveClient>;
   let mockLogger: jest.Mocked<LoggerService>;
+  let module: TestingModule;
 
   const mockUserSession: UserChatSessionData = {
     id: 'session-123',
@@ -86,6 +87,9 @@ describe('DeepgramService', () => {
   };
 
   beforeEach(async () => {
+    // Use fake timers to control setInterval
+    jest.useFakeTimers();
+
     // Mock configuration
     mockConfig = {
       ai: {
@@ -124,7 +128,7 @@ describe('DeepgramService', () => {
     // Mock LoggerService.getInstance
     (LoggerService.getInstance as jest.Mock).mockReturnValue(mockLogger);
 
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       providers: [
         DeepgramService,
         {
@@ -139,8 +143,17 @@ describe('DeepgramService', () => {
 
   afterEach(async () => {
     // Clean up any live connections and intervals to prevent Jest from hanging
-    await service.onModuleDestroy();
+    try {
+      await service.onModuleDestroy();
+    } catch (error) {
+      // Ignore cleanup errors in tests
+    }
     jest.clearAllMocks();
+    jest.clearAllTimers();
+    jest.useRealTimers();
+    if (module) {
+      await module.close();
+    }
   });
 
   describe('constructor', () => {
@@ -236,17 +249,23 @@ describe('DeepgramService', () => {
         return mockLiveClient;
       });
 
-      await expect(
-        service.startLiveTranscription(
+      try {
+        await service.startLiveTranscription(
           { session: mockUserSession, chatId },
           callback,
-        ),
-      ).rejects.toThrow('Connection failed');
+        );
+        fail('Expected error to be thrown');
+      } catch (err) {
+        expect(err.message).toBe('Connection failed');
+      }
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         `startLiveTranscription - Failed to start live transcription for userId: ${mockUserSession.userId}`,
         error,
       );
+
+      // Clear any timers that might have been set up before the error
+      jest.clearAllTimers();
     });
 
     it('should create live client with default options', async () => {

@@ -1,14 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationService } from '../notification.service';
 import { SlackService } from '../slack.service';
-import { SMSInterface } from '../../interface/sms.interface';
 import { EmailService } from '../email.service';
 import { NotificationErrorType } from '../../type/notification.error.type';
 
 describe('NotificationService', () => {
   let service: NotificationService;
   let mockSlackService: any;
-  let mockSmsService: any;
   let mockEmailService: any;
 
   const mockNotificationError: NotificationErrorType = {
@@ -34,11 +32,6 @@ describe('NotificationService', () => {
       sendMessage: jest.fn(),
     };
 
-    mockSmsService = {
-      sendSMS: jest.fn(),
-      sendOTP: jest.fn(),
-    };
-
     mockEmailService = {
       sendEmailOTP: jest.fn(),
       sendSummaryNotification: jest.fn(),
@@ -48,7 +41,6 @@ describe('NotificationService', () => {
       providers: [
         NotificationService,
         { provide: SlackService, useValue: mockSlackService },
-        { provide: SMSInterface, useValue: mockSmsService },
         { provide: EmailService, useValue: mockEmailService },
       ],
     }).compile();
@@ -71,28 +63,6 @@ describe('NotificationService', () => {
         expectedMessage,
         mockNotificationError.channel,
       );
-    });
-  });
-
-  describe('sendSMS', () => {
-    it('should send SMS message', async () => {
-      const to = '+1234567890';
-      const body = 'Test SMS message';
-
-      await service.sendSMS(to, body);
-
-      expect(mockSmsService.sendSMS).toHaveBeenCalledWith(to, body);
-    });
-  });
-
-  describe('sendOTP', () => {
-    it('should send OTP via SMS', async () => {
-      const to = '+1234567890';
-      const otp = '123456';
-
-      await service.sendOTP(to, otp);
-
-      expect(mockSmsService.sendOTP).toHaveBeenCalledWith(to, otp);
     });
   });
 

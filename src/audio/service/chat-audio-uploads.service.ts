@@ -3,7 +3,7 @@ import { EntityManager } from 'typeorm';
 import {
   ChatAudioUploads,
   ChatAudioUploadStatus,
-} from '../../common/entities/chat-audio-uploads.entity';
+} from '../entity/chat-audio-uploads.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { ChatAudioUploadRepository } from '../repository/chat-audio-upload.repository';

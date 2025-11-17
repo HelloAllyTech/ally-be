@@ -2,13 +2,13 @@ import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import { WriteStream } from 'fs';
 import * as path from 'path';
-import { ChatSummaryStatus } from 'src/common/entities/chat.entity';
+import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
 import { DataSource, EntityManager } from 'typeorm';
 import { AiEventService } from '../../ai/service/ai-event.service';
 import { LoggerService } from '../../logger/logger.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
-import { ChatAudioUploadStatus } from '../../common/entities/chat-audio-uploads.entity';
+import { ChatAudioUploadStatus } from '../entity/chat-audio-uploads.entity';
 import {
   AudioChatProvider,
   AudioChatPlatform,
@@ -27,7 +27,7 @@ import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-ty
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { AudioEncryptionUtil } from '../utils/audio-encryption.util';
 import { CipherGCM } from 'crypto';
-import { Chat } from 'src/common/entities/chat.entity';
+import { Chat } from '../../chat/entity/chat.entity';
 import { ChatAudioUploadsService } from './chat-audio-uploads.service';
 
 @Injectable()

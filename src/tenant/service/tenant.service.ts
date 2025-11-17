@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
-import { Tenant, TenantStatus } from '../../common/entities/tenant.entity';
+import { Tenant, TenantStatus } from '../entity/tenant.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { TenantsRepository } from '../repository/tenant.repository';
 import { Pagination } from 'src/common/type/common.type';

@@ -5,7 +5,7 @@ import { ChatAiService } from '../../chat/service/chat-ai-service';
 import axios from 'axios';
 import { TranscribeAndSummarizeResponseMessage } from '../dto/transcribe-and-summarize-response.model';
 import { ChatService } from 'src/chat/service/chat.service';
-import { ChatSummaryStatus } from 'src/common/entities/chat.entity';
+import { ChatSummaryStatus } from 'src/chat/entity/chat.entity';
 import { FailedDependencyException } from 'src/exception/custom.exception';
 import { AppConfigService } from 'src/config/config.service';
 
