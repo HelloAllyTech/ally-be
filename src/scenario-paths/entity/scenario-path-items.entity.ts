@@ -21,7 +21,10 @@ export class ScenarioPathItems extends BaseWithoutTenantEntity {
   order!: number;
 
   @Column({ nullable: true })
-  message?: string;
+  messageTitle?: string;
+
+  @Column({ nullable: true })
+  messageContent?: string;
 
   @Column({ nullable: true })
   minimumScore?: number;

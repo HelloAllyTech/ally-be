@@ -1,10 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { CreateScenarioPathDto } from '../dto/create-scenario-path.dto';
-import { Scenario } from '../type/scenario-path-session-items.type';
 import { ScenarioPaths } from '../entity/scenario-paths.entity';
 import { ScenarioPathItems } from '../entity/scenario-path-items.entity';
 import { ScenarioUtil } from 'src/learn/util/scenario.util';
+import { ScenarioPathStatus } from '../type/scenario-paths.type';
 
 @Injectable()
 export class ScenarioPathsService {
@@ -14,26 +14,29 @@ export class ScenarioPathsService {
   ) {}
 
   async createScenarioPath(createScenarioPathDto: CreateScenarioPathDto) {
-    await this.validateScenarios(createScenarioPathDto.scenarios);
+    const { title, description, coverImageUrl, isGlobal, status, scenarios } =
+      createScenarioPathDto;
+    await this.validateScenarios(createScenarioPathDto, status);
 
     return await this.dataSource.transaction(async (manager) => {
       const scenarioPathRepo = manager.getRepository(ScenarioPaths);
       const scenarioPath = await scenarioPathRepo.save({
-        title: createScenarioPathDto.title,
-        description: createScenarioPathDto.description,
-        coverImageUrl: createScenarioPathDto.coverImageUrl,
-        isGlobal: createScenarioPathDto.isGlobal || false,
-        status: createScenarioPathDto.status,
-        totalScenarios: createScenarioPathDto.scenarios.length,
+        title,
+        description,
+        coverImageUrl,
+        isGlobal,
+        status,
+        totalScenarios: scenarios.length,
       });
 
       const scenarioPathItemRepo = manager.getRepository(ScenarioPathItems);
-      const items = createScenarioPathDto.scenarios.map((scenario) =>
+      const items = scenarios.map((scenario) =>
         scenarioPathItemRepo.create({
           scenarioPathId: scenarioPath.id,
           scenarioId: scenario.scenarioId,
           order: scenario.order,
-          message: scenario.message,
+          messageTitle: scenario.messageTitle,
+          messageContent: scenario.messageContent,
           minimumScore: scenario.minimumScore,
         }),
       );
@@ -44,17 +47,59 @@ export class ScenarioPathsService {
     });
   }
 
-  private async validateScenarios(scenarios: Scenario[]) {
-    const scenarioIds: number[] = [];
-    const scenarioOrderSet = new Set<number>();
+  private async validateScenarios(
+    createScenarioPathDto: CreateScenarioPathDto,
+    status: ScenarioPathStatus,
+  ) {
+    const requiredFields = ['title', 'description', 'coverImageUrl'];
+    const scenariosLength = createScenarioPathDto.scenarios.length;
+    if (status === ScenarioPathStatus.ACTIVE) {
+      const missingFields = requiredFields.filter(
+        (field) => !createScenarioPathDto[field as keyof CreateScenarioPathDto],
+      );
+      if (missingFields.length > 0) {
+        throw new BadRequestException(
+          `The following required fields are missing: ${missingFields.join(', ')}`,
+        );
+      }
 
-    for (const scenario of scenarios) {
-      scenarioIds.push(scenario.scenarioId);
+      if (scenariosLength < 2) {
+        throw new BadRequestException(
+          'Scenario path must have at least 2 scenarios',
+        );
+      }
+
+      if (scenariosLength > 20) {
+        throw new BadRequestException(
+          'Scenario path must have at most 20 scenarios',
+        );
+      }
+    }
+
+    const scenarioIdsSet: Set<number> = new Set();
+    const scenarioOrderSet: Set<number> = new Set();
+
+    for (const scenario of createScenarioPathDto.scenarios) {
+      if (scenarioIdsSet.has(scenario.scenarioId)) {
+        throw new BadRequestException('Scenario order values must be unique');
+      }
       if (scenarioOrderSet.has(scenario.order)) {
         throw new BadRequestException('Scenario order values must be unique');
       }
+      scenarioIdsSet.add(scenario.scenarioId);
       scenarioOrderSet.add(scenario.order);
     }
+
+    for (let i = 1; i <= scenariosLength; i++) {
+      if (!scenarioOrderSet.has(i)) {
+        throw new BadRequestException(
+          `Scenario order must be sequential starting from 1. Missing order: ${i}`,
+        );
+      }
+    }
+
+    const scenarioIds = [...scenarioIdsSet];
+
     const existingScenarios =
       await this.scenarioUtil.getScenarioByIds(scenarioIds);
     const existingScenarioIds = existingScenarios.map(

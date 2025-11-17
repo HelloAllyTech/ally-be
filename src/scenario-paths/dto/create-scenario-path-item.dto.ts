@@ -27,12 +27,22 @@ export class CreateScenarioPathItemDto {
   minimumScore!: number;
 
   @ApiPropertyOptional({
-    description: 'Custom message to display when this scenario is reached',
+    description:
+      'Title of the message to display when this scenario is completed',
+    example: 'Scenario Completed',
+  })
+  @IsOptional()
+  @IsString()
+  messageTitle?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Content of the message to display when this scenario is completed',
     example: 'Great job! You can now proceed to the next scenario.',
   })
   @IsOptional()
   @IsString()
-  message?: string;
+  messageContent?: string;
 
   @ApiProperty({
     description:
