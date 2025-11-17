@@ -53,7 +53,13 @@ describe('ScenarioPathsController', () => {
     };
 
     it('should successfully create a scenario path', async () => {
-      const expectedResult = { success: true };
+      const expectedResult = {
+        id: 'test-path-id',
+        title: 'Test Scenario Path',
+        description: 'Test Description',
+        coverImageUrl: 'https://example.com/image.jpg',
+        status: ScenarioPathStatus.DRAFT,
+      };
       service.createScenarioPath.mockResolvedValue(expectedResult);
 
       const result = await controller.createScenarioPath(

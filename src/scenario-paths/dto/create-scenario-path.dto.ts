@@ -17,17 +17,17 @@ export class CreateScenarioPathDto {
   @ApiProperty({ description: 'Title of the scenario path' })
   @IsOptional()
   @IsString()
-  title!: string;
+  title?: string;
 
   @ApiProperty({ description: 'Description of the scenario path' })
   @IsOptional()
   @IsString()
-  description!: string;
+  description?: string;
 
   @ApiPropertyOptional({ description: 'Cover image URL' })
   @IsOptional()
   @IsString()
-  coverImageUrl!: string;
+  coverImageUrl?: string;
 
   @ApiProperty({ description: 'Whether the path is available globally' })
   @IsOptional()

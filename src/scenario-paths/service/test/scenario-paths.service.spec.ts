@@ -130,7 +130,13 @@ describe('ScenarioPathsService', () => {
         mockCreateScenarioPathDto,
       );
 
-      expect(result).toEqual({ success: true });
+      expect(result).toEqual({
+        id: mockSavedScenarioPath.id,
+        title: mockSavedScenarioPath.title,
+        description: mockSavedScenarioPath.description,
+        coverImageUrl: mockSavedScenarioPath.coverImageUrl,
+        status: mockSavedScenarioPath.status,
+      });
       expect(scenarioUtil.getScenarioByIds).toHaveBeenCalledWith([1, 2]);
       expect(dataSource.transaction).toHaveBeenCalled();
       expect(mockScenarioPathItemRepo.create).toHaveBeenCalledTimes(2);
