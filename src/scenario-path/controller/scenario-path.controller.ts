@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -68,6 +76,13 @@ export class ScenarioPathController {
       limit,
       search,
     });
+  }
+
+  @ApiOperation({ description: 'Get scenario path by id' })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_PATH])
+  @Get('scenario-paths/:id')
+  async getScenarioPathById(@Param('id', ParseUUIDPipe) id: string) {
+    return this.scenarioPathService.getScenarioPathById(id);
   }
 
   @ApiOperation({ description: 'Create scenario path' })
