@@ -1,30 +1,51 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { CreateScenarioPathDto } from '../dto/create-scenario-path.dto';
-import { ScenarioPaths } from '../entity/scenario-paths.entity';
-import { ScenarioPathItems } from '../entity/scenario-path-items.entity';
+import {
+  CreateScenarioPathDto,
+  CreateScenarioPathResponseDto,
+} from '../dto/create-scenario-path.dto';
+import { GetScenarioPathsResponseDto } from '../dto/scenario-paths-response.dto';
+import { ScenarioPath } from '../entity/scenario-path.entity';
+import { ScenarioPathItem } from '../entity/scenario-path-item.entity';
 import { ScenarioUtil } from 'src/learn/util/scenario.util';
-import { ScenarioPathStatus } from '../type/scenario-paths.type';
+import {
+  ScenarioPathStatus,
+  ScenarioPathFilterOptions,
+} from '../type/scenario-paths.type';
 import {
   SCENARIO_PATH_MAX_SCENARIOS,
   SCENARIO_PATH_MIN_SCENARIOS,
   SCENARIO_PATH_REQUIRED_FIELDS,
 } from '../constants/scenario-path.constant';
+import { ScenarioPathRepository } from '../repository/scenario-path.repository';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 @Injectable()
-export class ScenarioPathsService {
+export class ScenarioPathService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly scenarioUtil: ScenarioUtil,
+    private readonly scenarioPathRepository: ScenarioPathRepository,
   ) {}
 
-  async createScenarioPath(createScenarioPathDto: CreateScenarioPathDto) {
+  async getScenarioPaths(
+    filters?: ScenarioPathFilterOptions,
+  ): Promise<GetScenarioPathsResponseDto> {
+    const result = await this.scenarioPathRepository.findAll(filters);
+    return result;
+  }
+
+  async createScenarioPath(
+    createScenarioPathDto: CreateScenarioPathDto,
+  ): Promise<CreateScenarioPathResponseDto> {
     const { title, description, coverImageUrl, isGlobal, status, scenarios } =
       createScenarioPathDto;
     await this.validateScenarios(createScenarioPathDto, status);
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
 
     return await this.dataSource.transaction(async (manager) => {
-      const scenarioPathRepo = manager.getRepository(ScenarioPaths);
+      const scenarioPathRepo = manager.getRepository(ScenarioPath);
       const scenarioPath = await scenarioPathRepo.save({
         title,
         description,
@@ -32,10 +53,11 @@ export class ScenarioPathsService {
         isGlobal,
         status,
         totalScenarios: scenarios?.length,
+        ...(userId ? { createdBy: userId, updatedBy: userId } : {}),
       });
 
       if (scenarios && scenarios.length > 0) {
-        const scenarioPathItemRepo = manager.getRepository(ScenarioPathItems);
+        const scenarioPathItemRepo = manager.getRepository(ScenarioPathItem);
         const items = scenarios.map((scenario) =>
           scenarioPathItemRepo.create({
             scenarioPathId: scenarioPath.id,

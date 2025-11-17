@@ -8,7 +8,7 @@ import {
 import { ScenarioPathStatus } from '../type/scenario-paths.type';
 
 @Entity('scenario_paths')
-export class ScenarioPaths extends BaseWithoutTenantEntity {
+export class ScenarioPath extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 

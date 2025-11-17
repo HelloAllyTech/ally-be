@@ -6,8 +6,8 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-@Entity('scenario_path_items')
-export class ScenarioPathItems extends BaseWithoutTenantEntity {
+@Entity('scenario_path_sessions')
+export class ScenarioPathSession extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -15,19 +15,16 @@ export class ScenarioPathItems extends BaseWithoutTenantEntity {
   scenarioPathId!: string;
 
   @Column()
-  scenarioId!: number;
+  userId!: number;
 
-  @Column()
-  order!: number;
+  @Column({ type: 'timestamp', nullable: true })
+  startedAt?: Date;
 
-  @Column({ nullable: true })
-  messageTitle?: string;
+  @Column({ type: 'timestamp', nullable: true })
+  completedAt?: Date;
 
-  @Column({ nullable: true })
-  messageContent?: string;
-
-  @Column({ nullable: true })
-  minimumScore?: number;
+  @Column({ type: 'int', default: 0 })
+  completedScenarios!: number;
 
   @DeleteDateColumn()
   deletedAt?: Date;

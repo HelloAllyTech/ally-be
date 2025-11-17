@@ -53,3 +53,28 @@ export class CreateScenarioPathDto {
   @Type(() => CreateScenarioPathItemDto)
   scenarios?: CreateScenarioPathItemDto[];
 }
+
+export class CreateScenarioPathResponseDto {
+  @ApiProperty({ description: 'ID of the scenario path' })
+  @IsString()
+  id!: string;
+
+  @ApiPropertyOptional({ description: 'Title of the scenario path' })
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional({ description: 'Description of the scenario path' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional({ description: 'Cover image URL of the scenario path' })
+  @IsOptional()
+  @IsString()
+  coverImageUrl?: string;
+
+  @ApiProperty({ description: 'Status of the scenario path' })
+  @IsEnum(ScenarioPathStatus)
+  status!: ScenarioPathStatus;
+}
