@@ -7,7 +7,7 @@ import {
 } from 'typeorm';
 
 @Entity('scenario_path_tenants')
-export class ScenarioPathTenants extends BaseWithoutTenantEntity {
+export class ScenarioPathTenant extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 

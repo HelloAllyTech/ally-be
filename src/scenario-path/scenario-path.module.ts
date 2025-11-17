@@ -1,17 +1,17 @@
 import { Module } from '@nestjs/common';
-import { ScenarioPathsController } from './controller/scenario-paths.controller';
-import { ScenarioPathsService } from './service/scenario-paths.service';
+import { ScenarioPathController } from './controller/scenario-path.controller';
+import { ScenarioPathService } from './service/scenario-path.service';
 import { ScenarioPathRepository } from './repository/scenario-path.repository';
 import { ScenarioPathItemRepository } from './repository/scenario-path-item.repository';
 import { LearnModule } from 'src/learn/learn.module';
 
 @Module({
   imports: [LearnModule],
-  controllers: [ScenarioPathsController],
+  controllers: [ScenarioPathController],
   providers: [
-    ScenarioPathsService,
+    ScenarioPathService,
     ScenarioPathRepository,
     ScenarioPathItemRepository,
   ],
 })
-export class ScenarioPathsModule {}
+export class ScenarioPathModule {}
