@@ -94,11 +94,15 @@ describe('ScenarioPathsService', () => {
           scenarioId: 1,
           order: 1,
           minimumScore: 0,
+          messageTitle: 'Message 1',
+          messageContent: 'Content 1',
         },
         {
           scenarioId: 2,
           order: 2,
           minimumScore: 75,
+          messageTitle: 'Message 2',
+          messageContent: 'Content 2',
         },
       ],
     };
@@ -159,6 +163,50 @@ describe('ScenarioPathsService', () => {
 
       await expect(
         service.createScenarioPath(dtoWithDuplicateOrder),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when duplicate scenario IDs exist', async () => {
+      const dtoWithDuplicateScenarioId: CreateScenarioPathDto = {
+        ...mockCreateScenarioPathDto,
+        scenarios: [
+          {
+            scenarioId: 1,
+            order: 1,
+            minimumScore: 0,
+          },
+          {
+            scenarioId: 1,
+            order: 2,
+            minimumScore: 75,
+          },
+        ],
+      };
+
+      await expect(
+        service.createScenarioPath(dtoWithDuplicateScenarioId),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when order values are not sequential', async () => {
+      const dtoWithNonSequentialOrder: CreateScenarioPathDto = {
+        ...mockCreateScenarioPathDto,
+        scenarios: [
+          {
+            scenarioId: 1,
+            order: 1,
+            minimumScore: 0,
+          },
+          {
+            scenarioId: 2,
+            order: 3,
+            minimumScore: 75,
+          },
+        ],
+      };
+
+      await expect(
+        service.createScenarioPath(dtoWithNonSequentialOrder),
       ).rejects.toThrow(BadRequestException);
     });
   });
