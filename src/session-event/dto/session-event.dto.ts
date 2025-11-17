@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  IsArray,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -62,18 +63,25 @@ export class CombinationExpressionRequestDto {
 
 export class DetectionDataDto<T> {
   @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
   sentences?: string[];
 
   @ApiProperty({ required: false })
+  @IsOptional()
   score?: number;
 
   @ApiProperty({ required: false })
+  @IsOptional()
   time?: number;
 
   @ApiProperty({ required: false })
+  @IsOptional()
   condition?: SessionEventDetectionCondition;
 
   @ApiProperty({ required: false })
+  @IsOptional()
   expression?: T;
 }
 
