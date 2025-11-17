@@ -4,6 +4,8 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
+import { ScenarioEvents } from '../entity/scenario-events.entity';
+import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
 
 @Injectable()
 export class ScenariosRepository extends Repository<Scenarios> {
@@ -49,6 +51,19 @@ export class ScenariosRepository extends Repository<Scenarios> {
     }
 
     return query.getRawMany();
+  }
+
+  async getAdminScenarioById(id: number): Promise<GetAdminScenarioDto | null> {
+    return await this.createQueryBuilder('scenario')
+      .leftJoinAndMapOne(
+        'scenario.terminationEvent',
+        ScenarioEvents,
+        'scenarioEvent',
+        'scenarioEvent.scenarioId = scenario.id AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        { autoTerminationStatus: true },
+      )
+      .where('scenario.id = :id', { id })
+      .getOne();
   }
 
   private parseStringArray(value?: string): string[] {

@@ -45,6 +45,7 @@ import { DeleteCoverImageDto } from '../dto/delete-cover-image.dto';
 import { ScenarioVideoUploadResponseDto } from '../dto/scenario-video-upload-response.dto';
 import { ScenarioVideoUploadRequestDto } from '../dto/scenario-video-upload-request.dto';
 import { DeleteCoverVideoDto } from '../dto/delete-cover-video.dto';
+import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -130,8 +131,15 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Get a scenario by id' })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the scenario',
+    type: GetAdminScenarioDto,
+  })
   @Get('admin-scenarios/:id')
-  async getAdminScenario(@Param('id') id: number): Promise<Scenarios> {
+  async getAdminScenario(
+    @Param('id') id: number,
+  ): Promise<GetAdminScenarioDto> {
     return this.scenarioService.getAdminScenario(id);
   }
 

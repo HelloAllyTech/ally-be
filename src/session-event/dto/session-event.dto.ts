@@ -16,24 +16,13 @@ import {
   SessionEventDetectionCondition,
   SessionEventDetectionType,
 } from '../enum/session-event-detection.enum';
-import { SessionEventSpeaker } from '../enum/session-event-speaker.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 
 export class CombinationExpressionDto {
-  @ApiProperty({ required: true })
-  @IsEnum(CombinationExpressionType)
   type!: CombinationExpressionType;
-
-  @ApiProperty({ required: false })
   left?: CombinationExpressionDto;
-
-  @ApiProperty({ required: false })
   right?: CombinationExpressionDto;
-
-  @ApiProperty({ required: false })
   operand?: CombinationExpressionDto;
-
-  @ApiProperty({ required: false })
   id?: string;
 }
 
@@ -69,18 +58,22 @@ export class DetectionDataDto<T> {
   sentences?: string[];
 
   @ApiProperty({ required: false })
+  @IsNumber()
   @IsOptional()
   score?: number;
 
   @ApiProperty({ required: false })
+  @IsNumber()
   @IsOptional()
   time?: number;
 
   @ApiProperty({ required: false })
+  @IsEnum(SessionEventDetectionCondition)
   @IsOptional()
   condition?: SessionEventDetectionCondition;
 
   @ApiProperty({ required: false })
+  @ValidateNested()
   @IsOptional()
   expression?: T;
 }
@@ -179,15 +172,6 @@ export class SessionEventDto<T> {
   @Type(() => DetectionDataDto)
   @IsOptional()
   detectionData?: DetectionDataDto<T>;
-
-  @ApiProperty({
-    description: 'The speaker of the event',
-    example: SessionEventSpeaker.CARE_GIVER,
-    enum: SessionEventSpeaker,
-  })
-  @IsEnum(SessionEventSpeaker)
-  @IsNotEmpty()
-  speaker!: SessionEventSpeaker;
 }
 
 export class CreateSessionEventDto extends SessionEventDto<CombinationExpressionRequestDto> {}

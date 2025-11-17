@@ -32,7 +32,6 @@ import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
-import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 
 // Mock static classes
@@ -1524,7 +1523,6 @@ describe('ScenarioSessionService', () => {
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           message: 'Hello, world!',
-          speaker: SessionEventSpeaker.CARE_GIVER,
           createdAt: new Date(),
           updatedAt: new Date(),
         },
@@ -1580,7 +1578,6 @@ describe('ScenarioSessionService', () => {
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           message: 'Hello, world!',
-          speaker: SessionEventSpeaker.CARE_GIVER,
           score: 15,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -1640,7 +1637,6 @@ describe('ScenarioSessionService', () => {
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.PASSIVE,
           message: 'Hello, world!',
-          speaker: SessionEventSpeaker.CARE_GIVER,
           score: 10,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -1694,7 +1690,6 @@ describe('ScenarioSessionService', () => {
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           message: 'Hello, world!',
-          speaker: SessionEventSpeaker.CARE_GIVER,
           createdAt: new Date(),
           updatedAt: new Date(),
         },

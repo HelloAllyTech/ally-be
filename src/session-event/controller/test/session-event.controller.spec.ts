@@ -15,7 +15,6 @@ import { SessionEventVisibilityType } from 'src/session-event/enum/session-event
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventSortBy } from 'src/session-event/enum/session-event-sort-by.enum';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
-import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
 
 describe('SessionEventController', () => {
   let controller: SessionEventController;
@@ -33,7 +32,6 @@ describe('SessionEventController', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
-    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockSessionEventResponse: SessionEventResponseDto & {
@@ -52,7 +50,6 @@ describe('SessionEventController', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
-    speaker: SessionEventSpeaker.CARE_GIVER,
     detectionData: {
       sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
     },
@@ -70,7 +67,6 @@ describe('SessionEventController', () => {
     detectionData: {
       sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
     },
-    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockCreateSessionEventsDto: CreateSessionEventsDto = {
@@ -84,7 +80,6 @@ describe('SessionEventController', () => {
     emoji: '🎉',
     message: 'Excellent work!',
     branchInstruction: 'Move to advanced level',
-    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   beforeEach(async () => {
@@ -209,7 +204,6 @@ describe('SessionEventController', () => {
         detectionData: {
           sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
         },
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const minimalEventsDto: CreateSessionEventsDto = {
         events: [minimalEventDto],
@@ -252,7 +246,6 @@ describe('SessionEventController', () => {
         detectionData: {
           sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
         },
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const fullEventsDto: CreateSessionEventsDto = {
         events: [fullEventDto],
@@ -417,7 +410,6 @@ describe('SessionEventController', () => {
       const partialUpdate: UpdateSessionEventDto = {
         name: 'Partially Updated Event',
         score: 95,
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
 
       sessionEventService.updateSessionEvent.mockResolvedValue(true);
@@ -466,7 +458,6 @@ describe('SessionEventController', () => {
       const maxScoreUpdate: UpdateSessionEventDto = {
         score: Number.MAX_SAFE_INTEGER,
         name: 'Updated Event',
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
 
       sessionEventService.updateSessionEvent.mockResolvedValue(true);
@@ -487,7 +478,6 @@ describe('SessionEventController', () => {
       const minScoreUpdate: UpdateSessionEventDto = {
         score: 0,
         name: 'Updated Event',
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
 
       sessionEventService.updateSessionEvent.mockResolvedValue(true);
@@ -510,7 +500,6 @@ describe('SessionEventController', () => {
         description: 'B'.repeat(2000),
         message: 'C'.repeat(1500),
         branchInstruction: 'D'.repeat(500),
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
 
       sessionEventService.updateSessionEvent.mockResolvedValue(true);
@@ -531,7 +520,6 @@ describe('SessionEventController', () => {
       const unicodeUpdate: UpdateSessionEventDto = {
         emoji: '🎯🎪🎨🎭🎪',
         name: 'Updated Event',
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
 
       sessionEventService.updateSessionEvent.mockResolvedValue(true);

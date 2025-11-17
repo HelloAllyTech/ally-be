@@ -4,7 +4,6 @@ import { SessionEventRepository } from '../session-event.repository';
 import { SessionEvents } from '../../entity/session-events.entity';
 import { SessionEventVisibilityType } from '../../enum/session-event-visibility-type.enum';
 import { Pagination } from 'src/common/type/common.type';
-import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
 
 describe('SessionEventRepository', () => {
   let repository: SessionEventRepository;
@@ -22,7 +21,6 @@ describe('SessionEventRepository', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
-    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   beforeEach(async () => {

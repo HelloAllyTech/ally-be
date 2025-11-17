@@ -29,7 +29,6 @@ describe('SessionEventService', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
-    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockCreateSessionEventDto: CreateSessionEventDto = {
@@ -44,7 +43,6 @@ describe('SessionEventService', () => {
     detectionData: {
       sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
     },
-    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockUpdateSessionEventDto: UpdateSessionEventDto = {
@@ -54,7 +52,6 @@ describe('SessionEventService', () => {
     emoji: '🎉',
     message: 'Excellent work!',
     branchInstruction: 'Move to advanced level',
-    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockQueryBuilder = {
@@ -214,7 +211,6 @@ describe('SessionEventService', () => {
         name: 'Minimal Event',
         detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
         visibilityType: SessionEventVisibilityType.ACTIVE,
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const createdEvent = {
         ...minimalEventDto,
@@ -309,7 +305,6 @@ describe('SessionEventService', () => {
       const partialUpdate: UpdateSessionEventDto = {
         name: 'Partially Updated Event',
         score: 95,
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
 
       repository.findOne.mockResolvedValue(mockSessionEvent);
@@ -327,7 +322,6 @@ describe('SessionEventService', () => {
     it('should update with empty object', async () => {
       const emptyUpdate: UpdateSessionEventDto = {
         name: 'Empty Event',
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
 
       repository.findOne.mockResolvedValue(mockSessionEvent);
