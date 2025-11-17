@@ -51,5 +51,5 @@ export class CreateScenarioPathDto {
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => CreateScenarioPathItemDto)
-  scenarios!: CreateScenarioPathItemDto[];
+  scenarios?: CreateScenarioPathItemDto[];
 }

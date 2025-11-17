@@ -31,22 +31,24 @@ export class ScenarioPathsService {
         coverImageUrl,
         isGlobal,
         status,
-        totalScenarios: scenarios.length,
+        totalScenarios: scenarios?.length,
       });
 
-      const scenarioPathItemRepo = manager.getRepository(ScenarioPathItems);
-      const items = scenarios.map((scenario) =>
-        scenarioPathItemRepo.create({
-          scenarioPathId: scenarioPath.id,
-          scenarioId: scenario.scenarioId,
-          order: scenario.order,
-          messageTitle: scenario.messageTitle,
-          messageContent: scenario.messageContent,
-          minimumScore: scenario.minimumScore,
-        }),
-      );
+      if (scenarios && scenarios.length > 0) {
+        const scenarioPathItemRepo = manager.getRepository(ScenarioPathItems);
+        const items = scenarios.map((scenario) =>
+          scenarioPathItemRepo.create({
+            scenarioPathId: scenarioPath.id,
+            scenarioId: scenario.scenarioId,
+            order: scenario.order,
+            messageTitle: scenario.messageTitle,
+            messageContent: scenario.messageContent,
+            minimumScore: scenario.minimumScore,
+          }),
+        );
 
-      await scenarioPathItemRepo.save(items);
+        await scenarioPathItemRepo.save(items);
+      }
 
       return {
         id: scenarioPath.id,
@@ -62,7 +64,8 @@ export class ScenarioPathsService {
     createScenarioPathDto: CreateScenarioPathDto,
     status: ScenarioPathStatus,
   ) {
-    const scenariosLength = createScenarioPathDto.scenarios.length;
+    const scenarios = createScenarioPathDto?.scenarios ?? [];
+    const scenariosLength = scenarios.length;
     if (status === ScenarioPathStatus.ACTIVE) {
       const missingFields = SCENARIO_PATH_REQUIRED_FIELDS.filter(
         (field) => !createScenarioPathDto[field as keyof CreateScenarioPathDto],
@@ -89,7 +92,7 @@ export class ScenarioPathsService {
     const scenarioIdsSet: Set<number> = new Set();
     const scenarioOrderSet: Set<number> = new Set();
 
-    for (const scenario of createScenarioPathDto.scenarios) {
+    for (const scenario of scenarios) {
       if (scenarioIdsSet.has(scenario.scenarioId)) {
         throw new BadRequestException('Duplicate scenario found.');
       }
