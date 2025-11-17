@@ -101,6 +101,7 @@ export class AppConfigService {
       accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID'),
       secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY'),
       sessionToken: this.configService.get<string>('AWS_SESSION_TOKEN'),
+      endpointUrl: this.configService.get<string>('AWS_ENDPOINT_URL'),
     };
   }
 
