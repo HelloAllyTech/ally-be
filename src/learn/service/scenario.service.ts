@@ -45,7 +45,6 @@ import {
   formatAutoTerminationEventsList,
   mapCreateScenarioRequestToEntity,
 } from '../util/scenario.util';
-import { ScenarioData } from '../type/scenario.type';
 
 @Injectable()
 export class ScenarioService {
@@ -395,13 +394,15 @@ export class ScenarioService {
       await this.getScenarioVoice(createScenarioDto?.voiceId);
   }
 
-  private validateScenarioStatus(data: ScenarioData): void {
+  private validateScenarioStatus(
+    data: CreateScenarioDto | UpdateScenarioDto,
+  ): void {
     const { status, ...otherFields } = data;
 
     // Validate DRAFT: at least one field besides status must be provided
     if (status === ScenarioStatus.DRAFT) {
-      const hasAtLeastOneField = Object.keys(otherFields).some(
-        (key) => otherFields[key] !== undefined && otherFields[key] !== null,
+      const hasAtLeastOneField = Object.values(otherFields).some(
+        (value) => value !== undefined && value !== null,
       );
 
       if (!hasAtLeastOneField) {
@@ -423,7 +424,7 @@ export class ScenarioService {
       }
 
       const missingFields = SCENARIO_MANDATORY_FIELDS.filter(
-        (field) => !data[field],
+        (field) => !data[field as keyof typeof data],
       );
 
       if (missingFields.length > 0) {
