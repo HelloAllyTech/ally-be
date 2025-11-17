@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import {
   CreateScenarioPathDto,
@@ -19,6 +23,7 @@ import {
 } from '../constants/scenario-path.constant';
 import { ScenarioPathRepository } from '../repository/scenario-path.repository';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { ScenarioPathItemRepository } from '../repository/scenario-path-item.repository';
 
 @Injectable()
 export class ScenarioPathService {
@@ -26,13 +31,54 @@ export class ScenarioPathService {
     private readonly dataSource: DataSource,
     private readonly scenarioUtil: ScenarioUtil,
     private readonly scenarioPathRepository: ScenarioPathRepository,
+    private readonly scenarioPathItemRepository: ScenarioPathItemRepository,
   ) {}
 
   async getScenarioPaths(
     filters?: ScenarioPathFilterOptions,
   ): Promise<GetScenarioPathsResponseDto> {
     const result = await this.scenarioPathRepository.findAll(filters);
-    return result;
+    const scenarioPaths = result.data.map((scenarioPath) => ({
+      id: scenarioPath.id,
+      title: scenarioPath.title,
+      description: scenarioPath.description,
+      coverImageUrl: scenarioPath.coverImageUrl,
+      status: scenarioPath.status,
+      isGlobal: scenarioPath.isGlobal,
+      totalScenarios: scenarioPath.totalScenarios,
+      updatedAt: scenarioPath.updatedAt,
+    }));
+    return {
+      data: scenarioPaths,
+      count: result.count,
+    };
+  }
+
+  async getScenarioPathById(id: string) {
+    const result = await this.scenarioPathRepository.findOne({ where: { id } });
+    if (!result) {
+      throw new NotFoundException('Scenario path not found');
+    }
+    const scenarioPathItems = await this.scenarioPathItemRepository.find({
+      where: { scenarioPathId: id },
+    });
+    const scenarios = scenarioPathItems.map((item) => ({
+      id: item.scenarioId,
+      order: item.order,
+      messageTitle: item.messageTitle,
+      messageContent: item.messageContent,
+      minimumScore: item.minimumScore,
+    }));
+
+    return {
+      id: result.id,
+      title: result.title,
+      description: result.description,
+      coverImageUrl: result.coverImageUrl,
+      status: result.status,
+      isGlobal: result.isGlobal,
+      scenarios,
+    };
   }
 
   async createScenarioPath(

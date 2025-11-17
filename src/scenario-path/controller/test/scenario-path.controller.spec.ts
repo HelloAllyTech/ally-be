@@ -16,6 +16,7 @@ describe('ScenarioPathController', () => {
   const mockScenarioPathService = {
     createScenarioPath: jest.fn(),
     getScenarioPaths: jest.fn(),
+    getScenarioPathById: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -129,6 +130,35 @@ describe('ScenarioPathController', () => {
       expect(service.createScenarioPath).toHaveBeenCalledWith(
         mockCreateScenarioPathDto,
       );
+    });
+  });
+
+  describe('getScenarioPathById', () => {
+    const mockScenarioPath = {
+      id: 'path-1',
+      title: 'Path 1',
+      description: 'Description 1',
+      coverImageUrl: 'https://example.com/image.jpg',
+      status: ScenarioPathStatus.ACTIVE,
+      isGlobal: false,
+      scenarios: [
+        {
+          id: 1,
+          order: 1,
+          messageTitle: 'Message 1',
+          messageContent: 'Content 1',
+          minimumScore: 0,
+        },
+      ],
+    };
+
+    it('should return scenario path by id', async () => {
+      service.getScenarioPathById.mockResolvedValue(mockScenarioPath);
+
+      const result = await controller.getScenarioPathById('path-1');
+
+      expect(result).toEqual(mockScenarioPath);
+      expect(service.getScenarioPathById).toHaveBeenCalledWith('path-1');
     });
   });
 });
