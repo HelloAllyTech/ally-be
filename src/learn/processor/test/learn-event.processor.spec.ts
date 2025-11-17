@@ -7,7 +7,6 @@ import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
 import { ScenarioSessionStatus } from '../../enum/scenario-session-status.enum';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
-import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
 
 // Mock LoggerService
 jest.mock('src/logger/logger.service', () => ({
@@ -57,7 +56,6 @@ describe('LearnEventProcessor', () => {
           name: 'Event 1',
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.ACTIVE,
-          speaker: SessionEventSpeaker.CARE_GIVER,
           createdAt: new Date(),
           updatedAt: new Date(),
           message: 'Hello, world!',
@@ -368,7 +366,6 @@ describe('LearnEventProcessor', () => {
               detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
               visibilityType: SessionEventVisibilityType.ACTIVE,
               message: 'Hello, world!',
-              speaker: SessionEventSpeaker.CARE_GIVER,
               createdAt: new Date(),
               updatedAt: new Date(),
             },

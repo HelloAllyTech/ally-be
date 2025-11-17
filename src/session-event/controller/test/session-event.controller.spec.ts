@@ -12,7 +12,6 @@ import { SessionEventVisibilityType } from 'src/session-event/enum/session-event
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventSortBy } from 'src/session-event/enum/session-event-sort-by.enum';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
-import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
 
 describe('SessionEventController', () => {
   let controller: SessionEventController;
@@ -30,7 +29,6 @@ describe('SessionEventController', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
-    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockCreateSessionEventDto: CreateSessionEventDto = {
@@ -45,7 +43,6 @@ describe('SessionEventController', () => {
     detectionData: {
       sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
     },
-    speaker: SessionEventSpeaker.CARE_GIVER,
   };
 
   const mockCreateSessionEventsDto: CreateSessionEventsDto = {
@@ -183,7 +180,6 @@ describe('SessionEventController', () => {
         detectionData: {
           sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
         },
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const minimalEventsDto: CreateSessionEventsDto = {
         events: [minimalEventDto],
@@ -226,7 +222,6 @@ describe('SessionEventController', () => {
         detectionData: {
           sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
         },
-        speaker: SessionEventSpeaker.CARE_GIVER,
       };
       const fullEventsDto: CreateSessionEventsDto = {
         events: [fullEventDto],

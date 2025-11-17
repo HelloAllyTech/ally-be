@@ -2,7 +2,6 @@ import { Column, DeleteDateColumn, Entity, PrimaryColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from '../../common/entity/base-without-tenant.entity';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
-import { SessionEventSpeaker } from '../enum/session-event-speaker.enum';
 
 @Entity('session_events')
 export class SessionEvents extends BaseWithoutTenantEntity {
@@ -38,12 +37,6 @@ export class SessionEvents extends BaseWithoutTenantEntity {
     default: SessionEventVisibilityType.ACTIVE,
   })
   visibilityType!: SessionEventVisibilityType;
-
-  @Column({
-    enum: SessionEventSpeaker,
-    default: SessionEventSpeaker.CARE_GIVER,
-  })
-  speaker!: SessionEventSpeaker;
 
   @DeleteDateColumn()
   deletedAt?: Date;
