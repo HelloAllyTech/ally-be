@@ -8,7 +8,7 @@ import {
   AudioChatPlatform,
   AudioChatProvider,
 } from 'src/common/constants/chat.constants';
-import { ChatAudioUploadStatus } from 'src/common/entities/chat-audio-uploads.entity';
+import { ChatAudioUploadStatus } from '../../../audio/entity/chat-audio-uploads.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { UserRole } from 'src/common/constants/user.constants';
 import { AiEventService } from 'src/ai/service/ai-event.service';
@@ -18,7 +18,7 @@ import {
   AudioUploadRequestDto,
   CancelUploadRequestDto,
 } from 'src/chat/dto/audio-upload.dto';
-import { ChatStatus, ChatSummaryStatus } from 'src/common/entities/chat.entity';
+import { ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
 
 import { UserService } from 'src/user/service/user.service';
 import { AudioUploadService } from '../audio-upload.service';

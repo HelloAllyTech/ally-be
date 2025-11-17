@@ -1,4 +1,4 @@
-import { BaseWithoutTenantEntity } from 'src/common/entities/base-without-tenant.entity';
+import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity()

@@ -4,7 +4,7 @@ import {
   DEFAULT_SUMMARY_FIELDS_ARRAY,
   DEFAULT_SUMMARY_FIELDS_SET,
 } from '../constants/settings.constants';
-import { PreferenceService } from '../../common/service/preference.service';
+import { PreferenceService } from './preference.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import {
   PreferenceName,

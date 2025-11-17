@@ -6,7 +6,7 @@ export class AppConfigService {
   constructor(private configService: ConfigService) {}
 
   get port(): number {
-    return this.configService.get<number>('PORT', 3000);
+    return this.configService.get<number>('PORT', 8001);
   }
 
   get nodeEnv(): string {
@@ -95,29 +95,18 @@ export class AppConfigService {
     };
   }
 
-  get sms() {
-    return {
-      integration: this.configService.get<string>('SMS_INTEGRATION'),
-      msg91: {
-        apiKey: this.configService.get<string>('MSG91_API_KEY')!,
-        templateId: this.configService.get<string>('MSG91_TEMPLATE_ID')!,
-        apiUrl: this.configService.get<string>('MSG91_API_URL')!,
-      },
-    };
-  }
-
   get aws() {
     return {
       region: this.configService.get<string>('AWS_REGION'),
       accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID'),
       secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY'),
       sessionToken: this.configService.get<string>('AWS_SESSION_TOKEN'),
+      endpointUrl: this.configService.get<string>('AWS_ENDPOINT_URL'),
     };
   }
 
   get email() {
     return {
-      integration: this.configService.get<string>('EMAIL_INTEGRATION'),
       sourceEmail: this.configService.get<string>('SOURCE_EMAIL'),
       ses: {
         region: this.configService.get<string>('SMTP_REGION'),

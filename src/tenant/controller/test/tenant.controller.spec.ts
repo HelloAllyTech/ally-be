@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TenantController } from '../tenant.controller';
 import { TenantService } from '../../service/tenant.service';
-import { Tenant, TenantStatus } from '../../../common/entities/tenant.entity';
+import { Tenant, TenantStatus } from '../../entity/tenant.entity';
 import { CreateTenantDto } from '../../dto/create-tenant.dto';
 import { UpdateTenantStatusDto } from '../../dto/update-tenant-status.dto';
 import { UpdateTenantSettingsDto } from '../../dto/update-tenant-settings.dto';

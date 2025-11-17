@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChatEventConsumer } from '../chat.event.consumer';
 import { ChatService } from '../../service/chat.service';
-import { Chat } from '../../../common/entities/chat.entity';
+import { Chat } from '../../entity/chat.entity';
 
 describe('ChatEventConsumer', () => {
   let consumer: ChatEventConsumer;

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource, SelectQueryBuilder } from 'typeorm';
 import { Scenarios } from '../../entity/scenarios.entity';
-import { User } from 'src/common/entities/user.entity';
+import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { ScenariosRepository } from '../scenario.repository';

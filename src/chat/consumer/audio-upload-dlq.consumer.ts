@@ -5,7 +5,7 @@ import { ChatService } from '../service/chat.service';
 import { SqsDlqListener } from 'src/aws/decorators/sqs-listener.decorator';
 import { S3Service } from 'src/aws/service/s3.service';
 import { AudioChatProvider } from 'src/common/constants/chat.constants';
-import { ChatStatus, ChatSummaryStatus } from 'src/common/entities/chat.entity';
+import { ChatStatus, ChatSummaryStatus } from '../entity/chat.entity';
 
 @Injectable()
 export class AudioUploadDlqConsumer {

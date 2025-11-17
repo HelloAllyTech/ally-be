@@ -13,13 +13,13 @@ import {
   AudioChatProvider,
   CloudTelephonyProvider,
 } from '../../../common/constants/chat.constants';
-import { MessageBrokerChannel } from '../../../common/constants/message-broker.constants';
+import { MessageBrokerChannel } from '../../../message-broker/constants/message-broker.constants';
 import { UserRole } from '../../../common/constants/user.constants';
 import {
   Chat,
   ChatStatus,
   ChatSummaryStatus,
-} from '../../../common/entities/chat.entity';
+} from '../../../chat/entity/chat.entity';
 import {
   OzonetelCallAction,
   OzonetelCallDetails,

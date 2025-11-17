@@ -1,7 +1,7 @@
 import {
   FlattenedSummaryNotePayload,
   Tag,
-} from '../../common/entities/type/call.details.type';
+} from '../../chat/type/call.details.type';
 
 export type GenerateSummaryResponse = FlattenedSummaryNotePayload;
 

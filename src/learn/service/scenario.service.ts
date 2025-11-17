@@ -32,6 +32,14 @@ import { ScenarioEventsRepository } from '../repository/scenario-events.reposito
 import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
 import { DeleteCoverImageDto } from '../dto/delete-cover-image.dto';
 import { LoggerService } from 'src/logger/logger.service';
+import { ScenarioVideoUploadRequestDto } from '../dto/scenario-video-upload-request.dto';
+import { ScenarioVideoUploadResponseDto } from '../dto/scenario-video-upload-response.dto';
+import { ScenarioVideoUploadContentType } from '../enum/scenario-video-upload-content-type';
+import { DeleteCoverVideoDto } from '../dto/delete-cover-video.dto';
+import {
+  UPLOADED_VIDEO_FILE_DURATION_LIMIT,
+  UPLOADED_VIDEO_FILE_SIZE_LIMIT,
+} from '../constants/scenario-cover-video.constants';
 
 interface ScenarioData {
   status?: ScenarioStatus;
@@ -68,6 +76,7 @@ export class ScenarioService {
         'scenario',
         'description',
         'coverImageUrl',
+        'coverVideoUrl',
         'status',
       ],
       where: {
@@ -93,6 +102,7 @@ export class ScenarioService {
         scenario: item.scenario_scenario,
         description: item.scenario_description,
         coverImageUrl: item.scenario_coverImageUrl,
+        coverVideoUrl: item.scenario_coverVideoUrl,
         createdBy: item.user_name,
         status: item.scenario_status,
         usage: item.usage,
@@ -262,6 +272,85 @@ export class ScenarioService {
     }
   }
 
+  async getPresignedUrlForScenarioCoverVideo(
+    scenarioVideoUploadRequestDto: ScenarioVideoUploadRequestDto,
+  ): Promise<ScenarioVideoUploadResponseDto> {
+    const bucket = this.configService.s3.learnMediaPublicBucket;
+    if (!bucket) {
+      throw new Error(
+        'S3 bucket name for learnMediaPublicBucket is not defined',
+      );
+    }
+    const { fileName, fileSize, duration, contentType } =
+      scenarioVideoUploadRequestDto;
+
+    if (!Object.values(ScenarioVideoUploadContentType).includes(contentType)) {
+      throw new BadRequestException('Invalid file type');
+    }
+
+    if (fileSize > UPLOADED_VIDEO_FILE_SIZE_LIMIT) {
+      throw new BadRequestException(
+        `File size must be less than ${UPLOADED_VIDEO_FILE_SIZE_LIMIT / 1024 / 1024} MB`,
+      );
+    }
+
+    if (duration > UPLOADED_VIDEO_FILE_DURATION_LIMIT) {
+      throw new BadRequestException(
+        `File duration must be less than ${UPLOADED_VIDEO_FILE_DURATION_LIMIT}s`,
+      );
+    }
+
+    const sanitizedFileName = this.s3Service.sanitizeFileName(fileName);
+
+    const storageKey = `scenario-cover-videos/${Date.now()}-${sanitizedFileName}`;
+    const presignedUrl = await this.s3Service.generatePresignedUrl({
+      bucket,
+      key: storageKey,
+      operation: 'put',
+      expiresIn: 600, //10 min
+      contentType,
+    });
+
+    const region = this.configService.aws.region;
+    const coverVideoUrl = `https://${bucket}.s3.${region}.amazonaws.com/${storageKey}`;
+    return { presignedUrl, coverVideoUrl };
+  }
+
+  async deleteCoverVideo(deleteCoverVideoDto: DeleteCoverVideoDto) {
+    const bucket = this.configService.s3.learnMediaPublicBucket;
+    if (!bucket) {
+      throw new Error(
+        'S3 bucket name for learnMediaPublicBucket is not defined',
+      );
+    }
+
+    const coverVideoUrl = deleteCoverVideoDto.coverVideoUrl;
+    const s3CoverVideoUrlPattern =
+      /^https:\/\/[^.]+\.s3\.[^.]+\.amazonaws\.com\/(.+)$/;
+    const coverVideoUrlMatch = coverVideoUrl.match(s3CoverVideoUrlPattern);
+    const storageKey = coverVideoUrlMatch ? coverVideoUrlMatch[1] : null;
+
+    if (!storageKey) {
+      this.logger.warn(`Invalid or unrecognized S3 URL: ${coverVideoUrl}`);
+      return { success: false };
+    }
+
+    try {
+      await this.s3Service.deleteObject({
+        bucket,
+        key: storageKey,
+      });
+      return { success: true };
+    } catch (error) {
+      this.logger.error(
+        `Failed to delete uploaded cover video with error ${JSON.stringify(
+          error,
+        )}`,
+      );
+      return { success: false };
+    }
+  }
+
   async createScenarios(
     createScenariosDto: CreateScenariosDto,
     userId: number,
@@ -277,6 +366,7 @@ export class ScenarioService {
           scenario: '',
           description: scenario.description,
           coverImageUrl: scenario.coverImageUrl,
+          coverVideoUrl: scenario.coverVideoUrl,
           status: scenario.status,
           prompt: scenario.prompt,
           metadata: {
@@ -362,6 +452,7 @@ export class ScenarioService {
       'title',
       'description',
       'coverImageUrl',
+      'coverVideoUrl',
       'status',
       'prompt',
     ];

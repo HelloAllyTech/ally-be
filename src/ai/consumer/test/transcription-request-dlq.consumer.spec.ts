@@ -3,7 +3,7 @@ import { Message } from '@aws-sdk/client-sqs';
 import { TranscriptionRequestDlqConsumer } from '../transcription-request-dlq.consumer';
 import { ChatService } from '../../../chat/service/chat.service';
 import { LoggerService } from '../../../logger/logger.service';
-import { ChatSummaryStatus } from '../../../common/entities/chat.entity';
+import { ChatSummaryStatus } from '../../../chat/entity/chat.entity';
 
 describe('TranscriptionRequestDlqConsumer', () => {
   let consumer: TranscriptionRequestDlqConsumer;

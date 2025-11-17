@@ -1,26 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, Repository } from 'typeorm';
-import { Group } from 'src/common/entities/group.entity';
-import { UserGroup } from 'src/common/entities/user-group.entity';
+import { DataSource, Repository } from 'typeorm';
+import { Group } from 'src/authorization/entity/group.entity';
+import { UserGroup } from 'src/authorization/entity/user-group.entity';
 
 @Injectable()
-export class GroupRepository {
-  constructor(
-    @InjectRepository(Group)
-    private readonly groupRepository: Repository<Group>,
-  ) {}
-
-  async findOne(where: FindOptionsWhere<Group>): Promise<Group | null> {
-    return this.groupRepository.findOne({ where });
+export class GroupRepository extends Repository<Group> {
+  constructor(private dataSource: DataSource) {
+    super(Group, dataSource.createEntityManager());
   }
+
   async getAll(options?: any): Promise<Group[]> {
-    return this.groupRepository.find(options || {});
+    return this.find(options || {});
   }
 
   async findUserRoleByUserId(userId: number): Promise<Group[]> {
-    return this.groupRepository
-      .createQueryBuilder('group')
+    return this.createQueryBuilder('group')
       .leftJoin(UserGroup, 'ug', 'ug.groupId = group.id')
       .where('ug.userId = :userId', { userId })
       .getMany();

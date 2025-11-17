@@ -6,8 +6,8 @@ import { AppConfigModule } from '../config/config.module';
 import { ProviderFactory } from '../factory/provider.factory';
 import { UserModule } from '../user/user.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Dashboard } from '../common/entities/dashboard.entity';
-import { Chat } from '../common/entities/chat.entity';
+import { Chat } from '../chat/entity/chat.entity';
+import { Dashboard } from './entity/dashboard.entity';
 
 @Module({
   imports: [

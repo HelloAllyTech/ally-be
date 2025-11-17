@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { QueueService } from '../queue.service';
-import { QueueEntry } from 'src/common/entities/queue.entity';
+import { QueueEntry } from 'src/queue/entity/queue-entry.entity';
 import { QueueStatus } from 'src/common/constants/chat.constants';
 import { ChatService } from 'src/chat/service/chat.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';

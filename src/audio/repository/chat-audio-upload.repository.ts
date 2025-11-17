@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager, Repository } from 'typeorm';
-import { ChatAudioUploads } from '../../common/entities/chat-audio-uploads.entity';
+import { ChatAudioUploads } from '../entity/chat-audio-uploads.entity';
 
 @Injectable()
 export class ChatAudioUploadRepository extends Repository<ChatAudioUploads> {

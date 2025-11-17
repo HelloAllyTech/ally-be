@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserGroupService } from '../user-group.service';
 
-import { UserGroup } from 'src/common/entities/user-group.entity';
+import { UserGroup } from 'src/authorization/entity/user-group.entity';
 import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
 
 describe('UserGroupService', () => {
@@ -11,7 +11,7 @@ describe('UserGroupService', () => {
   beforeEach(async () => {
     // Create mock repository
     const mockRepository = {
-      findMany: jest.fn(),
+      find: jest.fn(),
       getUserGroupsByUserIds: jest.fn(),
     };
 
@@ -41,43 +41,43 @@ describe('UserGroupService', () => {
         { id: 2, userId: 1, groupId: 3 },
       ] as UserGroup[];
 
-      repository.findMany.mockResolvedValueOnce(expectedUserGroups);
+      repository.find.mockResolvedValueOnce(expectedUserGroups);
 
       const result = await service.getUserGroups(userId);
 
       expect(result).toEqual(expectedUserGroups);
-      expect(repository.findMany).toHaveBeenCalledWith({ userId });
-      expect(repository.findMany).toHaveBeenCalledTimes(1);
+      expect(repository.find).toHaveBeenCalledWith({ where: { userId } });
+      expect(repository.find).toHaveBeenCalledTimes(1);
     });
 
     it('should return empty array when user has no groups', async () => {
       const userId = 999;
-      repository.findMany.mockResolvedValueOnce([]);
+      repository.find.mockResolvedValueOnce([]);
 
       const result = await service.getUserGroups(userId);
 
       expect(result).toEqual([]);
-      expect(repository.findMany).toHaveBeenCalledWith({ userId: 999 });
+      expect(repository.find).toHaveBeenCalledWith({ where: { userId: 999 } });
     });
 
     it('should pass userId correctly to repository', async () => {
       const userId = 42;
-      repository.findMany.mockResolvedValueOnce([]);
+      repository.find.mockResolvedValueOnce([]);
 
       await service.getUserGroups(userId);
 
-      expect(repository.findMany).toHaveBeenCalledWith({ userId: 42 });
+      expect(repository.find).toHaveBeenCalledWith({ where: { userId: 42 } });
     });
 
     it('should handle repository errors', async () => {
       const userId = 1;
       const error = new Error('Database connection failed');
-      repository.findMany.mockRejectedValueOnce(error);
+      repository.find.mockRejectedValueOnce(error);
 
       await expect(service.getUserGroups(userId)).rejects.toThrow(
         'Database connection failed',
       );
-      expect(repository.findMany).toHaveBeenCalledWith({ userId });
+      expect(repository.find).toHaveBeenCalledWith({ where: { userId } });
     });
   });
 

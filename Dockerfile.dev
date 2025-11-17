@@ -1,0 +1,23 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+RUN mkdir -p /tmp/audio_storage
+
+RUN mkdir -p /mnt/audio_storage
+
+COPY package*.json ./
+
+# Install build dependencies for native modules (bcrypt)
+RUN apk add --no-cache python3 make g++
+
+# Install dependencies fresh in the container
+RUN npm install
+
+COPY . .
+
+RUN npm run build
+
+EXPOSE 8000
+
+CMD ["npm", "run", "start:dev"]

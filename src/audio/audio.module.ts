@@ -8,8 +8,8 @@ import { ChatAudioUploadsService } from './service/chat-audio-uploads.service';
 import { ChatModule } from '../chat/chat.module';
 import { AiModule } from '../ai/ai.module';
 import { BrokerModule } from '../message-broker/broker.module';
-import { ChatAudioUploads } from '../common/entities/chat-audio-uploads.entity';
 import { ChatAudioUploadRepository } from './repository/chat-audio-upload.repository';
+import { ChatAudioUploads } from './entity/chat-audio-uploads.entity';
 
 @Module({
   imports: [

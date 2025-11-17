@@ -10,7 +10,7 @@ import {
   IsUUID,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { DashboardData } from 'src/common/entities/type/dashboard.data.type';
+import { DashboardData } from 'src/analytics/type/dashboard.data.type';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class DashboardDataDto {

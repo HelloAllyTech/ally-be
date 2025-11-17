@@ -1,15 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { GroupRepository } from '../group.repository';
-import { Group } from 'src/common/entities/group.entity';
+import { Group } from 'src/authorization/entity/group.entity';
 
 describe('GroupRepository', () => {
   let repository: GroupRepository;
-
-  const mockRepo = {
-    findOne: jest.fn(),
-    createQueryBuilder: jest.fn(),
-  };
+  let dataSource: jest.Mocked<DataSource>;
 
   const mockQueryBuilder = {
     leftJoin: jest.fn().mockReturnThis(),
@@ -18,33 +14,47 @@ describe('GroupRepository', () => {
   };
 
   beforeEach(async () => {
+    const mockEntityManager = {
+      createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
+    };
+
+    dataSource = {
+      createEntityManager: jest.fn().mockReturnValue(mockEntityManager),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GroupRepository,
         {
-          provide: getRepositoryToken(Group),
-          useValue: mockRepo,
+          provide: DataSource,
+          useValue: dataSource,
         },
       ],
     }).compile();
 
     repository = module.get<GroupRepository>(GroupRepository);
-    mockRepo.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+    jest
+      .spyOn(repository, 'createQueryBuilder')
+      .mockReturnValue(mockQueryBuilder as any);
   });
 
   it('should call findOne and return a group', async () => {
     const group = { id: 1 } as Group;
-    mockRepo.findOne.mockResolvedValueOnce(group);
+    jest.spyOn(repository, 'findOne').mockResolvedValueOnce(group);
 
-    const result = await repository.findOne({ id: 1 });
+    const result = await repository.findOne({ where: { id: 1 } });
     expect(result).toBe(group);
   });
 
   it('should return groups associated with a user', async () => {
     const groups = [{ id: 1 }] as Group[];
-    (mockQueryBuilder.getMany as jest.Mock).mockResolvedValueOnce(groups);
+    mockQueryBuilder.getMany.mockResolvedValueOnce(groups);
 
     const result = await repository.findUserRoleByUserId(1);
     expect(result).toBe(groups);
+    expect(mockQueryBuilder.leftJoin).toHaveBeenCalled();
+    expect(mockQueryBuilder.where).toHaveBeenCalledWith('ug.userId = :userId', {
+      userId: 1,
+    });
   });
 });

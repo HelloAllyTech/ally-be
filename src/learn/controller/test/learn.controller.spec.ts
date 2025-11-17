@@ -13,6 +13,9 @@ import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { ScenarioSortBy } from 'src/learn/enum/scenario-sort-by.enum';
 import { DeleteCoverImageDto } from 'src/learn/dto/delete-cover-image.dto';
+import { DeleteCoverVideoDto } from 'src/learn/dto/delete-cover-video.dto';
+import { ScenarioVideoUploadRequestDto } from 'src/learn/dto/scenario-video-upload-request.dto';
+import { ScenarioVideoUploadContentType } from 'src/learn/enum/scenario-video-upload-content-type';
 
 describe('LearnController', () => {
   let controller: LearnController;
@@ -143,6 +146,7 @@ describe('LearnController', () => {
       getAdminScenario: jest.fn(),
       deleteAdminScenario: jest.fn(),
       getPresignedUrlForScenarioCoverImage: jest.fn(),
+      getPresignedUrlForScenarioCoverVideo: jest.fn(),
       createScenarios: jest.fn(),
       updateScenario: jest.fn(),
       mapEventsToScenario: jest.fn(),
@@ -153,6 +157,7 @@ describe('LearnController', () => {
       createScenarioVoices: jest.fn(),
       updateScenarioVoice: jest.fn(),
       deleteCoverImage: jest.fn(),
+      deleteCoverVideo: jest.fn(),
     };
 
     const mockScenarioSessionService = {
@@ -238,6 +243,7 @@ describe('LearnController', () => {
           description:
             'A scenario for learning how to mediate conflicts between two clients.',
           coverImageUrl: 'https://example.com/conflict.png',
+          coverVideoUrl: 'https://example.com/conflict.mp4',
           createdBy: 'user1',
           status: 'ACTIVE',
           usage: '2',
@@ -252,6 +258,7 @@ describe('LearnController', () => {
           description:
             'Simulates a client meeting to practice delivering a persuasive sales pitch.',
           coverImageUrl: 'https://example.com/sales.png',
+          coverVideoUrl: 'https://example.com/conflict.mp4',
           createdBy: 'Jane Smith',
           status: 'DRAFT',
           usage: '1',
@@ -401,6 +408,7 @@ describe('LearnController', () => {
         'scenario',
         'description',
         'coverImageUrl',
+        'coverVideoUrl',
         'status',
       ]);
     });
@@ -417,6 +425,7 @@ describe('LearnController', () => {
         'scenario',
         'description',
         'coverImageUrl',
+        'coverVideoUrl',
         'status',
       ]);
     });
@@ -1523,6 +1532,100 @@ describe('LearnController', () => {
       await expect(
         controller.deleteCoverImage(deleteCoverImageDto),
       ).rejects.toThrow('Failed to delete');
+    });
+  });
+  describe('getPresignedUrlForScenarioCoverVideo', () => {
+    it('should return presigned URL for scenario cover video', async () => {
+      const requestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'test-video.mp4',
+        fileSize: 5 * 1024 * 1024, // 5 MB
+        contentType: ScenarioVideoUploadContentType.MP4,
+        duration: 8,
+      };
+      const expectedResponse = {
+        presignedUrl: 'https://presigned-url.com',
+        coverVideoUrl:
+          'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-videos/1234567890-test-video.mp4',
+      };
+
+      scenarioService.getPresignedUrlForScenarioCoverVideo.mockResolvedValue(
+        expectedResponse,
+      );
+
+      const result =
+        await controller.getPresignedUrlForScenarioCoverVideo(requestDto);
+
+      expect(result).toEqual(expectedResponse);
+      expect(
+        scenarioService.getPresignedUrlForScenarioCoverVideo,
+      ).toHaveBeenCalledWith(requestDto);
+    });
+
+    it('should handle invalid video file type', async () => {
+      const requestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'test-video.avi',
+        fileSize: 1024 * 1024,
+        contentType: 'video/avi' as any,
+        duration: 5,
+      };
+      const error = new Error('Invalid file type');
+      scenarioService.getPresignedUrlForScenarioCoverVideo.mockRejectedValue(
+        error,
+      );
+
+      await expect(
+        controller.getPresignedUrlForScenarioCoverVideo(requestDto),
+      ).rejects.toThrow('Invalid file type');
+    });
+
+    it('should handle video file size too large', async () => {
+      const requestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'large-video.mp4',
+        fileSize: 100 * 1024 * 1024, // 100 MB
+        contentType: ScenarioVideoUploadContentType.MP4,
+        duration: 120,
+      };
+      const error = new Error('File size too large');
+      scenarioService.getPresignedUrlForScenarioCoverVideo.mockRejectedValue(
+        error,
+      );
+
+      await expect(
+        controller.getPresignedUrlForScenarioCoverVideo(requestDto),
+      ).rejects.toThrow('File size too large');
+    });
+  });
+
+  describe('deleteCoverVideo', () => {
+    it('should call scenarioService.deleteCoverVideo with the correct DTO', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl:
+          'https://example-bucket.s3.ap-south-1.amazonaws.com/uploads/test-video.mp4',
+      };
+
+      (scenarioService.deleteCoverVideo as jest.Mock).mockResolvedValue(true);
+
+      const result = await controller.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(scenarioService.deleteCoverVideo).toHaveBeenCalledWith(
+        deleteCoverVideoDto,
+      );
+      expect(result).toBe(true);
+    });
+
+    it('should handle errors gracefully if scenarioService throws', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl:
+          'https://example-bucket.s3.ap-south-1.amazonaws.com/uploads/error-video.mp4',
+      };
+
+      (scenarioService.deleteCoverVideo as jest.Mock).mockRejectedValue(
+        new Error('Failed to delete video'),
+      );
+
+      await expect(
+        controller.deleteCoverVideo(deleteCoverVideoDto),
+      ).rejects.toThrow('Failed to delete video');
     });
   });
 });

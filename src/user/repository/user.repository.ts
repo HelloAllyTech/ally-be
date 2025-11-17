@@ -1,5 +1,5 @@
-import { Tenant } from 'src/common/entities/tenant.entity';
-import { User } from 'src/common/entities/user.entity';
+import { Tenant } from 'src/tenant/entity/tenant.entity';
+import { User } from 'src/user/entity/user.entity';
 import { Repository } from 'typeorm/repository/Repository.js';
 import { UserFilterOptions } from '../interface/user-filter-options.interface';
 import { DataSource, SelectQueryBuilder } from 'typeorm';

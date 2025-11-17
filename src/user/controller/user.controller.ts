@@ -28,7 +28,6 @@ import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
 import { UserRole } from '../../common/constants/user.constants';
 import { AssignUserRoleDto, RemoveUserRoleDto } from '../dto/group.dto';
 import { GroupService } from 'src/authorization/service/group.service';
-import { User } from 'src/common/entities/user.entity';
 import { LoggerService } from 'src/logger/logger.service';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { UpdateUserStatusDto } from '../dto/update-user-status.dto';
@@ -41,6 +40,7 @@ import {
 } from '../dto/user-response.dto';
 import { AddUserResponseDto } from '../dto/user-add-response.dto';
 import { AddUserDto } from '../dto/add-user.dto';
+import { User } from '../entity/user.entity';
 
 @Controller('v1/users')
 @ApiTags('Users')

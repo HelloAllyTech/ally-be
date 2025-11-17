@@ -1,6 +1,6 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueueEntry } from '../../common/entities/queue.entity';
+import { QueueEntry } from '../entity/queue-entry.entity';
 import { EntityManager, Repository } from 'typeorm';
 import { QueueStatus } from '../../common/constants/chat.constants';
 import { ChatService } from '../../chat/service/chat.service';

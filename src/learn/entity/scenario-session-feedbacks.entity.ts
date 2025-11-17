@@ -1,4 +1,4 @@
-import { BaseEntity } from 'src/common/entities/base.entity';
+import { BaseEntity } from 'src/common/entity/base.entity';
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('scenario_session_feedbacks')

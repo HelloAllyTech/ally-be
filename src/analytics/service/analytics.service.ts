@@ -1,8 +1,8 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AnalyticsInterface } from '../interface/analytics.interface';
 import { In, Repository } from 'typeorm';
-import { Dashboard } from '../../common/entities/dashboard.entity';
-import { Chat } from '../../common/entities/chat.entity';
+import { Dashboard } from '../entity/dashboard.entity';
+import { Chat } from '../../chat/entity/chat.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { GroupService } from 'src/authorization/service/group.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';

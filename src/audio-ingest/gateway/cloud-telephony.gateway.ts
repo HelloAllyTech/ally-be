@@ -21,8 +21,8 @@ import {
 } from '../../common/decorator/execution.context.decorator';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
-import { MessageBrokerChannel } from '../../common/constants/message-broker.constants';
-import { Message } from '../../common/entities/message.entity';
+import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
+import { Message } from '../../chat/entity/message.entity';
 import { JwtService } from '@nestjs/jwt';
 import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
