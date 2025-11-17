@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ScenarioPathService } from '../scenario-path.service';
-import { ScenarioUtil } from 'src/learn/util/scenario.util';
+import { ScenarioUtil } from 'src/learn/util/scenario-service.util';
 import { CreateScenarioPathDto } from '../../dto/create-scenario-path.dto';
 import { ScenarioPath } from '../../entity/scenario-path.entity';
 import { ScenarioPathItem } from '../../entity/scenario-path-item.entity';

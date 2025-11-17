@@ -23,13 +23,13 @@ export class ScenarioEventsRepository extends Repository<ScenarioEvents> {
         'scenarioEvent.sessionEvent',
         SessionEvents,
         'sessionEvent',
-        'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL',
+        'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        { autoTerminationStatus: false },
       )
       .where(
         `(scenarioEvent.scenarioId = :scenarioId AND scenarioEvent.deletedAt IS NULL)`,
         { scenarioId },
       );
-
     this.applyPagination(query, options);
     this.applySort(query, options);
 

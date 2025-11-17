@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ScenarioUtil } from '../scenario.util';
+import { ScenarioUtil } from '../scenario-service.util';
 import { ScenariosRepository } from '../../repository/scenario.repository';
 import { Scenarios } from '../../entity/scenarios.entity';
 

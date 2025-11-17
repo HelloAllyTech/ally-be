@@ -14,7 +14,6 @@ import {
   SessionEventDetectionType,
 } from '../enum/session-event-detection.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
-import { SessionEventSpeaker } from '../enum/session-event-speaker.enum';
 
 export class DetectionDataDto {
   @ApiProperty({
@@ -130,19 +129,13 @@ export class CreateSessionEventDto {
     type: DetectionDataDto,
     example: {
       sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+      score: 85,
+      time: 120,
+      condition: SessionEventDetectionCondition.GTE,
     },
   })
   @ValidateNested()
   @Type(() => DetectionDataDto)
   @IsOptional()
   detectionData?: DetectionDataDto;
-
-  @ApiProperty({
-    description: 'The speaker of the event',
-    example: SessionEventSpeaker.CARE_GIVER,
-    enum: SessionEventSpeaker,
-  })
-  @IsEnum(SessionEventSpeaker)
-  @IsNotEmpty()
-  speaker!: SessionEventSpeaker;
 }

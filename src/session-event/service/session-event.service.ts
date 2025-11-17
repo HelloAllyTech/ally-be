@@ -98,6 +98,10 @@ export class SessionEventService {
     });
   }
 
+  async findSessionEventById(id: string): Promise<SessionEvents | null> {
+    return this.sessionEventRepository.findOne({ where: { id } });
+  }
+
   async getAllSessionEvents(
     visibilityType?: SessionEventVisibilityType,
     searchName?: string,

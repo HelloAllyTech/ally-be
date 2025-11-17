@@ -11,7 +11,7 @@ import {
 import { GetScenarioPathsResponseDto } from '../dto/scenario-paths-response.dto';
 import { ScenarioPath } from '../entity/scenario-path.entity';
 import { ScenarioPathItem } from '../entity/scenario-path-item.entity';
-import { ScenarioUtil } from 'src/learn/util/scenario.util';
+import { ScenarioUtil } from 'src/learn/util/scenario-service.util';
 import {
   ScenarioPathStatus,
   ScenarioPathFilterOptions,
