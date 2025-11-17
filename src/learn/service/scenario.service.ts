@@ -540,12 +540,13 @@ export class ScenarioService {
             { message: updateScenarioDto.terminationMessage },
           );
         } else if (updateScenarioDto.autoTerminationStatus) {
-          await scenarioEventsRepo.create({
+          const newTerminationEvent = scenarioEventsRepo.create({
             scenarioId: id,
             eventId: updateScenarioDto.terminationEventId,
             autoTerminationStatus: true,
             message: updateScenarioDto.terminationMessage,
           });
+          scenarioEventsRepo.save(newTerminationEvent);
         }
         return updatedScenario;
       },

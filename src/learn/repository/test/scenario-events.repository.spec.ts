@@ -46,6 +46,7 @@ describe('ScenarioEventsRepository', () => {
   beforeEach(async () => {
     mockQueryBuilder = {
       where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
       leftJoinAndMapOne: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       getManyAndCount: jest.fn(),
@@ -109,12 +110,15 @@ describe('ScenarioEventsRepository', () => {
         'scenarioEvent.sessionEvent',
         expect.anything(),
         'sessionEvent',
-        'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
-        { autoTerminationStatus: false },
+        'sessionEvent.id = scenarioEvent.eventId',
       );
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        '(scenarioEvent.scenarioId = :scenarioId AND scenarioEvent.deletedAt IS NULL)',
+        'scenarioEvent.scenarioId = :scenarioId',
         { scenarioId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        { autoTerminationStatus: false },
       );
     });
 
@@ -138,7 +142,14 @@ describe('ScenarioEventsRepository', () => {
         'scenarioEvent.sessionEvent',
         expect.anything(),
         'sessionEvent',
-        'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        'sessionEvent.id = scenarioEvent.eventId',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'scenarioEvent.scenarioId = :scenarioId',
+        { scenarioId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
         { autoTerminationStatus: false },
       );
       expect(mockQueryBuilder.limit).toHaveBeenCalledWith(10);
@@ -168,7 +179,14 @@ describe('ScenarioEventsRepository', () => {
         'scenarioEvent.sessionEvent',
         expect.anything(),
         'sessionEvent',
-        'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        'sessionEvent.id = scenarioEvent.eventId',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'scenarioEvent.scenarioId = :scenarioId',
+        { scenarioId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
         { autoTerminationStatus: false },
       );
       expect(mockQueryBuilder.limit).not.toHaveBeenCalled();
@@ -190,7 +208,14 @@ describe('ScenarioEventsRepository', () => {
         'scenarioEvent.sessionEvent',
         expect.anything(),
         'sessionEvent',
-        'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        'sessionEvent.id = scenarioEvent.eventId',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'scenarioEvent.scenarioId = :scenarioId',
+        { scenarioId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
         { autoTerminationStatus: false },
       );
     });
@@ -208,12 +233,15 @@ describe('ScenarioEventsRepository', () => {
         'scenarioEvent.sessionEvent',
         expect.anything(),
         'sessionEvent',
-        'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
-        { autoTerminationStatus: false },
+        'sessionEvent.id = scenarioEvent.eventId',
       );
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        '(scenarioEvent.scenarioId = :scenarioId AND scenarioEvent.deletedAt IS NULL)',
+        'scenarioEvent.scenarioId = :scenarioId',
         { scenarioId: differentScenarioId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        { autoTerminationStatus: false },
       );
     });
 
@@ -236,7 +264,14 @@ describe('ScenarioEventsRepository', () => {
         'scenarioEvent.sessionEvent',
         expect.anything(),
         'sessionEvent',
-        'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        'sessionEvent.id = scenarioEvent.eventId',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'scenarioEvent.scenarioId = :scenarioId',
+        { scenarioId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
         { autoTerminationStatus: false },
       );
       expect(mockQueryBuilder.limit).toHaveBeenCalledWith(5);
@@ -275,7 +310,14 @@ describe('ScenarioEventsRepository', () => {
         'scenarioEvent.sessionEvent',
         expect.anything(),
         'sessionEvent',
-        'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        'sessionEvent.id = scenarioEvent.eventId',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'scenarioEvent.scenarioId = :scenarioId',
+        { scenarioId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
         { autoTerminationStatus: false },
       );
     });
@@ -305,7 +347,14 @@ describe('ScenarioEventsRepository', () => {
         'scenarioEvent.sessionEvent',
         expect.anything(),
         'sessionEvent',
-        'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        'sessionEvent.id = scenarioEvent.eventId',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'scenarioEvent.scenarioId = :scenarioId',
+        { scenarioId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
         { autoTerminationStatus: false },
       );
     });
@@ -329,7 +378,14 @@ describe('ScenarioEventsRepository', () => {
         'scenarioEvent.sessionEvent',
         expect.anything(),
         'sessionEvent',
-        'sessionEvent.id = scenarioEvent.eventId AND sessionEvent.deletedAt IS NULL AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        'sessionEvent.id = scenarioEvent.eventId',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'scenarioEvent.scenarioId = :scenarioId',
+        { scenarioId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
         { autoTerminationStatus: false },
       );
       expect(mockQueryBuilder.limit).toHaveBeenCalledWith(1000);
