@@ -51,16 +51,25 @@ export class CommonUtil {
     return _.omit(obj, hiddenFields);
   }
 
-  static convertToCamelCase(
-    input: Record<string, any> | undefined,
-  ): Record<string, any> | undefined {
-    if (!input) {
-      return undefined;
+  /**
+   * Recursively converts object keys from snake_case to camelCase.
+   * Handles nested objects and arrays.
+   * @param obj - The object, array, or primitive to convert
+   * @returns The converted object with camelCase keys
+   */
+  static convertToCamelCase(obj: any): any {
+    if (Array.isArray(obj)) {
+      return obj.map((item) => CommonUtil.convertToCamelCase(item));
+    } else if (obj !== null && typeof obj === 'object') {
+      return Object.keys(obj).reduce((acc, key) => {
+        const camelKey = key.replace(/_([a-z])/g, (_, letter) =>
+          letter.toUpperCase(),
+        );
+        acc[camelKey] = CommonUtil.convertToCamelCase(obj[key]);
+        return acc;
+      }, {} as any);
     }
-    if (typeof input !== 'object' || Array.isArray(input)) {
-      throw new Error('Input must be an object');
-    }
-    return _.mapKeys(input, (value, key) => _.camelCase(key));
+    return obj;
   }
 
   static generateQueryParams(params: Record<string, any>) {

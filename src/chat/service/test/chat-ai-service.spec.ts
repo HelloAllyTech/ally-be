@@ -283,7 +283,7 @@ describe('ChatAiService', () => {
           counsellor: 'Jane Smith',
           sessionSummary: 'Test summary',
           callQuality: 5,
-          tags: [{ tag: 'urgent', positivity_rating: 0.2 }],
+          tags: [{ tag: 'urgent', positivityRating: 0.2 }],
         }),
       });
       expect(mockUserService.get).toHaveBeenCalledWith(2);

@@ -91,18 +91,18 @@ describe('CommonUtil', () => {
   });
 
   describe('convertToCamelCase', () => {
-    it('should return undefined for null/undefined input', () => {
-      expect(CommonUtil.convertToCamelCase(null as any)).toBeUndefined();
+    it('should return null for null input', () => {
+      expect(CommonUtil.convertToCamelCase(null)).toBeNull();
+    });
+
+    it('should return undefined for undefined input', () => {
       expect(CommonUtil.convertToCamelCase(undefined)).toBeUndefined();
     });
 
-    it('should throw error for non-object input', () => {
-      expect(() => CommonUtil.convertToCamelCase('string' as any)).toThrow(
-        'Input must be an object',
-      );
-      expect(() => CommonUtil.convertToCamelCase([] as any)).toThrow(
-        'Input must be an object',
-      );
+    it('should return primitives as-is', () => {
+      expect(CommonUtil.convertToCamelCase('string')).toBe('string');
+      expect(CommonUtil.convertToCamelCase(123)).toBe(123);
+      expect(CommonUtil.convertToCamelCase(true)).toBe(true);
     });
 
     it('should convert object keys to camelCase', () => {
@@ -114,6 +114,68 @@ describe('CommonUtil', () => {
         firstName: 'John',
         lastName: 'Doe',
         userId: 123,
+      });
+    });
+
+    it('should handle nested objects recursively', () => {
+      const input = {
+        user_name: 'John',
+        user_details: {
+          first_name: 'John',
+          last_name: 'Doe',
+        },
+      };
+
+      const result = CommonUtil.convertToCamelCase(input);
+
+      expect(result).toEqual({
+        userName: 'John',
+        userDetails: {
+          firstName: 'John',
+          lastName: 'Doe',
+        },
+      });
+    });
+
+    it('should handle arrays', () => {
+      const input = [
+        { first_name: 'John', last_name: 'Doe' },
+        { first_name: 'Jane', last_name: 'Smith' },
+      ];
+
+      const result = CommonUtil.convertToCamelCase(input);
+
+      expect(result).toEqual([
+        { firstName: 'John', lastName: 'Doe' },
+        { firstName: 'Jane', lastName: 'Smith' },
+      ]);
+    });
+
+    it('should handle mixed nested structures', () => {
+      const input = {
+        user_list: [
+          {
+            user_name: 'John',
+            user_address: {
+              street_name: 'Main St',
+              zip_code: '12345',
+            },
+          },
+        ],
+      };
+
+      const result = CommonUtil.convertToCamelCase(input);
+
+      expect(result).toEqual({
+        userList: [
+          {
+            userName: 'John',
+            userAddress: {
+              streetName: 'Main St',
+              zipCode: '12345',
+            },
+          },
+        ],
       });
     });
   });

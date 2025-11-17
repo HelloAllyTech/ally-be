@@ -23,6 +23,7 @@ import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type'
 import { CallInfo } from '../dto/call-log.response.dto';
 import { CallDetails } from '../entity/call.details.entity';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
+import { CommonUtil } from '../../common/util/common.util';
 
 @Injectable()
 export class CallDetailsService {
@@ -295,7 +296,7 @@ export class CallDetailsService {
       });
     const aiResponse =
       await this.aiService.generateSummaryAndTags(messageRequests);
-    const convertedResponse = this.convertToCamelCase(
+    const convertedResponse = CommonUtil.convertToCamelCase(
       aiResponse,
     ) as FlattenedSummaryNotePayloadCamelCase;
 
@@ -464,30 +465,5 @@ export class CallDetailsService {
       );
     }
     return isPaused;
-  }
-
-  // Helper method to convert to camel case (from CommonUtil)
-  private convertToCamelCase(obj: any): any {
-    if (Array.isArray(obj)) {
-      return obj.map((item) => this.convertToCamelCase(item));
-    } else if (obj !== null && typeof obj === 'object') {
-      return Object.keys(obj).reduce((acc, key) => {
-        const camelKey = key.replace(/_([a-z])/g, (_, letter) =>
-          letter.toUpperCase(),
-        );
-        acc[camelKey] = this.convertToCamelCase(obj[key]);
-        return acc;
-      }, {} as any);
-    }
-    return obj;
-  }
-
-  private async getChatById(chatId: number): Promise<Chat | null> {
-    return this.chatRepository.findOne({
-      where: {
-        id: chatId,
-        tenantId: ExecutionManager.getTenantId(),
-      },
-    });
   }
 }
