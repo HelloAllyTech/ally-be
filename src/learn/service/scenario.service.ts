@@ -45,22 +45,7 @@ import {
   formatAutoTerminationEventsList,
   mapCreateScenarioRequestToEntity,
 } from '../util/scenario.util';
-
-interface ScenarioData {
-  status?: ScenarioStatus;
-  title?: string;
-  description?: string;
-  coverImageUrl?: string;
-  lifeHistory?: string;
-  voiceId?: string;
-  age?: number;
-  gender?: string;
-  currentLocation?: string;
-  autoTerminationStatus?: boolean;
-  terminationMessage?: string;
-  terminationEventId?: string;
-  [key: string]: any;
-}
+import { ScenarioData } from '../type/scenario.type';
 
 @Injectable()
 export class ScenarioService {
@@ -379,29 +364,26 @@ export class ScenarioService {
       }),
     );
 
-    const savedScenarios = await this.dataSource.transaction(
-      async (entityManager) => {
-        const scenariosRepo = entityManager.getRepository(Scenarios);
-        const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
-        const scenarios = scenariosRepo.create(createScenarioDtos);
-        const savedScenarios = await scenariosRepo.save(scenarios);
+    return await this.dataSource.transaction(async (entityManager) => {
+      const scenariosRepo = entityManager.getRepository(Scenarios);
+      const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
+      const scenarios = scenariosRepo.create(createScenarioDtos);
+      const savedScenarios = await scenariosRepo.save(scenarios);
 
-        const autoTerminationEventList = formatAutoTerminationEventsList(
-          createScenariosDto,
-          savedScenarios,
-        );
-        const scenarioTerminationEvents = scenarioEventsRepo.create(
-          autoTerminationEventList,
-        );
+      const autoTerminationEventList = formatAutoTerminationEventsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+      const scenarioTerminationEvents = scenarioEventsRepo.create(
+        autoTerminationEventList,
+      );
 
-        if (scenarioTerminationEvents.length > 0) {
-          await scenarioEventsRepo.save(scenarioTerminationEvents);
-        }
+      if (scenarioTerminationEvents.length > 0) {
+        await scenarioEventsRepo.save(scenarioTerminationEvents);
+      }
 
-        return savedScenarios;
-      },
-    );
-    return savedScenarios;
+      return savedScenarios;
+    });
   }
 
   async validateCreateScenario(

@@ -59,7 +59,7 @@ export class ScenariosRepository extends Repository<Scenarios> {
         'scenario.terminationEvent',
         ScenarioEvents,
         'scenarioEvent',
-        'scenarioEvent.scenarioId = scenario.id AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus AND scenarioEvent.deletedAt IS NULL',
+        'scenarioEvent.scenarioId = scenario.id AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
         { autoTerminationStatus: true },
       )
       .where('scenario.id = :id', { id })
