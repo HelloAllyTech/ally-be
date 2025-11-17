@@ -20,8 +20,9 @@ services:
       REDIS_PORT: "6379"
       DB_HOST: "postgres"
       DB_PORT: "5432"
-      # When running inside docker-compose, point AWS/SQS endpoints to localstack service
-      AWS_ENDPOINT_URL: "http://localstack:4566"
+      # When running inside docker-compose, point AWS/SQS endpoints to the shared LocalStack
+      # instance running on the host (Docker for Mac exposes this as host.docker.internal).
+      AWS_ENDPOINT_URL: "http://host.docker.internal:4566"
       # These SQS URLs use "http://localstack:4566" instead of the DNS-style regional
       # hostnames (e.g., sqs.us-east-1.localhost.localstack.cloud) because:
       #
@@ -37,22 +38,22 @@ services:
       #    own default. Because the region is already provided via AWS_REGION, it does not need
       #    to be encoded in the SQS endpoint URL.
       #
-      # This setup keeps the configuration simple, reliable inside Docker, and consistent with
-      # how the AWS SDK resolves regions.
-      SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-request-queue"
-      SQS_TRANSCRIPTION_REQUEST_DLQ_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-request-dlq"
-      SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-response-queue"
-      SQS_TRANSCRIPTION_RESPONSE_DLQ_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-response-dlq"
-      SQS_AUDIO_FILE_RETRY_QUEUE_URL: "http://localstack:4566/000000000000/sqs-audio-file-retry-queue"
-      SQS_AUDIO_FILE_RETRY_DLQ_URL: "http://localstack:4566/000000000000/sqs-audio-file-retry-queue-dlq"
-      SQS_AUDIO_UPLOAD_QUEUE_URL: "http://localstack:4566/000000000000/sqs-audio-upload-queue"
-      SQS_AUDIO_UPLOAD_DLQ_URL: "http://localstack:4566/000000000000/sqs-audio-upload-queue-dlq"
-      SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: "http://localstack:4566/000000000000/sqs-learn-message-and-event-queue"
+      # This setup keeps the configuration simple and allows the app container to reach the
+      # shared LocalStack instance via the host.
+      SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: "http://host.docker.internal:4566/000000000000/sqs-ai-transcription-request-queue"
+      SQS_TRANSCRIPTION_REQUEST_DLQ_URL: "http://host.docker.internal:4566/000000000000/sqs-ai-transcription-request-dlq"
+      SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL: "http://host.docker.internal:4566/000000000000/sqs-ai-transcription-response-queue"
+      SQS_TRANSCRIPTION_RESPONSE_DLQ_URL: "http://host.docker.internal:4566/000000000000/sqs-ai-transcription-response-dlq"
+      SQS_AUDIO_FILE_RETRY_QUEUE_URL: "http://host.docker.internal:4566/000000000000/sqs-audio-file-retry-queue"
+      SQS_AUDIO_FILE_RETRY_DLQ_URL: "http://host.docker.internal:4566/000000000000/sqs-audio-file-retry-queue-dlq"
+      SQS_AUDIO_UPLOAD_QUEUE_URL: "http://host.docker.internal:4566/000000000000/sqs-audio-upload-queue"
+      SQS_AUDIO_UPLOAD_DLQ_URL: "http://host.docker.internal:4566/000000000000/sqs-audio-upload-queue-dlq"
+      SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: "http://host.docker.internal:4566/000000000000/sqs-learn-message-and-event-queue"
     depends_on:
       - postgres
       - redis
       - sqs-setup
-      - localstack
+      - localstack-wait
     networks:
       - app-network
     volumes:
@@ -77,31 +78,44 @@ services:
       - "6379:6379"
     networks:
       - app-network
-
-  localstack:
-    image: localstack/localstack:latest
-    container_name: localstack
-    ports:
-      - "4566:4566"
-    env_file:
-      - docker.env
-    environment:
-      - SERVICES=sqs
-      - DEBUG=1
-      - LOCALSTACK_HOSTNAME=localstack
-    networks:
-      - app-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  #localstack:
+  #   image: localstack/localstack:latest
+  #   container_name: localstack
+  #   ports:
+  #     - "4566:4566"
+  #   env_file:
+  #     - docker.env
+  #   environment:
+  #     - SERVICES=sqs
+  #     - DEBUG=1
+  #     - LOCALSTACK_HOSTNAME=localstack
+  #   networks:
+  #     - app-network
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  localstack-wait:
+    image: curlimages/curl:latest
+    command:
+      - sh
+      - -c
+      - |
+        echo "Waiting for shared LocalStack to be ready..."
+        until curl -f http://host.docker.internal:4566/_localstack/health; do
+          echo "LocalStack is not ready yet. Waiting..."
+          sleep 2
+        done
+        echo "LocalStack is ready!"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: "no"
 
   sqs-setup:
     image: amazon/aws-cli:latest
     depends_on:
-      localstack:
-        condition: service_healthy
+      - localstack-wait
     env_file:
       - docker.env
     networks:
@@ -111,33 +125,33 @@ services:
         echo '🚀 Waiting for LocalStack...' &&
         sleep 5 &&
         echo '📦 Creating SQS queues...' &&
-        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-request-queue &&
-        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-response-queue &&
-        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-audio-file-retry-queue &&
-        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-audio-upload-queue &&
-        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-request-dlq &&
-        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-response-dlq &&
-        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-audio-file-retry-queue-dlq &&
-        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-audio-upload-queue-dlq &&
-        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-learn-message-and-event-queue &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs create-queue --queue-name sqs-ai-transcription-request-queue &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs create-queue --queue-name sqs-ai-transcription-response-queue &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs create-queue --queue-name sqs-audio-file-retry-queue &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs create-queue --queue-name sqs-audio-upload-queue &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs create-queue --queue-name sqs-ai-transcription-request-dlq &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs create-queue --queue-name sqs-ai-transcription-response-dlq &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs create-queue --queue-name sqs-audio-file-retry-queue-dlq &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs create-queue --queue-name sqs-audio-upload-queue-dlq &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs create-queue --queue-name sqs-learn-message-and-event-queue &&
 
         echo '🔗 Setting up Dead Letter Queues...' &&
-        MAIN_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-ai-transcription-request-queue --query 'QueueUrl' --output text) &&
-        DLQ_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-ai-transcription-request-dlq --query 'QueueUrl' --output text) &&
-        DLQ_ARN=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-attributes --queue-url $$DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) &&
-        aws --endpoint-url=http://localstack:4566 sqs set-queue-attributes --queue-url $$MAIN_URL --attributes '{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"'$$DLQ_ARN'\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}' &&
-        MAIN_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-ai-transcription-response-queue --query 'QueueUrl' --output text) &&
-        DLQ_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-ai-transcription-response-dlq --query 'QueueUrl' --output text) &&
-        DLQ_ARN=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-attributes --queue-url $$DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) &&
-        aws --endpoint-url=http://localstack:4566 sqs set-queue-attributes --queue-url $$MAIN_URL --attributes '{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"'$$DLQ_ARN'\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}' &&
-        MAIN_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-audio-file-retry-queue --query 'QueueUrl' --output text) &&
-        DLQ_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-audio-file-retry-queue-dlq --query 'QueueUrl' --output text) &&
-        DLQ_ARN=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-attributes --queue-url $$DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) &&
-        aws --endpoint-url=http://localstack:4566 sqs set-queue-attributes --queue-url $$MAIN_URL --attributes '{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"'$$DLQ_ARN'\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}' &&
-        MAIN_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-audio-upload-queue --query 'QueueUrl' --output text) &&
-        DLQ_URL=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-url --queue-name sqs-audio-upload-queue-dlq --query 'QueueUrl' --output text) &&
-        DLQ_ARN=$$(aws --endpoint-url=http://localstack:4566 sqs get-queue-attributes --queue-url $$DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) &&
-        aws --endpoint-url=http://localstack:4566 sqs set-queue-attributes --queue-url $$MAIN_URL --attributes '{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"'$$DLQ_ARN'\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}' &&
+        MAIN_URL=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-url --queue-name sqs-ai-transcription-request-queue --query 'QueueUrl' --output text) &&
+        DLQ_URL=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-url --queue-name sqs-ai-transcription-request-dlq --query 'QueueUrl' --output text) &&
+        DLQ_ARN=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-attributes --queue-url $$DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs set-queue-attributes --queue-url $$MAIN_URL --attributes '{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"'$$DLQ_ARN'\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}' &&
+        MAIN_URL=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-url --queue-name sqs-ai-transcription-response-queue --query 'QueueUrl' --output text) &&
+        DLQ_URL=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-url --queue-name sqs-ai-transcription-response-dlq --query 'QueueUrl' --output text) &&
+        DLQ_ARN=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-attributes --queue-url $$DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs set-queue-attributes --queue-url $$MAIN_URL --attributes '{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"'$$DLQ_ARN'\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}' &&
+        MAIN_URL=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-url --queue-name sqs-audio-file-retry-queue --query 'QueueUrl' --output text) &&
+        DLQ_URL=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-url --queue-name sqs-audio-file-retry-queue-dlq --query 'QueueUrl' --output text) &&
+        DLQ_ARN=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-attributes --queue-url $$DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs set-queue-attributes --queue-url $$MAIN_URL --attributes '{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"'$$DLQ_ARN'\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}' &&
+        MAIN_URL=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-url --queue-name sqs-audio-upload-queue --query 'QueueUrl' --output text) &&
+        DLQ_URL=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-url --queue-name sqs-audio-upload-queue-dlq --query 'QueueUrl' --output text) &&
+        DLQ_ARN=$$(aws --endpoint-url=http://host.docker.internal:4566 sqs get-queue-attributes --queue-url $$DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text) &&
+        aws --endpoint-url=http://host.docker.internal:4566 sqs set-queue-attributes --queue-url $$MAIN_URL --attributes '{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"'$$DLQ_ARN'\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}' &&
         echo '🎉 All SQS queues and DLQs are ready!'
       "
 networks:

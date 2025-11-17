@@ -112,9 +112,27 @@ cd ally-be
 
 2. Edit `docker.env` and `.env` and fill in all required variables (see [Environment Configuration](#-environment-configuration) above)
 
-### Step 3: Start Docker Services
 
-Start PostgreSQL, Redis, LocalStack and SQS using Docker Compose:
+### Step 3: Start LocalStack
+
+```bash
+docker run -d \
+  --name shared-localstack \
+  --restart unless-stopped \
+  -p 4566:4566 \
+  -p 4510-4559:4510-4559 \
+  # -e SERVICES=sqs,s3 \ Why mention sqs and s3?
+  -e DEBUG=1 \
+  -e AWS_DEFAULT_REGION=us-east-1 \
+  -e AWS_ACCESS_KEY_ID=test \
+  -e AWS_SECRET_ACCESS_KEY=test \
+  -v shared_localstack_data:/var/lib/localstack \
+  localstack/localstack:latest
+```
+
+### Step 4: Start Docker Services
+
+Start PostgreSQL, Redis, and SQS using Docker Compose:
 
 ```bash
 docker-compose up
@@ -123,7 +141,7 @@ make sure the SQS URLs in your .env file match the ones shown in the Docker outp
 Note: The app in Docker will not start automatically at the moment — it requires manual execution. The steps for running it manually are detailed in the following sections.
 
 
-### Step 4: Run Database Migrations
+### Step 5: Run Database Migrations
 
 ```bash
 npm run migration:run
