@@ -1525,6 +1525,7 @@ describe('ScenarioSessionService', () => {
           message: 'Hello, world!',
           createdAt: new Date(),
           updatedAt: new Date(),
+          eventCode: 'SS1',
         },
       };
       const mockCreatedEvent = { id: 1, eventId: 'event-123' };
@@ -1581,6 +1582,7 @@ describe('ScenarioSessionService', () => {
           score: 15,
           createdAt: new Date(),
           updatedAt: new Date(),
+          eventCode: 'SS1',
         },
       };
       const mockCreatedEvent = { id: 1, eventId: 'event-123' };
@@ -1640,6 +1642,7 @@ describe('ScenarioSessionService', () => {
           score: 10,
           createdAt: new Date(),
           updatedAt: new Date(),
+          eventCode: 'SS1',
         },
       };
       const mockCreatedEvent = { id: 1, eventId: 'event-123' };
@@ -1692,6 +1695,7 @@ describe('ScenarioSessionService', () => {
           message: 'Hello, world!',
           createdAt: new Date(),
           updatedAt: new Date(),
+          eventCode: 'SS2',
         },
       };
       const mockCreatedEvent = { id: 2, eventId: 'event-124' };

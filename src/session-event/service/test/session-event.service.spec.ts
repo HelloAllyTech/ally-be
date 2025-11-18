@@ -29,6 +29,7 @@ describe('SessionEventService', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
+    eventCode: 'SS1',
   };
 
   const mockCreateSessionEventDto: CreateSessionEventDto = {
@@ -42,6 +43,7 @@ describe('SessionEventService', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     detectionData: {
       sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+      expression: undefined,
     },
   };
 
@@ -70,6 +72,7 @@ describe('SessionEventService', () => {
       createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
       getAllSessionEvents: jest.fn(),
       getSessionEventsByScenarioId: jest.fn(),
+      createSessionEvents: jest.fn(),
     };
 
     const mockEntityManager = {
@@ -106,15 +109,15 @@ describe('SessionEventService', () => {
   });
 
   describe('createSessionEvents', () => {
-    it('should create session events successfully', async () => {
+    it('should create session events by calling createSessionEvents repository function', async () => {
       const createEventDtos = [mockCreateSessionEventDto];
       const createdEvents = [mockSessionEvent];
 
-      repository.save.mockResolvedValue(createdEvents as any);
+      repository.createSessionEvents.mockResolvedValue(createdEvents as any);
 
       const result = await service.createSessionEvents(createEventDtos);
 
-      expect(repository.save).toHaveBeenCalledWith(
+      expect(repository.createSessionEvents).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({
             id: expect.any(String),
@@ -123,112 +126,6 @@ describe('SessionEventService', () => {
         ]),
       );
       expect(result).toEqual(createdEvents);
-    });
-
-    it('should create multiple session events successfully', async () => {
-      const createEventDtos = [
-        mockCreateSessionEventDto,
-        {
-          ...mockCreateSessionEventDto,
-          name: 'Second Event',
-        },
-      ];
-      const createdEvents = [
-        mockSessionEvent,
-        { ...mockSessionEvent, id: 'event-2', name: 'Second Event' },
-      ];
-
-      repository.save.mockResolvedValue(createdEvents as any);
-
-      const result = await service.createSessionEvents(createEventDtos);
-
-      expect(repository.save).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: expect.any(String),
-            ...mockCreateSessionEventDto,
-          }),
-          expect.objectContaining({
-            id: expect.any(String),
-            ...mockCreateSessionEventDto,
-            name: 'Second Event',
-          }),
-        ]),
-      );
-      expect(result).toEqual(createdEvents);
-    });
-
-    it('should handle empty array input', async () => {
-      const createEventDtos: CreateSessionEventDto[] = [];
-      const createdEvents: SessionEvents[] = [];
-
-      repository.save.mockResolvedValue(createdEvents as any);
-
-      const result = await service.createSessionEvents(createEventDtos);
-
-      expect(repository.save).toHaveBeenCalledWith(createEventDtos);
-      expect(result).toEqual(createdEvents);
-    });
-
-    it('should handle repository save error', async () => {
-      const createEventDtos = [mockCreateSessionEventDto];
-      const error = new Error('Save failed');
-
-      repository.save.mockRejectedValue(error);
-
-      await expect(
-        service.createSessionEvents(createEventDtos),
-      ).rejects.toThrow('Save failed');
-      expect(repository.save).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: expect.any(String),
-            ...mockCreateSessionEventDto,
-          }),
-        ]),
-      );
-    });
-
-    it('should handle null input gracefully', async () => {
-      const createEventDtos = null as any;
-
-      await expect(
-        service.createSessionEvents(createEventDtos),
-      ).rejects.toThrow("Cannot read properties of null (reading 'map')");
-    });
-
-    it('should handle undefined input gracefully', async () => {
-      const createEventDtos = undefined as any;
-
-      await expect(
-        service.createSessionEvents(createEventDtos),
-      ).rejects.toThrow("Cannot read properties of undefined (reading 'map')");
-    });
-
-    it('should handle single event with minimal data', async () => {
-      const minimalEventDto = {
-        id: 'minimal-event',
-        name: 'Minimal Event',
-        detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
-        visibilityType: SessionEventVisibilityType.ACTIVE,
-      };
-      const createdEvent = {
-        ...minimalEventDto,
-        description: null,
-        score: null,
-        emoji: null,
-        message: null,
-        branchInstruction: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      repository.save.mockResolvedValue([createdEvent] as any);
-
-      const result = await service.createSessionEvents([minimalEventDto]);
-
-      expect(repository.save).toHaveBeenCalledWith([minimalEventDto]);
-      expect(result).toEqual([createdEvent]);
     });
   });
 

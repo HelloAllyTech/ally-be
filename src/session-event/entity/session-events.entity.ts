@@ -48,4 +48,7 @@ export class SessionEvents extends BaseWithoutTenantEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   detectionData?: DetectionDataDto<CombinationExpressionDto>;
+
+  @Column({ type: 'varchar', unique: true })
+  eventCode!: string;
 }

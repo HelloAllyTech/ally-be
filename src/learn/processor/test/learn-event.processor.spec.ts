@@ -52,20 +52,18 @@ describe('LearnEventProcessor', () => {
       event: {
         timestamp: new Date(),
         event_data: {
-          id: 'event-123',
-          name: 'Event 1',
+          eventCode: 'SS1',
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.ACTIVE,
-          createdAt: new Date(),
-          updatedAt: new Date(),
           message: 'Hello, world!',
-          score: 100,
-          emoji: '👍',
-          description: 'This is a test event',
           branchInstruction: 'This is a test branch instruction',
           detectionData: {
             sentences: ['This is a test sentence', 'This is a test sentence 2'],
           },
+          id: '123',
+          name: 'Test name',
+          createdAt: new Date(),
+          updatedAt: new Date(),
         },
       },
     },
@@ -361,6 +359,7 @@ describe('LearnEventProcessor', () => {
           event: {
             timestamp: new Date(),
             event_data: {
+              eventCode: 'SS1',
               id: 'complex-event-123',
               name: 'Complex Event',
               detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,

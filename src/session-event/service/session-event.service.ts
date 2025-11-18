@@ -50,7 +50,9 @@ export class SessionEventService {
         detectionData: mappedDetectionData,
       };
     });
-    return this.sessionEventRepository.save(events as Partial<SessionEvents>[]);
+    return this.sessionEventRepository.createSessionEvents(
+      events as CreateSessionEventDto[],
+    );
   }
 
   async getSessionEventsByScenarioId(
@@ -87,6 +89,7 @@ export class SessionEventService {
         speaker: event.sessionEvents_speaker,
         createdAt: event.sessionEvents_createdAt,
         updatedAt: event.sessionEvents_updatedAt,
+        eventCode: event.sessionEvents_eventCode,
       };
     });
     return sessionEvents;
