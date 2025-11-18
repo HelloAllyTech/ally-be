@@ -3,7 +3,7 @@ import { ScenarioPathStatus } from '../type/scenario-paths.type';
 
 export class GetScenarioPathItemDto {
   @ApiProperty({ description: 'ID of the scenario' })
-  id!: string;
+  scenarioId!: number;
 
   @ApiProperty({ description: 'Order of the scenario in the path' })
   order!: number;
@@ -16,6 +16,15 @@ export class GetScenarioPathItemDto {
 
   @ApiProperty({ description: 'Minimum score of the scenario' })
   minimumScore?: number;
+
+  @ApiProperty({ description: 'Title of the scenario' })
+  title?: string;
+
+  @ApiProperty({ description: 'Description of the scenario' })
+  description?: string;
+
+  @ApiProperty({ description: 'Cover image URL of the scenario' })
+  coverImageUrl?: string;
 }
 
 export class GetScenarioPathResponseDto {

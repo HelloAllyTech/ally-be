@@ -12,6 +12,17 @@ import { ScenarioPathFilterOptions } from '../../type/scenario-paths.type';
 import { ScenarioPathItemRepository } from '../../repository/scenario-path-item.repository';
 import { NotFoundException } from '@nestjs/common';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { ScenarioPathSessionService } from '../scenario-path-session.service';
+import { UpdateScenarioPathDto } from '../../dto/update-scenario-path.dto';
+
+// Mock ExecutionManager
+jest.mock('src/common/execution/execution-manager', () => ({
+  ExecutionManager: {
+    getUserId: jest.fn(),
+    getExecutionId: jest.fn(),
+  },
+}));
 
 describe('ScenarioPathService', () => {
   let service: ScenarioPathService;
@@ -19,6 +30,7 @@ describe('ScenarioPathService', () => {
   let scenarioUtil: jest.Mocked<ScenarioSharedService>;
   let scenarioPathRepository: jest.Mocked<ScenarioPathRepository>;
   let scenarioPathItemRepository: jest.Mocked<ScenarioPathItemRepository>;
+  let scenarioPathSessionService: jest.Mocked<ScenarioPathSessionService>;
   let mockEntityManager: any;
   let mockScenarioPathRepo: jest.Mocked<Repository<ScenarioPath>>;
   let mockScenarioPathItemRepo: jest.Mocked<Repository<ScenarioPathItem>>;
@@ -35,6 +47,7 @@ describe('ScenarioPathService', () => {
       create: jest.fn(),
       find: jest.fn(),
       findOne: jest.fn(),
+      update: jest.fn(),
     } as any;
 
     mockScenarioPathItemRepo = {
@@ -42,6 +55,8 @@ describe('ScenarioPathService', () => {
       create: jest.fn(),
       find: jest.fn(),
       findOne: jest.fn(),
+      delete: jest.fn(),
+      update: jest.fn(),
     } as any;
 
     mockEntityManager = {
@@ -74,6 +89,10 @@ describe('ScenarioPathService', () => {
       find: jest.fn(),
     };
 
+    const mockScenarioPathSessionService = {
+      getScenarioPathSessionByScenarioPathId: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioPathService,
@@ -93,6 +112,10 @@ describe('ScenarioPathService', () => {
           provide: ScenarioPathItemRepository,
           useValue: mockScenarioPathItemRepository,
         },
+        {
+          provide: ScenarioPathSessionService,
+          useValue: mockScenarioPathSessionService,
+        },
       ],
     }).compile();
 
@@ -101,10 +124,12 @@ describe('ScenarioPathService', () => {
     scenarioUtil = module.get(ScenarioSharedService);
     scenarioPathRepository = module.get(ScenarioPathRepository);
     scenarioPathItemRepository = module.get(ScenarioPathItemRepository);
+    scenarioPathSessionService = module.get(ScenarioPathSessionService);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+    (ExecutionManager.getUserId as jest.Mock).mockReturnValue(undefined);
   });
 
   describe('getScenarioPaths', () => {
@@ -646,6 +671,20 @@ describe('ScenarioPathService', () => {
     it('should return scenario path with scenarios by id', async () => {
       scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
       scenarioPathItemRepository.find.mockResolvedValue(mockScenarioPathItems);
+      scenarioUtil.getScenarioByIds.mockResolvedValue([
+        {
+          id: 1,
+          title: 'Scenario 1',
+          description: 'Desc 1',
+          coverImageUrl: 'url1',
+        } as Scenarios,
+        {
+          id: 2,
+          title: 'Scenario 2',
+          description: 'Desc 2',
+          coverImageUrl: 'url2',
+        } as Scenarios,
+      ]);
 
       const result = await service.getScenarioPathById('path-1');
 
@@ -658,18 +697,24 @@ describe('ScenarioPathService', () => {
         isGlobal: mockScenarioPath.isGlobal,
         scenarios: [
           {
-            id: mockScenarioPathItems[0].scenarioId,
+            scenarioId: mockScenarioPathItems[0].scenarioId,
             order: mockScenarioPathItems[0].order,
             messageTitle: mockScenarioPathItems[0].messageTitle,
             messageContent: mockScenarioPathItems[0].messageContent,
             minimumScore: mockScenarioPathItems[0].minimumScore,
+            title: 'Scenario 1',
+            description: 'Desc 1',
+            coverImageUrl: 'url1',
           },
           {
-            id: mockScenarioPathItems[1].scenarioId,
+            scenarioId: mockScenarioPathItems[1].scenarioId,
             order: mockScenarioPathItems[1].order,
             messageTitle: mockScenarioPathItems[1].messageTitle,
             messageContent: mockScenarioPathItems[1].messageContent,
             minimumScore: mockScenarioPathItems[1].minimumScore,
+            title: 'Scenario 2',
+            description: 'Desc 2',
+            coverImageUrl: 'url2',
           },
         ],
       });
@@ -679,6 +724,7 @@ describe('ScenarioPathService', () => {
       expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1' },
       });
+      expect(scenarioUtil.getScenarioByIds).toHaveBeenCalledWith([1, 2]);
     });
 
     it('should throw NotFoundException when scenario path not found', async () => {
@@ -688,6 +734,202 @@ describe('ScenarioPathService', () => {
         service.getScenarioPathById('non-existent-id'),
       ).rejects.toThrow(NotFoundException);
       expect(scenarioPathItemRepository.find).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateScenarioPath', () => {
+    const mockScenarioPath: ScenarioPath = {
+      id: 'path-1',
+      title: 'Original Title',
+      description: 'Original Description',
+      coverImageUrl: 'https://example.com/original.jpg',
+      status: ScenarioPathStatus.DRAFT,
+      isGlobal: false,
+    } as ScenarioPath;
+
+    const mockUpdateScenarioPathDto: UpdateScenarioPathDto = {
+      title: 'Updated Title',
+      description: 'Updated Description',
+      status: ScenarioPathStatus.DRAFT,
+      scenarios: [
+        {
+          scenarioId: 1,
+          order: 1,
+          minimumScore: 0,
+          messageTitle: 'Message 1',
+          messageContent: 'Content 1',
+        },
+        {
+          scenarioId: 2,
+          order: 2,
+          minimumScore: 75,
+          messageTitle: 'Message 2',
+          messageContent: 'Content 2',
+        },
+      ],
+    };
+
+    const mockExistingScenarioPathItems: ScenarioPathItem[] = [
+      {
+        id: 'item-1',
+        scenarioPathId: 'path-1',
+        scenarioId: 1,
+        order: 1,
+        messageTitle: 'Old Message 1',
+        messageContent: 'Old Content 1',
+        minimumScore: 0,
+      } as ScenarioPathItem,
+    ];
+
+    it('should successfully update a scenario path', async () => {
+      scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
+      scenarioUtil.getScenarioByIds.mockResolvedValue([
+        mockScenarios[0],
+        mockScenarios[1],
+      ]);
+      mockScenarioPathRepo.update.mockResolvedValue(undefined as any);
+      mockScenarioPathRepo.findOne.mockResolvedValue({
+        ...mockScenarioPath,
+        ...mockUpdateScenarioPathDto,
+        totalScenarios: 2,
+      });
+      mockScenarioPathItemRepo.delete.mockResolvedValue(undefined as any);
+      mockScenarioPathItemRepo.create.mockImplementation((item) => item as any);
+      mockScenarioPathItemRepo.save.mockResolvedValue([] as any);
+
+      const result = await service.updateScenarioPath(
+        'path-1',
+        mockUpdateScenarioPathDto,
+      );
+
+      expect(result).toEqual({
+        id: 'path-1',
+        title: 'Updated Title',
+        description: 'Updated Description',
+        coverImageUrl: mockScenarioPath.coverImageUrl,
+        status: ScenarioPathStatus.DRAFT,
+      });
+      expect(scenarioPathRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'path-1' },
+      });
+      expect(mockScenarioPathRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'path-1' },
+      });
+      expect(mockScenarioPathItemRepo.delete).toHaveBeenCalledWith({
+        scenarioPathId: 'path-1',
+      });
+      expect(mockScenarioPathItemRepo.create).toHaveBeenCalledTimes(2);
+      expect(scenarioPathItemRepository.find).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when scenario path not found', async () => {
+      scenarioPathRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.updateScenarioPath(
+          'non-existent-id',
+          mockUpdateScenarioPathDto,
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw BadRequestException when trying to change ACTIVE to DRAFT with active sessions', async () => {
+      const activeScenarioPath: ScenarioPath = {
+        ...mockScenarioPath,
+        status: ScenarioPathStatus.ACTIVE,
+      };
+      const updateToDraft: UpdateScenarioPathDto = {
+        ...mockUpdateScenarioPathDto,
+        status: ScenarioPathStatus.DRAFT,
+      };
+
+      scenarioPathRepository.findOne.mockResolvedValue(activeScenarioPath);
+      scenarioPathSessionService.getScenarioPathSessionByScenarioPathId.mockResolvedValue(
+        {
+          id: 'session-1',
+        } as any,
+      );
+
+      await expect(
+        service.updateScenarioPath('path-1', updateToDraft),
+      ).rejects.toThrow(BadRequestException);
+      expect(
+        scenarioPathSessionService.getScenarioPathSessionByScenarioPathId,
+      ).toHaveBeenCalledWith('path-1');
+    });
+
+    it('should allow changing ACTIVE to DRAFT when no active sessions exist', async () => {
+      const activeScenarioPath: ScenarioPath = {
+        ...mockScenarioPath,
+        status: ScenarioPathStatus.ACTIVE,
+      };
+      const updateToDraft: UpdateScenarioPathDto = {
+        ...mockUpdateScenarioPathDto,
+        status: ScenarioPathStatus.DRAFT,
+      };
+
+      scenarioPathRepository.findOne.mockResolvedValue(activeScenarioPath);
+      scenarioPathSessionService.getScenarioPathSessionByScenarioPathId.mockResolvedValue(
+        null,
+      );
+      scenarioUtil.getScenarioByIds.mockResolvedValue([
+        mockScenarios[0],
+        mockScenarios[1],
+      ]);
+      mockScenarioPathRepo.update.mockResolvedValue(undefined as any);
+      mockScenarioPathRepo.findOne.mockResolvedValue({
+        ...activeScenarioPath,
+        ...updateToDraft,
+        totalScenarios: 2,
+      });
+      mockScenarioPathItemRepo.delete.mockResolvedValue(undefined as any);
+      mockScenarioPathItemRepo.create.mockImplementation((item) => item as any);
+      mockScenarioPathItemRepo.save.mockResolvedValue([] as any);
+
+      const result = await service.updateScenarioPath('path-1', updateToDraft);
+
+      expect(result.status).toBe(ScenarioPathStatus.DRAFT);
+      expect(
+        scenarioPathSessionService.getScenarioPathSessionByScenarioPathId,
+      ).toHaveBeenCalledWith('path-1');
+    });
+
+    it('should use existing scenarios when scenarios not provided in update', async () => {
+      const updateWithoutScenarios: UpdateScenarioPathDto = {
+        title: 'Updated Title',
+        status: ScenarioPathStatus.DRAFT,
+      };
+
+      scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
+      scenarioPathItemRepository.find.mockResolvedValue(
+        mockExistingScenarioPathItems,
+      );
+      scenarioUtil.getScenarioByIds.mockResolvedValue([mockScenarios[0]]);
+      mockScenarioPathRepo.update.mockResolvedValue(undefined as any);
+      mockScenarioPathRepo.findOne.mockResolvedValue({
+        ...mockScenarioPath,
+        title: 'Updated Title',
+        totalScenarios: 1,
+      });
+      mockScenarioPathItemRepo.delete.mockResolvedValue(undefined as any);
+      mockScenarioPathItemRepo.create.mockImplementation((item) => item as any);
+      mockScenarioPathItemRepo.save.mockResolvedValue([] as any);
+
+      await service.updateScenarioPath('path-1', updateWithoutScenarios);
+
+      expect(scenarioPathRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'path-1' },
+      });
+      expect(mockScenarioPathRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'path-1' },
+      });
+      expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
+        where: { scenarioPathId: 'path-1' },
+      });
+      expect(scenarioUtil.getScenarioByIds).toHaveBeenCalledWith([1]);
+      // When scenarios is not provided, items are not deleted or recreated
+      expect(mockScenarioPathItemRepo.delete).not.toHaveBeenCalled();
+      expect(mockScenarioPathItemRepo.create).not.toHaveBeenCalled();
     });
   });
 });

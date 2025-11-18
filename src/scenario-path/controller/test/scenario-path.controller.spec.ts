@@ -17,6 +17,7 @@ describe('ScenarioPathController', () => {
     createScenarioPath: jest.fn(),
     getScenarioPaths: jest.fn(),
     getScenarioPathById: jest.fn(),
+    updateScenarioPath: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -143,11 +144,14 @@ describe('ScenarioPathController', () => {
       isGlobal: false,
       scenarios: [
         {
-          id: 1,
+          scenarioId: 1,
           order: 1,
           messageTitle: 'Message 1',
           messageContent: 'Content 1',
           minimumScore: 0,
+          title: 'Scenario 1',
+          description: 'Scenario Description 1',
+          coverImageUrl: 'https://example.com/scenario1.jpg',
         },
       ],
     };
@@ -159,6 +163,43 @@ describe('ScenarioPathController', () => {
 
       expect(result).toEqual(mockScenarioPath);
       expect(service.getScenarioPathById).toHaveBeenCalledWith('path-1');
+    });
+  });
+
+  describe('updateScenarioPath', () => {
+    const mockUpdateScenarioPathDto = {
+      title: 'Updated Scenario Path',
+      description: 'Updated Description',
+      status: ScenarioPathStatus.DRAFT,
+      scenarios: [
+        {
+          scenarioId: 1,
+          order: 1,
+          minimumScore: 0,
+        },
+      ],
+    };
+
+    it('should successfully update a scenario path', async () => {
+      const expectedResult = {
+        id: 'path-1',
+        title: 'Updated Scenario Path',
+        description: 'Updated Description',
+        coverImageUrl: 'https://example.com/image.jpg',
+        status: ScenarioPathStatus.DRAFT,
+      };
+      service.updateScenarioPath.mockResolvedValue(expectedResult);
+
+      const result = await controller.updateScenarioPath(
+        'path-1',
+        mockUpdateScenarioPathDto,
+      );
+
+      expect(result).toEqual(expectedResult);
+      expect(service.updateScenarioPath).toHaveBeenCalledWith(
+        'path-1',
+        mockUpdateScenarioPathDto,
+      );
     });
   });
 });
