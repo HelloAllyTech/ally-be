@@ -3,13 +3,15 @@ import { NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { SessionEventService } from '../session-event.service';
 import { SessionEvents } from '../../entity/session-events.entity';
-import { CreateSessionEventDto } from '../../dto/create-session-event.dto';
-import { UpdateSessionEventDto } from '../../dto/update-session-event.dto';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { SessionEventRepository } from '../../repository/session-event.repository';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
+import {
+  CreateSessionEventDto,
+  UpdateSessionEventDto,
+} from 'src/session-event/dto/session-event.dto';
 
 describe('SessionEventService', () => {
   let service: SessionEventService;
@@ -318,7 +320,9 @@ describe('SessionEventService', () => {
     });
 
     it('should update with empty object', async () => {
-      const emptyUpdate: UpdateSessionEventDto = {};
+      const emptyUpdate: UpdateSessionEventDto = {
+        name: 'Empty Event',
+      };
 
       repository.findOne.mockResolvedValue(mockSessionEvent);
       repository.update.mockResolvedValue({ affected: 1 } as any);

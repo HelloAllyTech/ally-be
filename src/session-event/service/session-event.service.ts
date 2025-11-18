@@ -3,15 +3,25 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CreateSessionEventDto } from '../dto/create-session-event.dto';
+import { v4 } from 'uuid';
 import { DataSource, In } from 'typeorm';
+
 import { SessionEvents } from '../entity/session-events.entity';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
-import { UpdateSessionEventDto } from '../dto/update-session-event.dto';
 import { Pagination } from 'src/common/type/common.type';
 import { SessionEventRepository } from '../repository/session-event.repository';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
-import { v4 } from 'uuid';
+import {
+  mapDbExpressionToResponse,
+  mapRequestToDbExpression,
+} from '../util/session-event.util';
+import {
+  CombinationExpressionDto,
+  CombinationExpressionRequestDto,
+  CreateSessionEventDto,
+  SessionEventResponseDto,
+  UpdateSessionEventDto,
+} from '../dto/session-event.dto';
 
 @Injectable()
 export class SessionEventService {
@@ -24,12 +34,23 @@ export class SessionEventService {
     createEventDtos: CreateSessionEventDto[],
   ): Promise<SessionEvents[]> {
     const events = createEventDtos.map((event) => {
+      const mappedDetectionData = event.detectionData
+        ? {
+            ...event.detectionData,
+            expression: mapRequestToDbExpression(
+              event?.detectionData
+                ?.expression as CombinationExpressionRequestDto,
+            ),
+          }
+        : undefined;
+
       return {
         id: v4(),
         ...event,
+        detectionData: mappedDetectionData,
       };
     });
-    return this.sessionEventRepository.save(events);
+    return this.sessionEventRepository.save(events as Partial<SessionEvents>[]);
   }
 
   async getSessionEventsByScenarioId(
@@ -81,9 +102,23 @@ export class SessionEventService {
     if (!event) {
       throw new NotFoundException('Session Event not found');
     }
+    const mappedDetectionData = updateEventDto.detectionData
+      ? {
+          ...updateEventDto.detectionData,
+          expression: mapRequestToDbExpression(
+            updateEventDto?.detectionData
+              ?.expression as CombinationExpressionRequestDto,
+          ),
+        }
+      : undefined;
+
+    const formattedEventDto = {
+      ...updateEventDto,
+      detectionData: mappedDetectionData,
+    };
     const updated = await this.sessionEventRepository.update(
       id,
-      updateEventDto as Partial<SessionEvents>,
+      formattedEventDto as Partial<SessionEvents>,
     );
     return updated.affected !== 0;
   }
@@ -106,13 +141,27 @@ export class SessionEventService {
     visibilityType?: SessionEventVisibilityType,
     searchName?: string,
     pagination?: Pagination,
-  ): Promise<{ data: SessionEvents[] }> {
+  ): Promise<{ data: SessionEventResponseDto[] }> {
     const sessionEvents = await this.sessionEventRepository.getAllSessionEvents(
       visibilityType,
       searchName,
       pagination,
     );
-    return { data: sessionEvents };
+
+    const formattedSessionEvents = sessionEvents.map((event) => {
+      return {
+        ...event,
+        detectionData: event?.detectionData
+          ? {
+              ...event.detectionData,
+              expression: mapDbExpressionToResponse(
+                event?.detectionData?.expression as CombinationExpressionDto,
+              ),
+            }
+          : undefined,
+      };
+    });
+    return { data: formattedSessionEvents };
   }
 
   async deleteSessionEvents(eventIds: string[]): Promise<boolean> {

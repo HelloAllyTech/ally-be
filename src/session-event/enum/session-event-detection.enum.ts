@@ -13,3 +13,16 @@ export enum SessionEventDetectionCondition {
   LTE = 'LTE',
   GTE = 'GTE',
 }
+
+export enum CombinationExpressionType {
+  AND = 'AND',
+  OR = 'OR',
+  NOT = 'NOT',
+  IDENTIFIER = 'IDENTIFIER',
+}
+
+export enum CombinationExpressionRequestType {
+  AND = CombinationExpressionType.AND,
+  OR = CombinationExpressionType.OR,
+  NOT = CombinationExpressionType.NOT,
+}
