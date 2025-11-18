@@ -1,11 +1,15 @@
-import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
-import { v4 } from 'uuid';
+import {
+  DataSource,
+  DeepPartial,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 import { SessionEvents } from '../entity/session-events.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { Injectable } from '@nestjs/common';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
-import { CreateSessionEventDto } from '../dto/create-session-event.dto';
+import { CreateSessionEventDto } from '../dto/session-event.dto';
 import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
 import { EVENT_TYPE_PREFIX_MAP } from '../constants/event-type.constant';
 
@@ -18,7 +22,7 @@ export class SessionEventRepository extends Repository<SessionEvents> {
   async createSessionEvents(
     createEventDtos: CreateSessionEventDto[],
   ): Promise<SessionEvents[]> {
-    const events = await Promise.all(
+    const events: DeepPartial<SessionEvents>[] = await Promise.all(
       createEventDtos.map(async (event) => {
         const sequenceResult = await this.query(
           `SELECT nextval('session_events_event_code_seq') as next_value`,
@@ -32,10 +36,9 @@ export class SessionEventRepository extends Repository<SessionEvents> {
         const detectionType =
           event.detectionType || SessionEventDetectionType.SENTENCE_SIMILARITY;
         return this.create({
-          id: v4(),
           ...event,
-          eventCode: `${EVENT_TYPE_PREFIX_MAP[detectionType]}${eventCode}`,
-        });
+          eventCode: `${EVENT_TYPE_PREFIX_MAP[detectionType as SessionEventDetectionType]}${eventCode}`,
+        } as DeepPartial<SessionEvents>);
       }),
     );
     return this.save(events);

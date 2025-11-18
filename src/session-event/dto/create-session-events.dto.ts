@@ -1,7 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CreateSessionEventDto } from './create-session-event.dto';
+
+import { CreateSessionEventDto } from './session-event.dto';
 
 export class CreateSessionEventsDto {
   @ApiProperty({

@@ -5,7 +5,7 @@ import { SessionEvents } from '../../entity/session-events.entity';
 import { SessionEventVisibilityType } from '../../enum/session-event-visibility-type.enum';
 import { Pagination } from 'src/common/type/common.type';
 import { SessionEventDetectionType } from '../../enum/session-event-detection.enum';
-import { CreateSessionEventDto } from '../../dto/create-session-event.dto';
+import { CreateSessionEventDto } from '../../dto/session-event.dto';
 
 describe('SessionEventRepository', () => {
   let repository: SessionEventRepository;
@@ -464,7 +464,6 @@ describe('SessionEventRepository', () => {
         `SELECT nextval('session_events_event_code_seq') as next_value`,
       );
       expect(repository.create).toHaveBeenCalledWith({
-        id: expect.any(String),
         ...mockCreateEventDto,
         eventCode: expectedEventCode,
       });
@@ -691,44 +690,6 @@ describe('SessionEventRepository', () => {
       ).rejects.toThrow('Save failed');
       expect(repository.query).toHaveBeenCalled();
       expect(repository.create).toHaveBeenCalled();
-    });
-
-    it('should generate unique UUIDs for each event', async () => {
-      const createEventDtos = [
-        mockCreateEventDto,
-        { ...mockCreateEventDto, name: 'Second Event' },
-      ];
-
-      (repository.query as jest.Mock)
-        .mockResolvedValueOnce([{ next_value: 1 }])
-        .mockResolvedValueOnce([{ next_value: 2 }]);
-
-      const createdEvent1 = {
-        ...mockCreateEventDto,
-        id: 'uuid-1',
-        eventCode: 'SS0001',
-      };
-      const createdEvent2 = {
-        ...mockCreateEventDto,
-        name: 'Second Event',
-        id: 'uuid-2',
-        eventCode: 'SS0002',
-      };
-
-      (repository.create as jest.Mock)
-        .mockReturnValueOnce(createdEvent1)
-        .mockReturnValueOnce(createdEvent2);
-      (repository.save as jest.Mock).mockResolvedValue([
-        createdEvent1,
-        createdEvent2,
-      ]);
-
-      await repository.createSessionEvents(createEventDtos);
-
-      const createCalls = (repository.create as jest.Mock).mock.calls;
-      expect(createCalls[0][0].id).toBeDefined();
-      expect(createCalls[1][0].id).toBeDefined();
-      expect(createCalls[0][0].id).not.toBe(createCalls[1][0].id);
     });
 
     it('should preserve all event properties when creating', async () => {
