@@ -37,6 +37,10 @@ export class AlterSessionEventsAndAddEventCodeColumn1763448512197
               LPAD(nextval('session_events_event_code_seq')::text, 4, '0')
             WHERE "eventCode" IS NULL;
           `);
+    await queryRunner.query(`
+            ALTER TABLE "session_events"
+            ALTER COLUMN "eventCode" SET NOT NULL;
+          `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
