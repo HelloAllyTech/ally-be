@@ -7,8 +7,10 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { Injectable } from '@nestjs/common';
 
 @Injectable()
-export class ScenarioUtil {
-  private static readonly logger = LoggerService.getInstance(ScenarioUtil.name);
+export class ScenarioSharedService {
+  private static readonly logger = LoggerService.getInstance(
+    ScenarioSharedService.name,
+  );
   constructor(private readonly scenariosRepository: ScenariosRepository) {}
 
   async getScenarioByIds(scenarioIds: number[]): Promise<Scenarios[]> {
