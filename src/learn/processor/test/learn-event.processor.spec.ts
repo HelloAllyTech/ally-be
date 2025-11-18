@@ -52,7 +52,7 @@ describe('LearnEventProcessor', () => {
       event: {
         timestamp: new Date(),
         event_data: {
-          eventCode: 'SS0001',
+          eventCode: 'SS1',
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           message: 'Hello, world!',
@@ -359,7 +359,7 @@ describe('LearnEventProcessor', () => {
           event: {
             timestamp: new Date(),
             event_data: {
-              eventCode: 'SS0001',
+              eventCode: 'SS1',
               id: 'complex-event-123',
               name: 'Complex Event',
               detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,

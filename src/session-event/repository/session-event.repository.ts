@@ -28,11 +28,7 @@ export class SessionEventRepository extends Repository<SessionEvents> {
           `SELECT nextval('session_events_event_code_seq') as next_value`,
         );
 
-        // getting sequence and adding 0s in the front
-        const eventCode = String(sequenceResult[0]?.next_value || '0').padStart(
-          4,
-          '0',
-        );
+        const eventCode = sequenceResult[0]?.next_value || '0';
         const detectionType =
           event.detectionType || SessionEventDetectionType.SENTENCE_SIMILARITY;
         return this.create({

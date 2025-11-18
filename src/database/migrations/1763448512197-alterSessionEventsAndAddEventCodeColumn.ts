@@ -34,7 +34,7 @@ export class AlterSessionEventsAndAddEventCodeColumn1763448512197
             UPDATE session_events
             SET "eventCode" = 
               get_event_code_prefix("detectionType") || 
-              LPAD(nextval('session_events_event_code_seq')::text, 4, '0')
+              nextval('session_events_event_code_seq')
             WHERE "eventCode" IS NULL;
           `);
     await queryRunner.query(`

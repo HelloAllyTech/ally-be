@@ -23,7 +23,7 @@ describe('SessionEventRepository', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
-    eventCode: 'SS0001',
+    eventCode: 'SS1',
   };
 
   beforeEach(async () => {
@@ -445,7 +445,7 @@ describe('SessionEventRepository', () => {
 
     it('should create a single session event successfully', async () => {
       const sequenceValue = 1;
-      const expectedEventCode = 'SS0001';
+      const expectedEventCode = 'SS1';
       const createdEvent = {
         ...mockCreateEventDto,
         id: expect.any(String),
@@ -484,13 +484,13 @@ describe('SessionEventRepository', () => {
       const createdEvent1 = {
         ...mockCreateEventDto,
         id: expect.any(String),
-        eventCode: 'SS0001',
+        eventCode: 'SS1',
       };
       const createdEvent2 = {
         ...mockCreateEventDto,
         name: 'Second Event',
         id: expect.any(String),
-        eventCode: 'SS0002',
+        eventCode: 'SS2',
       };
 
       (repository.create as jest.Mock)
@@ -510,39 +510,6 @@ describe('SessionEventRepository', () => {
         createdEvent2,
       ]);
       expect(result).toEqual([createdEvent1, createdEvent2]);
-    });
-
-    it('should pad sequence values with leading zeros', async () => {
-      const testCases = [
-        { sequenceValue: 1, expectedCode: 'SS0001' },
-        { sequenceValue: 12, expectedCode: 'SS0012' },
-        { sequenceValue: 123, expectedCode: 'SS0123' },
-        { sequenceValue: 1234, expectedCode: 'SS1234' },
-        { sequenceValue: 12345, expectedCode: 'SS12345' },
-      ];
-
-      for (const testCase of testCases) {
-        jest.clearAllMocks();
-
-        (repository.query as jest.Mock).mockResolvedValue([
-          { next_value: testCase.sequenceValue },
-        ]);
-        const createdEvent = {
-          ...mockCreateEventDto,
-          id: expect.any(String),
-          eventCode: testCase.expectedCode,
-        };
-        (repository.create as jest.Mock).mockReturnValue(createdEvent);
-        (repository.save as jest.Mock).mockResolvedValue([createdEvent]);
-
-        await repository.createSessionEvents([mockCreateEventDto]);
-
-        expect(repository.create).toHaveBeenCalledWith(
-          expect.objectContaining({
-            eventCode: testCase.expectedCode,
-          }),
-        );
-      }
     });
 
     it('should use correct prefix for different detection types', async () => {
@@ -575,7 +542,7 @@ describe('SessionEventRepository', () => {
         const createdEvent = {
           ...eventDto,
           id: expect.any(String),
-          eventCode: `${detectionType.expectedPrefix}0001`,
+          eventCode: `${detectionType.expectedPrefix}1`,
         };
         (repository.create as jest.Mock).mockReturnValue(createdEvent);
         (repository.save as jest.Mock).mockResolvedValue([createdEvent]);
@@ -584,7 +551,7 @@ describe('SessionEventRepository', () => {
 
         expect(repository.create).toHaveBeenCalledWith(
           expect.objectContaining({
-            eventCode: `${detectionType.expectedPrefix}0001`,
+            eventCode: `${detectionType.expectedPrefix}1`,
           }),
         );
       }
@@ -600,7 +567,7 @@ describe('SessionEventRepository', () => {
       const createdEvent = {
         ...eventDtoWithoutDetectionType,
         id: expect.any(String),
-        eventCode: 'SS0001',
+        eventCode: 'SS1',
         detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
       };
       (repository.create as jest.Mock).mockReturnValue(createdEvent);
@@ -610,7 +577,7 @@ describe('SessionEventRepository', () => {
 
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          eventCode: 'SS0001',
+          eventCode: 'SS1',
         }),
       );
     });
@@ -631,7 +598,7 @@ describe('SessionEventRepository', () => {
       const createdEvent = {
         ...mockCreateEventDto,
         id: expect.any(String),
-        eventCode: 'SS0000',
+        eventCode: 'SS0',
       };
       (repository.create as jest.Mock).mockReturnValue(createdEvent);
       (repository.save as jest.Mock).mockResolvedValue([createdEvent]);
@@ -640,26 +607,7 @@ describe('SessionEventRepository', () => {
 
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          eventCode: 'SS0000',
-        }),
-      );
-    });
-
-    it('should handle undefined sequence result with fallback', async () => {
-      (repository.query as jest.Mock).mockResolvedValue([{}]);
-      const createdEvent = {
-        ...mockCreateEventDto,
-        id: expect.any(String),
-        eventCode: 'SS0000',
-      };
-      (repository.create as jest.Mock).mockReturnValue(createdEvent);
-      (repository.save as jest.Mock).mockResolvedValue([createdEvent]);
-
-      await repository.createSessionEvents([mockCreateEventDto]);
-
-      expect(repository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          eventCode: 'SS0000',
+          eventCode: 'SS0',
         }),
       );
     });
@@ -680,7 +628,7 @@ describe('SessionEventRepository', () => {
       const createdEvent = {
         ...mockCreateEventDto,
         id: expect.any(String),
-        eventCode: 'SS0001',
+        eventCode: 'SS1',
       };
       (repository.create as jest.Mock).mockReturnValue(createdEvent);
       (repository.save as jest.Mock).mockRejectedValue(error);
@@ -712,7 +660,7 @@ describe('SessionEventRepository', () => {
       const createdEvent = {
         ...fullEventDto,
         id: expect.any(String),
-        eventCode: 'SC0005',
+        eventCode: 'SC5',
       };
       (repository.create as jest.Mock).mockReturnValue(createdEvent);
       (repository.save as jest.Mock).mockResolvedValue([createdEvent]);
@@ -730,7 +678,7 @@ describe('SessionEventRepository', () => {
           detectionType: fullEventDto.detectionType,
           visibilityType: fullEventDto.visibilityType,
           detectionData: fullEventDto.detectionData,
-          eventCode: 'SC0005',
+          eventCode: 'SC5',
         }),
       );
     });
