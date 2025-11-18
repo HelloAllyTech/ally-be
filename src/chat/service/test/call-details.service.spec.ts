@@ -536,6 +536,8 @@ describe('CallDetailsService', () => {
         call_quality: 5,
       };
 
+      // Mock the getChatById method to return mockChat
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
       jest
         .spyOn(messageService, 'getChatHistoryForAIService')
         .mockResolvedValue([]);
@@ -599,6 +601,8 @@ describe('CallDetailsService', () => {
         newCallFollowUp: 'Follow up notes',
       };
 
+      // Mock the getChatById method to return mockChat
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
       jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
 
       await service.updateCallDetails(1, summary);
@@ -655,6 +659,8 @@ describe('CallDetailsService', () => {
         newCallFollowUp: 'Follow up notes',
       };
 
+      // Mock the getChatById method to return mockChat
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
       jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
 
       await service.updateCallDetails(1, summary);

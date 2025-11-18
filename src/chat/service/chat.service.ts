@@ -12,10 +12,8 @@ import { Message, MessageType } from '../entity/message.entity';
 import { Chat, ChatStatus } from '../entity/chat.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
-import { CryptoService } from '../../common/service/crypto.service';
 import { QueueService } from '../../queue/service/queue.service';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
-import { AiService } from '../../ai/service/ai.service';
 import {
   AudioChatPlatform,
   AudioChatProvider,
@@ -40,8 +38,6 @@ import { RedisService } from '../../redis/service/redis.service';
 import { NotFoundException } from '@nestjs/common';
 import { MessageBrokerChannel } from 'src/message-broker/constants/message-broker.constants';
 import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
-import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
-import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
 import { TokenUser } from '../../auth/type/auth.types';
 import {
   ANONYMOUS_CLIENT_ID,
@@ -52,12 +48,9 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { CallInfoDto, DeleteChatResponseDto } from '../dto/chat.response.dto';
 import { SummaryFeedbackResponse } from '../dto/call-log.response.dto';
 import { ForbiddenException } from '../../exception/custom.exception';
-import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
-import { SettingsService } from '../../settings/service/settings.service';
 import { CallLogFilters } from '../dto/call-log.request.dto';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { ChatRepository } from '../repository/chat.repository';
-import { AppConfigService } from 'src/config/config.service';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 import { SummaryFeedbackRepository } from '../repository/summary-feedback.repository';
@@ -94,15 +87,8 @@ export class ChatService {
     private gateway: ChatGateway,
     private userService: UserService,
     private eventEmitter: EventEmitter2,
-    private aiService: AiService,
-    private cryptoService: CryptoService,
     private readonly cache: RedisService,
-    private readonly publisher: MessageBrokerService,
     private dataSource: DataSource,
-    private settingsService: SettingsService,
-    private broadcastMessageService: BroadcastMessageService,
-    private streamFileProcessorService: StreamFileProcessorService,
-    private readonly config: AppConfigService,
     private chatAudioUploadsService: ChatAudioUploadsService,
     private permissionValidator: PermissionValidator,
     private groupService: GroupService,
@@ -138,6 +124,7 @@ export class ChatService {
       .andWhere('chat.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
       });
+
     const chat = (await chatQuery.getOne()) as Chat & { details: CallDetails };
     if (!chat) {
       throw new HttpException('Chat not found', 404);
@@ -935,7 +922,7 @@ export class ChatService {
     chatId: number,
     createNoteDto: AddNoteDto,
   ): Promise<AddNotesResponse> {
-    return this.addNoteToSession(chatId, createNoteDto);
+    return this.callDetailsService.addNoteToSession(chatId, createNoteDto);
   }
 
   async addFeedbackToChat(

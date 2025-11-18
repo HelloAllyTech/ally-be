@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Feedback } from '../entity/feedback.entity';
 import { ExecutionManager } from '../../common/execution/execution-manager';
+
 @Injectable()
 export class FeedbackService {
   constructor(
@@ -19,8 +20,16 @@ export class FeedbackService {
   }
 
   async findByMessageId(messageId: number): Promise<Feedback[]> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new NotFoundException('User not found');
+    }
     return await this.feedbackRepository.find({
-      where: { messageId, tenantId: ExecutionManager.getTenantId() },
+      where: {
+        messageId,
+        tenantId: ExecutionManager.getTenantId(),
+        userId: userId,
+      },
     });
   }
 
@@ -28,8 +37,16 @@ export class FeedbackService {
     id: number,
     updateFeedbackDto: Partial<Feedback>,
   ): Promise<Feedback> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new NotFoundException('User not found');
+    }
     const feedback = await this.feedbackRepository.findOne({
-      where: { feedbackId: id, tenantId: ExecutionManager.getTenantId() },
+      where: {
+        feedbackId: id,
+        tenantId: ExecutionManager.getTenantId(),
+        userId: userId,
+      },
     });
     if (!feedback) {
       throw new NotFoundException(`Feedback with ID ${id} not found`);

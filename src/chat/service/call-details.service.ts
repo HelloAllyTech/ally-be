@@ -102,6 +102,20 @@ export class CallDetailsService {
     chatId: number,
     createNoteDto: AddNoteDto,
   ): Promise<AddNotesResponse> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new NotFoundException('User not found');
+    }
+    const chat = await this.chatRepository.findOne({
+      where: {
+        counselorId: userId,
+        id: chatId,
+        tenantId: ExecutionManager.getTenantId(),
+      },
+    });
+    if (!chat) {
+      throw new NotFoundException('Chat not Found');
+    }
     const callDetails = await this.callDetailsRepository.findOne({
       where: { chatId, tenantId: ExecutionManager.getTenantId() },
     });
@@ -288,6 +302,20 @@ export class CallDetailsService {
     chatId: number,
   ): Promise<FlattenedSummaryNotePayloadCamelCase | undefined> {
     this.logger.debug(`generateSummary - chatId:${chatId}`);
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new NotFoundException('User not found');
+    }
+    const chat = await this.chatRepository.findOne({
+      where: {
+        counselorId: userId,
+        id: chatId,
+        tenantId: ExecutionManager.getTenantId(),
+      },
+    });
+    if (!chat) {
+      throw new NotFoundException(`Chat not found`);
+    }
     const messageRequests =
       await this.messageService.getChatHistoryForAIService(chatId, {
         sortBy: 'createdAt',
@@ -306,6 +334,20 @@ export class CallDetailsService {
     chatId: number,
     summary: FlattenedSummaryNotePayloadCamelCase,
   ) {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new NotFoundException('User not found');
+    }
+    const chat = await this.chatRepository.findOne({
+      where: {
+        id: chatId,
+        tenantId: ExecutionManager.getTenantId(),
+        counselorId: userId,
+      },
+    });
+    if (!chat) {
+      throw new NotFoundException('Chat not found');
+    }
     if (summary.sessionSummary) {
       summary.sessionSummary = await this.cryptoService.encrypt(
         summary.sessionSummary,
