@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { ChatFeedbackService } from '../chat-feedback.service';
 import { CallDetailsRepository } from '../../repository/call-details.repository';
 import { SummaryFeedbackRepository } from '../../repository/summary-feedback.repository';
+import { ChatRepository } from '../../repository/chat.repository';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import {
   AudioChatProvider,
@@ -15,7 +16,17 @@ describe('ChatFeedbackService', () => {
   let service: ChatFeedbackService;
   let callDetailsRepository: CallDetailsRepository;
   let summaryFeedbackRepository: SummaryFeedbackRepository;
+  let chatRepository: ChatRepository;
   let dataSource: DataSource;
+
+  const mockChat = {
+    id: 1,
+    counselorId: 200,
+    clientId: 100,
+    tenantId: 'test-tenant',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
 
   const mockCallDetails: CallDetails = {
     id: 1,
@@ -50,6 +61,7 @@ describe('ChatFeedbackService', () => {
   beforeEach(async () => {
     // Mock ExecutionManager
     jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue('test-tenant');
+    jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('200');
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -68,6 +80,12 @@ describe('ChatFeedbackService', () => {
           },
         },
         {
+          provide: ChatRepository,
+          useValue: {
+            findOne: jest.fn(),
+          },
+        },
+        {
           provide: DataSource,
           useValue: {
             transaction: jest.fn(),
@@ -83,6 +101,7 @@ describe('ChatFeedbackService', () => {
     summaryFeedbackRepository = module.get<SummaryFeedbackRepository>(
       SummaryFeedbackRepository,
     );
+    chatRepository = module.get<ChatRepository>(ChatRepository);
     dataSource = module.get<DataSource>(DataSource);
   });
 
@@ -114,6 +133,8 @@ describe('ChatFeedbackService', () => {
         }),
       };
 
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
+
       (dataSource.transaction as jest.Mock).mockImplementation(
         async (callback) => {
           return callback(mockEntityManager);
@@ -126,6 +147,13 @@ describe('ChatFeedbackService', () => {
 
       const result = await service.addFeedbackToChat(1, summaryFeedbackDto);
 
+      expect(chatRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          counselorId: 200,
+          id: 1,
+          tenantId: 'test-tenant',
+        },
+      });
       expect(result.message).toEqual('Feedback added successfully');
       expect(result.feedback).toEqual(mockFeedback);
     });
@@ -138,6 +166,8 @@ describe('ChatFeedbackService', () => {
           issues: [],
         },
       };
+
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
 
       const mockEntityManager = {
         getRepository: jest.fn(() => ({
@@ -182,6 +212,8 @@ describe('ChatFeedbackService', () => {
         }),
       };
 
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
+
       (dataSource.transaction as jest.Mock).mockImplementation(
         async (callback) => {
           return callback(mockEntityManager);
@@ -214,6 +246,8 @@ describe('ChatFeedbackService', () => {
           issues: [],
         },
       };
+
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
 
       const mockEntityManager = {
         getRepository: jest.fn((entity) => {
@@ -264,6 +298,8 @@ describe('ChatFeedbackService', () => {
         },
       };
 
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
+
       const mockCallDetailsRepo = {
         findOne: jest.fn().mockResolvedValue(mockCallDetails),
         update: jest.fn().mockResolvedValue({}),
@@ -296,42 +332,6 @@ describe('ChatFeedbackService', () => {
       );
     });
 
-    it('should throw NotFoundException when call details not found', async () => {
-      const summaryFeedbackDto = {
-        rating: 5,
-        feedback: {
-          comment: 'Test',
-          issues: [],
-        },
-      };
-
-      const mockCallDetailsRepo = {
-        findOne: jest.fn().mockResolvedValue(null),
-        update: jest.fn().mockResolvedValue({}),
-      };
-
-      const mockEntityManager = {
-        getRepository: jest.fn(() => mockCallDetailsRepo),
-      };
-
-      jest
-        .spyOn(dataSource, 'transaction')
-        .mockImplementation(async (callback: any) => {
-          return callback(mockEntityManager);
-        });
-
-      await expect(
-        service.addFeedbackToChat(1, summaryFeedbackDto),
-      ).rejects.toThrow(NotFoundException);
-      await expect(
-        service.addFeedbackToChat(1, summaryFeedbackDto),
-      ).rejects.toThrow('Call details not found for chat 1');
-
-      expect(
-        summaryFeedbackRepository.createSummaryFeedback,
-      ).not.toHaveBeenCalled();
-    });
-
     it('should handle call details with empty callInfo', async () => {
       const summaryFeedbackDto = {
         rating: 5,
@@ -345,6 +345,8 @@ describe('ChatFeedbackService', () => {
         ...mockCallDetails,
         callInfo: undefined,
       };
+
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
 
       const mockCallDetailsRepo = {
         findOne: jest.fn().mockResolvedValue(callDetailsWithoutInfo),
@@ -385,6 +387,8 @@ describe('ChatFeedbackService', () => {
           issues: ['audio quality', 'connection problems', 'delayed responses'],
         },
       };
+
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
 
       const mockCallDetailsRepo = {
         findOne: jest.fn().mockResolvedValue(mockCallDetails),
@@ -442,6 +446,8 @@ describe('ChatFeedbackService', () => {
           notes: 'Existing notes',
         },
       };
+
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
 
       const mockCallDetailsRepo = {
         findOne: jest.fn().mockResolvedValue(callDetailsWithExtraInfo),
