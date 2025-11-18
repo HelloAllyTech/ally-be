@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ScenarioUtil } from '../scenario-service.util';
 import { ScenariosRepository } from '../../repository/scenario.repository';
 import { Scenarios } from '../../entity/scenarios.entity';
+import { ScenarioSharedService } from '../scenario-shared.service';
 
-describe('ScenarioUtil', () => {
-  let util: ScenarioUtil;
+describe('ScenarioSharedService', () => {
+  let util: ScenarioSharedService;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
 
   const mockScenarios: Scenarios[] = [
@@ -20,7 +20,7 @@ describe('ScenarioUtil', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        ScenarioUtil,
+        ScenarioSharedService,
         {
           provide: ScenariosRepository,
           useValue: mockScenariosRepository,
@@ -28,7 +28,7 @@ describe('ScenarioUtil', () => {
       ],
     }).compile();
 
-    util = module.get<ScenarioUtil>(ScenarioUtil);
+    util = module.get<ScenarioSharedService>(ScenarioSharedService);
     scenariosRepository = module.get(ScenariosRepository);
   });
 

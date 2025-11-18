@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ScenarioPathService } from '../scenario-path.service';
-import { ScenarioUtil } from 'src/learn/util/scenario-service.util';
 import { CreateScenarioPathDto } from '../../dto/create-scenario-path.dto';
 import { ScenarioPath } from '../../entity/scenario-path.entity';
 import { ScenarioPathItem } from '../../entity/scenario-path-item.entity';
@@ -12,11 +11,12 @@ import { ScenarioPathRepository } from '../../repository/scenario-path.repositor
 import { ScenarioPathFilterOptions } from '../../type/scenario-paths.type';
 import { ScenarioPathItemRepository } from '../../repository/scenario-path-item.repository';
 import { NotFoundException } from '@nestjs/common';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 
 describe('ScenarioPathService', () => {
   let service: ScenarioPathService;
   let dataSource: jest.Mocked<DataSource>;
-  let scenarioUtil: jest.Mocked<ScenarioUtil>;
+  let scenarioUtil: jest.Mocked<ScenarioSharedService>;
   let scenarioPathRepository: jest.Mocked<ScenarioPathRepository>;
   let scenarioPathItemRepository: jest.Mocked<ScenarioPathItemRepository>;
   let mockEntityManager: any;
@@ -82,7 +82,7 @@ describe('ScenarioPathService', () => {
           useValue: mockDataSource,
         },
         {
-          provide: ScenarioUtil,
+          provide: ScenarioSharedService,
           useValue: mockScenarioUtil,
         },
         {
@@ -98,7 +98,7 @@ describe('ScenarioPathService', () => {
 
     service = module.get<ScenarioPathService>(ScenarioPathService);
     dataSource = module.get(DataSource);
-    scenarioUtil = module.get(ScenarioUtil);
+    scenarioUtil = module.get(ScenarioSharedService);
     scenarioPathRepository = module.get(ScenarioPathRepository);
     scenarioPathItemRepository = module.get(ScenarioPathItemRepository);
   });

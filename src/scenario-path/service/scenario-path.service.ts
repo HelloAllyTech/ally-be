@@ -11,7 +11,6 @@ import {
 import { GetScenarioPathsResponseDto } from '../dto/scenario-paths-response.dto';
 import { ScenarioPath } from '../entity/scenario-path.entity';
 import { ScenarioPathItem } from '../entity/scenario-path-item.entity';
-import { ScenarioUtil } from 'src/learn/util/scenario-service.util';
 import {
   ScenarioPathStatus,
   ScenarioPathFilterOptions,
@@ -24,12 +23,13 @@ import {
 import { ScenarioPathRepository } from '../repository/scenario-path.repository';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioPathItemRepository } from '../repository/scenario-path-item.repository';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 
 @Injectable()
 export class ScenarioPathService {
   constructor(
     private readonly dataSource: DataSource,
-    private readonly scenarioUtil: ScenarioUtil,
+    private readonly scenarioSharedService: ScenarioSharedService,
     private readonly scenarioPathRepository: ScenarioPathRepository,
     private readonly scenarioPathItemRepository: ScenarioPathItemRepository,
   ) {}
@@ -182,7 +182,7 @@ export class ScenarioPathService {
     const scenarioIds = [...scenarioIdsSet];
 
     const existingScenarios =
-      await this.scenarioUtil.getScenarioByIds(scenarioIds);
+      await this.scenarioSharedService.getScenarioByIds(scenarioIds);
     const existingScenarioIds = existingScenarios.map(
       (scenario) => scenario.id,
     );
