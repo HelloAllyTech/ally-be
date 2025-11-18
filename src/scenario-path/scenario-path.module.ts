@@ -4,6 +4,8 @@ import { ScenarioPathService } from './service/scenario-path.service';
 import { ScenarioPathRepository } from './repository/scenario-path.repository';
 import { ScenarioPathItemRepository } from './repository/scenario-path-item.repository';
 import { LearnModule } from 'src/learn/learn.module';
+import { ScenarioPathSessionService } from './service/scenario-path-session.service';
+import { ScenarioPathSessionRepository } from './repository/scenario-path-session.repository';
 
 @Module({
   imports: [LearnModule],
@@ -12,6 +14,8 @@ import { LearnModule } from 'src/learn/learn.module';
     ScenarioPathService,
     ScenarioPathRepository,
     ScenarioPathItemRepository,
+    ScenarioPathSessionService,
+    ScenarioPathSessionRepository,
   ],
 })
 export class ScenarioPathModule {}
