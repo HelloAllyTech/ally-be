@@ -11,7 +11,6 @@ import { UpdateSessionEventDto } from '../dto/update-session-event.dto';
 import { Pagination } from 'src/common/type/common.type';
 import { SessionEventRepository } from '../repository/session-event.repository';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
-import { v4 } from 'uuid';
 
 @Injectable()
 export class SessionEventService {
@@ -23,13 +22,7 @@ export class SessionEventService {
   async createSessionEvents(
     createEventDtos: CreateSessionEventDto[],
   ): Promise<SessionEvents[]> {
-    const events = createEventDtos.map((event) => {
-      return {
-        id: v4(),
-        ...event,
-      };
-    });
-    return this.sessionEventRepository.save(events);
+    return this.sessionEventRepository.createSessionEvents(createEventDtos);
   }
 
   async getSessionEventsByScenarioId(
@@ -66,6 +59,7 @@ export class SessionEventService {
         speaker: event.sessionEvents_speaker,
         createdAt: event.sessionEvents_createdAt,
         updatedAt: event.sessionEvents_updatedAt,
+        eventCode: event.sessionEvents_eventCode,
       };
     });
     return sessionEvents;

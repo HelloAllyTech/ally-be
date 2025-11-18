@@ -29,6 +29,7 @@ describe('SessionEventController', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
+    eventCode: 'SS0001',
   };
 
   const mockCreateSessionEventDto: CreateSessionEventDto = {

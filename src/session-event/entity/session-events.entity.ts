@@ -43,4 +43,7 @@ export class SessionEvents extends BaseWithoutTenantEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   detectionData?: Record<string, any>;
+
+  @Column({ type: 'varchar', unique: true })
+  eventCode!: string;
 }
