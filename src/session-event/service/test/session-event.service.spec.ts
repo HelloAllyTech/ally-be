@@ -831,6 +831,7 @@ describe('SessionEventService', () => {
       const mockRawEvents = [
         {
           sessionEvents_id: 'event-1',
+          sessionEvents_eventCode: 'SS1',
           sessionEvents_name: 'Event 1',
           sessionEvents_description: 'Description 1',
           sessionEvents_score: 80,
@@ -865,6 +866,7 @@ describe('SessionEventService', () => {
         {
           id: 'event-1',
           name: 'Event 1',
+          eventCode: 'SS1',
           description: 'Description 1',
           score: 90,
           emoji: '🎉',
@@ -873,7 +875,7 @@ describe('SessionEventService', () => {
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           feedbackStatus: true,
-          detectionData: {
+          data: {
             sentences: ['Sentence 1', 'Sentence 2'],
           },
           speaker: SessionEventSpeaker.CARE_GIVER,
@@ -891,6 +893,7 @@ describe('SessionEventService', () => {
         {
           sessionEvents_id: 'event-2',
           sessionEvents_name: 'Event 2',
+          sessionEvents_eventCode: 'SS2',
           sessionEvents_description: 'Description 2',
           sessionEvents_score: 75,
           sessionEvents_emoji: '✅',
@@ -924,6 +927,7 @@ describe('SessionEventService', () => {
         {
           id: 'event-2',
           name: 'Event 2',
+          eventCode: 'SS2',
           description: 'Description 2',
           score: 85, // Uses scenarioEvents_score via ?? operator
           emoji: '✅',
@@ -932,7 +936,7 @@ describe('SessionEventService', () => {
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.PASSIVE,
           feedbackStatus: false,
-          detectionData: {
+          data: {
             sentences: ['Sentence A', 'Sentence B'],
           },
           speaker: SessionEventSpeaker.CARE_GIVER,
@@ -1063,6 +1067,7 @@ describe('SessionEventService', () => {
         {
           sessionEvents_id: 'event-4',
           sessionEvents_name: 'Event 4',
+          sessionEvents_eventCode: 'SS4',
           sessionEvents_description: 'Description 4',
           sessionEvents_score: 70,
           sessionEvents_emoji: '✨',
@@ -1096,6 +1101,7 @@ describe('SessionEventService', () => {
         {
           id: 'event-4',
           name: 'Event 4',
+          eventCode: 'SS4',
           description: 'Description 4',
           score: 80,
           emoji: '💡',
@@ -1104,7 +1110,7 @@ describe('SessionEventService', () => {
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           feedbackStatus: true,
-          detectionData: {
+          data: {
             sentences: ['Test sentence'],
           },
           speaker: SessionEventSpeaker.CARE_GIVER,
