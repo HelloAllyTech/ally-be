@@ -232,4 +232,7 @@ export class UpdateScenarioDto {
   @IsOptional()
   @IsString()
   terminationEventId?: string;
+
+  @ApiProperty({ description: 'Global tenant visibility', example: false })
+  isGlobal?: boolean;
 }

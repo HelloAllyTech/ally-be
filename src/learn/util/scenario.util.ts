@@ -16,6 +16,7 @@ export const mapCreateScenarioRequestToEntity = (
     coverVideoUrl: scenario.coverVideoUrl,
     status: scenario.status,
     prompt: scenario.prompt,
+    isGlobal: scenario.isGlobal,
     metadata: {
       agentGoal: scenario.agentGoal,
       lifeHistory: scenario.lifeHistory,

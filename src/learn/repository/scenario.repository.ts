@@ -12,7 +12,11 @@ export class ScenariosRepository extends Repository<Scenarios> {
   constructor(private dataSource: DataSource) {
     super(Scenarios, dataSource.createEntityManager());
   }
-  async getAdminScenarios(status?: string, options?: Pagination) {
+  async getAdminScenarios(
+    status?: string,
+    tenantId?: string,
+    options?: Pagination,
+  ) {
     const query = this.createQueryBuilder('scenario')
       .leftJoin(User, 'user', 'scenario."createdBy"=user.id')
       .select(['scenario', 'user.name'])
@@ -50,6 +54,19 @@ export class ScenariosRepository extends Repository<Scenarios> {
       query.offset(options?.offset);
     }
 
+    if (tenantId) {
+      query
+        .leftJoin(
+          'scenario_tenants',
+          'scenarioTenants',
+          '"scenarioTenants"."scenarioId" = scenario.id AND "scenarioTenants"."tenantId" = :tenantId',
+          { tenantId },
+        )
+        .addSelect(
+          'CASE WHEN "scenarioTenants".id IS NOT NULL THEN true ELSE false END',
+          'isAssignedToTenant',
+        );
+    }
     return query.getRawMany();
   }
 

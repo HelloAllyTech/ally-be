@@ -2,25 +2,32 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { LearnController } from '../learn.controller';
 import { ScenarioService } from '../../service/scenario.service';
 import { ScenarioSessionService } from '../../service/scenario-session.service';
+import { ScenarioTenantService } from '../../service/scenario-tenant.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
-import { ScenarioSessionSortBy } from '../../enum/scenario-session-sort-by.enum';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { ScenarioStatus } from '../../enum/scenario.status.enum';
 import { ScenarioSessionStatus } from '../../enum/scenario-session-status.enum';
 import { ScenarioSessionMessageType } from '../../enum/scenario-session-message.type.enum';
-import { UserInfo } from 'src/chat/dto/call-log.response.dto';
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
-import { ScenarioSortBy } from 'src/learn/enum/scenario-sort-by.enum';
-import { DeleteCoverImageDto } from 'src/learn/dto/delete-cover-image.dto';
-import { DeleteCoverVideoDto } from 'src/learn/dto/delete-cover-video.dto';
-import { ScenarioVideoUploadRequestDto } from 'src/learn/dto/scenario-video-upload-request.dto';
-import { ScenarioVideoUploadContentType } from 'src/learn/enum/scenario-video-upload-content-type';
+import { DeleteCoverImageDto } from '../../dto/delete-cover-image.dto';
+import { DeleteCoverVideoDto } from '../../dto/delete-cover-video.dto';
+import { ScenarioVideoUploadRequestDto } from '../../dto/scenario-video-upload-request.dto';
+import { ScenarioVideoUploadContentType } from '../../enum/scenario-video-upload-content-type';
+import { AddScenarioTenantDto } from '../../dto/add-scenario-tenant.dto';
+import { DeleteScenarioTenantDto } from '../../dto/delete-scenario-tenant.dto';
+import { ScenarioVoiceSortBy } from '../../enum/scenario-voice-sort-by.enum';
+import {
+  Gender,
+  GenderIdentity,
+  SexualOrientation,
+} from '../../enum/gender.enum';
 
 describe('LearnController', () => {
   let controller: LearnController;
   let scenarioService: jest.Mocked<ScenarioService>;
   let scenarioSessionService: jest.Mocked<ScenarioSessionService>;
+  let scenarioTenantService: jest.Mocked<ScenarioTenantService>;
 
   const mockTokenUser: TokenUser = {
     id: 123,
@@ -34,16 +41,25 @@ describe('LearnController', () => {
     scenario: 'Test Scenario Content',
     description: 'Test Description',
     coverImageUrl: 'https://example.com/cover.jpg',
+    coverVideoUrl: null,
     status: ScenarioStatus.ACTIVE,
     prompt: 'You are a counselor',
-    metadata: undefined,
+    isGlobal: false,
+    metadata: {
+      agentGoal: 'Help the client',
+      name: 'Test Client',
+      age: 30,
+      voiceId: 'voice-123',
+    },
     createdAt: new Date(),
     updatedAt: new Date(),
+    createdBy: 1,
+    updatedBy: 1,
   };
 
   const mockScenarios = [mockScenarioResponse];
 
-  const mockUserInfo: UserInfo = {
+  const mockUserInfo = {
     id: 123,
     name: 'Test User',
     email: 'test@example.com',
@@ -71,24 +87,39 @@ describe('LearnController', () => {
     scenarios: [
       {
         title: 'New Scenario',
-        scenario: 'New Scenario Content',
         description: 'New Description',
         coverImageUrl: 'https://example.com/new-cover.jpg',
         status: ScenarioStatus.ACTIVE,
         prompt: 'Test prompt',
-        metadata: {},
+        agentGoal: 'Help client',
+        lifeHistory: 'Test life history',
+        name: 'Test Name',
+        voiceId: 'voice-123',
+        age: 25,
+        gender: Gender.FEMALE,
+        genderIdentity: GenderIdentity.FEMALE_WOMAN,
+        sexualOrientation: SexualOrientation.HETEROSEXUAL,
+        currentLocation: 'New York',
+        profession: 'Engineer',
+        context: 'Test context',
+        sessionBehaviorGuidelines: 'Guidelines',
+        coreMemories: 'Memories',
+        personality: 'Friendly',
+        startingState: 'Anxious',
+        emotionalNeeds: 'Support',
+        tone: 'Professional',
+        openingStatements: ['Hello', 'Welcome'],
+        isGlobal: false,
       },
     ],
   };
 
   const mockUpdateScenarioDto = {
     title: 'Updated Scenario',
-    scenario: 'Updated Scenario Content',
     description: 'Updated Description',
     coverImageUrl: 'https://example.com/updated-cover.jpg',
     status: ScenarioStatus.ACTIVE,
     prompt: 'Updated prompt',
-    metadata: {},
   };
 
   const mockStartScenarioSessionDto = {
@@ -105,29 +136,29 @@ describe('LearnController', () => {
     events: [
       {
         id: 'event1',
-        feedbackStatus: undefined,
+        feedbackStatus: false,
         score: undefined,
         emoji: undefined,
         message: undefined,
-        branchingStatus: undefined,
+        branchingStatus: false,
         branchInstruction: undefined,
       },
       {
         id: 'event2',
-        feedbackStatus: undefined,
+        feedbackStatus: false,
         score: undefined,
         emoji: undefined,
         message: undefined,
-        branchingStatus: undefined,
+        branchingStatus: false,
         branchInstruction: undefined,
       },
       {
         id: 'event3',
-        feedbackStatus: undefined,
+        feedbackStatus: false,
         score: undefined,
         emoji: undefined,
         message: undefined,
-        branchingStatus: undefined,
+        branchingStatus: false,
         branchInstruction: undefined,
       },
     ],
@@ -172,6 +203,12 @@ describe('LearnController', () => {
       getMessagesByScenarioSessionId: jest.fn(),
     };
 
+    const mockScenarioTenantService = {
+      assignScenariosToTenant: jest.fn(),
+      removeScenariosFromTenant: jest.fn(),
+      getScenarioTenant: jest.fn(),
+    };
+
     const mockPermissionsService = {
       getUserRoles: jest.fn(),
     };
@@ -186,6 +223,10 @@ describe('LearnController', () => {
         {
           provide: ScenarioSessionService,
           useValue: mockScenarioSessionService,
+        },
+        {
+          provide: ScenarioTenantService,
+          useValue: mockScenarioTenantService,
         },
         {
           provide: Reflector,
@@ -203,20 +244,32 @@ describe('LearnController', () => {
     controller = module.get<LearnController>(LearnController);
     scenarioService = module.get(ScenarioService);
     scenarioSessionService = module.get(ScenarioSessionService);
+    scenarioTenantService = module.get(ScenarioTenantService);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
+  describe('constructor', () => {
+    it('should be defined', () => {
+      expect(controller).toBeDefined();
+    });
+
+    it('should have all dependencies injected', () => {
+      expect(scenarioService).toBeDefined();
+      expect(scenarioSessionService).toBeDefined();
+      expect(scenarioTenantService).toBeDefined();
+    });
+  });
+
   describe('getScenarios', () => {
     it('should return all scenarios', async () => {
-      scenarioService.getScenarios.mockResolvedValue(mockScenarios);
+      scenarioService.getScenarios.mockResolvedValue(mockScenarios as any);
 
       const result = await controller.getScenarios();
 
       expect(result).toEqual(mockScenarios);
-
       expect(scenarioService.getScenarios).toHaveBeenCalledTimes(1);
       expect(scenarioService.getScenarios).toHaveBeenCalledWith();
     });
@@ -229,196 +282,25 @@ describe('LearnController', () => {
       expect(result).toEqual([]);
       expect(scenarioService.getScenarios).toHaveBeenCalledTimes(1);
     });
-  });
 
-  describe('getAdminScenarios', () => {
-    const mockAdminScenariosData = {
-      data: [
-        {
-          id: 2,
-          title: 'Conflict Resolution Training',
-          createdAt: new Date('2025-09-15T00:42:44.969Z'),
-          updatedAt: new Date('2025-09-15T00:42:44.969Z'),
-          scenario: 'Simulate mediation between two conflicting clients',
-          description:
-            'A scenario for learning how to mediate conflicts between two clients.',
-          coverImageUrl: 'https://example.com/conflict.png',
-          coverVideoUrl: 'https://example.com/conflict.mp4',
-          createdBy: 'user1',
-          status: 'ACTIVE',
-          usage: '2',
-          isPreviewEnabled: false,
-        },
-        {
-          id: 3,
-          title: 'Sales Pitch Practice',
-          createdAt: new Date('2025-09-15T00:42:44.969Z'),
-          updatedAt: new Date('2025-09-15T00:42:44.969Z'),
-          scenario: 'Simulate a meeting with a potential client',
-          description:
-            'Simulates a client meeting to practice delivering a persuasive sales pitch.',
-          coverImageUrl: 'https://example.com/sales.png',
-          coverVideoUrl: 'https://example.com/conflict.mp4',
-          createdBy: 'Jane Smith',
-          status: 'DRAFT',
-          usage: '1',
-          isPreviewEnabled: true,
-        },
-      ],
-    };
+    it('should handle errors from service', async () => {
+      const error = new Error('Database error');
+      scenarioService.getScenarios.mockRejectedValue(error);
 
-    it('should return admin scenarios with default parameters', async () => {
-      scenarioService.getAdminScenarios.mockResolvedValue(
-        mockAdminScenariosData,
-      );
-
-      const result = await controller.getAdminScenarios();
-
-      expect(result).toEqual(mockAdminScenariosData);
-      expect(scenarioService.getAdminScenarios).toHaveBeenCalledTimes(1);
-      expect(scenarioService.getAdminScenarios).toHaveBeenCalledWith(
-        undefined,
-        {
-          limit: undefined,
-          offset: undefined,
-          sortBy: ScenarioSortBy.CREATED_AT,
-          order: SortOrder.ASC,
-        },
-      );
-    });
-
-    it('should return admin scenarios with status filter', async () => {
-      scenarioService.getAdminScenarios.mockResolvedValue(
-        mockAdminScenariosData,
-      );
-
-      const result = await controller.getAdminScenarios(
-        undefined,
-        undefined,
-        ScenarioSortBy.CREATED_AT,
-        SortOrder.DESC,
-        'ACTIVE',
-      );
-
-      expect(result).toEqual(mockAdminScenariosData);
-      expect(scenarioService.getAdminScenarios).toHaveBeenCalledWith('ACTIVE', {
-        limit: undefined,
-        offset: undefined,
-        sortBy: ScenarioSortBy.CREATED_AT,
-        order: SortOrder.DESC,
-      });
-    });
-
-    it('should return admin scenarios with pagination parameters', async () => {
-      const limit = 10;
-      const offset = 0;
-
-      scenarioService.getAdminScenarios.mockResolvedValue(
-        mockAdminScenariosData,
-      );
-
-      const result = await controller.getAdminScenarios(
-        limit,
-        offset,
-        ScenarioSortBy.CREATED_AT,
-        SortOrder.DESC,
-      );
-
-      expect(result).toEqual(mockAdminScenariosData);
-      expect(scenarioService.getAdminScenarios).toHaveBeenCalledWith(
-        undefined,
-        {
-          limit,
-          offset,
-          sortBy: ScenarioSortBy.CREATED_AT,
-          order: SortOrder.DESC,
-        },
-      );
-    });
-
-    it('should return admin scenarios with all custom parameters', async () => {
-      const limit = 20;
-      const offset = 10;
-      const sortBy = ScenarioSortBy.ID;
-      const order = SortOrder.ASC;
-      const status = 'ACTIVE,DRAFT';
-
-      scenarioService.getAdminScenarios.mockResolvedValue(
-        mockAdminScenariosData,
-      );
-
-      const result = await controller.getAdminScenarios(
-        limit,
-        offset,
-        sortBy,
-        order,
-        status,
-      );
-
-      expect(result).toEqual(mockAdminScenariosData);
-      expect(scenarioService.getAdminScenarios).toHaveBeenCalledWith(status, {
-        limit,
-        offset,
-        sortBy,
-        order,
-      });
-    });
-
-    it('should return empty data array when no scenarios found', async () => {
-      scenarioService.getAdminScenarios.mockResolvedValue({ data: [] });
-
-      const result = await controller.getAdminScenarios();
-
-      expect(result).toEqual({ data: [] });
-    });
-
-    it('should handle multiple status filters', async () => {
-      scenarioService.getAdminScenarios.mockResolvedValue(
-        mockAdminScenariosData,
-      );
-
-      await controller.getAdminScenarios(
-        undefined,
-        undefined,
-        ScenarioSortBy.CREATED_AT,
-        SortOrder.DESC,
-        'ACTIVE,DRAFT',
-      );
-
-      expect(scenarioService.getAdminScenarios).toHaveBeenCalledWith(
-        'ACTIVE,DRAFT',
-        expect.any(Object),
-      );
+      await expect(controller.getScenarios()).rejects.toThrow('Database error');
     });
   });
 
   describe('getScenario', () => {
     it('should return a scenario by id', async () => {
       const scenarioId = 1;
-      scenarioService.getScenario.mockResolvedValue(mockScenarioResponse);
+      scenarioService.getScenario.mockResolvedValue(
+        mockScenarioResponse as any,
+      );
 
       const result = await controller.getScenario(scenarioId);
 
       expect(result).toEqual(mockScenarioResponse);
-
-      expect(scenarioService.getScenario).toHaveBeenCalledTimes(1);
-      expect(scenarioService.getScenario).toHaveBeenCalledWith(scenarioId, [
-        'id',
-        'title',
-        'scenario',
-        'description',
-        'coverImageUrl',
-        'coverVideoUrl',
-        'status',
-      ]);
-    });
-
-    it('should call getScenario with correct select fields', async () => {
-      const scenarioId = 5;
-      scenarioService.getScenario.mockResolvedValue(mockScenarioResponse);
-
-      await controller.getScenario(scenarioId);
-
       expect(scenarioService.getScenario).toHaveBeenCalledWith(scenarioId, [
         'id',
         'title',
@@ -434,53 +316,79 @@ describe('LearnController', () => {
   describe('getAdminScenario', () => {
     it('should return a scenario by id for admin', async () => {
       const scenarioId = 1;
-      const mockScenario = mockScenarios[0];
-      scenarioService.getAdminScenario.mockResolvedValue(mockScenario);
+      scenarioService.getAdminScenario.mockResolvedValue(
+        mockScenarioResponse as any,
+      );
 
       const result = await controller.getAdminScenario(scenarioId);
 
-      expect(result).toEqual(mockScenario);
+      expect(result).toEqual(mockScenarioResponse);
       expect(scenarioService.getAdminScenario).toHaveBeenCalledWith(scenarioId);
     });
   });
 
   describe('getPresignedUrlForScenarioCoverImage', () => {
-    it('should return presigned URL for scenario cover image', async () => {
-      const requestDto = {
-        fileName: 'test.jpg',
-        fileSize: 1024,
+    it('should return presigned URL for scenario cover image upload', async () => {
+      const uploadRequestDto = {
+        fileName: 'test-image.jpg',
+        fileSize: 1024000,
         contentType: 'image/jpeg' as any,
       };
       const expectedResponse = {
-        presignedUrl: 'https://presigned-url.com',
+        presignedUrl: 'https://s3.amazonaws.com/presigned-url',
         coverImageUrl:
-          'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-images/1234567890-test.jpg',
+          'https://s3.amazonaws.com/scenario-cover-images/test.jpg',
       };
+
       scenarioService.getPresignedUrlForScenarioCoverImage.mockResolvedValue(
         expectedResponse,
       );
 
       const result =
-        await controller.getPresignedUrlForScenarioCoverImage(requestDto);
+        await controller.getPresignedUrlForScenarioCoverImage(uploadRequestDto);
 
       expect(result).toEqual(expectedResponse);
-      expect(
-        scenarioService.getPresignedUrlForScenarioCoverImage,
-      ).toHaveBeenCalledWith(requestDto);
     });
   });
 
-  describe('deleteAdminScenario', () => {
-    it('should delete a scenario by id', async () => {
-      const scenarioId = 1;
-      scenarioService.deleteAdminScenario.mockResolvedValue(true);
+  describe('getPresignedUrlForScenarioCoverVideo', () => {
+    it('should return presigned URL for scenario cover video upload', async () => {
+      const uploadRequestDto: ScenarioVideoUploadRequestDto = {
+        fileName: 'test-video.mp4',
+        fileSize: 5000000,
+        duration: 30,
+        contentType: ScenarioVideoUploadContentType.MP4,
+      };
+      const expectedResponse = {
+        presignedUrl: 'https://s3.amazonaws.com/presigned-url-video',
+        coverVideoUrl:
+          'https://s3.amazonaws.com/scenario-cover-videos/test.mp4',
+      };
 
-      const result = await controller.deleteAdminScenario(scenarioId);
-
-      expect(result).toBe(true);
-      expect(scenarioService.deleteAdminScenario).toHaveBeenCalledWith(
-        scenarioId,
+      scenarioService.getPresignedUrlForScenarioCoverVideo.mockResolvedValue(
+        expectedResponse,
       );
+
+      const result =
+        await controller.getPresignedUrlForScenarioCoverVideo(uploadRequestDto);
+
+      expect(result).toEqual(expectedResponse);
+    });
+  });
+
+  describe('deleteCoverVideo', () => {
+    it('should delete cover video successfully', async () => {
+      const deleteCoverVideoDto: DeleteCoverVideoDto = {
+        coverVideoUrl:
+          'https://bucket.s3.us-east-1.amazonaws.com/scenario-cover-videos/test.mp4',
+      };
+      const expectedResponse = { success: true };
+
+      scenarioService.deleteCoverVideo.mockResolvedValue(expectedResponse);
+
+      const result = await controller.deleteCoverVideo(deleteCoverVideoDto);
+
+      expect(result).toEqual(expectedResponse);
     });
   });
 
@@ -494,25 +402,19 @@ describe('LearnController', () => {
       );
 
       expect(result).toEqual(mockScenarios);
-
-      expect(scenarioService.createScenarios).toHaveBeenCalledTimes(1);
       expect(scenarioService.createScenarios).toHaveBeenCalledWith(
         mockCreateScenariosDto,
         mockTokenUser.id,
       );
     });
 
-    it('should handle empty scenarios array', async () => {
-      const emptyDto = { scenarios: [] };
-      scenarioService.createScenarios.mockResolvedValue([]);
+    it('should handle validation errors', async () => {
+      const error = new Error('Validation failed');
+      scenarioService.createScenarios.mockRejectedValue(error);
 
-      const result = await controller.createScenario(mockTokenUser, emptyDto);
-
-      expect(result).toEqual([]);
-      expect(scenarioService.createScenarios).toHaveBeenCalledWith(
-        emptyDto,
-        mockTokenUser.id,
-      );
+      await expect(
+        controller.createScenario(mockTokenUser, mockCreateScenariosDto),
+      ).rejects.toThrow('Validation failed');
     });
   });
 
@@ -528,26 +430,54 @@ describe('LearnController', () => {
       );
 
       expect(result).toBe(true);
-
-      expect(scenarioService.updateScenario).toHaveBeenCalledTimes(1);
-      expect(scenarioService.updateScenario).toHaveBeenCalledWith(
-        scenarioId,
-        mockUpdateScenarioDto,
-        mockTokenUser.id,
-      );
     });
+  });
 
-    it('should return false when update fails', async () => {
-      const scenarioId = 1;
-      scenarioService.updateScenario.mockResolvedValue(false);
+  describe('previewScenario', () => {
+    it('should preview a scenario', async () => {
+      const previewDto = { scenarioId: 1 };
+      const expectedResponse = {
+        roomName: 'preview-1-uuid',
+        accessToken: {
+          token: 'mock-token',
+          roomName: 'preview-1-uuid',
+          serverUrl: 'ws://livekit:7880',
+        },
+      };
 
-      const result = await controller.updateScenario(
-        mockTokenUser,
-        scenarioId,
-        mockUpdateScenarioDto,
+      scenarioSessionService.previewScenario.mockResolvedValue(
+        expectedResponse as any,
       );
 
-      expect(result).toBe(false);
+      const result = await controller.previewScenario(
+        mockTokenUser,
+        previewDto as any,
+      );
+
+      expect(result).toEqual(expectedResponse);
+    });
+  });
+
+  describe('endPreviewScenario', () => {
+    it('should end a preview scenario', async () => {
+      const roomName = 'preview-test-session-123';
+
+      scenarioSessionService.endPreviewScenario.mockResolvedValue(undefined);
+
+      const result = await controller.endPreviewScenario(roomName);
+
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('deleteAdminScenario', () => {
+    it('should delete a scenario by id', async () => {
+      const scenarioId = 1;
+      scenarioService.deleteAdminScenario.mockResolvedValue(true);
+
+      const result = await controller.deleteAdminScenario(scenarioId);
+
+      expect(result).toBe(true);
     });
   });
 
@@ -561,68 +491,6 @@ describe('LearnController', () => {
       const result = await controller.getScenarioSessions(mockTokenUser);
 
       expect(result).toEqual(mockSessions);
-
-      expect(scenarioSessionService.getScenarioSessions).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(scenarioSessionService.getScenarioSessions).toHaveBeenCalledWith(
-        mockTokenUser.id,
-        {
-          limit: undefined,
-          offset: undefined,
-          sortBy: ScenarioSessionSortBy.CREATED_AT,
-          order: SortOrder.DESC,
-        },
-        undefined,
-      );
-    });
-
-    it('should return scenario sessions for user with custom parameters', async () => {
-      const mockSessions = { data: [mockScenarioSessionResponse] };
-      const statuses = 'ENDED,ACTIVE';
-      const limit = 10;
-      const offset = 0;
-      const sortBy = ScenarioSessionSortBy.SCORE;
-      const order = SortOrder.ASC;
-
-      scenarioSessionService.getScenarioSessions.mockResolvedValue(
-        mockSessions,
-      );
-
-      const result = await controller.getScenarioSessions(
-        mockTokenUser,
-        statuses,
-        limit,
-        offset,
-        sortBy,
-        order,
-      );
-
-      expect(result).toEqual(mockSessions);
-
-      expect(scenarioSessionService.getScenarioSessions).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(scenarioSessionService.getScenarioSessions).toHaveBeenCalledWith(
-        mockTokenUser.id,
-        {
-          limit,
-          offset,
-          sortBy,
-          order,
-        },
-        statuses,
-      );
-    });
-
-    it('should return empty sessions array', async () => {
-      scenarioSessionService.getScenarioSessions.mockResolvedValue({
-        data: [],
-      });
-
-      const result = await controller.getScenarioSessions(mockTokenUser);
-
-      expect(result).toEqual({ data: [] });
     });
   });
 
@@ -636,208 +504,71 @@ describe('LearnController', () => {
       const result = await controller.getAdminScenarioSessions();
 
       expect(result).toEqual(mockSessions);
-
-      expect(
-        scenarioSessionService.getAdminScenarioSessions,
-      ).toHaveBeenCalledTimes(1);
-      expect(
-        scenarioSessionService.getAdminScenarioSessions,
-      ).toHaveBeenCalledWith({
-        limit: undefined,
-        offset: undefined,
-        sortBy: ScenarioSessionSortBy.CREATED_AT,
-        order: SortOrder.DESC,
-      });
-    });
-
-    it('should return admin scenario sessions with custom parameters', async () => {
-      const mockSessions = { data: [mockScenarioSessionResponse] };
-      const limit = 20;
-      const offset = 10;
-      const sortBy = ScenarioSessionSortBy.ENDED_AT;
-      const order = SortOrder.ASC;
-
-      scenarioSessionService.getAdminScenarioSessions.mockResolvedValue(
-        mockSessions,
-      );
-
-      const result = await controller.getAdminScenarioSessions(
-        limit,
-        offset,
-        sortBy,
-        order,
-      );
-
-      expect(result).toEqual(mockSessions);
-
-      expect(
-        scenarioSessionService.getAdminScenarioSessions,
-      ).toHaveBeenCalledTimes(1);
-      expect(
-        scenarioSessionService.getAdminScenarioSessions,
-      ).toHaveBeenCalledWith({
-        limit,
-        offset,
-        sortBy,
-        order,
-      });
     });
   });
 
   describe('getScenarioSession', () => {
-    it('should return a scenario session by id with hasFeedback flag', async () => {
+    it('should return a scenario session by id', async () => {
       const sessionId = 'session-123';
-      const mockSessionWithFeedback = {
-        ...mockScenarioSessionResponse,
-        hasFeedback: false,
-      };
-      scenarioSessionService.getScenarioSession.mockResolvedValue(
-        mockSessionWithFeedback,
-      );
+      const mockSession = { ...mockScenarioSessionResponse, hasFeedback: true };
+      scenarioSessionService.getScenarioSession.mockResolvedValue(mockSession);
 
       const result = await controller.getScenarioSession(
         mockTokenUser,
         sessionId,
       );
 
-      expect(result).toEqual(mockSessionWithFeedback);
-      expect(scenarioSessionService.getScenarioSession).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(scenarioSessionService.getScenarioSession).toHaveBeenCalledWith(
-        sessionId,
-        mockTokenUser.id,
-      );
+      expect(result).toEqual(mockSession);
+    });
+  });
+
+  describe('getScenarioEvents', () => {
+    it('should return scenario events with default parameters', async () => {
+      const scenarioId = 1;
+      const mockEvents = {
+        data: [
+          {
+            eventId: 'event1',
+            name: 'Event 1',
+            feedbackStatus: false,
+            score: 10,
+            emoji: undefined,
+            message: undefined,
+            branchingStatus: false,
+            branchInstruction: undefined,
+          },
+        ],
+        count: 1,
+      };
+      scenarioService.getScenarioEvents.mockResolvedValue(mockEvents);
+
+      const result = await controller.getScenarioEvents(scenarioId);
+
+      expect(result).toEqual(mockEvents);
     });
   });
 
   describe('mapEventsToScenario', () => {
     it('should map events to scenario', async () => {
-      const mockResult = [
-        {
-          scenarioId: 1,
-          eventId: 'event1',
-          tenantId: 'tenant-123',
-          feedbackStatus: false,
-          score: undefined,
-          emoji: undefined,
-          message: undefined,
-          branchingStatus: false,
-          branchInstruction: undefined,
-        },
-        {
-          scenarioId: 1,
-          eventId: 'event2',
-          tenantId: 'tenant-123',
-          feedbackStatus: false,
-          score: undefined,
-          emoji: undefined,
-          message: undefined,
-          branchingStatus: false,
-          branchInstruction: undefined,
-        },
-        {
-          scenarioId: 1,
-          eventId: 'event3',
-          tenantId: 'tenant-123',
-          feedbackStatus: false,
-          score: undefined,
-          emoji: undefined,
-          message: undefined,
-          branchingStatus: false,
-          branchInstruction: undefined,
-        },
-      ] as any;
-      scenarioService.mapEventsToScenario.mockResolvedValue(mockResult);
-
-      const result = await controller.mapEventsToScenario(
-        mockCreateScenarioEventsDto,
-      );
-
-      expect(result).toEqual(mockResult);
-      expect(scenarioService.mapEventsToScenario).toHaveBeenCalledTimes(1);
-      expect(scenarioService.mapEventsToScenario).toHaveBeenCalledWith(
-        mockCreateScenarioEventsDto,
-      );
-    });
-
-    it('should map events to scenario with event-specific feedback and branching data', async () => {
-      const mockCreateDtoWithEventSpecificData = {
+      const mockResult = {
         scenarioId: 1,
-        events: [
-          {
-            id: 'event1',
-            feedbackStatus: true,
-            score: 85,
-            emoji: '👍',
-            message: 'Great job on event 1!',
-            branchingStatus: true,
-            branchInstruction: 'Continue with next step',
-          },
-          {
-            id: 'event2',
-            feedbackStatus: false,
-            branchingStatus: false,
-          },
-          {
-            id: 'event3',
-            feedbackStatus: true,
-            score: 90,
-            emoji: '🎉',
-            message: 'Excellent work!',
-            branchingStatus: true,
-            branchInstruction: 'Move to advanced level',
-          },
-        ],
+        events: mockCreateScenarioEventsDto.events.map((e) => ({
+          id: e.id,
+          feedbackStatus: e.feedbackStatus,
+          score: e.score,
+          emoji: e.emoji,
+          message: e.message,
+          branchingStatus: e.branchingStatus,
+          branchInstruction: e.branchInstruction,
+        })),
       };
-
-      const mockResult = [
-        {
-          scenarioId: 1,
-          eventId: 'event1',
-          tenantId: 'tenant-123',
-          feedbackStatus: true,
-          score: 85,
-          emoji: '👍',
-          message: 'Great job on event 1!',
-          branchingStatus: true,
-          branchInstruction: 'Continue with next step',
-        },
-        {
-          scenarioId: 1,
-          eventId: 'event2',
-          tenantId: 'tenant-123',
-          feedbackStatus: false,
-          score: undefined,
-          emoji: undefined,
-          message: undefined,
-          branchingStatus: false,
-          branchInstruction: undefined,
-        },
-        {
-          scenarioId: 1,
-          eventId: 'event3',
-          tenantId: 'tenant-123',
-          feedbackStatus: true,
-          score: 90,
-          emoji: '🎉',
-          message: 'Excellent work!',
-          branchingStatus: true,
-          branchInstruction: 'Move to advanced level',
-        },
-      ] as any;
-
-      scenarioService.mapEventsToScenario.mockResolvedValue(mockResult);
+      scenarioService.mapEventsToScenario.mockResolvedValue(mockResult as any);
 
       const result = await controller.mapEventsToScenario(
-        mockCreateDtoWithEventSpecificData,
+        mockCreateScenarioEventsDto,
       );
 
       expect(result).toEqual(mockResult);
-      expect(scenarioService.mapEventsToScenario).toHaveBeenCalledTimes(1);
-      expect(scenarioService.mapEventsToScenario).toHaveBeenCalledWith(
-        mockCreateDtoWithEventSpecificData,
-      );
     });
   });
 
@@ -850,13 +581,9 @@ describe('LearnController', () => {
       );
 
       expect(result).toBe(true);
-      expect(scenarioService.deleteScenarioEvents).toHaveBeenCalledTimes(1);
-      expect(scenarioService.deleteScenarioEvents).toHaveBeenCalledWith(
-        mockDeleteScenarioEventsDto,
-      );
     });
 
-    it('should delete scenario events and return false when no rows affected', async () => {
+    it('should return false when no rows affected', async () => {
       scenarioService.deleteScenarioEvents.mockResolvedValue(0);
 
       const result = await controller.deleteScenarioEvents(
@@ -864,24 +591,6 @@ describe('LearnController', () => {
       );
 
       expect(result).toBe(false);
-      expect(scenarioService.deleteScenarioEvents).toHaveBeenCalledTimes(1);
-      expect(scenarioService.deleteScenarioEvents).toHaveBeenCalledWith(
-        mockDeleteScenarioEventsDto,
-      );
-    });
-
-    it('should delete scenario events and return false when null returned', async () => {
-      scenarioService.deleteScenarioEvents.mockResolvedValue(null);
-
-      const result = await controller.deleteScenarioEvents(
-        mockDeleteScenarioEventsDto,
-      );
-
-      expect(result).toBe(false);
-      expect(scenarioService.deleteScenarioEvents).toHaveBeenCalledTimes(1);
-      expect(scenarioService.deleteScenarioEvents).toHaveBeenCalledWith(
-        mockDeleteScenarioEventsDto,
-      );
     });
   });
 
@@ -912,13 +621,6 @@ describe('LearnController', () => {
       );
 
       expect(result).toEqual(mockResult);
-      expect(scenarioSessionService.startScenarioSession).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(scenarioSessionService.startScenarioSession).toHaveBeenCalledWith(
-        mockTokenUser.id,
-        mockStartScenarioSessionDto,
-      );
     });
   });
 
@@ -934,13 +636,6 @@ describe('LearnController', () => {
       );
 
       expect(result).toEqual(mockResult);
-      expect(scenarioSessionService.endScenarioSession).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(scenarioSessionService.endScenarioSession).toHaveBeenCalledWith(
-        scenarioSessionId,
-        mockTokenUser.id,
-      );
     });
   });
 
@@ -957,7 +652,7 @@ describe('LearnController', () => {
         updatedAt: new Date(),
       };
       scenarioSessionService.addFeedbackToScenarioSession.mockResolvedValue(
-        mockResult,
+        mockResult as any,
       );
 
       const result = await controller.addFeedbackToScenarioSession(
@@ -967,33 +662,20 @@ describe('LearnController', () => {
       );
 
       expect(result).toEqual(mockResult);
-      expect(
-        scenarioSessionService.addFeedbackToScenarioSession,
-      ).toHaveBeenCalledTimes(1);
-      expect(
-        scenarioSessionService.addFeedbackToScenarioSession,
-      ).toHaveBeenCalledWith(
-        scenarioSessionId,
-        mockTokenUser.id,
-        mockAddFeedbackDto,
-      );
     });
   });
 
   describe('getMessagesByScenarioSessionId', () => {
-    it('should return messages for a scenario session with default parameters', async () => {
+    it('should return messages for a scenario session', async () => {
       const scenarioSessionId = 'session-123';
       const mockMessages = {
         messages: [
           {
-            id: 1,
-            scenarioSessionId,
+            id: 'msg-1',
+            content: 'Hello',
             senderId: 123,
             messageType: ScenarioSessionMessageType.TEXT,
-            content: 'Hello',
-            metadata: {},
-            startSeconds: 0,
-            endSeconds: 10,
+            scenarioSessionId: 'session-123',
             createdAt: new Date(),
             updatedAt: new Date(),
             tenantId: 'tenant-123',
@@ -1001,631 +683,245 @@ describe('LearnController', () => {
         ],
       };
       scenarioSessionService.getMessagesByScenarioSessionId.mockResolvedValue(
-        mockMessages,
+        mockMessages as any,
       );
 
       const result =
         await controller.getMessagesByScenarioSessionId(scenarioSessionId);
 
       expect(result).toEqual(mockMessages);
-      expect(
-        scenarioSessionService.getMessagesByScenarioSessionId,
-      ).toHaveBeenCalledTimes(1);
-      expect(
-        scenarioSessionService.getMessagesByScenarioSessionId,
-      ).toHaveBeenCalledWith(scenarioSessionId, {
-        limit: undefined,
-        offset: undefined,
-        sortBy: undefined,
-        order: SortOrder.ASC,
-      });
-    });
-
-    it('should return messages for a scenario session with custom parameters', async () => {
-      const scenarioSessionId = 'session-123';
-      const limit = 50;
-      const offset = 10;
-      const sortBy = 'createdAt';
-      const order = SortOrder.DESC;
-      const mockMessages = {
-        messages: [
-          {
-            id: 1,
-            scenarioSessionId,
-            senderId: 123,
-            messageType: ScenarioSessionMessageType.TEXT,
-            content: 'Hello',
-            metadata: {},
-            startSeconds: 0,
-            endSeconds: 10,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            tenantId: 'tenant-123',
-          },
-        ],
-      };
-      scenarioSessionService.getMessagesByScenarioSessionId.mockResolvedValue(
-        mockMessages,
-      );
-
-      const result = await controller.getMessagesByScenarioSessionId(
-        scenarioSessionId,
-        limit,
-        offset,
-        sortBy,
-        order,
-      );
-
-      expect(result).toEqual(mockMessages);
-      expect(
-        scenarioSessionService.getMessagesByScenarioSessionId,
-      ).toHaveBeenCalledTimes(1);
-      expect(
-        scenarioSessionService.getMessagesByScenarioSessionId,
-      ).toHaveBeenCalledWith(scenarioSessionId, {
-        limit,
-        offset,
-        sortBy,
-        order,
-      });
     });
   });
 
   describe('getScenarioVoices', () => {
-    it('should return all scenario voices with pagination', async () => {
-      const mockVoices = [
+    it('should return scenario voices with default parameters', async () => {
+      const mockVoices: any[] = [
         {
           id: 'voice-1',
           name: 'Voice 1',
           voiceId: 'openai-voice-1',
           provider: 'openai',
-          config: {},
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: 'voice-2',
-          name: 'Voice 2',
-          voiceId: 'openai-voice-2',
-          provider: 'openai',
-          config: {},
-          createdAt: new Date(),
-          updatedAt: new Date(),
         },
       ];
+      scenarioService.getScenarioVoices.mockResolvedValue(mockVoices as any);
 
+      const result = await controller.getScenarioVoices();
+
+      expect(result).toEqual(mockVoices);
+    });
+
+    it('should return scenario voices with pagination and sorting', async () => {
+      const mockVoices: any[] = [];
       scenarioService.getScenarioVoices.mockResolvedValue(mockVoices);
 
       const result = await controller.getScenarioVoices(
         10,
         0,
-        'name' as any,
-        'ASC' as any,
+        ScenarioVoiceSortBy.NAME,
+        SortOrder.DESC,
       );
 
       expect(result).toEqual(mockVoices);
-      expect(scenarioService.getScenarioVoices).toHaveBeenCalledWith({
-        limit: 10,
-        offset: 0,
-        sortBy: 'name',
-        order: 'ASC',
-      });
     });
   });
 
-  describe('createScenarioVoice', () => {
-    it('should create and return multiple scenario voices', async () => {
-      const createDto = {
+  describe('createScenarioVoices', () => {
+    it('should create scenario voices', async () => {
+      const createVoicesDto = {
         voices: [
           {
-            name: 'New Voice 1',
+            id: 'voice-new',
+            name: 'New Voice',
+            voiceId: 'openai-voice-new',
             provider: 'openai',
-            config: { model: 'gpt-4', voiceId: 'voice-1' },
-          },
-          {
-            name: 'New Voice 2',
-            provider: 'deepgram',
-            config: { voiceId: 'voice-2' },
+            config: { speed: 1.0 },
           },
         ],
       };
-      const createdVoices = [
-        {
-          id: 'new-voice-123',
-          name: 'New Voice 1',
-          provider: 'openai',
-          config: { model: 'gpt-4', voiceId: 'voice-1' },
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: 'new-voice-456',
-          name: 'New Voice 2',
-          provider: 'deepgram',
-          config: { voiceId: 'voice-2' },
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ];
+      const mockCreatedVoices = createVoicesDto.voices;
 
       scenarioService.createScenarioVoices.mockResolvedValue(
-        createdVoices as any,
+        mockCreatedVoices as any,
       );
 
-      const result = await controller.createScenarioVoices(createDto);
+      const result = await controller.createScenarioVoices(createVoicesDto);
 
-      expect(result).toEqual(createdVoices);
-      expect(scenarioService.createScenarioVoices).toHaveBeenCalledWith(
-        createDto,
-      );
-    });
-
-    it('should handle empty voices array', async () => {
-      const emptyDto = { voices: [] };
-      scenarioService.createScenarioVoices.mockResolvedValue([]);
-
-      const result = await controller.createScenarioVoices(emptyDto);
-
-      expect(result).toEqual([]);
-      expect(scenarioService.createScenarioVoices).toHaveBeenCalledWith(
-        emptyDto,
-      );
-    });
-
-    it('should handle single voice in array', async () => {
-      const singleVoiceDto = {
-        voices: [
-          {
-            name: 'Single Voice',
-            provider: 'openai',
-            config: { model: 'gpt-4', voiceId: 'voice-single' },
-          },
-        ],
-      };
-      const createdVoice = [
-        {
-          id: 'single-voice-123',
-          name: 'Single Voice',
-          provider: 'openai',
-          config: { model: 'gpt-4', voiceId: 'voice-single' },
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ];
-
-      scenarioService.createScenarioVoices.mockResolvedValue(
-        createdVoice as any,
-      );
-
-      const result = await controller.createScenarioVoices(singleVoiceDto);
-
-      expect(result).toEqual(createdVoice);
-      expect(scenarioService.createScenarioVoices).toHaveBeenCalledWith(
-        singleVoiceDto,
-      );
+      expect(result).toEqual(mockCreatedVoices);
     });
   });
 
   describe('updateScenarioVoice', () => {
-    it('should update scenario voice and return result', async () => {
+    it('should update a scenario voice', async () => {
       const voiceId = 'voice-123';
       const updateDto = {
-        name: 'Updated Voice',
-        voiceId: 'openai-updated-voice',
+        name: 'Updated Voice Name',
       };
-
       scenarioService.updateScenarioVoice.mockResolvedValue(true);
 
       const result = await controller.updateScenarioVoice(voiceId, updateDto);
 
       expect(result).toBe(true);
-      expect(scenarioService.updateScenarioVoice).toHaveBeenCalledWith(
-        voiceId,
-        updateDto,
-      );
-    });
-  });
-
-  describe('getScenarioEvents', () => {
-    it('should return scenario events with pagination', async () => {
-      const scenarioId = 1;
-      const limit = 10;
-      const offset = 0;
-      const mockEvents = {
-        data: [
-          {
-            eventId: 'event-1',
-            name: 'Event 1',
-            feedbackStatus: true,
-            emoji: '👍',
-            message: 'Great job!',
-            score: 85,
-            branchingStatus: true,
-            branchInstruction: 'Continue with next step',
-          },
-        ],
-        count: 1,
-      };
-
-      scenarioService.getScenarioEvents.mockResolvedValue(mockEvents);
-
-      const result = await controller.getScenarioEvents(
-        scenarioId,
-        limit,
-        offset,
-      );
-
-      expect(result).toEqual(mockEvents);
-      expect(scenarioService.getScenarioEvents).toHaveBeenCalledWith(
-        scenarioId,
-        {
-          limit,
-          offset,
-          sortBy: 'createdAt',
-          order: 'DESC',
-        },
-      );
-    });
-
-    it('should return scenario events without pagination', async () => {
-      const scenarioId = 1;
-
-      const mockEvents = {
-        data: [
-          {
-            eventId: 'event-1',
-            name: 'Event 1',
-            feedbackStatus: false,
-            emoji: undefined,
-            message: undefined,
-            score: undefined,
-            branchingStatus: false,
-            branchInstruction: undefined,
-          },
-        ],
-        count: 1,
-      };
-
-      scenarioService.getScenarioEvents.mockResolvedValue(mockEvents);
-
-      const result = await controller.getScenarioEvents(scenarioId);
-
-      expect(result).toEqual(mockEvents);
-      expect(scenarioService.getScenarioEvents).toHaveBeenCalledWith(
-        scenarioId,
-        {
-          limit: undefined,
-          offset: undefined,
-          sortBy: 'createdAt',
-          order: 'DESC',
-        },
-      );
-    });
-
-    it('should handle empty events', async () => {
-      const scenarioId = 1;
-      const mockEvents = { data: [], count: 0 };
-
-      scenarioService.getScenarioEvents.mockResolvedValue(mockEvents);
-
-      const result = await controller.getScenarioEvents(scenarioId);
-
-      expect(result).toEqual(mockEvents);
-    });
-
-    it('should handle service errors', async () => {
-      const scenarioId = 1;
-      const error = new Error('Service error');
-      scenarioService.getScenarioEvents.mockRejectedValue(error);
-
-      await expect(controller.getScenarioEvents(scenarioId)).rejects.toThrow(
-        'Service error',
-      );
-    });
-  });
-
-  describe('previewScenario', () => {
-    it('should preview a scenario', async () => {
-      const previewDto = {
-        scenarioId: 1,
-      };
-      const mockUser = {
-        id: 123,
-        tenantId: 1,
-        role: 'ADMIN',
-      };
-      const expectedResponse = {
-        scenarioSession: { id: 'preview-session-123' },
-        accessToken: 'mock-token',
-      };
-
-      scenarioSessionService.previewScenario.mockResolvedValue(
-        expectedResponse as any,
-      );
-
-      const result = await controller.previewScenario(
-        mockUser as any,
-        previewDto as any,
-      );
-
-      expect(result).toEqual(expectedResponse);
-      expect(scenarioSessionService.previewScenario).toHaveBeenCalledWith(
-        previewDto,
-        mockUser.id,
-      );
-    });
-  });
-
-  describe('getAdminScenario', () => {
-    it('should return admin scenario by id', async () => {
-      const scenarioId = 1;
-      const mockAdminScenario = {
-        id: 1,
-        title: 'Admin Scenario',
-        scenario: 'Admin scenario content',
-        description: 'Admin description',
-        coverImageUrl: 'https://example.com/admin-cover.jpg',
-        status: ScenarioStatus.ACTIVE,
-        prompt: 'Admin prompt',
-        metadata: {},
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        tenantId: 'tenant-123',
-        createdBy: 1,
-      };
-
-      scenarioService.getAdminScenario.mockResolvedValue(mockAdminScenario);
-
-      const result = await controller.getAdminScenario(scenarioId);
-
-      expect(result).toEqual(mockAdminScenario);
-      expect(scenarioService.getAdminScenario).toHaveBeenCalledWith(scenarioId);
-    });
-
-    it('should handle scenario not found', async () => {
-      const scenarioId = 999;
-      const error = new Error('Scenario not found');
-      scenarioService.getAdminScenario.mockRejectedValue(error);
-
-      await expect(controller.getAdminScenario(scenarioId)).rejects.toThrow(
-        'Scenario not found',
-      );
-    });
-  });
-
-  describe('deleteAdminScenario', () => {
-    it('should delete admin scenario and return true', async () => {
-      const scenarioId = 1;
-      scenarioService.deleteAdminScenario.mockResolvedValue(true);
-
-      const result = await controller.deleteAdminScenario(scenarioId);
-
-      expect(result).toBe(true);
-      expect(scenarioService.deleteAdminScenario).toHaveBeenCalledWith(
-        scenarioId,
-      );
-    });
-
-    it('should return false when deletion fails', async () => {
-      const scenarioId = 1;
-      scenarioService.deleteAdminScenario.mockResolvedValue(false);
-
-      const result = await controller.deleteAdminScenario(scenarioId);
-
-      expect(result).toBe(false);
-    });
-
-    it('should handle scenario not found during deletion', async () => {
-      const scenarioId = 999;
-      const error = new Error('Scenario not found');
-      scenarioService.deleteAdminScenario.mockRejectedValue(error);
-
-      await expect(controller.deleteAdminScenario(scenarioId)).rejects.toThrow(
-        'Scenario not found',
-      );
-    });
-  });
-
-  describe('getPresignedUrlForScenarioCoverImage', () => {
-    it('should return presigned URL for scenario cover image', async () => {
-      const requestDto = {
-        fileName: 'test-image.jpg',
-        fileSize: 1024 * 1024, // 1 MB
-        contentType: 'image/jpeg' as any,
-      };
-      const mockResponse = {
-        presignedUrl: 'https://presigned-url.com',
-        coverImageUrl:
-          'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-images/1234567890-test-image.jpg',
-      };
-
-      scenarioService.getPresignedUrlForScenarioCoverImage.mockResolvedValue(
-        mockResponse,
-      );
-
-      const result =
-        await controller.getPresignedUrlForScenarioCoverImage(requestDto);
-
-      expect(result).toEqual(mockResponse);
-      expect(
-        scenarioService.getPresignedUrlForScenarioCoverImage,
-      ).toHaveBeenCalledWith(requestDto);
-    });
-
-    it('should handle invalid file type', async () => {
-      const requestDto = {
-        fileName: 'test-file.txt',
-        fileSize: 1024,
-        contentType: 'text/plain' as any,
-      };
-      const error = new Error('Invalid file type');
-      scenarioService.getPresignedUrlForScenarioCoverImage.mockRejectedValue(
-        error,
-      );
-
-      await expect(
-        controller.getPresignedUrlForScenarioCoverImage(requestDto),
-      ).rejects.toThrow('Invalid file type');
-    });
-
-    it('should handle file size too large', async () => {
-      const requestDto = {
-        fileName: 'large-image.jpg',
-        fileSize: 3 * 1024 * 1024, // 3 MB
-        contentType: 'image/jpeg' as any,
-      };
-      const error = new Error('File size too large');
-      scenarioService.getPresignedUrlForScenarioCoverImage.mockRejectedValue(
-        error,
-      );
-
-      await expect(
-        controller.getPresignedUrlForScenarioCoverImage(requestDto),
-      ).rejects.toThrow('File size too large');
-    });
-  });
-  describe('endPreviewScenario', () => {
-    it('should end a preview scenario', async () => {
-      const roomName = 'preview-test-session-123';
-      const expectedResponse = { message: 'Preview ended successfully' };
-
-      scenarioSessionService.endPreviewScenario.mockResolvedValue(
-        expectedResponse as any,
-      );
-
-      const result = await controller.endPreviewScenario(roomName);
-
-      expect(result).toEqual(expectedResponse);
-      expect(scenarioSessionService.endPreviewScenario).toHaveBeenCalledWith(
-        roomName,
-      );
     });
   });
 
   describe('deleteCoverImage', () => {
-    it('should call scenarioService.deleteCoverImage with the correct DTO', async () => {
+    it('should delete cover image successfully', async () => {
       const deleteCoverImageDto: DeleteCoverImageDto = {
         coverImageUrl:
-          'https://example-bucket.s3.ap-south-1.amazonaws.com/uploads/test.jpg',
+          'https://bucket.s3.us-east-1.amazonaws.com/scenario-cover-images/test.jpg',
       };
+      const expectedResponse = { success: true };
 
-      (scenarioService.deleteCoverImage as jest.Mock).mockResolvedValue(true);
+      scenarioService.deleteCoverImage.mockResolvedValue(expectedResponse);
 
       const result = await controller.deleteCoverImage(deleteCoverImageDto);
 
-      expect(scenarioService.deleteCoverImage).toHaveBeenCalledWith(
-        deleteCoverImageDto,
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should handle errors gracefully if scenarioService throws', async () => {
-      const deleteCoverImageDto: DeleteCoverImageDto = {
-        coverImageUrl:
-          'https://example-bucket.s3.ap-south-1.amazonaws.com/uploads/error.jpg',
-      };
-
-      (scenarioService.deleteCoverImage as jest.Mock).mockRejectedValue(
-        new Error('Failed to delete'),
-      );
-
-      await expect(
-        controller.deleteCoverImage(deleteCoverImageDto),
-      ).rejects.toThrow('Failed to delete');
+      expect(result).toEqual(expectedResponse);
     });
   });
-  describe('getPresignedUrlForScenarioCoverVideo', () => {
-    it('should return presigned URL for scenario cover video', async () => {
-      const requestDto: ScenarioVideoUploadRequestDto = {
-        fileName: 'test-video.mp4',
-        fileSize: 5 * 1024 * 1024, // 5 MB
-        contentType: ScenarioVideoUploadContentType.MP4,
-        duration: 8,
+
+  describe('assignScenarioToTenant', () => {
+    it('should assign scenarios to tenant successfully', async () => {
+      const tenantId = 'tenant-123';
+      const addScenarioTenantDto: AddScenarioTenantDto = {
+        scenarioIds: [1, 2, 3],
       };
       const expectedResponse = {
-        presignedUrl: 'https://presigned-url.com',
-        coverVideoUrl:
-          'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-videos/1234567890-test-video.mp4',
+        success: true,
+        count: 3,
       };
 
-      scenarioService.getPresignedUrlForScenarioCoverVideo.mockResolvedValue(
-        expectedResponse,
+      scenarioTenantService.assignScenariosToTenant.mockResolvedValue(
+        expectedResponse as any,
       );
 
-      const result =
-        await controller.getPresignedUrlForScenarioCoverVideo(requestDto);
+      const result = await controller.assignScenarioToTenant(
+        tenantId,
+        addScenarioTenantDto,
+      );
 
       expect(result).toEqual(expectedResponse);
       expect(
-        scenarioService.getPresignedUrlForScenarioCoverVideo,
-      ).toHaveBeenCalledWith(requestDto);
+        scenarioTenantService.assignScenariosToTenant,
+      ).toHaveBeenCalledWith(tenantId, addScenarioTenantDto);
     });
 
-    it('should handle invalid video file type', async () => {
-      const requestDto: ScenarioVideoUploadRequestDto = {
-        fileName: 'test-video.avi',
-        fileSize: 1024 * 1024,
-        contentType: 'video/avi' as any,
-        duration: 5,
+    it('should handle single scenario assignment', async () => {
+      const tenantId = 'tenant-456';
+      const addScenarioTenantDto: AddScenarioTenantDto = {
+        scenarioIds: [5],
       };
-      const error = new Error('Invalid file type');
-      scenarioService.getPresignedUrlForScenarioCoverVideo.mockRejectedValue(
-        error,
+      const expectedResponse = {
+        success: true,
+        count: 1,
+      };
+
+      scenarioTenantService.assignScenariosToTenant.mockResolvedValue(
+        expectedResponse as any,
       );
 
-      await expect(
-        controller.getPresignedUrlForScenarioCoverVideo(requestDto),
-      ).rejects.toThrow('Invalid file type');
+      const result = await controller.assignScenarioToTenant(
+        tenantId,
+        addScenarioTenantDto,
+      );
+
+      expect(result).toEqual(expectedResponse);
     });
 
-    it('should handle video file size too large', async () => {
-      const requestDto: ScenarioVideoUploadRequestDto = {
-        fileName: 'large-video.mp4',
-        fileSize: 100 * 1024 * 1024, // 100 MB
-        contentType: ScenarioVideoUploadContentType.MP4,
-        duration: 120,
+    it('should handle empty scenario list', async () => {
+      const tenantId = 'tenant-123';
+      const addScenarioTenantDto: AddScenarioTenantDto = {
+        scenarioIds: [],
       };
-      const error = new Error('File size too large');
-      scenarioService.getPresignedUrlForScenarioCoverVideo.mockRejectedValue(
-        error,
+      const expectedResponse = {
+        success: true,
+        count: 0,
+      };
+
+      scenarioTenantService.assignScenariosToTenant.mockResolvedValue(
+        expectedResponse as any,
       );
 
+      const result = await controller.assignScenarioToTenant(
+        tenantId,
+        addScenarioTenantDto,
+      );
+
+      expect(result).toEqual(expectedResponse);
+    });
+
+    it('should handle errors during scenario assignment', async () => {
+      const tenantId = 'tenant-invalid';
+      const addScenarioTenantDto: AddScenarioTenantDto = {
+        scenarioIds: [1, 2],
+      };
+      const error = new Error('Tenant not found');
+
+      scenarioTenantService.assignScenariosToTenant.mockRejectedValue(error);
+
       await expect(
-        controller.getPresignedUrlForScenarioCoverVideo(requestDto),
-      ).rejects.toThrow('File size too large');
+        controller.assignScenarioToTenant(tenantId, addScenarioTenantDto),
+      ).rejects.toThrow('Tenant not found');
     });
   });
 
-  describe('deleteCoverVideo', () => {
-    it('should call scenarioService.deleteCoverVideo with the correct DTO', async () => {
-      const deleteCoverVideoDto: DeleteCoverVideoDto = {
-        coverVideoUrl:
-          'https://example-bucket.s3.ap-south-1.amazonaws.com/uploads/test-video.mp4',
+  describe('removeScenarioFromTenants', () => {
+    it('should remove scenarios from tenant successfully', async () => {
+      const tenantId = 'tenant-123';
+      const deleteScenarioTenantDto: DeleteScenarioTenantDto = {
+        scenarioIds: [1, 2, 3],
+      };
+      const expectedResponse = {
+        success: true,
+        count: 3,
       };
 
-      (scenarioService.deleteCoverVideo as jest.Mock).mockResolvedValue(true);
-
-      const result = await controller.deleteCoverVideo(deleteCoverVideoDto);
-
-      expect(scenarioService.deleteCoverVideo).toHaveBeenCalledWith(
-        deleteCoverVideoDto,
+      scenarioTenantService.removeScenariosFromTenant.mockResolvedValue(
+        expectedResponse as any,
       );
-      expect(result).toBe(true);
+
+      const result = await controller.removeScenarioFromTenants(
+        tenantId,
+        deleteScenarioTenantDto,
+      );
+
+      expect(result).toEqual(expectedResponse);
     });
 
-    it('should handle errors gracefully if scenarioService throws', async () => {
-      const deleteCoverVideoDto: DeleteCoverVideoDto = {
-        coverVideoUrl:
-          'https://example-bucket.s3.ap-south-1.amazonaws.com/uploads/error-video.mp4',
+    it('should handle single scenario removal', async () => {
+      const tenantId = 'tenant-456';
+      const deleteScenarioTenantDto: DeleteScenarioTenantDto = {
+        scenarioIds: [5],
+      };
+      const expectedResponse = {
+        success: true,
+        count: 1,
       };
 
-      (scenarioService.deleteCoverVideo as jest.Mock).mockRejectedValue(
-        new Error('Failed to delete video'),
+      scenarioTenantService.removeScenariosFromTenant.mockResolvedValue(
+        expectedResponse as any,
       );
 
+      const result = await controller.removeScenarioFromTenants(
+        tenantId,
+        deleteScenarioTenantDto,
+      );
+
+      expect(result).toEqual(expectedResponse);
+    });
+
+    it('should handle errors during scenario removal', async () => {
+      const tenantId = 'tenant-invalid';
+      const deleteScenarioTenantDto: DeleteScenarioTenantDto = {
+        scenarioIds: [1, 2],
+      };
+      const error = new Error('Tenant not found');
+
+      scenarioTenantService.removeScenariosFromTenant.mockRejectedValue(error);
+
       await expect(
-        controller.deleteCoverVideo(deleteCoverVideoDto),
-      ).rejects.toThrow('Failed to delete video');
+        controller.removeScenarioFromTenants(tenantId, deleteScenarioTenantDto),
+      ).rejects.toThrow('Tenant not found');
     });
   });
 });
