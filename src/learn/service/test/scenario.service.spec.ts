@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-
 import { SessionEventService } from 'src/session-event/service/session-event.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import {
@@ -361,7 +360,7 @@ describe('ScenarioService', () => {
 
       const result = await service.getAdminScenarios(
         undefined,
-        undefined,
+
         options,
       );
 

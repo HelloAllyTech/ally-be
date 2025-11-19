@@ -1,16 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository, UpdateResult } from 'typeorm';
-import { TenantService } from '../tenant.service';
-import { Tenant, TenantStatus } from 'src/tenant/entity/tenant.entity';
-import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
-import { UserRepository } from 'src/user/repository/user.repository';
-import { TenantScenarioUtil } from 'src/tenant/util/tenant-scenario.util';
 import {
   BadRequestException,
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
+
+import { TenantService } from '../tenant.service';
+import { Tenant, TenantStatus } from 'src/tenant/entity/tenant.entity';
+import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
+import { UserRepository } from 'src/user/repository/user.repository';
+import { TenantScenarioSharedService } from '../tenant-scenario-shared';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -30,7 +31,7 @@ describe('TenantService', () => {
   let tenantRepository: jest.Mocked<Repository<Tenant>>;
   let tenantsRepository: jest.Mocked<TenantsRepository>;
   let userRepository: jest.Mocked<UserRepository>;
-  let tenantScenarioUtil: jest.Mocked<TenantScenarioUtil>;
+  let tenantScenarioUtil: jest.Mocked<TenantScenarioSharedService>;
   let dataSource: jest.Mocked<DataSource>;
 
   const mockTenant: Tenant = {
@@ -96,7 +97,7 @@ describe('TenantService', () => {
           useValue: mockUserRepository,
         },
         {
-          provide: TenantScenarioUtil,
+          provide: TenantScenarioSharedService,
           useValue: mockTenantScenarioUtil,
         },
         {
@@ -110,7 +111,7 @@ describe('TenantService', () => {
     tenantRepository = module.get(getRepositoryToken(Tenant));
     tenantsRepository = module.get(TenantsRepository);
     userRepository = module.get(UserRepository);
-    tenantScenarioUtil = module.get(TenantScenarioUtil);
+    tenantScenarioUtil = module.get(TenantScenarioSharedService);
     dataSource = module.get(DataSource);
   });
 

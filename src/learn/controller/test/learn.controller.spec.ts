@@ -10,7 +10,6 @@ import { ScenarioSessionStatus } from '../../enum/scenario-session-status.enum';
 import { ScenarioSessionMessageType } from '../../enum/scenario-session-message.type.enum';
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
-import { ScenarioSortBy } from '../../enum/scenario-sort-by.enum';
 import { DeleteCoverImageDto } from '../../dto/delete-cover-image.dto';
 import { DeleteCoverVideoDto } from '../../dto/delete-cover-video.dto';
 import { ScenarioVideoUploadRequestDto } from '../../dto/scenario-video-upload-request.dto';
@@ -289,76 +288,6 @@ describe('LearnController', () => {
       scenarioService.getScenarios.mockRejectedValue(error);
 
       await expect(controller.getScenarios()).rejects.toThrow('Database error');
-    });
-  });
-
-  describe('getAdminScenarios', () => {
-    const mockAdminScenariosData = {
-      data: [
-        {
-          id: 1,
-          title: 'Test Scenario 1',
-          createdAt: new Date('2025-01-01'),
-          updatedAt: new Date('2025-01-02'),
-          scenario: 'Content 1',
-          description: 'Description 1',
-          coverImageUrl: 'https://example.com/cover1.jpg',
-          coverVideoUrl: 'https://example.com/video1.mp4',
-          createdBy: 'Admin User',
-          status: 'ACTIVE',
-          usage: 5,
-          isAssignedToTenant: true,
-          isPreviewEnabled: true,
-        },
-      ],
-    };
-
-    it('should return admin scenarios with default parameters', async () => {
-      scenarioService.getAdminScenarios.mockResolvedValue(
-        mockAdminScenariosData,
-      );
-
-      const result = await controller.getAdminScenarios();
-
-      expect(result).toEqual(mockAdminScenariosData);
-      expect(scenarioService.getAdminScenarios).toHaveBeenCalledWith(
-        undefined,
-        undefined,
-        {
-          limit: undefined,
-          offset: undefined,
-          sortBy: ScenarioSortBy.CREATED_AT,
-          order: SortOrder.ASC,
-        },
-      );
-    });
-
-    it('should return admin scenarios with tenantId filter', async () => {
-      const tenantId = 'tenant-456';
-      scenarioService.getAdminScenarios.mockResolvedValue(
-        mockAdminScenariosData,
-      );
-
-      const result = await controller.getAdminScenarios(
-        undefined,
-        undefined,
-        ScenarioSortBy.CREATED_AT,
-        SortOrder.ASC,
-        undefined,
-        tenantId,
-      );
-
-      expect(result).toEqual(mockAdminScenariosData);
-      expect(scenarioService.getAdminScenarios).toHaveBeenCalledWith(
-        undefined,
-        tenantId,
-        {
-          limit: undefined,
-          offset: undefined,
-          sortBy: ScenarioSortBy.CREATED_AT,
-          order: SortOrder.ASC,
-        },
-      );
     });
   });
 

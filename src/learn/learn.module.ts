@@ -32,8 +32,9 @@ import { ScenarioSharedService } from './service/scenario-shared.service';
 import { ScenarioTenantService } from './service/scenario-tenant.service';
 import { ScenarioTenantRepository } from './repository/scenario-tenant.repository';
 import { TenantModule } from 'src/tenant/tenant.module';
-import { ScenarioTenantValidationUtil } from './util/scenario-tenant-validation.util';
+
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
+import { ScenarioTenantValidationShared } from './service/scenario-tenant-validation-shared';
 
 @Module({
   imports: [
@@ -72,7 +73,7 @@ import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
     ScenarioSharedService,
     ScenarioTenantService,
     ScenarioTenantRepository,
-    ScenarioTenantValidationUtil,
+    ScenarioTenantValidationShared,
     TenantsRepository,
   ],
   exports: [

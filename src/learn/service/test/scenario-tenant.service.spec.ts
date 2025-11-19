@@ -1,13 +1,13 @@
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ScenarioTenantService } from '../scenario-tenant.service';
 import { ScenarioTenantRepository } from '../../repository/scenario-tenant.repository';
-import { ScenarioTenantValidationUtil } from '../../util/scenario-tenant-validation.util';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ScenarioTenantValidationShared } from '../scenario-tenant-validation-shared';
 
 describe('ScenarioTenantService', () => {
   let service: ScenarioTenantService;
   let scenarioTenantRepository: jest.Mocked<ScenarioTenantRepository>;
-  let scenarioTenantValidationUtil: jest.Mocked<ScenarioTenantValidationUtil>;
+  let scenarioTenantValidationUtil: jest.Mocked<ScenarioTenantValidationShared>;
 
   beforeEach(async () => {
     const mockScenarioTenantRepository = {
@@ -29,7 +29,7 @@ describe('ScenarioTenantService', () => {
           useValue: mockScenarioTenantRepository,
         },
         {
-          provide: ScenarioTenantValidationUtil,
+          provide: ScenarioTenantValidationShared,
           useValue: mockScenarioTenantValidationUtil,
         },
       ],
@@ -37,7 +37,7 @@ describe('ScenarioTenantService', () => {
 
     service = module.get<ScenarioTenantService>(ScenarioTenantService);
     scenarioTenantRepository = module.get(ScenarioTenantRepository);
-    scenarioTenantValidationUtil = module.get(ScenarioTenantValidationUtil);
+    scenarioTenantValidationUtil = module.get(ScenarioTenantValidationShared);
   });
 
   afterEach(() => {

@@ -5,9 +5,9 @@ import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { ScenarioTenants } from 'src/learn/entity/scenario-tenants.entity';
 
 @Injectable()
-export class TenantScenarioUtil {
+export class TenantScenarioSharedService {
   private static readonly logger = LoggerService.getInstance(
-    TenantScenarioUtil.name,
+    TenantScenarioSharedService.name,
   );
 
   constructor() {}
@@ -23,7 +23,9 @@ export class TenantScenarioUtil {
     });
 
     if (globalScenarios.length === 0) {
-      TenantScenarioUtil.logger.warn('No global scenarios found to assign');
+      TenantScenarioSharedService.logger.warn(
+        'No global scenarios found to assign',
+      );
       return;
     }
 

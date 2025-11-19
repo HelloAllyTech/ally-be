@@ -117,12 +117,15 @@ export class LearnController {
     @Query('status') status?: string,
     @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
   ) {
-    return this.scenarioService.getAdminScenarios(status, tenantId, {
-      limit,
-      offset,
-      sortBy,
-      order,
-    });
+    return this.scenarioService.getAdminScenarios(
+      { status, tenantId },
+      {
+        limit,
+        offset,
+        sortBy,
+        order,
+      },
+    );
   }
 
   // TODO: Remove swagger lock

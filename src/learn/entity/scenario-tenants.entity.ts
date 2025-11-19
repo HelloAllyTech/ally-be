@@ -1,4 +1,3 @@
-import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import {
   Column,
   DeleteDateColumn,
@@ -6,6 +5,7 @@ import {
   Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 
 @Entity('scenario_tenants')
 @Index(['scenarioId', 'tenantId'], {

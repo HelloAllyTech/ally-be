@@ -15,7 +15,7 @@ import { Pagination } from 'src/common/type/common.type';
 import { UpdateTenantDto } from '../dto/update-tenant.dto';
 import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
 import { UserRepository } from 'src/user/repository/user.repository';
-import { TenantScenarioUtil } from '../util/tenant-scenario.util';
+import { TenantScenarioSharedService } from './tenant-scenario-shared';
 
 @Injectable()
 export class TenantService {
@@ -25,7 +25,7 @@ export class TenantService {
     @InjectRepository(Tenant)
     private readonly tenantRepository: Repository<Tenant>,
     private readonly tenantsRepository: TenantsRepository,
-    private readonly tenantScenarioUtil: TenantScenarioUtil,
+    private readonly tenantScenarioSharedService: TenantScenarioSharedService,
     @Inject(forwardRef(() => UserRepository))
     private readonly userRepository: UserRepository,
     private readonly dataSource: DataSource,
@@ -56,7 +56,7 @@ export class TenantService {
           const tenant = entityManager.create(Tenant, tenantData);
           const savedTenant = await entityManager.save(Tenant, tenant);
 
-          await this.tenantScenarioUtil.assignGlobalScenariosToTenant(
+          await this.tenantScenarioSharedService.assignGlobalScenariosToTenant(
             savedTenant.id,
             entityManager,
           );

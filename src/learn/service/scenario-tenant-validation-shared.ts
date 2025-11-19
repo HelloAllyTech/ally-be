@@ -4,13 +4,13 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { In } from 'typeorm';
-import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
+import { TenantService } from 'src/tenant/service/tenant.service';
 
 @Injectable()
-export class ScenarioTenantValidationUtil {
+export class ScenarioTenantValidationShared {
   constructor(
-    private readonly tenantsRepository: TenantsRepository,
+    private readonly tenantService: TenantService,
     private readonly scenariosRepository: ScenariosRepository,
   ) {}
 
@@ -18,9 +18,7 @@ export class ScenarioTenantValidationUtil {
     scenarioIds: number[],
     tenantId: string,
   ): Promise<void> {
-    const tenant = await this.tenantsRepository.findOne({
-      where: { id: tenantId },
-    });
+    const tenant = await this.tenantService.findById(tenantId);
 
     if (!tenant) {
       throw new NotFoundException('Tenant not found');

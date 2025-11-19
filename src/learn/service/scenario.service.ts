@@ -18,7 +18,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
-import { Pagination } from 'src/common/type/common.type';
+import { Pagination, ScenarioFilters } from 'src/common/type/common.type';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
@@ -82,10 +82,10 @@ export class ScenarioService {
   }
 
   async getAdminScenarios(
-    status?: string,
-    tenantId?: string,
+    scenarioFilters?: ScenarioFilters,
     options?: Pagination,
   ) {
+    const { status, tenantId } = scenarioFilters ?? {};
     if (tenantId) {
       const tenant = await this.tenantService.findById(tenantId);
       if (!tenant) {

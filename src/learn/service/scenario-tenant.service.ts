@@ -6,20 +6,20 @@ import {
 import { AddScenarioTenantDto } from '../dto/add-scenario-tenant.dto';
 import { ScenarioTenantRepository } from '../repository/scenario-tenant.repository';
 import { DeleteScenarioTenantDto } from '../dto/delete-scenario-tenant.dto';
-import { ScenarioTenantValidationUtil } from '../util/scenario-tenant-validation.util';
+import { ScenarioTenantValidationShared } from './scenario-tenant-validation-shared';
 
 @Injectable()
 export class ScenarioTenantService {
   constructor(
     private readonly scenarioTenantRepository: ScenarioTenantRepository,
-    private readonly scenarioTenantValidationUtil: ScenarioTenantValidationUtil,
+    private readonly scenarioTenantValidationShared: ScenarioTenantValidationShared,
   ) {}
 
   async assignScenariosToTenant(
     tenantId: string,
     addScenarioTenantDto: AddScenarioTenantDto,
   ): Promise<{ success: boolean }> {
-    await this.scenarioTenantValidationUtil.validateScenarioTenant(
+    await this.scenarioTenantValidationShared.validateScenarioTenant(
       addScenarioTenantDto.scenarioIds,
       tenantId,
     );
@@ -46,7 +46,7 @@ export class ScenarioTenantService {
     tenantId: string,
     deleteScenarioTenantDto: DeleteScenarioTenantDto,
   ): Promise<{ success: boolean }> {
-    await this.scenarioTenantValidationUtil.validateScenarioTenant(
+    await this.scenarioTenantValidationShared.validateScenarioTenant(
       deleteScenarioTenantDto.scenarioIds,
       tenantId,
     );

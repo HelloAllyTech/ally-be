@@ -1,13 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
-import { ScenarioTenantValidationUtil } from '../scenario-tenant-validation.util';
-import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
+import { TenantService } from 'src/tenant/service/tenant.service';
 import { In } from 'typeorm';
+import { ScenarioTenantValidationShared } from '../scenario-tenant-validation-shared';
 
-describe('ScenarioTenantValidationUtil', () => {
-  let util: ScenarioTenantValidationUtil;
-  let tenantsRepository: jest.Mocked<TenantsRepository>;
+describe('ScenarioTenantValidationShared', () => {
+  let util: ScenarioTenantValidationShared;
+  let tenantService: jest.Mocked<TenantService>;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
 
   const mockTenantId = 'tenant-123';
@@ -16,6 +16,8 @@ describe('ScenarioTenantValidationUtil', () => {
   const mockTenant = {
     id: 'tenant-123',
     name: 'Test Tenant',
+    domain: 'test-tenant.com',
+    isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -48,10 +50,9 @@ describe('ScenarioTenantValidationUtil', () => {
   ];
 
   beforeEach(async () => {
-    const mockTenantsRepository = {
-      findOne: jest.fn(),
-      find: jest.fn(),
-      save: jest.fn(),
+    const mockTenantService = {
+      findById: jest.fn(),
+      findAll: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -68,10 +69,10 @@ describe('ScenarioTenantValidationUtil', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        ScenarioTenantValidationUtil,
+        ScenarioTenantValidationShared,
         {
-          provide: TenantsRepository,
-          useValue: mockTenantsRepository,
+          provide: TenantService,
+          useValue: mockTenantService,
         },
         {
           provide: ScenariosRepository,
@@ -80,10 +81,10 @@ describe('ScenarioTenantValidationUtil', () => {
       ],
     }).compile();
 
-    util = module.get<ScenarioTenantValidationUtil>(
-      ScenarioTenantValidationUtil,
+    util = module.get<ScenarioTenantValidationShared>(
+      ScenarioTenantValidationShared,
     );
-    tenantsRepository = module.get(TenantsRepository);
+    tenantService = module.get(TenantService);
     scenariosRepository = module.get(ScenariosRepository);
   });
 
@@ -96,8 +97,8 @@ describe('ScenarioTenantValidationUtil', () => {
       expect(util).toBeDefined();
     });
 
-    it('should have tenantsRepository injected', () => {
-      expect(tenantsRepository).toBeDefined();
+    it('should have tenantService injected', () => {
+      expect(tenantService).toBeDefined();
     });
 
     it('should have scenariosRepository injected', () => {
@@ -108,16 +109,14 @@ describe('ScenarioTenantValidationUtil', () => {
   describe('validateScenarioTenant', () => {
     describe('successful validation', () => {
       it('should validate successfully with valid tenant and scenarios', async () => {
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue(mockScenarios as any);
 
         await expect(
           util.validateScenarioTenant(mockScenarioIds, mockTenantId),
         ).resolves.toBeUndefined();
 
-        expect(tenantsRepository.findOne).toHaveBeenCalledWith({
-          where: { id: mockTenantId },
-        });
+        expect(tenantService.findById).toHaveBeenCalledWith(mockTenantId);
         expect(scenariosRepository.find).toHaveBeenCalledWith({
           where: { id: In(mockScenarioIds) },
         });
@@ -127,16 +126,14 @@ describe('ScenarioTenantValidationUtil', () => {
         const singleScenarioId = [1];
         const singleScenario = [mockScenarios[0]];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue(singleScenario as any);
 
         await expect(
           util.validateScenarioTenant(singleScenarioId, mockTenantId),
         ).resolves.toBeUndefined();
 
-        expect(tenantsRepository.findOne).toHaveBeenCalledWith({
-          where: { id: mockTenantId },
-        });
+        expect(tenantService.findById).toHaveBeenCalledWith(mockTenantId);
         expect(scenariosRepository.find).toHaveBeenCalledWith({
           where: { id: In(singleScenarioId) },
         });
@@ -153,18 +150,20 @@ describe('ScenarioTenantValidationUtil', () => {
           updatedAt: new Date(),
         }));
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue(largeScenarios as any);
 
         await expect(
           util.validateScenarioTenant(largeScenarioIds, mockTenantId),
         ).resolves.toBeUndefined();
+
+        expect(tenantService.findById).toHaveBeenCalledWith(mockTenantId);
       });
     });
 
     describe('tenant validation errors', () => {
       it('should throw NotFoundException when tenant does not exist', async () => {
-        tenantsRepository.findOne.mockResolvedValue(null);
+        tenantService.findById.mockResolvedValue(null);
 
         await expect(
           util.validateScenarioTenant(mockScenarioIds, mockTenantId),
@@ -174,23 +173,19 @@ describe('ScenarioTenantValidationUtil', () => {
           util.validateScenarioTenant(mockScenarioIds, mockTenantId),
         ).rejects.toThrow('Tenant not found');
 
-        expect(tenantsRepository.findOne).toHaveBeenCalledWith({
-          where: { id: mockTenantId },
-        });
+        expect(tenantService.findById).toHaveBeenCalledWith(mockTenantId);
         expect(scenariosRepository.find).not.toHaveBeenCalled();
       });
 
       it('should throw NotFoundException for invalid tenant id format', async () => {
         const invalidTenantId = 'invalid-tenant-999';
-        tenantsRepository.findOne.mockResolvedValue(null);
+        tenantService.findById.mockResolvedValue(null);
 
         await expect(
           util.validateScenarioTenant(mockScenarioIds, invalidTenantId),
         ).rejects.toThrow(NotFoundException);
 
-        expect(tenantsRepository.findOne).toHaveBeenCalledWith({
-          where: { id: invalidTenantId },
-        });
+        expect(tenantService.findById).toHaveBeenCalledWith(invalidTenantId);
       });
     });
 
@@ -198,7 +193,7 @@ describe('ScenarioTenantValidationUtil', () => {
       it('should throw BadRequestException when scenario ids contain duplicates', async () => {
         const duplicateScenarioIds = [1, 2, 2, 3];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
 
         await expect(
           util.validateScenarioTenant(duplicateScenarioIds, mockTenantId),
@@ -208,14 +203,14 @@ describe('ScenarioTenantValidationUtil', () => {
           util.validateScenarioTenant(duplicateScenarioIds, mockTenantId),
         ).rejects.toThrow('Duplicate scenario ids');
 
-        expect(tenantsRepository.findOne).toHaveBeenCalled();
+        expect(tenantService.findById).toHaveBeenCalled();
         expect(scenariosRepository.find).not.toHaveBeenCalled();
       });
 
       it('should throw BadRequestException with multiple duplicate scenario ids', async () => {
         const duplicateScenarioIds = [1, 1, 2, 2, 3, 3];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
 
         await expect(
           util.validateScenarioTenant(duplicateScenarioIds, mockTenantId),
@@ -229,17 +224,27 @@ describe('ScenarioTenantValidationUtil', () => {
       it('should throw BadRequestException when all scenario ids are duplicates', async () => {
         const allDuplicates = [5, 5, 5, 5];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
 
         await expect(
           util.validateScenarioTenant(allDuplicates, mockTenantId),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('should throw BadRequestException for consecutive duplicates', async () => {
+        const consecutiveDuplicates = [1, 2, 3, 3, 4];
+
+        tenantService.findById.mockResolvedValue(mockTenant as any);
+
+        await expect(
+          util.validateScenarioTenant(consecutiveDuplicates, mockTenantId),
         ).rejects.toThrow(BadRequestException);
       });
     });
 
     describe('scenario existence validation', () => {
       it('should throw NotFoundException when no valid scenarios are found', async () => {
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue([]);
 
         await expect(
@@ -259,7 +264,7 @@ describe('ScenarioTenantValidationUtil', () => {
         const requestedIds = [1, 2, 999];
         const existingScenarios = [mockScenarios[0], mockScenarios[1]];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue(existingScenarios as any);
 
         await expect(
@@ -275,7 +280,7 @@ describe('ScenarioTenantValidationUtil', () => {
         const requestedIds = [1, 2, 998, 999];
         const existingScenarios = [mockScenarios[0], mockScenarios[1]];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue(existingScenarios as any);
 
         await expect(
@@ -290,7 +295,7 @@ describe('ScenarioTenantValidationUtil', () => {
       it('should throw NotFoundException when all scenarios do not exist', async () => {
         const nonExistentIds = [997, 998, 999];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue([]);
 
         await expect(
@@ -301,13 +306,33 @@ describe('ScenarioTenantValidationUtil', () => {
           util.validateScenarioTenant(nonExistentIds, mockTenantId),
         ).rejects.toThrow('No valid scenarios found');
       });
+
+      it('should correctly identify multiple missing scenarios in order', async () => {
+        const requestedIds = [1, 999, 2, 998, 3, 997];
+        const existingScenarios = [
+          mockScenarios[0],
+          mockScenarios[1],
+          mockScenarios[2],
+        ];
+
+        tenantService.findById.mockResolvedValue(mockTenant as any);
+        scenariosRepository.find.mockResolvedValue(existingScenarios as any);
+
+        await expect(
+          util.validateScenarioTenant(requestedIds, mockTenantId),
+        ).rejects.toThrow(NotFoundException);
+
+        await expect(
+          util.validateScenarioTenant(requestedIds, mockTenantId),
+        ).rejects.toThrow('Scenarios 999, 998, 997 do not exist');
+      });
     });
 
     describe('edge cases', () => {
       it('should handle empty scenario ids array', async () => {
         const emptyScenarioIds: number[] = [];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue([]);
 
         await expect(
@@ -322,7 +347,7 @@ describe('ScenarioTenantValidationUtil', () => {
       it('should handle scenario ids with zero', async () => {
         const scenarioIdsWithZero = [0, 1, 2];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue([
           mockScenarios[0],
           mockScenarios[1],
@@ -340,7 +365,7 @@ describe('ScenarioTenantValidationUtil', () => {
       it('should handle negative scenario ids', async () => {
         const negativeScenarioIds = [-1, 1, 2];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue([
           mockScenarios[0],
           mockScenarios[1],
@@ -363,19 +388,37 @@ describe('ScenarioTenantValidationUtil', () => {
           mockScenarios[1],
         ];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue(returnedScenarios as any);
 
         await expect(
           util.validateScenarioTenant(requestedIds, mockTenantId),
         ).resolves.toBeUndefined();
       });
+
+      it('should handle very large scenario ids', async () => {
+        const largeIds = [Number.MAX_SAFE_INTEGER, 1, 2];
+
+        tenantService.findById.mockResolvedValue(mockTenant as any);
+        scenariosRepository.find.mockResolvedValue([
+          mockScenarios[0],
+          mockScenarios[1],
+        ] as any);
+
+        await expect(
+          util.validateScenarioTenant(largeIds, mockTenantId),
+        ).rejects.toThrow(NotFoundException);
+
+        await expect(
+          util.validateScenarioTenant(largeIds, mockTenantId),
+        ).rejects.toThrow(`Scenarios ${Number.MAX_SAFE_INTEGER} do not exist`);
+      });
     });
 
     describe('database errors', () => {
       it('should handle database error when finding tenant', async () => {
         const dbError = new Error('Database connection error');
-        tenantsRepository.findOne.mockRejectedValue(dbError);
+        tenantService.findById.mockRejectedValue(dbError);
 
         await expect(
           util.validateScenarioTenant(mockScenarioIds, mockTenantId),
@@ -386,50 +429,74 @@ describe('ScenarioTenantValidationUtil', () => {
 
       it('should handle database error when finding scenarios', async () => {
         const dbError = new Error('Database query failed');
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockRejectedValue(dbError);
 
         await expect(
           util.validateScenarioTenant(mockScenarioIds, mockTenantId),
         ).rejects.toThrow('Database query failed');
 
-        expect(tenantsRepository.findOne).toHaveBeenCalled();
+        expect(tenantService.findById).toHaveBeenCalled();
       });
 
       it('should handle timeout error', async () => {
         const timeoutError = new Error('Query timeout');
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockRejectedValue(timeoutError);
 
         await expect(
           util.validateScenarioTenant(mockScenarioIds, mockTenantId),
         ).rejects.toThrow('Query timeout');
       });
+
+      it('should handle network error from tenant service', async () => {
+        const networkError = new Error('Network unavailable');
+        tenantService.findById.mockRejectedValue(networkError);
+
+        await expect(
+          util.validateScenarioTenant(mockScenarioIds, mockTenantId),
+        ).rejects.toThrow('Network unavailable');
+      });
     });
 
     describe('validation order', () => {
       it('should validate tenant before checking for duplicates', async () => {
         const duplicateScenarioIds = [1, 1, 2];
-        tenantsRepository.findOne.mockResolvedValue(null);
+        tenantService.findById.mockResolvedValue(null);
 
         await expect(
           util.validateScenarioTenant(duplicateScenarioIds, mockTenantId),
         ).rejects.toThrow('Tenant not found');
 
-        expect(tenantsRepository.findOne).toHaveBeenCalled();
+        expect(tenantService.findById).toHaveBeenCalled();
         expect(scenariosRepository.find).not.toHaveBeenCalled();
       });
 
       it('should validate duplicates before checking scenario existence', async () => {
         const duplicateScenarioIds = [1, 1, 999];
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
 
         await expect(
           util.validateScenarioTenant(duplicateScenarioIds, mockTenantId),
         ).rejects.toThrow('Duplicate scenario ids');
 
-        expect(tenantsRepository.findOne).toHaveBeenCalled();
+        expect(tenantService.findById).toHaveBeenCalled();
         expect(scenariosRepository.find).not.toHaveBeenCalled();
+      });
+
+      it('should check scenario existence after duplicate validation', async () => {
+        const validIds = [1, 2, 999];
+        const existingScenarios = [mockScenarios[0], mockScenarios[1]];
+
+        tenantService.findById.mockResolvedValue(mockTenant as any);
+        scenariosRepository.find.mockResolvedValue(existingScenarios as any);
+
+        await expect(
+          util.validateScenarioTenant(validIds, mockTenantId),
+        ).rejects.toThrow('Scenarios 999 do not exist');
+
+        expect(tenantService.findById).toHaveBeenCalled();
+        expect(scenariosRepository.find).toHaveBeenCalled();
       });
     });
 
@@ -445,7 +512,7 @@ describe('ScenarioTenantValidationUtil', () => {
           updatedAt: new Date(),
         }));
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
         scenariosRepository.find.mockResolvedValue(manyScenarios as any);
 
         await expect(
@@ -463,11 +530,37 @@ describe('ScenarioTenantValidationUtil', () => {
           50, // duplicate
         ];
 
-        tenantsRepository.findOne.mockResolvedValue(mockTenant as any);
+        tenantService.findById.mockResolvedValue(mockTenant as any);
 
         await expect(
           util.validateScenarioTenant(largeArrayWithDuplicates, mockTenantId),
         ).rejects.toThrow('Duplicate scenario ids');
+      });
+
+      it('should efficiently identify missing scenarios in large dataset', async () => {
+        const largeRequestedIds = Array.from({ length: 500 }, (_, i) => i + 1);
+        const existingScenarios = Array.from({ length: 490 }, (_, i) => ({
+          id: i + 1,
+          title: `Scenario ${i + 1}`,
+          description: `Description ${i + 1}`,
+          status: 'ACTIVE',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }));
+
+        tenantService.findById.mockResolvedValue(mockTenant as any);
+        scenariosRepository.find.mockResolvedValue(existingScenarios as any);
+
+        await expect(
+          util.validateScenarioTenant(largeRequestedIds, mockTenantId),
+        ).rejects.toThrow(NotFoundException);
+
+        const error = await util
+          .validateScenarioTenant(largeRequestedIds, mockTenantId)
+          .catch((e) => e);
+
+        expect(error.message).toContain('Scenarios');
+        expect(error.message).toContain('do not exist');
       });
     });
   });
