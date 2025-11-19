@@ -1,10 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository, UpdateResult } from 'typeorm';
+import { DataSource, Repository, UpdateResult } from 'typeorm';
 import { TenantService } from '../tenant.service';
 import { Tenant, TenantStatus } from 'src/tenant/entity/tenant.entity';
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { UserRepository } from 'src/user/repository/user.repository';
+import { TenantScenarioUtil } from 'src/tenant/util/tenant-scenario.util';
 import {
   BadRequestException,
   ConflictException,
@@ -29,6 +30,8 @@ describe('TenantService', () => {
   let tenantRepository: jest.Mocked<Repository<Tenant>>;
   let tenantsRepository: jest.Mocked<TenantsRepository>;
   let userRepository: jest.Mocked<UserRepository>;
+  let tenantScenarioUtil: jest.Mocked<TenantScenarioUtil>;
+  let dataSource: jest.Mocked<DataSource>;
 
   const mockTenant: Tenant = {
     id: 'test-tenant-id',
@@ -69,6 +72,14 @@ describe('TenantService', () => {
       getUserCountByTenantIds: jest.fn(),
     };
 
+    const mockTenantScenarioUtil = {
+      assignGlobalScenariosToTenant: jest.fn(),
+    };
+
+    const mockDataSource = {
+      transaction: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
@@ -84,6 +95,14 @@ describe('TenantService', () => {
           provide: UserRepository,
           useValue: mockUserRepository,
         },
+        {
+          provide: TenantScenarioUtil,
+          useValue: mockTenantScenarioUtil,
+        },
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
+        },
       ],
     }).compile();
 
@@ -91,6 +110,8 @@ describe('TenantService', () => {
     tenantRepository = module.get(getRepositoryToken(Tenant));
     tenantsRepository = module.get(TenantsRepository);
     userRepository = module.get(UserRepository);
+    tenantScenarioUtil = module.get(TenantScenarioUtil);
+    dataSource = module.get(DataSource);
   });
 
   afterEach(() => {
@@ -125,11 +146,22 @@ describe('TenantService', () => {
   });
 
   describe('create', () => {
-    it('should create and save a new tenant successfully', async () => {
+    it('should create and save a new tenant successfully with global scenarios', async () => {
       const createdTenant = { ...mockTenant, ...mockCreateTenantData };
+      const mockEntityManager = {
+        create: jest.fn().mockReturnValue(createdTenant),
+        save: jest.fn().mockResolvedValue(createdTenant),
+      };
+
       tenantRepository.findOne.mockResolvedValue(null);
-      tenantRepository.create.mockReturnValue(createdTenant as any);
-      tenantRepository.save.mockResolvedValue(createdTenant);
+      // Fix: Cast to unknown first, then to the correct type
+      dataSource.transaction.mockImplementation((async (callback: any) => {
+        return await callback(mockEntityManager);
+      }) as any);
+
+      tenantScenarioUtil.assignGlobalScenariosToTenant.mockResolvedValue(
+        undefined,
+      );
 
       const result = await service.create(mockCreateTenantData);
 
@@ -139,10 +171,18 @@ describe('TenantService', () => {
           { code: mockCreateTenantData.code },
         ],
       });
-      expect(tenantRepository.create).toHaveBeenCalledWith(
+      expect(dataSource.transaction).toHaveBeenCalled();
+      expect(mockEntityManager.create).toHaveBeenCalledWith(
+        Tenant,
         mockCreateTenantData,
       );
-      expect(tenantRepository.save).toHaveBeenCalledWith(createdTenant);
+      expect(mockEntityManager.save).toHaveBeenCalledWith(
+        Tenant,
+        createdTenant,
+      );
+      expect(
+        tenantScenarioUtil.assignGlobalScenariosToTenant,
+      ).toHaveBeenCalledWith(createdTenant.id, mockEntityManager);
       expect(result).toEqual(createdTenant);
     });
 
@@ -159,6 +199,7 @@ describe('TenantService', () => {
       await expect(service.create(mockCreateTenantData)).rejects.toThrow(
         `Tenant with name "${mockCreateTenantData.name}" already exists`,
       );
+      expect(dataSource.transaction).not.toHaveBeenCalled();
     });
 
     it('should throw ConflictException when tenant code already exists', async () => {
@@ -175,16 +216,43 @@ describe('TenantService', () => {
       await expect(service.create(mockCreateTenantData)).rejects.toThrow(
         `Tenant with code "${mockCreateTenantData.code}" already exists`,
       );
+      expect(dataSource.transaction).not.toHaveBeenCalled();
     });
 
-    it('should handle repository errors during tenant creation', async () => {
-      const error = new Error('Database error');
+    it('should throw BadRequestException when transaction fails', async () => {
+      const error = new Error('Transaction failed');
+
       tenantRepository.findOne.mockResolvedValue(null);
-      tenantRepository.create.mockReturnValue(mockTenant as any);
-      tenantRepository.save.mockRejectedValue(error);
+      dataSource.transaction.mockRejectedValue(error);
 
       await expect(service.create(mockCreateTenantData)).rejects.toThrow(
-        'Database error',
+        BadRequestException,
+      );
+      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
+        'Failed to create tenant: Transaction failed',
+      );
+    });
+
+    it('should rollback transaction if global scenario assignment fails', async () => {
+      const createdTenant = { ...mockTenant, ...mockCreateTenantData };
+      const mockEntityManager = {
+        create: jest.fn().mockReturnValue(createdTenant),
+        save: jest.fn().mockResolvedValue(createdTenant),
+      };
+      const assignmentError = new Error('Failed to assign scenarios');
+
+      tenantRepository.findOne.mockResolvedValue(null);
+
+      dataSource.transaction.mockImplementation((async (callback: any) => {
+        return await callback(mockEntityManager);
+      }) as any);
+
+      tenantScenarioUtil.assignGlobalScenariosToTenant.mockRejectedValue(
+        assignmentError,
+      );
+
+      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
+        BadRequestException,
       );
     });
   });

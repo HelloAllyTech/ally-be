@@ -7,6 +7,7 @@ import {
   Body,
   Put,
   Delete,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -46,6 +47,9 @@ import { ScenarioVideoUploadResponseDto } from '../dto/scenario-video-upload-res
 import { ScenarioVideoUploadRequestDto } from '../dto/scenario-video-upload-request.dto';
 import { DeleteCoverVideoDto } from '../dto/delete-cover-video.dto';
 import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import { AddScenarioTenantDto } from '../dto/add-scenario-tenant.dto';
+import { ScenarioTenantService } from '../service/scenario-tenant.service';
+import { DeleteScenarioTenantDto } from '../dto/delete-scenario-tenant.dto';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -55,6 +59,7 @@ export class LearnController {
   constructor(
     private readonly scenarioService: ScenarioService,
     private readonly scenarioSessionService: ScenarioSessionService,
+    private readonly scenarioTenantService: ScenarioTenantService,
   ) {}
 
   @Public()
@@ -95,6 +100,12 @@ export class LearnController {
     type: String,
     description: 'Filter by scenario status(comma-separated)',
   })
+  @ApiQuery({
+    name: 'tenantId',
+    required: false,
+    type: String,
+    description: 'TenantId',
+  })
   @Get('admin-scenarios')
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIOS])
   async getAdminScenarios(
@@ -104,8 +115,9 @@ export class LearnController {
     sortBy: ScenarioSortBy = ScenarioSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('status') status?: string,
+    @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
   ) {
-    return this.scenarioService.getAdminScenarios(status, {
+    return this.scenarioService.getAdminScenarios(status, tenantId, {
       limit,
       offset,
       sortBy,
@@ -556,5 +568,35 @@ export class LearnController {
   @Delete('cover-image')
   async deleteCoverImage(@Body() deleteCoverImageDto: DeleteCoverImageDto) {
     return this.scenarioService.deleteCoverImage(deleteCoverImageDto);
+  }
+
+  @ApiOperation({ description: 'Assign scenarios to a tenant' })
+  @ApiResponse({
+    description: 'Scenarios assigned to tenant successfully',
+  })
+  @Post('scenario/tenant/:tenantId')
+  async assignScenarioToTenant(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() addScenarioTenantDto: AddScenarioTenantDto,
+  ) {
+    return this.scenarioTenantService.assignScenariosToTenant(
+      tenantId,
+      addScenarioTenantDto,
+    );
+  }
+
+  @ApiOperation({ description: 'Remove scenario from tenants' })
+  @ApiResponse({
+    description: 'Scenario access removed from tenants successfully',
+  })
+  @Delete('scenario/tenant/:tenantId')
+  async removeScenarioFromTenants(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() deleteScenarioTenantDto: DeleteScenarioTenantDto,
+  ) {
+    return this.scenarioTenantService.removeScenariosFromTenant(
+      tenantId,
+      deleteScenarioTenantDto,
+    );
   }
 }

@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { DataSource, Not, Repository } from 'typeorm';
 import { Tenant, TenantStatus } from '../entity/tenant.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { TenantsRepository } from '../repository/tenant.repository';
@@ -15,6 +15,7 @@ import { Pagination } from 'src/common/type/common.type';
 import { UpdateTenantDto } from '../dto/update-tenant.dto';
 import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
 import { UserRepository } from 'src/user/repository/user.repository';
+import { TenantScenarioUtil } from '../util/tenant-scenario.util';
 
 @Injectable()
 export class TenantService {
@@ -24,12 +25,16 @@ export class TenantService {
     @InjectRepository(Tenant)
     private readonly tenantRepository: Repository<Tenant>,
     private readonly tenantsRepository: TenantsRepository,
+    private readonly tenantScenarioUtil: TenantScenarioUtil,
     @Inject(forwardRef(() => UserRepository))
     private readonly userRepository: UserRepository,
+    private readonly dataSource: DataSource,
   ) {}
+
   async findAll(): Promise<Tenant[]> {
     return this.tenantRepository.find();
   }
+
   async create(tenantData: Partial<Tenant>): Promise<Tenant> {
     const existingTenant = await this.tenantRepository.findOne({
       where: [{ name: tenantData.name }, { code: tenantData.code }],
@@ -45,8 +50,30 @@ export class TenantService {
       );
     }
 
-    const tenant = this.tenantRepository.create(tenantData);
-    return this.tenantRepository.save(tenant);
+    try {
+      const result = await this.dataSource.transaction(
+        async (entityManager) => {
+          const tenant = entityManager.create(Tenant, tenantData);
+          const savedTenant = await entityManager.save(Tenant, tenant);
+
+          await this.tenantScenarioUtil.assignGlobalScenariosToTenant(
+            savedTenant.id,
+            entityManager,
+          );
+
+          return savedTenant;
+        },
+      );
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Failed to create tenant: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Failed to create tenant: ${error.message}`,
+      );
+    }
   }
 
   async findById(id: string): Promise<Tenant | null> {

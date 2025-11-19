@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
@@ -35,6 +39,7 @@ import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
 import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { ScenarioTenantService } from './scenario-tenant.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -49,6 +54,7 @@ export class ScenarioSessionService {
     private scenarioSessionFeedbacksRepository: Repository<ScenarioSessionFeedbacks>,
     private dataSource: DataSource,
     private aiService: AiService,
+    private scenarioTenantService: ScenarioTenantService,
     private permissionsService: PermissionsService,
     private permissionValidatorService: PermissionValidator,
     private simulationCreditsService: SimulationCreditsService,
@@ -119,11 +125,10 @@ export class ScenarioSessionService {
     counselorId: number,
     startScenarioSessionDto: StartScenarioSessionRequestDto,
   ) {
-    await this.validateStartScenarioSession(counselorId);
-
     const scenario = await this.scenarioService.getScenario(
       startScenarioSessionDto.scenarioId,
     );
+    await this.validateStartScenarioSession(counselorId, scenario.id);
 
     const sessionEvents =
       await this.sessionEventService.getSessionEventsByScenarioId(
@@ -186,7 +191,23 @@ export class ScenarioSessionService {
     };
   }
 
-  private async validateStartScenarioSession(counselorId: number) {
+  private async validateStartScenarioSession(
+    counselorId: number,
+    scenarioId: number,
+  ) {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new NotFoundException('TenantId not found');
+    }
+    const scenarioTenant = await this.scenarioTenantService.getScenarioTenant(
+      tenantId,
+      scenarioId,
+    );
+    if (!scenarioTenant) {
+      throw new BadRequestException(
+        'Scenario is not available for your organization',
+      );
+    }
     const activeScenarioSessions = await this.getScenarioSessions(
       counselorId,
       {

@@ -233,4 +233,7 @@ export class CreateScenarioDto {
   @IsOptional()
   @IsString()
   terminationEventId?: string;
+
+  @ApiProperty({ description: 'Global tenant visibility', example: false })
+  isGlobal!: boolean;
 }

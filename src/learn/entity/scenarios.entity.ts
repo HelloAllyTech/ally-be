@@ -44,4 +44,7 @@ export class Scenarios extends BaseWithoutTenantEntity {
 
   @DeleteDateColumn()
   deletedAt?: Date;
+
+  @Column({ default: false })
+  isGlobal!: boolean;
 }
