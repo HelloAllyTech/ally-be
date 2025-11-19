@@ -83,8 +83,8 @@ export class SessionEventService {
               event.sessionEvents_branchInstruction)
             : null,
         detectionType: event.sessionEvents_detectionType,
+        data: event.sessionEvents_detectionData,
         visibilityType: event.sessionEvents_visibilityType,
-        detectionData: event.sessionEvents_detectionData,
         feedbackStatus: event.scenarioEvents_feedbackStatus,
         speaker: event.sessionEvents_speaker,
         createdAt: event.sessionEvents_createdAt,
