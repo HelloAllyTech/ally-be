@@ -12,6 +12,7 @@ import {
   CombinationExpressionType,
   SessionEventDetectionType,
 } from '../enum/session-event-detection.enum';
+import { SessionEventRepository } from '../repository/session-event.repository';
 
 export const mapRequestToDbExpression = (
   node: CombinationExpressionRequestDto,
@@ -191,4 +192,106 @@ export const getUniqueCombinationExpressionEventIdList = (
       );
     }) ?? [];
   return Array.from(new Set(allIds));
+};
+
+/**
+ * Extract all event IDs referenced in a combination expression tree
+ */
+export const extractEventIds = (
+  expr: CombinationExpressionDto | undefined,
+): string[] => {
+  const ids: string[] = [];
+
+  const traverse = (node: CombinationExpressionDto | undefined) => {
+    if (!node) return;
+
+    if (node.type === CombinationExpressionType.IDENTIFIER && node.id) {
+      ids.push(node.id);
+    }
+
+    if (node.left) traverse(node.left);
+    if (node.right) traverse(node.right);
+    if (node.operand) traverse(node.operand);
+  };
+
+  traverse(expr);
+  return ids;
+};
+
+/**
+ * Validate that a combination event does not create circular dependencies
+ * Uses depth-first search with recursion stack tracking to detect cycles
+ *
+ * @param eventId - The ID of the event being created/updated
+ * @param expression - The combination expression to validate
+ * @param sessionEventRepository - Repository to fetch referenced events
+ * @param maxDepth - Maximum allowed dependency depth (default: 10)
+ * @throws BadRequestException if a cycle is detected or max depth is exceeded
+ */
+export const validateNoCycles = async (
+  eventId: string,
+  expression: CombinationExpressionDto | undefined,
+  sessionEventRepository: SessionEventRepository,
+  maxDepth: number = 20,
+): Promise<void> => {
+  if (!expression) return;
+
+  const visited = new Set<string>();
+  const recursionStack = new Set<string>();
+
+  const checkCycle = async (
+    currentEventId: string,
+    expr: CombinationExpressionDto | undefined,
+    depth: number,
+  ): Promise<boolean> => {
+    // Solution 2: Depth limit protection
+    if (depth > maxDepth) {
+      throw new BadRequestException(
+        `Maximum dependency depth (${maxDepth}) exceeded. This may indicate a circular dependency or overly complex event structure.`,
+      );
+    }
+
+    if (!expr) return false;
+
+    // Mark current event as being processed in this recursion path
+    recursionStack.add(currentEventId);
+    visited.add(currentEventId);
+
+    // Extract all referenced event IDs from the expression
+    const referencedIds = extractEventIds(expr);
+
+    for (const refId of referencedIds) {
+      // Solution 1: Cycle detection - if we encounter an event already in the recursion stack, we have a cycle
+      if (recursionStack.has(refId)) {
+        throw new BadRequestException(
+          `Circular dependency detected: Event '${currentEventId}' references '${refId}' which creates a cycle. Events cannot reference each other in a circular manner.`,
+        );
+      }
+
+      // If not visited, recursively check this referenced event
+      if (!visited.has(refId)) {
+        const referencedEvent = await sessionEventRepository.findOne({
+          where: { id: refId },
+        });
+
+        // Only check combination events for further dependencies
+        if (
+          referencedEvent?.detectionType ===
+          SessionEventDetectionType.COMBINATION
+        ) {
+          const cycleFound = await checkCycle(
+            refId,
+            referencedEvent.detectionData?.expression,
+            depth + 1,
+          );
+          if (cycleFound) return true;
+        }
+      }
+    }
+
+    // Remove from recursion stack after processing all dependencies
+    recursionStack.delete(currentEventId);
+    return false;
+  };
+  await checkCycle(eventId, expression, 0);
 };

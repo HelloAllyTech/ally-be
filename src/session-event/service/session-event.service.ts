@@ -11,11 +11,13 @@ import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { SessionEventRepository } from '../repository/session-event.repository';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
+import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
 import {
   mapCreateEventDtoToDbEvent,
   mapUpdateEventDtoToDbEvent,
   mapDbExpressionToResponse,
   getUniqueCombinationExpressionEventIdList,
+  validateNoCycles,
 } from '../util/session-event.util';
 import {
   CombinationExpressionDto,
@@ -45,6 +47,18 @@ export class SessionEventService {
       id: v4(),
       ...(mapCreateEventDtoToDbEvent(event) || {}),
     }));
+
+    // Validate no circular dependencies for COMBINATION events
+    for (const event of events) {
+      if (event.detectionType === SessionEventDetectionType.COMBINATION) {
+        await validateNoCycles(
+          event.id,
+          event.detectionData?.expression,
+          this.sessionEventRepository,
+        );
+      }
+    }
+
     return this.sessionEventRepository.createSessionEvents(
       events as CreateSessionEventDto[],
     );
@@ -99,7 +113,21 @@ export class SessionEventService {
       throw new NotFoundException('Session Event not found');
     }
 
-    const formattedEventDto = mapUpdateEventDtoToDbEvent(updateEventDto) || {};
+    const formattedEventDto =
+      mapUpdateEventDtoToDbEvent({
+        ...updateEventDto,
+        detectionType: event.detectionType,
+      }) || {};
+
+    // Validate no circular dependencies if updating a COMBINATION event
+    if (event.detectionType === SessionEventDetectionType.COMBINATION) {
+      await validateNoCycles(
+        id,
+        formattedEventDto?.detectionData?.expression,
+        this.sessionEventRepository,
+      );
+    }
+
     const updated = await this.sessionEventRepository.update(
       id,
       formattedEventDto as Partial<SessionEvents>,
