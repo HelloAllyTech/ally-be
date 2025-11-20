@@ -1,6 +1,7 @@
 import {
   DataSource,
   DeepPartial,
+  In,
   Repository,
   SelectQueryBuilder,
 } from 'typeorm';
@@ -38,6 +39,10 @@ export class SessionEventRepository extends Repository<SessionEvents> {
       }),
     );
     return this.save(events);
+  }
+
+  async findByIds(ids: string[]): Promise<SessionEvents[]> {
+    return this.find({ where: { id: In(ids) } });
   }
 
   async getAllSessionEvents(

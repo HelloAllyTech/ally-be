@@ -12,17 +12,17 @@ import { Pagination } from 'src/common/type/common.type';
 import { SessionEventRepository } from '../repository/session-event.repository';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 import {
+  mapCreateEventDtoToDbEvent,
+  mapUpdateEventDtoToDbEvent,
   mapDbExpressionToResponse,
-  mapRequestToDbExpression,
+  getUniqueCombinationExpressionEventIdList,
 } from '../util/session-event.util';
 import {
   CombinationExpressionDto,
-  CombinationExpressionRequestDto,
   CreateSessionEventDto,
   SessionEventResponseDto,
   UpdateSessionEventDto,
 } from '../dto/session-event.dto';
-
 @Injectable()
 export class SessionEventService {
   constructor(
@@ -33,23 +33,18 @@ export class SessionEventService {
   async createSessionEvents(
     createEventDtos: CreateSessionEventDto[],
   ): Promise<SessionEvents[]> {
-    const events = createEventDtos.map((event) => {
-      const mappedDetectionData = event.detectionData
-        ? {
-            ...event.detectionData,
-            expression: mapRequestToDbExpression(
-              event?.detectionData
-                ?.expression as CombinationExpressionRequestDto,
-            ),
-          }
-        : undefined;
-
-      return {
-        id: v4(),
-        ...event,
-        detectionData: mappedDetectionData,
-      };
-    });
+    const combinationExpressionEventIds =
+      getUniqueCombinationExpressionEventIdList(createEventDtos);
+    const eventDetails = await this.sessionEventRepository.findByIds(
+      combinationExpressionEventIds,
+    );
+    if (eventDetails?.length !== combinationExpressionEventIds.length) {
+      throw new BadRequestException('Invalid combination expression event IDs');
+    }
+    const events = createEventDtos.map((event) => ({
+      id: v4(),
+      ...(mapCreateEventDtoToDbEvent(event) || {}),
+    }));
     return this.sessionEventRepository.createSessionEvents(
       events as CreateSessionEventDto[],
     );
@@ -95,8 +90,6 @@ export class SessionEventService {
     return sessionEvents;
   }
 
-  // TODO: updateEventDto to not pass directly and select the necessary values only
-  // passing something will be saved directly to DB(even if it is not expected but is present in DB)
   async updateSessionEvent(
     id: string,
     updateEventDto: UpdateSessionEventDto,
@@ -105,20 +98,8 @@ export class SessionEventService {
     if (!event) {
       throw new NotFoundException('Session Event not found');
     }
-    const mappedDetectionData = updateEventDto.detectionData
-      ? {
-          ...updateEventDto.detectionData,
-          expression: mapRequestToDbExpression(
-            updateEventDto?.detectionData
-              ?.expression as CombinationExpressionRequestDto,
-          ),
-        }
-      : undefined;
 
-    const formattedEventDto = {
-      ...updateEventDto,
-      detectionData: mappedDetectionData,
-    };
+    const formattedEventDto = mapUpdateEventDtoToDbEvent(updateEventDto) || {};
     const updated = await this.sessionEventRepository.update(
       id,
       formattedEventDto as Partial<SessionEvents>,
