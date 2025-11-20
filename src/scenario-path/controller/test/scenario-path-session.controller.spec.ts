@@ -12,7 +12,8 @@ describe('ScenarioPathSessionController', () => {
   let service: jest.Mocked<ScenarioPathSessionService>;
 
   const mockScenarioPathSessionService = {
-    getScenarioPathSessions: jest.fn(),
+    getUserScenarioPaths: jest.fn(),
+    getUserScenarioPathItems: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -59,27 +60,59 @@ describe('ScenarioPathSessionController', () => {
     };
 
     it('should return scenario path sessions without query parameters', async () => {
-      service.getScenarioPathSessions.mockResolvedValue(mockResponse);
+      service.getUserScenarioPaths.mockResolvedValue(mockResponse);
 
-      const result = await controller.getScenarioPathSessions();
+      const result = await controller.getUserScenarioPaths();
 
       expect(result).toEqual(mockResponse);
-      expect(service.getScenarioPathSessions).toHaveBeenCalledWith({
+      expect(service.getUserScenarioPaths).toHaveBeenCalledWith({
         offset: undefined,
         limit: undefined,
       });
     });
 
     it('should return scenario path sessions with query parameters', async () => {
-      service.getScenarioPathSessions.mockResolvedValue(mockResponse);
+      service.getUserScenarioPaths.mockResolvedValue(mockResponse);
 
-      const result = await controller.getScenarioPathSessions(10, 20);
+      const result = await controller.getUserScenarioPaths(10, 20);
 
       expect(result).toEqual(mockResponse);
-      expect(service.getScenarioPathSessions).toHaveBeenCalledWith({
+      expect(service.getUserScenarioPaths).toHaveBeenCalledWith({
         offset: 10,
         limit: 20,
       });
+    });
+  });
+
+  describe('getUserScenarioPathItems', () => {
+    const mockResponse = {
+      id: 'path-1',
+      title: 'Path 1',
+      description: 'Description 1',
+      coverImageUrl: 'https://example.com/image.jpg',
+      status: 'ACTIVE' as any,
+      isGlobal: false,
+      completedScenarios: 2,
+      completedAt: new Date(),
+      scenarios: [
+        {
+          id: 'item-1',
+          scenarioId: 1,
+          order: 1,
+          title: 'Scenario 1',
+          sessionId: 'session-item-1',
+          status: 'COMPLETED' as any,
+        },
+      ],
+    };
+
+    it('should return scenario path items by id', async () => {
+      service.getUserScenarioPathItems.mockResolvedValue(mockResponse);
+
+      const result = await controller.getUserScenarioPathItems('path-1');
+
+      expect(result).toEqual(mockResponse);
+      expect(service.getUserScenarioPathItems).toHaveBeenCalledWith('path-1');
     });
   });
 });

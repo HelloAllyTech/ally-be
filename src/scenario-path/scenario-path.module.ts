@@ -6,6 +6,7 @@ import { ScenarioPathItemRepository } from './repository/scenario-path-item.repo
 import { LearnModule } from 'src/learn/learn.module';
 import { ScenarioPathSessionService } from './service/scenario-path-session.service';
 import { ScenarioPathSessionRepository } from './repository/scenario-path-session.repository';
+import { ScenarioPathSessionItemRepository } from './repository/scenario-path-session-item.repository';
 import { ScenarioPathSharedService } from './service/scenario-path-shared.service';
 import { ScenarioPathSessionController } from './controller/scenario-path-session.controller';
 
@@ -19,6 +20,7 @@ import { ScenarioPathSessionController } from './controller/scenario-path-sessio
     ScenarioPathItemRepository,
     ScenarioPathSessionService,
     ScenarioPathSessionRepository,
+    ScenarioPathSessionItemRepository,
   ],
 })
 export class ScenarioPathModule {}

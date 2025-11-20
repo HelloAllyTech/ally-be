@@ -5,6 +5,9 @@ import { ScenarioPathSessionRepository } from '../../repository/scenario-path-se
 import { ScenarioPathSharedService } from '../scenario-path-shared.service';
 import { ScenarioPathSession } from '../../entity/scenario-path-session.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { ScenarioPathSessionItemRepository } from '../../repository/scenario-path-session-item.repository';
+import { ScenarioPathSessionItem } from '../../entity/scenario-path-session-item.entity';
+import { SessionItemStatus } from '../../type/scenario-path-session-items.type';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -16,6 +19,7 @@ describe('ScenarioPathSessionService', () => {
   let service: ScenarioPathSessionService;
   let repository: jest.Mocked<ScenarioPathSessionRepository>;
   let scenarioPathSharedService: jest.Mocked<ScenarioPathSharedService>;
+  let scenarioPathSessionItemRepository: jest.Mocked<ScenarioPathSessionItemRepository>;
 
   const mockRepository = {
     findOne: jest.fn(),
@@ -23,6 +27,11 @@ describe('ScenarioPathSessionService', () => {
 
   const mockScenarioPathSharedService = {
     getScenarioPathsWithSession: jest.fn(),
+    getScenarioPathWithScenarios: jest.fn(),
+  };
+
+  const mockScenarioPathSessionItemRepository = {
+    find: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -37,6 +46,10 @@ describe('ScenarioPathSessionService', () => {
           provide: ScenarioPathSharedService,
           useValue: mockScenarioPathSharedService,
         },
+        {
+          provide: ScenarioPathSessionItemRepository,
+          useValue: mockScenarioPathSessionItemRepository,
+        },
       ],
     }).compile();
 
@@ -45,6 +58,9 @@ describe('ScenarioPathSessionService', () => {
     );
     repository = module.get(ScenarioPathSessionRepository);
     scenarioPathSharedService = module.get(ScenarioPathSharedService);
+    scenarioPathSessionItemRepository = module.get(
+      ScenarioPathSessionItemRepository,
+    );
   });
 
   afterEach(() => {
@@ -52,7 +68,7 @@ describe('ScenarioPathSessionService', () => {
     (ExecutionManager.getUserId as jest.Mock).mockReturnValue(undefined);
   });
 
-  describe('getScenarioPathSessions', () => {
+  describe('getUserScenarioPaths', () => {
     const mockScenarioPathsWithSession = {
       data: [
         {
@@ -84,7 +100,7 @@ describe('ScenarioPathSessionService', () => {
         mockScenarioPathsWithSession,
       );
 
-      const result = await service.getScenarioPathSessions({
+      const result = await service.getUserScenarioPaths({
         offset: 0,
         limit: 10,
       });
@@ -122,7 +138,7 @@ describe('ScenarioPathSessionService', () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
 
       await expect(
-        service.getScenarioPathSessions({ offset: 0, limit: 10 }),
+        service.getUserScenarioPaths({ offset: 0, limit: 10 }),
       ).rejects.toThrow(UnauthorizedException);
       expect(
         scenarioPathSharedService.getScenarioPathsWithSession,
@@ -147,7 +163,7 @@ describe('ScenarioPathSessionService', () => {
         count: 1,
       } as any);
 
-      const result = await service.getScenarioPathSessions();
+      const result = await service.getUserScenarioPaths();
 
       expect(result.data[0].completedScenarios).toBeUndefined();
     });
@@ -181,6 +197,129 @@ describe('ScenarioPathSessionService', () => {
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { scenarioPathId: 'non-existent-id' },
       });
+    });
+  });
+
+  describe('getUserScenarioPathItems', () => {
+    const mockScenarioPathWithScenarios = {
+      id: 'path-1',
+      title: 'Path 1',
+      description: 'Description 1',
+      coverImageUrl: 'https://example.com/image.jpg',
+      status: 'ACTIVE' as any,
+      isGlobal: false,
+      scenarios: [
+        {
+          id: 'item-1',
+          scenarioId: 1,
+          order: 1,
+          title: 'Scenario 1',
+        },
+        {
+          id: 'item-2',
+          scenarioId: 2,
+          order: 2,
+          title: 'Scenario 2',
+        },
+      ],
+    };
+
+    const mockScenarioPathSession: ScenarioPathSession = {
+      id: 'session-1',
+      scenarioPathId: 'path-1',
+      userId: 123,
+      completedScenarios: 1,
+      completedAt: new Date(),
+    } as ScenarioPathSession;
+
+    const mockSessionItems: ScenarioPathSessionItem[] = [
+      {
+        id: 'session-item-1',
+        scenarioPathSessionId: 'session-1',
+        scenarioPathItemId: 'item-1',
+        userId: 123,
+        status: SessionItemStatus.COMPLETED,
+      } as ScenarioPathSessionItem,
+    ];
+
+    it('should return scenario path items with session data when session exists', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      scenarioPathSharedService.getScenarioPathWithScenarios.mockResolvedValue(
+        mockScenarioPathWithScenarios,
+      );
+      repository.findOne.mockResolvedValue(mockScenarioPathSession);
+      scenarioPathSessionItemRepository.find.mockResolvedValue(
+        mockSessionItems,
+      );
+
+      const result = await service.getUserScenarioPathItems('path-1');
+
+      expect(result).toEqual({
+        ...mockScenarioPathWithScenarios,
+        completedScenarios: 1,
+        completedAt: mockScenarioPathSession.completedAt,
+        scenarios: [
+          {
+            ...mockScenarioPathWithScenarios.scenarios[0],
+            sessionId: 'session-item-1',
+            status: SessionItemStatus.COMPLETED,
+          },
+          {
+            ...mockScenarioPathWithScenarios.scenarios[1],
+            sessionId: undefined,
+            status: SessionItemStatus.LOCKED,
+          },
+        ],
+      });
+      expect(
+        scenarioPathSharedService.getScenarioPathWithScenarios,
+      ).toHaveBeenCalledWith('path-1');
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { scenarioPathId: 'path-1', userId: 123 },
+      });
+      expect(scenarioPathSessionItemRepository.find).toHaveBeenCalledWith({
+        where: { scenarioPathSessionId: 'session-1' },
+      });
+    });
+
+    it('should return scenario path items without session when session does not exist', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      scenarioPathSharedService.getScenarioPathWithScenarios.mockResolvedValue(
+        mockScenarioPathWithScenarios,
+      );
+      repository.findOne.mockResolvedValue(null);
+
+      const result = await service.getUserScenarioPathItems('path-1');
+
+      expect(result).toEqual({
+        ...mockScenarioPathWithScenarios,
+        completedScenarios: 0,
+        completedAt: null,
+        scenarios: [
+          {
+            ...mockScenarioPathWithScenarios.scenarios[0],
+            sessionId: null,
+            status: SessionItemStatus.UNLOCKED,
+          },
+          {
+            ...mockScenarioPathWithScenarios.scenarios[1],
+            sessionId: null,
+            status: SessionItemStatus.LOCKED,
+          },
+        ],
+      });
+      expect(scenarioPathSessionItemRepository.find).not.toHaveBeenCalled();
+    });
+
+    it('should throw UnauthorizedException when user is not authenticated', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
+
+      await expect(service.getUserScenarioPathItems('path-1')).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(
+        scenarioPathSharedService.getScenarioPathWithScenarios,
+      ).not.toHaveBeenCalled();
     });
   });
 });

@@ -23,7 +23,7 @@ export class ScenarioPathSessionItem extends BaseWithoutTenantEntity {
 
   @Column({
     enum: SessionItemStatus,
-    default: SessionItemStatus.IN_PROGRESS,
+    default: SessionItemStatus.UNLOCKED,
   })
   status!: SessionItemStatus;
 

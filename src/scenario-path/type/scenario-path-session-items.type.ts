@@ -1,7 +1,7 @@
 export enum SessionItemStatus {
-  IN_PROGRESS = 'IN_PROGRESS',
-  COMPLETED = 'COMPLETED',
   LOCKED = 'LOCKED',
+  UNLOCKED = 'UNLOCKED',
+  COMPLETED = 'COMPLETED',
 }
 
 export interface ScenarioPathSessionFilterOptions {

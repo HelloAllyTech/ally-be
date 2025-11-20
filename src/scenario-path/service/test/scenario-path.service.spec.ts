@@ -15,6 +15,7 @@ import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioPathSessionService } from '../scenario-path-session.service';
 import { UpdateScenarioPathDto } from '../../dto/update-scenario-path.dto';
+import { ScenarioPathSharedService } from '../scenario-path-shared.service';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -31,6 +32,7 @@ describe('ScenarioPathService', () => {
   let scenarioPathRepository: jest.Mocked<ScenarioPathRepository>;
   let scenarioPathItemRepository: jest.Mocked<ScenarioPathItemRepository>;
   let scenarioPathSessionService: jest.Mocked<ScenarioPathSessionService>;
+  let scenarioPathSharedService: jest.Mocked<ScenarioPathSharedService>;
   let mockEntityManager: any;
   let mockScenarioPathRepo: jest.Mocked<Repository<ScenarioPath>>;
   let mockScenarioPathItemRepo: jest.Mocked<Repository<ScenarioPathItem>>;
@@ -93,6 +95,10 @@ describe('ScenarioPathService', () => {
       getScenarioPathSessionByScenarioPathId: jest.fn(),
     };
 
+    const mockScenarioPathSharedService = {
+      getScenarioPathWithScenarios: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioPathService,
@@ -116,6 +122,10 @@ describe('ScenarioPathService', () => {
           provide: ScenarioPathSessionService,
           useValue: mockScenarioPathSessionService,
         },
+        {
+          provide: ScenarioPathSharedService,
+          useValue: mockScenarioPathSharedService,
+        },
       ],
     }).compile();
 
@@ -125,6 +135,7 @@ describe('ScenarioPathService', () => {
     scenarioPathRepository = module.get(ScenarioPathRepository);
     scenarioPathItemRepository = module.get(ScenarioPathItemRepository);
     scenarioPathSessionService = module.get(ScenarioPathSessionService);
+    scenarioPathSharedService = module.get(ScenarioPathSharedService);
   });
 
   afterEach(() => {
@@ -693,26 +704,7 @@ describe('ScenarioPathService', () => {
     ];
 
     it('should return scenario path with scenarios by id', async () => {
-      scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
-      scenarioPathItemRepository.find.mockResolvedValue(mockScenarioPathItems);
-      scenarioUtil.getScenarioByIds.mockResolvedValue([
-        {
-          id: 1,
-          title: 'Scenario 1',
-          description: 'Desc 1',
-          coverImageUrl: 'url1',
-        } as Scenarios,
-        {
-          id: 2,
-          title: 'Scenario 2',
-          description: 'Desc 2',
-          coverImageUrl: 'url2',
-        } as Scenarios,
-      ]);
-
-      const result = await service.getScenarioPathById('path-1');
-
-      expect(result).toEqual({
+      const mockResponse = {
         id: mockScenarioPath.id,
         title: mockScenarioPath.title,
         description: mockScenarioPath.description,
@@ -721,6 +713,7 @@ describe('ScenarioPathService', () => {
         isGlobal: mockScenarioPath.isGlobal,
         scenarios: [
           {
+            id: mockScenarioPathItems[0].id,
             scenarioId: mockScenarioPathItems[0].scenarioId,
             order: mockScenarioPathItems[0].order,
             messageTitle: mockScenarioPathItems[0].messageTitle,
@@ -731,6 +724,7 @@ describe('ScenarioPathService', () => {
             coverImageUrl: 'url1',
           },
           {
+            id: mockScenarioPathItems[1].id,
             scenarioId: mockScenarioPathItems[1].scenarioId,
             order: mockScenarioPathItems[1].order,
             messageTitle: mockScenarioPathItems[1].messageTitle,
@@ -741,23 +735,31 @@ describe('ScenarioPathService', () => {
             coverImageUrl: 'url2',
           },
         ],
-      });
-      expect(scenarioPathRepository.findOne).toHaveBeenCalledWith({
-        where: { id: 'path-1' },
-      });
-      expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
-        where: { scenarioPathId: 'path-1' },
-      });
-      expect(scenarioUtil.getScenarioByIds).toHaveBeenCalledWith([1, 2]);
+      };
+
+      scenarioPathSharedService.getScenarioPathWithScenarios.mockResolvedValue(
+        mockResponse,
+      );
+
+      const result = await service.getScenarioPathById('path-1');
+
+      expect(result).toEqual(mockResponse);
+      expect(
+        scenarioPathSharedService.getScenarioPathWithScenarios,
+      ).toHaveBeenCalledWith('path-1');
     });
 
     it('should throw NotFoundException when scenario path not found', async () => {
-      scenarioPathRepository.findOne.mockResolvedValue(null);
+      scenarioPathSharedService.getScenarioPathWithScenarios.mockRejectedValue(
+        new NotFoundException('Scenario path not found'),
+      );
 
       await expect(
         service.getScenarioPathById('non-existent-id'),
       ).rejects.toThrow(NotFoundException);
-      expect(scenarioPathItemRepository.find).not.toHaveBeenCalled();
+      expect(
+        scenarioPathSharedService.getScenarioPathWithScenarios,
+      ).toHaveBeenCalledWith('non-existent-id');
     });
   });
 
