@@ -144,6 +144,7 @@ describe('ScenarioPathController', () => {
       isGlobal: false,
       scenarios: [
         {
+          id: 'item-1',
           scenarioId: 1,
           order: 1,
           messageTitle: 'Message 1',

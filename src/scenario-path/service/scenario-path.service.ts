@@ -31,6 +31,7 @@ import {
 } from '../dto/update-scenario-path.dto';
 import { ScenarioPathSessionService } from './scenario-path-session.service';
 import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
+import { ScenarioPathSharedService } from './scenario-path-shared.service';
 
 @Injectable()
 export class ScenarioPathService {
@@ -42,6 +43,7 @@ export class ScenarioPathService {
     private readonly scenarioPathRepository: ScenarioPathRepository,
     private readonly scenarioPathItemRepository: ScenarioPathItemRepository,
     private readonly scenarioPathSessionService: ScenarioPathSessionService,
+    private readonly scenarioPathSharedService: ScenarioPathSharedService,
   ) {}
 
   async getScenarioPaths(
@@ -66,46 +68,7 @@ export class ScenarioPathService {
   }
 
   async getScenarioPathById(id: string): Promise<GetScenarioPathResponseDto> {
-    const result = await this.scenarioPathRepository.findOne({ where: { id } });
-    if (!result) {
-      this.logger.error(`Scenario path not found for id: ${id}`);
-      throw new NotFoundException('Scenario path not found');
-    }
-    const scenarioPathItems = await this.scenarioPathItemRepository.find({
-      where: { scenarioPathId: id },
-    });
-
-    const scenarioIds = scenarioPathItems.map((item) => item.scenarioId);
-
-    const scenariosData =
-      await this.scenarioSharedService.getScenarioByIds(scenarioIds);
-    const scenariosDataMap = new Map(
-      scenariosData.map((scenario) => [scenario.id, scenario]),
-    );
-
-    const scenarios = scenarioPathItems.map((item) => {
-      const scenarioData = scenariosDataMap.get(item.scenarioId);
-      return {
-        scenarioId: item.scenarioId,
-        order: item.order,
-        messageTitle: item.messageTitle,
-        messageContent: item.messageContent,
-        minimumScore: item.minimumScore ?? 0,
-        title: scenarioData?.title,
-        description: scenarioData?.description,
-        coverImageUrl: scenarioData?.coverImageUrl,
-      };
-    });
-
-    return {
-      id: result.id,
-      title: result.title,
-      description: result.description,
-      coverImageUrl: result.coverImageUrl,
-      status: result.status,
-      isGlobal: result.isGlobal,
-      scenarios,
-    };
+    return this.scenarioPathSharedService.getScenarioPathWithScenarios(id);
   }
 
   async createScenarioPath(

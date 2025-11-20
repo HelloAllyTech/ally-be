@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -41,13 +41,20 @@ export class ScenarioPathSessionController {
   })
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
   @Get('/scenario-paths')
-  async getScenarioPathSessions(
+  async getUserScenarioPaths(
     @Query('offset') offset?: number,
     @Query('limit') limit?: number,
   ): Promise<ScenarioPathSessionsResponseDto> {
-    return this.scenarioPathSessionService.getScenarioPathSessions({
+    return this.scenarioPathSessionService.getUserScenarioPaths({
       offset,
       limit,
     });
+  }
+
+  @ApiOperation({ summary: 'Get scenario path session by scenario path id' })
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
+  @Get('/scenario-paths/:id')
+  async getUserScenarioPathItems(@Param('id', ParseUUIDPipe) id: string) {
+    return this.scenarioPathSessionService.getUserScenarioPathItems(id);
   }
 }

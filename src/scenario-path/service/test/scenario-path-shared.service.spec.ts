@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
 import { ScenarioPathSharedService } from '../scenario-path-shared.service';
 import { ScenarioPathRepository } from '../../repository/scenario-path.repository';
 import {
@@ -8,13 +9,27 @@ import {
 } from '../../type/scenario-paths.type';
 import { ScenarioPath } from '../../entity/scenario-path.entity';
 import { ScenarioPathSession } from '../../entity/scenario-path-session.entity';
+import { ScenarioPathItemRepository } from '../../repository/scenario-path-item.repository';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
+import { ScenarioPathItem } from '../../entity/scenario-path-item.entity';
 
 describe('ScenarioPathSharedService', () => {
   let service: ScenarioPathSharedService;
   let scenarioPathRepository: jest.Mocked<ScenarioPathRepository>;
+  let scenarioPathItemRepository: jest.Mocked<ScenarioPathItemRepository>;
+  let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
 
   const mockScenarioPathRepository = {
     getAllScenarioPathsWithSession: jest.fn(),
+    findOne: jest.fn(),
+  };
+
+  const mockScenarioPathItemRepository = {
+    find: jest.fn(),
+  };
+
+  const mockScenarioSharedService = {
+    getScenarioByIds: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -25,11 +40,21 @@ describe('ScenarioPathSharedService', () => {
           provide: ScenarioPathRepository,
           useValue: mockScenarioPathRepository,
         },
+        {
+          provide: ScenarioPathItemRepository,
+          useValue: mockScenarioPathItemRepository,
+        },
+        {
+          provide: ScenarioSharedService,
+          useValue: mockScenarioSharedService,
+        },
       ],
     }).compile();
 
     service = module.get<ScenarioPathSharedService>(ScenarioPathSharedService);
     scenarioPathRepository = module.get(ScenarioPathRepository);
+    scenarioPathItemRepository = module.get(ScenarioPathItemRepository);
+    scenarioSharedService = module.get(ScenarioSharedService);
   });
 
   afterEach(() => {
@@ -103,6 +128,126 @@ describe('ScenarioPathSharedService', () => {
       expect(
         scenarioPathRepository.getAllScenarioPathsWithSession,
       ).toHaveBeenCalledWith(filters);
+    });
+  });
+
+  describe('getScenarioPathWithScenarios', () => {
+    const mockScenarioPath: ScenarioPath = {
+      id: 'path-1',
+      title: 'Path 1',
+      description: 'Description 1',
+      coverImageUrl: 'https://example.com/image.jpg',
+      status: ScenarioPathStatus.ACTIVE,
+      isGlobal: false,
+    } as ScenarioPath;
+
+    const mockScenarioPathItems: ScenarioPathItem[] = [
+      {
+        id: 'item-1',
+        scenarioPathId: 'path-1',
+        scenarioId: 1,
+        order: 1,
+        messageTitle: 'Message 1',
+        messageContent: 'Content 1',
+        minimumScore: 80,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as ScenarioPathItem,
+      {
+        id: 'item-2',
+        scenarioPathId: 'path-1',
+        scenarioId: 2,
+        order: 2,
+        messageTitle: 'Message 2',
+        minimumScore: undefined,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as ScenarioPathItem,
+    ];
+
+    const mockScenarios = [
+      {
+        id: 1,
+        title: 'Scenario 1',
+        description: 'Description 1',
+        coverImageUrl: 'https://example.com/scenario1.jpg',
+        coverVideoUrl: 'https://example.com/scenario1.mp4',
+        status: 'ACTIVE' as any,
+        isGlobal: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 2,
+        title: 'Scenario 2',
+        description: 'Description 2',
+        coverImageUrl: 'https://example.com/scenario2.jpg',
+        status: 'ACTIVE' as any,
+        isGlobal: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ] as any;
+
+    it('should return scenario path with scenarios', async () => {
+      scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
+      scenarioPathItemRepository.find.mockResolvedValue(mockScenarioPathItems);
+      scenarioSharedService.getScenarioByIds.mockResolvedValue(mockScenarios);
+
+      const result = await service.getScenarioPathWithScenarios('path-1');
+
+      expect(result).toEqual({
+        id: 'path-1',
+        title: 'Path 1',
+        description: 'Description 1',
+        coverImageUrl: 'https://example.com/image.jpg',
+        status: ScenarioPathStatus.ACTIVE,
+        isGlobal: false,
+        scenarios: [
+          {
+            id: 'item-1',
+            scenarioId: 1,
+            order: 1,
+            messageTitle: 'Message 1',
+            messageContent: 'Content 1',
+            minimumScore: 80,
+            title: 'Scenario 1',
+            description: 'Description 1',
+            coverImageUrl: 'https://example.com/scenario1.jpg',
+            coverVideoUrl: 'https://example.com/scenario1.mp4',
+          },
+          {
+            id: 'item-2',
+            scenarioId: 2,
+            order: 2,
+            messageTitle: 'Message 2',
+            messageContent: undefined,
+            minimumScore: 0,
+            title: 'Scenario 2',
+            description: 'Description 2',
+            coverImageUrl: 'https://example.com/scenario2.jpg',
+            coverVideoUrl: undefined,
+          },
+        ],
+      });
+      expect(scenarioPathRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'path-1' },
+      });
+      expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
+        where: { scenarioPathId: 'path-1' },
+      });
+      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
+        1, 2,
+      ]);
+    });
+
+    it('should throw NotFoundException when scenario path not found', async () => {
+      scenarioPathRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.getScenarioPathWithScenarios('non-existent-id'),
+      ).rejects.toThrow(NotFoundException);
+      expect(scenarioPathItemRepository.find).not.toHaveBeenCalled();
     });
   });
 });

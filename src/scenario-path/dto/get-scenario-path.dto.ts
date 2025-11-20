@@ -2,6 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 import { ScenarioPathStatus } from '../type/scenario-paths.type';
 
 export class GetScenarioPathItemDto {
+  @ApiProperty({ description: 'ID of the scenario path item' })
+  id!: string;
+
   @ApiProperty({ description: 'ID of the scenario' })
   scenarioId!: number;
 
@@ -25,6 +28,9 @@ export class GetScenarioPathItemDto {
 
   @ApiProperty({ description: 'Cover image URL of the scenario' })
   coverImageUrl?: string;
+
+  @ApiProperty({ description: 'Cover video URL of the scenario' })
+  coverVideoUrl?: string;
 }
 
 export class GetScenarioPathResponseDto {

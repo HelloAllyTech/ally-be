@@ -5,7 +5,7 @@ export class AddScenarioPathTables1763619821855 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TABLE "scenario_path_session_items" ("createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "id" uuid NOT NULL DEFAULT uuid_generate_v4(), "scenarioPathSessionId" uuid NOT NULL, "userId" integer NOT NULL, "scenarioPathItemId" uuid NOT NULL, "status" character varying NOT NULL DEFAULT 'IN_PROGRESS', "duration" double precision, "deletedAt" TIMESTAMP, CONSTRAINT "PK_a81cafd4bfff099319500334ff7" PRIMARY KEY ("id"))`,
+      `CREATE TABLE "scenario_path_session_items" ("createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "id" uuid NOT NULL DEFAULT uuid_generate_v4(), "scenarioPathSessionId" uuid NOT NULL, "userId" integer NOT NULL, "scenarioPathItemId" uuid NOT NULL, "status" character varying NOT NULL DEFAULT 'UNLOCKED', "duration" double precision, "deletedAt" TIMESTAMP, CONSTRAINT "PK_a81cafd4bfff099319500334ff7" PRIMARY KEY ("id"))`,
     );
     await queryRunner.query(
       `CREATE TABLE "scenario_path_sessions" ("createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "id" uuid NOT NULL DEFAULT uuid_generate_v4(), "scenarioPathId" uuid NOT NULL, "userId" integer NOT NULL, "startedAt" TIMESTAMP, "completedAt" TIMESTAMP, "completedScenarios" integer NOT NULL DEFAULT '0', "deletedAt" TIMESTAMP, CONSTRAINT "PK_e30f6dfaf2c221279ab886f13ab" PRIMARY KEY ("id"))`,
