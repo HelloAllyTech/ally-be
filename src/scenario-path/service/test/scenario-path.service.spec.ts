@@ -81,7 +81,7 @@ describe('ScenarioPathService', () => {
     };
 
     const mockScenarioPathRepository = {
-      findAll: jest.fn(),
+      getAllScenarioPaths: jest.fn(),
       findOne: jest.fn(),
     };
 
@@ -153,12 +153,16 @@ describe('ScenarioPathService', () => {
         data: mockScenarioPaths,
         count: 2,
       };
-      scenarioPathRepository.findAll.mockResolvedValue(expectedResult);
+      scenarioPathRepository.getAllScenarioPaths.mockResolvedValue(
+        expectedResult,
+      );
 
       const result = await service.getScenarioPaths();
 
       expect(result).toEqual(expectedResult);
-      expect(scenarioPathRepository.findAll).toHaveBeenCalledWith(undefined);
+      expect(scenarioPathRepository.getAllScenarioPaths).toHaveBeenCalledWith(
+        undefined,
+      );
     });
 
     it('should return scenario paths with status filter', async () => {
@@ -169,12 +173,16 @@ describe('ScenarioPathService', () => {
         data: [mockScenarioPaths[0]],
         count: 1,
       };
-      scenarioPathRepository.findAll.mockResolvedValue(expectedResult);
+      scenarioPathRepository.getAllScenarioPaths.mockResolvedValue(
+        expectedResult,
+      );
 
       const result = await service.getScenarioPaths(filters);
 
       expect(result).toEqual(expectedResult);
-      expect(scenarioPathRepository.findAll).toHaveBeenCalledWith(filters);
+      expect(scenarioPathRepository.getAllScenarioPaths).toHaveBeenCalledWith(
+        filters,
+      );
     });
 
     it('should return scenario paths with pagination filters', async () => {
@@ -186,12 +194,16 @@ describe('ScenarioPathService', () => {
         data: mockScenarioPaths,
         count: 2,
       };
-      scenarioPathRepository.findAll.mockResolvedValue(expectedResult);
+      scenarioPathRepository.getAllScenarioPaths.mockResolvedValue(
+        expectedResult,
+      );
 
       const result = await service.getScenarioPaths(filters);
 
       expect(result).toEqual(expectedResult);
-      expect(scenarioPathRepository.findAll).toHaveBeenCalledWith(filters);
+      expect(scenarioPathRepository.getAllScenarioPaths).toHaveBeenCalledWith(
+        filters,
+      );
     });
 
     it('should return scenario paths with search filter', async () => {
@@ -202,12 +214,16 @@ describe('ScenarioPathService', () => {
         data: [mockScenarioPaths[0]],
         count: 1,
       };
-      scenarioPathRepository.findAll.mockResolvedValue(expectedResult);
+      scenarioPathRepository.getAllScenarioPaths.mockResolvedValue(
+        expectedResult,
+      );
 
       const result = await service.getScenarioPaths(filters);
 
       expect(result).toEqual(expectedResult);
-      expect(scenarioPathRepository.findAll).toHaveBeenCalledWith(filters);
+      expect(scenarioPathRepository.getAllScenarioPaths).toHaveBeenCalledWith(
+        filters,
+      );
     });
 
     it('should return scenario paths with all filters', async () => {
@@ -221,12 +237,16 @@ describe('ScenarioPathService', () => {
         data: mockScenarioPaths,
         count: 2,
       };
-      scenarioPathRepository.findAll.mockResolvedValue(expectedResult);
+      scenarioPathRepository.getAllScenarioPaths.mockResolvedValue(
+        expectedResult,
+      );
 
       const result = await service.getScenarioPaths(filters);
 
       expect(result).toEqual(expectedResult);
-      expect(scenarioPathRepository.findAll).toHaveBeenCalledWith(filters);
+      expect(scenarioPathRepository.getAllScenarioPaths).toHaveBeenCalledWith(
+        filters,
+      );
     });
 
     it('should return empty array when no scenario paths found', async () => {
@@ -234,12 +254,16 @@ describe('ScenarioPathService', () => {
         data: [],
         count: 0,
       };
-      scenarioPathRepository.findAll.mockResolvedValue(expectedResult);
+      scenarioPathRepository.getAllScenarioPaths.mockResolvedValue(
+        expectedResult,
+      );
 
       const result = await service.getScenarioPaths();
 
       expect(result).toEqual(expectedResult);
-      expect(scenarioPathRepository.findAll).toHaveBeenCalledWith(undefined);
+      expect(scenarioPathRepository.getAllScenarioPaths).toHaveBeenCalledWith(
+        undefined,
+      );
     });
   });
 

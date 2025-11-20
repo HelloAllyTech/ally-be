@@ -37,7 +37,7 @@ import {
 export class ScenarioPathController {
   constructor(private readonly scenarioPathService: ScenarioPathService) {}
 
-  @ApiOperation({ description: 'Get scenario paths' })
+  @ApiOperation({ summary: 'Get scenario paths' })
   @ApiResponse({
     status: 200,
     description: 'List of scenario paths retrieved successfully',
@@ -83,14 +83,14 @@ export class ScenarioPathController {
     });
   }
 
-  @ApiOperation({ description: 'Get scenario path by id' })
+  @ApiOperation({ summary: 'Get scenario path by id' })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_PATH])
   @Get('scenario-paths/:id')
   async getScenarioPathById(@Param('id', ParseUUIDPipe) id: string) {
     return this.scenarioPathService.getScenarioPathById(id);
   }
 
-  @ApiOperation({ description: 'Create scenario path' })
+  @ApiOperation({ summary: 'Create scenario path' })
   @ApiResponse({
     status: 201,
     description: 'Scenario path created successfully',
@@ -104,7 +104,7 @@ export class ScenarioPathController {
     return this.scenarioPathService.createScenarioPath(createScenarioPathDto);
   }
 
-  @ApiOperation({ description: 'Edit scenario path' })
+  @ApiOperation({ summary: 'Edit scenario path' })
   @ApiResponse({
     status: 200,
     description: 'Scenario path updated successfully',

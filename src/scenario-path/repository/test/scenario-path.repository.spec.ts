@@ -61,12 +61,12 @@ describe('ScenarioPathRepository', () => {
     jest.clearAllMocks();
   });
 
-  describe('findAll', () => {
+  describe('getAllScenarioPaths', () => {
     it('should return all scenario paths without filters', async () => {
       const expectedPaths = [mockScenarioPath];
       queryBuilder.getManyAndCount.mockResolvedValue([expectedPaths, 1]);
 
-      const result = await repository.findAll();
+      const result = await repository.getAllScenarioPaths();
 
       expect(repository.createQueryBuilder).toHaveBeenCalledWith(
         'scenarioPath',
@@ -85,7 +85,7 @@ describe('ScenarioPathRepository', () => {
       };
       queryBuilder.getManyAndCount.mockResolvedValue([expectedPaths, 1]);
 
-      const result = await repository.findAll(filters);
+      const result = await repository.getAllScenarioPaths(filters);
 
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         'scenarioPath.status = :status',

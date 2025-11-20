@@ -6,12 +6,15 @@ import { ScenarioPathItemRepository } from './repository/scenario-path-item.repo
 import { LearnModule } from 'src/learn/learn.module';
 import { ScenarioPathSessionService } from './service/scenario-path-session.service';
 import { ScenarioPathSessionRepository } from './repository/scenario-path-session.repository';
+import { ScenarioPathSharedService } from './service/scenario-path-shared.service';
+import { ScenarioPathSessionController } from './controller/scenario-path-session.controller';
 
 @Module({
   imports: [LearnModule],
-  controllers: [ScenarioPathController],
+  controllers: [ScenarioPathController, ScenarioPathSessionController],
   providers: [
     ScenarioPathService,
+    ScenarioPathSharedService,
     ScenarioPathRepository,
     ScenarioPathItemRepository,
     ScenarioPathSessionService,

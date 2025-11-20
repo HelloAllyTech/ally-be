@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { ScenarioPath } from '../entity/scenario-path.entity';
-import { ScenarioPathFilterOptions } from '../type/scenario-paths.type';
+import {
+  ScenarioPathFilterOptions,
+  ScenarioPathsWithSession,
+  ScenarioPathWithSession,
+  ScenarioPathWithSessionFilterOptions,
+} from '../type/scenario-paths.type';
+import { ScenarioPathSession } from '../entity/scenario-path-session.entity';
 
 @Injectable()
 export class ScenarioPathRepository extends Repository<ScenarioPath> {
@@ -9,7 +15,7 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
     super(ScenarioPath, dataSource.createEntityManager());
   }
 
-  async findAll(
+  async getAllScenarioPaths(
     filters?: ScenarioPathFilterOptions,
   ): Promise<{ data: ScenarioPath[]; count: number }> {
     const query = this.createQueryBuilder('scenarioPath');
@@ -51,5 +57,30 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
         search: searchTerm,
       });
     }
+  }
+
+  async getAllScenarioPathsWithSession(
+    filters: ScenarioPathWithSessionFilterOptions,
+  ): Promise<ScenarioPathsWithSession> {
+    const query = this.createQueryBuilder('scenarioPath')
+      .leftJoinAndMapOne(
+        'scenarioPath.session',
+        ScenarioPathSession,
+        'scenarioPathSession',
+        '"scenarioPathSession"."scenarioPathId" = scenarioPath.id AND scenarioPathSession.userId = :userId',
+      )
+      .setParameters({ userId: filters.userId });
+
+    if (filters?.limit) {
+      query.limit(filters.limit);
+    }
+
+    if (filters?.offset) {
+      query.offset(filters.offset);
+    }
+
+    const [data, count] = await query.getManyAndCount();
+
+    return { data: data as ScenarioPathWithSession[], count };
   }
 }
