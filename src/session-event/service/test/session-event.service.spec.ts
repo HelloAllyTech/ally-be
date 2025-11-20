@@ -73,6 +73,7 @@ describe('SessionEventService', () => {
       getAllSessionEvents: jest.fn(),
       getSessionEventsByScenarioId: jest.fn(),
       createSessionEvents: jest.fn(),
+      findByIds: jest.fn(),
     };
 
     const mockEntityManager = {
@@ -113,6 +114,7 @@ describe('SessionEventService', () => {
       const createEventDtos = [mockCreateSessionEventDto];
       const createdEvents = [mockSessionEvent];
 
+      repository.findByIds.mockResolvedValue([]);
       repository.createSessionEvents.mockResolvedValue(createdEvents as any);
 
       const result = await service.createSessionEvents(createEventDtos);

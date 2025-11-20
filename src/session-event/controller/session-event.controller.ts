@@ -8,7 +8,6 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { SessionEventService } from '../service/session-event.service';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -21,7 +20,7 @@ import { SessionEvents } from '../entity/session-events.entity';
 import { CreateSessionEventsDto } from '../dto/create-session-events.dto';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
-
+import { SessionEventService } from '../service/session-event.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { SessionEventSortBy } from '../enum/session-event-sort-by.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';

@@ -1,9 +1,16 @@
 import { BadRequestException } from '@nestjs/common';
-import { CombinationExpressionRequestDto } from '../dto/session-event.dto';
+import {
+  CombinationExpressionRequestDto,
+  CreateSessionEventDto,
+  DetectionDataDto,
+  SessionEventDto,
+  UpdateSessionEventDto,
+} from '../dto/session-event.dto';
 import { CombinationExpressionDto } from '../dto/session-event.dto';
 import {
   CombinationExpressionRequestType,
   CombinationExpressionType,
+  SessionEventDetectionType,
 } from '../enum/session-event-detection.enum';
 
 export const mapRequestToDbExpression = (
@@ -75,4 +82,113 @@ export const mapDbExpressionToResponse = (
     default:
       throw new BadRequestException('Invalid combination expression');
   }
+};
+
+export const mapRequestToDbDetectionDataByType = (
+  type: SessionEventDetectionType,
+  eventDetectiondata: DetectionDataDto<CombinationExpressionRequestDto>,
+): DetectionDataDto<CombinationExpressionDto> | undefined => {
+  if (!eventDetectiondata) return undefined;
+  const formattedExpression = mapRequestToDbExpression(
+    eventDetectiondata?.expression as CombinationExpressionRequestDto,
+  );
+  switch (type) {
+    case SessionEventDetectionType.SENTENCE_SIMILARITY:
+      return {
+        sentences: eventDetectiondata.sentences,
+      };
+    case SessionEventDetectionType.SEMANTIC_SIMILARITY:
+      return {
+        sentences: eventDetectiondata.sentences,
+      };
+    case SessionEventDetectionType.TIME:
+      return {
+        time: eventDetectiondata.time,
+        condition: eventDetectiondata.condition,
+      };
+    case SessionEventDetectionType.SCORE:
+      return {
+        score: eventDetectiondata.score,
+        condition: eventDetectiondata.condition,
+      };
+    case SessionEventDetectionType.COMBINATION:
+      return {
+        expression: formattedExpression,
+      };
+    default:
+      return undefined;
+  }
+};
+
+export const mapCreateEventDtoToDbEvent = (
+  event: CreateSessionEventDto,
+): SessionEventDto<CombinationExpressionDto> => ({
+  name: event.name,
+  description: event.description,
+  score: event.score,
+  emoji: event.emoji,
+  message: event.message,
+  branchInstruction: event.branchInstruction,
+  detectionType: event.detectionType,
+  visibilityType: event.visibilityType,
+  detectionData: mapRequestToDbDetectionDataByType(
+    event.detectionType as SessionEventDetectionType,
+    event.detectionData as DetectionDataDto<CombinationExpressionRequestDto>,
+  ),
+});
+
+export const mapUpdateEventDtoToDbEvent = (
+  event: UpdateSessionEventDto,
+): SessionEventDto<CombinationExpressionDto> => ({
+  name: event.name,
+  description: event.description,
+  score: event.score,
+  emoji: event.emoji,
+  message: event.message,
+  branchInstruction: event.branchInstruction,
+  visibilityType: event.visibilityType,
+  detectionData: mapRequestToDbDetectionDataByType(
+    event.detectionType as SessionEventDetectionType,
+    event.detectionData as DetectionDataDto<CombinationExpressionRequestDto>,
+  ),
+});
+
+const extractEventIdsFromExpression = (
+  expression: CombinationExpressionRequestDto | undefined,
+): string[] => {
+  if (!expression) return [];
+
+  const ids: string[] = [];
+
+  // If it's a simple identifier, add the id
+  if (expression.id) {
+    ids.push(expression.id);
+  }
+  // Recursively extract from left (used in AND, OR, and NOT)
+  if (expression.left) {
+    ids.push(...extractEventIdsFromExpression(expression.left));
+  }
+  // Recursively extract from right (used in AND, OR)
+  if (expression.right) {
+    ids.push(...extractEventIdsFromExpression(expression.right));
+  }
+  return ids;
+};
+
+export const getUniqueCombinationExpressionEventIdList = (
+  createEventDtos: CreateSessionEventDto[],
+): string[] => {
+  const allIds: string[] = [];
+  createEventDtos
+    .filter(
+      (event) =>
+        event.detectionType === SessionEventDetectionType.COMBINATION &&
+        event.detectionData?.expression,
+    )
+    ?.forEach((event) => {
+      allIds.push(
+        ...extractEventIdsFromExpression(event.detectionData?.expression),
+      );
+    }) ?? [];
+  return Array.from(new Set(allIds));
 };
