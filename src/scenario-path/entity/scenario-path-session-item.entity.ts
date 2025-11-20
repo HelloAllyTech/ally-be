@@ -12,13 +12,13 @@ export class ScenarioPathSessionItem extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   scenarioPathSessionId!: string;
 
   @Column()
   userId!: number;
 
-  @Column()
+  @Column({ type: 'uuid' })
   scenarioPathItemId!: string;
 
   @Column({

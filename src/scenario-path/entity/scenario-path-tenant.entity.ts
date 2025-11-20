@@ -11,10 +11,10 @@ export class ScenarioPathTenant extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   scenarioPathId!: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   tenantId!: string;
 
   @DeleteDateColumn()

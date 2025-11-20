@@ -11,7 +11,7 @@ export class ScenarioPathItem extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   scenarioPathId!: string;
 
   @Column()

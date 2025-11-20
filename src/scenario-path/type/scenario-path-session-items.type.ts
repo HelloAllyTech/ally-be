@@ -3,3 +3,8 @@ export enum SessionItemStatus {
   COMPLETED = 'COMPLETED',
   LOCKED = 'LOCKED',
 }
+
+export interface ScenarioPathSessionFilterOptions {
+  limit?: number;
+  offset?: number;
+}

@@ -1,3 +1,6 @@
+import { ScenarioPathSession } from '../entity/scenario-path-session.entity';
+import { ScenarioPath } from '../entity/scenario-path.entity';
+
 export enum ScenarioPathStatus {
   DRAFT = 'DRAFT',
   ACTIVE = 'ACTIVE',
@@ -9,4 +12,18 @@ export interface ScenarioPathFilterOptions {
   limit?: number;
   offset?: number;
   search?: string;
+}
+
+export interface ScenarioPathWithSession extends ScenarioPath {
+  session: ScenarioPathSession;
+}
+
+export interface ScenarioPathWithSessionFilterOptions {
+  userId: number;
+  limit?: number;
+  offset?: number;
+}
+export interface ScenarioPathsWithSession {
+  data: ScenarioPathWithSession[];
+  count: number;
 }

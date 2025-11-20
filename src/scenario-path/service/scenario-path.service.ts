@@ -47,7 +47,8 @@ export class ScenarioPathService {
   async getScenarioPaths(
     filters?: ScenarioPathFilterOptions,
   ): Promise<GetScenarioPathsResponseDto> {
-    const result = await this.scenarioPathRepository.findAll(filters);
+    const result =
+      await this.scenarioPathRepository.getAllScenarioPaths(filters);
     const scenarioPaths = result.data.map((scenarioPath) => ({
       id: scenarioPath.id,
       title: scenarioPath.title,
