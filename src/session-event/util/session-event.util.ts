@@ -12,6 +12,7 @@ import {
   CombinationExpressionType,
   SessionEventDetectionType,
 } from '../enum/session-event-detection.enum';
+import { SessionEventRepository } from '../repository/session-event.repository';
 
 export const mapRequestToDbExpression = (
   node: CombinationExpressionRequestDto,
@@ -153,25 +154,48 @@ export const mapUpdateEventDtoToDbEvent = (
   ),
 });
 
-const extractEventIdsFromExpression = (
-  expression: CombinationExpressionRequestDto | undefined,
+/**
+ * Extract all event IDs from a combination expression
+ * Works with both request format (CombinationExpressionRequestDto) and DB format (CombinationExpressionDto)
+ */
+export const extractEventIds = (
+  expression:
+    | CombinationExpressionRequestDto
+    | CombinationExpressionDto
+    | undefined,
 ): string[] => {
   if (!expression) return [];
 
   const ids: string[] = [];
 
-  // If it's a simple identifier, add the id
-  if (expression.id) {
+  // Handle identifier in DB format (has type field)
+  if (
+    'type' in expression &&
+    expression.type === CombinationExpressionType.IDENTIFIER &&
+    expression.id
+  ) {
     ids.push(expression.id);
   }
+  // Handle identifier in request format (direct id without type check)
+  else if (expression.id && !('type' in expression)) {
+    ids.push(expression.id);
+  }
+
   // Recursively extract from left (used in AND, OR, and NOT)
   if (expression.left) {
-    ids.push(...extractEventIdsFromExpression(expression.left));
+    ids.push(...extractEventIds(expression.left));
   }
+
   // Recursively extract from right (used in AND, OR)
   if (expression.right) {
-    ids.push(...extractEventIdsFromExpression(expression.right));
+    ids.push(...extractEventIds(expression.right));
   }
+
+  // Recursively extract from operand (used in NOT for DB format)
+  if ('operand' in expression && expression.operand) {
+    ids.push(...extractEventIds(expression.operand));
+  }
+
   return ids;
 };
 
@@ -186,9 +210,79 @@ export const getUniqueCombinationExpressionEventIdList = (
         event.detectionData?.expression,
     )
     ?.forEach((event) => {
-      allIds.push(
-        ...extractEventIdsFromExpression(event.detectionData?.expression),
-      );
+      allIds.push(...extractEventIds(event.detectionData?.expression));
     }) ?? [];
   return Array.from(new Set(allIds));
+};
+
+/**
+ * Validate that a combination event does not create circular dependencies
+ * Uses depth-first search with recursion stack tracking to detect cycles
+ */
+export const validateNoCycles = async (
+  eventId: string,
+  expression: CombinationExpressionDto | undefined,
+  sessionEventRepository: SessionEventRepository,
+  maxDepth: number = 20,
+): Promise<void> => {
+  if (!expression) return;
+
+  const visited = new Set<string>();
+  const recursionStack = new Set<string>();
+
+  const checkCycle = async (
+    currentEventId: string,
+    expr: CombinationExpressionDto | undefined,
+    depth: number,
+  ): Promise<boolean> => {
+    // Solution 2: Depth limit protection
+    if (depth > maxDepth) {
+      throw new BadRequestException(
+        `Maximum dependency depth (${maxDepth}) exceeded. This may indicate a circular dependency or overly complex event structure.`,
+      );
+    }
+
+    if (!expr) return false;
+
+    // Mark current event as being processed in this recursion path
+    recursionStack.add(currentEventId);
+    visited.add(currentEventId);
+
+    // Extract all referenced event IDs from the expression
+    const referencedIds = extractEventIds(expr);
+
+    for (const refId of referencedIds) {
+      // Solution 1: Cycle detection - if we encounter an event already in the recursion stack, we have a cycle
+      if (recursionStack.has(refId)) {
+        throw new BadRequestException(
+          `Circular dependency detected: Event '${currentEventId}' references '${refId}' which creates a cycle. Events cannot reference each other in a circular manner.`,
+        );
+      }
+
+      // If not visited, recursively check this referenced event
+      if (!visited.has(refId)) {
+        const referencedEvent = await sessionEventRepository.findOne({
+          where: { id: refId },
+        });
+
+        // Only check combination events for further dependencies
+        if (
+          referencedEvent?.detectionType ===
+          SessionEventDetectionType.COMBINATION
+        ) {
+          const cycleFound = await checkCycle(
+            refId,
+            referencedEvent.detectionData?.expression,
+            depth + 1,
+          );
+          if (cycleFound) return true;
+        }
+      }
+    }
+
+    // Remove from recursion stack after processing all dependencies
+    recursionStack.delete(currentEventId);
+    return false;
+  };
+  await checkCycle(eventId, expression, 0);
 };

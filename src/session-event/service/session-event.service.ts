@@ -11,11 +11,13 @@ import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { SessionEventRepository } from '../repository/session-event.repository';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
+import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
 import {
   mapCreateEventDtoToDbEvent,
   mapUpdateEventDtoToDbEvent,
   mapDbExpressionToResponse,
-  getUniqueCombinationExpressionEventIdList,
+  extractEventIds,
+  validateNoCycles,
 } from '../util/session-event.util';
 import {
   CombinationExpressionDto,
@@ -33,21 +35,48 @@ export class SessionEventService {
   async createSessionEvents(
     createEventDtos: CreateSessionEventDto[],
   ): Promise<SessionEvents[]> {
-    const combinationExpressionEventIds =
-      getUniqueCombinationExpressionEventIdList(createEventDtos);
-    const eventDetails = await this.sessionEventRepository.findByIds(
-      combinationExpressionEventIds,
-    );
-    if (eventDetails?.length !== combinationExpressionEventIds.length) {
-      throw new BadRequestException('Invalid combination expression event IDs');
-    }
     const events = createEventDtos.map((event) => ({
       id: v4(),
       ...(mapCreateEventDtoToDbEvent(event) || {}),
     }));
+
+    // Validate events
+    await this.validateCreateSessionEvents(events);
+
     return this.sessionEventRepository.createSessionEvents(
       events as CreateSessionEventDto[],
     );
+  }
+
+  private async validateCreateSessionEvents(
+    events: Partial<SessionEvents>[],
+  ): Promise<void> {
+    const combinationExpressionEventIds: string[] = [];
+    for (const event of events) {
+      if (
+        event.detectionType === SessionEventDetectionType.COMBINATION &&
+        event.id
+      ) {
+        await validateNoCycles(
+          event.id,
+          event.detectionData?.expression,
+          this.sessionEventRepository,
+        );
+
+        combinationExpressionEventIds.push(
+          ...extractEventIds(event.detectionData?.expression),
+        );
+
+        const eventDetails = await this.sessionEventRepository.findByIds(
+          combinationExpressionEventIds,
+        );
+        if (eventDetails?.length !== combinationExpressionEventIds.length) {
+          throw new BadRequestException(
+            'Invalid combination expression event IDs',
+          );
+        }
+      }
+    }
   }
 
   async getSessionEventsByScenarioId(
@@ -99,7 +128,21 @@ export class SessionEventService {
       throw new NotFoundException('Session Event not found');
     }
 
-    const formattedEventDto = mapUpdateEventDtoToDbEvent(updateEventDto) || {};
+    const formattedEventDto =
+      mapUpdateEventDtoToDbEvent({
+        ...updateEventDto,
+        detectionType: event.detectionType,
+      }) || {};
+
+    // Validate no circular dependencies if updating a COMBINATION event
+    if (event.detectionType === SessionEventDetectionType.COMBINATION) {
+      await validateNoCycles(
+        id,
+        formattedEventDto?.detectionData?.expression,
+        this.sessionEventRepository,
+      );
+    }
+
     const updated = await this.sessionEventRepository.update(
       id,
       formattedEventDto as Partial<SessionEvents>,
