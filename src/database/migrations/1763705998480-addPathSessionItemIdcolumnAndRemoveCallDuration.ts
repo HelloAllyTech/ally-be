@@ -1,9 +1,9 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPathSessionItemIdcolumnAndRemoveCallDuration1763705998480
+export class AddPathSessionItemIdColumnAndRemoveCallDuration1763705998480
   implements MigrationInterface
 {
-  name = 'AddPathSessionItemIdcolumnAndRemoveCallDuration1763705998480';
+  name = 'AddPathSessionItemIdColumnAndRemoveCallDuration1763705998480';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

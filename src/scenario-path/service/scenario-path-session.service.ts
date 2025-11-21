@@ -252,8 +252,11 @@ export class ScenarioPathSessionService {
     );
   }
 
-  async getNextUnlockedScenarioPathItem(scenarioPathSessionId: string) {
-    return this.scenarioPathSessionItemRepository
+  async getNextScenarioPathItem(
+    scenarioPathSessionId: string,
+    status?: SessionItemStatus,
+  ) {
+    const queryBuilder = this.scenarioPathSessionItemRepository
       .createQueryBuilder('sessionItem')
       .innerJoin(
         'scenario_path_items',
@@ -262,12 +265,15 @@ export class ScenarioPathSessionService {
       )
       .where('sessionItem.scenarioPathSessionId = :scenarioPathSessionId', {
         scenarioPathSessionId,
-      })
-      .andWhere('sessionItem.status = :status', {
-        status: SessionItemStatus.UNLOCKED,
-      })
-      .orderBy('pathItem.order', 'ASC')
-      .getOne();
+      });
+
+    if (status !== undefined) {
+      queryBuilder.andWhere('sessionItem.status = :status', {
+        status,
+      });
+    }
+
+    return queryBuilder.orderBy('pathItem.order', 'ASC').getOne();
   }
 
   async getUserPathSessionById(scenarioPathSessionId: string) {
@@ -346,7 +352,7 @@ export class ScenarioPathSessionService {
         status: SessionItemStatus.COMPLETED,
       });
 
-      const nextScenarioPathItem = await this.getNextUnlockedScenarioPathItem(
+      const nextScenarioPathItem = await this.getNextScenarioPathItem(
         scenarioPathSession.id,
       );
       if (nextScenarioPathItem) {
