@@ -577,6 +577,7 @@ export class LearnController {
   @ApiResponse({
     description: 'Scenarios assigned to tenant successfully',
   })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_TENANT])
   @Post('scenario/tenant/:tenantId')
   async assignScenarioToTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
@@ -592,6 +593,7 @@ export class LearnController {
   @ApiResponse({
     description: 'Scenario access removed from tenants successfully',
   })
+  @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_TENANT])
   @Delete('scenario/tenant/:tenantId')
   async removeScenarioFromTenants(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,

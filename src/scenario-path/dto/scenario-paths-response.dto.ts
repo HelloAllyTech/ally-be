@@ -26,6 +26,9 @@ export class ScenarioPathResponseDto {
 
   @ApiProperty({ description: 'Updated at' })
   updatedAt!: Date;
+
+  @ApiProperty({ description: 'whether scenario path bis assigned' })
+  isAssignedToTenant?: boolean;
 }
 
 export class GetScenarioPathsResponseDto {

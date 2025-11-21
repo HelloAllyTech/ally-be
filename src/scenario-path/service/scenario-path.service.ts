@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import {
   CreateScenarioPathDto,
   CreateScenarioPathResponseDto,
@@ -35,6 +35,8 @@ import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
 import { ScenarioPathSharedService } from './scenario-path-shared.service';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { DuplicateScenarioPathResponseDto } from '../dto/duplicate-scenario-path-response.dto';
+import { TenantService } from 'src/tenant/service/tenant.service';
+import { ScenarioPathTenant } from '../entity/scenario-path-tenant.entity';
 
 @Injectable()
 export class ScenarioPathService {
@@ -47,23 +49,38 @@ export class ScenarioPathService {
     private readonly scenarioPathItemRepository: ScenarioPathItemRepository,
     private readonly scenarioPathSessionService: ScenarioPathSessionService,
     private readonly scenarioPathSharedService: ScenarioPathSharedService,
+    private tenantService: TenantService,
   ) {}
 
   async getScenarioPaths(
     filters?: ScenarioPathFilterOptions,
   ): Promise<GetScenarioPathsResponseDto> {
+    if (filters?.tenantId) {
+      const tenant = await this.tenantService.findById(filters.tenantId);
+      if (!tenant) {
+        throw new NotFoundException('Tenant not found');
+      }
+    }
     const result =
       await this.scenarioPathRepository.getAllScenarioPaths(filters);
-    const scenarioPaths = result.data.map((scenarioPath) => ({
-      id: scenarioPath.id,
-      title: scenarioPath.title,
-      description: scenarioPath.description,
-      coverImageUrl: scenarioPath.coverImageUrl,
-      status: scenarioPath.status,
-      isGlobal: scenarioPath.isGlobal,
-      totalScenarios: scenarioPath.totalScenarios,
-      updatedAt: scenarioPath.updatedAt,
-    }));
+
+    const scenarioPaths = result.data.map((scenarioPath: any) => {
+      const { scenarioPathTenant, ...scenarioPathData } = scenarioPath;
+      return {
+        id: scenarioPathData.id,
+        title: scenarioPathData.title,
+        description: scenarioPathData.description,
+        coverImageUrl: scenarioPathData.coverImageUrl,
+        status: scenarioPathData.status,
+        isGlobal: scenarioPathData.isGlobal,
+        totalScenarios: scenarioPathData.totalScenarios,
+        isAssignedToTenant: filters?.tenantId
+          ? !!scenarioPathTenant
+          : undefined,
+        updatedAt: scenarioPathData.updatedAt,
+      };
+    });
+
     return {
       data: scenarioPaths,
       count: result.count,
@@ -113,7 +130,19 @@ export class ScenarioPathService {
 
         await scenarioPathItemRepo.save(items);
       }
-
+      if (scenarioPath.isGlobal) {
+        const tenants = await this.tenantService.findAll();
+        const tenantIds = tenants.map((tenant) => tenant.id);
+        const scenarioPathTenantRepository =
+          manager.getRepository(ScenarioPathTenant);
+        const scenarioPathTenant = tenantIds.map((tenantId) =>
+          scenarioPathTenantRepository.create({
+            scenarioPathId: scenarioPath.id,
+            tenantId,
+          }),
+        );
+        await scenarioPathTenantRepository.save(scenarioPathTenant);
+      }
       this.logger.info(`Scenario path ${scenarioPath.id} created successfully`);
       return this.getMinimalScenarioPathData(scenarioPath);
     });
@@ -214,6 +243,29 @@ export class ScenarioPathService {
       const updatedScenarioPath = await scenarioPathRepo.findOne({
         where: { id },
       });
+      if (
+        updatedScenarioPath &&
+        updateScenarioPath.isGlobal !== scenarioPath.isGlobal
+      ) {
+        const tenants = await this.tenantService.findAll();
+        const tenantIds = tenants.map((tenant) => tenant.id);
+        const scenarioPathTenantRepo =
+          manager.getRepository(ScenarioPathTenant);
+        if (updatedScenarioPath?.isGlobal) {
+          const scenarioPathTenantMappings = tenantIds.map((tenantId) => ({
+            scenarioPathId: id,
+            tenantId: tenantId,
+          }));
+          await scenarioPathTenantRepo.save(
+            scenarioPathTenantRepo.create(scenarioPathTenantMappings),
+          );
+        } else {
+          await scenarioPathTenantRepo.delete({
+            scenarioPathId: id,
+            tenantId: In(tenantIds),
+          });
+        }
+      }
       this.logger.info(`Scenario path ${id} updated successfully`);
 
       return this.getMinimalScenarioPathData(updatedScenarioPath!);
@@ -341,6 +393,9 @@ export class ScenarioPathService {
       await manager.getRepository(ScenarioPathItem).softDelete({
         scenarioPathId: id,
       });
+      await manager
+        .getRepository(ScenarioPathTenant)
+        .softDelete({ scenarioPathId: id });
     });
 
     this.logger.info(`Scenario path ${id} deleted successfully`);

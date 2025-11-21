@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ScenarioPathRepository } from '../repository/scenario-path.repository';
 import {
   ScenarioPathsWithSession,
@@ -9,6 +13,8 @@ import { ScenarioPathItem } from '../entity/scenario-path-item.entity';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
+import { ScenarioPathTenantService } from './scenario-path-tenant.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 @Injectable()
 export class ScenarioPathSharedService {
@@ -19,6 +25,7 @@ export class ScenarioPathSharedService {
     private readonly scenarioPathRepository: ScenarioPathRepository,
     private readonly scenarioPathItemRepository: ScenarioPathItemRepository,
     private readonly scenarioSharedService: ScenarioSharedService,
+    private readonly scenarioPathTenantService: ScenarioPathTenantService,
   ) {}
 
   async getScenarioPathsWithSession(
@@ -38,6 +45,18 @@ export class ScenarioPathSharedService {
     if (!result) {
       this.logger.error(`Scenario path not found for id: ${scenarioPathId}`);
       throw new NotFoundException('Scenario path not found');
+    }
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new NotFoundException('Tenant not found');
+    }
+    const scenarioPathTenant =
+      await this.scenarioPathTenantService.getScenarioPathTenant(
+        tenantId,
+        scenarioPathId,
+      );
+    if (!scenarioPathTenant) {
+      throw new BadRequestException('Organization access denied');
     }
 
     const scenarioPathItems = await this.scenarioPathItemRepository.find({

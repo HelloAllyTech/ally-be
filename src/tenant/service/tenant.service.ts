@@ -16,6 +16,7 @@ import { UpdateTenantDto } from '../dto/update-tenant.dto';
 import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
 import { UserRepository } from 'src/user/repository/user.repository';
 import { TenantScenarioSharedService } from './tenant-scenario-shared';
+import { TenantScenarioPathSharedService } from './tenant-scenario-path-shared';
 
 @Injectable()
 export class TenantService {
@@ -26,6 +27,7 @@ export class TenantService {
     private readonly tenantRepository: Repository<Tenant>,
     private readonly tenantsRepository: TenantsRepository,
     private readonly tenantScenarioSharedService: TenantScenarioSharedService,
+    private readonly tenantScenarioPathSharedService: TenantScenarioPathSharedService,
     @Inject(forwardRef(() => UserRepository))
     private readonly userRepository: UserRepository,
     private readonly dataSource: DataSource,
@@ -57,6 +59,11 @@ export class TenantService {
           const savedTenant = await entityManager.save(Tenant, tenant);
 
           await this.tenantScenarioSharedService.assignGlobalScenariosToTenant(
+            savedTenant.id,
+            entityManager,
+          );
+
+          await this.tenantScenarioPathSharedService.assignGlobalScenarioPathsToTenant(
             savedTenant.id,
             entityManager,
           );
