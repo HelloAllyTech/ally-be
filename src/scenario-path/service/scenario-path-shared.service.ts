@@ -75,6 +75,7 @@ export class ScenarioPathSharedService {
       coverImageUrl: result.coverImageUrl,
       status: result.status,
       isGlobal: result.isGlobal,
+      totalScenarios: result.totalScenarios,
       scenarios,
     };
   }

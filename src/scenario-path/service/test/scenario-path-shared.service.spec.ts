@@ -139,6 +139,7 @@ describe('ScenarioPathSharedService', () => {
       coverImageUrl: 'https://example.com/image.jpg',
       status: ScenarioPathStatus.ACTIVE,
       isGlobal: false,
+      totalScenarios: 2,
     } as ScenarioPath;
 
     const mockScenarioPathItems: ScenarioPathItem[] = [
@@ -203,6 +204,7 @@ describe('ScenarioPathSharedService', () => {
         coverImageUrl: 'https://example.com/image.jpg',
         status: ScenarioPathStatus.ACTIVE,
         isGlobal: false,
+        totalScenarios: 2,
         scenarios: [
           {
             id: 'item-1',

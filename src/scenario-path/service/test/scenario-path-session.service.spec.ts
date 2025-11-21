@@ -208,6 +208,7 @@ describe('ScenarioPathSessionService', () => {
       coverImageUrl: 'https://example.com/image.jpg',
       status: 'ACTIVE' as any,
       isGlobal: false,
+      totalScenarios: 2,
       scenarios: [
         {
           id: 'item-1',

@@ -52,6 +52,9 @@ export class GetScenarioPathResponseDto {
   @ApiProperty({ description: 'Whether the path is available globally' })
   isGlobal!: boolean;
 
+  @ApiProperty({ description: 'Total scenarios in the scenario path' })
+  totalScenarios!: number;
+
   @ApiProperty({ description: 'List of scenarios in the path' })
   scenarios!: GetScenarioPathItemDto[];
 }

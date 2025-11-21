@@ -27,3 +27,11 @@ export interface ScenarioPathsWithSession {
   data: ScenarioPathWithSession[];
   count: number;
 }
+
+export interface MinimalScenarioPathData {
+  id: string;
+  title: string;
+  description?: string;
+  coverImageUrl?: string;
+  status: ScenarioPathStatus;
+}

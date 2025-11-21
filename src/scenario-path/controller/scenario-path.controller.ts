@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -29,6 +30,8 @@ import {
   UpdateScenarioPathResponseDto,
   UpdateScenarioPathDto,
 } from '../dto/update-scenario-path.dto';
+import { SuccessResponse } from 'src/common/type/common.type';
+import { DuplicateScenarioPathResponseDto } from '../dto/duplicate-scenario-path-response.dto';
 
 @ApiTags('Learn Scenario Paths')
 @ApiBearerAuth()
@@ -120,5 +123,32 @@ export class ScenarioPathController {
       id,
       updateScenarioPathDto,
     );
+  }
+
+  @ApiOperation({ summary: 'Delete scenario path' })
+  @ApiResponse({
+    status: 200,
+    description: 'Scenario path deleted successfully',
+  })
+  @AuthPermissions([PERMISSIONS.DELETE_ADMIN_SCENARIO_PATH])
+  @Delete('scenario-paths/:id')
+  async deleteScenarioPath(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<SuccessResponse> {
+    return this.scenarioPathService.deleteScenarioPath(id);
+  }
+
+  @ApiOperation({ summary: 'Duplicate scenario path' })
+  @ApiResponse({
+    status: 200,
+    description: 'Scenario path duplicated successfully',
+    type: DuplicateScenarioPathResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_SCENARIO_PATH])
+  @Post('scenario-paths/:id/duplicate')
+  async duplicateScenarioPath(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<DuplicateScenarioPathResponseDto> {
+    return this.scenarioPathService.duplicateScenarioPath(id);
   }
 }
