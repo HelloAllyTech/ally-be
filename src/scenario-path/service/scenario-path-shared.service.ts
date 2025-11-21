@@ -11,6 +11,7 @@ import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service
 import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
 import { SessionItemStatus } from '../type/scenario-path-session-items.type';
 import { ScenarioPathSessionItem } from '../entity/scenario-path-session-item.entity';
+import { Scenarios } from 'src/learn/entity/scenarios.entity';
 
 @Injectable()
 export class ScenarioPathSharedService {
@@ -101,6 +102,7 @@ export class ScenarioPathSharedService {
   async getNextScenarioPathItem(scenarioPathSessionId: string): Promise<
     | (ScenarioPathItem & {
         pathSessionItem: ScenarioPathSessionItem | null;
+        scenario: Scenarios | null;
       })
     | null
   > {
@@ -112,6 +114,12 @@ export class ScenarioPathSharedService {
         'pathSessionItem',
         'pathSessionItem.scenarioPathItemId = scenarioPathItem.id AND pathSessionItem.scenarioPathSessionId = :scenarioPathSessionId',
         { scenarioPathSessionId },
+      )
+      .leftJoinAndMapOne(
+        'scenarioPathItem.scenario',
+        'scenarios',
+        'scenario',
+        'scenario.id = scenarioPathItem.scenarioId',
       )
       .where(
         '(pathSessionItem.status != :status OR pathSessionItem.status IS NULL)',
@@ -128,6 +136,7 @@ export class ScenarioPathSharedService {
 
     return result as ScenarioPathItem & {
       pathSessionItem: ScenarioPathSessionItem | null;
+      scenario: Scenarios | null;
     };
   }
 }
