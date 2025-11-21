@@ -86,6 +86,7 @@ export class ScenarioPathSessionService {
         ...scenarioPathWithScenarios,
         completedScenarios: 0,
         completedAt: null,
+        scenarioPathSessionId: null,
         scenarios: scenarioPathWithScenarios.scenarios.map((scenario) => ({
           ...scenario,
           sessionId: null,
@@ -110,50 +111,7 @@ export class ScenarioPathSessionService {
       ...scenarioPathWithScenarios,
       completedScenarios: scenarioPathSession.completedScenarios,
       completedAt: scenarioPathSession.completedAt,
-      scenarios: scenarioPathWithScenarios.scenarios.map((scenario) => {
-        const scenarioPathSessionItem = sessionItemsMap.get(scenario.id);
-        return {
-          ...scenario,
-          sessionId: scenarioPathSessionItem?.id,
-          status: scenarioPathSessionItem?.status || SessionItemStatus.LOCKED,
-        };
-      }),
-    };
-  }
-
-  async getUserScenarioPathSessionItemsIfExist(scenarioPathId: string) {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) {
-      throw new UnauthorizedException('Unauthorized access');
-    }
-
-    const scenarioPathWithScenarios =
-      await this.scenarioPathSharedService.getScenarioPathWithScenarios(
-        scenarioPathId,
-      );
-
-    const scenarioPathSession =
-      await this.scenarioPathSessionRepository.findOne({
-        where: { scenarioPathId, userId: Number(userId) },
-      });
-
-    if (!scenarioPathSession) {
-      return null;
-    }
-
-    const scenarioPathSessionItems =
-      await this.scenarioPathSessionItemRepository.find({
-        where: { scenarioPathSessionId: scenarioPathSession.id },
-      });
-
-    const sessionItemsMap = new Map(
-      scenarioPathSessionItems.map((item) => [item.scenarioPathItemId, item]),
-    );
-
-    return {
-      ...scenarioPathWithScenarios,
-      completedScenarios: scenarioPathSession.completedScenarios,
-      completedAt: scenarioPathSession.completedAt,
+      scenarioPathSessionId: scenarioPathSession.id,
       scenarios: scenarioPathWithScenarios.scenarios.map((scenario) => {
         const scenarioPathSessionItem = sessionItemsMap.get(scenario.id);
         return {
@@ -252,31 +210,7 @@ export class ScenarioPathSessionService {
     );
   }
 
-  async getNextScenarioPathItem(
-    scenarioPathSessionId: string,
-    status?: SessionItemStatus,
-  ) {
-    const queryBuilder = this.scenarioPathSessionItemRepository
-      .createQueryBuilder('sessionItem')
-      .innerJoin(
-        'scenario_path_items',
-        'pathItem',
-        'pathItem.id = sessionItem.scenarioPathItemId',
-      )
-      .where('sessionItem.scenarioPathSessionId = :scenarioPathSessionId', {
-        scenarioPathSessionId,
-      });
-
-    if (status !== undefined) {
-      queryBuilder.andWhere('sessionItem.status = :status', {
-        status,
-      });
-    }
-
-    return queryBuilder.orderBy('pathItem.order', 'ASC').getOne();
-  }
-
-  async getUserPathSessionById(scenarioPathSessionId: string) {
+  async getScenarioPathSessionById(scenarioPathSessionId: string) {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
       throw new UnauthorizedException('Unauthorized access');
@@ -286,26 +220,61 @@ export class ScenarioPathSessionService {
     });
   }
 
-  async startUserPathSession(scenarioPathId: string, scenarioId: number) {
-    let currentUserSession =
-      await this.getUserScenarioPathSessionItemsIfExist(scenarioPathId);
-    if (!currentUserSession) {
-      currentUserSession = await this.createUserPathSession(scenarioPathId);
+  async startUserPathSession(scenarioPathId: string) {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new UnauthorizedException('Unauthorized access');
     }
-    // get the current scenario path session item from scenarioId and currentUserSession.scenarioPathSessionId
-    const currentScenarioPathSessionItem = currentUserSession.scenarios.find(
-      (scenario) => scenario.scenarioId === scenarioId,
+    const existingScenarioPathSession =
+      await this.getUserScenarioPathItems(scenarioPathId);
+    if (existingScenarioPathSession.scenarioPathSessionId)
+      return {
+        ...existingScenarioPathSession,
+        currentScenario:
+          existingScenarioPathSession?.scenarios?.find(
+            (scenario) => scenario.status === SessionItemStatus.UNLOCKED,
+          ) ?? null,
+      };
+
+    // If no scenario path session created
+    const scenarioPathSessionEntityInstance =
+      this.scenarioPathSessionRepository.create({
+        scenarioPathId,
+        userId: Number(userId),
+        startedAt: new Date(),
+        completedScenarios: 0,
+      });
+    const scenarioPathSession = await this.scenarioPathSessionRepository.save(
+      scenarioPathSessionEntityInstance,
     );
-    if (currentScenarioPathSessionItem?.status === SessionItemStatus.LOCKED) {
-      throw new BadRequestException(
-        'The scenario is LOCKED. Please complete the previous scenario first.',
-      );
+
+    const scenarioPathItems =
+      await this.scenarioPathSharedService.getScenarioPathItems(scenarioPathId);
+
+    let scenarioPathSessionItem: ScenarioPathSessionItem | undefined;
+    if (scenarioPathItems && scenarioPathItems?.[0]) {
+      //Taking the first element as the list is sorted by order
+      const scenarioPathSessionItemEntityInstance =
+        this.scenarioPathSessionItemRepository.create({
+          scenarioPathSessionId: scenarioPathSession.id,
+          scenarioPathItemId: scenarioPathItems[0].id,
+          userId: Number(userId),
+          status: SessionItemStatus.UNLOCKED,
+        });
+      scenarioPathSessionItem =
+        await this.scenarioPathSessionItemRepository.save(
+          scenarioPathSessionItemEntityInstance,
+        );
     }
     return {
-      scenarioPathSessionId: currentUserSession.id,
-      scenarioPathSessionItemId: currentScenarioPathSessionItem?.id,
-      scenarioPathId: scenarioPathId,
-      scenarioId: scenarioId,
+      ...existingScenarioPathSession,
+      scenarioPathSessionId: scenarioPathSession.id,
+      completedAt: scenarioPathSession.completedAt,
+      completedScenarios: scenarioPathSession.completedScenarios,
+      currentScenario: {
+        ...scenarioPathSessionItem,
+        sessionId: scenarioPathSessionItem?.id,
+      },
     };
   }
 
@@ -318,6 +287,10 @@ export class ScenarioPathSessionService {
     score: number;
     callDuration: number;
   }) {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new UnauthorizedException('Unauthorized access');
+    }
     const callDurationInSeconds = (callDuration ?? 0) / 1000;
     if (callDurationInSeconds < SCENARIO_MIN_DURATION_FOR_COMPLETION) {
       return;
@@ -337,39 +310,56 @@ export class ScenarioPathSessionService {
     if (!scenarioPathItem) {
       throw new BadRequestException('Scenario path item not found');
     }
-    if (score >= (scenarioPathItem?.minimumScore ?? 0)) {
-      const scenarioPathSession =
-        await this.scenarioPathSessionRepository.findOne({
-          where: { id: scenarioPathSessionItem.scenarioPathSessionId },
-        });
-      if (!scenarioPathSession) {
-        throw new BadRequestException('Scenario path session not found');
-      }
-      const currentScenarioPathSession = await this.getUserPathSessionById(
-        scenarioPathSession.id,
-      );
-      await this.updatePathSessionItem(scenarioPathSessionItem.id, {
-        status: SessionItemStatus.COMPLETED,
-      });
 
-      const nextScenarioPathItem = await this.getNextScenarioPathItem(
+    // Score less than minimum score -> cant make the session complete
+    if (score < (scenarioPathItem?.minimumScore ?? 0)) return;
+
+    const scenarioPathSession =
+      await this.scenarioPathSessionRepository.findOne({
+        where: { id: scenarioPathSessionItem.scenarioPathSessionId },
+      });
+    if (!scenarioPathSession) {
+      throw new BadRequestException('Scenario path session not found');
+    }
+    await this.updatePathSessionItem(scenarioPathSessionItem.id, {
+      status: SessionItemStatus.COMPLETED,
+    });
+
+    const nextScenarioPathItem =
+      await this.scenarioPathSharedService.getNextScenarioPathItem(
         scenarioPathSession.id,
       );
-      if (nextScenarioPathItem) {
-        await this.updatePathSessionItem(nextScenarioPathItem.id, {
-          status: SessionItemStatus.UNLOCKED,
-        });
-        await this.updatePathSession(scenarioPathSession.id, {
-          completedScenarios:
-            (currentScenarioPathSession?.completedScenarios ?? 0) + 1,
-        });
-      } else {
-        await this.updatePathSession(scenarioPathSession.id, {
-          completedAt: new Date(),
-          completedScenarios:
-            (currentScenarioPathSession?.completedScenarios ?? 0) + 1,
-        });
-      }
+    // All sub items are complete
+    if (!nextScenarioPathItem) {
+      await this.updatePathSession(scenarioPathSession.id, {
+        completedAt: new Date(),
+        completedScenarios: (scenarioPathSession?.completedScenarios ?? 0) + 1,
+      });
     }
+    await this.updatePathSession(scenarioPathSession.id, {
+      completedScenarios: (scenarioPathSession?.completedScenarios ?? 0) + 1,
+    });
+    if (!nextScenarioPathItem?.pathSessionItem?.status) {
+      // No entry created for next scenario
+      const nextItemEntity = this.scenarioPathSessionItemRepository.create({
+        scenarioPathSessionId: scenarioPathSession.id,
+        scenarioPathItemId: nextScenarioPathItem?.id,
+        userId: Number(userId),
+        status: SessionItemStatus.UNLOCKED,
+      });
+      await this.scenarioPathSessionItemRepository.save(nextItemEntity);
+      return;
+    }
+    if (
+      nextScenarioPathItem?.pathSessionItem?.status === SessionItemStatus.LOCKED
+    ) {
+      await this.updatePathSessionItem(
+        nextScenarioPathItem?.pathSessionItem?.id,
+        {
+          status: SessionItemStatus.UNLOCKED,
+        },
+      );
+    }
+    return;
   }
 }

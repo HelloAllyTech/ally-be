@@ -145,7 +145,6 @@ describe('ScenarioSessionService', () => {
       deleteRoom: jest.fn(),
       generateAccessToken: jest.fn(),
       getRoom: jest.fn(),
-      getRoomMetadata: jest.fn(),
     };
 
     const mockSessionEventService = {

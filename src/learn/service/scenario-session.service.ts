@@ -131,13 +131,15 @@ export class ScenarioSessionService {
     const scenario = await this.scenarioService.getScenario(
       startScenarioSessionDto.scenarioId,
     );
+    if (!scenario) {
+      throw new BadRequestException('Scenario not found');
+    }
     await this.validateStartScenarioSession(counselorId, scenario.id);
-    let currentUserSession;
+    let currentScenarioPathSession;
     if (startScenarioSessionDto.scenarioPathId) {
-      currentUserSession =
+      currentScenarioPathSession =
         await this.scenarioPathSessionService.startUserPathSession(
           startScenarioSessionDto.scenarioPathId,
-          startScenarioSessionDto.scenarioId,
         );
     }
 
@@ -150,14 +152,10 @@ export class ScenarioSessionService {
       await this.scenarioSessionRepository.createScenarioSession(counselorId, {
         ...startScenarioSessionDto,
         scenarioPathSessionItemId:
-          currentUserSession?.scenarioPathSessionItemId,
+          currentScenarioPathSession?.currentScenario?.sessionId,
       });
 
-    const roomMetadata = await this.createRoomMetadata(
-      scenario,
-      sessionEvents,
-      currentUserSession?.scenarioPathSessionItemId,
-    );
+    const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
 
     await this.livekitService.createRoom({
       name: `${scenarioSession.roomId}`,
@@ -176,7 +174,6 @@ export class ScenarioSessionService {
   private async createRoomMetadata(
     scenario: Scenarios,
     sessionEvents: SessionEvents[],
-    scenarioPathSessionItemId?: string,
   ) {
     if (!scenario.metadata?.lifeHistory) {
       this.logger.error(
@@ -200,7 +197,6 @@ export class ScenarioSessionService {
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
-      scenarioPathSessionItemId,
       scenario: {
         ...scenarioData,
         voice: scenarioVoice,
@@ -304,13 +300,9 @@ export class ScenarioSessionService {
       scenarioSession.scenarioId,
       callDuration,
     );
-    const roomMetadata = await this.livekitService.getRoomMetadata(
-      scenarioSession.roomId,
-    );
-    const scenarioPathSessionItemId = roomMetadata?.scenarioPathSessionItemId;
-    if (scenarioPathSessionItemId)
+    if (scenarioSession.scenarioPathSessionItemId)
       await this.scenarioPathSessionService.handleEndScenarioPathSession({
-        scenarioPathSessionItemId,
+        scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
         score,
         callDuration,
       });

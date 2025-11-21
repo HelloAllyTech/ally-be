@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { Pagination } from 'src/common/type/common.type';
 import { Scenarios } from '../entity/scenarios.entity';
 import { User } from 'src/user/entity/user.entity';
-import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
-import { v4 as uuidv4 } from 'uuid';
+import { CreateScenarioSessionDto } from '../dto/start-scenario-session-request.dto';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
@@ -104,7 +104,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
 
   async createScenarioSession(
     counselorId: number,
-    startScenarioSessionDto: StartScenarioSessionRequestDto,
+    createScenarioSessionDto: CreateScenarioSessionDto,
   ): Promise<ScenarioSessions> {
     const uuid = uuidv4();
 
@@ -120,9 +120,11 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       id: uuid,
       roomId: `ss_${uuid}`,
       counselorId,
-      scenarioId: startScenarioSessionDto.scenarioId,
+      scenarioId: createScenarioSessionDto.scenarioId,
       startedAt,
       tenantId: ExecutionManager.getTenantId(),
+      scenarioPathSessionItemId:
+        createScenarioSessionDto.scenarioPathSessionItemId,
       metadata: {
         sessionName: `SS-${sessionId}-${date}`,
       },

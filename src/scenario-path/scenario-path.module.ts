@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ScenarioPathController } from './controller/scenario-path.controller';
 import { ScenarioPathService } from './service/scenario-path.service';
 import { ScenarioPathRepository } from './repository/scenario-path.repository';
@@ -8,8 +8,10 @@ import { ScenarioPathSessionRepository } from './repository/scenario-path-sessio
 import { ScenarioPathSessionItemRepository } from './repository/scenario-path-session-item.repository';
 import { ScenarioPathSharedService } from './service/scenario-path-shared.service';
 import { ScenarioPathSessionController } from './controller/scenario-path-session.controller';
+import { LearnModule } from 'src/learn/learn.module';
 
 @Module({
+  imports: [forwardRef(() => LearnModule)],
   controllers: [ScenarioPathController, ScenarioPathSessionController],
   providers: [
     ScenarioPathService,

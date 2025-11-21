@@ -9,6 +9,8 @@ import { ScenarioPathItem } from '../entity/scenario-path-item.entity';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
+import { SessionItemStatus } from '../type/scenario-path-session-items.type';
+import { ScenarioPathSessionItem } from '../entity/scenario-path-session-item.entity';
 
 @Injectable()
 export class ScenarioPathSharedService {
@@ -94,5 +96,38 @@ export class ScenarioPathSharedService {
     return this.scenarioPathItemRepository.findOne({
       where: { id: scenarioPathItemId },
     });
+  }
+
+  async getNextScenarioPathItem(scenarioPathSessionId: string): Promise<
+    | (ScenarioPathItem & {
+        pathSessionItem: ScenarioPathSessionItem | null;
+      })
+    | null
+  > {
+    const result = await this.scenarioPathItemRepository
+      .createQueryBuilder('scenarioPathItem')
+      .leftJoinAndMapOne(
+        'scenarioPathItem.pathSessionItem',
+        'scenario_path_session_items',
+        'pathSessionItem',
+        'pathSessionItem.scenarioPathItemId = scenarioPathItem.id AND pathSessionItem.scenarioPathSessionId = :scenarioPathSessionId',
+        { scenarioPathSessionId },
+      )
+      .where(
+        '(pathSessionItem.status != :status OR pathSessionItem.status IS NULL)',
+        {
+          status: SessionItemStatus.COMPLETED,
+        },
+      )
+      .orderBy('scenarioPathItem.order', 'ASC')
+      .getOne();
+
+    if (!result) {
+      return null;
+    }
+
+    return result as ScenarioPathItem & {
+      pathSessionItem: ScenarioPathSessionItem | null;
+    };
   }
 }

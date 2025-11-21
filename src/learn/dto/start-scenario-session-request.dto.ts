@@ -26,7 +26,9 @@ export class StartScenarioSessionRequestDto {
   @IsNumber()
   @Max(DEFAULT_SCENARIO_SESSION_TTL_SECONDS)
   ttl?: number;
+}
 
+export class CreateScenarioSessionDto extends StartScenarioSessionRequestDto {
   @IsString()
   @IsOptional()
   scenarioPathSessionItemId?: string;

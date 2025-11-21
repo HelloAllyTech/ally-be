@@ -134,22 +134,6 @@ export class LiveKitService {
     }
   }
 
-  async getRoomMetadata(roomName: string): Promise<Record<string, any> | null> {
-    try {
-      const rooms = await this.roomService.listRooms();
-      const room = rooms.find((r) => r.name === roomName);
-      if (!room || !room.metadata) {
-        return null;
-      }
-      return JSON.parse(room.metadata);
-    } catch (error) {
-      this.logger.error(
-        `Failed to parse room metadata for ${roomName}: ${error.message}`,
-      );
-      return null;
-    }
-  }
-
   async listParticipants(roomName: string) {
     try {
       const fullRoomName = `${roomName}`;

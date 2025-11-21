@@ -258,6 +258,7 @@ describe('ScenarioPathSessionService', () => {
         ...mockScenarioPathWithScenarios,
         completedScenarios: 1,
         completedAt: mockScenarioPathSession.completedAt,
+        scenarioPathSessionId: 'session-1',
         scenarios: [
           {
             ...mockScenarioPathWithScenarios.scenarios[0],
@@ -295,6 +296,7 @@ describe('ScenarioPathSessionService', () => {
         ...mockScenarioPathWithScenarios,
         completedScenarios: 0,
         completedAt: null,
+        scenarioPathSessionId: null,
         scenarios: [
           {
             ...mockScenarioPathWithScenarios.scenarios[0],
