@@ -50,6 +50,7 @@ describe('ScenarioPathService', () => {
       find: jest.fn(),
       findOne: jest.fn(),
       update: jest.fn(),
+      softDelete: jest.fn(),
     } as any;
 
     mockScenarioPathItemRepo = {
@@ -59,6 +60,7 @@ describe('ScenarioPathService', () => {
       findOne: jest.fn(),
       delete: jest.fn(),
       update: jest.fn(),
+      softDelete: jest.fn(),
     } as any;
 
     mockEntityManager = {
@@ -711,6 +713,7 @@ describe('ScenarioPathService', () => {
         coverImageUrl: mockScenarioPath.coverImageUrl,
         status: mockScenarioPath.status,
         isGlobal: mockScenarioPath.isGlobal,
+        totalScenarios: 2,
         scenarios: [
           {
             id: mockScenarioPathItems[0].id,
@@ -956,6 +959,177 @@ describe('ScenarioPathService', () => {
       // When scenarios is not provided, items are not deleted or recreated
       expect(mockScenarioPathItemRepo.delete).not.toHaveBeenCalled();
       expect(mockScenarioPathItemRepo.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteScenarioPath', () => {
+    const mockScenarioPath: ScenarioPath = {
+      id: 'path-1',
+      title: 'Path 1',
+      description: 'Description 1',
+      status: ScenarioPathStatus.ACTIVE,
+    } as ScenarioPath;
+
+    it('should successfully delete a scenario path', async () => {
+      scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
+      scenarioPathSessionService.getScenarioPathSessionByScenarioPathId.mockResolvedValue(
+        null,
+      );
+      mockScenarioPathRepo.softDelete.mockResolvedValue({
+        affected: 1,
+      } as any);
+      mockScenarioPathItemRepo.softDelete.mockResolvedValue({
+        affected: 2,
+      } as any);
+
+      const result = await service.deleteScenarioPath('path-1');
+
+      expect(result).toEqual({ success: true });
+      expect(scenarioPathRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'path-1' },
+      });
+      expect(
+        scenarioPathSessionService.getScenarioPathSessionByScenarioPathId,
+      ).toHaveBeenCalledWith('path-1');
+      expect(dataSource.transaction).toHaveBeenCalled();
+      expect(mockScenarioPathRepo.softDelete).toHaveBeenCalledWith('path-1');
+      expect(mockScenarioPathItemRepo.softDelete).toHaveBeenCalledWith({
+        scenarioPathId: 'path-1',
+      });
+    });
+
+    it('should throw NotFoundException when scenario path not found', async () => {
+      scenarioPathRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.deleteScenarioPath('non-existent-id'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw BadRequestException when scenario path has active sessions', async () => {
+      scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
+      scenarioPathSessionService.getScenarioPathSessionByScenarioPathId.mockResolvedValue(
+        {
+          id: 'session-1',
+        } as any,
+      );
+
+      await expect(service.deleteScenarioPath('path-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(
+        scenarioPathSessionService.getScenarioPathSessionByScenarioPathId,
+      ).toHaveBeenCalledWith('path-1');
+    });
+  });
+
+  describe('duplicateScenarioPath', () => {
+    const mockScenarioPath: ScenarioPath = {
+      id: 'path-1',
+      title: 'Original Path',
+      description: 'Original Description',
+      coverImageUrl: 'https://example.com/image.jpg',
+      status: ScenarioPathStatus.ACTIVE,
+      isGlobal: false,
+      totalScenarios: 2,
+    } as ScenarioPath;
+
+    const mockScenarioPathItems: ScenarioPathItem[] = [
+      {
+        id: 'item-1',
+        scenarioPathId: 'path-1',
+        scenarioId: 1,
+        order: 1,
+        messageTitle: 'Message 1',
+        messageContent: 'Content 1',
+        minimumScore: 0,
+      } as ScenarioPathItem,
+      {
+        id: 'item-2',
+        scenarioPathId: 'path-1',
+        scenarioId: 2,
+        order: 2,
+        messageTitle: 'Message 2',
+        messageContent: 'Content 2',
+        minimumScore: 75,
+      } as ScenarioPathItem,
+    ];
+
+    it('should successfully duplicate a scenario path', async () => {
+      const duplicatedScenarioPath: ScenarioPath = {
+        id: 'duplicated-path-id',
+        title: 'Copy of Original Path',
+        description: 'Original Description',
+        coverImageUrl: 'https://example.com/image.jpg',
+        status: ScenarioPathStatus.DRAFT,
+        isGlobal: false,
+        totalScenarios: 2,
+      } as ScenarioPath;
+
+      scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
+      scenarioPathItemRepository.find.mockResolvedValue(mockScenarioPathItems);
+      mockScenarioPathRepo.save.mockResolvedValue(duplicatedScenarioPath);
+      mockScenarioPathItemRepo.create.mockImplementation((item) => item as any);
+      mockScenarioPathItemRepo.save.mockResolvedValue([] as any);
+
+      const result = await service.duplicateScenarioPath('path-1');
+
+      expect(result).toEqual({
+        id: duplicatedScenarioPath.id,
+        title: duplicatedScenarioPath.title,
+        description: duplicatedScenarioPath.description,
+        coverImageUrl: duplicatedScenarioPath.coverImageUrl,
+        status: duplicatedScenarioPath.status,
+      });
+      expect(scenarioPathRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'path-1' },
+      });
+      expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
+        where: { scenarioPathId: 'path-1' },
+      });
+      expect(mockScenarioPathRepo.save).toHaveBeenCalledWith({
+        title: 'Copy of Original Path',
+        description: 'Original Description',
+        coverImageUrl: 'https://example.com/image.jpg',
+        status: ScenarioPathStatus.DRAFT,
+        isGlobal: false,
+        totalScenarios: 2,
+      });
+      expect(mockScenarioPathItemRepo.create).toHaveBeenCalledTimes(2);
+      expect(mockScenarioPathItemRepo.save).toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when scenario path not found', async () => {
+      scenarioPathRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.duplicateScenarioPath('non-existent-id'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should duplicate scenario path with empty items array', async () => {
+      const duplicatedScenarioPath: ScenarioPath = {
+        id: 'duplicated-path-id',
+        title: 'Copy of Original Path',
+        description: 'Original Description',
+        coverImageUrl: 'https://example.com/image.jpg',
+        status: ScenarioPathStatus.DRAFT,
+        isGlobal: false,
+        totalScenarios: 0,
+      } as ScenarioPath;
+
+      scenarioPathRepository.findOne.mockResolvedValue({
+        ...mockScenarioPath,
+        totalScenarios: 0,
+      });
+      scenarioPathItemRepository.find.mockResolvedValue([]);
+      mockScenarioPathRepo.save.mockResolvedValue(duplicatedScenarioPath);
+
+      const result = await service.duplicateScenarioPath('path-1');
+
+      expect(result).toBeDefined();
+      expect(mockScenarioPathItemRepo.create).not.toHaveBeenCalled();
+      expect(mockScenarioPathItemRepo.save).not.toHaveBeenCalled();
     });
   });
 });

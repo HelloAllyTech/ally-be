@@ -92,6 +92,7 @@ describe('ScenarioPathSessionController', () => {
       coverImageUrl: 'https://example.com/image.jpg',
       status: 'ACTIVE' as any,
       isGlobal: false,
+      totalScenarios: 1,
       completedScenarios: 2,
       completedAt: new Date(),
       scenarios: [

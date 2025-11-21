@@ -18,6 +18,8 @@ describe('ScenarioPathController', () => {
     getScenarioPaths: jest.fn(),
     getScenarioPathById: jest.fn(),
     updateScenarioPath: jest.fn(),
+    deleteScenarioPath: jest.fn(),
+    duplicateScenarioPath: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -142,6 +144,7 @@ describe('ScenarioPathController', () => {
       coverImageUrl: 'https://example.com/image.jpg',
       status: ScenarioPathStatus.ACTIVE,
       isGlobal: false,
+      totalScenarios: 1,
       scenarios: [
         {
           id: 'item-1',
@@ -201,6 +204,36 @@ describe('ScenarioPathController', () => {
         'path-1',
         mockUpdateScenarioPathDto,
       );
+    });
+  });
+
+  describe('deleteScenarioPath', () => {
+    it('should successfully delete a scenario path', async () => {
+      const expectedResult = { success: true };
+      service.deleteScenarioPath.mockResolvedValue(expectedResult);
+
+      const result = await controller.deleteScenarioPath('path-1');
+
+      expect(result).toEqual(expectedResult);
+      expect(service.deleteScenarioPath).toHaveBeenCalledWith('path-1');
+    });
+  });
+
+  describe('duplicateScenarioPath', () => {
+    it('should successfully duplicate a scenario path', async () => {
+      const expectedResult = {
+        id: 'duplicated-path-id',
+        title: 'Copy of Path 1',
+        description: 'Description 1',
+        coverImageUrl: 'https://example.com/image.jpg',
+        status: ScenarioPathStatus.DRAFT,
+      };
+      service.duplicateScenarioPath.mockResolvedValue(expectedResult);
+
+      const result = await controller.duplicateScenarioPath('path-1');
+
+      expect(result).toEqual(expectedResult);
+      expect(service.duplicateScenarioPath).toHaveBeenCalledWith('path-1');
     });
   });
 });

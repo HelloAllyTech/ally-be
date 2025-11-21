@@ -14,6 +14,7 @@ import { ScenarioPathItem } from '../entity/scenario-path-item.entity';
 import {
   ScenarioPathStatus,
   ScenarioPathFilterOptions,
+  MinimalScenarioPathData,
 } from '../type/scenario-paths.type';
 import {
   SCENARIO_PATH_MAX_SCENARIOS,
@@ -32,6 +33,8 @@ import {
 import { ScenarioPathSessionService } from './scenario-path-session.service';
 import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
 import { ScenarioPathSharedService } from './scenario-path-shared.service';
+import { SuccessResponse } from 'src/common/type/common.type';
+import { DuplicateScenarioPathResponseDto } from '../dto/duplicate-scenario-path-response.dto';
 
 @Injectable()
 export class ScenarioPathService {
@@ -77,6 +80,9 @@ export class ScenarioPathService {
     const { title, description, coverImageUrl, isGlobal, status, scenarios } =
       createScenarioPathDto;
     await this.validateScenarioPath(createScenarioPathDto);
+    this.logger.info(
+      `Create Scenario Path validation passed for the title: ${title}`,
+    );
     const userIdStr = ExecutionManager.getUserId();
     const userId = userIdStr ? Number(userIdStr) : undefined;
 
@@ -108,13 +114,8 @@ export class ScenarioPathService {
         await scenarioPathItemRepo.save(items);
       }
 
-      return {
-        id: scenarioPath.id,
-        title: scenarioPath.title,
-        description: scenarioPath.description,
-        coverImageUrl: scenarioPath.coverImageUrl,
-        status: scenarioPath.status,
-      };
+      this.logger.info(`Scenario path ${scenarioPath.id} created successfully`);
+      return this.getMinimalScenarioPathData(scenarioPath);
     });
   }
 
@@ -172,6 +173,7 @@ export class ScenarioPathService {
     };
 
     await this.validateScenarioPath(updateScenarioPath);
+    this.logger.info(`Update Scenario Path ${id} validation passed`);
     const userIdStr = ExecutionManager.getUserId();
     const userId = userIdStr ? Number(userIdStr) : undefined;
 
@@ -212,14 +214,9 @@ export class ScenarioPathService {
       const updatedScenarioPath = await scenarioPathRepo.findOne({
         where: { id },
       });
+      this.logger.info(`Scenario path ${id} updated successfully`);
 
-      return {
-        id: updatedScenarioPath!.id,
-        title: updatedScenarioPath!.title,
-        description: updatedScenarioPath!.description,
-        coverImageUrl: updatedScenarioPath!.coverImageUrl,
-        status: updatedScenarioPath!.status,
-      };
+      return this.getMinimalScenarioPathData(updatedScenarioPath!);
     });
   }
 
@@ -309,9 +306,105 @@ export class ScenarioPathService {
     );
 
     if (missingScenarioIds.length > 0) {
+      this.logger.error(
+        `Scenario Path: ${scenarioPath.id ?? scenarioPath.title} validation failed: Invalid scenario IDs: ${missingScenarioIds}`,
+      );
       throw new BadRequestException(
         `Invalid scenario IDs: ${missingScenarioIds}`,
       );
     }
+  }
+
+  async deleteScenarioPath(id: string): Promise<SuccessResponse> {
+    const scenarioPath = await this.scenarioPathRepository.findOne({
+      where: { id },
+    });
+    if (!scenarioPath) {
+      throw new NotFoundException('Scenario path not found');
+    }
+
+    const scenarioPathSession =
+      await this.scenarioPathSessionService.getScenarioPathSessionByScenarioPathId(
+        id,
+      );
+    if (scenarioPathSession) {
+      this.logger.error(
+        `Delete blocked: Scenario Path ${id} has active sessions.`,
+      );
+      throw new BadRequestException(
+        'Cannot delete a scenario path with active sessions',
+      );
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.getRepository(ScenarioPath).softDelete(id);
+      await manager.getRepository(ScenarioPathItem).softDelete({
+        scenarioPathId: id,
+      });
+    });
+
+    this.logger.info(`Scenario path ${id} deleted successfully`);
+    return { success: true };
+  }
+
+  async duplicateScenarioPath(
+    id: string,
+  ): Promise<DuplicateScenarioPathResponseDto> {
+    const scenarioPath = await this.scenarioPathRepository.findOne({
+      where: { id },
+    });
+    if (!scenarioPath) {
+      throw new NotFoundException('Scenario path not found');
+    }
+
+    const scenarioPathItems = await this.scenarioPathItemRepository.find({
+      where: { scenarioPathId: id },
+    });
+
+    const newScenarioPath = {
+      title: `Copy of ${scenarioPath.title}`,
+      description: scenarioPath.description,
+      coverImageUrl: scenarioPath.coverImageUrl,
+      status: ScenarioPathStatus.DRAFT,
+      isGlobal: scenarioPath.isGlobal,
+      totalScenarios: scenarioPath.totalScenarios,
+    };
+
+    return await this.dataSource.transaction(async (manager) => {
+      const scenarioPathRepo = manager.getRepository(ScenarioPath);
+      const scenarioPathItemRepo = manager.getRepository(ScenarioPathItem);
+
+      const newScenarioPathData = await scenarioPathRepo.save(newScenarioPath);
+
+      if (scenarioPathItems.length > 0) {
+        const newScenarioPathItems = scenarioPathItems.map((item) =>
+          scenarioPathItemRepo.create({
+            scenarioPathId: newScenarioPathData.id,
+            scenarioId: item.scenarioId,
+            order: item.order,
+            messageTitle: item.messageTitle,
+            messageContent: item.messageContent,
+            minimumScore: item.minimumScore,
+          }),
+        );
+
+        await scenarioPathItemRepo.save(newScenarioPathItems);
+      }
+
+      this.logger.info(`Scenario path ${id} duplicated successfully`);
+      return this.getMinimalScenarioPathData(newScenarioPathData);
+    });
+  }
+
+  private getMinimalScenarioPathData(
+    scenarioPath: ScenarioPath,
+  ): MinimalScenarioPathData {
+    return {
+      id: scenarioPath.id,
+      title: scenarioPath.title,
+      description: scenarioPath.description,
+      coverImageUrl: scenarioPath.coverImageUrl,
+      status: scenarioPath.status,
+    };
   }
 }
