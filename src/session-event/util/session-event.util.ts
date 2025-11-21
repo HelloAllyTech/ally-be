@@ -154,25 +154,48 @@ export const mapUpdateEventDtoToDbEvent = (
   ),
 });
 
-const extractEventIdsFromExpression = (
-  expression: CombinationExpressionRequestDto | undefined,
+/**
+ * Extract all event IDs from a combination expression
+ * Works with both request format (CombinationExpressionRequestDto) and DB format (CombinationExpressionDto)
+ */
+export const extractEventIds = (
+  expression:
+    | CombinationExpressionRequestDto
+    | CombinationExpressionDto
+    | undefined,
 ): string[] => {
   if (!expression) return [];
 
   const ids: string[] = [];
 
-  // If it's a simple identifier, add the id
-  if (expression.id) {
+  // Handle identifier in DB format (has type field)
+  if (
+    'type' in expression &&
+    expression.type === CombinationExpressionType.IDENTIFIER &&
+    expression.id
+  ) {
     ids.push(expression.id);
   }
+  // Handle identifier in request format (direct id without type check)
+  else if (expression.id && !('type' in expression)) {
+    ids.push(expression.id);
+  }
+
   // Recursively extract from left (used in AND, OR, and NOT)
   if (expression.left) {
-    ids.push(...extractEventIdsFromExpression(expression.left));
+    ids.push(...extractEventIds(expression.left));
   }
+
   // Recursively extract from right (used in AND, OR)
   if (expression.right) {
-    ids.push(...extractEventIdsFromExpression(expression.right));
+    ids.push(...extractEventIds(expression.right));
   }
+
+  // Recursively extract from operand (used in NOT for DB format)
+  if ('operand' in expression && expression.operand) {
+    ids.push(...extractEventIds(expression.operand));
+  }
+
   return ids;
 };
 
@@ -187,46 +210,14 @@ export const getUniqueCombinationExpressionEventIdList = (
         event.detectionData?.expression,
     )
     ?.forEach((event) => {
-      allIds.push(
-        ...extractEventIdsFromExpression(event.detectionData?.expression),
-      );
+      allIds.push(...extractEventIds(event.detectionData?.expression));
     }) ?? [];
   return Array.from(new Set(allIds));
 };
 
 /**
- * Extract all event IDs referenced in a combination expression tree
- */
-export const extractEventIds = (
-  expr: CombinationExpressionDto | undefined,
-): string[] => {
-  const ids: string[] = [];
-
-  const traverse = (node: CombinationExpressionDto | undefined) => {
-    if (!node) return;
-
-    if (node.type === CombinationExpressionType.IDENTIFIER && node.id) {
-      ids.push(node.id);
-    }
-
-    if (node.left) traverse(node.left);
-    if (node.right) traverse(node.right);
-    if (node.operand) traverse(node.operand);
-  };
-
-  traverse(expr);
-  return ids;
-};
-
-/**
  * Validate that a combination event does not create circular dependencies
  * Uses depth-first search with recursion stack tracking to detect cycles
- *
- * @param eventId - The ID of the event being created/updated
- * @param expression - The combination expression to validate
- * @param sessionEventRepository - Repository to fetch referenced events
- * @param maxDepth - Maximum allowed dependency depth (default: 10)
- * @throws BadRequestException if a cycle is detected or max depth is exceeded
  */
 export const validateNoCycles = async (
   eventId: string,

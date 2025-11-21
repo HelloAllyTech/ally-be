@@ -16,7 +16,7 @@ import {
   mapCreateEventDtoToDbEvent,
   mapUpdateEventDtoToDbEvent,
   mapDbExpressionToResponse,
-  getUniqueCombinationExpressionEventIdList,
+  extractEventIds,
   validateNoCycles,
 } from '../util/session-event.util';
 import {
@@ -35,33 +35,48 @@ export class SessionEventService {
   async createSessionEvents(
     createEventDtos: CreateSessionEventDto[],
   ): Promise<SessionEvents[]> {
-    const combinationExpressionEventIds =
-      getUniqueCombinationExpressionEventIdList(createEventDtos);
-    const eventDetails = await this.sessionEventRepository.findByIds(
-      combinationExpressionEventIds,
-    );
-    if (eventDetails?.length !== combinationExpressionEventIds.length) {
-      throw new BadRequestException('Invalid combination expression event IDs');
-    }
     const events = createEventDtos.map((event) => ({
       id: v4(),
       ...(mapCreateEventDtoToDbEvent(event) || {}),
     }));
 
-    // Validate no circular dependencies for COMBINATION events
+    // Validate events
+    await this.validateCreateSessionEvents(events);
+
+    return this.sessionEventRepository.createSessionEvents(
+      events as CreateSessionEventDto[],
+    );
+  }
+
+  private async validateCreateSessionEvents(
+    events: Partial<SessionEvents>[],
+  ): Promise<void> {
+    const combinationExpressionEventIds: string[] = [];
     for (const event of events) {
-      if (event.detectionType === SessionEventDetectionType.COMBINATION) {
+      if (
+        event.detectionType === SessionEventDetectionType.COMBINATION &&
+        event.id
+      ) {
         await validateNoCycles(
           event.id,
           event.detectionData?.expression,
           this.sessionEventRepository,
         );
+
+        combinationExpressionEventIds.push(
+          ...extractEventIds(event.detectionData?.expression),
+        );
+
+        const eventDetails = await this.sessionEventRepository.findByIds(
+          combinationExpressionEventIds,
+        );
+        if (eventDetails?.length !== combinationExpressionEventIds.length) {
+          throw new BadRequestException(
+            'Invalid combination expression event IDs',
+          );
+        }
       }
     }
-
-    return this.sessionEventRepository.createSessionEvents(
-      events as CreateSessionEventDto[],
-    );
   }
 
   async getSessionEventsByScenarioId(

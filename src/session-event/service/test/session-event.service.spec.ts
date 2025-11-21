@@ -1487,14 +1487,13 @@ describe('SessionEventService', () => {
           },
         };
 
-        // Mock findByIds to return empty array (no combination expressions to validate)
-        repository.findByIds.mockResolvedValue([]);
         repository.createSessionEvents.mockResolvedValue([mockSessionEvent]);
 
         const result = await service.createSessionEvents([createEventDto]);
 
         expect(result).toBeDefined();
-        expect(repository.findByIds).toHaveBeenCalledWith([]);
+        // findByIds should not be called for non-combination events
+        expect(repository.findByIds).not.toHaveBeenCalled();
         // findOne should not be called for circular dependency check
         expect(repository.findOne).not.toHaveBeenCalled();
       });
