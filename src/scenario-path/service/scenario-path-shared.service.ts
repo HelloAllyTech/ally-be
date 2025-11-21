@@ -87,4 +87,12 @@ export class ScenarioPathSharedService {
       order: { order: 'ASC' },
     });
   }
+
+  async getScenarioPathItemById(
+    scenarioPathItemId: string,
+  ): Promise<ScenarioPathItem | null> {
+    return this.scenarioPathItemRepository.findOne({
+      where: { id: scenarioPathItemId },
+    });
+  }
 }

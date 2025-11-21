@@ -26,7 +26,6 @@ import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../interface/learn-message.interface';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
-import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { Scenarios } from '../entity/scenarios.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
@@ -40,6 +39,9 @@ import { AppConfigService } from 'src/config/config.service';
 import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
 import { ScenarioTenantService } from './scenario-tenant.service';
+import { ScenarioPathStatus } from 'src/scenario-path/type/scenario-paths.type';
+import { ScenarioPathService } from 'src/scenario-path/service/scenario-path.service';
+import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -55,7 +57,8 @@ export class ScenarioSessionService {
     private dataSource: DataSource,
     private aiService: AiService,
     private scenarioTenantService: ScenarioTenantService,
-    private permissionsService: PermissionsService,
+    private scenarioPathService: ScenarioPathService,
+    private scenarioPathSessionService: ScenarioPathSessionService,
     private permissionValidatorService: PermissionValidator,
     private simulationCreditsService: SimulationCreditsService,
     private configService: AppConfigService,
@@ -129,6 +132,14 @@ export class ScenarioSessionService {
       startScenarioSessionDto.scenarioId,
     );
     await this.validateStartScenarioSession(counselorId, scenario.id);
+    let currentUserSession;
+    if (startScenarioSessionDto.scenarioPathId) {
+      currentUserSession =
+        await this.scenarioPathSessionService.startUserPathSession(
+          startScenarioSessionDto.scenarioPathId,
+          startScenarioSessionDto.scenarioId,
+        );
+    }
 
     const sessionEvents =
       await this.sessionEventService.getSessionEventsByScenarioId(
@@ -136,12 +147,17 @@ export class ScenarioSessionService {
       );
 
     const scenarioSession =
-      await this.scenarioSessionRepository.createScenarioSession(
-        counselorId,
-        startScenarioSessionDto,
-      );
+      await this.scenarioSessionRepository.createScenarioSession(counselorId, {
+        ...startScenarioSessionDto,
+        scenarioPathSessionItemId:
+          currentUserSession?.scenarioPathSessionItemId,
+      });
 
-    const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
+    const roomMetadata = await this.createRoomMetadata(
+      scenario,
+      sessionEvents,
+      currentUserSession?.scenarioPathSessionItemId,
+    );
 
     await this.livekitService.createRoom({
       name: `${scenarioSession.roomId}`,
@@ -160,6 +176,7 @@ export class ScenarioSessionService {
   private async createRoomMetadata(
     scenario: Scenarios,
     sessionEvents: SessionEvents[],
+    scenarioPathSessionItemId?: string,
   ) {
     if (!scenario.metadata?.lifeHistory) {
       this.logger.error(
@@ -183,6 +200,7 @@ export class ScenarioSessionService {
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
+      scenarioPathSessionItemId,
       scenario: {
         ...scenarioData,
         voice: scenarioVoice,
@@ -194,6 +212,7 @@ export class ScenarioSessionService {
   private async validateStartScenarioSession(
     counselorId: number,
     scenarioId: number,
+    scenarioPathId?: string,
   ) {
     const tenantId = ExecutionManager.getTenantId();
     if (!tenantId) {
@@ -207,6 +226,16 @@ export class ScenarioSessionService {
       throw new BadRequestException(
         'Scenario is not available for your organization',
       );
+    }
+    if (scenarioPathId) {
+      const scenarioPath =
+        await this.scenarioPathService.getScenarioPathById(scenarioPathId);
+      if (!scenarioPath) {
+        throw new BadRequestException('Scenario path not found');
+      }
+      if (scenarioPath.status !== ScenarioPathStatus.ACTIVE) {
+        throw new BadRequestException('Scenario path is not active');
+      }
     }
     const activeScenarioSessions = await this.getScenarioSessions(
       counselorId,
@@ -275,6 +304,16 @@ export class ScenarioSessionService {
       scenarioSession.scenarioId,
       callDuration,
     );
+    const roomMetadata = await this.livekitService.getRoomMetadata(
+      scenarioSession.roomId,
+    );
+    const scenarioPathSessionItemId = roomMetadata?.scenarioPathSessionItemId;
+    if (scenarioPathSessionItemId)
+      await this.scenarioPathSessionService.handleEndScenarioPathSession({
+        scenarioPathSessionItemId,
+        score,
+        callDuration,
+      });
 
     try {
       await this.livekitService.deleteRoom(scenarioSession.roomId);
