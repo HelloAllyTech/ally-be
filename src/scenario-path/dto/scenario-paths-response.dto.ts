@@ -18,7 +18,7 @@ export class ScenarioPathResponseDto {
   @ApiProperty({ description: 'Status of the scenario path' })
   status!: ScenarioPathStatus;
 
-  @ApiProperty({ description: 'Whether the path is available globally' })
+  @ApiProperty({ description: 'Check if scenario path is global' })
   isGlobal!: boolean;
 
   @ApiProperty({ description: 'Total scenarios in the scenario path' })
@@ -27,7 +27,9 @@ export class ScenarioPathResponseDto {
   @ApiProperty({ description: 'Updated at' })
   updatedAt!: Date;
 
-  @ApiProperty({ description: 'whether scenario path bis assigned' })
+  @ApiProperty({
+    description: 'Check if scenario path is assigned to a tenant',
+  })
   isAssignedToTenant?: boolean;
 }
 

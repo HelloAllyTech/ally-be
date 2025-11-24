@@ -579,7 +579,7 @@ export class LearnController {
   })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_TENANT])
   @Post('scenario/tenant/:tenantId')
-  async assignScenarioToTenant(
+  async assignScenariosToTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
     @Body() addScenarioTenantDto: AddScenarioTenantDto,
   ) {
@@ -595,7 +595,7 @@ export class LearnController {
   })
   @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_TENANT])
   @Delete('scenario/tenant/:tenantId')
-  async removeScenarioFromTenants(
+  async removeScenariosFromTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
     @Body() deleteScenarioTenantDto: DeleteScenarioTenantDto,
   ) {

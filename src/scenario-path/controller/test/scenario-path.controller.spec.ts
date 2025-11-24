@@ -293,7 +293,7 @@ describe('ScenarioPathController', () => {
         expectedResult,
       );
 
-      const result = await controller.assignScenarioToTenant(
+      const result = await controller.assignScenarioPathsToTenant(
         tenantId,
         createDto,
       );
@@ -320,7 +320,7 @@ describe('ScenarioPathController', () => {
         expectedResult,
       );
 
-      const result = await controller.removeScenarioFromTenants(
+      const result = await controller.removeScenarioPathsFromTenant(
         tenantId,
         deleteDto,
       );

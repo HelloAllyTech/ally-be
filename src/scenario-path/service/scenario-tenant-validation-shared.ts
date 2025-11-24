@@ -42,7 +42,7 @@ export class ScenarioPathTenantValidationShared {
     );
     if (missingScenarioPathIds.length > 0) {
       throw new NotFoundException(
-        `Scenario path${missingScenarioPathIds.join(', ')} do not exist`,
+        `Scenario path ${missingScenarioPathIds.join(', ')} do not exist`,
       );
     }
   }

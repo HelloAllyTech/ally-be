@@ -165,8 +165,10 @@ describe('ScenarioPathRepository', () => {
         'scenario_path_tenants',
         'scenarioPathTenant',
         '"scenarioPathTenant"."scenarioPathId" = scenarioPath.id AND "scenarioPathTenant"."tenantId" = :tenantId',
-        { tenantId: 'tenant-1' },
       );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        tenantId: 'tenant-1',
+      });
       expect(result).toEqual({
         data: entities,
         count: 1,
@@ -197,6 +199,9 @@ describe('ScenarioPathRepository', () => {
       expect(queryBuilder.limit).toHaveBeenCalledWith(10);
       expect(queryBuilder.offset).toHaveBeenCalledWith(5);
       expect(queryBuilder.leftJoinAndMapOne).toHaveBeenCalled();
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        tenantId: 'tenant-1',
+      });
       expect(result).toEqual({
         data: entities,
         count: 1,
@@ -241,7 +246,14 @@ describe('ScenarioPathRepository', () => {
         'scenarioPathSession',
         '"scenarioPathSession"."scenarioPathId" = scenarioPath.id AND scenarioPathSession.userId = :userId',
       );
-      expect(queryBuilder.setParameters).toHaveBeenCalledWith({ userId: 123 });
+      // Expect setParameters to be called twice
+      expect(queryBuilder.setParameters).toHaveBeenCalledTimes(2);
+      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(1, {
+        userId: 123,
+      });
+      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(2, {
+        tenantId: 'tenant',
+      });
       expect(result).toEqual({
         data: entities,
         count: 1,
@@ -282,8 +294,35 @@ describe('ScenarioPathRepository', () => {
         'scenario_path_tenants',
         'scenarioPathTenant',
         '"scenarioPathTenant"."scenarioPathId" = scenarioPath.id AND scenarioPathTenant.tenantId = :tenantId',
-        { tenantId: 'tenant-1' },
       );
+      // Expect setParameters to be called twice
+      expect(queryBuilder.setParameters).toHaveBeenCalledTimes(2);
+      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(1, {
+        userId: 123,
+      });
+      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(2, {
+        tenantId: 'tenant-1',
+      });
+      expect(result).toEqual({
+        data: entities,
+        count: 1,
+      });
+    });
+
+    it('should handle userId only without tenantId', async () => {
+      const filters: ScenarioPathWithSessionFilterOptions = {
+        userId: 123,
+        tenantId: '',
+      };
+      const entities = [mockScenarioPathWithSession];
+      queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
+
+      const result = await repository.getAllScenarioPathsWithSession(filters);
+
+      // When no tenantId, setParameters should only be called once
+      expect(queryBuilder.setParameters).toHaveBeenCalledTimes(1);
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({ userId: 123 });
+      expect(queryBuilder.innerJoin).not.toHaveBeenCalled();
       expect(result).toEqual({
         data: entities,
         count: 1,
@@ -303,7 +342,14 @@ describe('ScenarioPathRepository', () => {
       const result = await repository.getAllScenarioPathsWithSession(filters);
 
       expect(queryBuilder.leftJoinAndMapOne).toHaveBeenCalled();
-      expect(queryBuilder.setParameters).toHaveBeenCalledWith({ userId: 123 });
+      // Expect setParameters to be called twice
+      expect(queryBuilder.setParameters).toHaveBeenCalledTimes(2);
+      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(1, {
+        userId: 123,
+      });
+      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(2, {
+        tenantId: 'tenant-1',
+      });
       expect(queryBuilder.limit).toHaveBeenCalledWith(10);
       expect(queryBuilder.offset).toHaveBeenCalledWith(5);
       expect(queryBuilder.innerJoin).toHaveBeenCalled();

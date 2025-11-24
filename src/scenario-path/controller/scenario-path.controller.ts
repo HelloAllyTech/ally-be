@@ -172,7 +172,7 @@ export class ScenarioPathController {
   })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_PATH_TENANT])
   @Post('scenario-paths/tenant/:tenantId')
-  async assignScenarioToTenant(
+  async assignScenarioPathsToTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
     @Body() createScenarioPathTenantDto: CreateScenarioPathTenantDto,
   ) {
@@ -188,7 +188,7 @@ export class ScenarioPathController {
   })
   @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_PATH_TENANT])
   @Delete('scenario-paths/tenant/:tenantId')
-  async removeScenarioFromTenants(
+  async removeScenarioPathsFromTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
     @Body() deleteScenarioPathTenantDto: DeleteScenarioPathTenantDto,
   ) {

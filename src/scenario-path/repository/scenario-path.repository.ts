@@ -33,13 +33,16 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
     }
 
     if (filters?.tenantId) {
-      query.leftJoinAndMapOne(
-        'scenarioPath.scenarioPathTenant',
-        'scenario_path_tenants',
-        'scenarioPathTenant',
-        '"scenarioPathTenant"."scenarioPathId" = scenarioPath.id AND "scenarioPathTenant"."tenantId" = :tenantId',
-        { tenantId: filters.tenantId },
-      );
+      query
+        .leftJoinAndMapOne(
+          'scenarioPath.scenarioPathTenant',
+          'scenario_path_tenants',
+          'scenarioPathTenant',
+          '"scenarioPathTenant"."scenarioPathId" = scenarioPath.id AND "scenarioPathTenant"."tenantId" = :tenantId',
+        )
+        .setParameters({
+          tenantId: filters.tenantId,
+        });
     }
     const [data, count] = await query.getManyAndCount();
 
@@ -90,12 +93,15 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
     }
 
     if (filters.tenantId) {
-      query.innerJoin(
-        'scenario_path_tenants',
-        'scenarioPathTenant',
-        '"scenarioPathTenant"."scenarioPathId" = scenarioPath.id AND scenarioPathTenant.tenantId = :tenantId',
-        { tenantId: filters.tenantId },
-      );
+      query
+        .innerJoin(
+          'scenario_path_tenants',
+          'scenarioPathTenant',
+          '"scenarioPathTenant"."scenarioPathId" = scenarioPath.id AND scenarioPathTenant.tenantId = :tenantId',
+        )
+        .setParameters({
+          tenantId: filters.tenantId,
+        });
     }
 
     const [data, count] = await query.getManyAndCount();
