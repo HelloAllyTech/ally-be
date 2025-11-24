@@ -19,7 +19,7 @@ import { ScenarioPathSessionsResponseDto } from '../dto/scenario-path-sessions.d
 import { GetUpcomingScenarioPathItemResponseDto } from '../dto/get-scenario-path.dto';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
-import { ScenarioPathSharedService } from '../service/scenario-path-shared.service';
+import { CreateScenarioPathSessionResponseDto } from '../dto/create-scenario-path-item.dto';
 
 @ApiTags('Learn Scenario Paths')
 @ApiBearerAuth()
@@ -28,7 +28,6 @@ import { ScenarioPathSharedService } from '../service/scenario-path-shared.servi
 export class ScenarioPathSessionController {
   constructor(
     private readonly scenarioPathSessionService: ScenarioPathSessionService,
-    private readonly scenarioPathSharedService: ScenarioPathSharedService,
   ) {}
 
   @ApiOperation({ summary: 'Get scenario path sessions' })
@@ -71,15 +70,20 @@ export class ScenarioPathSessionController {
   @ApiOperation({ summary: 'Create Scenario path session for user' })
   @ApiResponse({
     status: 200,
-    type: ScenarioPathSessionsResponseDto,
+    type: CreateScenarioPathSessionResponseDto,
+    example: {
+      scenarioPathSessionItemId: '123',
+    },
   })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_PATH])
   @Post('/scenario-paths/:id/create-session')
-  async createScenarioPathSession(@Param('id', ParseUUIDPipe) id: string) {
+  async createScenarioPathSession(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<CreateScenarioPathSessionResponseDto> {
     return this.scenarioPathSessionService.createUserPathSession(id);
   }
 
-  @ApiOperation({ summary: 'Get next scenario' })
+  @ApiOperation({ summary: 'Get upcoming scenario' })
   @ApiResponse({
     status: 200,
     description: 'Upcoming scenario path item retrieved successfully',
@@ -105,16 +109,19 @@ export class ScenarioPathSessionController {
         "You have successfully completed the first scenario. Now, let's move on to the next challenge.",
     },
   })
-  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_PATH])
   @Get('/scenario-paths/:scenarioSessionId/upcoming-scenario')
   async getUpcomingScenarioPathItem(
     @Param('scenarioSessionId', ParseUUIDPipe)
     scenarioSessionId: string,
-  ) {
+  ): Promise<GetUpcomingScenarioPathItemResponseDto | null> {
     const result =
       await this.scenarioPathSessionService.getNextScenarioPathItem(
         scenarioSessionId,
       );
+    if (!result?.nextScenarioData?.scenario || !result?.currentPathItem) {
+      return null;
+    }
     return {
       ...(result?.nextScenarioData?.scenario || {}),
       order: result?.nextScenarioData?.pathItem?.order,

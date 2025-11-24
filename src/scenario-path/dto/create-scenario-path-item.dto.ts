@@ -54,3 +54,13 @@ export class CreateScenarioPathItemDto {
   @Min(1)
   order!: number;
 }
+
+export class CreateScenarioPathSessionResponseDto {
+  @ApiProperty({
+    description: 'ID of the first scenario path session item',
+    example: '123',
+  })
+  @IsString()
+  @IsNotEmpty()
+  scenarioPathSessionItemId!: string;
+}

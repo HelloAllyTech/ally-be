@@ -171,41 +171,48 @@ export class ScenarioPathSessionService {
     if (existingScenarioPathSession?.id)
       throw new BadRequestException('Scenario path session already exists');
 
-    const scenarioPathSessionEntityInstance =
-      this.scenarioPathSessionRepository.create({
-        scenarioPathId,
-        userId: Number(userId),
-        startedAt: new Date(),
-        completedScenarios: 0,
-      });
-    const scenarioPathSession = await this.scenarioPathSessionRepository.save(
-      scenarioPathSessionEntityInstance,
+    return await this.dataSource.transaction(
+      async (entityManager: EntityManager) => {
+        const scenarioPathSessionRepo =
+          entityManager.getRepository(ScenarioPathSession);
+        const scenarioPathSessionItemRepo = entityManager.getRepository(
+          ScenarioPathSessionItem,
+        );
+        const scenarioPathSessionEntityInstance =
+          scenarioPathSessionRepo.create({
+            scenarioPathId,
+            userId: Number(userId),
+            startedAt: new Date(),
+            completedScenarios: 0,
+          });
+        const scenarioPathSession = await scenarioPathSessionRepo.save(
+          scenarioPathSessionEntityInstance,
+        );
+        const scenarioPathItems =
+          await this.scenarioPathSharedService.getScenarioPathItems(
+            scenarioPathId,
+          );
+        if (!scenarioPathItems || scenarioPathItems.length === 0) {
+          throw new BadRequestException(
+            'No sub simulations available for this scenario path',
+          );
+        }
+        //Taking the first element as the list is sorted by order
+        const scenarioPathSessionItemEntityInstance =
+          scenarioPathSessionItemRepo.create({
+            scenarioPathSessionId: scenarioPathSession.id,
+            scenarioPathItemId: scenarioPathItems[0].id,
+            userId: Number(userId),
+            status: SessionItemStatus.UNLOCKED,
+          });
+        const scenarioPathSessionItem = await scenarioPathSessionItemRepo.save(
+          scenarioPathSessionItemEntityInstance,
+        );
+        return {
+          scenarioPathSessionItemId: scenarioPathSessionItem.id,
+        };
+      },
     );
-    const scenarioPathItems =
-      await this.scenarioPathSharedService.getScenarioPathItems(scenarioPathId);
-    if (!scenarioPathItems || scenarioPathItems.length === 0) {
-      throw new BadRequestException(
-        'No sub simulations available for this scenario path',
-      );
-    }
-    //Taking the first element as the list is sorted by order
-    const scenarioPathSessionItemEntityInstance =
-      this.scenarioPathSessionItemRepository.create({
-        scenarioPathSessionId: scenarioPathSession.id,
-        scenarioPathItemId: scenarioPathItems[0].id,
-        userId: Number(userId),
-        status: SessionItemStatus.UNLOCKED,
-      });
-    const scenarioPathSessionItem =
-      await this.scenarioPathSessionItemRepository.save(
-        scenarioPathSessionItemEntityInstance,
-      );
-    return {
-      scenarioPathSessionId: scenarioPathSession.id,
-      completedAt: scenarioPathSession.completedAt,
-      completedScenarios: scenarioPathSession.completedScenarios,
-      currentScenario: scenarioPathSessionItem,
-    };
   }
 
   async getNextScenarioPathItem(scenarioSessionId: string) {
