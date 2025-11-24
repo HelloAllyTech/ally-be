@@ -67,7 +67,7 @@ export class ScenarioTenantService {
   }
 
   async getScenarioTenant(tenantId: string, scenarioId: number) {
-    return this.scenarioTenantRepository.find({
+    return this.scenarioTenantRepository.findOne({
       where: { tenantId, scenarioId },
     });
   }

@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioPathSessionRepository } from '../repository/scenario-path-session.repository';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -68,10 +72,14 @@ export class ScenarioPathSessionService {
     if (!userId) {
       throw new UnauthorizedException('Unauthorized access');
     }
-
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new NotFoundException('Tenant not found');
+    }
     const scenarioPathWithScenarios =
       await this.scenarioPathSharedService.getScenarioPathWithScenarios(
         scenarioPathId,
+        tenantId,
       );
 
     const scenarioPathSession =
