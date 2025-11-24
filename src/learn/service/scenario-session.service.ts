@@ -39,9 +39,9 @@ import { AppConfigService } from 'src/config/config.service';
 import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
 import { ScenarioTenantService } from './scenario-tenant.service';
-import { ScenarioPathStatus } from 'src/scenario-path/type/scenario-paths.type';
 import { ScenarioPathService } from 'src/scenario-path/service/scenario-path.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
+import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -134,14 +134,11 @@ export class ScenarioSessionService {
     if (!scenario) {
       throw new BadRequestException('Scenario not found');
     }
-    await this.validateStartScenarioSession(counselorId, scenario.id);
-    let currentPathSessionItem;
-    if (startScenarioSessionDto.scenarioPathSessionItemId) {
-      currentPathSessionItem =
-        await this.scenarioPathSessionService.startUserPathSession(
-          startScenarioSessionDto.scenarioPathSessionItemId,
-        );
-    }
+    await this.validateStartScenarioSession(
+      counselorId,
+      scenario.id,
+      startScenarioSessionDto.scenarioPathSessionItemId,
+    );
 
     const sessionEvents =
       await this.sessionEventService.getSessionEventsByScenarioId(
@@ -151,7 +148,8 @@ export class ScenarioSessionService {
     const scenarioSession =
       await this.scenarioSessionRepository.createScenarioSession(counselorId, {
         ...startScenarioSessionDto,
-        scenarioPathSessionItemId: currentPathSessionItem?.id,
+        scenarioPathSessionItemId:
+          startScenarioSessionDto.scenarioPathSessionItemId,
       });
 
     const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
@@ -207,7 +205,7 @@ export class ScenarioSessionService {
   private async validateStartScenarioSession(
     counselorId: number,
     scenarioId: number,
-    scenarioPathId?: string,
+    scenarioPathSessionItemId?: string,
   ) {
     const tenantId = ExecutionManager.getTenantId();
     if (!tenantId) {
@@ -222,14 +220,16 @@ export class ScenarioSessionService {
         'Scenario is not available for your organization',
       );
     }
-    if (scenarioPathId) {
-      const scenarioPath =
-        await this.scenarioPathService.getScenarioPathById(scenarioPathId);
-      if (!scenarioPath) {
-        throw new BadRequestException('Scenario path not found');
+    if (scenarioPathSessionItemId) {
+      const scenarioPathSessionItem =
+        await this.scenarioPathSessionService.getPermittedPathSessionItemBySessionItemId(
+          scenarioPathSessionItemId,
+        );
+      if (!scenarioPathSessionItem) {
+        throw new BadRequestException('Scenario path session item not found');
       }
-      if (scenarioPath.status !== ScenarioPathStatus.ACTIVE) {
-        throw new BadRequestException('Scenario path is not active');
+      if (scenarioPathSessionItem.status === SessionItemStatus.LOCKED) {
+        throw new BadRequestException('Scenario path session item is locked');
       }
     }
     const activeScenarioSessions = await this.getScenarioSessions(

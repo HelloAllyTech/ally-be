@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
+import { DataSource } from 'typeorm';
+
 import { ScenarioPathSessionService } from '../scenario-path-session.service';
 import { ScenarioPathSessionRepository } from '../../repository/scenario-path-session.repository';
 import { ScenarioPathSharedService } from '../scenario-path-shared.service';
@@ -35,6 +37,10 @@ describe('ScenarioPathSessionService', () => {
     find: jest.fn(),
   };
 
+  const mockDataSource = {
+    transaction: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -50,6 +56,10 @@ describe('ScenarioPathSessionService', () => {
         {
           provide: ScenarioPathSessionItemRepository,
           useValue: mockScenarioPathSessionItemRepository,
+        },
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
         },
       ],
     }).compile();

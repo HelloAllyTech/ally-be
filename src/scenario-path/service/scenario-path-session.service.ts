@@ -3,6 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { DataSource, In } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioPathSessionRepository } from '../repository/scenario-path-session.repository';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -26,6 +27,7 @@ export class ScenarioPathSessionService {
     private readonly scenarioPathSessionRepository: ScenarioPathSessionRepository,
     private readonly scenarioPathSharedService: ScenarioPathSharedService,
     private readonly scenarioPathSessionItemRepository: ScenarioPathSessionItemRepository,
+    private readonly dataSource: DataSource,
   ) {}
 
   async getUserScenarioPaths(
@@ -128,36 +130,6 @@ export class ScenarioPathSessionService {
     };
   }
 
-  async updatePathSessionItem(
-    scenarioPathSessionItemId: string,
-    updatePathSessionItemDto: Partial<ScenarioPathSessionItem>,
-  ) {
-    return this.scenarioPathSessionItemRepository.update(
-      scenarioPathSessionItemId,
-      updatePathSessionItemDto,
-    );
-  }
-
-  async updatePathSession(
-    scenarioPathSessionId: string,
-    updatePathSessionDto: Partial<ScenarioPathSession>,
-  ) {
-    return this.scenarioPathSessionRepository.update(
-      scenarioPathSessionId,
-      updatePathSessionDto,
-    );
-  }
-
-  async updatePathSessionItemByPathSessionIdAndOrder(
-    scenarioPathSessionItemId: string,
-    updatePathSessionItemDto: Partial<ScenarioPathSessionItem>,
-  ) {
-    return this.scenarioPathSessionItemRepository.update(
-      scenarioPathSessionItemId,
-      updatePathSessionItemDto,
-    );
-  }
-
   async getScenarioPathSessionById(scenarioPathSessionId: string) {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
@@ -176,7 +148,11 @@ export class ScenarioPathSessionService {
       throw new UnauthorizedException('Unauthorized access');
     }
     return this.scenarioPathSessionItemRepository.findOne({
-      where: { id: scenarioPathSessionItemId, userId: Number(userId) },
+      where: {
+        id: scenarioPathSessionItemId,
+        userId: Number(userId),
+        status: In([SessionItemStatus.UNLOCKED, SessionItemStatus.COMPLETED]),
+      },
     });
   }
 
@@ -186,9 +162,10 @@ export class ScenarioPathSessionService {
       throw new UnauthorizedException('Unauthorized access');
     }
     const existingScenarioPathSession =
-      await this.getUserScenarioPathItems(scenarioPathId);
-    if (existingScenarioPathSession.scenarioPathSessionId)
+      await this.getScenarioPathSessionByScenarioPathId(scenarioPathId);
+    if (existingScenarioPathSession?.id)
       throw new BadRequestException('Scenario path session already exists');
+
     const scenarioPathSessionEntityInstance =
       this.scenarioPathSessionRepository.create({
         scenarioPathId,
@@ -219,29 +196,11 @@ export class ScenarioPathSessionService {
         scenarioPathSessionItemEntityInstance,
       );
     return {
-      ...existingScenarioPathSession,
       scenarioPathSessionId: scenarioPathSession.id,
       completedAt: scenarioPathSession.completedAt,
       completedScenarios: scenarioPathSession.completedScenarios,
       currentScenario: scenarioPathSessionItem,
     };
-  }
-
-  async startUserPathSession(
-    scenarioPathSessionItemId: string,
-  ): Promise<ScenarioPathSessionItem> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) {
-      throw new UnauthorizedException('Unauthorized access');
-    }
-    const pathSessionItem =
-      await this.getPermittedPathSessionItemBySessionItemId(
-        scenarioPathSessionItemId,
-      );
-    if (!pathSessionItem) {
-      throw new BadRequestException('Scenario path sub simulation not found');
-    }
-    return pathSessionItem;
   }
 
   async getNextScenarioPathItem(scenarioSessionId: string) {
@@ -306,78 +265,91 @@ export class ScenarioPathSessionService {
       return;
     }
 
-    const scenarioPathSessionItem =
+    const currentScenarioPathSessionItem =
       await this.scenarioPathSessionItemRepository.findOne({
         where: { id: scenarioPathSessionItemId },
       });
-    if (!scenarioPathSessionItem) {
+    if (!currentScenarioPathSessionItem) {
       throw new BadRequestException('Scenario path session item not found');
     }
-    const scenarioPathItem =
+    const currentScenarioPathItem =
       await this.scenarioPathSharedService.getScenarioPathItemById(
-        scenarioPathSessionItem.scenarioPathItemId,
+        currentScenarioPathSessionItem.scenarioPathItemId,
       );
-    if (!scenarioPathItem) {
+    if (!currentScenarioPathItem) {
       throw new BadRequestException('Scenario path item not found');
     }
 
     // Score less than minimum score -> cant make the session complete
-    if (score < (scenarioPathItem?.minimumScore ?? 0)) return;
+    if (score < (currentScenarioPathItem?.minimumScore ?? 0)) return;
 
-    const scenarioPathSession =
+    const currentScenarioPathSession =
       await this.scenarioPathSessionRepository.findOne({
-        where: { id: scenarioPathSessionItem.scenarioPathSessionId },
+        where: { id: currentScenarioPathSessionItem.scenarioPathSessionId },
       });
-    if (!scenarioPathSession) {
+    if (!currentScenarioPathSession) {
       throw new BadRequestException('Scenario path session not found');
     }
-    await this.updatePathSessionItem(scenarioPathSessionItem.id, {
-      status: SessionItemStatus.COMPLETED,
-    });
 
-    const scenarioPathData = await this.getUserScenarioPathItems(
-      scenarioPathSession.scenarioPathId,
-    );
+    return await this.dataSource.transaction(async (entityManager) => {
+      const scenarioPathSessionItemRepo = entityManager.getRepository(
+        ScenarioPathSessionItem,
+      );
+      const scenarioPathSessionRepo =
+        entityManager.getRepository(ScenarioPathSession);
 
-    const currentScenarioItemOrder = scenarioPathData?.scenarios?.find(
-      (scenario) => scenario.scenarioId === scenarioPathItem.scenarioId,
-    )?.order;
-    if (!currentScenarioItemOrder) {
-      throw new BadRequestException('Current scenario item order not found');
-    }
-    const nextScenarioPathItem = scenarioPathData?.scenarios?.find(
-      (scenario) => scenario.order === currentScenarioItemOrder + 1,
-    );
-    // All sub items are complete
-    if (!nextScenarioPathItem) {
-      await this.updatePathSession(scenarioPathSession.id, {
-        completedAt: new Date(),
-        completedScenarios: (scenarioPathSession?.completedScenarios ?? 0) + 1,
+      await scenarioPathSessionItemRepo.update(
+        currentScenarioPathSessionItem.id,
+        {
+          status: SessionItemStatus.COMPLETED,
+        },
+      );
+
+      const nextScenarioPathItem =
+        await this.scenarioPathSharedService.getNextPathItemByCurrentItemId(
+          currentScenarioPathSessionItem.scenarioPathItemId,
+        );
+
+      // All sub items are complete
+      if (!nextScenarioPathItem) {
+        await scenarioPathSessionRepo.update(currentScenarioPathSession.id, {
+          completedAt: new Date(),
+          completedScenarios:
+            (currentScenarioPathSession?.completedScenarios ?? 0) + 1,
+        });
+        return;
+      }
+      await scenarioPathSessionRepo.update(currentScenarioPathSession.id, {
+        completedScenarios:
+          (currentScenarioPathSession?.completedScenarios ?? 0) + 1,
       });
+      const nextScenarioPathSessionItem =
+        await this.scenarioPathSessionItemRepository.findOne({
+          where: { scenarioPathItemId: nextScenarioPathItem?.id },
+        });
+      if (!nextScenarioPathSessionItem?.id) {
+        // No entry created for next scenario
+        const nextSessionItemEntity = scenarioPathSessionItemRepo.create({
+          scenarioPathSessionId: currentScenarioPathSession.id,
+          scenarioPathItemId: nextScenarioPathItem.id,
+          userId: Number(userId),
+          status: SessionItemStatus.UNLOCKED,
+        });
+        await scenarioPathSessionItemRepo.save(nextSessionItemEntity);
+        return;
+      }
+      if (
+        nextScenarioPathSessionItem?.id &&
+        nextScenarioPathSessionItem?.status === SessionItemStatus.LOCKED
+      ) {
+        await scenarioPathSessionItemRepo.update(
+          nextScenarioPathSessionItem.id,
+          {
+            status: SessionItemStatus.UNLOCKED,
+          },
+        );
+      }
       return;
-    }
-    await this.updatePathSession(scenarioPathSession.id, {
-      completedScenarios: (scenarioPathSession?.completedScenarios ?? 0) + 1,
     });
-    if (!nextScenarioPathItem?.status && nextScenarioPathItem?.sessionId) {
-      // No entry created for next scenario
-      const nextItemEntity = this.scenarioPathSessionItemRepository.create({
-        scenarioPathSessionId: scenarioPathSession.id,
-        scenarioPathItemId: nextScenarioPathItem?.sessionId,
-        userId: Number(userId),
-        status: SessionItemStatus.UNLOCKED,
-      });
-      await this.scenarioPathSessionItemRepository.save(nextItemEntity);
-      return;
-    }
-    if (
-      nextScenarioPathItem?.status === SessionItemStatus.LOCKED &&
-      nextScenarioPathItem?.sessionId
-    ) {
-      await this.updatePathSessionItem(nextScenarioPathItem?.sessionId, {
-        status: SessionItemStatus.UNLOCKED,
-      });
-    }
-    return;
   }
 }

@@ -203,7 +203,6 @@ describe('ScenarioSessionService', () => {
     };
 
     const mockScenarioPathSessionService = {
-      startUserPathSession: jest.fn(),
       handleEndScenarioPathSession: jest.fn(),
     };
 

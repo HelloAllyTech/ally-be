@@ -61,7 +61,24 @@ export class GetScenarioPathResponseDto {
 }
 
 export class GetUpcomingScenarioPathItemResponseDto extends Scenarios {
+  @ApiProperty({
+    description: 'Order of the scenario in the path',
+    example: 2,
+  })
   order!: number;
+
+  @ApiProperty({
+    description: 'Transition message title from the previous scenario',
+    example: 'Great job on the previous scenario!',
+    required: false,
+  })
   transitionMessageTitle?: string;
+
+  @ApiProperty({
+    description: 'Transition message content from the previous scenario',
+    example:
+      "You have successfully completed the first scenario. Now, let's move on to the next challenge.",
+    required: false,
+  })
   transitionMessageContent?: string;
 }

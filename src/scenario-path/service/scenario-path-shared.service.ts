@@ -134,21 +134,28 @@ export class ScenarioPathSharedService {
     return { ...scenarioData[0], pathItem: scenarioPathItem };
   }
 
-  async getNextScenarioDataByPathItemId(
+  async getNextPathItemByCurrentItemId(
     scenarioPathItemId: string,
-  ): Promise<{ scenario: Scenarios; pathItem: ScenarioPathItem } | null> {
+  ): Promise<ScenarioPathItem | null> {
     const scenarioPathItem = await this.scenarioPathItemRepository.findOne({
       where: { id: scenarioPathItemId },
     });
     if (!scenarioPathItem) {
       return null;
     }
-    const nextScenarioPathItem = await this.scenarioPathItemRepository.findOne({
+    return await this.scenarioPathItemRepository.findOne({
       where: {
         scenarioPathId: scenarioPathItem.scenarioPathId,
         order: scenarioPathItem.order + 1,
       },
     });
+  }
+
+  async getNextScenarioDataByPathItemId(
+    scenarioPathItemId: string,
+  ): Promise<{ scenario: Scenarios; pathItem: ScenarioPathItem } | null> {
+    const nextScenarioPathItem =
+      await this.getNextPathItemByCurrentItemId(scenarioPathItemId);
     if (!nextScenarioPathItem) {
       return null;
     }
