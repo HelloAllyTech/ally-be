@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -29,13 +30,21 @@ import {
   UpdateScenarioPathResponseDto,
   UpdateScenarioPathDto,
 } from '../dto/update-scenario-path.dto';
+import { SuccessResponse } from 'src/common/type/common.type';
+import { DuplicateScenarioPathResponseDto } from '../dto/duplicate-scenario-path-response.dto';
+import { ScenarioPathTenantService } from '../service/scenario-path-tenant.service';
+import { CreateScenarioPathTenantDto } from '../dto/create-scenario-path-tenant.dto';
+import { DeleteScenarioPathTenantDto } from '../dto/delete-scenario-path-tenant.dto';
 
 @ApiTags('Learn Scenario Paths')
 @ApiBearerAuth()
 @ApiSecurity('access-token')
 @Controller('v1/learn/admin')
 export class ScenarioPathController {
-  constructor(private readonly scenarioPathService: ScenarioPathService) {}
+  constructor(
+    private readonly scenarioPathService: ScenarioPathService,
+    private readonly scenarioPathTenantService: ScenarioPathTenantService,
+  ) {}
 
   @ApiOperation({ summary: 'Get scenario paths' })
   @ApiResponse({
@@ -67,6 +76,12 @@ export class ScenarioPathController {
     type: String,
     description: 'Search by title or description',
   })
+  @ApiQuery({
+    name: 'tenantId',
+    required: false,
+    type: String,
+    description: 'TenantId',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_PATH])
   @Get('scenario-paths')
   async getScenarioPaths(
@@ -74,12 +89,14 @@ export class ScenarioPathController {
     @Query('offset') offset?: number,
     @Query('limit') limit?: number,
     @Query('search') search?: string,
+    @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
   ): Promise<GetScenarioPathsResponseDto> {
     return this.scenarioPathService.getScenarioPaths({
       status,
       offset,
       limit,
       search,
+      tenantId,
     });
   }
 
@@ -119,6 +136,65 @@ export class ScenarioPathController {
     return this.scenarioPathService.updateScenarioPath(
       id,
       updateScenarioPathDto,
+    );
+  }
+
+  @ApiOperation({ summary: 'Delete scenario path' })
+  @ApiResponse({
+    status: 200,
+    description: 'Scenario path deleted successfully',
+  })
+  @AuthPermissions([PERMISSIONS.DELETE_ADMIN_SCENARIO_PATH])
+  @Delete('scenario-paths/:id')
+  async deleteScenarioPath(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<SuccessResponse> {
+    return this.scenarioPathService.deleteScenarioPath(id);
+  }
+
+  @ApiOperation({ summary: 'Duplicate scenario path' })
+  @ApiResponse({
+    status: 200,
+    description: 'Scenario path duplicated successfully',
+    type: DuplicateScenarioPathResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_SCENARIO_PATH])
+  @Post('scenario-paths/:id/duplicate')
+  async duplicateScenarioPath(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<DuplicateScenarioPathResponseDto> {
+    return this.scenarioPathService.duplicateScenarioPath(id);
+  }
+
+  @ApiOperation({ description: 'Assign scenario path to a tenant' })
+  @ApiResponse({
+    description: 'Scenario-path assigned to tenant successfully',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_PATH_TENANT])
+  @Post('scenario-paths/tenant/:tenantId')
+  async assignScenarioPathsToTenant(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() createScenarioPathTenantDto: CreateScenarioPathTenantDto,
+  ) {
+    return this.scenarioPathTenantService.assignScenarioPathsToTenant(
+      tenantId,
+      createScenarioPathTenantDto,
+    );
+  }
+
+  @ApiOperation({ description: 'Remove scenario path from tenants' })
+  @ApiResponse({
+    description: 'Scenario path access removed from tenants successfully',
+  })
+  @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_PATH_TENANT])
+  @Delete('scenario-paths/tenant/:tenantId')
+  async removeScenarioPathsFromTenant(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() deleteScenarioPathTenantDto: DeleteScenarioPathTenantDto,
+  ) {
+    return this.scenarioPathTenantService.removeScenarioPathsFromTenant(
+      tenantId,
+      deleteScenarioPathTenantDto,
     );
   }
 }

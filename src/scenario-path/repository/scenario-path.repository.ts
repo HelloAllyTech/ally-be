@@ -15,9 +15,10 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
     super(ScenarioPath, dataSource.createEntityManager());
   }
 
-  async getAllScenarioPaths(
-    filters?: ScenarioPathFilterOptions,
-  ): Promise<{ data: ScenarioPath[]; count: number }> {
+  async getAllScenarioPaths(filters?: ScenarioPathFilterOptions): Promise<{
+    data: (ScenarioPath & { isAssignedToTenant?: boolean })[];
+    count: number;
+  }> {
     const query = this.createQueryBuilder('scenarioPath');
 
     this.applyStatusFilter(query, filters);
@@ -31,6 +32,18 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
       query.offset(filters.offset);
     }
 
+    if (filters?.tenantId) {
+      query
+        .leftJoinAndMapOne(
+          'scenarioPath.scenarioPathTenant',
+          'scenario_path_tenants',
+          'scenarioPathTenant',
+          '"scenarioPathTenant"."scenarioPathId" = scenarioPath.id AND "scenarioPathTenant"."tenantId" = :tenantId',
+        )
+        .setParameters({
+          tenantId: filters.tenantId,
+        });
+    }
     const [data, count] = await query.getManyAndCount();
 
     return { data, count };
@@ -77,6 +90,18 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
 
     if (filters?.offset) {
       query.offset(filters.offset);
+    }
+
+    if (filters.tenantId) {
+      query
+        .innerJoin(
+          'scenario_path_tenants',
+          'scenarioPathTenant',
+          '"scenarioPathTenant"."scenarioPathId" = scenarioPath.id AND scenarioPathTenant.tenantId = :tenantId',
+        )
+        .setParameters({
+          tenantId: filters.tenantId,
+        });
     }
 
     const [data, count] = await query.getManyAndCount();

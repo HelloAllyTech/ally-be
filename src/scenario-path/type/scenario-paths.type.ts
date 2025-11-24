@@ -12,6 +12,7 @@ export interface ScenarioPathFilterOptions {
   limit?: number;
   offset?: number;
   search?: string;
+  tenantId?: string;
 }
 
 export interface ScenarioPathWithSession extends ScenarioPath {
@@ -20,10 +21,19 @@ export interface ScenarioPathWithSession extends ScenarioPath {
 
 export interface ScenarioPathWithSessionFilterOptions {
   userId: number;
+  tenantId: string;
   limit?: number;
   offset?: number;
 }
 export interface ScenarioPathsWithSession {
   data: ScenarioPathWithSession[];
   count: number;
+}
+
+export interface MinimalScenarioPathData {
+  id: string;
+  title: string;
+  description?: string;
+  coverImageUrl?: string;
+  status: ScenarioPathStatus;
 }

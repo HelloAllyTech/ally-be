@@ -12,6 +12,7 @@ import { SessionItemStatus } from '../../type/scenario-path-session-items.type';
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
     getUserId: jest.fn(),
+    getTenantId: jest.fn(),
   },
 }));
 
@@ -66,6 +67,7 @@ describe('ScenarioPathSessionService', () => {
   afterEach(() => {
     jest.clearAllMocks();
     (ExecutionManager.getUserId as jest.Mock).mockReturnValue(undefined);
+    (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(undefined);
   });
 
   describe('getUserScenarioPaths', () => {
@@ -94,8 +96,9 @@ describe('ScenarioPathSessionService', () => {
       count: 2,
     };
 
-    it('should return formatted scenario path sessions when user is authenticated', async () => {
+    it('should return formatted scenario path sessions when user and tenant are authenticated', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
       scenarioPathSharedService.getScenarioPathsWithSession.mockResolvedValue(
         mockScenarioPathsWithSession,
       );
@@ -129,6 +132,7 @@ describe('ScenarioPathSessionService', () => {
         scenarioPathSharedService.getScenarioPathsWithSession,
       ).toHaveBeenCalledWith({
         userId: 123,
+        tenantId: 'tenant-1',
         limit: 10,
         offset: 0,
       });
@@ -136,6 +140,19 @@ describe('ScenarioPathSessionService', () => {
 
     it('should throw UnauthorizedException when user is not authenticated', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+
+      await expect(
+        service.getUserScenarioPaths({ offset: 0, limit: 10 }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(
+        scenarioPathSharedService.getScenarioPathsWithSession,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should throw UnauthorizedException when tenant is not available', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(null);
 
       await expect(
         service.getUserScenarioPaths({ offset: 0, limit: 10 }),
@@ -147,6 +164,7 @@ describe('ScenarioPathSessionService', () => {
 
     it('should handle scenario paths without sessions', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
       scenarioPathSharedService.getScenarioPathsWithSession.mockResolvedValue({
         data: [
           {
@@ -166,6 +184,25 @@ describe('ScenarioPathSessionService', () => {
       const result = await service.getUserScenarioPaths();
 
       expect(result.data[0].completedScenarios).toBeUndefined();
+    });
+
+    it('should call service with correct parameters when no filters provided', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+      scenarioPathSharedService.getScenarioPathsWithSession.mockResolvedValue(
+        mockScenarioPathsWithSession,
+      );
+
+      await service.getUserScenarioPaths();
+
+      expect(
+        scenarioPathSharedService.getScenarioPathsWithSession,
+      ).toHaveBeenCalledWith({
+        userId: 123,
+        tenantId: 'tenant-1',
+        limit: undefined,
+        offset: undefined,
+      });
     });
   });
 
@@ -208,6 +245,7 @@ describe('ScenarioPathSessionService', () => {
       coverImageUrl: 'https://example.com/image.jpg',
       status: 'ACTIVE' as any,
       isGlobal: false,
+      totalScenarios: 2,
       scenarios: [
         {
           id: 'item-1',

@@ -1,9 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ScenarioPathController } from '../scenario-path.controller';
 import { ScenarioPathService } from '../../service/scenario-path.service';
+import { ScenarioPathTenantService } from '../../service/scenario-path-tenant.service';
 import { CreateScenarioPathDto } from '../../dto/create-scenario-path.dto';
 import { ScenarioPathStatus } from '../../type/scenario-paths.type';
 import { ScenarioPath } from '../../entity/scenario-path.entity';
+import { CreateScenarioPathTenantDto } from '../../dto/create-scenario-path-tenant.dto';
+import { DeleteScenarioPathTenantDto } from '../../dto/delete-scenario-path-tenant.dto';
 
 jest.mock('../../../auth/decorators/auth-permissions.decorator', () => ({
   AuthPermissions: () => () => {},
@@ -12,12 +15,20 @@ jest.mock('../../../auth/decorators/auth-permissions.decorator', () => ({
 describe('ScenarioPathController', () => {
   let controller: ScenarioPathController;
   let service: jest.Mocked<ScenarioPathService>;
+  let tenantService: jest.Mocked<ScenarioPathTenantService>;
 
   const mockScenarioPathService = {
     createScenarioPath: jest.fn(),
     getScenarioPaths: jest.fn(),
     getScenarioPathById: jest.fn(),
     updateScenarioPath: jest.fn(),
+    deleteScenarioPath: jest.fn(),
+    duplicateScenarioPath: jest.fn(),
+  };
+
+  const mockScenarioPathTenantService = {
+    assignScenarioPathsToTenant: jest.fn(),
+    removeScenarioPathsFromTenant: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -28,11 +39,16 @@ describe('ScenarioPathController', () => {
           provide: ScenarioPathService,
           useValue: mockScenarioPathService,
         },
+        {
+          provide: ScenarioPathTenantService,
+          useValue: mockScenarioPathTenantService,
+        },
       ],
     }).compile();
 
     controller = module.get<ScenarioPathController>(ScenarioPathController);
     service = module.get(ScenarioPathService);
+    tenantService = module.get(ScenarioPathTenantService);
   });
 
   afterEach(() => {
@@ -70,6 +86,7 @@ describe('ScenarioPathController', () => {
         offset: undefined,
         limit: undefined,
         search: undefined,
+        tenantId: undefined,
       });
     });
 
@@ -93,6 +110,33 @@ describe('ScenarioPathController', () => {
         offset: 0,
         limit: 10,
         search: 'Path',
+        tenantId: undefined,
+      });
+    });
+
+    it('should return scenario paths filtered by tenantId', async () => {
+      const expectedResult = {
+        data: mockScenarioPaths,
+        count: 2,
+      };
+      service.getScenarioPaths.mockResolvedValue(expectedResult);
+
+      const tenantId = '123e4567-e89b-12d3-a456-426614174000';
+      const result = await controller.getScenarioPaths(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        tenantId,
+      );
+
+      expect(result).toEqual(expectedResult);
+      expect(service.getScenarioPaths).toHaveBeenCalledWith({
+        status: undefined,
+        offset: undefined,
+        limit: undefined,
+        search: undefined,
+        tenantId,
       });
     });
   });
@@ -142,6 +186,7 @@ describe('ScenarioPathController', () => {
       coverImageUrl: 'https://example.com/image.jpg',
       status: ScenarioPathStatus.ACTIVE,
       isGlobal: false,
+      totalScenarios: 1,
       scenarios: [
         {
           id: 'item-1',
@@ -200,6 +245,90 @@ describe('ScenarioPathController', () => {
       expect(service.updateScenarioPath).toHaveBeenCalledWith(
         'path-1',
         mockUpdateScenarioPathDto,
+      );
+    });
+  });
+
+  describe('deleteScenarioPath', () => {
+    it('should successfully delete a scenario path', async () => {
+      const expectedResult = { success: true };
+      service.deleteScenarioPath.mockResolvedValue(expectedResult);
+
+      const result = await controller.deleteScenarioPath('path-1');
+
+      expect(result).toEqual(expectedResult);
+      expect(service.deleteScenarioPath).toHaveBeenCalledWith('path-1');
+    });
+  });
+
+  describe('duplicateScenarioPath', () => {
+    it('should successfully duplicate a scenario path', async () => {
+      const expectedResult = {
+        id: 'duplicated-path-id',
+        title: 'Copy of Path 1',
+        description: 'Description 1',
+        coverImageUrl: 'https://example.com/image.jpg',
+        status: ScenarioPathStatus.DRAFT,
+      };
+      service.duplicateScenarioPath.mockResolvedValue(expectedResult);
+
+      const result = await controller.duplicateScenarioPath('path-1');
+
+      expect(result).toEqual(expectedResult);
+      expect(service.duplicateScenarioPath).toHaveBeenCalledWith('path-1');
+    });
+  });
+
+  describe('assignScenarioToTenant', () => {
+    it('should successfully assign scenario paths to tenant', async () => {
+      const tenantId = '123e4567-e89b-12d3-a456-426614174000';
+      const createDto: CreateScenarioPathTenantDto = {
+        scenarioPathIds: ['path-1', 'path-2', 'path-3'],
+      };
+      const expectedResult = {
+        success: true,
+      };
+
+      tenantService.assignScenarioPathsToTenant.mockResolvedValue(
+        expectedResult,
+      );
+
+      const result = await controller.assignScenarioPathsToTenant(
+        tenantId,
+        createDto,
+      );
+
+      expect(result).toEqual(expectedResult);
+      expect(tenantService.assignScenarioPathsToTenant).toHaveBeenCalledWith(
+        tenantId,
+        createDto,
+      );
+    });
+  });
+
+  describe('removeScenarioFromTenants', () => {
+    it('should successfully remove scenario paths from tenant', async () => {
+      const tenantId = '123e4567-e89b-12d3-a456-426614174000';
+      const deleteDto: DeleteScenarioPathTenantDto = {
+        scenarioPathIds: ['path-1', 'path-2'],
+      };
+      const expectedResult = {
+        success: true,
+      };
+
+      tenantService.removeScenarioPathsFromTenant.mockResolvedValue(
+        expectedResult,
+      );
+
+      const result = await controller.removeScenarioPathsFromTenant(
+        tenantId,
+        deleteDto,
+      );
+
+      expect(result).toEqual(expectedResult);
+      expect(tenantService.removeScenarioPathsFromTenant).toHaveBeenCalledWith(
+        tenantId,
+        deleteDto,
       );
     });
   });

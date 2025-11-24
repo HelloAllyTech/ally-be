@@ -795,7 +795,7 @@ describe('LearnController', () => {
         expectedResponse as any,
       );
 
-      const result = await controller.assignScenarioToTenant(
+      const result = await controller.assignScenariosToTenant(
         tenantId,
         addScenarioTenantDto,
       );
@@ -820,7 +820,7 @@ describe('LearnController', () => {
         expectedResponse as any,
       );
 
-      const result = await controller.assignScenarioToTenant(
+      const result = await controller.assignScenariosToTenant(
         tenantId,
         addScenarioTenantDto,
       );
@@ -842,7 +842,7 @@ describe('LearnController', () => {
         expectedResponse as any,
       );
 
-      const result = await controller.assignScenarioToTenant(
+      const result = await controller.assignScenariosToTenant(
         tenantId,
         addScenarioTenantDto,
       );
@@ -860,7 +860,7 @@ describe('LearnController', () => {
       scenarioTenantService.assignScenariosToTenant.mockRejectedValue(error);
 
       await expect(
-        controller.assignScenarioToTenant(tenantId, addScenarioTenantDto),
+        controller.assignScenariosToTenant(tenantId, addScenarioTenantDto),
       ).rejects.toThrow('Tenant not found');
     });
   });
@@ -880,7 +880,7 @@ describe('LearnController', () => {
         expectedResponse as any,
       );
 
-      const result = await controller.removeScenarioFromTenants(
+      const result = await controller.removeScenariosFromTenant(
         tenantId,
         deleteScenarioTenantDto,
       );
@@ -902,7 +902,7 @@ describe('LearnController', () => {
         expectedResponse as any,
       );
 
-      const result = await controller.removeScenarioFromTenants(
+      const result = await controller.removeScenariosFromTenant(
         tenantId,
         deleteScenarioTenantDto,
       );
@@ -920,7 +920,7 @@ describe('LearnController', () => {
       scenarioTenantService.removeScenariosFromTenant.mockRejectedValue(error);
 
       await expect(
-        controller.removeScenarioFromTenants(tenantId, deleteScenarioTenantDto),
+        controller.removeScenariosFromTenant(tenantId, deleteScenarioTenantDto),
       ).rejects.toThrow('Tenant not found');
     });
   });
