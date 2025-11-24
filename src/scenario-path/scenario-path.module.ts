@@ -9,9 +9,13 @@ import { ScenarioPathSessionRepository } from './repository/scenario-path-sessio
 import { ScenarioPathSessionItemRepository } from './repository/scenario-path-session-item.repository';
 import { ScenarioPathSharedService } from './service/scenario-path-shared.service';
 import { ScenarioPathSessionController } from './controller/scenario-path-session.controller';
+import { TenantModule } from 'src/tenant/tenant.module';
+import { ScenarioPathTenantService } from './service/scenario-path-tenant.service';
+import { ScenarioPathTenantRepository } from './repository/scenario-path-tenant.repository';
+import { ScenarioPathTenantValidationShared } from './service/scenario-tenant-validation-shared';
 
 @Module({
-  imports: [LearnModule],
+  imports: [LearnModule, TenantModule],
   controllers: [ScenarioPathController, ScenarioPathSessionController],
   providers: [
     ScenarioPathService,
@@ -21,6 +25,9 @@ import { ScenarioPathSessionController } from './controller/scenario-path-sessio
     ScenarioPathSessionService,
     ScenarioPathSessionRepository,
     ScenarioPathSessionItemRepository,
+    ScenarioPathTenantService,
+    ScenarioPathTenantRepository,
+    ScenarioPathTenantValidationShared,
   ],
 })
 export class ScenarioPathModule {}

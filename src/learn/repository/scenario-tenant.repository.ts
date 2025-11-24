@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, In, Repository } from 'typeorm';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
-import { ScenarioTenantsResponseDto } from '../dto/scenario-tenant-response.dto';
+import { SuccessResponse } from 'src/common/type/common.type';
 
 @Injectable()
 export class ScenarioTenantRepository extends Repository<ScenarioTenants> {
@@ -11,28 +11,17 @@ export class ScenarioTenantRepository extends Repository<ScenarioTenants> {
 
   async createScenarioTenants(
     scenarioTenants: Array<{ scenarioId: number; tenantId: string }>,
-  ): Promise<ScenarioTenantsResponseDto> {
+  ): Promise<SuccessResponse> {
     await this.save(this.create(scenarioTenants));
     return {
       success: true,
     };
   }
 
-  async deleteByTenantsIds(
-    scenarioId: number,
-    tenantIds: string[],
-  ): Promise<ScenarioTenantsResponseDto> {
-    const result = await this.delete({
-      scenarioId,
-      tenantId: In(tenantIds),
-    });
-    return { success: result.affected !== 0 };
-  }
-
   async deleteByScenarioIds(
     scenarioIds: number[],
     tenantId: string,
-  ): Promise<ScenarioTenantsResponseDto> {
+  ): Promise<SuccessResponse> {
     const result = await this.delete({ tenantId, scenarioId: In(scenarioIds) });
     return { success: result.affected !== 0 };
   }

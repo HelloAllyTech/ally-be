@@ -6,10 +6,16 @@ import { TenantController } from './controller/tenant.controller';
 import { TenantsRepository } from './repository/tenant.repository';
 import { UserModule } from 'src/user/user.module';
 import { TenantScenarioSharedService } from './service/tenant-scenario-shared';
+import { TenantScenarioPathSharedService } from './service/tenant-scenario-path-shared';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Tenant]), forwardRef(() => UserModule)],
-  providers: [TenantService, TenantsRepository, TenantScenarioSharedService],
+  providers: [
+    TenantService,
+    TenantsRepository,
+    TenantScenarioSharedService,
+    TenantScenarioPathSharedService,
+  ],
   controllers: [TenantController],
   exports: [TenantService],
 })

@@ -28,9 +28,14 @@ export class ScenarioPathSessionService {
     if (!userId) {
       throw new UnauthorizedException('Unauthorized access');
     }
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new UnauthorizedException('Unauthorized access');
+    }
     const scenarioPaths =
       await this.scenarioPathSharedService.getScenarioPathsWithSession({
         userId: Number(userId),
+        tenantId,
         limit: filters?.limit,
         offset: filters?.offset,
       });
