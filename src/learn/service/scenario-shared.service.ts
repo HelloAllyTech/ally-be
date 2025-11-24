@@ -30,4 +30,10 @@ export class ScenarioSharedService {
       where: { scenarioPathSessionItemId },
     });
   }
+
+  async getScenarioPathItemIdByScenarioSessionId(scenarioSessionId: string) {
+    return this.scenarioSessionRepository.findOne({
+      where: { id: scenarioSessionId },
+    });
+  }
 }

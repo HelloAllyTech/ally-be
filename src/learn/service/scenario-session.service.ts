@@ -135,11 +135,11 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario not found');
     }
     await this.validateStartScenarioSession(counselorId, scenario.id);
-    let currentScenarioPathSession;
-    if (startScenarioSessionDto.scenarioPathId) {
-      currentScenarioPathSession =
+    let currentPathSessionItem;
+    if (startScenarioSessionDto.scenarioPathSessionItemId) {
+      currentPathSessionItem =
         await this.scenarioPathSessionService.startUserPathSession(
-          startScenarioSessionDto.scenarioPathId,
+          startScenarioSessionDto.scenarioPathSessionItemId,
         );
     }
 
@@ -151,8 +151,7 @@ export class ScenarioSessionService {
     const scenarioSession =
       await this.scenarioSessionRepository.createScenarioSession(counselorId, {
         ...startScenarioSessionDto,
-        scenarioPathSessionItemId:
-          currentScenarioPathSession?.currentScenario?.sessionId,
+        scenarioPathSessionItemId: currentPathSessionItem?.id,
       });
 
     const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);

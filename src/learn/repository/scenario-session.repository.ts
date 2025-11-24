@@ -6,7 +6,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { Pagination } from 'src/common/type/common.type';
 import { Scenarios } from '../entity/scenarios.entity';
 import { User } from 'src/user/entity/user.entity';
-import { CreateScenarioSessionDto } from '../dto/start-scenario-session-request.dto';
+import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
@@ -104,7 +104,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
 
   async createScenarioSession(
     counselorId: number,
-    createScenarioSessionDto: CreateScenarioSessionDto,
+    createScenarioSessionDto: StartScenarioSessionRequestDto,
   ): Promise<ScenarioSessions> {
     const uuid = uuidv4();
 

@@ -1,4 +1,11 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -61,20 +68,30 @@ export class ScenarioPathSessionController {
     return this.scenarioPathSessionService.getUserScenarioPathItems(id);
   }
 
+  @ApiOperation({ summary: 'Create Scenario path session for user' })
+  @ApiResponse({
+    status: 200,
+    type: ScenarioPathSessionsResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_PATH])
+  @Post('/scenario-paths/:id/create-session')
+  async createScenarioPathSession(@Param('id', ParseUUIDPipe) id: string) {
+    return this.scenarioPathSessionService.createUserPathSession(id);
+  }
+
   @ApiOperation({ summary: 'Get next scenario' })
   @ApiResponse({
     status: 200,
     type: Scenarios,
   })
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
-  @Get('/scenario-paths/:scenario-path-session-id/upcoming-scenario')
+  @Get('/scenario-paths/:chat-id/upcoming-scenario')
   async getUpcomingScenarioPathItem(
-    @Param('scenario-path-session-id', ParseUUIDPipe)
-    scenarioPathSessionId: string,
+    @Param('chat-id', ParseUUIDPipe)
+    chatId: string,
   ) {
-    const result = await this.scenarioPathSharedService.getNextScenarioPathItem(
-      scenarioPathSessionId,
-    );
+    const result =
+      await this.scenarioPathSessionService.getNextScenarioPathItem(chatId);
     return result?.scenario;
   }
 }

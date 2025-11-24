@@ -11,12 +11,12 @@ export class StartScenarioSessionRequestDto {
   scenarioId!: number;
 
   @ApiProperty({
-    description: 'Scenario Path ID',
+    description: 'Scenario Path sub-Simulation session ID',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @IsString()
   @IsOptional()
-  scenarioPathId?: string;
+  scenarioPathSessionItemId?: string;
 
   @ApiProperty({
     description: 'TTL in seconds',
@@ -26,10 +26,4 @@ export class StartScenarioSessionRequestDto {
   @IsNumber()
   @Max(DEFAULT_SCENARIO_SESSION_TTL_SECONDS)
   ttl?: number;
-}
-
-export class CreateScenarioSessionDto extends StartScenarioSessionRequestDto {
-  @IsString()
-  @IsOptional()
-  scenarioPathSessionItemId?: string;
 }
