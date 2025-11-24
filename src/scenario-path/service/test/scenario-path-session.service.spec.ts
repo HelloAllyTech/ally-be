@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { ScenarioPathSessionService } from '../scenario-path-session.service';
@@ -292,6 +292,7 @@ describe('ScenarioPathSessionService', () => {
 
     it('should return scenario path items with session data when session exists', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
       scenarioPathSharedService.getScenarioPathWithScenarios.mockResolvedValue(
         mockScenarioPathWithScenarios,
       );
@@ -322,7 +323,7 @@ describe('ScenarioPathSessionService', () => {
       });
       expect(
         scenarioPathSharedService.getScenarioPathWithScenarios,
-      ).toHaveBeenCalledWith('path-1');
+      ).toHaveBeenCalledWith('path-1', 'tenant-1');
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1', userId: 123 },
       });
@@ -333,6 +334,7 @@ describe('ScenarioPathSessionService', () => {
 
     it('should return scenario path items without session when session does not exist', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
       scenarioPathSharedService.getScenarioPathWithScenarios.mockResolvedValue(
         mockScenarioPathWithScenarios,
       );
@@ -358,14 +360,30 @@ describe('ScenarioPathSessionService', () => {
           },
         ],
       });
+      expect(
+        scenarioPathSharedService.getScenarioPathWithScenarios,
+      ).toHaveBeenCalledWith('path-1', 'tenant-1');
       expect(scenarioPathSessionItemRepository.find).not.toHaveBeenCalled();
     });
 
     it('should throw UnauthorizedException when user is not authenticated', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
 
       await expect(service.getUserScenarioPathItems('path-1')).rejects.toThrow(
         UnauthorizedException,
+      );
+      expect(
+        scenarioPathSharedService.getScenarioPathWithScenarios,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when tenant is not available', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(null);
+
+      await expect(service.getUserScenarioPathItems('path-1')).rejects.toThrow(
+        NotFoundException,
       );
       expect(
         scenarioPathSharedService.getScenarioPathWithScenarios,

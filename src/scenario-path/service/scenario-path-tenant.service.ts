@@ -69,7 +69,7 @@ export class ScenarioPathTenantService {
   }
 
   async getScenarioPathTenant(tenantId: string, scenarioPathId: string) {
-    return this.scenarioPathTenantRepository.find({
+    return this.scenarioPathTenantRepository.findOne({
       where: { tenantId, scenarioPathId },
     });
   }

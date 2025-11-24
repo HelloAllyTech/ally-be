@@ -15,7 +15,6 @@ import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service
 import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { ScenarioPathTenantService } from './scenario-path-tenant.service';
-import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 
 @Injectable()
@@ -40,6 +39,7 @@ export class ScenarioPathSharedService {
 
   async getScenarioPathWithScenarios(
     scenarioPathId: string,
+    tenantId?: string,
   ): Promise<GetScenarioPathResponseDto> {
     const result = await this.scenarioPathRepository.findOne({
       where: { id: scenarioPathId },
@@ -48,17 +48,16 @@ export class ScenarioPathSharedService {
       this.logger.error(`Scenario path not found for id: ${scenarioPathId}`);
       throw new NotFoundException('Scenario path not found');
     }
-    const tenantId = ExecutionManager.getTenantId();
-    if (!tenantId) {
-      throw new NotFoundException('Tenant not found');
-    }
-    const scenarioPathTenant =
-      await this.scenarioPathTenantService.getScenarioPathTenant(
-        tenantId,
-        scenarioPathId,
-      );
-    if (!scenarioPathTenant) {
-      throw new BadRequestException('Organization access denied');
+
+    if (tenantId) {
+      const scenarioPathTenant =
+        await this.scenarioPathTenantService.getScenarioPathTenant(
+          tenantId,
+          scenarioPathId,
+        );
+      if (!scenarioPathTenant) {
+        throw new BadRequestException('Organization access denied');
+      }
     }
 
     const scenarioPathItems = await this.scenarioPathItemRepository.find({

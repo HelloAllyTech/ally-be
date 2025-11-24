@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ScenarioPathSharedService } from '../scenario-path-shared.service';
 import { ScenarioPathRepository } from '../../repository/scenario-path.repository';
 import { ScenarioPathItemRepository } from '../../repository/scenario-path-item.repository';
@@ -12,7 +12,6 @@ import {
 import { ScenarioPath } from '../../entity/scenario-path.entity';
 import { ScenarioPathSession } from '../../entity/scenario-path-session.entity';
 import { ScenarioPathItem } from '../../entity/scenario-path-item.entity';
-import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ScenarioPathTenantService } from '../scenario-path-tenant.service';
 
@@ -202,22 +201,22 @@ describe('ScenarioPathSharedService', () => {
       },
     ] as any;
 
-    it('should return scenario path with scenarios', async () => {
+    it('should return scenario path with scenarios when tenantId is provided and access is granted', async () => {
       scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
+      // FIXED: Return single object, not array
+      scenarioPathTenantService.getScenarioPathTenant.mockResolvedValue({
+        id: 'mock-id',
+        scenarioPathId: 'path-1',
+        tenantId: 'tenant-1',
+        deletedAt: null,
+      } as any);
       scenarioPathItemRepository.find.mockResolvedValue(mockScenarioPathItems);
       scenarioSharedService.getScenarioByIds.mockResolvedValue(mockScenarios);
 
-      jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue('tenant-1');
-      scenarioPathTenantService.getScenarioPathTenant.mockResolvedValue([
-        {
-          id: 'mock-id',
-          scenarioPathId: 'path-1',
-          tenantId: 'tenant-1',
-          deletedAt: null,
-        } as any,
-      ]);
-
-      const result = await service.getScenarioPathWithScenarios('path-1');
+      const result = await service.getScenarioPathWithScenarios(
+        'path-1',
+        'tenant-1',
+      );
 
       expect(result).toEqual({
         id: 'path-1',
@@ -269,12 +268,86 @@ describe('ScenarioPathSharedService', () => {
       ]);
     });
 
+    it('should return scenario path with scenarios when tenantId is not provided', async () => {
+      scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
+      scenarioPathItemRepository.find.mockResolvedValue(mockScenarioPathItems);
+      scenarioSharedService.getScenarioByIds.mockResolvedValue(mockScenarios);
+
+      const result = await service.getScenarioPathWithScenarios('path-1');
+
+      expect(result).toEqual({
+        id: 'path-1',
+        title: 'Path 1',
+        description: 'Description 1',
+        coverImageUrl: 'https://example.com/image.jpg',
+        status: ScenarioPathStatus.ACTIVE,
+        isGlobal: false,
+        totalScenarios: 2,
+        scenarios: [
+          {
+            id: 'item-1',
+            scenarioId: 1,
+            order: 1,
+            messageTitle: 'Message 1',
+            messageContent: 'Content 1',
+            minimumScore: 80,
+            title: 'Scenario 1',
+            description: 'Description 1',
+            coverImageUrl: 'https://example.com/scenario1.jpg',
+            coverVideoUrl: 'https://example.com/scenario1.mp4',
+          },
+          {
+            id: 'item-2',
+            scenarioId: 2,
+            order: 2,
+            messageTitle: 'Message 2',
+            messageContent: undefined,
+            minimumScore: 0,
+            title: 'Scenario 2',
+            description: 'Description 2',
+            coverImageUrl: 'https://example.com/scenario2.jpg',
+            coverVideoUrl: undefined,
+          },
+        ],
+      });
+
+      expect(scenarioPathRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'path-1' },
+      });
+      expect(
+        scenarioPathTenantService.getScenarioPathTenant,
+      ).not.toHaveBeenCalled();
+      expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
+        where: { scenarioPathId: 'path-1' },
+      });
+      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
+        1, 2,
+      ]);
+    });
+
     it('should throw NotFoundException when scenario path not found', async () => {
       scenarioPathRepository.findOne.mockResolvedValue(null);
 
       await expect(
         service.getScenarioPathWithScenarios('non-existent-id'),
       ).rejects.toThrow(NotFoundException);
+      expect(scenarioPathItemRepository.find).not.toHaveBeenCalled();
+      expect(
+        scenarioPathTenantService.getScenarioPathTenant,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when tenant does not have access', async () => {
+      scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
+      // FIXED: Return null (falsy value) instead of empty array
+      scenarioPathTenantService.getScenarioPathTenant.mockResolvedValue(null);
+
+      await expect(
+        service.getScenarioPathWithScenarios('path-1', 'tenant-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(
+        scenarioPathTenantService.getScenarioPathTenant,
+      ).toHaveBeenCalledWith('tenant-1', 'path-1');
       expect(scenarioPathItemRepository.find).not.toHaveBeenCalled();
     });
   });
