@@ -16,10 +16,10 @@ import {
 } from '@nestjs/swagger';
 import { ScenarioPathSessionService } from '../service/scenario-path-session.service';
 import { ScenarioPathSessionsResponseDto } from '../dto/scenario-path-sessions.dto';
+import { GetUpcomingScenarioPathItemResponseDto } from '../dto/get-scenario-path.dto';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { ScenarioPathSharedService } from '../service/scenario-path-shared.service';
-import { Scenarios } from 'src/learn/entity/scenarios.entity';
 
 @ApiTags('Learn Scenario Paths')
 @ApiBearerAuth()
@@ -82,16 +82,23 @@ export class ScenarioPathSessionController {
   @ApiOperation({ summary: 'Get next scenario' })
   @ApiResponse({
     status: 200,
-    type: Scenarios,
+    type: GetUpcomingScenarioPathItemResponseDto,
   })
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
-  @Get('/scenario-paths/:chat-id/upcoming-scenario')
+  @Get('/scenario-paths/:scenarioSessionId/upcoming-scenario')
   async getUpcomingScenarioPathItem(
-    @Param('chat-id', ParseUUIDPipe)
-    chatId: string,
+    @Param('scenarioSessionId', ParseUUIDPipe)
+    scenarioSessionId: string,
   ) {
     const result =
-      await this.scenarioPathSessionService.getNextScenarioPathItem(chatId);
-    return result?.scenario;
+      await this.scenarioPathSessionService.getNextScenarioPathItem(
+        scenarioSessionId,
+      );
+    return {
+      ...(result?.nextScenarioData?.scenario || {}),
+      order: result?.nextScenarioData?.pathItem?.order,
+      transitionMessageTitle: result?.currentPathItem?.messageTitle,
+      transitionMessageContent: result?.currentPathItem?.messageContent,
+    };
   }
 }

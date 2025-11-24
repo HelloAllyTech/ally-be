@@ -6,6 +6,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { ScenariosRepository } from '../repository/scenario.repository';
 import { Scenarios } from '../entity/scenarios.entity';
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
+import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -31,7 +32,9 @@ export class ScenarioSharedService {
     });
   }
 
-  async getScenarioPathItemIdByScenarioSessionId(scenarioSessionId: string) {
+  async getScenarioSessionById(
+    scenarioSessionId: string,
+  ): Promise<ScenarioSessions | null> {
     return this.scenarioSessionRepository.findOne({
       where: { id: scenarioSessionId },
     });

@@ -16,6 +16,7 @@ import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { ScenarioPathTenantService } from './scenario-path-tenant.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 
 @Injectable()
 export class ScenarioPathSharedService {
@@ -160,14 +161,17 @@ export class ScenarioPathSharedService {
     return { scenario: scenarioData[0], pathItem: nextScenarioPathItem };
   }
 
-  async getPathSessionItemIdByScenarioSessionId(
+  async getPathItemById(pathItemId: string): Promise<ScenarioPathItem | null> {
+    return this.scenarioPathItemRepository.findOne({
+      where: { id: pathItemId },
+    });
+  }
+
+  async getScenarioSessionById(
     scenarioSessionId: string,
-  ): Promise<string | undefined> {
-    const pathSessionItemId = (
-      await this.scenarioSharedService.getScenarioPathItemIdByScenarioSessionId(
-        scenarioSessionId,
-      )
-    )?.scenarioPathSessionItemId;
-    return pathSessionItemId;
+  ): Promise<ScenarioSessions | null> {
+    return await this.scenarioSharedService.getScenarioSessionById(
+      scenarioSessionId,
+    );
   }
 }

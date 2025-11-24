@@ -245,10 +245,12 @@ export class ScenarioPathSessionService {
   }
 
   async getNextScenarioPathItem(scenarioSessionId: string) {
-    const scenarioPathSessionItemId =
-      await this.scenarioPathSharedService.getPathSessionItemIdByScenarioSessionId(
+    const scenarioSessionItem =
+      await this.scenarioPathSharedService.getScenarioSessionById(
         scenarioSessionId,
       );
+    const scenarioPathSessionItemId =
+      scenarioSessionItem?.scenarioPathSessionItemId;
     if (!scenarioPathSessionItemId) {
       return null;
     }
@@ -271,13 +273,18 @@ export class ScenarioPathSessionService {
       await this.scenarioPathSessionItemRepository.findOne({
         where: { scenarioPathItemId: nextScenarioData?.pathItem?.id },
       });
+    const currentPathItem =
+      await this.scenarioPathSharedService.getScenarioPathItemById(
+        currentPathSessionItem.scenarioPathItemId,
+      );
     if (!nextScenarioSessionItem) {
       return null;
     }
 
     return {
-      ...nextScenarioData,
-      pathSessionItem: nextScenarioSessionItem,
+      nextScenarioSessionItem,
+      nextScenarioData,
+      currentPathItem,
     };
   }
 

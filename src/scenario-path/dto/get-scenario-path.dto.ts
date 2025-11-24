@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ScenarioPathStatus } from '../type/scenario-paths.type';
+import { Scenarios } from 'src/learn/entity/scenarios.entity';
 
 export class GetScenarioPathItemDto {
   @ApiProperty({ description: 'ID of the scenario path item' })
@@ -57,4 +58,10 @@ export class GetScenarioPathResponseDto {
 
   @ApiProperty({ description: 'List of scenarios in the path' })
   scenarios!: GetScenarioPathItemDto[];
+}
+
+export class GetUpcomingScenarioPathItemResponseDto extends Scenarios {
+  order!: number;
+  transitionMessageTitle?: string;
+  transitionMessageContent?: string;
 }
