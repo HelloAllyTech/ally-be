@@ -123,63 +123,6 @@ export class ScenarioPathSessionService {
     };
   }
 
-  async createUserPathSession(scenarioPathId: string) {
-    const scenarioPathWithScenarios =
-      await this.scenarioPathSharedService.getScenarioPathWithScenarios(
-        scenarioPathId,
-      );
-
-    const userSessionEntityInstance = this.scenarioPathSessionRepository.create(
-      {
-        scenarioPathId,
-        userId: Number(ExecutionManager.getUserId()),
-        startedAt: new Date(),
-        completedScenarios: 0,
-      },
-    );
-    const userSession = await this.scenarioPathSessionRepository.save(
-      userSessionEntityInstance,
-    );
-    const scenarioPathItems =
-      await this.scenarioPathSharedService.getScenarioPathItems(scenarioPathId);
-    const scenarioPathItemsEntityInstances = scenarioPathItems.map((item) =>
-      this.scenarioPathSessionItemRepository.create({
-        scenarioPathSessionId: userSession.id,
-        scenarioPathItemId: item.id,
-        userId: Number(ExecutionManager.getUserId()),
-        status:
-          item?.order > 1
-            ? SessionItemStatus.LOCKED
-            : SessionItemStatus.UNLOCKED,
-      }),
-    );
-    const savedScenarioPathSessionItems =
-      await this.scenarioPathSessionItemRepository.save(
-        scenarioPathItemsEntityInstances,
-      );
-
-    const sessionItemsMap = new Map(
-      savedScenarioPathSessionItems.map((item) => [
-        item.scenarioPathItemId,
-        item,
-      ]),
-    );
-
-    return {
-      ...scenarioPathWithScenarios,
-      completedScenarios: userSession.completedScenarios,
-      completedAt: userSession.completedAt,
-      scenarios: scenarioPathWithScenarios.scenarios.map((scenario) => {
-        const scenarioPathSessionItem = sessionItemsMap.get(scenario.id);
-        return {
-          ...scenario,
-          sessionId: scenarioPathSessionItem?.id,
-          status: scenarioPathSessionItem?.status || SessionItemStatus.LOCKED,
-        };
-      }),
-    };
-  }
-
   async updatePathSessionItem(
     scenarioPathSessionItemId: string,
     updatePathSessionItemDto: Partial<ScenarioPathSessionItem>,
