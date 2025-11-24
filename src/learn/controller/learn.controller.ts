@@ -624,8 +624,8 @@ export class LearnController {
       metadata: {},
     },
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_SESSION])
-  @Get('scenario-session/path-session-item/:pathSessionItemId')
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
+  @Get('scenario-session/:pathSessionItemId')
   async getScenarioSessionByPathSessionItemId(
     @Param('pathSessionItemId', ParseUUIDPipe) pathSessionItemId: string,
   ): Promise<ScenarioSessions | null> {

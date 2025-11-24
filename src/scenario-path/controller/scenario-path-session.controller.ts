@@ -75,7 +75,7 @@ export class ScenarioPathSessionController {
       scenarioPathSessionItemId: '123',
     },
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_PATH])
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
   @Post('/scenario-paths/:id/create-session')
   async createScenarioPathSession(
     @Param('id', ParseUUIDPipe) id: string,
@@ -109,7 +109,7 @@ export class ScenarioPathSessionController {
         "You have successfully completed the first scenario. Now, let's move on to the next challenge.",
     },
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_PATH])
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
   @Get('/scenario-paths/:scenarioSessionId/upcoming-scenario')
   async getUpcomingScenarioPathItem(
     @Param('scenarioSessionId', ParseUUIDPipe)
