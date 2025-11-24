@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ScenariosRepository } from '../../repository/scenario.repository';
 import { Scenarios } from '../../entity/scenarios.entity';
 import { ScenarioSharedService } from '../scenario-shared.service';
+import { ScenarioSessionRepository } from '../../repository/scenario-session.repository';
 
 describe('ScenarioSharedService', () => {
   let util: ScenarioSharedService;
@@ -18,12 +19,20 @@ describe('ScenarioSharedService', () => {
       findBy: jest.fn(),
     };
 
+    const mockScenarioSessionRepository = {
+      findOne: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSharedService,
         {
           provide: ScenariosRepository,
           useValue: mockScenariosRepository,
+        },
+        {
+          provide: ScenarioSessionRepository,
+          useValue: mockScenarioSessionRepository,
         },
       ],
     }).compile();

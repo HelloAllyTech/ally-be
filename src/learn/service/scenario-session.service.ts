@@ -26,7 +26,6 @@ import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../interface/learn-message.interface';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
-import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { Scenarios } from '../entity/scenarios.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
@@ -40,6 +39,9 @@ import { AppConfigService } from 'src/config/config.service';
 import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
 import { ScenarioTenantService } from './scenario-tenant.service';
+import { ScenarioPathService } from 'src/scenario-path/service/scenario-path.service';
+import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
+import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -55,7 +57,8 @@ export class ScenarioSessionService {
     private dataSource: DataSource,
     private aiService: AiService,
     private scenarioTenantService: ScenarioTenantService,
-    private permissionsService: PermissionsService,
+    private scenarioPathService: ScenarioPathService,
+    private scenarioPathSessionService: ScenarioPathSessionService,
     private permissionValidatorService: PermissionValidator,
     private simulationCreditsService: SimulationCreditsService,
     private configService: AppConfigService,
@@ -128,7 +131,14 @@ export class ScenarioSessionService {
     const scenario = await this.scenarioService.getScenario(
       startScenarioSessionDto.scenarioId,
     );
-    await this.validateStartScenarioSession(counselorId, scenario.id);
+    if (!scenario) {
+      throw new BadRequestException('Scenario not found');
+    }
+    await this.validateStartScenarioSession(
+      counselorId,
+      scenario.id,
+      startScenarioSessionDto.scenarioPathSessionItemId,
+    );
 
     const sessionEvents =
       await this.sessionEventService.getSessionEventsByScenarioId(
@@ -136,10 +146,11 @@ export class ScenarioSessionService {
       );
 
     const scenarioSession =
-      await this.scenarioSessionRepository.createScenarioSession(
-        counselorId,
-        startScenarioSessionDto,
-      );
+      await this.scenarioSessionRepository.createScenarioSession(counselorId, {
+        ...startScenarioSessionDto,
+        scenarioPathSessionItemId:
+          startScenarioSessionDto.scenarioPathSessionItemId,
+      });
 
     const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
 
@@ -194,6 +205,7 @@ export class ScenarioSessionService {
   private async validateStartScenarioSession(
     counselorId: number,
     scenarioId: number,
+    scenarioPathSessionItemId?: string,
   ) {
     const tenantId = ExecutionManager.getTenantId();
     if (!tenantId) {
@@ -207,6 +219,18 @@ export class ScenarioSessionService {
       throw new BadRequestException(
         'Scenario is not available for your organization',
       );
+    }
+    if (scenarioPathSessionItemId) {
+      const scenarioPathSessionItem =
+        await this.scenarioPathSessionService.getPermittedPathSessionItemBySessionItemId(
+          scenarioPathSessionItemId,
+        );
+      if (!scenarioPathSessionItem) {
+        throw new BadRequestException('Scenario path session item not found');
+      }
+      if (scenarioPathSessionItem.status === SessionItemStatus.LOCKED) {
+        throw new BadRequestException('Scenario path session item is locked');
+      }
     }
     const activeScenarioSessions = await this.getScenarioSessions(
       counselorId,
@@ -275,6 +299,12 @@ export class ScenarioSessionService {
       scenarioSession.scenarioId,
       callDuration,
     );
+    if (scenarioSession.scenarioPathSessionItemId)
+      await this.scenarioPathSessionService.handleEndScenarioPathSession({
+        scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
+        score,
+        callDuration,
+      });
 
     try {
       await this.livekitService.deleteRoom(scenarioSession.roomId);

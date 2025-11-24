@@ -27,9 +27,6 @@ export class ScenarioPathSessionItem extends BaseWithoutTenantEntity {
   })
   status!: SessionItemStatus;
 
-  @Column({ type: 'float', nullable: true })
-  duration?: number;
-
   @DeleteDateColumn()
   deletedAt?: Date;
 }

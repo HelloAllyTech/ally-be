@@ -35,6 +35,7 @@ import { TenantModule } from 'src/tenant/tenant.module';
 
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { ScenarioTenantValidationShared } from './service/scenario-tenant-validation-shared';
+import { ScenarioPathModule } from 'src/scenario-path/scenario-path.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { ScenarioTenantValidationShared } from './service/scenario-tenant-valida
     forwardRef(() => AiModule),
     forwardRef(() => UserModule),
     AwsModule,
+    forwardRef(() => ScenarioPathModule),
   ],
   controllers: [LearnController, SimulationCreditsController],
   providers: [

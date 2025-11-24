@@ -25,6 +25,8 @@ import { ScenarioSessionService } from '../scenario-session.service';
 import { ScenarioTenantService } from '../scenario-tenant.service';
 import { ScenarioService } from '../scenario.service';
 import { SimulationCreditsService } from '../simulation-credits.service';
+import { ScenarioPathService } from 'src/scenario-path/service/scenario-path.service';
+import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -142,6 +144,7 @@ describe('ScenarioSessionService', () => {
       createRoom: jest.fn(),
       deleteRoom: jest.fn(),
       generateAccessToken: jest.fn(),
+      getRoom: jest.fn(),
     };
 
     const mockSessionEventService = {
@@ -193,6 +196,14 @@ describe('ScenarioSessionService', () => {
 
     const mockScenarioTenantService = {
       getScenarioTenant: jest.fn(),
+    };
+
+    const mockScenarioPathService = {
+      getScenarioPathById: jest.fn(),
+    };
+
+    const mockScenarioPathSessionService = {
+      handleEndScenarioPathSession: jest.fn(),
     };
 
     mockConfigService = {
@@ -272,6 +283,14 @@ describe('ScenarioSessionService', () => {
         {
           provide: AppConfigService,
           useValue: mockConfigService,
+        },
+        {
+          provide: ScenarioPathService,
+          useValue: mockScenarioPathService,
+        },
+        {
+          provide: ScenarioPathSessionService,
+          useValue: mockScenarioPathSessionService,
         },
       ],
     }).compile();

@@ -13,7 +13,9 @@ import { ScenarioPathItem } from '../entity/scenario-path-item.entity';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
+import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { ScenarioPathTenantService } from './scenario-path-tenant.service';
+import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 
 @Injectable()
 export class ScenarioPathSharedService {
@@ -105,5 +107,77 @@ export class ScenarioPathSharedService {
       where: { scenarioPathId },
       order: { order: 'ASC' },
     });
+  }
+
+  async getScenarioPathItemById(
+    scenarioPathItemId: string,
+  ): Promise<ScenarioPathItem | null> {
+    return this.scenarioPathItemRepository.findOne({
+      where: { id: scenarioPathItemId },
+    });
+  }
+
+  async getScenarioDataByPathItemId(scenarioPathItemId: string) {
+    const scenarioPathItem = await this.scenarioPathItemRepository.findOne({
+      where: { id: scenarioPathItemId },
+    });
+    if (!scenarioPathItem) {
+      return null;
+    }
+    const scenarioData = await this.scenarioSharedService.getScenarioByIds([
+      scenarioPathItem.scenarioId,
+    ]);
+    if (!scenarioData?.[0]) {
+      return null;
+    }
+    return { ...scenarioData[0], pathItem: scenarioPathItem };
+  }
+
+  async getNextPathItemByCurrentItemId(
+    scenarioPathItemId: string,
+  ): Promise<ScenarioPathItem | null> {
+    const scenarioPathItem = await this.scenarioPathItemRepository.findOne({
+      where: { id: scenarioPathItemId },
+    });
+    if (!scenarioPathItem) {
+      return null;
+    }
+    return await this.scenarioPathItemRepository.findOne({
+      where: {
+        scenarioPathId: scenarioPathItem.scenarioPathId,
+        order: scenarioPathItem.order + 1,
+      },
+    });
+  }
+
+  async getNextScenarioDataByPathItemId(
+    scenarioPathItemId: string,
+  ): Promise<{ scenario: Scenarios; pathItem: ScenarioPathItem } | null> {
+    const nextScenarioPathItem =
+      await this.getNextPathItemByCurrentItemId(scenarioPathItemId);
+    if (!nextScenarioPathItem) {
+      return null;
+    }
+    const scenarioData = await this.scenarioSharedService.getScenarioByIds([
+      nextScenarioPathItem.scenarioId,
+    ]);
+    if (!scenarioData?.[0]) {
+      return null;
+    }
+    return { scenario: scenarioData[0], pathItem: nextScenarioPathItem };
+  }
+
+  async getPathItemById(pathItemId: string): Promise<ScenarioPathItem | null> {
+    return this.scenarioPathItemRepository.findOne({
+      where: { id: pathItemId },
+    });
+  }
+
+  async getScenarioSessionById(
+    scenarioSessionId: string,
+  ): Promise<ScenarioSessions | null> {
+    return await this.scenarioSharedService.getScenarioSessionById(
+      scenarioSessionId,
+    );
   }
 }
