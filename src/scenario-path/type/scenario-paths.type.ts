@@ -8,11 +8,13 @@ export enum ScenarioPathStatus {
 }
 
 export interface ScenarioPathFilterOptions {
-  status?: ScenarioPathStatus;
+  status?: string[];
   limit?: number;
   offset?: number;
   search?: string;
   tenantId?: string;
+  sortBy?: ScenarioPathSortBy;
+  order?: SortOrder;
 }
 
 export interface ScenarioPathWithSession extends ScenarioPath {
@@ -24,6 +26,8 @@ export interface ScenarioPathWithSessionFilterOptions {
   tenantId: string;
   limit?: number;
   offset?: number;
+  sortBy?: ScenarioPathSortBy;
+  order?: SortOrder;
 }
 export interface ScenarioPathsWithSession {
   data: ScenarioPathWithSession[];
@@ -36,4 +40,14 @@ export interface MinimalScenarioPathData {
   description?: string;
   coverImageUrl?: string;
   status: ScenarioPathStatus;
+}
+
+export enum ScenarioPathSortBy {
+  CREATED_AT = 'createdAt',
+  UPDATED_AT = 'updatedAt',
+}
+
+export enum SortOrder {
+  ASC = 'ASC',
+  DESC = 'DESC',
 }

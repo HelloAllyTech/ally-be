@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
+import { DataSource, In, Repository, SelectQueryBuilder } from 'typeorm';
 import { ScenarioPath } from '../entity/scenario-path.entity';
 import {
   ScenarioPathFilterOptions,
@@ -21,17 +21,6 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
   }> {
     const query = this.createQueryBuilder('scenarioPath');
 
-    this.applyStatusFilter(query, filters);
-    this.applySearchFilter(query, filters);
-
-    if (filters?.limit) {
-      query.limit(filters.limit);
-    }
-
-    if (filters?.offset) {
-      query.offset(filters.offset);
-    }
-
     if (filters?.tenantId) {
       query
         .leftJoinAndMapOne(
@@ -44,6 +33,25 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
           tenantId: filters.tenantId,
         });
     }
+
+    this.applyStatusFilter(query, filters);
+    this.applySearchFilter(query, filters);
+
+    if (filters?.sortBy) {
+      query.orderBy(
+        `scenarioPath.${filters.sortBy}`,
+        filters.order as 'ASC' | 'DESC',
+      );
+    }
+
+    if (filters?.limit) {
+      query.limit(filters.limit);
+    }
+
+    if (filters?.offset) {
+      query.offset(filters.offset);
+    }
+
     const [data, count] = await query.getManyAndCount();
 
     return { data, count };
@@ -54,8 +62,8 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
     filters?: ScenarioPathFilterOptions,
   ): void {
     if (filters?.status) {
-      query.andWhere('scenarioPath.status = :status', {
-        status: filters.status,
+      query.andWhere('scenarioPath.status IN (:...status)', {
+        status: In(filters.status),
       });
     }
   }
@@ -84,14 +92,6 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
       )
       .setParameters({ userId: filters.userId });
 
-    if (filters?.limit) {
-      query.limit(filters.limit);
-    }
-
-    if (filters?.offset) {
-      query.offset(filters.offset);
-    }
-
     if (filters.tenantId) {
       query
         .innerJoin(
@@ -102,6 +102,21 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
         .setParameters({
           tenantId: filters.tenantId,
         });
+    }
+
+    if (filters?.sortBy) {
+      query.orderBy(
+        `scenarioPathSession.${filters.sortBy}`,
+        filters.order as 'ASC' | 'DESC',
+      );
+    }
+
+    if (filters?.limit) {
+      query.limit(filters.limit);
+    }
+
+    if (filters?.offset) {
+      query.offset(filters.offset);
     }
 
     const [data, count] = await query.getManyAndCount();

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { DataSource, SelectQueryBuilder } from 'typeorm';
+import { DataSource, In, SelectQueryBuilder } from 'typeorm';
 import { ScenarioPathRepository } from '../scenario-path.repository';
 import { ScenarioPath } from '../../entity/scenario-path.entity';
 import { ScenarioPathSession } from '../../entity/scenario-path-session.entity';
@@ -98,15 +98,15 @@ describe('ScenarioPathRepository', () => {
     it('should apply status filter', async () => {
       const entities = [mockScenarioPath];
       const filters: ScenarioPathFilterOptions = {
-        status: ScenarioPathStatus.ACTIVE,
+        status: [ScenarioPathStatus.ACTIVE],
       };
       queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
 
       const result = await repository.getAllScenarioPaths(filters);
 
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'scenarioPath.status = :status',
-        { status: ScenarioPathStatus.ACTIVE },
+        'scenarioPath.status IN (:...status)',
+        { status: In([ScenarioPathStatus.ACTIVE]) },
       );
       expect(result).toEqual({
         data: entities,
@@ -178,7 +178,7 @@ describe('ScenarioPathRepository', () => {
     it('should apply all filters together', async () => {
       const entities = [mockScenarioPathWithTenantMapping];
       const filters: ScenarioPathFilterOptions = {
-        status: ScenarioPathStatus.ACTIVE,
+        status: [ScenarioPathStatus.ACTIVE],
         search: 'Test',
         limit: 10,
         offset: 5,
@@ -189,8 +189,8 @@ describe('ScenarioPathRepository', () => {
       const result = await repository.getAllScenarioPaths(filters);
 
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'scenarioPath.status = :status',
-        { status: ScenarioPathStatus.ACTIVE },
+        'scenarioPath.status IN (:...status)',
+        { status: In([ScenarioPathStatus.ACTIVE]) },
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         '(scenarioPath.title ILIKE :search)',

@@ -1,3 +1,5 @@
+import { SortOrder } from './scenario-paths.type';
+
 export enum SessionItemStatus {
   LOCKED = 'LOCKED',
   UNLOCKED = 'UNLOCKED',
@@ -7,4 +9,11 @@ export enum SessionItemStatus {
 export interface ScenarioPathSessionFilterOptions {
   limit?: number;
   offset?: number;
+  sortBy?: ScenarioPathSessionSortBy;
+  order?: SortOrder;
+}
+
+export enum ScenarioPathSessionSortBy {
+  CREATED_AT = 'createdAt',
+  UPDATED_AT = 'updatedAt',
 }
