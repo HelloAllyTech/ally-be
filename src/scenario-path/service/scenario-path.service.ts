@@ -37,6 +37,7 @@ import { SuccessResponse } from 'src/common/type/common.type';
 import { DuplicateScenarioPathResponseDto } from '../dto/duplicate-scenario-path-response.dto';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioPathTenant } from '../entity/scenario-path-tenant.entity';
+import { UpdateScenarioPathItemDto } from '../dto/update-scenario-path-item.dto';
 
 @Injectable()
 export class ScenarioPathService {
@@ -163,14 +164,15 @@ export class ScenarioPathService {
       throw new NotFoundException('Scenario path not found');
     }
 
+    const scenarioPathSession =
+      await this.scenarioPathSessionService.getScenarioPathSessionByScenarioPathId(
+        id,
+      );
+
     if (
       scenarioPath.status === ScenarioPathStatus.ACTIVE &&
       status === ScenarioPathStatus.DRAFT
     ) {
-      const scenarioPathSession =
-        await this.scenarioPathSessionService.getScenarioPathSessionByScenarioPathId(
-          id,
-        );
       if (scenarioPathSession) {
         throw new BadRequestException(
           'This scenario path cannot be changed to draft because it has active sessions.',
@@ -197,9 +199,20 @@ export class ScenarioPathService {
       description: scenarioPath.description,
       coverImageUrl: scenarioPath.coverImageUrl,
       isGlobal: scenarioPath.isGlobal,
-      scenarios: scenarioPathItems,
       ...updateScenarioPathDto,
+      scenarios: scenarioPathItems,
     };
+    if (scenarioPathSession) {
+      const isValidScenarioPathItems = this.validateUpdateScenarioPathItems(
+        updateScenarioPathDto?.scenarios,
+        scenarioPathItems,
+      );
+      if (!isValidScenarioPathItems) {
+        throw new BadRequestException(
+          'Cant add or remove any existing scenarios from a scenario path that has active sessions.',
+        );
+      }
+    }
 
     await this.validateScenarioPath(updateScenarioPath);
     this.logger.info(`Update Scenario Path ${id} validation passed`);
@@ -269,6 +282,33 @@ export class ScenarioPathService {
       this.logger.info(`Scenario path ${id} updated successfully`);
 
       return this.getMinimalScenarioPathData(updatedScenarioPath!);
+    });
+  }
+
+  private async validateUpdateScenarioPathItems(
+    inputScenarioPathItems?: UpdateScenarioPathItemDto[],
+    existingScenarioPathItems?: UpdateScenarioPathItemDto[],
+  ) {
+    // If both are undefined, return true
+    if (!inputScenarioPathItems && !existingScenarioPathItems) {
+      return true;
+    }
+
+    // If one is undefined and the other is not, return false
+    if (!inputScenarioPathItems || !existingScenarioPathItems) {
+      return false;
+    }
+
+    if (inputScenarioPathItems.length !== existingScenarioPathItems.length)
+      return false;
+
+    // Check if all scenarioIds from input exist in existing and their orders match
+    return inputScenarioPathItems.every((inputItem) => {
+      return existingScenarioPathItems.some(
+        (existingItem) =>
+          existingItem.scenarioId === inputItem.scenarioId &&
+          existingItem.order === inputItem.order,
+      );
     });
   }
 
@@ -445,6 +485,18 @@ export class ScenarioPathService {
 
         await scenarioPathItemRepo.save(newScenarioPathItems);
       }
+
+      const tenants = await this.tenantService.findAll();
+      const tenantIds = tenants.map((tenant) => tenant.id);
+      const scenarioPathTenantRepository =
+        manager.getRepository(ScenarioPathTenant);
+      const scenarioPathTenant = tenantIds.map((tenantId) =>
+        scenarioPathTenantRepository.create({
+          scenarioPathId: newScenarioPathData.id,
+          tenantId,
+        }),
+      );
+      await scenarioPathTenantRepository.save(scenarioPathTenant);
 
       this.logger.info(`Scenario path ${id} duplicated successfully`);
       return this.getMinimalScenarioPathData(newScenarioPathData);
