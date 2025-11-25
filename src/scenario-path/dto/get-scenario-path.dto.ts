@@ -61,6 +61,9 @@ export class GetScenarioPathResponseDto {
 }
 
 export class GetUpcomingScenarioPathItemResponseDto extends Scenarios {
+  @ApiProperty({ description: 'ID of the scenario path session item' })
+  scenarioPathSessionItemId?: string;
+
   @ApiProperty({
     description: 'Order of the scenario in the path',
     example: 2,

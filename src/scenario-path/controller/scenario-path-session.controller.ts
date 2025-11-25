@@ -104,6 +104,7 @@ export class ScenarioPathSessionController {
       createdAt: '2024-01-15T10:00:00Z',
       updatedAt: '2024-01-15T10:00:00Z',
       order: 2,
+      scenarioPathSessionItemId: '123',
       transitionMessageTitle: 'Great job on the previous scenario!',
       transitionMessageContent:
         "You have successfully completed the first scenario. Now, let's move on to the next challenge.",
@@ -125,6 +126,7 @@ export class ScenarioPathSessionController {
     return {
       ...(result?.nextScenarioData?.scenario || {}),
       order: result?.nextScenarioData?.pathItem?.order,
+      scenarioPathSessionItemId: result?.nextScenarioSessionItem?.id,
       transitionMessageTitle: result?.currentPathItem?.messageTitle,
       transitionMessageContent: result?.currentPathItem?.messageContent,
     };
