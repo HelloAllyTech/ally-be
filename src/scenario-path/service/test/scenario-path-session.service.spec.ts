@@ -145,6 +145,8 @@ describe('ScenarioPathSessionService', () => {
         tenantId: 'tenant-1',
         limit: 10,
         offset: 0,
+        sortBy: undefined,
+        order: undefined,
       });
     });
 
@@ -212,6 +214,8 @@ describe('ScenarioPathSessionService', () => {
         tenantId: 'tenant-1',
         limit: undefined,
         offset: undefined,
+        sortBy: undefined,
+        order: undefined,
       });
     });
   });

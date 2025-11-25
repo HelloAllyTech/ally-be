@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ScenarioPathService } from '../../service/scenario-path.service';
 import { ScenarioPathTenantService } from '../../service/scenario-path-tenant.service';
 import { CreateScenarioPathDto } from '../../dto/create-scenario-path.dto';
-import { ScenarioPathStatus } from '../../type/scenario-paths.type';
+import {
+  ScenarioPathStatus,
+  ScenarioPathSortBy,
+  SortOrder,
+} from '../../type/scenario-paths.type';
 import { ScenarioPath } from '../../entity/scenario-path.entity';
 import { CreateScenarioPathTenantDto } from '../../dto/create-scenario-path-tenant.dto';
 import { DeleteScenarioPathTenantDto } from '../../dto/delete-scenario-path-tenant.dto';
@@ -87,6 +91,8 @@ describe('ScenarioPathController', () => {
         limit: undefined,
         search: undefined,
         tenantId: undefined,
+        sortBy: ScenarioPathSortBy.UPDATED_AT,
+        order: SortOrder.DESC,
       });
     });
 
@@ -106,11 +112,13 @@ describe('ScenarioPathController', () => {
 
       expect(result).toEqual(expectedResult);
       expect(service.getScenarioPaths).toHaveBeenCalledWith({
-        status: ScenarioPathStatus.ACTIVE,
+        status: [ScenarioPathStatus.ACTIVE],
         offset: 0,
         limit: 10,
         search: 'Path',
         tenantId: undefined,
+        sortBy: ScenarioPathSortBy.UPDATED_AT,
+        order: SortOrder.DESC,
       });
     });
 
@@ -137,6 +145,8 @@ describe('ScenarioPathController', () => {
         limit: undefined,
         search: undefined,
         tenantId,
+        sortBy: ScenarioPathSortBy.UPDATED_AT,
+        order: SortOrder.DESC,
       });
     });
   });
