@@ -98,15 +98,15 @@ describe('ScenarioPathRepository', () => {
     it('should apply status filter', async () => {
       const entities = [mockScenarioPath];
       const filters: ScenarioPathFilterOptions = {
-        status: ScenarioPathStatus.ACTIVE,
+        status: [ScenarioPathStatus.ACTIVE],
       };
       queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
 
       const result = await repository.getAllScenarioPaths(filters);
 
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'scenarioPath.status = :status',
-        { status: ScenarioPathStatus.ACTIVE },
+        'scenarioPath.status IN (:...status)',
+        { status: [ScenarioPathStatus.ACTIVE] },
       );
       expect(result).toEqual({
         data: entities,
@@ -178,7 +178,7 @@ describe('ScenarioPathRepository', () => {
     it('should apply all filters together', async () => {
       const entities = [mockScenarioPathWithTenantMapping];
       const filters: ScenarioPathFilterOptions = {
-        status: ScenarioPathStatus.ACTIVE,
+        status: [ScenarioPathStatus.ACTIVE],
         search: 'Test',
         limit: 10,
         offset: 5,
@@ -189,8 +189,8 @@ describe('ScenarioPathRepository', () => {
       const result = await repository.getAllScenarioPaths(filters);
 
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'scenarioPath.status = :status',
-        { status: ScenarioPathStatus.ACTIVE },
+        'scenarioPath.status IN (:...status)',
+        { status: [ScenarioPathStatus.ACTIVE] },
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         '(scenarioPath.title ILIKE :search)',

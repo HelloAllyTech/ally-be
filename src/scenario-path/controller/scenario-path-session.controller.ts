@@ -21,6 +21,8 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { CreateScenarioPathSessionResponseDto } from '../dto/create-scenario-path-item.dto';
 import { UPCOMING_SCENARIO_PATH_ITEM_EXAMPLE } from '../constants/scenario-path.constant';
+import { SortOrder } from '../type/scenario-paths.type';
+import { ScenarioPathSessionSortBy } from '../type/scenario-path-session-items.type';
 
 @ApiTags('Learn Scenario Paths')
 @ApiBearerAuth()
@@ -49,15 +51,32 @@ export class ScenarioPathSessionController {
     type: Number,
     description: 'Number of records to return',
   })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ScenarioPathSessionSortBy,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
   @Get('/scenario-paths')
   async getUserScenarioPaths(
     @Query('offset') offset?: number,
     @Query('limit') limit?: number,
+    @Query('sortBy')
+    sortBy: ScenarioPathSessionSortBy = ScenarioPathSessionSortBy.UPDATED_AT,
+    @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<ScenarioPathSessionsResponseDto> {
     return this.scenarioPathSessionService.getUserScenarioPaths({
       offset,
       limit,
+      sortBy,
+      order,
     });
   }
 

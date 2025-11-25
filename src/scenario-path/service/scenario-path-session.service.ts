@@ -11,6 +11,7 @@ import {
   ScenarioPathSessionFilterOptions,
   SessionItemStatus,
 } from '../type/scenario-path-session-items.type';
+import { ScenarioPathSortBy } from '../type/scenario-paths.type';
 import { ScenarioPathSessionsResponseDto } from '../dto/scenario-path-sessions.dto';
 import { ScenarioPathSharedService } from './scenario-path-shared.service';
 import { ScenarioPathSessionItemRepository } from '../repository/scenario-path-session-item.repository';
@@ -48,6 +49,8 @@ export class ScenarioPathSessionService {
         tenantId,
         limit: filters?.limit,
         offset: filters?.offset,
+        sortBy: filters?.sortBy as ScenarioPathSortBy | undefined,
+        order: filters?.order,
       });
 
     const { data, count } = scenarioPaths;

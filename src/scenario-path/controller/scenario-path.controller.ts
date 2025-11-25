@@ -25,7 +25,7 @@ import { GetScenarioPathsResponseDto } from '../dto/scenario-paths-response.dto'
 import { ScenarioPathService } from '../service/scenario-path.service';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { ScenarioPathStatus } from '../type/scenario-paths.type';
+import { ScenarioPathSortBy, SortOrder } from '../type/scenario-paths.type';
 import {
   UpdateScenarioPathResponseDto,
   UpdateScenarioPathDto,
@@ -55,8 +55,8 @@ export class ScenarioPathController {
   @ApiQuery({
     name: 'status',
     required: false,
-    enum: ScenarioPathStatus,
-    description: 'Filter by status',
+    type: String,
+    description: 'Filter by status (comma-separated)',
   })
   @ApiQuery({
     name: 'offset',
@@ -82,21 +82,37 @@ export class ScenarioPathController {
     type: String,
     description: 'TenantId',
   })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ScenarioPathSortBy,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_PATH])
   @Get('scenario-paths')
   async getScenarioPaths(
-    @Query('status') status?: ScenarioPathStatus,
+    @Query('status') status?: string,
     @Query('offset') offset?: number,
     @Query('limit') limit?: number,
     @Query('search') search?: string,
     @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
+    @Query('sortBy') sortBy: ScenarioPathSortBy = ScenarioPathSortBy.UPDATED_AT,
+    @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<GetScenarioPathsResponseDto> {
     return this.scenarioPathService.getScenarioPaths({
-      status,
+      status: status?.split(',').map((status) => status.trim()),
       offset,
       limit,
       search,
       tenantId,
+      sortBy,
+      order,
     });
   }
 

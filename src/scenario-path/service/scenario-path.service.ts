@@ -42,7 +42,6 @@ import { UpdateScenarioPathItemDto } from '../dto/update-scenario-path-item.dto'
 @Injectable()
 export class ScenarioPathService {
   private readonly logger = LoggerService.getInstance(ScenarioPathService.name);
-
   constructor(
     private readonly dataSource: DataSource,
     private readonly scenarioSharedService: ScenarioSharedService,
@@ -200,7 +199,6 @@ export class ScenarioPathService {
       coverImageUrl: scenarioPath.coverImageUrl,
       isGlobal: scenarioPath.isGlobal,
       ...updateScenarioPathDto,
-      scenarios: scenarioPathItems,
     };
     if (scenarioPathSession) {
       const isValidScenarioPathItems = this.validateUpdateScenarioPathItems(
