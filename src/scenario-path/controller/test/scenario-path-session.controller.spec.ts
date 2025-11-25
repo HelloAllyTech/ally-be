@@ -6,6 +6,8 @@ import { ScenarioPathSharedService } from '../../service/scenario-path-shared.se
 import { ScenarioPathSessionItem } from '../../entity/scenario-path-session-item.entity';
 import { ScenarioPathItem } from '../../entity/scenario-path-item.entity';
 import { SessionItemStatus } from '../../type/scenario-path-session-items.type';
+import { ScenarioPathSessionSortBy } from '../../type/scenario-path-session-items.type';
+import { SortOrder } from '../../type/scenario-paths.type';
 
 jest.mock('../../../auth/decorators/auth-permissions.decorator', () => ({
   AuthPermissions: () => () => {},
@@ -81,6 +83,8 @@ describe('ScenarioPathSessionController', () => {
       expect(service.getUserScenarioPaths).toHaveBeenCalledWith({
         offset: undefined,
         limit: undefined,
+        sortBy: ScenarioPathSessionSortBy.UPDATED_AT,
+        order: SortOrder.DESC,
       });
     });
 
@@ -93,6 +97,8 @@ describe('ScenarioPathSessionController', () => {
       expect(service.getUserScenarioPaths).toHaveBeenCalledWith({
         offset: 10,
         limit: 20,
+        sortBy: ScenarioPathSessionSortBy.UPDATED_AT,
+        order: SortOrder.DESC,
       });
     });
   });
