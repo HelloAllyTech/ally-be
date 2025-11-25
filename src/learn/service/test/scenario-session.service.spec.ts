@@ -708,4 +708,57 @@ describe('ScenarioSessionService', () => {
       expect(livekitService.deleteRoom).toHaveBeenCalledWith(roomName);
     });
   });
+
+  describe('getLatestScenarioSessionByScenarioPathSessionItemId', () => {
+    it('should return a scenario session when found', async () => {
+      const scenarioPathSessionItemId = '550e8400-e29b-41d4-a716-446655440000';
+      const mockSessionWithPathItemId = {
+        ...mockScenarioSession,
+        scenarioPathSessionItemId,
+      };
+      scenarioSessionRepository.findOne.mockResolvedValue(
+        mockSessionWithPathItemId,
+      );
+
+      const result =
+        await service.getLatestScenarioSessionByScenarioPathSessionItemId(
+          scenarioPathSessionItemId,
+        );
+
+      expect(result).toEqual(mockSessionWithPathItemId);
+      expect(scenarioSessionRepository.findOne).toHaveBeenCalledWith({
+        where: { scenarioPathSessionItemId },
+        order: { createdAt: 'DESC' },
+      });
+      expect(scenarioSessionRepository.findOne).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return null when scenario session is not found', async () => {
+      const scenarioPathSessionItemId = '550e8400-e29b-41d4-a716-446655440000';
+      scenarioSessionRepository.findOne.mockResolvedValue(null);
+
+      const result =
+        await service.getLatestScenarioSessionByScenarioPathSessionItemId(
+          scenarioPathSessionItemId,
+        );
+
+      expect(result).toBeNull();
+      expect(scenarioSessionRepository.findOne).toHaveBeenCalledWith({
+        where: { scenarioPathSessionItemId },
+        order: { createdAt: 'DESC' },
+      });
+    });
+
+    it('should handle errors from repository', async () => {
+      const scenarioPathSessionItemId = '550e8400-e29b-41d4-a716-446655440000';
+      const error = new Error('Database error');
+      scenarioSessionRepository.findOne.mockRejectedValue(error);
+
+      await expect(
+        service.getLatestScenarioSessionByScenarioPathSessionItemId(
+          scenarioPathSessionItemId,
+        ),
+      ).rejects.toThrow('Database error');
+    });
+  });
 });

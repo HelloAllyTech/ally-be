@@ -24,14 +24,6 @@ export class ScenarioSharedService {
     });
   }
 
-  async getScenarioSessionByScenarioPathSessionItemId(
-    scenarioPathSessionItemId: string,
-  ) {
-    return this.scenarioSessionRepository.findOne({
-      where: { scenarioPathSessionItemId },
-    });
-  }
-
   async getScenarioSessionById(
     scenarioSessionId: string,
   ): Promise<ScenarioSessions | null> {

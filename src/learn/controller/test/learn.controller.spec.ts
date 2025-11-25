@@ -201,6 +201,7 @@ describe('LearnController', () => {
       endScenarioSession: jest.fn(),
       addFeedbackToScenarioSession: jest.fn(),
       getMessagesByScenarioSessionId: jest.fn(),
+      getLatestScenarioSessionByScenarioPathSessionItemId: jest.fn(),
     };
 
     const mockScenarioTenantService = {
@@ -922,6 +923,63 @@ describe('LearnController', () => {
       await expect(
         controller.removeScenariosFromTenant(tenantId, deleteScenarioTenantDto),
       ).rejects.toThrow('Tenant not found');
+    });
+  });
+
+  describe('getLatestScenarioSessionByPathSessionItemId', () => {
+    it('should return a scenario session when found', async () => {
+      const pathSessionItemId = '550e8400-e29b-41d4-a716-446655440000';
+      const mockSession = {
+        ...mockScenarioSessionResponse,
+        scenarioPathSessionItemId: pathSessionItemId,
+      };
+      scenarioSessionService.getLatestScenarioSessionByScenarioPathSessionItemId.mockResolvedValue(
+        mockSession,
+      );
+
+      const result =
+        await controller.getLatestScenarioSessionByPathSessionItemId(
+          pathSessionItemId,
+        );
+
+      expect(result).toEqual(mockSession);
+      expect(
+        scenarioSessionService.getLatestScenarioSessionByScenarioPathSessionItemId,
+      ).toHaveBeenCalledWith(pathSessionItemId);
+      expect(
+        scenarioSessionService.getLatestScenarioSessionByScenarioPathSessionItemId,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return null when scenario session is not found', async () => {
+      const pathSessionItemId = '550e8400-e29b-41d4-a716-446655440000';
+      scenarioSessionService.getLatestScenarioSessionByScenarioPathSessionItemId.mockResolvedValue(
+        null,
+      );
+
+      const result =
+        await controller.getLatestScenarioSessionByPathSessionItemId(
+          pathSessionItemId,
+        );
+
+      expect(result).toBeNull();
+      expect(
+        scenarioSessionService.getLatestScenarioSessionByScenarioPathSessionItemId,
+      ).toHaveBeenCalledWith(pathSessionItemId);
+    });
+
+    it('should handle errors from service', async () => {
+      const pathSessionItemId = '550e8400-e29b-41d4-a716-446655440000';
+      const error = new Error('Database error');
+      scenarioSessionService.getLatestScenarioSessionByScenarioPathSessionItemId.mockRejectedValue(
+        error,
+      );
+
+      await expect(
+        controller.getLatestScenarioSessionByPathSessionItemId(
+          pathSessionItemId,
+        ),
+      ).rejects.toThrow('Database error');
     });
   });
 });

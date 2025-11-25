@@ -50,6 +50,8 @@ import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
 import { AddScenarioTenantDto } from '../dto/add-scenario-tenant.dto';
 import { ScenarioTenantService } from '../service/scenario-tenant.service';
 import { DeleteScenarioTenantDto } from '../dto/delete-scenario-tenant.dto';
+import { ScenarioSessions } from '../entity/scenario-sessions.entity';
+import { SCENARIO_SESSION_EXAMPLE } from '../constants/scenario-session.constants';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -602,6 +604,24 @@ export class LearnController {
     return this.scenarioTenantService.removeScenariosFromTenant(
       tenantId,
       deleteScenarioTenantDto,
+    );
+  }
+
+  @ApiOperation({
+    description: 'get scenario session from path session item id',
+  })
+  @ApiResponse({
+    description: 'Scenario session retrieved successfully',
+    type: ScenarioSessions,
+    example: SCENARIO_SESSION_EXAMPLE,
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
+  @Get('scenario-session/scenario-path-session-item/:pathSessionItemId')
+  async getLatestScenarioSessionByPathSessionItemId(
+    @Param('pathSessionItemId', ParseUUIDPipe) pathSessionItemId: string,
+  ): Promise<ScenarioSessions | null> {
+    return this.scenarioSessionService.getLatestScenarioSessionByScenarioPathSessionItemId(
+      pathSessionItemId,
     );
   }
 }

@@ -218,6 +218,7 @@ describe('ScenarioPathSessionService', () => {
 
   describe('getScenarioPathSessionByScenarioPathId', () => {
     it('should return scenario path session when found', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
       const mockSession: ScenarioPathSession = {
         id: 'session-1',
         scenarioPathId: 'path-1',
@@ -230,11 +231,12 @@ describe('ScenarioPathSessionService', () => {
 
       expect(result).toEqual(mockSession);
       expect(repository.findOne).toHaveBeenCalledWith({
-        where: { scenarioPathId: 'path-1' },
+        where: { scenarioPathId: 'path-1', userId: 123 },
       });
     });
 
     it('should return null when scenario path session not found', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
       repository.findOne.mockResolvedValue(null);
 
       const result =
@@ -242,7 +244,7 @@ describe('ScenarioPathSessionService', () => {
 
       expect(result).toBeNull();
       expect(repository.findOne).toHaveBeenCalledWith({
-        where: { scenarioPathId: 'non-existent-id' },
+        where: { scenarioPathId: 'non-existent-id', userId: 123 },
       });
     });
   });
