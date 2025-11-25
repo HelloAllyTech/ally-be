@@ -75,7 +75,7 @@ export class ScenarioPathSessionController {
       scenarioPathSessionItemId: '123',
     },
   })
-  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_PATH])
   @Post('/scenario-paths/:id/create-session')
   async createScenarioPathSession(
     @Param('id', ParseUUIDPipe) id: string,
