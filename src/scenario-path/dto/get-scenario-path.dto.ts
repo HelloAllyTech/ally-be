@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ScenarioPathStatus } from '../type/scenario-paths.type';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
+import { ScenarioStatus } from 'src/learn/enum/scenario.status.enum';
 
 export class GetScenarioPathItemDto {
   @ApiProperty({ description: 'ID of the scenario path item' })
@@ -60,15 +61,45 @@ export class GetScenarioPathResponseDto {
   scenarios!: GetScenarioPathItemDto[];
 }
 
-export class GetUpcomingScenarioPathItemResponseDto extends Scenarios {
+export class GetUpcomingScenarioPathItemResponseDto
+  implements Partial<Scenarios>
+{
+  @ApiProperty({ description: 'ID of the scenario', required: false })
+  id?: number;
+
+  @ApiProperty({ description: 'Title of the scenario', required: false })
+  title?: string;
+
+  @ApiProperty({ description: 'Scenario content', required: false })
+  scenario?: string;
+
+  @ApiProperty({ description: 'Description of the scenario', required: false })
+  description?: string;
+
+  @ApiProperty({
+    description: 'Cover image URL of the scenario',
+    required: false,
+  })
+  coverImageUrl?: string;
+
+  @ApiProperty({
+    description: 'Cover video URL of the scenario',
+    required: false,
+  })
+  coverVideoUrl?: string;
+
+  @ApiProperty({ description: 'Status of the scenario', required: false })
+  status?: ScenarioStatus;
+
   @ApiProperty({ description: 'ID of the scenario path session item' })
   scenarioPathSessionItemId?: string;
 
   @ApiProperty({
     description: 'Order of the scenario in the path',
     example: 2,
+    required: false,
   })
-  order!: number;
+  order?: number;
 
   @ApiProperty({
     description: 'Transition message title from the previous scenario',

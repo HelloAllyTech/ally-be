@@ -68,8 +68,12 @@ export class ScenarioPathSessionService {
   }
 
   async getScenarioPathSessionByScenarioPathId(scenarioPathId: string) {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new UnauthorizedException('Unauthorized access');
+    }
     return this.scenarioPathSessionRepository.findOne({
-      where: { scenarioPathId },
+      where: { scenarioPathId, userId: Number(userId) },
     });
   }
 

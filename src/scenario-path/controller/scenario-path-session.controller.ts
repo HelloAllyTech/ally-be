@@ -126,11 +126,11 @@ export class ScenarioPathSessionController {
       return null;
     }
     return {
-      ...(result?.nextScenarioData?.scenario || {}),
-      order: result?.nextScenarioData?.pathItem?.order,
-      scenarioPathSessionItemId: result?.nextScenarioSessionItem?.id,
-      transitionMessageTitle: result?.currentPathItem?.messageTitle,
-      transitionMessageContent: result?.currentPathItem?.messageContent,
+      ...result.nextScenarioData.scenario,
+      order: result.nextScenarioData.pathItem?.order,
+      scenarioPathSessionItemId: result.nextScenarioSessionItem?.id,
+      transitionMessageTitle: result.currentPathItem.messageTitle,
+      transitionMessageContent: result.currentPathItem.messageContent,
     };
   }
 }
