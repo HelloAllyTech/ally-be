@@ -8,6 +8,7 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioFilters } from 'src/common/type/common.type';
+import { ScenarioPathItemRepository } from 'src/scenario-path/repository/scenario-path-item.repository';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -17,6 +18,7 @@ export class ScenarioSharedService {
   constructor(
     private readonly scenariosRepository: ScenariosRepository,
     private scenarioSessionRepository: ScenarioSessionRepository,
+    private scenarioPathItemRepository: ScenarioPathItemRepository,
   ) {}
 
   async getScenarioByIds(
@@ -35,5 +37,9 @@ export class ScenarioSharedService {
     return this.scenarioSessionRepository.findOne({
       where: { id: scenarioSessionId },
     });
+  }
+
+  async getScenarioPathItemByScenarioId(scenarioId: number) {
+    return this.scenarioPathItemRepository.findOne({ where: { scenarioId } });
   }
 }

@@ -14,7 +14,6 @@ import { ScenarioPathSession } from '../../entity/scenario-path-session.entity';
 import { ScenarioPathItem } from '../../entity/scenario-path-item.entity';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ScenarioPathTenantService } from '../scenario-path-tenant.service';
-import { ScenarioStatus } from 'src/learn/enum/scenario.status.enum';
 
 describe('ScenarioPathSharedService', () => {
   let service: ScenarioPathSharedService;
@@ -265,11 +264,10 @@ describe('ScenarioPathSharedService', () => {
       expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1' },
       });
-      // UPDATED: Now expects filters parameter
-      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith(
-        [1, 2],
-        { status: ScenarioStatus.ACTIVE },
-      );
+      // FIXED: Service calls without filter
+      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
+        1, 2,
+      ]);
     });
 
     it('should return scenario path with scenarios when tenantId is not provided', async () => {
@@ -324,11 +322,10 @@ describe('ScenarioPathSharedService', () => {
       expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1' },
       });
-      // UPDATED: Now expects filters parameter
-      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith(
-        [1, 2],
-        { status: ScenarioStatus.ACTIVE },
-      );
+
+      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
+        1, 2,
+      ]);
     });
 
     it('should throw NotFoundException when scenario path not found', async () => {

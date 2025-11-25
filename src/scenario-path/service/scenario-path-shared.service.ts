@@ -16,7 +16,6 @@ import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { ScenarioPathTenantService } from './scenario-path-tenant.service';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
-import { ScenarioStatus } from 'src/learn/enum/scenario.status.enum';
 
 @Injectable()
 export class ScenarioPathSharedService {
@@ -66,10 +65,8 @@ export class ScenarioPathSharedService {
 
     const scenarioIds = scenarioPathItems.map((item) => item.scenarioId);
 
-    const scenariosData = await this.scenarioSharedService.getScenarioByIds(
-      scenarioIds,
-      { status: ScenarioStatus.ACTIVE },
-    );
+    const scenariosData =
+      await this.scenarioSharedService.getScenarioByIds(scenarioIds);
     const scenariosDataMap = new Map(
       scenariosData.map((scenario) => [scenario.id, scenario]),
     );

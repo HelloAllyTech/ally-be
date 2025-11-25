@@ -47,7 +47,7 @@ import {
 } from '../util/scenario.util';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
-import { ScenarioPathItem } from 'src/scenario-path/entity/scenario-path-item.entity';
+import { ScenarioSharedService } from './scenario-shared.service';
 
 @Injectable()
 export class ScenarioService {
@@ -62,6 +62,7 @@ export class ScenarioService {
     private s3Service: S3Service,
     private configService: AppConfigService,
     private dataSource: DataSource,
+    private scenarioSharedService: ScenarioSharedService,
   ) {}
 
   async getScenarios(): Promise<Scenarios[]> {
@@ -482,19 +483,6 @@ export class ScenarioService {
         updatedBy: userId,
       };
 
-      if (
-        (updateScenarioDto?.status &&
-          updateScenarioDto.status === ScenarioStatus.DRAFT) ||
-        updateScenarioDto.status === ScenarioStatus.ARCHIVED
-      ) {
-        const scenarioPathItem = await entityManager
-          .getRepository(ScenarioPathItem)
-          .findOne({ where: { scenarioId: id } });
-        if (scenarioPathItem) {
-          throw new BadRequestException('Scenario is a part of scenario path');
-        }
-      }
-
       const updateScenarioObjectFields = [
         'title',
         'description',
@@ -637,6 +625,19 @@ export class ScenarioService {
       throw new NotFoundException('Scenario not found');
     }
 
+    if (
+      updateScenarioDto?.status &&
+      updateScenarioDto.status !== scenario.status &&
+      (updateScenarioDto.status === ScenarioStatus.DRAFT ||
+        updateScenarioDto.status === ScenarioStatus.ARCHIVED)
+    ) {
+      const scenarioPathItem =
+        await this.scenarioSharedService.getScenarioPathItemByScenarioId(id);
+      if (scenarioPathItem) {
+        throw new BadRequestException('Scenario is a part of scenario path');
+      }
+    }
+
     if (updateScenarioDto.status) {
       if (
         !SCENARIO_STATUS_MAP.get(scenario.status)?.includes(
@@ -659,15 +660,12 @@ export class ScenarioService {
 
   async deleteAdminScenario(id: number): Promise<boolean> {
     await this.getAdminScenario(id);
-
+    const scenarioPathItem =
+      await this.scenarioSharedService.getScenarioPathItemByScenarioId(id);
+    if (scenarioPathItem) {
+      throw new BadRequestException('Scenario is a part of scenario path');
+    }
     await this.dataSource.transaction(async (em) => {
-      const scenarioPathItem = await em
-        .getRepository(ScenarioPathItem)
-        .findOne({ where: { scenarioId: id } });
-      if (scenarioPathItem) {
-        throw new BadRequestException('Scenario is a part of scenario path');
-      }
-
       await em.getRepository(Scenarios).softDelete(id);
       await em.getRepository(ScenarioEvents).softDelete({ scenarioId: id });
       await em.getRepository(ScenarioTenants).softDelete({ scenarioId: id });
