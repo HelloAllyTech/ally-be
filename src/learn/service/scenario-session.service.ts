@@ -594,11 +594,12 @@ export class ScenarioSessionService {
     await this.livekitService.deleteRoom(roomName);
   }
 
-  async getScenarioSessionByScenarioPathSessionItemId(
+  async getLatestScenarioSessionByScenarioPathSessionItemId(
     scenarioPathSessionItemId: string,
   ) {
     return this.scenarioSessionRepository.findOne({
       where: { scenarioPathSessionItemId },
+      order: { createdAt: 'DESC' },
     });
   }
 }
