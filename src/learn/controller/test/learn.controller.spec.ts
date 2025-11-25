@@ -201,6 +201,7 @@ describe('LearnController', () => {
       endScenarioSession: jest.fn(),
       addFeedbackToScenarioSession: jest.fn(),
       getMessagesByScenarioSessionId: jest.fn(),
+      getScenarioSessionByScenarioPathSessionItemId: jest.fn(),
     };
 
     const mockScenarioTenantService = {
@@ -922,6 +923,61 @@ describe('LearnController', () => {
       await expect(
         controller.removeScenariosFromTenant(tenantId, deleteScenarioTenantDto),
       ).rejects.toThrow('Tenant not found');
+    });
+  });
+
+  describe('getScenarioSessionByPathSessionItemId', () => {
+    it('should return a scenario session when found', async () => {
+      const pathSessionItemId = '550e8400-e29b-41d4-a716-446655440000';
+      const mockSession = {
+        ...mockScenarioSessionResponse,
+        scenarioPathSessionItemId: pathSessionItemId,
+      };
+      scenarioSessionService.getScenarioSessionByScenarioPathSessionItemId.mockResolvedValue(
+        mockSession,
+      );
+
+      const result =
+        await controller.getScenarioSessionByPathSessionItemId(
+          pathSessionItemId,
+        );
+
+      expect(result).toEqual(mockSession);
+      expect(
+        scenarioSessionService.getScenarioSessionByScenarioPathSessionItemId,
+      ).toHaveBeenCalledWith(pathSessionItemId);
+      expect(
+        scenarioSessionService.getScenarioSessionByScenarioPathSessionItemId,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return null when scenario session is not found', async () => {
+      const pathSessionItemId = '550e8400-e29b-41d4-a716-446655440000';
+      scenarioSessionService.getScenarioSessionByScenarioPathSessionItemId.mockResolvedValue(
+        null,
+      );
+
+      const result =
+        await controller.getScenarioSessionByPathSessionItemId(
+          pathSessionItemId,
+        );
+
+      expect(result).toBeNull();
+      expect(
+        scenarioSessionService.getScenarioSessionByScenarioPathSessionItemId,
+      ).toHaveBeenCalledWith(pathSessionItemId);
+    });
+
+    it('should handle errors from service', async () => {
+      const pathSessionItemId = '550e8400-e29b-41d4-a716-446655440000';
+      const error = new Error('Database error');
+      scenarioSessionService.getScenarioSessionByScenarioPathSessionItemId.mockRejectedValue(
+        error,
+      );
+
+      await expect(
+        controller.getScenarioSessionByPathSessionItemId(pathSessionItemId),
+      ).rejects.toThrow('Database error');
     });
   });
 });
