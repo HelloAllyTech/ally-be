@@ -28,6 +28,14 @@ import { PermissionValidator } from 'src/authorization/service/permission-valida
 import { UserModule } from 'src/user/user.module';
 import { AwsModule } from 'src/aws/aws.module';
 import { ScenarioEventsRepository } from './repository/scenario-events.repository';
+import { ScenarioSharedService } from './service/scenario-shared.service';
+import { ScenarioTenantService } from './service/scenario-tenant.service';
+import { ScenarioTenantRepository } from './repository/scenario-tenant.repository';
+import { TenantModule } from 'src/tenant/tenant.module';
+
+import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
+import { ScenarioTenantValidationShared } from './service/scenario-tenant-validation-shared';
+import { ScenarioPathModule } from 'src/scenario-path/scenario-path.module';
 
 @Module({
   imports: [
@@ -43,9 +51,11 @@ import { ScenarioEventsRepository } from './repository/scenario-events.repositor
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
+    TenantModule,
     forwardRef(() => AiModule),
     forwardRef(() => UserModule),
     AwsModule,
+    forwardRef(() => ScenarioPathModule),
   ],
   controllers: [LearnController, SimulationCreditsController],
   providers: [
@@ -62,12 +72,20 @@ import { ScenarioEventsRepository } from './repository/scenario-events.repositor
     SimulationCreditsRepository,
     PermissionValidator,
     ScenarioEventsRepository,
+    ScenarioSharedService,
+    ScenarioTenantService,
+    ScenarioTenantRepository,
+    ScenarioTenantValidationShared,
+    TenantsRepository,
   ],
   exports: [
     LearnMessageProcessor,
     LearnEventProcessor,
     ScenarioSessionService,
     SimulationCreditsService,
+    ScenarioSharedService,
+    ScenarioService,
+    ScenarioTenantService,
   ],
 })
 export class LearnModule {}

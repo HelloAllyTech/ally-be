@@ -1,14 +1,48 @@
-import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
+import {
+  DataSource,
+  DeepPartial,
+  In,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 import { SessionEvents } from '../entity/session-events.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { Injectable } from '@nestjs/common';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
+import { CreateSessionEventDto } from '../dto/session-event.dto';
+import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
+import { EVENT_TYPE_PREFIX_MAP } from '../constants/event-type.constant';
 
 @Injectable()
 export class SessionEventRepository extends Repository<SessionEvents> {
   constructor(private dataSource: DataSource) {
     super(SessionEvents, dataSource.createEntityManager());
+  }
+
+  async createSessionEvents(
+    createEventDtos: CreateSessionEventDto[],
+  ): Promise<SessionEvents[]> {
+    const events: DeepPartial<SessionEvents>[] = await Promise.all(
+      createEventDtos.map(async (event) => {
+        const sequenceResult = await this.query(
+          `SELECT nextval('session_events_event_code_seq') as next_value`,
+        );
+
+        const eventCode = sequenceResult[0]?.next_value || '0';
+        const detectionType =
+          event.detectionType || SessionEventDetectionType.SENTENCE_SIMILARITY;
+        return this.create({
+          ...event,
+          eventCode: `${EVENT_TYPE_PREFIX_MAP[detectionType as SessionEventDetectionType]}${eventCode}`,
+        } as DeepPartial<SessionEvents>);
+      }),
+    );
+    return this.save(events);
+  }
+
+  async findByIds(ids: string[]): Promise<SessionEvents[]> {
+    return this.find({ where: { id: In(ids) } });
   }
 
   async getAllSessionEvents(
@@ -23,9 +57,13 @@ export class SessionEventRepository extends Repository<SessionEvents> {
       });
     }
     if (searchName) {
-      query.andWhere('sessionEvent.name ILIKE :searchName').setParameters({
-        searchName: `%${searchName}%`,
-      });
+      query
+        .andWhere(
+          '(sessionEvent.name ILIKE :searchName OR sessionEvent.eventCode ILIKE :searchName)',
+        )
+        .setParameters({
+          searchName: `%${searchName}%`,
+        });
     }
     this.applySorting(query, pagination);
     this.applyPagination(query, pagination);

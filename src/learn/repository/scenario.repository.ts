@@ -4,13 +4,19 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
+import { ScenarioEvents } from '../entity/scenario-events.entity';
+import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
 
 @Injectable()
 export class ScenariosRepository extends Repository<Scenarios> {
   constructor(private dataSource: DataSource) {
     super(Scenarios, dataSource.createEntityManager());
   }
-  async getAdminScenarios(status?: string, options?: Pagination) {
+  async getAdminScenarios(
+    status?: string,
+    tenantId?: string,
+    options?: Pagination,
+  ) {
     const query = this.createQueryBuilder('scenario')
       .leftJoin(User, 'user', 'scenario."createdBy"=user.id')
       .select(['scenario', 'user.name'])
@@ -48,7 +54,33 @@ export class ScenariosRepository extends Repository<Scenarios> {
       query.offset(options?.offset);
     }
 
+    if (tenantId) {
+      query
+        .leftJoin(
+          'scenario_tenants',
+          'scenarioTenants',
+          '"scenarioTenants"."scenarioId" = scenario.id AND "scenarioTenants"."tenantId" = :tenantId',
+          { tenantId },
+        )
+        .addSelect(
+          'CASE WHEN "scenarioTenants".id IS NOT NULL THEN true ELSE false END',
+          'isAssignedToTenant',
+        );
+    }
     return query.getRawMany();
+  }
+
+  async getAdminScenarioById(id: number): Promise<GetAdminScenarioDto | null> {
+    return await this.createQueryBuilder('scenario')
+      .leftJoinAndMapOne(
+        'scenario.terminationEvent',
+        ScenarioEvents,
+        'scenarioEvent',
+        'scenarioEvent.scenarioId = scenario.id AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        { autoTerminationStatus: true },
+      )
+      .where('scenario.id = :id', { id })
+      .getOne();
   }
 
   private parseStringArray(value?: string): string[] {

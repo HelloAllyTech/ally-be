@@ -8,7 +8,6 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { SessionEventService } from '../service/session-event.service';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -19,14 +18,17 @@ import {
 } from '@nestjs/swagger';
 import { SessionEvents } from '../entity/session-events.entity';
 import { CreateSessionEventsDto } from '../dto/create-session-events.dto';
-import { UpdateSessionEventDto } from '../dto/update-session-event.dto';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
-
+import { SessionEventService } from '../service/session-event.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { SessionEventSortBy } from '../enum/session-event-sort-by.enum';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 import { DeleteSessionEventsDto } from '../dto/delete-session-events.dto';
+import {
+  SessionEventResponseDto,
+  UpdateSessionEventDto,
+} from '../dto/session-event.dto';
 
 @ApiTags('SessionEvents')
 @ApiBearerAuth()
@@ -102,7 +104,7 @@ export class SessionEventController {
     @Query('offset') offset?: number,
     @Query('sortBy') sortBy: SessionEventSortBy = SessionEventSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
-  ): Promise<{ data: SessionEvents[] }> {
+  ): Promise<{ data: SessionEventResponseDto[] }> {
     return this.sessionEventService.getAllSessionEvents(
       visibilityType,
       searchName,

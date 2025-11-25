@@ -6,6 +6,11 @@ export type Pagination = {
   order?: 'ASC' | 'DESC';
 };
 
+export type ScenarioFilters = {
+  status?: string;
+  tenantId?: string;
+};
+
 export class PaginatedResponse<T> {
   data!: T[];
   count!: number;
@@ -32,4 +37,8 @@ export type RequestWithUser = Request & {
     role: string;
     tenantId: string;
   };
+};
+
+export type SuccessResponse = {
+  success: boolean;
 };
