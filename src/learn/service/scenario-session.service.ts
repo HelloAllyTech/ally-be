@@ -42,6 +42,7 @@ import { ScenarioTenantService } from './scenario-tenant.service';
 import { ScenarioPathService } from 'src/scenario-path/service/scenario-path.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
+import { ScenarioPathTenantService } from 'src/scenario-path/service/scenario-path-tenant.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -57,6 +58,7 @@ export class ScenarioSessionService {
     private dataSource: DataSource,
     private aiService: AiService,
     private scenarioTenantService: ScenarioTenantService,
+    private scenarioPathTenantService: ScenarioPathTenantService,
     private scenarioPathService: ScenarioPathService,
     private scenarioPathSessionService: ScenarioPathSessionService,
     private permissionValidatorService: PermissionValidator,
@@ -211,15 +213,6 @@ export class ScenarioSessionService {
     if (!tenantId) {
       throw new NotFoundException('TenantId not found');
     }
-    const scenarioTenant = await this.scenarioTenantService.getScenarioTenant(
-      tenantId,
-      scenarioId,
-    );
-    if (!scenarioTenant) {
-      throw new BadRequestException(
-        'Scenario is not available for your organization',
-      );
-    }
     if (scenarioPathSessionItemId) {
       const scenarioPathSessionItem =
         await this.scenarioPathSessionService.getPermittedPathSessionItemBySessionItemId(
@@ -230,6 +223,35 @@ export class ScenarioSessionService {
       }
       if (scenarioPathSessionItem.status === SessionItemStatus.LOCKED) {
         throw new BadRequestException('Scenario path session item is locked');
+      }
+      const scenarioPathSessionId =
+        scenarioPathSessionItem.scenarioPathSessionId;
+      const scenarioPathSessionItemData =
+        await this.scenarioPathSessionService.getScenarioPathSessionById(
+          scenarioPathSessionId,
+        );
+      const scenarioPathId = scenarioPathSessionItemData?.scenarioPathId;
+      if (scenarioPathId) {
+        const scenarioPathTenant =
+          await this.scenarioPathTenantService.getScenarioPathTenant(
+            tenantId,
+            scenarioPathId,
+          );
+        if (!scenarioPathTenant) {
+          throw new BadRequestException(
+            'Scenario is not available for your organization',
+          );
+        }
+      }
+    } else {
+      const scenarioTenant = await this.scenarioTenantService.getScenarioTenant(
+        tenantId,
+        scenarioId,
+      );
+      if (!scenarioTenant) {
+        throw new BadRequestException(
+          'Scenario is not available for your organization',
+        );
       }
     }
     const activeScenarioSessions = await this.getScenarioSessions(

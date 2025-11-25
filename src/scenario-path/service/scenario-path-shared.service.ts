@@ -16,6 +16,7 @@ import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { ScenarioPathTenantService } from './scenario-path-tenant.service';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
+import { ScenarioStatus } from 'src/learn/enum/scenario.status.enum';
 
 @Injectable()
 export class ScenarioPathSharedService {
@@ -48,7 +49,6 @@ export class ScenarioPathSharedService {
       this.logger.error(`Scenario path not found for id: ${scenarioPathId}`);
       throw new NotFoundException('Scenario path not found');
     }
-
     if (tenantId) {
       const scenarioPathTenant =
         await this.scenarioPathTenantService.getScenarioPathTenant(
@@ -66,8 +66,10 @@ export class ScenarioPathSharedService {
 
     const scenarioIds = scenarioPathItems.map((item) => item.scenarioId);
 
-    const scenariosData =
-      await this.scenarioSharedService.getScenarioByIds(scenarioIds);
+    const scenariosData = await this.scenarioSharedService.getScenarioByIds(
+      scenarioIds,
+      { status: ScenarioStatus.ACTIVE },
+    );
     const scenariosDataMap = new Map(
       scenariosData.map((scenario) => [scenario.id, scenario]),
     );

@@ -14,6 +14,7 @@ import { ScenarioPathSession } from '../../entity/scenario-path-session.entity';
 import { ScenarioPathItem } from '../../entity/scenario-path-item.entity';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ScenarioPathTenantService } from '../scenario-path-tenant.service';
+import { ScenarioStatus } from 'src/learn/enum/scenario.status.enum';
 
 describe('ScenarioPathSharedService', () => {
   let service: ScenarioPathSharedService;
@@ -29,10 +30,12 @@ describe('ScenarioPathSharedService', () => {
 
   const mockScenarioPathItemRepository = {
     find: jest.fn(),
+    findOne: jest.fn(),
   };
 
   const mockScenarioSharedService = {
     getScenarioByIds: jest.fn(),
+    getScenarioSessionById: jest.fn(),
   };
 
   const mockScenarioPathTenantService = {
@@ -203,7 +206,6 @@ describe('ScenarioPathSharedService', () => {
 
     it('should return scenario path with scenarios when tenantId is provided and access is granted', async () => {
       scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
-      // FIXED: Return single object, not array
       scenarioPathTenantService.getScenarioPathTenant.mockResolvedValue({
         id: 'mock-id',
         scenarioPathId: 'path-1',
@@ -263,9 +265,11 @@ describe('ScenarioPathSharedService', () => {
       expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1' },
       });
-      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
-        1, 2,
-      ]);
+      // UPDATED: Now expects filters parameter
+      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith(
+        [1, 2],
+        { status: ScenarioStatus.ACTIVE },
+      );
     });
 
     it('should return scenario path with scenarios when tenantId is not provided', async () => {
@@ -320,9 +324,11 @@ describe('ScenarioPathSharedService', () => {
       expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1' },
       });
-      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
-        1, 2,
-      ]);
+      // UPDATED: Now expects filters parameter
+      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith(
+        [1, 2],
+        { status: ScenarioStatus.ACTIVE },
+      );
     });
 
     it('should throw NotFoundException when scenario path not found', async () => {
@@ -339,7 +345,6 @@ describe('ScenarioPathSharedService', () => {
 
     it('should throw BadRequestException when tenant does not have access', async () => {
       scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
-      // FIXED: Return null (falsy value) instead of empty array
       scenarioPathTenantService.getScenarioPathTenant.mockResolvedValue(null);
 
       await expect(

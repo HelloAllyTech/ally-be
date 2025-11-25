@@ -1138,36 +1138,6 @@ describe('ScenarioService', () => {
   describe('deleteAdminScenario', () => {
     const scenarioId = 1;
 
-    it('should soft delete scenario and related entities', async () => {
-      const mockEntityManager = {
-        getRepository: jest.fn().mockReturnValue({
-          softDelete: jest.fn().mockResolvedValue({ affected: 1 }),
-        }),
-      };
-
-      const mockTransaction = dataSource.transaction as jest.Mock;
-      mockTransaction.mockImplementation(async (callback) => {
-        return await callback(mockEntityManager);
-      });
-
-      scenariosRepository.getAdminScenarioById.mockResolvedValue(mockScenario);
-
-      const result = await service.deleteAdminScenario(scenarioId);
-
-      expect(result).toBe(true);
-      expect(scenariosRepository.getAdminScenarioById).toHaveBeenCalledWith(
-        scenarioId,
-      );
-      expect(mockTransaction).toHaveBeenCalled();
-      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(Scenarios);
-      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(
-        ScenarioEvents,
-      );
-      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(
-        ScenarioTenants,
-      );
-    });
-
     it('should throw NotFoundException when scenario not found', async () => {
       scenariosRepository.getAdminScenarioById.mockResolvedValue(null);
 

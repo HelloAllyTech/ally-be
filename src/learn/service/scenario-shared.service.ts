@@ -7,6 +7,7 @@ import { ScenariosRepository } from '../repository/scenario.repository';
 import { Scenarios } from '../entity/scenarios.entity';
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
+import { ScenarioFilters } from 'src/common/type/common.type';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -18,9 +19,13 @@ export class ScenarioSharedService {
     private scenarioSessionRepository: ScenarioSessionRepository,
   ) {}
 
-  async getScenarioByIds(scenarioIds: number[]): Promise<Scenarios[]> {
+  async getScenarioByIds(
+    scenarioIds: number[],
+    filters?: ScenarioFilters,
+  ): Promise<Scenarios[]> {
     return this.scenariosRepository.findBy({
       id: In(scenarioIds),
+      ...(filters?.status && { status: In([filters.status]) }),
     });
   }
 
