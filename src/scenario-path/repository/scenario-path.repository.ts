@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, In, Repository, SelectQueryBuilder } from 'typeorm';
+import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { ScenarioPath } from '../entity/scenario-path.entity';
 import {
   ScenarioPathFilterOptions,
@@ -63,7 +63,7 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
   ): void {
     if (filters?.status) {
       query.andWhere('scenarioPath.status IN (:...status)', {
-        status: In(filters.status),
+        status: filters.status,
       });
     }
   }

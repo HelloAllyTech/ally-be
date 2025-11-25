@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { DataSource, In, SelectQueryBuilder } from 'typeorm';
+import { DataSource, SelectQueryBuilder } from 'typeorm';
 import { ScenarioPathRepository } from '../scenario-path.repository';
 import { ScenarioPath } from '../../entity/scenario-path.entity';
 import { ScenarioPathSession } from '../../entity/scenario-path-session.entity';
@@ -106,7 +106,7 @@ describe('ScenarioPathRepository', () => {
 
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         'scenarioPath.status IN (:...status)',
-        { status: In([ScenarioPathStatus.ACTIVE]) },
+        { status: [ScenarioPathStatus.ACTIVE] },
       );
       expect(result).toEqual({
         data: entities,
@@ -190,7 +190,7 @@ describe('ScenarioPathRepository', () => {
 
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         'scenarioPath.status IN (:...status)',
-        { status: In([ScenarioPathStatus.ACTIVE]) },
+        { status: [ScenarioPathStatus.ACTIVE] },
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         '(scenarioPath.title ILIKE :search)',
