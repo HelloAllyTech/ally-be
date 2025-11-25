@@ -76,11 +76,13 @@ export class ScenarioPathSessionController {
     },
   })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_PATH])
-  @Post('/scenario-paths/:id/create-session')
+  @Post('/scenario-paths/:scenarioPathId/create-session')
   async createScenarioPathSession(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('scenarioPathId', ParseUUIDPipe) scenarioPathId: string,
   ): Promise<CreateScenarioPathSessionResponseDto> {
-    return this.scenarioPathSessionService.createUserPathSession(id);
+    return this.scenarioPathSessionService.createUserPathSession(
+      scenarioPathId,
+    );
   }
 
   @ApiOperation({ summary: 'Get upcoming scenario' })
