@@ -29,6 +29,12 @@ export class ScenarioSharedService {
     });
   }
 
+  async getScenarioById(scenarioId: number): Promise<Scenarios | null> {
+    return this.scenariosRepository.findOne({
+      where: { id: scenarioId },
+    });
+  }
+
   async getScenarioSessionById(
     scenarioSessionId: string,
   ): Promise<ScenarioSessions | null> {

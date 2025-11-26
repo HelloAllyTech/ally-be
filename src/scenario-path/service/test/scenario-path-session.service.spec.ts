@@ -14,6 +14,7 @@ import { ScenarioPathSessionItemRepository } from '../../repository/scenario-pat
 import { ScenarioPathSessionItem } from '../../entity/scenario-path-session-item.entity';
 import { SessionItemStatus } from '../../type/scenario-path-session-items.type';
 import { ScenarioPathStatus } from '../../type/scenario-paths.type';
+import { AppConfigService } from 'src/config/config.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -57,6 +58,12 @@ describe('ScenarioPathSessionService', () => {
     transaction: jest.fn(),
   };
 
+  const mockConfigService = {
+    simulationPath: {
+      simulationPathItemMinDurationForCompletion: 0,
+    },
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -70,7 +77,14 @@ describe('ScenarioPathSessionService', () => {
           provide: ScenarioPathSessionItemRepository,
           useValue: mockScenarioPathSessionItemRepository,
         },
-        { provide: DataSource, useValue: mockDataSource },
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
+        },
+        {
+          provide: AppConfigService,
+          useValue: mockConfigService,
+        },
       ],
     }).compile();
 

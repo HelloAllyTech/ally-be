@@ -4,6 +4,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { In } from 'typeorm';
 import { ScenarioPathRepository } from '../repository/scenario-path.repository';
 import {
   ScenarioPathsWithSession,
@@ -21,7 +22,6 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioPathSessionRepository } from '../repository/scenario-path-session.repository';
 import { ScenarioPathSessionItemRepository } from '../repository/scenario-path-session-item.repository';
 import { SessionItemStatus } from '../type/scenario-path-session-items.type';
-import { In } from 'typeorm';
 
 @Injectable()
 export class ScenarioPathSharedService {
@@ -131,13 +131,17 @@ export class ScenarioPathSharedService {
     if (!scenarioPathItem) {
       return null;
     }
-    const scenarioData = await this.scenarioSharedService.getScenarioByIds([
+    const scenarioData = await this.getScenarioDataById(
       scenarioPathItem.scenarioId,
-    ]);
-    if (!scenarioData?.[0]) {
+    );
+    if (!scenarioData) {
       return null;
     }
-    return { ...scenarioData[0], pathItem: scenarioPathItem };
+    return { ...scenarioData, pathItem: scenarioPathItem };
+  }
+
+  async getScenarioDataById(scenarioId: number) {
+    return await this.scenarioSharedService.getScenarioById(scenarioId);
   }
 
   async getNextPathItemByCurrentItemId(
@@ -157,21 +161,19 @@ export class ScenarioPathSharedService {
     });
   }
 
-  async getNextScenarioDataByPathItemId(
-    scenarioPathItemId: string,
-  ): Promise<{ scenario: Scenarios; pathItem: ScenarioPathItem } | null> {
+  async getNextScenarioDataByPathItemId(scenarioPathItemId: string): Promise<{
+    scenario: Scenarios | null;
+    pathItem: ScenarioPathItem;
+  } | null> {
     const nextScenarioPathItem =
       await this.getNextPathItemByCurrentItemId(scenarioPathItemId);
     if (!nextScenarioPathItem) {
       return null;
     }
-    const scenarioData = await this.scenarioSharedService.getScenarioByIds([
+    const scenarioData = await this.scenarioSharedService.getScenarioById(
       nextScenarioPathItem.scenarioId,
-    ]);
-    if (!scenarioData?.[0]) {
-      return null;
-    }
-    return { scenario: scenarioData[0], pathItem: nextScenarioPathItem };
+    );
+    return { scenario: scenarioData, pathItem: nextScenarioPathItem };
   }
 
   async getPathItemById(pathItemId: string): Promise<ScenarioPathItem | null> {

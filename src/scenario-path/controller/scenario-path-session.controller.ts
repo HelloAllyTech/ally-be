@@ -118,19 +118,8 @@ export class ScenarioPathSessionController {
     @Param('scenarioSessionId', ParseUUIDPipe)
     scenarioSessionId: string,
   ): Promise<GetUpcomingScenarioPathItemResponseDto | null> {
-    const result =
-      await this.scenarioPathSessionService.getNextScenarioPathItem(
-        scenarioSessionId,
-      );
-    if (!result?.nextScenarioData?.scenario || !result?.currentPathItem) {
-      return null;
-    }
-    return {
-      ...result.nextScenarioData.scenario,
-      order: result.nextScenarioData.pathItem?.order,
-      scenarioPathSessionItemId: result.nextScenarioSessionItem?.id,
-      transitionMessageTitle: result.currentPathItem.messageTitle,
-      transitionMessageContent: result.currentPathItem.messageContent,
-    };
+    return await this.scenarioPathSessionService.getNextScenarioPathItem(
+      scenarioSessionId,
+    );
   }
 }
