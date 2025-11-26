@@ -28,6 +28,7 @@ export interface ScenarioPathWithSessionFilterOptions {
   offset?: number;
   sortBy?: ScenarioPathSortBy;
   order?: SortOrder;
+  status: ScenarioPathStatus;
 }
 export interface ScenarioPathsWithSession {
   data: ScenarioPathWithSession[];

@@ -92,6 +92,7 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
       )
       .setParameters({ userId: filters.userId });
 
+    query.where('scenarioPath.status = :status', { status: filters.status });
     if (filters.tenantId) {
       query
         .innerJoin(
