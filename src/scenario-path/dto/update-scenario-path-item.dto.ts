@@ -19,11 +19,9 @@ export class UpdateScenarioPathItemDto {
   @ApiProperty({
     description: 'Minimum score required to unlock this scenario',
     example: 75,
-    minimum: 0,
   })
   @IsNotEmpty()
   @IsNumber()
-  @Min(0)
   minimumScore!: number;
 
   @ApiPropertyOptional({

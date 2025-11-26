@@ -300,7 +300,11 @@ export class ScenarioPathSessionService {
     }
 
     // Score less than minimum score -> cant make the session complete
-    if (score < (currentScenarioPathItem?.minimumScore ?? 0)) return;
+    if (
+      currentScenarioPathItem?.minimumScore !== undefined &&
+      score < currentScenarioPathItem?.minimumScore
+    )
+      return;
 
     const currentScenarioPathSession =
       await this.scenarioPathSessionRepository.findOne({
