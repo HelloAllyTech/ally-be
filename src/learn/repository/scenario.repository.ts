@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Scenarios } from '../entity/scenarios.entity';
-import { Pagination } from 'src/common/type/common.type';
+import { Pagination, ScenarioFilters } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
@@ -13,10 +13,10 @@ export class ScenariosRepository extends Repository<Scenarios> {
     super(Scenarios, dataSource.createEntityManager());
   }
   async getAdminScenarios(
-    status?: string,
-    tenantId?: string,
+    scenarioFilters?: ScenarioFilters,
     options?: Pagination,
   ) {
+    const { status, tenantId, search } = scenarioFilters ?? {};
     const query = this.createQueryBuilder('scenario')
       .leftJoin(User, 'user', 'scenario."createdBy"=user.id')
       .select(['scenario', 'user.name'])
@@ -26,6 +26,8 @@ export class ScenariosRepository extends Repository<Scenarios> {
           .from(ScenarioSessions, 'scenarioSessions')
           .where('scenarioSessions.scenarioId = scenario.id');
       }, 'usage');
+
+    this.applySearchFilter(query, search);
 
     if (status) {
       const statuses = this.parseStringArray(status);
@@ -89,5 +91,15 @@ export class ScenariosRepository extends Repository<Scenarios> {
       .split(',')
       .map((item) => item.trim())
       .filter((item) => item.length > 0);
+  }
+  private applySearchFilter(
+    query: SelectQueryBuilder<Scenarios>,
+    search?: string,
+  ) {
+    if (search && search.trim()) {
+      const searchTerm = `%${search.trim()}%`;
+
+      query.andWhere('(scenario.title ILIKE :search)', { search: searchTerm });
+    }
   }
 }

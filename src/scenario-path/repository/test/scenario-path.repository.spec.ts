@@ -5,8 +5,10 @@ import { ScenarioPath } from '../../entity/scenario-path.entity';
 import { ScenarioPathSession } from '../../entity/scenario-path-session.entity';
 import {
   ScenarioPathFilterOptions,
+  ScenarioPathSortBy,
   ScenarioPathStatus,
   ScenarioPathWithSessionFilterOptions,
+  SortOrder,
 } from '../../type/scenario-paths.type';
 
 describe('ScenarioPathRepository', () => {
@@ -39,9 +41,11 @@ describe('ScenarioPathRepository', () => {
 
   beforeEach(async () => {
     queryBuilder = {
+      where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       offset: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
       innerJoin: jest.fn().mockReturnThis(),
       leftJoinAndMapOne: jest.fn().mockReturnThis(),
@@ -79,7 +83,7 @@ describe('ScenarioPathRepository', () => {
   });
 
   describe('getAllScenarioPaths', () => {
-    it('should return all scenario paths without filters', async () => {
+    it('returns all scenario paths without filters', async () => {
       const entities = [mockScenarioPath];
       queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
 
@@ -95,7 +99,7 @@ describe('ScenarioPathRepository', () => {
       });
     });
 
-    it('should apply status filter', async () => {
+    it('applies status filter', async () => {
       const entities = [mockScenarioPath];
       const filters: ScenarioPathFilterOptions = {
         status: [ScenarioPathStatus.ACTIVE],
@@ -114,7 +118,7 @@ describe('ScenarioPathRepository', () => {
       });
     });
 
-    it('should apply search filter', async () => {
+    it('applies search filter', async () => {
       const entities = [mockScenarioPath];
       const filters: ScenarioPathFilterOptions = {
         search: 'Test',
@@ -133,7 +137,7 @@ describe('ScenarioPathRepository', () => {
       });
     });
 
-    it('should apply pagination filters', async () => {
+    it('applies pagination filters', async () => {
       const entities = [mockScenarioPath];
       const filters: ScenarioPathFilterOptions = {
         limit: 10,
@@ -151,7 +155,27 @@ describe('ScenarioPathRepository', () => {
       });
     });
 
-    it('should apply tenant filter with leftJoinAndMapOne', async () => {
+    it('applies sorting filter', async () => {
+      const entities = [mockScenarioPath];
+      const filters: ScenarioPathFilterOptions = {
+        sortBy: ScenarioPathSortBy.UPDATED_AT,
+        order: SortOrder.ASC,
+      };
+      queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
+
+      const result = await repository.getAllScenarioPaths(filters);
+
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        'scenarioPath.updatedAt',
+        'ASC',
+      );
+      expect(result).toEqual({
+        data: entities,
+        count: 1,
+      });
+    });
+
+    it('applies tenant filter with leftJoinAndMapOne', async () => {
       const entities = [mockScenarioPathWithTenantMapping];
       const filters: ScenarioPathFilterOptions = {
         tenantId: 'tenant-1',
@@ -175,7 +199,7 @@ describe('ScenarioPathRepository', () => {
       });
     });
 
-    it('should apply all filters together', async () => {
+    it('applies all filters together', async () => {
       const entities = [mockScenarioPathWithTenantMapping];
       const filters: ScenarioPathFilterOptions = {
         status: [ScenarioPathStatus.ACTIVE],
@@ -183,6 +207,8 @@ describe('ScenarioPathRepository', () => {
         limit: 10,
         offset: 5,
         tenantId: 'tenant-1',
+        sortBy: ScenarioPathSortBy.UPDATED_AT,
+        order: SortOrder.ASC,
       };
       queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
 
@@ -195,6 +221,10 @@ describe('ScenarioPathRepository', () => {
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         '(scenarioPath.title ILIKE :search)',
         { search: '%Test%' },
+      );
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        'scenarioPath.updatedAt',
+        'ASC',
       );
       expect(queryBuilder.limit).toHaveBeenCalledWith(10);
       expect(queryBuilder.offset).toHaveBeenCalledWith(5);
@@ -227,10 +257,11 @@ describe('ScenarioPathRepository', () => {
       session: mockSession,
     };
 
-    it('should return scenario paths with session for user', async () => {
+    it('returns scenario paths with session for user', async () => {
       const filters: ScenarioPathWithSessionFilterOptions = {
         userId: 123,
         tenantId: 'tenant',
+        status: ScenarioPathStatus.DRAFT,
       };
       const entities = [mockScenarioPathWithSession];
       queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
@@ -246,26 +277,26 @@ describe('ScenarioPathRepository', () => {
         'scenarioPathSession',
         '"scenarioPathSession"."scenarioPathId" = scenarioPath.id AND scenarioPathSession.userId = :userId',
       );
-      // Expect setParameters to be called twice
-      expect(queryBuilder.setParameters).toHaveBeenCalledTimes(2);
-      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(1, {
-        userId: 123,
-      });
-      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(2, {
-        tenantId: 'tenant',
-      });
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({ userId: 123 });
+      expect(queryBuilder.where).toHaveBeenCalledWith(
+        'scenarioPath.status = :status',
+        {
+          status: ScenarioPathStatus.DRAFT,
+        },
+      );
       expect(result).toEqual({
         data: entities,
         count: 1,
       });
     });
 
-    it('should apply pagination', async () => {
+    it('applies pagination', async () => {
       const filters: ScenarioPathWithSessionFilterOptions = {
         userId: 123,
         tenantId: 'tenant',
         limit: 10,
         offset: 5,
+        status: ScenarioPathStatus.DRAFT,
       };
       const entities = [mockScenarioPathWithSession];
       queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
@@ -280,10 +311,34 @@ describe('ScenarioPathRepository', () => {
       });
     });
 
-    it('should apply tenant filter with innerJoin', async () => {
+    it('applies sorting', async () => {
+      const filters: ScenarioPathWithSessionFilterOptions = {
+        userId: 123,
+        tenantId: 'tenant',
+        status: ScenarioPathStatus.DRAFT,
+        sortBy: ScenarioPathSortBy.UPDATED_AT,
+        order: SortOrder.ASC,
+      };
+      const entities = [mockScenarioPathWithSession];
+      queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
+
+      const result = await repository.getAllScenarioPathsWithSession(filters);
+
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        'scenarioPathSession.updatedAt',
+        'ASC',
+      );
+      expect(result).toEqual({
+        data: entities,
+        count: 1,
+      });
+    });
+
+    it('applies tenant filter with innerJoin', async () => {
       const filters: ScenarioPathWithSessionFilterOptions = {
         userId: 123,
         tenantId: 'tenant-1',
+        status: ScenarioPathStatus.DRAFT,
       };
       const entities = [mockScenarioPathWithSession];
       queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
@@ -295,12 +350,9 @@ describe('ScenarioPathRepository', () => {
         'scenarioPathTenant',
         '"scenarioPathTenant"."scenarioPathId" = scenarioPath.id AND scenarioPathTenant.tenantId = :tenantId',
       );
-      // Expect setParameters to be called twice
-      expect(queryBuilder.setParameters).toHaveBeenCalledTimes(2);
-      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(1, {
-        userId: 123,
-      });
-      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(2, {
+
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({ userId: 123 });
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
         tenantId: 'tenant-1',
       });
       expect(result).toEqual({
@@ -309,18 +361,17 @@ describe('ScenarioPathRepository', () => {
       });
     });
 
-    it('should handle userId only without tenantId', async () => {
+    it('handles userId only without tenantId', async () => {
       const filters: ScenarioPathWithSessionFilterOptions = {
         userId: 123,
         tenantId: '',
+        status: ScenarioPathStatus.DRAFT,
       };
       const entities = [mockScenarioPathWithSession];
       queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
 
       const result = await repository.getAllScenarioPathsWithSession(filters);
 
-      // When no tenantId, setParameters should only be called once
-      expect(queryBuilder.setParameters).toHaveBeenCalledTimes(1);
       expect(queryBuilder.setParameters).toHaveBeenCalledWith({ userId: 123 });
       expect(queryBuilder.innerJoin).not.toHaveBeenCalled();
       expect(result).toEqual({
@@ -329,12 +380,15 @@ describe('ScenarioPathRepository', () => {
       });
     });
 
-    it('should apply all filters together', async () => {
+    it('applies all filters together', async () => {
       const filters: ScenarioPathWithSessionFilterOptions = {
         userId: 123,
         tenantId: 'tenant-1',
         limit: 10,
         offset: 5,
+        status: ScenarioPathStatus.DRAFT,
+        sortBy: ScenarioPathSortBy.UPDATED_AT,
+        order: SortOrder.ASC,
       };
       const entities = [mockScenarioPathWithSession];
       queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
@@ -342,14 +396,20 @@ describe('ScenarioPathRepository', () => {
       const result = await repository.getAllScenarioPathsWithSession(filters);
 
       expect(queryBuilder.leftJoinAndMapOne).toHaveBeenCalled();
-      // Expect setParameters to be called twice
-      expect(queryBuilder.setParameters).toHaveBeenCalledTimes(2);
-      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(1, {
-        userId: 123,
-      });
-      expect(queryBuilder.setParameters).toHaveBeenNthCalledWith(2, {
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({ userId: 123 });
+      expect(queryBuilder.where).toHaveBeenCalledWith(
+        'scenarioPath.status = :status',
+        {
+          status: ScenarioPathStatus.DRAFT,
+        },
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
         tenantId: 'tenant-1',
       });
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        'scenarioPathSession.updatedAt',
+        'ASC',
+      );
       expect(queryBuilder.limit).toHaveBeenCalledWith(10);
       expect(queryBuilder.offset).toHaveBeenCalledWith(5);
       expect(queryBuilder.innerJoin).toHaveBeenCalled();

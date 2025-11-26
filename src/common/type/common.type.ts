@@ -9,6 +9,7 @@ export type Pagination = {
 export type ScenarioFilters = {
   status?: string;
   tenantId?: string;
+  search?: string;
 };
 
 export class PaginatedResponse<T> {

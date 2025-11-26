@@ -108,6 +108,12 @@ export class LearnController {
     type: String,
     description: 'TenantId',
   })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Search by title',
+  })
   @Get('admin-scenarios')
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIOS])
   async getAdminScenarios(
@@ -118,9 +124,10 @@ export class LearnController {
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('status') status?: string,
     @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
+    @Query('search') search?: string,
   ) {
     return this.scenarioService.getAdminScenarios(
-      { status, tenantId },
+      { status, tenantId, search },
       {
         limit,
         offset,
