@@ -30,6 +30,6 @@ export class ScenarioEvents extends BaseWithoutTenantEntity {
   @DeleteDateColumn()
   deletedAt?: Date;
 
-  @Column({ nullable: true, default: false })
+  @PrimaryColumn({ default: false })
   autoTerminationStatus?: boolean;
 }

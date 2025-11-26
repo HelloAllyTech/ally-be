@@ -12,6 +12,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiOperation,
+  ApiParam,
   ApiQuery,
   ApiSecurity,
   ApiTags,
@@ -115,6 +116,16 @@ export class SessionEventController {
         order,
       },
     );
+  }
+
+  @ApiOperation({ summary: 'Get session event by id' })
+  @ApiParam({ name: 'id', description: 'Session event id' })
+  @AuthPermissions([PERMISSIONS.VIEW_SESSION_EVENTS])
+  @Get('events/:id')
+  async getSessionEventById(
+    @Param('id') id: string,
+  ): Promise<SessionEventResponseDto> {
+    return this.sessionEventService.getSessionEventById(id);
   }
 
   @ApiOperation({ summary: 'Delete session events' })
