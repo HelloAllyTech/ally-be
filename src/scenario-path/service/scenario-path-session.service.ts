@@ -20,6 +20,7 @@ import { ScenarioPathSessionItemRepository } from '../repository/scenario-path-s
 import { ScenarioPathSession } from '../entity/scenario-path-session.entity';
 import { ScenarioPathSessionItem } from '../entity/scenario-path-session-item.entity';
 import { AppConfigService } from 'src/config/config.service';
+import { GetUpcomingScenarioPathItemResponseDto } from '../dto/get-scenario-path.dto';
 
 @Injectable()
 export class ScenarioPathSessionService {
@@ -224,13 +225,15 @@ export class ScenarioPathSessionService {
     );
   }
 
-  async getNextScenarioPathItem(scenarioSessionId: string) {
-    const scenarioSessionItem =
+  async getNextScenarioPathItem(
+    scenarioSessionId: string,
+  ): Promise<GetUpcomingScenarioPathItemResponseDto | null> {
+    const currentScenarioSession =
       await this.scenarioPathSharedService.getScenarioSessionById(
         scenarioSessionId,
       );
     const scenarioPathSessionItemId =
-      scenarioSessionItem?.scenarioPathSessionItemId;
+      currentScenarioSession?.scenarioPathSessionItemId;
     if (!scenarioPathSessionItemId) {
       return null;
     }
@@ -268,6 +271,10 @@ export class ScenarioPathSessionService {
           currentPathItem?.scenarioId,
         );
     }
+    const currentScenarioPathSession =
+      await this.scenarioPathSessionRepository.findOne({
+        where: { scenarioPathId: currentPathItem?.scenarioPathId },
+      });
 
     return {
       upcomingScenario: nextScenarioData
@@ -292,7 +299,8 @@ export class ScenarioPathSessionService {
         scenarioPathSessionItemId: currentPathSessionItem?.id,
         transitionMessageTitle: currentPathItem?.messageTitle,
         transitionMessageContent: currentPathItem?.messageContent,
-        scenarioPathSessionStatus: currentPathSessionItem?.status,
+        isScenarioPathSessionCompleted:
+          !!currentScenarioPathSession?.completedAt,
       },
     };
   }
