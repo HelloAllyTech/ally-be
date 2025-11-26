@@ -163,6 +163,10 @@ describe('ScenarioPathSessionController', () => {
     };
 
     it('should return upcoming scenario path item when all data is present', async () => {
+      const mockCurrentScenario = {
+        ...mockScenario,
+        id: 1,
+      };
       const mockNextScenarioPathItem = {
         nextScenarioSessionItem: {
           id: 'session-item-123',
@@ -195,6 +199,16 @@ describe('ScenarioPathSessionController', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
         } as ScenarioPathItem,
+        currentPathSessionItem: {
+          id: 'current-session-item-123',
+          scenarioPathSessionId: 'session-123',
+          userId: 123,
+          scenarioPathItemId: 'current-path-item-123',
+          status: SessionItemStatus.COMPLETED,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as ScenarioPathSessionItem,
+        currentScenarioData: mockCurrentScenario,
       };
 
       service.getNextScenarioPathItem.mockResolvedValue(
@@ -204,21 +218,14 @@ describe('ScenarioPathSessionController', () => {
       const result =
         await controller.getUpcomingScenarioPathItem(scenarioSessionId);
 
-      expect(result).toEqual({
-        ...mockScenario,
-        order: 2,
-        scenarioPathSessionItemId: 'session-item-123',
-        transitionMessageTitle: 'Great job on the previous scenario!',
-        transitionMessageContent:
-          "You have successfully completed the first scenario. Now, let's move on to the next challenge.",
-      });
+      expect(result).toEqual(mockNextScenarioPathItem);
       expect(service.getNextScenarioPathItem).toHaveBeenCalledWith(
         scenarioSessionId,
       );
       expect(service.getNextScenarioPathItem).toHaveBeenCalledTimes(1);
     });
 
-    it('should return null when nextScenarioData.scenario is missing', async () => {
+    it('should return object with undefined upcomingScenario when nextScenarioData.scenario is missing', async () => {
       const mockNextScenarioPathItem = {
         nextScenarioSessionItem: {
           id: 'session-item-123',
@@ -250,6 +257,8 @@ describe('ScenarioPathSessionController', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
         } as ScenarioPathItem,
+        currentPathSessionItem: undefined,
+        currentScenarioData: undefined,
       };
 
       service.getNextScenarioPathItem.mockResolvedValue(
@@ -259,13 +268,13 @@ describe('ScenarioPathSessionController', () => {
       const result =
         await controller.getUpcomingScenarioPathItem(scenarioSessionId);
 
-      expect(result).toBeNull();
+      expect(result).toEqual(mockNextScenarioPathItem);
       expect(service.getNextScenarioPathItem).toHaveBeenCalledWith(
         scenarioSessionId,
       );
     });
 
-    it('should return null when nextScenarioData is missing', async () => {
+    it('should return object with undefined upcomingScenario when nextScenarioData is missing', async () => {
       const mockNextScenarioPathItem = {
         nextScenarioSessionItem: {
           id: 'session-item-123',
@@ -287,6 +296,8 @@ describe('ScenarioPathSessionController', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
         } as ScenarioPathItem,
+        currentPathSessionItem: undefined,
+        currentScenarioData: undefined,
       };
 
       service.getNextScenarioPathItem.mockResolvedValue(
@@ -296,13 +307,13 @@ describe('ScenarioPathSessionController', () => {
       const result =
         await controller.getUpcomingScenarioPathItem(scenarioSessionId);
 
-      expect(result).toBeNull();
+      expect(result).toEqual(mockNextScenarioPathItem);
       expect(service.getNextScenarioPathItem).toHaveBeenCalledWith(
         scenarioSessionId,
       );
     });
 
-    it('should return null when currentPathItem is missing', async () => {
+    it('should return object with undefined currentSession fields when currentPathItem is missing', async () => {
       const mockNextScenarioPathItem = {
         nextScenarioSessionItem: {
           id: 'session-item-123',
@@ -325,6 +336,8 @@ describe('ScenarioPathSessionController', () => {
           } as ScenarioPathItem,
         },
         currentPathItem: null,
+        currentPathSessionItem: undefined,
+        currentScenarioData: undefined,
       };
 
       service.getNextScenarioPathItem.mockResolvedValue(
@@ -334,7 +347,7 @@ describe('ScenarioPathSessionController', () => {
       const result =
         await controller.getUpcomingScenarioPathItem(scenarioSessionId);
 
-      expect(result).toBeNull();
+      expect(result).toEqual(mockNextScenarioPathItem);
       expect(service.getNextScenarioPathItem).toHaveBeenCalledWith(
         scenarioSessionId,
       );
@@ -353,6 +366,10 @@ describe('ScenarioPathSessionController', () => {
     });
 
     it('should handle optional fields gracefully', async () => {
+      const mockCurrentScenario = {
+        ...mockScenario,
+        id: 1,
+      };
       const mockNextScenarioPathItem = {
         nextScenarioSessionItem: {
           id: 'session-item-123',
@@ -384,6 +401,16 @@ describe('ScenarioPathSessionController', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
         } as ScenarioPathItem,
+        currentPathSessionItem: {
+          id: 'current-session-item-123',
+          scenarioPathSessionId: 'session-123',
+          userId: 123,
+          scenarioPathItemId: 'current-path-item-123',
+          status: SessionItemStatus.COMPLETED,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as ScenarioPathSessionItem,
+        currentScenarioData: mockCurrentScenario,
       };
 
       service.getNextScenarioPathItem.mockResolvedValue(
@@ -393,13 +420,7 @@ describe('ScenarioPathSessionController', () => {
       const result =
         await controller.getUpcomingScenarioPathItem(scenarioSessionId);
 
-      expect(result).toEqual({
-        ...mockScenario,
-        order: 2,
-        scenarioPathSessionItemId: 'session-item-123',
-        transitionMessageTitle: undefined,
-        transitionMessageContent: undefined,
-      });
+      expect(result).toEqual(mockNextScenarioPathItem);
     });
 
     it('should handle errors from service', async () => {

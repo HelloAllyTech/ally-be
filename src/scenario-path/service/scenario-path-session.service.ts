@@ -249,22 +249,51 @@ export class ScenarioPathSessionService {
       await this.scenarioPathSharedService.getNextScenarioDataByPathItemId(
         currentPathSessionItem?.scenarioPathItemId,
       );
-    const nextScenarioSessionItem =
-      await this.scenarioPathSessionItemRepository.findOne({
-        where: { scenarioPathItemId: nextScenarioData?.pathItem?.id },
-      });
+    let nextScenarioSessionItem;
+    if (nextScenarioData?.pathItem?.id) {
+      nextScenarioSessionItem =
+        await this.scenarioPathSessionItemRepository.findOne({
+          where: { scenarioPathItemId: nextScenarioData?.pathItem?.id },
+        });
+    }
     const currentPathItem =
       await this.scenarioPathSharedService.getScenarioPathItemById(
         currentPathSessionItem.scenarioPathItemId,
       );
-    if (!nextScenarioSessionItem) {
-      return null;
+
+    let currentScenarioData;
+    if (currentPathItem?.scenarioId) {
+      currentScenarioData =
+        await this.scenarioPathSharedService.getScenarioDataById(
+          currentPathItem?.scenarioId,
+        );
     }
 
     return {
-      nextScenarioSessionItem,
-      nextScenarioData,
-      currentPathItem,
+      upcomingScenario: nextScenarioData
+        ? {
+            id: nextScenarioData?.scenario?.id,
+            title: nextScenarioData?.scenario?.title,
+            description: nextScenarioData?.scenario?.description,
+            coverImageUrl: nextScenarioData?.scenario?.coverImageUrl,
+            coverVideoUrl: nextScenarioData?.scenario?.coverVideoUrl,
+            scenarioPathSessionItemStatus: nextScenarioSessionItem?.status,
+            order: nextScenarioData?.pathItem?.order,
+            scenarioPathSessionItemId: nextScenarioSessionItem?.id,
+          }
+        : undefined,
+      currentSession: {
+        scenarioId: currentScenarioData?.id,
+        title: currentScenarioData?.title,
+        description: currentScenarioData?.description,
+        coverImageUrl: currentScenarioData?.coverImageUrl,
+        coverVideoUrl: currentScenarioData?.coverVideoUrl,
+        scenarioPathSessionItemStatus: currentPathSessionItem?.status,
+        scenarioPathSessionItemId: currentPathSessionItem?.id,
+        transitionMessageTitle: currentPathItem?.messageTitle,
+        transitionMessageContent: currentPathItem?.messageContent,
+        scenarioPathSessionStatus: currentPathSessionItem?.status,
+      },
     };
   }
 
