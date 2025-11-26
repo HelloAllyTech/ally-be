@@ -1784,7 +1784,7 @@ describe('ScenarioSessionService', () => {
       });
     });
 
-    it('should generate AI summary when messages exist', async () => {
+    it('should generate AI summary when messages exist and thresholds are met', async () => {
       const mockMessages = [
         {
           senderId: mockCounselorId,
@@ -1817,9 +1817,16 @@ describe('ScenarioSessionService', () => {
       );
       aiService.getScenarioSessionSummary.mockResolvedValue(mockSummary);
 
-      // Call through endScenarioSession
+      // Call through endScenarioSession with duration >= 60 seconds (in milliseconds)
       const mockScore = 85.5;
-      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      const mockScenarioSessionWithDuration = {
+        ...mockScenarioSession,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T10:01:05Z'), // 65 seconds = 65000 ms
+      };
+      scenarioSessionRepository.findOne.mockResolvedValue(
+        mockScenarioSessionWithDuration,
+      );
       scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(
         mockScore,
       );
@@ -1864,6 +1871,113 @@ describe('ScenarioSessionService', () => {
       expect(mockScenarioSessionDetailsRepo.save).toHaveBeenCalled();
     });
 
+    it('should skip summary generation when session duration is too short', async () => {
+      const mockMessages = [
+        {
+          senderId: mockCounselorId,
+          content: 'Hello',
+          startSeconds: 1.0,
+          endSeconds: 3.0,
+        },
+        {
+          senderId: -1,
+          content: 'Hi',
+          startSeconds: 4.0,
+          endSeconds: 6.0,
+        },
+      ];
+      const mockScenarioSessionMessagesRepo = {
+        find: jest.fn().mockResolvedValue(mockMessages),
+      };
+
+      mockEntityManager.getRepository.mockReturnValue(
+        mockScenarioSessionMessagesRepo,
+      );
+
+      dataSource.transaction.mockImplementation(async (callback: any) =>
+        callback(mockEntityManager),
+      );
+
+      const mockScore = 85.5;
+      // Session duration: 30 seconds (30000 ms) - below threshold
+      const mockScenarioSessionWithShortDuration = {
+        ...mockScenarioSession,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T10:00:30Z'), // 30 seconds
+      };
+      scenarioSessionRepository.findOne.mockResolvedValue(
+        mockScenarioSessionWithShortDuration,
+      );
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(
+        mockScore,
+      );
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+
+      // Add a small delay to allow the async method to execute
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(aiService.getScenarioSessionSummary).not.toHaveBeenCalled();
+    });
+
+    it('should skip summary generation when only one party has messages', async () => {
+      // Only COUNSELLOR messages, no CLIENT messages
+      const mockMessages = [
+        {
+          senderId: mockCounselorId,
+          content: 'Hello',
+          startSeconds: 1.0,
+          endSeconds: 3.0,
+        },
+        {
+          senderId: mockCounselorId,
+          content: 'How can I help?',
+          startSeconds: 4.0,
+          endSeconds: 6.0,
+        },
+      ];
+      const mockScenarioSessionMessagesRepo = {
+        find: jest.fn().mockResolvedValue(mockMessages),
+      };
+
+      mockEntityManager.getRepository.mockReturnValue(
+        mockScenarioSessionMessagesRepo,
+      );
+
+      dataSource.transaction.mockImplementation(async (callback: any) =>
+        callback(mockEntityManager),
+      );
+
+      const mockScore = 85.5;
+      // Session duration: 120 seconds (120000 ms) - above threshold
+      const mockScenarioSessionWithLongDuration = {
+        ...mockScenarioSession,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T10:02:00Z'), // 120 seconds
+      };
+      scenarioSessionRepository.findOne.mockResolvedValue(
+        mockScenarioSessionWithLongDuration,
+      );
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(
+        mockScore,
+      );
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+
+      // Add a small delay to allow the async method to execute
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(aiService.getScenarioSessionSummary).not.toHaveBeenCalled();
+    });
+
     it('should use empty string when agentGoal is undefined', async () => {
       const mockMessages = [
         {
@@ -1871,6 +1985,12 @@ describe('ScenarioSessionService', () => {
           content: 'Hello',
           startSeconds: 10.5,
           endSeconds: 15.2,
+        },
+        {
+          senderId: -1,
+          content: 'Hi there',
+          startSeconds: 16.0,
+          endSeconds: 20.0,
         },
       ];
       const mockSummary = 'AI generated summary';
@@ -1892,7 +2012,15 @@ describe('ScenarioSessionService', () => {
       aiService.getScenarioSessionSummary.mockResolvedValue(mockSummary);
 
       const mockScore = 85.5;
-      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      // Session duration: 90 seconds (90000 ms) - above threshold
+      const mockScenarioSessionWithDuration = {
+        ...mockScenarioSession,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T10:01:30Z'), // 90 seconds
+      };
+      scenarioSessionRepository.findOne.mockResolvedValue(
+        mockScenarioSessionWithDuration,
+      );
       scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(
         mockScore,
       );
