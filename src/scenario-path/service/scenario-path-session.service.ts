@@ -4,6 +4,8 @@ import {
   BadRequestException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { DataSource, EntityManager, In } from 'typeorm';
+
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioPathSessionRepository } from '../repository/scenario-path-session.repository';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -17,8 +19,7 @@ import { ScenarioPathSharedService } from './scenario-path-shared.service';
 import { ScenarioPathSessionItemRepository } from '../repository/scenario-path-session-item.repository';
 import { ScenarioPathSession } from '../entity/scenario-path-session.entity';
 import { ScenarioPathSessionItem } from '../entity/scenario-path-session-item.entity';
-import { SCENARIO_MIN_DURATION_FOR_COMPLETION } from '../constants/scenario-path.constant';
-import { DataSource, EntityManager, In } from 'typeorm';
+import { AppConfigService } from 'src/config/config.service';
 
 @Injectable()
 export class ScenarioPathSessionService {
@@ -30,6 +31,7 @@ export class ScenarioPathSessionService {
     private readonly scenarioPathSharedService: ScenarioPathSharedService,
     private readonly scenarioPathSessionItemRepository: ScenarioPathSessionItemRepository,
     private readonly dataSource: DataSource,
+    private readonly configService: AppConfigService,
   ) {}
 
   async getUserScenarioPaths(
@@ -280,7 +282,10 @@ export class ScenarioPathSessionService {
       throw new UnauthorizedException('Unauthorized access');
     }
     const callDurationInSeconds = (callDuration ?? 0) / 1000;
-    if (callDurationInSeconds < SCENARIO_MIN_DURATION_FOR_COMPLETION) {
+    const callDurationRequiredForCompletionInSeconds =
+      this.configService.simulationPath
+        .simulationPathItemMinDurationForCompletion ?? 0;
+    if (callDurationInSeconds < callDurationRequiredForCompletionInSeconds) {
       return;
     }
 
