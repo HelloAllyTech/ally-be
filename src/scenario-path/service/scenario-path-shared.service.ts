@@ -48,7 +48,6 @@ export class ScenarioPathSharedService {
       this.logger.error(`Scenario path not found for id: ${scenarioPathId}`);
       throw new NotFoundException('Scenario path not found');
     }
-
     if (tenantId) {
       const scenarioPathTenant =
         await this.scenarioPathTenantService.getScenarioPathTenant(
@@ -179,5 +178,9 @@ export class ScenarioPathSharedService {
     return await this.scenarioSharedService.getScenarioSessionById(
       scenarioSessionId,
     );
+  }
+
+  async getScenarioPathItemByScenarioId(scenarioId: number) {
+    return this.scenarioPathItemRepository.findOne({ where: { scenarioId } });
   }
 }

@@ -27,6 +27,7 @@ import { ScenarioService } from '../scenario.service';
 import { SimulationCreditsService } from '../simulation-credits.service';
 import { ScenarioPathService } from 'src/scenario-path/service/scenario-path.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
+import { ScenarioPathTenantService } from 'src/scenario-path/service/scenario-path-tenant.service';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -49,10 +50,11 @@ describe('ScenarioSessionService', () => {
     Repository<ScenarioSessionFeedbacks>
   >;
   let dataSource: jest.Mocked<DataSource>;
-
   let permissionValidatorService: jest.Mocked<PermissionValidator>;
   let simulationCreditsService: jest.Mocked<SimulationCreditsService>;
   let scenarioTenantService: jest.Mocked<ScenarioTenantService>;
+  let scenarioPathTenantService: jest.Mocked<ScenarioPathTenantService>;
+  let scenarioPathSessionService: jest.Mocked<ScenarioPathSessionService>;
   let mockConfigService: any;
 
   const mockTenantId = 'tenant-123';
@@ -198,11 +200,17 @@ describe('ScenarioSessionService', () => {
       getScenarioTenant: jest.fn(),
     };
 
+    const mockScenarioPathTenantService = {
+      getScenarioPathTenant: jest.fn(),
+    };
+
     const mockScenarioPathService = {
       getScenarioPathById: jest.fn(),
     };
 
     const mockScenarioPathSessionService = {
+      getPermittedPathSessionItemBySessionItemId: jest.fn(),
+      getScenarioPathSessionById: jest.fn(),
       handleEndScenarioPathSession: jest.fn(),
     };
 
@@ -281,6 +289,10 @@ describe('ScenarioSessionService', () => {
           useValue: mockScenarioTenantService,
         },
         {
+          provide: ScenarioPathTenantService, // ADDED
+          useValue: mockScenarioPathTenantService,
+        },
+        {
           provide: AppConfigService,
           useValue: mockConfigService,
         },
@@ -311,6 +323,8 @@ describe('ScenarioSessionService', () => {
     permissionValidatorService = module.get(PermissionValidator);
     simulationCreditsService = module.get(SimulationCreditsService);
     scenarioTenantService = module.get(ScenarioTenantService);
+    scenarioPathTenantService = module.get(ScenarioPathTenantService); // ADDED
+    scenarioPathSessionService = module.get(ScenarioPathSessionService); // ADDED
   });
 
   afterEach(() => {
@@ -334,8 +348,12 @@ describe('ScenarioSessionService', () => {
       expect(permissionValidatorService).toBeDefined();
       expect(simulationCreditsService).toBeDefined();
       expect(scenarioTenantService).toBeDefined();
+      expect(scenarioPathTenantService).toBeDefined(); // ADDED
+      expect(scenarioPathSessionService).toBeDefined(); // ADDED
     });
   });
+
+  // ... rest of the tests remain the same ...
 
   describe('getScenarioSessions', () => {
     it('should return scenario sessions with default status', async () => {
@@ -379,6 +397,9 @@ describe('ScenarioSessionService', () => {
     });
   });
 
+  // Add rest of your existing tests here...
+  // getAdminScenarioSessions, getScenarioSession, endScenarioSession,
+  // addFeedbackToScenarioSession, previewScenario, endPreviewScenario
   describe('getAdminScenarioSessions', () => {
     it('should return admin scenario sessions', async () => {
       const mockSessions = [mockScenarioSession];
