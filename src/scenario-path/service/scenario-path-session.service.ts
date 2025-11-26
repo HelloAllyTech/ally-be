@@ -221,22 +221,10 @@ export class ScenarioPathSessionService {
     if (!currentPathSessionItem) {
       throw new BadRequestException('Scenario path session item not found');
     }
-    const nextScenarioData =
-      await this.scenarioPathSharedService.getNextScenarioDataByPathItemId(
-        currentPathSessionItem?.scenarioPathItemId,
-      );
-    let nextScenarioSessionItem;
-    if (nextScenarioData?.pathItem?.id) {
-      nextScenarioSessionItem =
-        await this.scenarioPathSessionItemRepository.findOne({
-          where: { scenarioPathItemId: nextScenarioData?.pathItem?.id },
-        });
-    }
     const currentPathItem =
       await this.scenarioPathSharedService.getScenarioPathItemById(
         currentPathSessionItem.scenarioPathItemId,
       );
-
     let currentScenarioData;
     if (currentPathItem?.scenarioId) {
       currentScenarioData =
@@ -249,32 +237,52 @@ export class ScenarioPathSessionService {
         where: { scenarioPathId: currentPathItem?.scenarioPathId },
       });
 
+    const currentSession = {
+      scenarioId: currentScenarioData?.id,
+      title: currentScenarioData?.title,
+      description: currentScenarioData?.description,
+      coverImageUrl: currentScenarioData?.coverImageUrl,
+      coverVideoUrl: currentScenarioData?.coverVideoUrl,
+      scenarioPathSessionItemStatus: currentPathSessionItem?.status,
+      scenarioPathSessionItemId: currentPathSessionItem?.id,
+      transitionMessageTitle: currentPathItem?.messageTitle,
+      transitionMessageContent: currentPathItem?.messageContent,
+      isScenarioPathSessionCompleted: !!currentScenarioPathSession?.completedAt,
+    };
+    if (currentPathSessionItem?.status === SessionItemStatus.COMPLETED) {
+      return {
+        currentSession,
+      };
+    }
+
+    const nextScenarioData =
+      await this.scenarioPathSharedService.getNextScenarioDataByPathItemId(
+        currentPathSessionItem?.scenarioPathItemId,
+      );
+    let nextScenarioSessionItem;
+    if (nextScenarioData?.pathItem?.id) {
+      nextScenarioSessionItem =
+        await this.scenarioPathSessionItemRepository.findOne({
+          where: { scenarioPathItemId: nextScenarioData?.pathItem?.id },
+        });
+    }
+
+    const upcomingScenario = nextScenarioData
+      ? {
+          id: nextScenarioData?.scenario?.id,
+          title: nextScenarioData?.scenario?.title,
+          description: nextScenarioData?.scenario?.description,
+          coverImageUrl: nextScenarioData?.scenario?.coverImageUrl,
+          coverVideoUrl: nextScenarioData?.scenario?.coverVideoUrl,
+          scenarioPathSessionItemStatus: nextScenarioSessionItem?.status,
+          order: nextScenarioData?.pathItem?.order,
+          scenarioPathSessionItemId: nextScenarioSessionItem?.id,
+        }
+      : undefined;
+
     return {
-      upcomingScenario: nextScenarioData
-        ? {
-            id: nextScenarioData?.scenario?.id,
-            title: nextScenarioData?.scenario?.title,
-            description: nextScenarioData?.scenario?.description,
-            coverImageUrl: nextScenarioData?.scenario?.coverImageUrl,
-            coverVideoUrl: nextScenarioData?.scenario?.coverVideoUrl,
-            scenarioPathSessionItemStatus: nextScenarioSessionItem?.status,
-            order: nextScenarioData?.pathItem?.order,
-            scenarioPathSessionItemId: nextScenarioSessionItem?.id,
-          }
-        : undefined,
-      currentSession: {
-        scenarioId: currentScenarioData?.id,
-        title: currentScenarioData?.title,
-        description: currentScenarioData?.description,
-        coverImageUrl: currentScenarioData?.coverImageUrl,
-        coverVideoUrl: currentScenarioData?.coverVideoUrl,
-        scenarioPathSessionItemStatus: currentPathSessionItem?.status,
-        scenarioPathSessionItemId: currentPathSessionItem?.id,
-        transitionMessageTitle: currentPathItem?.messageTitle,
-        transitionMessageContent: currentPathItem?.messageContent,
-        isScenarioPathSessionCompleted:
-          !!currentScenarioPathSession?.completedAt,
-      },
+      currentSession,
+      upcomingScenario,
     };
   }
 
