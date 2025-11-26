@@ -1,0 +1,90 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { ScenarioPathStatus } from '../type/scenario-paths.type';
+import { SessionItemStatus } from '../type/scenario-path-session-items.type';
+
+export class GetScenarioPathItemDto {
+  @ApiProperty({ description: 'ID of the scenario path item' })
+  id!: string;
+
+  @ApiProperty({ description: 'ID of the scenario' })
+  scenarioId!: number;
+
+  @ApiProperty({ description: 'Order of the scenario in the path' })
+  order!: number;
+
+  @ApiProperty({ description: 'Message title of the scenario' })
+  messageTitle?: string;
+
+  @ApiProperty({ description: 'Message content of the scenario' })
+  messageContent?: string;
+
+  @ApiProperty({ description: 'Minimum score of the scenario' })
+  minimumScore?: number;
+
+  @ApiProperty({ description: 'Title of the scenario' })
+  title?: string;
+
+  @ApiProperty({ description: 'Description of the scenario' })
+  description?: string;
+
+  @ApiProperty({ description: 'Cover image URL of the scenario' })
+  coverImageUrl?: string;
+
+  @ApiProperty({ description: 'Cover video URL of the scenario' })
+  coverVideoUrl?: string;
+}
+
+export class GetScenarioPathResponseDto {
+  @ApiProperty({ description: 'ID of the scenario path' })
+  id!: string;
+
+  @ApiProperty({ description: 'Title of the scenario path' })
+  title?: string;
+
+  @ApiProperty({ description: 'Description of the scenario path' })
+  description?: string;
+
+  @ApiProperty({ description: 'Cover image URL of the scenario path' })
+  coverImageUrl?: string;
+
+  @ApiProperty({ description: 'Status of the scenario path' })
+  status!: ScenarioPathStatus;
+
+  @ApiProperty({ description: 'Whether the path is available globally' })
+  isGlobal!: boolean;
+
+  @ApiProperty({ description: 'Total scenarios in the scenario path' })
+  totalScenarios!: number;
+
+  @ApiProperty({ description: 'List of scenarios in the path' })
+  scenarios!: GetScenarioPathItemDto[];
+}
+
+interface UpcomingScenarioDto {
+  id?: number;
+  title?: string;
+  description?: string;
+  coverImageUrl?: string;
+  coverVideoUrl?: string;
+  scenarioPathSessionItemStatus?: SessionItemStatus;
+  order?: number;
+  scenarioPathSessionItemId?: string;
+}
+
+interface CurrentSessionDto {
+  scenarioId?: number;
+  title?: string;
+  description?: string;
+  coverImageUrl?: string;
+  coverVideoUrl?: string;
+  scenarioPathSessionItemStatus?: SessionItemStatus;
+  scenarioPathSessionItemId?: string;
+  transitionMessageTitle?: string;
+  transitionMessageContent?: string;
+  scenarioPathSessionStatus?: SessionItemStatus;
+}
+
+export class GetUpcomingScenarioPathItemResponseDto {
+  upcomingScenario?: UpcomingScenarioDto;
+  currentSession?: CurrentSessionDto;
+}

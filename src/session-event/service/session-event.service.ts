@@ -3,16 +3,28 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CreateSessionEventDto } from '../dto/create-session-event.dto';
+import { v4 } from 'uuid';
 import { DataSource, In } from 'typeorm';
+
 import { SessionEvents } from '../entity/session-events.entity';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
-import { UpdateSessionEventDto } from '../dto/update-session-event.dto';
 import { Pagination } from 'src/common/type/common.type';
 import { SessionEventRepository } from '../repository/session-event.repository';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
-import { v4 } from 'uuid';
-
+import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
+import {
+  mapCreateEventDtoToDbEvent,
+  mapUpdateEventDtoToDbEvent,
+  mapDbExpressionToResponse,
+  extractEventIds,
+  validateNoCycles,
+} from '../util/session-event.util';
+import {
+  CombinationExpressionDto,
+  CreateSessionEventDto,
+  SessionEventResponseDto,
+  UpdateSessionEventDto,
+} from '../dto/session-event.dto';
 @Injectable()
 export class SessionEventService {
   constructor(
@@ -23,13 +35,48 @@ export class SessionEventService {
   async createSessionEvents(
     createEventDtos: CreateSessionEventDto[],
   ): Promise<SessionEvents[]> {
-    const events = createEventDtos.map((event) => {
-      return {
-        id: v4(),
-        ...event,
-      };
-    });
-    return this.sessionEventRepository.save(events);
+    const events = createEventDtos.map((event) => ({
+      id: v4(),
+      ...(mapCreateEventDtoToDbEvent(event) || {}),
+    }));
+
+    // Validate events
+    await this.validateCreateSessionEvents(events);
+
+    return this.sessionEventRepository.createSessionEvents(
+      events as CreateSessionEventDto[],
+    );
+  }
+
+  private async validateCreateSessionEvents(
+    events: Partial<SessionEvents>[],
+  ): Promise<void> {
+    const combinationExpressionEventIds: string[] = [];
+    for (const event of events) {
+      if (
+        event.detectionType === SessionEventDetectionType.COMBINATION &&
+        event.id
+      ) {
+        await validateNoCycles(
+          event.id,
+          event.detectionData?.expression,
+          this.sessionEventRepository,
+        );
+
+        combinationExpressionEventIds.push(
+          ...extractEventIds(event.detectionData?.expression),
+        );
+
+        const eventDetails = await this.sessionEventRepository.findByIds(
+          combinationExpressionEventIds,
+        );
+        if (eventDetails?.length !== combinationExpressionEventIds.length) {
+          throw new BadRequestException(
+            'Invalid combination expression event IDs',
+          );
+        }
+      }
+    }
   }
 
   async getSessionEventsByScenarioId(
@@ -60,12 +107,13 @@ export class SessionEventService {
               event.sessionEvents_branchInstruction)
             : null,
         detectionType: event.sessionEvents_detectionType,
+        data: event.sessionEvents_detectionData,
         visibilityType: event.sessionEvents_visibilityType,
         feedbackStatus: event.scenarioEvents_feedbackStatus,
-        sentences: event.sessionEvents_sentences,
         speaker: event.sessionEvents_speaker,
         createdAt: event.sessionEvents_createdAt,
         updatedAt: event.sessionEvents_updatedAt,
+        eventCode: event.sessionEvents_eventCode,
       };
     });
     return sessionEvents;
@@ -79,9 +127,25 @@ export class SessionEventService {
     if (!event) {
       throw new NotFoundException('Session Event not found');
     }
+
+    const formattedEventDto =
+      mapUpdateEventDtoToDbEvent({
+        ...updateEventDto,
+        detectionType: event.detectionType,
+      }) || {};
+
+    // Validate no circular dependencies if updating a COMBINATION event
+    if (event.detectionType === SessionEventDetectionType.COMBINATION) {
+      await validateNoCycles(
+        id,
+        formattedEventDto?.detectionData?.expression,
+        this.sessionEventRepository,
+      );
+    }
+
     const updated = await this.sessionEventRepository.update(
       id,
-      updateEventDto as Partial<SessionEvents>,
+      formattedEventDto as Partial<SessionEvents>,
     );
     return updated.affected !== 0;
   }
@@ -96,17 +160,35 @@ export class SessionEventService {
     });
   }
 
+  async findSessionEventById(id: string): Promise<SessionEvents | null> {
+    return this.sessionEventRepository.findOne({ where: { id } });
+  }
+
   async getAllSessionEvents(
     visibilityType?: SessionEventVisibilityType,
     searchName?: string,
     pagination?: Pagination,
-  ): Promise<{ data: SessionEvents[] }> {
+  ): Promise<{ data: SessionEventResponseDto[] }> {
     const sessionEvents = await this.sessionEventRepository.getAllSessionEvents(
       visibilityType,
       searchName,
       pagination,
     );
-    return { data: sessionEvents };
+
+    const formattedSessionEvents = sessionEvents.map((event) => {
+      return {
+        ...event,
+        detectionData: event?.detectionData
+          ? {
+              ...event.detectionData,
+              expression: mapDbExpressionToResponse(
+                event?.detectionData?.expression as CombinationExpressionDto,
+              ),
+            }
+          : undefined,
+      };
+    });
+    return { data: formattedSessionEvents };
   }
 
   async deleteSessionEvents(eventIds: string[]): Promise<boolean> {

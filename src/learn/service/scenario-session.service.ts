@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
@@ -22,7 +26,6 @@ import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { LearnEventData } from '../interface/learn-message.interface';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
-import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { Scenarios } from '../entity/scenarios.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
@@ -38,6 +41,11 @@ import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
 import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { ScenarioTenantService } from './scenario-tenant.service';
+import { ScenarioPathService } from 'src/scenario-path/service/scenario-path.service';
+import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
+import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
+import { ScenarioPathTenantService } from 'src/scenario-path/service/scenario-path-tenant.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -52,7 +60,10 @@ export class ScenarioSessionService {
     private scenarioSessionFeedbacksRepository: Repository<ScenarioSessionFeedbacks>,
     private dataSource: DataSource,
     private aiService: AiService,
-    private permissionsService: PermissionsService,
+    private scenarioTenantService: ScenarioTenantService,
+    private scenarioPathTenantService: ScenarioPathTenantService,
+    private scenarioPathService: ScenarioPathService,
+    private scenarioPathSessionService: ScenarioPathSessionService,
     private permissionValidatorService: PermissionValidator,
     private simulationCreditsService: SimulationCreditsService,
     private configService: AppConfigService,
@@ -122,10 +133,16 @@ export class ScenarioSessionService {
     counselorId: number,
     startScenarioSessionDto: StartScenarioSessionRequestDto,
   ) {
-    await this.validateStartScenarioSession(counselorId);
-
     const scenario = await this.scenarioService.getScenario(
       startScenarioSessionDto.scenarioId,
+    );
+    if (!scenario) {
+      throw new BadRequestException('Scenario not found');
+    }
+    await this.validateStartScenarioSession(
+      counselorId,
+      scenario.id,
+      startScenarioSessionDto.scenarioPathSessionItemId,
     );
 
     const sessionEvents =
@@ -134,10 +151,11 @@ export class ScenarioSessionService {
       );
 
     const scenarioSession =
-      await this.scenarioSessionRepository.createScenarioSession(
-        counselorId,
-        startScenarioSessionDto,
-      );
+      await this.scenarioSessionRepository.createScenarioSession(counselorId, {
+        ...startScenarioSessionDto,
+        scenarioPathSessionItemId:
+          startScenarioSessionDto.scenarioPathSessionItemId,
+      });
 
     const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
 
@@ -189,7 +207,56 @@ export class ScenarioSessionService {
     };
   }
 
-  private async validateStartScenarioSession(counselorId: number) {
+  private async validateStartScenarioSession(
+    counselorId: number,
+    scenarioId: number,
+    scenarioPathSessionItemId?: string,
+  ) {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new NotFoundException('TenantId not found');
+    }
+    if (scenarioPathSessionItemId) {
+      const scenarioPathSessionItem =
+        await this.scenarioPathSessionService.getPermittedPathSessionItemBySessionItemId(
+          scenarioPathSessionItemId,
+        );
+      if (!scenarioPathSessionItem) {
+        throw new BadRequestException('Scenario path session item not found');
+      }
+      if (scenarioPathSessionItem.status === SessionItemStatus.LOCKED) {
+        throw new BadRequestException('Scenario path session item is locked');
+      }
+      const scenarioPathSessionId =
+        scenarioPathSessionItem.scenarioPathSessionId;
+      const scenarioPathSession =
+        await this.scenarioPathSessionService.getScenarioPathSessionById(
+          scenarioPathSessionId,
+        );
+      const scenarioPathId = scenarioPathSession?.scenarioPathId;
+      if (scenarioPathId) {
+        const scenarioPathTenant =
+          await this.scenarioPathTenantService.getScenarioPathTenant(
+            tenantId,
+            scenarioPathId,
+          );
+        if (!scenarioPathTenant) {
+          throw new BadRequestException(
+            'Scenario is not available for your organization',
+          );
+        }
+      }
+    } else {
+      const scenarioTenant = await this.scenarioTenantService.getScenarioTenant(
+        tenantId,
+        scenarioId,
+      );
+      if (!scenarioTenant) {
+        throw new BadRequestException(
+          'Scenario is not available for your organization',
+        );
+      }
+    }
     const activeScenarioSessions = await this.getScenarioSessions(
       counselorId,
       {
@@ -257,6 +324,12 @@ export class ScenarioSessionService {
       scenarioSession.scenarioId,
       callDuration,
     );
+    if (scenarioSession.scenarioPathSessionItemId)
+      await this.scenarioPathSessionService.handleEndScenarioPathSession({
+        scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
+        score,
+        callDuration,
+      });
 
     try {
       await this.livekitService.deleteRoom(scenarioSession.roomId);
@@ -570,5 +643,14 @@ export class ScenarioSessionService {
 
   async endPreviewScenario(roomName: string) {
     await this.livekitService.deleteRoom(roomName);
+  }
+
+  async getLatestScenarioSessionByScenarioPathSessionItemId(
+    scenarioPathSessionItemId: string,
+  ) {
+    return this.scenarioSessionRepository.findOne({
+      where: { scenarioPathSessionItemId },
+      order: { createdAt: 'DESC' },
+    });
   }
 }
