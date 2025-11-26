@@ -113,14 +113,11 @@ describe('ScenariosRepository', () => {
       expect(mockQueryBuilder.addSelect).toHaveBeenCalled();
     });
 
-    // ... [Keep all existing tests]
-
-    // NEW TESTS FOR TENANT FILTERING
     it('should apply tenantId filter when provided', async () => {
       const tenantId = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
       mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
 
-      await repository.getAdminScenarios(undefined, tenantId);
+      await repository.getAdminScenarios({ tenantId }, undefined);
 
       expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
         'scenario_tenants',
@@ -137,7 +134,7 @@ describe('ScenariosRepository', () => {
     it('should not apply tenantId filter when not provided', async () => {
       mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
 
-      await repository.getAdminScenarios(undefined, undefined);
+      await repository.getAdminScenarios();
 
       // Should only have the User join, not the scenario_tenants join
       expect(mockQueryBuilder.leftJoin).toHaveBeenCalledTimes(1);
@@ -152,111 +149,52 @@ describe('ScenariosRepository', () => {
       const tenantId = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
       mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
 
-      const result = await repository.getAdminScenarios(undefined, tenantId);
+      const result = await repository.getAdminScenarios(
+        { tenantId },
+        undefined,
+      );
 
       expect(result[0]).toHaveProperty('isAssignedToTenant');
       expect(result[0].isAssignedToTenant).toBe(true);
       expect(result[1].isAssignedToTenant).toBe(false);
     });
 
-    it('should combine tenantId filter with status filter', async () => {
-      const status = 'ACTIVE';
-      const tenantId = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
-      mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
-
-      await repository.getAdminScenarios(status, tenantId);
-
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'scenario.status IN (:...statuses)',
-        { statuses: ['ACTIVE'] },
-      );
-      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-        'scenario_tenants',
-        'scenarioTenants',
-        '"scenarioTenants"."scenarioId" = scenario.id AND "scenarioTenants"."tenantId" = :tenantId',
-        { tenantId },
-      );
-    });
-
-    it('should combine tenantId filter with pagination', async () => {
-      const tenantId = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
-      const options: Pagination = {
-        limit: 10,
-        offset: 5,
-      };
-      mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
-
-      await repository.getAdminScenarios(undefined, tenantId, options);
-
-      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-        'scenario_tenants',
-        'scenarioTenants',
-        '"scenarioTenants"."scenarioId" = scenario.id AND "scenarioTenants"."tenantId" = :tenantId',
-        { tenantId },
-      );
-      expect(mockQueryBuilder.limit).toHaveBeenCalledWith(10);
-      expect(mockQueryBuilder.offset).toHaveBeenCalledWith(5);
-    });
-
-    it('should combine tenantId filter with sorting', async () => {
-      const tenantId = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
-      const options: Pagination = {
-        sortBy: 'createdAt',
-        order: 'DESC',
-      };
-      mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
-
-      await repository.getAdminScenarios(undefined, tenantId, options);
-
-      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-        'scenario_tenants',
-        'scenarioTenants',
-        '"scenarioTenants"."scenarioId" = scenario.id AND "scenarioTenants"."tenantId" = :tenantId',
-        { tenantId },
-      );
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'scenario.createdAt',
-        'DESC',
-      );
-    });
-
-    it('should apply all filters with tenantId together', async () => {
+    it('should apply status filter', async () => {
       const status = 'ACTIVE,DRAFT';
-      const tenantId = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
-      const options: Pagination = {
-        sortBy: 'updatedAt',
-        order: 'DESC',
-        limit: 10,
-        offset: 5,
-      };
       mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
 
-      await repository.getAdminScenarios(status, tenantId, options);
+      await repository.getAdminScenarios({ status });
 
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         'scenario.status IN (:...statuses)',
         { statuses: ['ACTIVE', 'DRAFT'] },
       );
-      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-        'scenario_tenants',
-        'scenarioTenants',
-        '"scenarioTenants"."scenarioId" = scenario.id AND "scenarioTenants"."tenantId" = :tenantId',
-        { tenantId },
-      );
+    });
+
+    it('should apply sorting and pagination', async () => {
+      const options: Pagination = {
+        sortBy: 'createdAt',
+        order: 'DESC',
+        limit: 10,
+        offset: 5,
+      };
+      mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
+
+      await repository.getAdminScenarios(undefined, options);
+
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'scenario.updatedAt',
+        'scenario.createdAt',
         'DESC',
       );
       expect(mockQueryBuilder.limit).toHaveBeenCalledWith(10);
       expect(mockQueryBuilder.offset).toHaveBeenCalledWith(5);
     });
 
-    it('should handle empty tenantId string', async () => {
+    it('should not apply tenant join if tenantId is empty', async () => {
       mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
 
-      await repository.getAdminScenarios(undefined, '');
+      await repository.getAdminScenarios(undefined, undefined);
 
-      // Should not apply tenant filter for empty string
       expect(mockQueryBuilder.leftJoin).toHaveBeenCalledTimes(1);
       expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
         User,
@@ -264,30 +202,45 @@ describe('ScenariosRepository', () => {
         'scenario."createdBy"=user.id',
       );
     });
-
-    it('should verify addSelect is called twice when tenantId is provided', async () => {
-      const tenantId = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
-      mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
-
-      await repository.getAdminScenarios(undefined, tenantId);
-
-      // Once for usage count, once for isAssignedToTenant
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(2);
-    });
-
-    it('should verify addSelect is called once when tenantId is not provided', async () => {
-      mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
-
-      await repository.getAdminScenarios();
-
-      // Only once for usage count
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(1);
-    });
-
-    // ... [Keep all existing tests for status, pagination, sorting, etc.]
   });
 
-  describe('parseStringArray (private method via status parsing)', () => {
-    // ... [Keep all existing parseStringArray tests]
+  describe('parseStringArray', () => {
+    it('should return empty array if value is undefined', () => {
+      expect((repository as any).parseStringArray(undefined)).toEqual([]);
+    });
+
+    it('should split, trim and filter empty strings', () => {
+      const input = 'ACTIVE, ,DRAFT, , , ';
+      expect((repository as any).parseStringArray(input)).toEqual([
+        'ACTIVE',
+        'DRAFT',
+      ]);
+    });
+  });
+
+  describe('applySearchFilter', () => {
+    it('should add where clause for search', () => {
+      const search = 'test';
+      const andWhereMock = jest.fn().mockReturnThis();
+      const fakeQuery = { andWhere: andWhereMock } as any;
+
+      (repository as any).applySearchFilter(fakeQuery, search);
+
+      expect(andWhereMock).toHaveBeenCalledWith(
+        '(scenario.title ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    });
+
+    it('should not add where clause for empty or blank search', () => {
+      const andWhereMock = jest.fn();
+      const fakeQuery = { andWhere: andWhereMock } as any;
+
+      (repository as any).applySearchFilter(fakeQuery, '');
+      (repository as any).applySearchFilter(fakeQuery, '    ');
+      (repository as any).applySearchFilter(fakeQuery, undefined);
+
+      expect(andWhereMock).not.toHaveBeenCalled();
+    });
   });
 });

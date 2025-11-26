@@ -4,28 +4,27 @@ import {
   BadRequestException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { DataSource, EntityManager, In } from 'typeorm';
-
-import { LoggerService } from 'src/logger/logger.service';
+import { DataSource, EntityManager } from 'typeorm';
 import { ScenarioPathSessionRepository } from '../repository/scenario-path-session.repository';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import {
   ScenarioPathSessionFilterOptions,
   SessionItemStatus,
 } from '../type/scenario-path-session-items.type';
-import { ScenarioPathSortBy } from '../type/scenario-paths.type';
+import {
+  ScenarioPathSortBy,
+  ScenarioPathStatus,
+} from '../type/scenario-paths.type';
 import { ScenarioPathSessionsResponseDto } from '../dto/scenario-path-sessions.dto';
 import { ScenarioPathSharedService } from './scenario-path-shared.service';
 import { ScenarioPathSessionItemRepository } from '../repository/scenario-path-session-item.repository';
 import { ScenarioPathSession } from '../entity/scenario-path-session.entity';
 import { ScenarioPathSessionItem } from '../entity/scenario-path-session-item.entity';
 import { AppConfigService } from 'src/config/config.service';
+import { GetUpcomingScenarioPathItemResponseDto } from '../dto/get-scenario-path.dto';
 
 @Injectable()
 export class ScenarioPathSessionService {
-  private readonly logger = LoggerService.getInstance(
-    ScenarioPathSessionService.name,
-  );
   constructor(
     private readonly scenarioPathSessionRepository: ScenarioPathSessionRepository,
     private readonly scenarioPathSharedService: ScenarioPathSharedService,
@@ -53,6 +52,7 @@ export class ScenarioPathSessionService {
         offset: filters?.offset,
         sortBy: filters?.sortBy as ScenarioPathSortBy | undefined,
         order: filters?.order,
+        status: ScenarioPathStatus.ACTIVE,
       });
 
     const { data, count } = scenarioPaths;
@@ -144,32 +144,6 @@ export class ScenarioPathSessionService {
     };
   }
 
-  async getScenarioPathSessionById(scenarioPathSessionId: string) {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) {
-      throw new UnauthorizedException('Unauthorized access');
-    }
-    return this.scenarioPathSessionRepository.findOne({
-      where: { id: scenarioPathSessionId, userId: Number(userId) },
-    });
-  }
-
-  async getPermittedPathSessionItemBySessionItemId(
-    scenarioPathSessionItemId: string,
-  ) {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) {
-      throw new UnauthorizedException('Unauthorized access');
-    }
-    return this.scenarioPathSessionItemRepository.findOne({
-      where: {
-        id: scenarioPathSessionItemId,
-        userId: Number(userId),
-        status: In([SessionItemStatus.UNLOCKED, SessionItemStatus.COMPLETED]),
-      },
-    });
-  }
-
   async createUserPathSession(scenarioPathId: string) {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
@@ -224,13 +198,15 @@ export class ScenarioPathSessionService {
     );
   }
 
-  async getNextScenarioPathItem(scenarioSessionId: string) {
-    const scenarioSessionItem =
+  async getNextScenarioPathItem(
+    scenarioSessionId: string,
+  ): Promise<GetUpcomingScenarioPathItemResponseDto | null> {
+    const currentScenarioSession =
       await this.scenarioPathSharedService.getScenarioSessionById(
         scenarioSessionId,
       );
     const scenarioPathSessionItemId =
-      scenarioSessionItem?.scenarioPathSessionItemId;
+      currentScenarioSession?.scenarioPathSessionItemId;
     if (!scenarioPathSessionItemId) {
       return null;
     }
@@ -268,6 +244,10 @@ export class ScenarioPathSessionService {
           currentPathItem?.scenarioId,
         );
     }
+    const currentScenarioPathSession =
+      await this.scenarioPathSessionRepository.findOne({
+        where: { scenarioPathId: currentPathItem?.scenarioPathId },
+      });
 
     return {
       upcomingScenario: nextScenarioData
@@ -292,7 +272,8 @@ export class ScenarioPathSessionService {
         scenarioPathSessionItemId: currentPathSessionItem?.id,
         transitionMessageTitle: currentPathItem?.messageTitle,
         transitionMessageContent: currentPathItem?.messageContent,
-        scenarioPathSessionStatus: currentPathSessionItem?.status,
+        isScenarioPathSessionCompleted:
+          !!currentScenarioPathSession?.completedAt,
       },
     };
   }

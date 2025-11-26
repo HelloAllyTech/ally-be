@@ -87,7 +87,7 @@ export class ScenarioService {
     scenarioFilters?: ScenarioFilters,
     options?: Pagination,
   ) {
-    const { status, tenantId } = scenarioFilters ?? {};
+    const { status, tenantId, search } = scenarioFilters ?? {};
     if (tenantId) {
       const tenant = await this.tenantService.findById(tenantId);
       if (!tenant) {
@@ -95,8 +95,7 @@ export class ScenarioService {
       }
     }
     const scenarios = await this.scenariosRepository.getAdminScenarios(
-      status,
-      tenantId,
+      { status, tenantId, search },
       options,
     );
     const mappedData = scenarios.map((item) => {

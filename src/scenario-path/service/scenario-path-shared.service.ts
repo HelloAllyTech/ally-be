@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { In } from 'typeorm';
 import { ScenarioPathRepository } from '../repository/scenario-path.repository';
 import {
   ScenarioPathsWithSession,
@@ -16,6 +18,10 @@ import { GetScenarioPathResponseDto } from '../dto/get-scenario-path.dto';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { ScenarioPathTenantService } from './scenario-path-tenant.service';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { ScenarioPathSessionRepository } from '../repository/scenario-path-session.repository';
+import { ScenarioPathSessionItemRepository } from '../repository/scenario-path-session-item.repository';
+import { SessionItemStatus } from '../type/scenario-path-session-items.type';
 
 @Injectable()
 export class ScenarioPathSharedService {
@@ -27,6 +33,8 @@ export class ScenarioPathSharedService {
     private readonly scenarioPathItemRepository: ScenarioPathItemRepository,
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly scenarioPathTenantService: ScenarioPathTenantService,
+    private readonly scenarioPathSessionRepository: ScenarioPathSessionRepository,
+    private readonly scenarioPathSessionItemRepository: ScenarioPathSessionItemRepository,
   ) {}
 
   async getScenarioPathsWithSession(
@@ -184,5 +192,38 @@ export class ScenarioPathSharedService {
 
   async getScenarioPathItemByScenarioId(scenarioId: number) {
     return this.scenarioPathItemRepository.findOne({ where: { scenarioId } });
+  }
+
+  async getScenarioPathSessionById(scenarioPathSessionId: string) {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new UnauthorizedException('Unauthorized access');
+    }
+    return this.scenarioPathSessionRepository.findOne({
+      where: { id: scenarioPathSessionId, userId: Number(userId) },
+    });
+  }
+
+  async getPermittedPathSessionItemBySessionItemId(
+    scenarioPathSessionItemId: string,
+  ) {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new UnauthorizedException('Unauthorized access');
+    }
+    return this.scenarioPathSessionItemRepository.findOne({
+      where: {
+        id: scenarioPathSessionItemId,
+        userId: Number(userId),
+        status: In([SessionItemStatus.UNLOCKED, SessionItemStatus.COMPLETED]),
+      },
+    });
+  }
+
+  async getScenarioPathTenant(tenantId: string, scenarioPathId: string) {
+    return this.scenarioPathTenantService.getScenarioPathTenant(
+      tenantId,
+      scenarioPathId,
+    );
   }
 }

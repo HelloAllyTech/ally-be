@@ -39,13 +39,12 @@ import { AppConfigService } from 'src/config/config.service';
 import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
 import { ScenarioTenantService } from './scenario-tenant.service';
-import { ScenarioPathService } from 'src/scenario-path/service/scenario-path.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
-import { ScenarioPathTenantService } from 'src/scenario-path/service/scenario-path-tenant.service';
 import { extractEventIds } from 'src/session-event/util/session-event.util';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -61,12 +60,11 @@ export class ScenarioSessionService {
     private dataSource: DataSource,
     private aiService: AiService,
     private scenarioTenantService: ScenarioTenantService,
-    private scenarioPathTenantService: ScenarioPathTenantService,
-    private scenarioPathService: ScenarioPathService,
     private scenarioPathSessionService: ScenarioPathSessionService,
     private permissionValidatorService: PermissionValidator,
     private simulationCreditsService: SimulationCreditsService,
     private configService: AppConfigService,
+    private scenarioPathSharedService: ScenarioPathSharedService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -297,7 +295,7 @@ export class ScenarioSessionService {
     }
     if (scenarioPathSessionItemId) {
       const scenarioPathSessionItem =
-        await this.scenarioPathSessionService.getPermittedPathSessionItemBySessionItemId(
+        await this.scenarioPathSharedService.getPermittedPathSessionItemBySessionItemId(
           scenarioPathSessionItemId,
         );
       if (!scenarioPathSessionItem) {
@@ -309,13 +307,13 @@ export class ScenarioSessionService {
       const scenarioPathSessionId =
         scenarioPathSessionItem.scenarioPathSessionId;
       const scenarioPathSession =
-        await this.scenarioPathSessionService.getScenarioPathSessionById(
+        await this.scenarioPathSharedService.getScenarioPathSessionById(
           scenarioPathSessionId,
         );
       const scenarioPathId = scenarioPathSession?.scenarioPathId;
       if (scenarioPathId) {
         const scenarioPathTenant =
-          await this.scenarioPathTenantService.getScenarioPathTenant(
+          await this.scenarioPathSharedService.getScenarioPathTenant(
             tenantId,
             scenarioPathId,
           );
