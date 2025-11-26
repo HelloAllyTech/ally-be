@@ -38,6 +38,7 @@ import { DuplicateScenarioPathResponseDto } from '../dto/duplicate-scenario-path
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioPathTenant } from '../entity/scenario-path-tenant.entity';
 import { UpdateScenarioPathItemDto } from '../dto/update-scenario-path-item.dto';
+import { ScenarioStatus } from 'src/learn/enum/scenario.status.enum';
 
 @Injectable()
 export class ScenarioPathService {
@@ -386,8 +387,10 @@ export class ScenarioPathService {
 
     const scenarioIds = [...scenarioIdsSet];
 
-    const existingScenarios =
-      await this.scenarioSharedService.getScenarioByIds(scenarioIds);
+    const existingScenarios = await this.scenarioSharedService.getScenarioByIds(
+      scenarioIds,
+      { status: ScenarioStatus.ACTIVE },
+    );
     const existingScenarioIds = existingScenarios.map(
       (scenario) => scenario.id,
     );
@@ -401,7 +404,7 @@ export class ScenarioPathService {
         `Scenario Path: ${scenarioPath.id ?? scenarioPath.title} validation failed: Invalid scenario IDs: ${missingScenarioIds}`,
       );
       throw new BadRequestException(
-        `Invalid scenario IDs: ${missingScenarioIds}`,
+        `Invalid or inactive scenario IDs: ${missingScenarioIds}`,
       );
     }
   }

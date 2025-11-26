@@ -29,10 +29,12 @@ describe('ScenarioPathSharedService', () => {
 
   const mockScenarioPathItemRepository = {
     find: jest.fn(),
+    findOne: jest.fn(),
   };
 
   const mockScenarioSharedService = {
     getScenarioByIds: jest.fn(),
+    getScenarioSessionById: jest.fn(),
   };
 
   const mockScenarioPathTenantService = {
@@ -203,7 +205,6 @@ describe('ScenarioPathSharedService', () => {
 
     it('should return scenario path with scenarios when tenantId is provided and access is granted', async () => {
       scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
-      // FIXED: Return single object, not array
       scenarioPathTenantService.getScenarioPathTenant.mockResolvedValue({
         id: 'mock-id',
         scenarioPathId: 'path-1',
@@ -263,6 +264,7 @@ describe('ScenarioPathSharedService', () => {
       expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1' },
       });
+      // FIXED: Service calls without filter
       expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
         1, 2,
       ]);
@@ -320,6 +322,7 @@ describe('ScenarioPathSharedService', () => {
       expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1' },
       });
+
       expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
         1, 2,
       ]);
@@ -339,7 +342,6 @@ describe('ScenarioPathSharedService', () => {
 
     it('should throw BadRequestException when tenant does not have access', async () => {
       scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
-      // FIXED: Return null (falsy value) instead of empty array
       scenarioPathTenantService.getScenarioPathTenant.mockResolvedValue(null);
 
       await expect(

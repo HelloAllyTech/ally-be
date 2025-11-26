@@ -35,6 +35,7 @@ import { ScenarioPathTenantValidationShared } from './service/scenario-tenant-va
     ScenarioPathRepository,
     ScenarioPathItemRepository,
     ScenarioPathSharedService,
+    ScenarioPathTenantService,
   ],
 })
 export class ScenarioPathModule {}
