@@ -284,7 +284,7 @@ export class ScenarioPathSessionService {
     const callDurationInSeconds = (callDuration ?? 0) / 1000;
     const callDurationRequiredForCompletionInSeconds =
       this.configService.simulationPath
-        .simulationPathMinDurationForCompletion ?? 0;
+        .simulationPathItemMinDurationForCompletion ?? 0;
     if (callDurationInSeconds < callDurationRequiredForCompletionInSeconds) {
       return;
     }

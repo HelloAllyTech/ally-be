@@ -44,7 +44,7 @@ describe('ScenarioPathSessionService', () => {
 
   const mockConfigService = {
     simulationPath: {
-      simulationPathMinDurationForCompletion: 0,
+      simulationPathItemMinDurationForCompletion: 0,
     },
   };
 
