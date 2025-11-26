@@ -268,11 +268,30 @@ export class ScenarioPathSessionService {
     }
 
     return {
-      nextScenarioSessionItem,
-      nextScenarioData,
-      currentPathItem,
-      currentPathSessionItem,
-      currentScenarioData,
+      upcomingScenario: nextScenarioData
+        ? {
+            id: nextScenarioData?.scenario?.id,
+            title: nextScenarioData?.scenario?.title,
+            description: nextScenarioData?.scenario?.description,
+            coverImageUrl: nextScenarioData?.scenario?.coverImageUrl,
+            coverVideoUrl: nextScenarioData?.scenario?.coverVideoUrl,
+            scenarioPathSessionItemStatus: nextScenarioSessionItem?.status,
+            order: nextScenarioData?.pathItem?.order,
+            scenarioPathSessionItemId: nextScenarioSessionItem?.id,
+          }
+        : undefined,
+      currentSession: {
+        scenarioId: currentScenarioData?.id,
+        title: currentScenarioData?.title,
+        description: currentScenarioData?.description,
+        coverImageUrl: currentScenarioData?.coverImageUrl,
+        coverVideoUrl: currentScenarioData?.coverVideoUrl,
+        scenarioPathSessionItemStatus: currentPathSessionItem?.status,
+        scenarioPathSessionItemId: currentPathSessionItem?.id,
+        transitionMessageTitle: currentPathItem?.messageTitle,
+        transitionMessageContent: currentPathItem?.messageContent,
+        scenarioPathSessionStatus: currentPathSessionItem?.status,
+      },
     };
   }
 

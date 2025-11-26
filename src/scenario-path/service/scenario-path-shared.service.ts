@@ -133,13 +133,7 @@ export class ScenarioPathSharedService {
   }
 
   async getScenarioDataById(scenarioId: number) {
-    const scenarioData = await this.scenarioSharedService.getScenarioByIds([
-      scenarioId,
-    ]);
-    if (!scenarioData?.[0]) {
-      return null;
-    }
-    return scenarioData[0];
+    return await this.scenarioSharedService.getScenarioById(scenarioId);
   }
 
   async getNextPathItemByCurrentItemId(
@@ -159,21 +153,19 @@ export class ScenarioPathSharedService {
     });
   }
 
-  async getNextScenarioDataByPathItemId(
-    scenarioPathItemId: string,
-  ): Promise<{ scenario: Scenarios; pathItem: ScenarioPathItem } | null> {
+  async getNextScenarioDataByPathItemId(scenarioPathItemId: string): Promise<{
+    scenario: Scenarios | null;
+    pathItem: ScenarioPathItem;
+  } | null> {
     const nextScenarioPathItem =
       await this.getNextPathItemByCurrentItemId(scenarioPathItemId);
     if (!nextScenarioPathItem) {
       return null;
     }
-    const scenarioData = await this.scenarioSharedService.getScenarioByIds([
+    const scenarioData = await this.scenarioSharedService.getScenarioById(
       nextScenarioPathItem.scenarioId,
-    ]);
-    if (!scenarioData?.[0]) {
-      return null;
-    }
-    return { scenario: scenarioData[0], pathItem: nextScenarioPathItem };
+    );
+    return { scenario: scenarioData, pathItem: nextScenarioPathItem };
   }
 
   async getPathItemById(pathItemId: string): Promise<ScenarioPathItem | null> {

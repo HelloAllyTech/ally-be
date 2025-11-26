@@ -118,36 +118,8 @@ export class ScenarioPathSessionController {
     @Param('scenarioSessionId', ParseUUIDPipe)
     scenarioSessionId: string,
   ): Promise<GetUpcomingScenarioPathItemResponseDto | null> {
-    const result =
-      await this.scenarioPathSessionService.getNextScenarioPathItem(
-        scenarioSessionId,
-      );
-    return {
-      upcomingScenario: result?.nextScenarioData
-        ? {
-            id: result?.nextScenarioData?.scenario?.id,
-            title: result?.nextScenarioData?.scenario?.title,
-            description: result?.nextScenarioData?.scenario?.description,
-            coverImageUrl: result?.nextScenarioData?.scenario?.coverImageUrl,
-            coverVideoUrl: result?.nextScenarioData?.scenario?.coverVideoUrl,
-            scenarioPathSessionItemStatus:
-              result?.nextScenarioSessionItem?.status,
-            order: result?.nextScenarioData?.pathItem?.order,
-            scenarioPathSessionItemId: result?.nextScenarioSessionItem?.id,
-          }
-        : undefined,
-      currentSession: {
-        scenarioId: result?.currentScenarioData?.id,
-        title: result?.currentScenarioData?.title,
-        description: result?.currentScenarioData?.description,
-        coverImageUrl: result?.currentScenarioData?.coverImageUrl,
-        coverVideoUrl: result?.currentScenarioData?.coverVideoUrl,
-        scenarioPathSessionItemStatus: result?.currentPathSessionItem?.status,
-        scenarioPathSessionItemId: result?.currentPathSessionItem?.id,
-        transitionMessageTitle: result?.currentPathItem?.messageTitle,
-        transitionMessageContent: result?.currentPathItem?.messageContent,
-        scenarioPathSessionStatus: result?.currentPathSessionItem?.status,
-      },
-    };
+    return await this.scenarioPathSessionService.getNextScenarioPathItem(
+      scenarioSessionId,
+    );
   }
 }
