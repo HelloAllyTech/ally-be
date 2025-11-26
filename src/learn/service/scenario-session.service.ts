@@ -30,7 +30,10 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
 import { v4 } from 'uuid';
-import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from '../constants/scenario-session.constants';
+import {
+  DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
+  MINIMUM_SESSION_DURATION_FOR_SUMMARY_SECONDS,
+} from '../constants/scenario-session.constants';
 import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
 import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
@@ -317,6 +320,32 @@ export class ScenarioSessionService {
       if (scenarioSessionMessages.length === 0) {
         this.logger.warn(
           `No scenario session messages found for scenario session ${scenarioSessionId}`,
+        );
+        return;
+      }
+
+      // Validate minimum exchange (both parties must participate)
+      const hasCounselorMessage = scenarioSessionMessages.some(
+        (message) => message.senderId > 0,
+      );
+      const hasClientMessage = scenarioSessionMessages.some(
+        (message) => message.senderId <= 0,
+      );
+
+      if (!hasCounselorMessage || !hasClientMessage) {
+        this.logger.warn(
+          `Insufficient exchange for scenario session ${scenarioSessionId}. Both COUNSELLOR and CLIENT must have at least one message.`,
+        );
+        return;
+      }
+
+      // Validate minimum session duration
+      const callDurationInSeconds = callDuration ? callDuration / 1000 : 0;
+      if (
+        callDurationInSeconds < MINIMUM_SESSION_DURATION_FOR_SUMMARY_SECONDS
+      ) {
+        this.logger.warn(
+          `Session too short (${callDurationInSeconds}s) to generate summary for scenario session ${scenarioSessionId}. Minimum required: ${MINIMUM_SESSION_DURATION_FOR_SUMMARY_SECONDS}s`,
         );
         return;
       }

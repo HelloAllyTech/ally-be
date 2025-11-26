@@ -1,1 +1,3 @@
 export const DEFAULT_SCENARIO_SESSION_TTL_SECONDS = 1200; // 20 minutes
+
+export const MINIMUM_SESSION_DURATION_FOR_SUMMARY_SECONDS = 60; // 1 minute
