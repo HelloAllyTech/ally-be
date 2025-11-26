@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Repository, DataSource } from 'typeorm';
 import { S3Service } from 'src/aws/service/s3.service';
 import { AppConfigService } from 'src/config/config.service';
@@ -19,7 +19,7 @@ import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.r
 import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
 import { ScenarioService } from '../scenario.service';
 import { ScenarioTenants } from 'src/learn/entity/scenario-tenants.entity';
-import { ScenarioSharedService } from '../scenario-shared.service';
+import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -37,7 +37,7 @@ describe('ScenarioService', () => {
   let scenarioVoiceRepository: jest.Mocked<ScenarioVoicesRepository>;
   let tenantService: jest.Mocked<TenantService>;
   let dataSource: jest.Mocked<DataSource>;
-  let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
+  let scenarioPathSharedService: jest.Mocked<ScenarioPathSharedService>;
 
   const mockTenantId = 'tenant-123';
 
@@ -71,6 +71,7 @@ describe('ScenarioService', () => {
       create: jest.fn(),
       save: jest.fn(),
       update: jest.fn(),
+      softDelete: jest.fn(),
     };
 
     const mockScenariosRepository = {
@@ -91,6 +92,7 @@ describe('ScenarioService', () => {
       getScenarioEvents: jest.fn(),
       findOne: jest.fn(),
       create: jest.fn(),
+      softDelete: jest.fn(),
     };
 
     const mockSessionEventService = {
@@ -134,13 +136,11 @@ describe('ScenarioService', () => {
       transaction: jest.fn(),
     };
 
-    const mockScenarioSharedService = {
-      getScenarioByIds: jest.fn(),
-      getScenarioSessionById: jest.fn(),
+    const mockScenarioPathSharedService = {
       getScenarioPathItemByScenarioId: jest.fn(),
+      getScenarioPathWithScenarios: jest.fn(),
     };
 
-    // Setup ExecutionManager mock
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -187,8 +187,8 @@ describe('ScenarioService', () => {
           useValue: mockScenarioEventsRepository,
         },
         {
-          provide: ScenarioSharedService,
-          useValue: mockScenarioSharedService,
+          provide: ScenarioPathSharedService,
+          useValue: mockScenarioPathSharedService,
         },
       ],
     }).compile();
@@ -201,7 +201,7 @@ describe('ScenarioService', () => {
     scenarioVoiceRepository = module.get(ScenarioVoicesRepository);
     tenantService = module.get(TenantService);
     dataSource = module.get(DataSource);
-    scenarioSharedService = module.get(ScenarioSharedService);
+    scenarioPathSharedService = module.get(ScenarioPathSharedService);
   });
 
   afterEach(() => {
@@ -220,7 +220,7 @@ describe('ScenarioService', () => {
       expect(sessionEventService).toBeDefined();
       expect(scenarioVoiceRepository).toBeDefined();
       expect(tenantService).toBeDefined();
-      expect(scenarioSharedService).toBeDefined();
+      expect(scenarioPathSharedService).toBeDefined();
     });
   });
 
@@ -233,11 +233,9 @@ describe('ScenarioService', () => {
       };
 
       scenariosRepository.findOne.mockResolvedValue(mockScenario);
-      scenarioSharedService.getScenarioPathItemByScenarioId.mockResolvedValue({
-        id: 'path-item-1',
-        scenarioId: 1,
-        scenarioPathId: 'path-1',
-      } as any);
+      scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+        { id: 'path-item-1', scenarioId: 1, scenarioPathId: 'path-1' } as any,
+      );
 
       await expect(
         service.validateUpdateScenario(scenarioId, updateDto),
@@ -246,7 +244,7 @@ describe('ScenarioService', () => {
         service.validateUpdateScenario(scenarioId, updateDto),
       ).rejects.toThrow('Scenario is a part of scenario path');
       expect(
-        scenarioSharedService.getScenarioPathItemByScenarioId,
+        scenarioPathSharedService.getScenarioPathItemByScenarioId,
       ).toHaveBeenCalledWith(scenarioId);
     });
 
@@ -257,10 +255,9 @@ describe('ScenarioService', () => {
       };
 
       scenariosRepository.findOne.mockResolvedValue(mockScenario);
-      scenarioSharedService.getScenarioPathItemByScenarioId.mockResolvedValue({
-        id: 'path-item-1',
-        scenarioId: 1,
-      } as any);
+      scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+        { id: 'path-item-1', scenarioId: 1 } as any,
+      );
 
       await expect(
         service.validateUpdateScenario(scenarioId, updateDto),
@@ -278,7 +275,7 @@ describe('ScenarioService', () => {
       };
 
       scenariosRepository.findOne.mockResolvedValue(mockScenario);
-      scenarioSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+      scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
         null,
       );
 
@@ -289,8 +286,21 @@ describe('ScenarioService', () => {
 
       expect(result).toEqual(mockScenario);
       expect(
-        scenarioSharedService.getScenarioPathItemByScenarioId,
+        scenarioPathSharedService.getScenarioPathItemByScenarioId,
       ).toHaveBeenCalledWith(scenarioId);
+    });
+
+    it('should throw NotFoundException when scenario does not exist', async () => {
+      const scenarioId = 999;
+      const updateDto: UpdateScenarioDto = {
+        status: ScenarioStatus.DRAFT,
+      };
+
+      scenariosRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.validateUpdateScenario(scenarioId, updateDto),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -302,10 +312,9 @@ describe('ScenarioService', () => {
       scenariosRepository.getAdminScenarioById.mockResolvedValue(
         mockScenarioData as any,
       );
-      scenarioSharedService.getScenarioPathItemByScenarioId.mockResolvedValue({
-        id: 'path-item-1',
-        scenarioId: 1,
-      } as any);
+      scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+        { id: 'path-item-1', scenarioId: 1 } as any,
+      );
 
       await expect(service.deleteAdminScenario(scenarioId)).rejects.toThrow(
         BadRequestException,
@@ -314,7 +323,7 @@ describe('ScenarioService', () => {
         'Scenario is a part of scenario path',
       );
       expect(
-        scenarioSharedService.getScenarioPathItemByScenarioId,
+        scenarioPathSharedService.getScenarioPathItemByScenarioId,
       ).toHaveBeenCalledWith(scenarioId);
     });
 
@@ -325,7 +334,7 @@ describe('ScenarioService', () => {
       scenariosRepository.getAdminScenarioById.mockResolvedValue(
         mockScenarioData as any,
       );
-      scenarioSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+      scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
         null,
       );
 

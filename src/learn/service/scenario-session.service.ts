@@ -226,11 +226,11 @@ export class ScenarioSessionService {
       }
       const scenarioPathSessionId =
         scenarioPathSessionItem.scenarioPathSessionId;
-      const scenarioPathSessionItemData =
+      const scenarioPathSession =
         await this.scenarioPathSessionService.getScenarioPathSessionById(
           scenarioPathSessionId,
         );
-      const scenarioPathId = scenarioPathSessionItemData?.scenarioPathId;
+      const scenarioPathId = scenarioPathSession?.scenarioPathId;
       if (scenarioPathId) {
         const scenarioPathTenant =
           await this.scenarioPathTenantService.getScenarioPathTenant(

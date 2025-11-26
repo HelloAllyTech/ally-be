@@ -179,4 +179,8 @@ export class ScenarioPathSharedService {
       scenarioSessionId,
     );
   }
+
+  async getScenarioPathItemByScenarioId(scenarioId: number) {
+    return this.scenarioPathItemRepository.findOne({ where: { scenarioId } });
+  }
 }

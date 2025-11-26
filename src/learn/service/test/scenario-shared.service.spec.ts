@@ -1,24 +1,23 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { In } from 'typeorm';
-import { ScenariosRepository } from '../../repository/scenario.repository';
-import { Scenarios } from '../../entity/scenarios.entity';
 import { ScenarioSharedService } from '../scenario-shared.service';
+import { ScenariosRepository } from '../../repository/scenario.repository';
 import { ScenarioSessionRepository } from '../../repository/scenario-session.repository';
 import { ScenarioPathItemRepository } from 'src/scenario-path/repository/scenario-path-item.repository';
+import { Scenarios } from '../../entity/scenarios.entity';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
-import { ScenarioPathItem } from 'src/scenario-path/entity/scenario-path-item.entity';
 import { ScenarioStatus } from '../../enum/scenario.status.enum';
+import { ScenarioFilters } from 'src/common/type/common.type';
 
 describe('ScenarioSharedService', () => {
   let service: ScenarioSharedService;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
   let scenarioSessionRepository: jest.Mocked<ScenarioSessionRepository>;
-  let scenarioPathItemRepository: jest.Mocked<ScenarioPathItemRepository>;
 
   const mockScenarios: Scenarios[] = [
     { id: 1, title: 'Scenario 1', status: ScenarioStatus.ACTIVE } as Scenarios,
     { id: 2, title: 'Scenario 2', status: ScenarioStatus.ACTIVE } as Scenarios,
-    { id: 3, title: 'Scenario 3', status: ScenarioStatus.ACTIVE } as Scenarios,
+    { id: 3, title: 'Scenario 3', status: ScenarioStatus.DRAFT } as Scenarios,
   ];
 
   const mockScenarioSession: ScenarioSessions = {
@@ -27,23 +26,16 @@ describe('ScenarioSharedService', () => {
     counselorId: 123,
   } as ScenarioSessions;
 
-  const mockScenarioPathItem: ScenarioPathItem = {
-    id: 'path-item-1',
-    scenarioId: 1,
-    scenarioPathId: 'path-1',
-    order: 1,
-  } as ScenarioPathItem;
-
   beforeEach(async () => {
-    const mockScenariosRepository = {
+    const mockScenariosRepo = {
       findBy: jest.fn(),
     };
 
-    const mockScenarioSessionRepository = {
+    const mockScenarioSessionRepo = {
       findOne: jest.fn(),
     };
 
-    const mockScenarioPathItemRepository = {
+    const mockScenarioPathItemRepo = {
       findOne: jest.fn(),
     };
 
@@ -52,15 +44,15 @@ describe('ScenarioSharedService', () => {
         ScenarioSharedService,
         {
           provide: ScenariosRepository,
-          useValue: mockScenariosRepository,
+          useValue: mockScenariosRepo,
         },
         {
           provide: ScenarioSessionRepository,
-          useValue: mockScenarioSessionRepository,
+          useValue: mockScenarioSessionRepo,
         },
         {
           provide: ScenarioPathItemRepository,
-          useValue: mockScenarioPathItemRepository,
+          useValue: mockScenarioPathItemRepo,
         },
       ],
     }).compile();
@@ -68,7 +60,8 @@ describe('ScenarioSharedService', () => {
     service = module.get<ScenarioSharedService>(ScenarioSharedService);
     scenariosRepository = module.get(ScenariosRepository);
     scenarioSessionRepository = module.get(ScenarioSessionRepository);
-    scenarioPathItemRepository = module.get(ScenarioPathItemRepository);
+
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -76,7 +69,7 @@ describe('ScenarioSharedService', () => {
   });
 
   describe('getScenarioByIds', () => {
-    it('should return scenarios when IDs exist', async () => {
+    it('should return scenarios when IDs exist (no filters)', async () => {
       const scenarioIds = [1, 2, 3];
       scenariosRepository.findBy.mockResolvedValue(mockScenarios);
 
@@ -88,14 +81,17 @@ describe('ScenarioSharedService', () => {
       });
     });
 
-    it('should return scenarios filtered by status', async () => {
+    it('should apply status filter when provided', async () => {
       const scenarioIds = [1, 2];
-      const filteredScenarios = mockScenarios.slice(0, 2);
+      const filters: ScenarioFilters = {
+        status: ScenarioStatus.ACTIVE,
+      };
+      const filteredScenarios = mockScenarios.filter(
+        (s) => s.status === ScenarioStatus.ACTIVE,
+      );
       scenariosRepository.findBy.mockResolvedValue(filteredScenarios);
 
-      const result = await service.getScenarioByIds(scenarioIds, {
-        status: ScenarioStatus.ACTIVE,
-      });
+      const result = await service.getScenarioByIds(scenarioIds, filters);
 
       expect(result).toEqual(filteredScenarios);
       expect(scenariosRepository.findBy).toHaveBeenCalledWith({
@@ -104,7 +100,7 @@ describe('ScenarioSharedService', () => {
       });
     });
 
-    it('should return empty array when no scenarios found', async () => {
+    it('should return empty array when repository returns none', async () => {
       const scenarioIds = [999];
       scenariosRepository.findBy.mockResolvedValue([]);
 
@@ -116,12 +112,13 @@ describe('ScenarioSharedService', () => {
       });
     });
 
-    it('should not include status filter when not provided', async () => {
+    it('should not include status filter when filters.status is not provided', async () => {
       const scenarioIds = [1, 2];
       scenariosRepository.findBy.mockResolvedValue(mockScenarios);
 
-      await service.getScenarioByIds(scenarioIds);
+      const result = await service.getScenarioByIds(scenarioIds, {});
 
+      expect(result).toEqual(mockScenarios);
       expect(scenariosRepository.findBy).toHaveBeenCalledWith({
         id: In(scenarioIds),
       });
@@ -143,49 +140,12 @@ describe('ScenarioSharedService', () => {
     it('should return null when scenario session not found', async () => {
       scenarioSessionRepository.findOne.mockResolvedValue(null);
 
-      const result = await service.getScenarioSessionById('non-existent');
+      const result = await service.getScenarioSessionById('non-existent-id');
 
       expect(result).toBeNull();
       expect(scenarioSessionRepository.findOne).toHaveBeenCalledWith({
-        where: { id: 'non-existent' },
+        where: { id: 'non-existent-id' },
       });
-    });
-  });
-
-  describe('getScenarioPathItemByScenarioId', () => {
-    it('should return scenario path item when found', async () => {
-      scenarioPathItemRepository.findOne.mockResolvedValue(
-        mockScenarioPathItem,
-      );
-
-      const result = await service.getScenarioPathItemByScenarioId(1);
-
-      expect(result).toEqual(mockScenarioPathItem);
-      expect(scenarioPathItemRepository.findOne).toHaveBeenCalledWith({
-        where: { scenarioId: 1 },
-      });
-    });
-
-    it('should return null when scenario path item not found', async () => {
-      scenarioPathItemRepository.findOne.mockResolvedValue(null);
-
-      const result = await service.getScenarioPathItemByScenarioId(999);
-
-      expect(result).toBeNull();
-      expect(scenarioPathItemRepository.findOne).toHaveBeenCalledWith({
-        where: { scenarioId: 999 },
-      });
-    });
-
-    it('should check if scenario is part of a path', async () => {
-      scenarioPathItemRepository.findOne.mockResolvedValue(
-        mockScenarioPathItem,
-      );
-
-      const result = await service.getScenarioPathItemByScenarioId(1);
-
-      expect(result).toBeTruthy();
-      expect(result?.scenarioId).toBe(1);
     });
   });
 });
