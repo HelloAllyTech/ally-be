@@ -122,15 +122,32 @@ export class ScenarioPathSessionController {
       await this.scenarioPathSessionService.getNextScenarioPathItem(
         scenarioSessionId,
       );
-    if (!result?.nextScenarioData?.scenario || !result?.currentPathItem) {
-      return null;
-    }
     return {
-      ...result.nextScenarioData.scenario,
-      order: result.nextScenarioData.pathItem?.order,
-      scenarioPathSessionItemId: result.nextScenarioSessionItem?.id,
-      transitionMessageTitle: result.currentPathItem.messageTitle,
-      transitionMessageContent: result.currentPathItem.messageContent,
+      upcomingScenario: result?.nextScenarioData
+        ? {
+            id: result?.nextScenarioData?.scenario?.id,
+            title: result?.nextScenarioData?.scenario?.title,
+            description: result?.nextScenarioData?.scenario?.description,
+            coverImageUrl: result?.nextScenarioData?.scenario?.coverImageUrl,
+            coverVideoUrl: result?.nextScenarioData?.scenario?.coverVideoUrl,
+            scenarioPathSessionItemStatus:
+              result?.nextScenarioSessionItem?.status,
+            order: result?.nextScenarioData?.pathItem?.order,
+            scenarioPathSessionItemId: result?.nextScenarioSessionItem?.id,
+          }
+        : undefined,
+      currentSession: {
+        scenarioId: result?.currentScenarioData?.id,
+        title: result?.currentScenarioData?.title,
+        description: result?.currentScenarioData?.description,
+        coverImageUrl: result?.currentScenarioData?.coverImageUrl,
+        coverVideoUrl: result?.currentScenarioData?.coverVideoUrl,
+        scenarioPathSessionItemStatus: result?.currentPathSessionItem?.status,
+        scenarioPathSessionItemId: result?.currentPathSessionItem?.id,
+        transitionMessageTitle: result?.currentPathItem?.messageTitle,
+        transitionMessageContent: result?.currentPathItem?.messageContent,
+        scenarioPathSessionStatus: result?.currentPathSessionItem?.status,
+      },
     };
   }
 }

@@ -123,13 +123,23 @@ export class ScenarioPathSharedService {
     if (!scenarioPathItem) {
       return null;
     }
-    const scenarioData = await this.scenarioSharedService.getScenarioByIds([
+    const scenarioData = await this.getScenarioDataById(
       scenarioPathItem.scenarioId,
+    );
+    if (!scenarioData) {
+      return null;
+    }
+    return { ...scenarioData, pathItem: scenarioPathItem };
+  }
+
+  async getScenarioDataById(scenarioId: number) {
+    const scenarioData = await this.scenarioSharedService.getScenarioByIds([
+      scenarioId,
     ]);
     if (!scenarioData?.[0]) {
       return null;
     }
-    return { ...scenarioData[0], pathItem: scenarioPathItem };
+    return scenarioData[0];
   }
 
   async getNextPathItemByCurrentItemId(

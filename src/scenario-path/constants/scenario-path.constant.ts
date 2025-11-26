@@ -1,3 +1,5 @@
+import { SessionItemStatus } from '../type/scenario-path-session-items.type';
+
 export const SCENARIO_PATH_REQUIRED_FIELDS = [
   'title',
   'description',
@@ -11,23 +13,27 @@ export const SCENARIO_PATH_MIN_SCENARIOS = 2;
 export const SCENARIO_MIN_DURATION_FOR_COMPLETION = 180; // 3 minutes in seconds
 
 export const UPCOMING_SCENARIO_PATH_ITEM_EXAMPLE = {
-  id: 1,
-  title: 'Customer Service Scenario',
-  scenario: 'You are a customer service representative...',
-  description: 'Practice handling customer complaints',
-  coverImageUrl: 'https://example.com/scenario-cover.jpg',
-  coverVideoUrl: 'https://example.com/scenario-cover.mp4',
-  status: 'ACTIVE',
-  prompt: 'You are a helpful customer service agent',
-  metadata: {},
-  createdBy: 123,
-  updatedBy: 123,
-  isGlobal: false,
-  createdAt: '2024-01-15T10:00:00Z',
-  updatedAt: '2024-01-15T10:00:00Z',
-  order: 2,
-  scenarioPathSessionItemId: '123',
-  transitionMessageTitle: 'Great job on the previous scenario!',
-  transitionMessageContent:
-    "You have successfully completed the first scenario. Now, let's move on to the next challenge.",
+  upcomingScenario: {
+    id: 1,
+    title: 'Customer Service Scenario',
+    description: 'Practice handling customer complaints',
+    coverImageUrl: 'https://example.com/scenario-cover.jpg',
+    coverVideoUrl: 'https://example.com/scenario-cover.mp4',
+    scenarioPathSessionItemStatus: SessionItemStatus.UNLOCKED,
+    order: 2,
+    scenarioPathSessionItemId: '550e8400-e29b-41d4-a716-446655440000',
+  },
+  currentSession: {
+    scenarioId: 1,
+    title: 'Introduction Scenario',
+    description: 'Introduction to customer service',
+    coverImageUrl: 'https://example.com/intro-scenario-cover.jpg',
+    coverVideoUrl: 'https://example.com/intro-scenario-cover.mp4',
+    scenarioPathSessionItemStatus: SessionItemStatus.COMPLETED,
+    scenarioPathSessionItemId: '550e8400-e29b-41d4-a716-446655440001',
+    transitionMessageTitle: 'Great job on the previous scenario!',
+    transitionMessageContent:
+      "You have successfully completed the first scenario. Now, let's move on to the next challenge.",
+    scenarioPathSessionStatus: SessionItemStatus.COMPLETED,
+  },
 };

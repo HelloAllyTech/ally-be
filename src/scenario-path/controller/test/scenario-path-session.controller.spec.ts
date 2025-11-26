@@ -163,6 +163,10 @@ describe('ScenarioPathSessionController', () => {
     };
 
     it('should return upcoming scenario path item when all data is present', async () => {
+      const mockCurrentScenario = {
+        ...mockScenario,
+        id: 1,
+      };
       const mockNextScenarioPathItem = {
         nextScenarioSessionItem: {
           id: 'session-item-123',
@@ -195,6 +199,16 @@ describe('ScenarioPathSessionController', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
         } as ScenarioPathItem,
+        currentPathSessionItem: {
+          id: 'current-session-item-123',
+          scenarioPathSessionId: 'session-123',
+          userId: 123,
+          scenarioPathItemId: 'current-path-item-123',
+          status: SessionItemStatus.COMPLETED,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as ScenarioPathSessionItem,
+        currentScenarioData: mockCurrentScenario,
       };
 
       service.getNextScenarioPathItem.mockResolvedValue(
@@ -205,12 +219,29 @@ describe('ScenarioPathSessionController', () => {
         await controller.getUpcomingScenarioPathItem(scenarioSessionId);
 
       expect(result).toEqual({
-        ...mockScenario,
-        order: 2,
-        scenarioPathSessionItemId: 'session-item-123',
-        transitionMessageTitle: 'Great job on the previous scenario!',
-        transitionMessageContent:
-          "You have successfully completed the first scenario. Now, let's move on to the next challenge.",
+        upcomingScenario: {
+          id: 1,
+          title: 'Customer Service Scenario',
+          description: 'Practice handling customer complaints',
+          coverImageUrl: 'https://example.com/scenario-cover.jpg',
+          coverVideoUrl: 'https://example.com/scenario-cover.mp4',
+          scenarioPathSessionItemStatus: SessionItemStatus.UNLOCKED,
+          order: 2,
+          scenarioPathSessionItemId: 'session-item-123',
+        },
+        currentSession: {
+          scenarioId: 1,
+          title: 'Customer Service Scenario',
+          description: 'Practice handling customer complaints',
+          coverImageUrl: 'https://example.com/scenario-cover.jpg',
+          coverVideoUrl: 'https://example.com/scenario-cover.mp4',
+          scenarioPathSessionItemStatus: SessionItemStatus.COMPLETED,
+          scenarioPathSessionItemId: 'current-session-item-123',
+          transitionMessageTitle: 'Great job on the previous scenario!',
+          transitionMessageContent:
+            "You have successfully completed the first scenario. Now, let's move on to the next challenge.",
+          scenarioPathSessionStatus: SessionItemStatus.COMPLETED,
+        },
       });
       expect(service.getNextScenarioPathItem).toHaveBeenCalledWith(
         scenarioSessionId,
@@ -218,7 +249,7 @@ describe('ScenarioPathSessionController', () => {
       expect(service.getNextScenarioPathItem).toHaveBeenCalledTimes(1);
     });
 
-    it('should return null when nextScenarioData.scenario is missing', async () => {
+    it('should return object with undefined upcomingScenario when nextScenarioData.scenario is missing', async () => {
       const mockNextScenarioPathItem = {
         nextScenarioSessionItem: {
           id: 'session-item-123',
@@ -259,13 +290,36 @@ describe('ScenarioPathSessionController', () => {
       const result =
         await controller.getUpcomingScenarioPathItem(scenarioSessionId);
 
-      expect(result).toBeNull();
+      expect(result).toEqual({
+        upcomingScenario: {
+          id: undefined,
+          title: undefined,
+          description: undefined,
+          coverImageUrl: undefined,
+          coverVideoUrl: undefined,
+          scenarioPathSessionItemStatus: SessionItemStatus.UNLOCKED,
+          order: 2,
+          scenarioPathSessionItemId: 'session-item-123',
+        },
+        currentSession: {
+          scenarioId: undefined,
+          title: undefined,
+          description: undefined,
+          coverImageUrl: undefined,
+          coverVideoUrl: undefined,
+          scenarioPathSessionItemStatus: undefined,
+          scenarioPathSessionItemId: undefined,
+          transitionMessageTitle: 'Great job!',
+          transitionMessageContent: 'Well done!',
+          scenarioPathSessionStatus: undefined,
+        },
+      });
       expect(service.getNextScenarioPathItem).toHaveBeenCalledWith(
         scenarioSessionId,
       );
     });
 
-    it('should return null when nextScenarioData is missing', async () => {
+    it('should return object with undefined upcomingScenario when nextScenarioData is missing', async () => {
       const mockNextScenarioPathItem = {
         nextScenarioSessionItem: {
           id: 'session-item-123',
@@ -296,13 +350,27 @@ describe('ScenarioPathSessionController', () => {
       const result =
         await controller.getUpcomingScenarioPathItem(scenarioSessionId);
 
-      expect(result).toBeNull();
+      expect(result).toEqual({
+        upcomingScenario: undefined,
+        currentSession: {
+          scenarioId: undefined,
+          title: undefined,
+          description: undefined,
+          coverImageUrl: undefined,
+          coverVideoUrl: undefined,
+          scenarioPathSessionItemStatus: undefined,
+          scenarioPathSessionItemId: undefined,
+          transitionMessageTitle: 'Great job!',
+          transitionMessageContent: 'Well done!',
+          scenarioPathSessionStatus: undefined,
+        },
+      });
       expect(service.getNextScenarioPathItem).toHaveBeenCalledWith(
         scenarioSessionId,
       );
     });
 
-    it('should return null when currentPathItem is missing', async () => {
+    it('should return object with undefined currentSession fields when currentPathItem is missing', async () => {
       const mockNextScenarioPathItem = {
         nextScenarioSessionItem: {
           id: 'session-item-123',
@@ -334,25 +402,66 @@ describe('ScenarioPathSessionController', () => {
       const result =
         await controller.getUpcomingScenarioPathItem(scenarioSessionId);
 
-      expect(result).toBeNull();
+      expect(result).toEqual({
+        upcomingScenario: {
+          id: 1,
+          title: 'Customer Service Scenario',
+          description: 'Practice handling customer complaints',
+          coverImageUrl: 'https://example.com/scenario-cover.jpg',
+          coverVideoUrl: 'https://example.com/scenario-cover.mp4',
+          scenarioPathSessionItemStatus: SessionItemStatus.UNLOCKED,
+          order: 2,
+          scenarioPathSessionItemId: 'session-item-123',
+        },
+        currentSession: {
+          scenarioId: undefined,
+          title: undefined,
+          description: undefined,
+          coverImageUrl: undefined,
+          coverVideoUrl: undefined,
+          scenarioPathSessionItemStatus: undefined,
+          scenarioPathSessionItemId: undefined,
+          transitionMessageTitle: undefined,
+          transitionMessageContent: undefined,
+          scenarioPathSessionStatus: undefined,
+        },
+      });
       expect(service.getNextScenarioPathItem).toHaveBeenCalledWith(
         scenarioSessionId,
       );
     });
 
-    it('should return null when service returns null', async () => {
+    it('should return object with undefined values when service returns null', async () => {
       service.getNextScenarioPathItem.mockResolvedValue(null);
 
       const result =
         await controller.getUpcomingScenarioPathItem(scenarioSessionId);
 
-      expect(result).toBeNull();
+      expect(result).toEqual({
+        upcomingScenario: undefined,
+        currentSession: {
+          scenarioId: undefined,
+          title: undefined,
+          description: undefined,
+          coverImageUrl: undefined,
+          coverVideoUrl: undefined,
+          scenarioPathSessionItemStatus: undefined,
+          scenarioPathSessionItemId: undefined,
+          transitionMessageTitle: undefined,
+          transitionMessageContent: undefined,
+          scenarioPathSessionStatus: undefined,
+        },
+      });
       expect(service.getNextScenarioPathItem).toHaveBeenCalledWith(
         scenarioSessionId,
       );
     });
 
     it('should handle optional fields gracefully', async () => {
+      const mockCurrentScenario = {
+        ...mockScenario,
+        id: 1,
+      };
       const mockNextScenarioPathItem = {
         nextScenarioSessionItem: {
           id: 'session-item-123',
@@ -384,6 +493,16 @@ describe('ScenarioPathSessionController', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
         } as ScenarioPathItem,
+        currentPathSessionItem: {
+          id: 'current-session-item-123',
+          scenarioPathSessionId: 'session-123',
+          userId: 123,
+          scenarioPathItemId: 'current-path-item-123',
+          status: SessionItemStatus.COMPLETED,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as ScenarioPathSessionItem,
+        currentScenarioData: mockCurrentScenario,
       };
 
       service.getNextScenarioPathItem.mockResolvedValue(
@@ -394,11 +513,28 @@ describe('ScenarioPathSessionController', () => {
         await controller.getUpcomingScenarioPathItem(scenarioSessionId);
 
       expect(result).toEqual({
-        ...mockScenario,
-        order: 2,
-        scenarioPathSessionItemId: 'session-item-123',
-        transitionMessageTitle: undefined,
-        transitionMessageContent: undefined,
+        upcomingScenario: {
+          id: 1,
+          title: 'Customer Service Scenario',
+          description: 'Practice handling customer complaints',
+          coverImageUrl: 'https://example.com/scenario-cover.jpg',
+          coverVideoUrl: 'https://example.com/scenario-cover.mp4',
+          scenarioPathSessionItemStatus: SessionItemStatus.UNLOCKED,
+          order: 2,
+          scenarioPathSessionItemId: 'session-item-123',
+        },
+        currentSession: {
+          scenarioId: 1,
+          title: 'Customer Service Scenario',
+          description: 'Practice handling customer complaints',
+          coverImageUrl: 'https://example.com/scenario-cover.jpg',
+          coverVideoUrl: 'https://example.com/scenario-cover.mp4',
+          scenarioPathSessionItemStatus: SessionItemStatus.COMPLETED,
+          scenarioPathSessionItemId: 'current-session-item-123',
+          transitionMessageTitle: undefined,
+          transitionMessageContent: undefined,
+          scenarioPathSessionStatus: SessionItemStatus.COMPLETED,
+        },
       });
     });
 

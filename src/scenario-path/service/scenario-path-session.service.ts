@@ -247,22 +247,32 @@ export class ScenarioPathSessionService {
       await this.scenarioPathSharedService.getNextScenarioDataByPathItemId(
         currentPathSessionItem?.scenarioPathItemId,
       );
-    const nextScenarioSessionItem =
-      await this.scenarioPathSessionItemRepository.findOne({
-        where: { scenarioPathItemId: nextScenarioData?.pathItem?.id },
-      });
+    let nextScenarioSessionItem;
+    if (nextScenarioData?.pathItem?.id) {
+      nextScenarioSessionItem =
+        await this.scenarioPathSessionItemRepository.findOne({
+          where: { scenarioPathItemId: nextScenarioData?.pathItem?.id },
+        });
+    }
     const currentPathItem =
       await this.scenarioPathSharedService.getScenarioPathItemById(
         currentPathSessionItem.scenarioPathItemId,
       );
-    if (!nextScenarioSessionItem) {
-      return null;
+
+    let currentScenarioData;
+    if (currentPathItem?.scenarioId) {
+      currentScenarioData =
+        await this.scenarioPathSharedService.getScenarioDataById(
+          currentPathItem?.scenarioId,
+        );
     }
 
     return {
       nextScenarioSessionItem,
       nextScenarioData,
       currentPathItem,
+      currentPathSessionItem,
+      currentScenarioData,
     };
   }
 
