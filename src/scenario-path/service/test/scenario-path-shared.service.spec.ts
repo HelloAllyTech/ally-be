@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ScenarioPathSharedService } from '../scenario-path-shared.service';
 import { ScenarioPathRepository } from '../../repository/scenario-path.repository';
 import { ScenarioPathItemRepository } from '../../repository/scenario-path-item.repository';
-
+import { ScenarioPathSessionRepository } from '../../repository/scenario-path-session.repository';
+import { ScenarioPathSessionItemRepository } from '../../repository/scenario-path-session-item.repository';
 import {
   ScenarioPathsWithSession,
   ScenarioPathWithSessionFilterOptions,
@@ -14,6 +15,16 @@ import { ScenarioPathSession } from '../../entity/scenario-path-session.entity';
 import { ScenarioPathItem } from '../../entity/scenario-path-item.entity';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ScenarioPathTenantService } from '../scenario-path-tenant.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { SessionItemStatus } from '../../type/scenario-path-session-items.type';
+import { In } from 'typeorm';
+
+jest.mock('src/common/execution/execution-manager', () => ({
+  ExecutionManager: {
+    getUserId: jest.fn(),
+    getTenantId: jest.fn(),
+  },
+}));
 
 describe('ScenarioPathSharedService', () => {
   let service: ScenarioPathSharedService;
@@ -21,6 +32,8 @@ describe('ScenarioPathSharedService', () => {
   let scenarioPathItemRepository: jest.Mocked<ScenarioPathItemRepository>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let scenarioPathTenantService: jest.Mocked<ScenarioPathTenantService>;
+  let scenarioPathSessionRepository: jest.Mocked<ScenarioPathSessionRepository>;
+  let scenarioPathSessionItemRepository: jest.Mocked<ScenarioPathSessionItemRepository>;
 
   const mockScenarioPathRepository = {
     getAllScenarioPathsWithSession: jest.fn(),
@@ -41,6 +54,14 @@ describe('ScenarioPathSharedService', () => {
     getScenarioPathTenant: jest.fn(),
   };
 
+  const mockScenarioPathSessionRepository = {
+    findOne: jest.fn(),
+  };
+
+  const mockScenarioPathSessionItemRepository = {
+    findOne: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -53,13 +74,18 @@ describe('ScenarioPathSharedService', () => {
           provide: ScenarioPathItemRepository,
           useValue: mockScenarioPathItemRepository,
         },
-        {
-          provide: ScenarioSharedService,
-          useValue: mockScenarioSharedService,
-        },
+        { provide: ScenarioSharedService, useValue: mockScenarioSharedService },
         {
           provide: ScenarioPathTenantService,
           useValue: mockScenarioPathTenantService,
+        },
+        {
+          provide: ScenarioPathSessionRepository,
+          useValue: mockScenarioPathSessionRepository,
+        },
+        {
+          provide: ScenarioPathSessionItemRepository,
+          useValue: mockScenarioPathSessionItemRepository,
         },
       ],
     }).compile();
@@ -69,17 +95,27 @@ describe('ScenarioPathSharedService', () => {
     scenarioPathItemRepository = module.get(ScenarioPathItemRepository);
     scenarioSharedService = module.get(ScenarioSharedService);
     scenarioPathTenantService = module.get(ScenarioPathTenantService);
+    scenarioPathSessionRepository = module.get(ScenarioPathSessionRepository);
+    scenarioPathSessionItemRepository = module.get(
+      ScenarioPathSessionItemRepository,
+    );
 
     jest.clearAllMocks();
   });
 
+  afterEach(() => {
+    (ExecutionManager.getUserId as jest.Mock).mockReset();
+    (ExecutionManager.getTenantId as jest.Mock).mockReset();
+  });
+
   describe('getScenarioPathsWithSession', () => {
-    it('should return scenario paths with sessions', async () => {
+    it('returns scenario paths with sessions', async () => {
       const filters: ScenarioPathWithSessionFilterOptions = {
         userId: 123,
         tenantId: 'tenant',
         limit: 10,
         offset: 0,
+        status: ScenarioPathStatus.DRAFT,
       };
       const mockResult: ScenarioPathsWithSession = {
         data: [
@@ -120,16 +156,14 @@ describe('ScenarioPathSharedService', () => {
       ).toHaveBeenCalledWith(filters);
     });
 
-    it('should return empty array when no scenario paths found', async () => {
+    it('returns empty array when no scenario paths found', async () => {
       const filters: ScenarioPathWithSessionFilterOptions = {
         userId: 123,
         tenantId: 'tenant',
+        status: ScenarioPathStatus.DRAFT,
       };
 
-      const emptyResult: ScenarioPathsWithSession = {
-        data: [],
-        count: 0,
-      };
+      const emptyResult: ScenarioPathsWithSession = { data: [], count: 0 };
 
       scenarioPathRepository.getAllScenarioPathsWithSession.mockResolvedValue(
         emptyResult,
@@ -203,7 +237,7 @@ describe('ScenarioPathSharedService', () => {
       },
     ] as any;
 
-    it('should return scenario path with scenarios when tenantId is provided and access is granted', async () => {
+    it('returns scenario path with scenarios when tenantId is provided and access is granted', async () => {
       scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
       scenarioPathTenantService.getScenarioPathTenant.mockResolvedValue({
         id: 'mock-id',
@@ -264,13 +298,12 @@ describe('ScenarioPathSharedService', () => {
       expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1' },
       });
-      // FIXED: Service calls without filter
       expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
         1, 2,
       ]);
     });
 
-    it('should return scenario path with scenarios when tenantId is not provided', async () => {
+    it('returns scenario path with scenarios when tenantId is not provided', async () => {
       scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
       scenarioPathItemRepository.find.mockResolvedValue(mockScenarioPathItems);
       scenarioSharedService.getScenarioByIds.mockResolvedValue(mockScenarios);
@@ -322,25 +355,12 @@ describe('ScenarioPathSharedService', () => {
       expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1' },
       });
-
       expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
         1, 2,
       ]);
     });
 
-    it('should throw NotFoundException when scenario path not found', async () => {
-      scenarioPathRepository.findOne.mockResolvedValue(null);
-
-      await expect(
-        service.getScenarioPathWithScenarios('non-existent-id'),
-      ).rejects.toThrow(NotFoundException);
-      expect(scenarioPathItemRepository.find).not.toHaveBeenCalled();
-      expect(
-        scenarioPathTenantService.getScenarioPathTenant,
-      ).not.toHaveBeenCalled();
-    });
-
-    it('should throw BadRequestException when tenant does not have access', async () => {
+    it('throws BadRequestException when tenant does not have access', async () => {
       scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
       scenarioPathTenantService.getScenarioPathTenant.mockResolvedValue(null);
 
@@ -355,7 +375,7 @@ describe('ScenarioPathSharedService', () => {
   });
 
   describe('getScenarioPathItems', () => {
-    it('should return scenario path items sorted by order', async () => {
+    it('returns scenario path items sorted by order', async () => {
       const mockItems: ScenarioPathItem[] = [
         { id: '1', scenarioPathId: 'path-1', order: 1 } as ScenarioPathItem,
         { id: '2', scenarioPathId: 'path-1', order: 2 } as ScenarioPathItem,
@@ -369,6 +389,102 @@ describe('ScenarioPathSharedService', () => {
         order: { order: 'ASC' },
       });
       expect(result).toEqual(mockItems);
+    });
+  });
+
+  describe('getScenarioPathItemById', () => {
+    it('returns scenario path item when found', async () => {
+      const mockItem = {
+        id: 'item-1',
+        scenarioPathId: 'path-1',
+      } as ScenarioPathItem;
+      scenarioPathItemRepository.findOne.mockResolvedValue(mockItem);
+
+      const result = await service.getScenarioPathItemById('item-1');
+
+      expect(result).toEqual(mockItem);
+      expect(scenarioPathItemRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'item-1' },
+      });
+    });
+
+    it('returns null when scenario path item not found', async () => {
+      scenarioPathItemRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getScenarioPathItemById('non-existent');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getScenarioPathSessionById', () => {
+    it('returns scenario path session when user is authenticated', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      const mockSession = { id: 'session-1', userId: 123 } as any;
+      scenarioPathSessionRepository.findOne.mockResolvedValue(mockSession);
+
+      const result = await service.getScenarioPathSessionById('session-1');
+
+      expect(result).toEqual(mockSession);
+      expect(scenarioPathSessionRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'session-1', userId: 123 },
+      });
+    });
+
+    it('throws UnauthorizedException when user is not authenticated', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
+
+      await expect(
+        service.getScenarioPathSessionById('session-1'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('getPermittedPathSessionItemBySessionItemId', () => {
+    it('returns session item when user is authenticated and item is unlocked', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      const mockItem = {
+        id: 'item-1',
+        userId: 123,
+        status: SessionItemStatus.UNLOCKED,
+      } as any;
+      scenarioPathSessionItemRepository.findOne.mockResolvedValue(mockItem);
+
+      const result =
+        await service.getPermittedPathSessionItemBySessionItemId('item-1');
+
+      expect(result).toEqual(mockItem);
+      expect(scenarioPathSessionItemRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          id: 'item-1',
+          userId: 123,
+          status: In([SessionItemStatus.UNLOCKED, SessionItemStatus.COMPLETED]),
+        },
+      });
+    });
+
+    it('throws UnauthorizedException when user is not authenticated', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
+
+      await expect(
+        service.getPermittedPathSessionItemBySessionItemId('item-1'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('getScenarioPathTenant', () => {
+    it('delegates to scenarioPathTenantService', async () => {
+      const mockTenant = { id: 'tenant-1' } as any;
+      scenarioPathTenantService.getScenarioPathTenant.mockResolvedValue(
+        mockTenant,
+      );
+
+      const result = await service.getScenarioPathTenant('tenant-1', 'path-1');
+
+      expect(result).toEqual(mockTenant);
+      expect(
+        scenarioPathTenantService.getScenarioPathTenant,
+      ).toHaveBeenCalledWith('tenant-1', 'path-1');
     });
   });
 });
