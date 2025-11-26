@@ -198,6 +198,7 @@ export class ScenarioPathService {
       description: scenarioPath.description,
       coverImageUrl: scenarioPath.coverImageUrl,
       isGlobal: scenarioPath.isGlobal,
+      scenarios: scenarioPathItems,
       ...updateScenarioPathDto,
     };
     if (scenarioPathSession) {
