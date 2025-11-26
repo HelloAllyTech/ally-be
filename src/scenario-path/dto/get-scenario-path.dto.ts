@@ -81,7 +81,7 @@ interface CurrentSessionDto {
   scenarioPathSessionItemId?: string;
   transitionMessageTitle?: string;
   transitionMessageContent?: string;
-  scenarioPathSessionStatus?: SessionItemStatus;
+  isScenarioPathSessionCompleted?: boolean;
 }
 
 export class GetUpcomingScenarioPathItemResponseDto {
