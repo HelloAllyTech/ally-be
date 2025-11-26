@@ -249,7 +249,10 @@ export class ScenarioPathSessionService {
       transitionMessageContent: currentPathItem?.messageContent,
       isScenarioPathSessionCompleted: !!currentScenarioPathSession?.completedAt,
     };
-    if (currentPathSessionItem?.status !== SessionItemStatus.COMPLETED) {
+    if (
+      currentPathSessionItem?.status !== SessionItemStatus.COMPLETED ||
+      !!currentScenarioPathSession?.completedAt
+    ) {
       return {
         currentSession,
       };
