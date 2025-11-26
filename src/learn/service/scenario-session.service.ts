@@ -395,24 +395,23 @@ export class ScenarioSessionService {
       callDuration =
         endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
     }
-
-    this.getScenarioSessionSummaryFromAI(
-      scenarioSessionId,
-      scenarioSession.scenarioId,
-      callDuration,
-    );
-    if (scenarioSession.scenarioPathSessionItemId)
-      await this.scenarioPathSessionService.handleEndScenarioPathSession({
-        scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
-        score,
-        callDuration,
-      });
-
     try {
+      this.getScenarioSessionSummaryFromAI(
+        scenarioSessionId,
+        scenarioSession.scenarioId,
+        callDuration,
+      );
+      if (scenarioSession.scenarioPathSessionItemId)
+        await this.scenarioPathSessionService.handleEndScenarioPathSession({
+          scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
+          score,
+          callDuration,
+        });
+
       await this.livekitService.deleteRoom(scenarioSession.roomId);
     } catch (error) {
       this.logger.debug(
-        `Failed to delete room: ${JSON.stringify(error.message)}`,
+        `Failed to end session: ${JSON.stringify(error.message)}`,
       );
     }
 
@@ -463,7 +462,6 @@ export class ScenarioSessionService {
         where: {
           scenarioSessionId,
           messageType: ScenarioSessionMessageType.TEXT,
-          tenantId: ExecutionManager.getTenantId(),
         },
       });
 
