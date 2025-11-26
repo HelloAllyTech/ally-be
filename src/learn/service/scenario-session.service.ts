@@ -399,6 +399,7 @@ export class ScenarioSessionService {
       this.getScenarioSessionSummaryFromAI(
         scenarioSessionId,
         scenarioSession.scenarioId,
+        scenarioSession.tenantId,
         callDuration,
       );
       if (scenarioSession.scenarioPathSessionItemId)
@@ -452,6 +453,7 @@ export class ScenarioSessionService {
   private async getScenarioSessionSummaryFromAI(
     scenarioSessionId: string,
     scenarioId: number,
+    tenantId: string,
     callDuration?: number,
   ) {
     await this.dataSource.transaction(async (entityManager) => {
@@ -462,6 +464,7 @@ export class ScenarioSessionService {
         where: {
           scenarioSessionId,
           messageType: ScenarioSessionMessageType.TEXT,
+          tenantId,
         },
       });
 
@@ -497,7 +500,7 @@ export class ScenarioSessionService {
         scenarioSessionId,
         callDuration,
         summary: { feedback: summary },
-        tenantId: ExecutionManager.getTenantId(),
+        tenantId,
       });
       await scenarioSessionDetailsRepo.save(scenarioSessionDetails);
     });
