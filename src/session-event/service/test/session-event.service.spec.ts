@@ -757,6 +757,92 @@ describe('SessionEventService', () => {
     });
   });
 
+  describe('getSessionEventById', () => {
+    it('should get session event by ID successfully', async () => {
+      const eventId = 'event-123';
+      repository.findOne.mockResolvedValue(mockSessionEvent);
+
+      const result = await service.getSessionEventById(eventId);
+
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { id: eventId },
+      });
+      expect(result).toEqual(mockSessionEvent);
+    });
+
+    it('should throw NotFoundException when event not found', async () => {
+      const eventId = 'non-existent-id';
+      repository.findOne.mockResolvedValue(null);
+
+      await expect(service.getSessionEventById(eventId)).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.getSessionEventById(eventId)).rejects.toThrow(
+        'Session Event not found',
+      );
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { id: eventId },
+      });
+    });
+
+    it('should handle event with detectionData correctly', async () => {
+      const eventId = 'event-456';
+      const eventWithDetectionData: SessionEvents = {
+        ...mockSessionEvent,
+        detectionData: {
+          expression: {
+            type: CombinationExpressionType.AND,
+            left: { type: CombinationExpressionType.IDENTIFIER, id: 'event-1' },
+            right: {
+              type: CombinationExpressionType.IDENTIFIER,
+              id: 'event-2',
+            },
+          },
+        },
+      };
+      repository.findOne.mockResolvedValue(eventWithDetectionData);
+
+      const result = await service.getSessionEventById(eventId);
+
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { id: eventId },
+      });
+      expect(result).toBeDefined();
+      expect(result.detectionData).toBeDefined();
+      expect(result.detectionData?.expression).toBeDefined();
+    });
+
+    it('should handle event without detectionData', async () => {
+      const eventId = 'event-789';
+      const eventWithoutDetectionData: SessionEvents = {
+        ...mockSessionEvent,
+        detectionData: undefined,
+      };
+      repository.findOne.mockResolvedValue(eventWithoutDetectionData);
+
+      const result = await service.getSessionEventById(eventId);
+
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { id: eventId },
+      });
+      expect(result).toBeDefined();
+      expect(result.detectionData).toBeUndefined();
+    });
+
+    it('should handle repository error', async () => {
+      const eventId = 'event-error';
+      const error = new Error('Database connection failed');
+      repository.findOne.mockRejectedValue(error);
+
+      await expect(service.getSessionEventById(eventId)).rejects.toThrow(
+        'Database connection failed',
+      );
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { id: eventId },
+      });
+    });
+  });
+
   describe('deleteSessionEvents', () => {
     let mockSoftDelete: jest.Mock;
     let mockGetRepository: jest.Mock;

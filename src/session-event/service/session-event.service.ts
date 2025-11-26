@@ -191,6 +191,24 @@ export class SessionEventService {
     return { data: formattedSessionEvents };
   }
 
+  async getSessionEventById(id: string): Promise<SessionEventResponseDto> {
+    const event = await this.sessionEventRepository.findOne({ where: { id } });
+    if (!event) {
+      throw new NotFoundException('Session Event not found');
+    }
+    return {
+      ...event,
+      detectionData: event?.detectionData
+        ? {
+            ...event.detectionData,
+            expression: mapDbExpressionToResponse(
+              event?.detectionData?.expression as CombinationExpressionDto,
+            ),
+          }
+        : undefined,
+    };
+  }
+
   async deleteSessionEvents(eventIds: string[]): Promise<boolean> {
     // Do not allow PASSIVE events to be deleted
     const activeEvents = await this.sessionEventRepository.find({

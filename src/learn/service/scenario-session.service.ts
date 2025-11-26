@@ -41,6 +41,9 @@ import { ScenarioStatus } from '../enum/scenario.status.enum';
 import { ScenarioTenantService } from './scenario-tenant.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
+import { extractEventIds } from 'src/session-event/util/session-event.util';
+import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
+import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 
 @Injectable()
@@ -128,7 +131,8 @@ export class ScenarioSessionService {
     counselorId: number,
     startScenarioSessionDto: StartScenarioSessionRequestDto,
   ) {
-    const scenario = await this.scenarioService.getScenario(
+    // Validate and get scenario
+    const scenario = await this.scenarioService.getAdminScenario(
       startScenarioSessionDto.scenarioId,
     );
     if (!scenario) {
@@ -140,11 +144,13 @@ export class ScenarioSessionService {
       startScenarioSessionDto.scenarioPathSessionItemId,
     );
 
+    // Get all session events for this scenario
     const sessionEvents =
       await this.sessionEventService.getSessionEventsByScenarioId(
         startScenarioSessionDto.scenarioId,
       );
 
+    // Create scenario session record
     const scenarioSession =
       await this.scenarioSessionRepository.createScenarioSession(counselorId, {
         ...startScenarioSessionDto,
@@ -152,24 +158,37 @@ export class ScenarioSessionService {
           startScenarioSessionDto.scenarioPathSessionItemId,
       });
 
-    const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
+    try {
+      // Prepare room metadata with events and dependencies
+      const roomMetadata = await this.createRoomMetadata(
+        scenario,
+        sessionEvents,
+      );
 
-    await this.livekitService.createRoom({
-      name: `${scenarioSession.roomId}`,
-      ttl: startScenarioSessionDto.ttl ?? DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
-      metadata: roomMetadata,
-    });
+      // Create LiveKit room
+      await this.livekitService.createRoom({
+        name: `${scenarioSession.roomId}`,
+        ttl:
+          startScenarioSessionDto.ttl ?? DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
+        metadata: roomMetadata,
+      });
 
-    const accessToken = await this.generateScenarioSessionToken(
-      scenarioSession.roomId,
-      counselorId,
-    );
+      // Generate access token for the user
+      const accessToken = await this.generateScenarioSessionToken(
+        scenarioSession.roomId,
+        counselorId,
+      );
 
-    return { scenarioSession, accessToken };
+      return { scenarioSession, accessToken };
+    } catch (error) {
+      // If room creation fails, clean up the session
+      await this.scenarioSessionRepository.delete(scenarioSession.id);
+      throw error;
+    }
   }
 
   private async createRoomMetadata(
-    scenario: Scenarios,
+    scenario: GetAdminScenarioDto,
     sessionEvents: SessionEvents[],
   ) {
     if (!scenario.metadata?.lifeHistory) {
@@ -191,13 +210,76 @@ export class ScenarioSessionService {
 
     const scenarioVoice = await this.scenarioService.getScenarioVoice(voiceId);
 
+    // triggerEvents: Only IDs from sessionEvents (events associated with this scenario)
+    const triggerEvents = sessionEvents.map((event) => event.id);
+
+    // Build a map of existing events for quick lookup
+    const eventMap = new Map(sessionEvents.map((event) => [event.id, event]));
+    const referencedEventIds = new Set<string>();
+
+    // Extract all event IDs referenced in combination events
+    sessionEvents.forEach((event) => {
+      if (event.detectionType === SessionEventDetectionType.COMBINATION) {
+        const detectionData = (event as any).data || event.detectionData;
+        const dependentIds = extractEventIds(detectionData?.expression);
+        dependentIds.forEach((id) => {
+          if (!eventMap.has(id)) {
+            referencedEventIds.add(id);
+          }
+        });
+      }
+    });
+
+    // Add termination event ID to referenced events if it exists and is not already included
+    if (
+      scenario.terminationEvent?.eventId &&
+      !eventMap.has(scenario.terminationEvent.eventId)
+    ) {
+      referencedEventIds.add(scenario.terminationEvent.eventId);
+    }
+
+    // Fetch any missing events (referenced in combinations or termination event)
+    if (referencedEventIds.size > 0) {
+      const missingEvents = await this.sessionEventService.findByIds(
+        Array.from(referencedEventIds),
+      );
+      missingEvents.forEach((event) => eventMap.set(event.id, event));
+    }
+
+    // Enhance all events with dependentEvents for combination events
+    const allEvents = Array.from(eventMap.values()).map((event) => {
+      if (event.detectionType === SessionEventDetectionType.COMBINATION) {
+        const detectionData = (event as any).data || event.detectionData;
+        const dependentEvents = extractEventIds(detectionData?.expression);
+
+        return {
+          ...event,
+          data: {
+            ...((event as any).data || {}),
+            dependentEvents,
+          },
+        };
+      }
+      return event;
+    });
+
+    const autoTerminationEvent = scenario.terminationEvent
+      ?.autoTerminationStatus
+      ? {
+          id: scenario.terminationEvent?.eventId,
+          terminationMessage: scenario.terminationEvent?.message,
+        }
+      : undefined;
+
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
       scenario: {
         ...scenarioData,
         voice: scenarioVoice,
-        events: sessionEvents,
+        events: allEvents,
+        triggerEvents,
+        autoTerminationEvent,
       },
     };
   }

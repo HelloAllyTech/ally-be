@@ -15,7 +15,7 @@ export class AddAutoTermStatusColumnAndUpdateSpeakerColumn1763362826701
           ELSE
             "detectionData" || jsonb_build_object('speaker', "speaker")
         END
-      WHERE "speaker" IS NOT NULL
+      WHERE "detectionType" = 'SENTENCE_SIMILARITY' AND "speaker" IS NOT NULL
     `);
 
     await queryRunner.query(
@@ -40,7 +40,7 @@ export class AddAutoTermStatusColumnAndUpdateSpeakerColumn1763362826701
         "speaker" = COALESCE("detectionData"->>'speaker', 'CARE_GIVER'),
         "detectionData" = "detectionData" - 'speaker'
       WHERE "detectionData" IS NOT NULL 
-        AND "detectionData"->>'speaker' IS NOT NULL
+        AND "detectionType" = 'SENTENCE_SIMILARITY' AND "detectionData"->>'speaker' IS NOT NULL
     `);
   }
 }
