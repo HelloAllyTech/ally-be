@@ -256,4 +256,12 @@ export class AppConfigService {
       ),
     };
   }
+
+  get simulationPath() {
+    return {
+      simulationPathMinDurationForCompletion: this.configService.get<number>(
+        'SCENARIO_PATH_MIN_DURATION_FOR_COMPLETION',
+      ),
+    };
+  }
 }
