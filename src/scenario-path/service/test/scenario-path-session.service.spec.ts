@@ -44,6 +44,7 @@ describe('ScenarioPathSessionService', () => {
     getScenarioPathItemById: jest.fn(),
     getNextScenarioDataByPathItemId: jest.fn(),
     getNextPathItemByCurrentItemId: jest.fn(),
+    getScenarioDataById: jest.fn(),
   };
 
   const mockScenarioPathSessionItemRepository = {
@@ -244,7 +245,6 @@ describe('ScenarioPathSessionService', () => {
 
   describe('getScenarioPathSessionByScenarioPathId', () => {
     it('should return scenario path session when found', async () => {
-      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
       const mockSession: ScenarioPathSession = {
         id: 'session-1',
         scenarioPathId: 'path-1',
@@ -257,6 +257,35 @@ describe('ScenarioPathSessionService', () => {
 
       expect(result).toEqual(mockSession);
       expect(repository.findOne).toHaveBeenCalledWith({
+        where: { scenarioPathId: 'path-1' },
+      });
+    });
+
+    it('should return null when scenario path session not found', async () => {
+      repository.findOne.mockResolvedValue(null);
+
+      const result =
+        await service.getScenarioPathSessionByScenarioPathId('non-existent-id');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getUserScenarioPathSessionByScenarioPathId', () => {
+    it('should return scenario path session when found', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      const mockSession: ScenarioPathSession = {
+        id: 'session-1',
+        scenarioPathId: 'path-1',
+      } as ScenarioPathSession;
+
+      repository.findOne.mockResolvedValue(mockSession);
+
+      const result =
+        await service.getUserScenarioPathSessionByScenarioPathId('path-1');
+
+      expect(result).toEqual(mockSession);
+      expect(repository.findOne).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1', userId: 123 },
       });
     });
@@ -266,19 +295,18 @@ describe('ScenarioPathSessionService', () => {
       repository.findOne.mockResolvedValue(null);
 
       const result =
-        await service.getScenarioPathSessionByScenarioPathId('non-existent-id');
+        await service.getUserScenarioPathSessionByScenarioPathId(
+          'non-existent-id',
+        );
 
       expect(result).toBeNull();
-      expect(repository.findOne).toHaveBeenCalledWith({
-        where: { scenarioPathId: 'non-existent-id', userId: 123 },
-      });
     });
 
     it('should throw UnauthorizedException when user is not authenticated', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
 
       await expect(
-        service.getScenarioPathSessionByScenarioPathId('path-1'),
+        service.getUserScenarioPathSessionByScenarioPathId('path-1'),
       ).rejects.toThrow(UnauthorizedException);
     });
   });
@@ -347,15 +375,6 @@ describe('ScenarioPathSessionService', () => {
           },
         ],
       });
-      expect(
-        scenarioPathSharedService.getScenarioPathWithScenarios,
-      ).toHaveBeenCalledWith('path-1', 'tenant-1');
-      expect(repository.findOne).toHaveBeenCalledWith({
-        where: { scenarioPathId: 'path-1', userId: 123 },
-      });
-      expect(scenarioPathSessionItemRepository.find).toHaveBeenCalledWith({
-        where: { scenarioPathSessionId: 'session-1' },
-      });
     });
 
     it('should return scenario path items without session when session does not exist', async () => {
@@ -386,10 +405,6 @@ describe('ScenarioPathSessionService', () => {
           },
         ],
       });
-      expect(
-        scenarioPathSharedService.getScenarioPathWithScenarios,
-      ).toHaveBeenCalledWith('path-1', 'tenant-1');
-      expect(scenarioPathSessionItemRepository.find).not.toHaveBeenCalled();
     });
 
     it('should throw UnauthorizedException when user is not authenticated', async () => {
@@ -399,9 +414,6 @@ describe('ScenarioPathSessionService', () => {
       await expect(service.getUserScenarioPathItems('path-1')).rejects.toThrow(
         UnauthorizedException,
       );
-      expect(
-        scenarioPathSharedService.getScenarioPathWithScenarios,
-      ).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when tenant is not available', async () => {
@@ -411,9 +423,6 @@ describe('ScenarioPathSessionService', () => {
       await expect(service.getUserScenarioPathItems('path-1')).rejects.toThrow(
         NotFoundException,
       );
-      expect(
-        scenarioPathSharedService.getScenarioPathWithScenarios,
-      ).not.toHaveBeenCalled();
     });
   });
 
@@ -488,6 +497,419 @@ describe('ScenarioPathSessionService', () => {
       await expect(service.createUserPathSession('path-1')).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  describe('getNextScenarioPathItem', () => {
+    const mockCurrentScenarioSession = {
+      id: 'scenario-session-1',
+      roomId: 'room-1',
+      scenarioId: 'scenario-1',
+      counselorId: 123,
+      userId: 123,
+      scenarioPathSessionItemId: 'session-item-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any;
+
+    const mockCurrentPathSessionItem = {
+      id: 'session-item-1',
+      scenarioPathItemId: 'path-item-1',
+      status: SessionItemStatus.COMPLETED,
+    };
+
+    const mockCurrentPathItem = {
+      scenarioId: 'scenario-1',
+      scenarioPathId: 'path-1',
+      messageTitle: 'Great job!',
+      messageContent: 'You completed the scenario',
+    };
+
+    const mockCurrentScenarioData = {
+      id: 'scenario-1',
+      title: 'Scenario 1',
+      description: 'Description 1',
+      coverImageUrl: 'https://example.com/cover.jpg',
+      coverVideoUrl: 'https://example.com/video.mp4',
+    };
+
+    it('should return current session data when session item is not completed', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      scenarioPathSharedService.getScenarioSessionById.mockResolvedValue(
+        mockCurrentScenarioSession,
+      );
+      scenarioPathSessionItemRepository.findOne.mockResolvedValue({
+        ...mockCurrentPathSessionItem,
+        status: SessionItemStatus.UNLOCKED,
+      } as any);
+      scenarioPathSharedService.getScenarioPathItemById.mockResolvedValue(
+        mockCurrentPathItem as any,
+      );
+      scenarioPathSharedService.getScenarioDataById.mockResolvedValue(
+        mockCurrentScenarioData as any,
+      );
+      repository.findOne.mockResolvedValue({
+        completedAt: null,
+      } as any);
+
+      const result =
+        await service.getNextScenarioPathItem('scenario-session-1');
+
+      expect(result).toEqual({
+        currentSession: {
+          scenarioId: 'scenario-1',
+          title: 'Scenario 1',
+          description: 'Description 1',
+          coverImageUrl: 'https://example.com/cover.jpg',
+          coverVideoUrl: 'https://example.com/video.mp4',
+          scenarioPathSessionItemStatus: SessionItemStatus.UNLOCKED,
+          scenarioPathSessionItemId: 'session-item-1',
+          transitionMessageTitle: 'Great job!',
+          transitionMessageContent: 'You completed the scenario',
+          isScenarioPathSessionCompleted: false,
+        },
+      });
+    });
+
+    it('should return both current and upcoming scenario when current is completed', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      scenarioPathSharedService.getScenarioSessionById.mockResolvedValue(
+        mockCurrentScenarioSession,
+      );
+      scenarioPathSessionItemRepository.findOne
+        .mockResolvedValueOnce(mockCurrentPathSessionItem as any)
+        .mockResolvedValueOnce({
+          id: 'session-item-2',
+          status: SessionItemStatus.UNLOCKED,
+        } as any);
+      scenarioPathSharedService.getScenarioPathItemById.mockResolvedValue(
+        mockCurrentPathItem as any,
+      );
+      scenarioPathSharedService.getScenarioDataById.mockResolvedValue(
+        mockCurrentScenarioData as any,
+      );
+      repository.findOne.mockResolvedValue({
+        completedAt: null,
+      } as any);
+      scenarioPathSharedService.getNextScenarioDataByPathItemId.mockResolvedValue(
+        {
+          scenario: {
+            id: 'scenario-2',
+            title: 'Scenario 2',
+            description: 'Description 2',
+            coverImageUrl: 'https://example.com/cover2.jpg',
+            coverVideoUrl: 'https://example.com/video2.mp4',
+          },
+          pathItem: {
+            id: 'path-item-2',
+            order: 2,
+          },
+        } as any,
+      );
+
+      const result =
+        await service.getNextScenarioPathItem('scenario-session-1');
+
+      expect(result?.upcomingScenario).toBeDefined();
+      expect(result?.upcomingScenario?.id).toBe('scenario-2');
+    });
+
+    it('should return null when scenario session item id not found', async () => {
+      scenarioPathSharedService.getScenarioSessionById.mockResolvedValue({
+        scenarioPathSessionItemId: null,
+      } as any);
+
+      const result =
+        await service.getNextScenarioPathItem('scenario-session-1');
+
+      expect(result).toBeNull();
+    });
+
+    it('should throw UnauthorizedException when user is not authenticated', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
+      scenarioPathSharedService.getScenarioSessionById.mockResolvedValue(
+        mockCurrentScenarioSession,
+      );
+
+      await expect(
+        service.getNextScenarioPathItem('scenario-session-1'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw BadRequestException when path session item not found', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      scenarioPathSharedService.getScenarioSessionById.mockResolvedValue(
+        mockCurrentScenarioSession,
+      );
+      scenarioPathSessionItemRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.getNextScenarioPathItem('scenario-session-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('handleEndScenarioPathSession', () => {
+    const mockSessionItem = {
+      id: 'session-item-1',
+      scenarioPathSessionId: 'session-1',
+      scenarioPathItemId: 'path-item-1',
+      status: SessionItemStatus.UNLOCKED,
+    };
+
+    const mockPathItem = {
+      id: 'path-item-1',
+      scenarioPathId: 'path-1',
+      minimumScore: 70,
+    };
+
+    const mockPathSession = {
+      id: 'session-1',
+      completedScenarios: 0,
+    };
+
+    it('should return early if call duration is less than required', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 10;
+
+      const result = await service.handleEndScenarioPathSession({
+        scenarioPathSessionItemId: 'session-item-1',
+        score: 80,
+        callDuration: 5000,
+      });
+
+      expect(result).toBeUndefined();
+      expect(scenarioPathSessionItemRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('should return early if score is less than minimum score', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
+      scenarioPathSessionItemRepository.findOne.mockResolvedValue(
+        mockSessionItem as any,
+      );
+      scenarioPathSharedService.getScenarioPathItemById.mockResolvedValue(
+        mockPathItem as any,
+      );
+
+      const result = await service.handleEndScenarioPathSession({
+        scenarioPathSessionItemId: 'session-item-1',
+        score: 60,
+        callDuration: 10000,
+      });
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should complete session item and create next item when next path item exists', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
+      scenarioPathSessionItemRepository.findOne
+        .mockResolvedValueOnce(mockSessionItem as any)
+        .mockResolvedValueOnce(null);
+      scenarioPathSharedService.getScenarioPathItemById.mockResolvedValue(
+        mockPathItem as any,
+      );
+      repository.findOne.mockResolvedValue(mockPathSession as any);
+      scenarioPathSharedService.getNextPathItemByCurrentItemId.mockResolvedValue(
+        { id: 'path-item-2' } as any,
+      );
+
+      const mockSessionItemRepo = {
+        update: jest.fn().mockResolvedValue({}),
+        create: jest.fn().mockReturnValue({ id: 'session-item-2' }),
+        save: jest.fn().mockResolvedValue({ id: 'session-item-2' }),
+      };
+      const mockSessionRepo = {
+        update: jest.fn().mockResolvedValue({}),
+      };
+
+      const mockEntityManager = {
+        getRepository: jest.fn((entity) => {
+          if (entity === ScenarioPathSessionItem) return mockSessionItemRepo;
+          if (entity === ScenarioPathSession) return mockSessionRepo;
+        }),
+      };
+
+      mockDataSource.transaction.mockImplementation(async (callback) =>
+        callback(mockEntityManager as any),
+      );
+
+      await service.handleEndScenarioPathSession({
+        scenarioPathSessionItemId: 'session-item-1',
+        score: 80,
+        callDuration: 10000,
+      });
+
+      expect(mockSessionItemRepo.update).toHaveBeenCalledWith(
+        'session-item-1',
+        {
+          status: SessionItemStatus.COMPLETED,
+        },
+      );
+      expect(mockSessionRepo.update).toHaveBeenCalledWith('session-1', {
+        completedScenarios: 1,
+      });
+      expect(mockSessionItemRepo.save).toHaveBeenCalled();
+    });
+
+    it('should complete entire path session when no next path item exists', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
+      scenarioPathSessionItemRepository.findOne.mockResolvedValue(
+        mockSessionItem as any,
+      );
+      scenarioPathSharedService.getScenarioPathItemById.mockResolvedValue(
+        mockPathItem as any,
+      );
+      repository.findOne.mockResolvedValue(mockPathSession as any);
+      scenarioPathSharedService.getNextPathItemByCurrentItemId.mockResolvedValue(
+        null,
+      );
+
+      const mockSessionItemRepo = {
+        update: jest.fn().mockResolvedValue({}),
+      };
+      const mockSessionRepo = {
+        update: jest.fn().mockResolvedValue({}),
+      };
+
+      const mockEntityManager = {
+        getRepository: jest.fn((entity) => {
+          if (entity === ScenarioPathSessionItem) return mockSessionItemRepo;
+          if (entity === ScenarioPathSession) return mockSessionRepo;
+        }),
+      };
+
+      mockDataSource.transaction.mockImplementation(async (callback) =>
+        callback(mockEntityManager as any),
+      );
+
+      await service.handleEndScenarioPathSession({
+        scenarioPathSessionItemId: 'session-item-1',
+        score: 80,
+        callDuration: 10000,
+      });
+
+      expect(mockSessionRepo.update).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({
+          completedAt: expect.any(Date),
+          completedScenarios: 1,
+        }),
+      );
+    });
+
+    it('should unlock existing locked next session item', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
+      scenarioPathSessionItemRepository.findOne
+        .mockResolvedValueOnce(mockSessionItem as any)
+        .mockResolvedValueOnce({
+          id: 'session-item-2',
+          status: SessionItemStatus.LOCKED,
+        } as any);
+      scenarioPathSharedService.getScenarioPathItemById.mockResolvedValue(
+        mockPathItem as any,
+      );
+      repository.findOne.mockResolvedValue(mockPathSession as any);
+      scenarioPathSharedService.getNextPathItemByCurrentItemId.mockResolvedValue(
+        { id: 'path-item-2' } as any,
+      );
+
+      const mockSessionItemRepo = {
+        update: jest.fn().mockResolvedValue({}),
+      };
+      const mockSessionRepo = {
+        update: jest.fn().mockResolvedValue({}),
+      };
+
+      const mockEntityManager = {
+        getRepository: jest.fn((entity) => {
+          if (entity === ScenarioPathSessionItem) return mockSessionItemRepo;
+          if (entity === ScenarioPathSession) return mockSessionRepo;
+        }),
+      };
+
+      mockDataSource.transaction.mockImplementation(async (callback) =>
+        callback(mockEntityManager as any),
+      );
+
+      await service.handleEndScenarioPathSession({
+        scenarioPathSessionItemId: 'session-item-1',
+        score: 80,
+        callDuration: 10000,
+      });
+
+      expect(mockSessionItemRepo.update).toHaveBeenCalledWith(
+        'session-item-2',
+        {
+          status: SessionItemStatus.UNLOCKED,
+        },
+      );
+    });
+
+    it('should throw UnauthorizedException when user is not authenticated', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
+
+      await expect(
+        service.handleEndScenarioPathSession({
+          scenarioPathSessionItemId: 'session-item-1',
+          score: 80,
+          callDuration: 10000,
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw BadRequestException when session item not found', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
+      scenarioPathSessionItemRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.handleEndScenarioPathSession({
+          scenarioPathSessionItemId: 'session-item-1',
+          score: 80,
+          callDuration: 10000,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when path item not found', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
+      scenarioPathSessionItemRepository.findOne.mockResolvedValue(
+        mockSessionItem as any,
+      );
+      scenarioPathSharedService.getScenarioPathItemById.mockResolvedValue(null);
+
+      await expect(
+        service.handleEndScenarioPathSession({
+          scenarioPathSessionItemId: 'session-item-1',
+          score: 80,
+          callDuration: 10000,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when path session not found', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
+      scenarioPathSessionItemRepository.findOne.mockResolvedValue(
+        mockSessionItem as any,
+      );
+      scenarioPathSharedService.getScenarioPathItemById.mockResolvedValue(
+        mockPathItem as any,
+      );
+      repository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.handleEndScenarioPathSession({
+          scenarioPathSessionItemId: 'session-item-1',
+          score: 80,
+          callDuration: 10000,
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });
