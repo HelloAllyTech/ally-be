@@ -17,6 +17,7 @@ import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
 import { UserRepository } from 'src/user/repository/user.repository';
 import { TenantScenarioSharedService } from './tenant-scenario-shared';
 import { TenantScenarioPathSharedService } from './tenant-scenario-path-shared';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 @Injectable()
 export class TenantService {
@@ -50,6 +51,16 @@ export class TenantService {
       throw new ConflictException(
         `Tenant with code "${tenantData.code}" already exists`,
       );
+    }
+
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+
+    if (userId) {
+      tenantData = {
+        ...tenantData,
+        ...(userId ? { createdBy: userId, updatedBy: userId } : {}),
+      };
     }
 
     try {
@@ -184,7 +195,16 @@ export class TenantService {
         );
       }
     }
-    await this.tenantRepository.update(id, updateTenantDto as Partial<Tenant>);
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+    const updatedTenantData = {
+      ...updateTenantDto,
+      ...(userId ? { updatedBy: userId } : {}),
+    };
+    await this.tenantRepository.update(
+      id,
+      updatedTenantData as Partial<Tenant>,
+    );
     return this.findById(id);
   }
 }

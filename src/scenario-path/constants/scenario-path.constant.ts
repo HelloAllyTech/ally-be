@@ -32,6 +32,6 @@ export const UPCOMING_SCENARIO_PATH_ITEM_EXAMPLE = {
     transitionMessageTitle: 'Great job on the previous scenario!',
     transitionMessageContent:
       "You have successfully completed the first scenario. Now, let's move on to the next challenge.",
-    scenarioPathSessionStatus: SessionItemStatus.COMPLETED,
+    isScenarioPathSessionCompleted: false,
   },
 };

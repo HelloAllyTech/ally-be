@@ -1,12 +1,25 @@
-import { Column, Entity, PrimaryColumn, DeleteDateColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  PrimaryGeneratedColumn,
+  DeleteDateColumn,
+  Index,
+} from 'typeorm';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 
 @Entity('scenario_events')
+@Index(['scenarioId', 'eventId', 'autoTerminationStatus'], {
+  unique: true,
+  where: '"deletedAt" IS NULL',
+})
 export class ScenarioEvents extends BaseWithoutTenantEntity {
-  @PrimaryColumn()
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @Column()
   scenarioId!: number;
 
-  @PrimaryColumn()
+  @Column()
   eventId!: string;
 
   @Column({ nullable: true })
@@ -30,6 +43,6 @@ export class ScenarioEvents extends BaseWithoutTenantEntity {
   @DeleteDateColumn()
   deletedAt?: Date;
 
-  @PrimaryColumn({ default: false })
+  @Column({ default: false })
   autoTerminationStatus?: boolean;
 }
