@@ -13,6 +13,7 @@ import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { UserRepository } from 'src/user/repository/user.repository';
 import { TenantScenarioSharedService } from '../tenant-scenario-shared';
 import { TenantScenarioPathSharedService } from '../tenant-scenario-path-shared';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -24,6 +25,13 @@ jest.mock('../../../logger/logger.service', () => ({
       debug: jest.fn(),
       log: jest.fn(),
     })),
+  },
+}));
+
+// Mock ExecutionManager
+jest.mock('src/common/execution/execution-manager', () => ({
+  ExecutionManager: {
+    getUserId: jest.fn(),
   },
 }));
 
@@ -45,6 +53,8 @@ describe('TenantService', () => {
     createdAt: new Date('2023-01-01'),
     updatedAt: new Date('2023-01-01'),
     deletedAt: undefined,
+    createdBy: undefined,
+    updatedBy: undefined,
   };
 
   const mockCreateTenantData = {
@@ -126,6 +136,7 @@ describe('TenantService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    (ExecutionManager.getUserId as jest.Mock).mockReturnValue(undefined);
   });
 
   describe('findAll', () => {
@@ -192,6 +203,38 @@ describe('TenantService', () => {
         tenantScenarioPathSharedService.assignGlobalScenarioPathsToTenant,
       ).toHaveBeenCalledWith(createdTenant.id, mockEntityManager);
       expect(result).toEqual(createdTenant);
+    });
+
+    it('should set createdBy and updatedBy when userId is available', async () => {
+      const userId = '123';
+      const createdTenant = { ...mockTenant, ...mockCreateTenantData };
+      const mockEntityManager = {
+        create: jest.fn().mockReturnValue(createdTenant),
+        save: jest.fn().mockResolvedValue(createdTenant),
+      };
+
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      tenantRepository.findOne.mockResolvedValue(null);
+      dataSource.transaction.mockImplementation((async (callback: any) => {
+        return await callback(mockEntityManager);
+      }) as any);
+
+      tenantScenarioSharedService.assignGlobalScenariosToTenant.mockResolvedValue(
+        undefined,
+      );
+      tenantScenarioPathSharedService.assignGlobalScenarioPathsToTenant.mockResolvedValue(
+        undefined,
+      );
+
+      await service.create(mockCreateTenantData);
+
+      expect(mockEntityManager.create).toHaveBeenCalledWith(
+        Tenant,
+        expect.objectContaining({
+          createdBy: 123,
+          updatedBy: 123,
+        }),
+      );
     });
 
     it('should throw ConflictException when tenant name already exists', async () => {
@@ -310,6 +353,32 @@ describe('TenantService', () => {
         updateDto,
       );
       expect(result).toEqual(updatedTenant);
+    });
+
+    it('should set updatedBy when userId is available', async () => {
+      const userId = '456';
+      const updateDto = { description: 'Updated description' };
+      const updatedTenant = { ...mockTenant, ...updateDto };
+
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      jest
+        .spyOn(service, 'findById')
+        .mockResolvedValueOnce(mockTenant)
+        .mockResolvedValueOnce(updatedTenant);
+      tenantRepository.update.mockResolvedValue({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
+
+      await service.updateTenant('test-tenant-id', updateDto);
+
+      expect(tenantRepository.update).toHaveBeenCalledWith(
+        'test-tenant-id',
+        expect.objectContaining({
+          updatedBy: 456,
+        }),
+      );
     });
 
     it('should throw NotFoundException when tenant not found', async () => {

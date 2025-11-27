@@ -5,7 +5,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Not, Repository } from 'typeorm';
+import { In, Not } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../entity/user.entity';
 import { QueueService } from '../../queue/service/queue.service';
@@ -42,13 +42,12 @@ export class UserService {
 
   constructor(
     @InjectRepository(User)
-    private userRepository: Repository<User>,
     private queueService: QueueService,
     private readonly cache: RedisService,
     private groupRepository: GroupRepository,
     private userGroupRepository: UserGroupRepository,
     private readonly tenantService: TenantService,
-    private readonly usersRepository: UserRepository,
+    private readonly userRepository: UserRepository,
     private readonly groupService: GroupService,
     @Inject(forwardRef(() => SimulationCreditsService))
     private readonly simulationCreditsService: SimulationCreditsService,
@@ -227,7 +226,7 @@ export class UserService {
   }
 
   async getAllUsers(filters: UserFilterOptions): Promise<UserListResponseDto> {
-    const result = await this.usersRepository.getAllUsers(filters, true);
+    const result = await this.userRepository.getAllUsers(filters, true);
     if (result.users.length === 0) {
       return { data: [], count: 0 };
     }
@@ -296,7 +295,19 @@ export class UserService {
         );
       }
     }
-    const updated = await this.userRepository.update(id, body as Partial<User>);
+
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+    const updatedUserData = {
+      ...body,
+      ...(userId ? { updatedBy: userId } : {}),
+    };
+
+    const updated = await this.userRepository.update(
+      id,
+      updatedUserData as Partial<User>,
+    );
+
     const updatedUser = await this.userRepository.findOne({ where: { id } });
     this.auditLogger.log({
       eventType: AUDIT_EVENTS.USER_UPDATED,
@@ -306,6 +317,7 @@ export class UserService {
         username: updatedUser?.username,
         email: updatedUser?.email,
         phone: updatedUser?.phone,
+        updatedBy: userId,
       },
     });
 
@@ -327,8 +339,26 @@ export class UserService {
         `User with ID ${id} is already ${newStatus.toLowerCase()}`,
       );
     }
-    user.status = newStatus;
-    await this.userRepository.save(user);
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+    const updatedUserData = {
+      status: newStatus,
+      ...(userId ? { updatedBy: userId } : {}),
+      ...(newStatus === UserStatus.SUSPENDED && userId
+        ? { suspendedBy: userId, suspendedAt: new Date() }
+        : {}),
+    };
+    await this.userRepository.update(id, updatedUserData as Partial<User>);
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.USER_UPDATED,
+      tenantId: user.tenantId,
+      userId: user.id,
+      details: {
+        message: 'User status updated',
+        status: newStatus,
+        updatedBy: userId,
+      },
+    });
     return { success: true };
   }
 
@@ -346,9 +376,11 @@ export class UserService {
       throw new BadRequestException('Phone number already registered');
     }
 
+    const isSuperAdmin = userData.roles.includes(UserRole.SUPER_ADMIN);
+
     if (!userData.tenantId) {
       throw new BadRequestException('Tenant ID is required');
-    } else {
+    } else if (!isSuperAdmin) {
       const tenant = await this.tenantService.findById(userData.tenantId);
       if (!tenant) {
         throw new BadRequestException(' Tenant is not valid');
@@ -374,6 +406,8 @@ export class UserService {
       ? await bcrypt.hash(userData.password, 10)
       : undefined;
 
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
     const newUser = this.userRepository.create({
       email: userData.email,
       password: hashedPassword,
@@ -384,6 +418,7 @@ export class UserService {
       phone: userData.phone,
       tenantId: userData.tenantId,
       externalId: userData.externalId,
+      ...(userId ? { createdBy: userId, updatedBy: userId } : {}),
     });
 
     // Save user
@@ -418,6 +453,8 @@ export class UserService {
         username: savedUser.username,
         email: savedUser.email,
         phone: savedUser.phone,
+        createdBy: userId,
+        updatedBy: userId,
       },
     });
 
