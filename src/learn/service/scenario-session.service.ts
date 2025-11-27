@@ -45,6 +45,10 @@ import { extractEventIds } from 'src/session-event/util/session-event.util';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
+import {
+  ExecutionContextPropagation,
+  WithExecutionContext,
+} from 'src/common/decorator/execution.context.decorator';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -200,7 +204,8 @@ export class ScenarioSessionService {
       );
     }
 
-    const { metadata, ...scenarioDataWithoutMetadata } = scenario;
+    const { metadata, terminationEvent, ...scenarioDataWithoutMetadata } =
+      scenario;
     const { voiceId, ...promptData } = metadata;
 
     const scenarioData = {
@@ -231,11 +236,8 @@ export class ScenarioSessionService {
     });
 
     // Add termination event ID to referenced events if it exists and is not already included
-    if (
-      scenario.terminationEvent?.eventId &&
-      !eventMap.has(scenario.terminationEvent.eventId)
-    ) {
-      referencedEventIds.add(scenario.terminationEvent.eventId);
+    if (terminationEvent?.eventId && !eventMap.has(terminationEvent.eventId)) {
+      referencedEventIds.add(terminationEvent.eventId);
     }
 
     // Fetch any missing events (referenced in combinations or termination event)
@@ -263,11 +265,10 @@ export class ScenarioSessionService {
       return event;
     });
 
-    const autoTerminationEvent = scenario.terminationEvent
-      ?.autoTerminationStatus
+    const autoTerminationEvent = terminationEvent?.autoTerminationStatus
       ? {
-          id: scenario.terminationEvent?.eventId,
-          terminationMessage: scenario.terminationEvent?.message,
+          id: terminationEvent?.eventId,
+          terminationMessage: terminationEvent?.message,
         }
       : undefined;
 
@@ -364,12 +365,12 @@ export class ScenarioSessionService {
     }
   }
 
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async endScenarioSession(scenarioSessionId: string, counselorId: number) {
     const scenarioSession = await this.scenarioSessionRepository.findOne({
       where: {
         id: scenarioSessionId,
         counselorId,
-        tenantId: ExecutionManager.getTenantId(),
       },
     });
 
@@ -379,6 +380,13 @@ export class ScenarioSessionService {
 
     if (scenarioSession.status !== ScenarioSessionStatus.ACTIVE) {
       throw new BadRequestException('Scenario session is not active');
+    }
+
+    if (!ExecutionManager.getTenantId()) {
+      ExecutionManager.setAuthContext(
+        counselorId.toString(),
+        scenarioSession.tenantId,
+      );
     }
 
     const endedAt = scenarioSession.endedAt ?? new Date();
@@ -395,24 +403,23 @@ export class ScenarioSessionService {
       callDuration =
         endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
     }
-
-    this.getScenarioSessionSummaryFromAI(
-      scenarioSessionId,
-      scenarioSession.scenarioId,
-      callDuration,
-    );
-    if (scenarioSession.scenarioPathSessionItemId)
-      await this.scenarioPathSessionService.handleEndScenarioPathSession({
-        scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
-        score,
-        callDuration,
-      });
-
     try {
+      this.getScenarioSessionSummaryFromAI(
+        scenarioSessionId,
+        scenarioSession.scenarioId,
+        callDuration,
+      );
+      if (scenarioSession.scenarioPathSessionItemId)
+        await this.scenarioPathSessionService.handleEndScenarioPathSession({
+          scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
+          score,
+          callDuration,
+        });
+
       await this.livekitService.deleteRoom(scenarioSession.roomId);
     } catch (error) {
       this.logger.debug(
-        `Failed to delete room: ${JSON.stringify(error.message)}`,
+        `Failed to end session: ${JSON.stringify(error.message)}`,
       );
     }
 
@@ -455,54 +462,60 @@ export class ScenarioSessionService {
     scenarioId: number,
     callDuration?: number,
   ) {
-    await this.dataSource.transaction(async (entityManager) => {
-      const scenarioSessionMessagesRepo = entityManager.getRepository(
-        ScenarioSessionMessages,
-      );
-      const scenarioSessionMessages = await scenarioSessionMessagesRepo.find({
-        where: {
-          scenarioSessionId,
-          messageType: ScenarioSessionMessageType.TEXT,
-          tenantId: ExecutionManager.getTenantId(),
-        },
-      });
-
-      if (scenarioSessionMessages.length === 0) {
-        this.logger.warn(
-          `No scenario session messages found for scenario session ${scenarioSessionId}`,
+    try {
+      await this.dataSource.transaction(async (entityManager) => {
+        const scenarioSessionMessagesRepo = entityManager.getRepository(
+          ScenarioSessionMessages,
         );
-        return;
-      }
+        const scenarioSessionMessages = await scenarioSessionMessagesRepo.find({
+          where: {
+            scenarioSessionId,
+            messageType: ScenarioSessionMessageType.TEXT,
+            tenantId: ExecutionManager.getTenantId(),
+          },
+        });
 
-      const messages = scenarioSessionMessages.map((message) => ({
-        role: message.senderId > 0 ? 'COUNSELLOR' : 'CLIENT',
-        content: message.content,
-        start_time: message.startSeconds,
-        end_time: message.endSeconds,
-      }));
+        if (scenarioSessionMessages.length === 0) {
+          this.logger.warn(
+            `No scenario session messages found for scenario session ${scenarioSessionId}`,
+          );
+          return;
+        }
 
-      const scenario = await this.scenarioService.getScenario(
-        scenarioId,
-        ['id', 'metadata'],
-        entityManager,
-      );
+        const messages = scenarioSessionMessages.map((message) => ({
+          role: message.senderId > 0 ? 'COUNSELLOR' : 'CLIENT',
+          content: message.content,
+          start_time: message.startSeconds,
+          end_time: message.endSeconds,
+        }));
 
-      const summary = await this.aiService.getScenarioSessionSummary(
-        messages,
-        scenario.metadata?.agentGoal ?? '',
-      );
+        const scenario = await this.scenarioService.getScenario(
+          scenarioId,
+          ['id', 'metadata'],
+          entityManager,
+        );
 
-      const scenarioSessionDetailsRepo = entityManager.getRepository(
-        ScenarioSessionDetails,
-      );
-      const scenarioSessionDetails = scenarioSessionDetailsRepo.create({
-        scenarioSessionId,
-        callDuration,
-        summary: { feedback: summary },
-        tenantId: ExecutionManager.getTenantId(),
+        const summary = await this.aiService.getScenarioSessionSummary(
+          messages,
+          scenario.metadata?.agentGoal ?? '',
+        );
+
+        const scenarioSessionDetailsRepo = entityManager.getRepository(
+          ScenarioSessionDetails,
+        );
+        const scenarioSessionDetails = scenarioSessionDetailsRepo.create({
+          scenarioSessionId,
+          callDuration,
+          summary: { feedback: summary },
+          tenantId: ExecutionManager.getTenantId(),
+        });
+        await scenarioSessionDetailsRepo.save(scenarioSessionDetails);
       });
-      await scenarioSessionDetailsRepo.save(scenarioSessionDetails);
-    });
+    } catch (error) {
+      this.logger.error(
+        `Failed to get scenario session summary from AI: ${JSON.stringify(error.message)}`,
+      );
+    }
   }
 
   async generateScenarioSessionToken(roomId: string, counselorId: number) {
@@ -637,6 +650,13 @@ export class ScenarioSessionService {
       }
       return savedScenarioSessionEvent;
     });
+
+    if (event.event_data.autoTerminationStatus) {
+      await this.endScenarioSession(
+        scenarioSession.id,
+        scenarioSession.counselorId,
+      );
+    }
   }
 
   async previewScenario(

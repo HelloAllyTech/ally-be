@@ -15,10 +15,17 @@ import { SessionEventVisibilityType } from 'src/session-event/enum/session-event
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventSortBy } from 'src/session-event/enum/session-event-sort-by.enum';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
+import { TokenUser } from 'src/auth/type/auth.types';
 
 describe('SessionEventController', () => {
   let controller: SessionEventController;
   let sessionEventService: jest.Mocked<SessionEventService>;
+
+  const mockUser: TokenUser = {
+    id: 1,
+    username: 'testuser',
+    tenantId: 'tenant-1',
+  };
 
   const mockSessionEvent: SessionEvents = {
     id: 'event-1',
@@ -146,10 +153,12 @@ describe('SessionEventController', () => {
 
       const result = await controller.createSessionEvents(
         mockCreateSessionEventsDto,
+        mockUser,
       );
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         mockCreateSessionEventsDto.events,
+        mockUser.id,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -171,10 +180,14 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(multipleEventsDto);
+      const result = await controller.createSessionEvents(
+        multipleEventsDto,
+        mockUser,
+      );
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         multipleEventsDto.events,
+        mockUser.id,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -187,9 +200,15 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(emptyEventsDto);
+      const result = await controller.createSessionEvents(
+        emptyEventsDto,
+        mockUser,
+      );
 
-      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith([]);
+      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
+        [],
+        mockUser.id,
+      );
       expect(result).toEqual(expectedResult);
     });
 
@@ -226,11 +245,15 @@ describe('SessionEventController', () => {
         expectedResult as any,
       );
 
-      const result = await controller.createSessionEvents(minimalEventsDto);
+      const result = await controller.createSessionEvents(
+        minimalEventsDto,
+        mockUser,
+      );
 
-      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith([
-        minimalEventDto,
-      ]);
+      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
+        [minimalEventDto],
+        mockUser.id,
+      );
       expect(result).toEqual(expectedResult);
     });
 
@@ -266,11 +289,15 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(fullEventsDto);
+      const result = await controller.createSessionEvents(
+        fullEventsDto,
+        mockUser,
+      );
 
-      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith([
-        fullEventDto,
-      ]);
+      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
+        [fullEventDto],
+        mockUser.id,
+      );
       expect(result).toEqual(expectedResult);
     });
 
@@ -283,11 +310,12 @@ describe('SessionEventController', () => {
       );
 
       await expect(
-        controller.createSessionEvents(mockCreateSessionEventsDto),
+        controller.createSessionEvents(mockCreateSessionEventsDto, mockUser),
       ).rejects.toThrow('Duplicate key value violates unique constraint');
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         mockCreateSessionEventsDto.events,
+        mockUser.id,
       );
     });
 
@@ -306,10 +334,14 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(largeEventsDto);
+      const result = await controller.createSessionEvents(
+        largeEventsDto,
+        mockUser,
+      );
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         largeEventsDto.events,
+        mockUser.id,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -330,10 +362,14 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(scoreVariationsDto);
+      const result = await controller.createSessionEvents(
+        scoreVariationsDto,
+        mockUser,
+      );
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         scoreVariationsDto.events,
+        mockUser.id,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -365,10 +401,14 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(specialCharsDto);
+      const result = await controller.createSessionEvents(
+        specialCharsDto,
+        mockUser,
+      );
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         specialCharsDto.events,
+        mockUser.id,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -383,11 +423,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });
@@ -398,11 +440,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser.id,
       );
       expect(result).toBe(false);
     });
@@ -418,11 +462,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         partialUpdate,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         partialUpdate,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });
@@ -432,12 +478,17 @@ describe('SessionEventController', () => {
       sessionEventService.updateSessionEvent.mockRejectedValue(error);
 
       await expect(
-        controller.updateSessionEvents(eventId, mockUpdateSessionEventDto),
+        controller.updateSessionEvents(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUser,
+        ),
       ).rejects.toThrow('Service update failed');
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser.id,
       );
     });
 
@@ -446,12 +497,17 @@ describe('SessionEventController', () => {
       sessionEventService.updateSessionEvent.mockRejectedValue(notFoundError);
 
       await expect(
-        controller.updateSessionEvents(eventId, mockUpdateSessionEventDto),
+        controller.updateSessionEvents(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUser,
+        ),
       ).rejects.toThrow('Session Event not found');
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser.id,
       );
     });
 
@@ -466,11 +522,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         maxScoreUpdate,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         maxScoreUpdate,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });
@@ -486,11 +544,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         minScoreUpdate,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         minScoreUpdate,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });
@@ -508,11 +568,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         longTextUpdate,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         longTextUpdate,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });
@@ -528,11 +590,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         unicodeUpdate,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         unicodeUpdate,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });

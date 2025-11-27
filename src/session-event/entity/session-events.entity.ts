@@ -51,4 +51,10 @@ export class SessionEvents extends BaseWithoutTenantEntity {
 
   @Column({ type: 'varchar', unique: true })
   eventCode!: string;
+
+  @Column({ nullable: true })
+  createdBy?: number;
+
+  @Column({ nullable: true })
+  updatedBy?: number;
 }

@@ -33,6 +33,11 @@ jest.mock('src/common/execution/execution-manager', () => ({
     getTenantId: jest.fn(() => 'test-tenant-id'),
     getUserId: jest.fn(() => 'test-user-id'),
     getExecutionId: jest.fn(() => 'test-execution-id'),
+    getCurrentContext: jest.fn(() => ({
+      tenantId: 'test-tenant-id',
+      userId: 'test-user-id',
+      executionId: 'test-execution-id',
+    })),
   },
 }));
 
@@ -138,6 +143,7 @@ describe('ScenarioSessionService', () => {
     const mockScenarioService = {
       getScenario: jest.fn(),
       getScenarioVoice: jest.fn(),
+      getAdminScenario: jest.fn(),
     };
 
     const mockLivekitService = {
@@ -739,6 +745,167 @@ describe('ScenarioSessionService', () => {
           scenarioPathSessionItemId,
         ),
       ).rejects.toThrow('Database error');
+    });
+  });
+
+  describe('startScenarioSession', () => {
+    it('should throw BadRequestException when scenario not found', async () => {
+      const startDto = {
+        scenarioId: mockScenarioId,
+        ttl: 3600,
+      };
+      scenarioService.getAdminScenario.mockResolvedValue(null as any);
+
+      await expect(
+        service.startScenarioSession(mockCounselorId, startDto as any),
+      ).rejects.toThrow(new BadRequestException('Scenario not found'));
+
+      expect(scenarioService.getAdminScenario).toHaveBeenCalledWith(
+        mockScenarioId,
+      );
+    });
+
+    it('should successfully start scenario session', async () => {
+      const startDto = {
+        scenarioId: mockScenarioId,
+        ttl: 3600,
+      };
+      const mockScenarioWithMetadata = {
+        ...mockScenario,
+        metadata: {
+          agentGoal: 'Help the client',
+          lifeHistory: 'Life history',
+          voiceId: 'voice-123',
+          name: 'Test Client',
+          age: 25,
+          gender: 'female',
+          currentLocation: 'New York',
+          context: 'Context',
+          openingStatements: 'Opening',
+        },
+        isGlobal: false,
+      };
+      const mockVoice = {
+        id: 'voice-123',
+        name: 'Test Voice',
+        voiceId: 'openai-voice-id',
+        provider: 'openai',
+      };
+      const mockCreatedSession = {
+        ...mockScenarioSession,
+        id: 'new-session-id',
+        roomId: 'new-room-id',
+      };
+      const mockTokenResponse = {
+        token: 'access-token-123',
+        roomName: 'new-room-id',
+        serverUrl: 'https://livekit.example.com',
+      };
+
+      scenarioService.getAdminScenario.mockResolvedValue(
+        mockScenarioWithMetadata as any,
+      );
+      scenarioService.getScenarioVoice.mockResolvedValue(mockVoice as any);
+      scenarioTenantService.getScenarioTenant.mockResolvedValue({
+        id: 1,
+        scenarioId: mockScenarioId,
+        tenantId: mockTenantId,
+      } as any);
+      sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      sessionEventService.findByIds.mockResolvedValue([]);
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        consumedCredits: 0,
+        creditLimit: 100,
+      } as any);
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue(
+        mockCreatedSession,
+      );
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue(mockTokenResponse);
+
+      const result = await service.startScenarioSession(
+        mockCounselorId,
+        startDto as any,
+      );
+
+      expect(result).toBeDefined();
+      expect(result.scenarioSession).toEqual(mockCreatedSession);
+      expect(result.accessToken).toEqual(mockTokenResponse);
+      expect(livekitService.createRoom).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: mockCreatedSession.roomId,
+          ttl: 3600,
+        }),
+      );
+    });
+
+    it('should clean up session when room creation fails', async () => {
+      const startDto = {
+        scenarioId: mockScenarioId,
+        ttl: 3600,
+      };
+      const mockScenarioWithMetadata = {
+        ...mockScenario,
+        metadata: {
+          agentGoal: 'Help the client',
+          lifeHistory: 'Life history',
+          voiceId: 'voice-123',
+          name: 'Test Client',
+          age: 25,
+          gender: 'female',
+          currentLocation: 'New York',
+          context: 'Context',
+          openingStatements: 'Opening',
+        },
+        isGlobal: false,
+      };
+      const mockVoice = {
+        id: 'voice-123',
+        name: 'Test Voice',
+        voiceId: 'openai-voice-id',
+        provider: 'openai',
+      };
+      const mockCreatedSession = {
+        ...mockScenarioSession,
+        id: 'new-session-id',
+        roomId: 'new-room-id',
+      };
+      const roomError = new Error('Room creation failed');
+
+      scenarioService.getAdminScenario.mockResolvedValue(
+        mockScenarioWithMetadata as any,
+      );
+      scenarioService.getScenarioVoice.mockResolvedValue(mockVoice as any);
+      scenarioTenantService.getScenarioTenant.mockResolvedValue({
+        id: 1,
+        scenarioId: mockScenarioId,
+        tenantId: mockTenantId,
+      } as any);
+      sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      sessionEventService.findByIds.mockResolvedValue([]);
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        consumedCredits: 0,
+        creditLimit: 100,
+      } as any);
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue(
+        mockCreatedSession,
+      );
+      scenarioSessionRepository.delete = jest.fn().mockResolvedValue(undefined);
+      livekitService.createRoom.mockRejectedValue(roomError);
+
+      await expect(
+        service.startScenarioSession(mockCounselorId, startDto as any),
+      ).rejects.toThrow('Room creation failed');
+
+      expect(scenarioSessionRepository.delete).toHaveBeenCalledWith(
+        mockCreatedSession.id,
+      );
     });
   });
 });
