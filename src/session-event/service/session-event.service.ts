@@ -34,10 +34,13 @@ export class SessionEventService {
 
   async createSessionEvents(
     createEventDtos: CreateSessionEventDto[],
+    userId: number,
   ): Promise<SessionEvents[]> {
     const events = createEventDtos.map((event) => ({
       id: v4(),
       ...(mapCreateEventDtoToDbEvent(event) || {}),
+      createdBy: userId,
+      updatedBy: userId,
     }));
 
     // Validate events
@@ -122,6 +125,7 @@ export class SessionEventService {
   async updateSessionEvent(
     id: string,
     updateEventDto: UpdateSessionEventDto,
+    userId: number,
   ): Promise<boolean> {
     const event = await this.sessionEventRepository.findOne({ where: { id } });
     if (!event) {
@@ -143,10 +147,10 @@ export class SessionEventService {
       );
     }
 
-    const updated = await this.sessionEventRepository.update(
-      id,
-      formattedEventDto as Partial<SessionEvents>,
-    );
+    const updated = await this.sessionEventRepository.update(id, {
+      ...formattedEventDto,
+      updatedBy: userId,
+    });
     return updated.affected !== 0;
   }
 

@@ -14,7 +14,6 @@ import { ScenarioVoices } from '../entity/scenario-voices.entity';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
 import { UpdateScenarioVoiceDto } from '../dto/update-scenario-voice.dto';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
-import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
@@ -691,59 +690,70 @@ export class ScenarioService {
     if (invalidEventIds.length > 0) {
       throw new BadRequestException(`Invalid event IDs: ${invalidEventIds}`);
     }
-    // Create an array of ScenarioEvents entities to be saved
-    const scenarioEvents = events.map((event) => {
-      const {
-        id,
-        feedbackStatus,
-        score,
-        emoji,
-        message,
-        branchingStatus,
-        branchInstruction,
-      } = event;
+
+    return await this.dataSource.transaction(async (entityManager) => {
+      const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
+
+      // Delete existing non-auto-termination events for this scenario
+      await scenarioEventsRepo.delete({
+        scenarioId,
+        autoTerminationStatus: false,
+      });
+
+      // Create an array of ScenarioEvents entities to be saved
+      const scenarioEvents = events.map((event) => {
+        const {
+          id,
+          feedbackStatus,
+          score,
+          emoji,
+          message,
+          branchingStatus,
+          branchInstruction,
+        } = event;
+        return {
+          scenarioId,
+          eventId: id,
+          autoTerminationStatus: false,
+          score,
+          ...(feedbackStatus
+            ? {
+                feedbackStatus,
+                emoji,
+                message,
+              }
+            : {
+                feedbackStatus: false,
+                emoji: undefined,
+                message: undefined,
+              }),
+          ...(branchingStatus
+            ? {
+                branchingStatus,
+                branchInstruction,
+              }
+            : {
+                branchingStatus: false,
+                branchInstruction: undefined,
+              }),
+        };
+      });
+
+      await scenarioEventsRepo.save(scenarioEvents);
+
       return {
         scenarioId,
-        eventId: id,
-        tenantId: ExecutionManager.getTenantId(),
-        score,
-        ...(feedbackStatus
-          ? {
-              feedbackStatus,
-              emoji,
-              message,
-            }
-          : {
-              feedbackStatus: false,
-              emoji: undefined,
-              message: undefined,
-            }),
-        ...(branchingStatus
-          ? {
-              branchingStatus,
-              branchInstruction,
-            }
-          : {
-              branchingStatus: false,
-              branchInstruction: undefined,
-            }),
+        events: scenarioEvents.map((event) => ({
+          id: event.eventId,
+          feedbackStatus: event.feedbackStatus,
+          score: event.score,
+          emoji: event.emoji,
+          message: event.message,
+          branchingStatus: event.branchingStatus,
+          branchInstruction: event.branchInstruction,
+        })),
       };
     });
-
-    // Save the scenario events to the database
-    await this.scenarioEventsRepository.save(scenarioEvents);
-    return {
-      scenarioId,
-      events: scenarioEvents.map((event) => ({
-        id: event.eventId,
-        feedbackStatus: event.feedbackStatus,
-        score: event.score,
-        emoji: event.emoji,
-        message: event.message,
-        branchingStatus: event.branchingStatus,
-        branchInstruction: event.branchInstruction,
-      })),
-    };
   }
 
   async deleteScenarioEvents(scenarioEvents: DeleteScenarioEventsDto) {

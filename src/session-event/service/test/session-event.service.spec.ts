@@ -114,6 +114,8 @@ describe('SessionEventService', () => {
   });
 
   describe('createSessionEvents', () => {
+    const mockUserId = 1;
+
     it('should create session events by calling createSessionEvents repository function', async () => {
       const createEventDtos = [mockCreateSessionEventDto];
       const createdEvents = [mockSessionEvent];
@@ -121,13 +123,18 @@ describe('SessionEventService', () => {
       repository.findByIds.mockResolvedValue([]);
       repository.createSessionEvents.mockResolvedValue(createdEvents as any);
 
-      const result = await service.createSessionEvents(createEventDtos);
+      const result = await service.createSessionEvents(
+        createEventDtos,
+        mockUserId,
+      );
 
       expect(repository.createSessionEvents).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({
             id: expect.any(String),
             ...mockCreateSessionEventDto,
+            createdBy: mockUserId,
+            updatedBy: mockUserId,
           }),
         ]),
       );
@@ -165,16 +172,17 @@ describe('SessionEventService', () => {
       ]);
 
       await expect(
-        service.createSessionEvents([createEventDto]),
+        service.createSessionEvents([createEventDto], mockUserId),
       ).rejects.toThrow(BadRequestException);
       await expect(
-        service.createSessionEvents([createEventDto]),
+        service.createSessionEvents([createEventDto], mockUserId),
       ).rejects.toThrow('Invalid combination expression event IDs');
     });
   });
 
   describe('updateSessionEvent', () => {
     const eventId = 'event-1';
+    const mockUserId = 1;
 
     it('should update session event successfully', async () => {
       repository.findOne.mockResolvedValue(mockSessionEvent);
@@ -183,15 +191,16 @@ describe('SessionEventService', () => {
       const result = await service.updateSessionEvent(
         eventId,
         mockUpdateSessionEventDto,
+        mockUserId,
       );
 
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: eventId },
       });
-      expect(repository.update).toHaveBeenCalledWith(
-        eventId,
-        mockUpdateSessionEventDto,
-      );
+      expect(repository.update).toHaveBeenCalledWith(eventId, {
+        ...mockUpdateSessionEventDto,
+        updatedBy: mockUserId,
+      });
       expect(result).toBe(true);
     });
 
@@ -202,15 +211,16 @@ describe('SessionEventService', () => {
       const result = await service.updateSessionEvent(
         eventId,
         mockUpdateSessionEventDto,
+        mockUserId,
       );
 
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: eventId },
       });
-      expect(repository.update).toHaveBeenCalledWith(
-        eventId,
-        mockUpdateSessionEventDto,
-      );
+      expect(repository.update).toHaveBeenCalledWith(eventId, {
+        ...mockUpdateSessionEventDto,
+        updatedBy: mockUserId,
+      });
       expect(result).toBe(false);
     });
 
@@ -221,6 +231,7 @@ describe('SessionEventService', () => {
       const result = await service.updateSessionEvent(
         eventId,
         mockUpdateSessionEventDto,
+        mockUserId,
       );
 
       expect(result).toBe(true); // undefined !== 0 is true
@@ -230,10 +241,18 @@ describe('SessionEventService', () => {
       repository.findOne.mockResolvedValue(null);
 
       await expect(
-        service.updateSessionEvent(eventId, mockUpdateSessionEventDto),
+        service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        ),
       ).rejects.toThrow(NotFoundException);
       await expect(
-        service.updateSessionEvent(eventId, mockUpdateSessionEventDto),
+        service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        ),
       ).rejects.toThrow('Session Event not found');
 
       expect(repository.findOne).toHaveBeenCalledWith({
@@ -251,12 +270,19 @@ describe('SessionEventService', () => {
       repository.findOne.mockResolvedValue(mockSessionEvent);
       repository.update.mockResolvedValue({ affected: 1 } as any);
 
-      const result = await service.updateSessionEvent(eventId, partialUpdate);
+      const result = await service.updateSessionEvent(
+        eventId,
+        partialUpdate,
+        mockUserId,
+      );
 
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: eventId },
       });
-      expect(repository.update).toHaveBeenCalledWith(eventId, partialUpdate);
+      expect(repository.update).toHaveBeenCalledWith(eventId, {
+        ...partialUpdate,
+        updatedBy: mockUserId,
+      });
       expect(result).toBe(true);
     });
 
@@ -268,12 +294,19 @@ describe('SessionEventService', () => {
       repository.findOne.mockResolvedValue(mockSessionEvent);
       repository.update.mockResolvedValue({ affected: 1 } as any);
 
-      const result = await service.updateSessionEvent(eventId, emptyUpdate);
+      const result = await service.updateSessionEvent(
+        eventId,
+        emptyUpdate,
+        mockUserId,
+      );
 
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: eventId },
       });
-      expect(repository.update).toHaveBeenCalledWith(eventId, emptyUpdate);
+      expect(repository.update).toHaveBeenCalledWith(eventId, {
+        ...emptyUpdate,
+        updatedBy: mockUserId,
+      });
       expect(result).toBe(true);
     });
 
@@ -282,7 +315,11 @@ describe('SessionEventService', () => {
       repository.findOne.mockRejectedValue(error);
 
       await expect(
-        service.updateSessionEvent(eventId, mockUpdateSessionEventDto),
+        service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        ),
       ).rejects.toThrow('Database connection failed');
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: eventId },
@@ -296,15 +333,19 @@ describe('SessionEventService', () => {
       repository.update.mockRejectedValue(error);
 
       await expect(
-        service.updateSessionEvent(eventId, mockUpdateSessionEventDto),
+        service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        ),
       ).rejects.toThrow('Update operation failed');
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: eventId },
       });
-      expect(repository.update).toHaveBeenCalledWith(
-        eventId,
-        mockUpdateSessionEventDto,
-      );
+      expect(repository.update).toHaveBeenCalledWith(eventId, {
+        ...mockUpdateSessionEventDto,
+        updatedBy: mockUserId,
+      });
     });
 
     it('should handle null affected value', async () => {
@@ -314,6 +355,7 @@ describe('SessionEventService', () => {
       const result = await service.updateSessionEvent(
         eventId,
         mockUpdateSessionEventDto,
+        mockUserId,
       );
 
       expect(result).toBe(true); // null !== 0 is true
@@ -326,6 +368,7 @@ describe('SessionEventService', () => {
       const result = await service.updateSessionEvent(
         eventId,
         mockUpdateSessionEventDto,
+        mockUserId,
       );
 
       expect(result).toBe(true); // -1 !== 0 is true
@@ -1281,6 +1324,8 @@ describe('SessionEventService', () => {
   });
 
   describe('Circular Dependency Detection', () => {
+    const mockUserId = 1;
+
     describe('createSessionEvents - circular dependency validation', () => {
       it('should successfully create a combination event without cycles', async () => {
         const eventAId = 'event-a';
@@ -1331,7 +1376,10 @@ describe('SessionEventService', () => {
         });
         repository.createSessionEvents.mockResolvedValue([eventA]);
 
-        const result = await service.createSessionEvents([createEventDto]);
+        const result = await service.createSessionEvents(
+          [createEventDto],
+          mockUserId,
+        );
 
         expect(repository.findByIds).toHaveBeenCalledWith([eventAId, eventBId]);
         expect(repository.createSessionEvents).toHaveBeenCalled();
@@ -1401,10 +1449,10 @@ describe('SessionEventService', () => {
         });
 
         await expect(
-          service.createSessionEvents([createEventDto]),
+          service.createSessionEvents([createEventDto], mockUserId),
         ).rejects.toThrow(BadRequestException);
         await expect(
-          service.createSessionEvents([createEventDto]),
+          service.createSessionEvents([createEventDto], mockUserId),
         ).rejects.toThrow(/Circular dependency detected/);
       });
 
@@ -1489,10 +1537,10 @@ describe('SessionEventService', () => {
         });
 
         await expect(
-          service.createSessionEvents([createEventDto]),
+          service.createSessionEvents([createEventDto], mockUserId),
         ).rejects.toThrow(BadRequestException);
         await expect(
-          service.createSessionEvents([createEventDto]),
+          service.createSessionEvents([createEventDto], mockUserId),
         ).rejects.toThrow(/Circular dependency detected/);
       });
 
@@ -1556,10 +1604,10 @@ describe('SessionEventService', () => {
         };
 
         await expect(
-          service.createSessionEvents([createEventDto]),
+          service.createSessionEvents([createEventDto], mockUserId),
         ).rejects.toThrow(BadRequestException);
         await expect(
-          service.createSessionEvents([createEventDto]),
+          service.createSessionEvents([createEventDto], mockUserId),
         ).rejects.toThrow(/Maximum dependency depth/);
       });
 
@@ -1575,7 +1623,10 @@ describe('SessionEventService', () => {
 
         repository.createSessionEvents.mockResolvedValue([mockSessionEvent]);
 
-        const result = await service.createSessionEvents([createEventDto]);
+        const result = await service.createSessionEvents(
+          [createEventDto],
+          mockUserId,
+        );
 
         expect(result).toBeDefined();
         // findByIds should not be called for non-combination events
@@ -1586,6 +1637,8 @@ describe('SessionEventService', () => {
     });
 
     describe('updateSessionEvent - circular dependency validation', () => {
+      const mockUserId = 1;
+
       it('should successfully update a combination event without creating cycles', async () => {
         const eventAId = 'event-a';
         const eventBId = 'event-b';
@@ -1616,7 +1669,11 @@ describe('SessionEventService', () => {
         repository.findOne.mockResolvedValue(null);
         repository.update.mockResolvedValue({ affected: 1 } as any);
 
-        const result = await service.updateSessionEvent(eventCId, updateDto);
+        const result = await service.updateSessionEvent(
+          eventCId,
+          updateDto,
+          mockUserId,
+        );
 
         expect(result).toBe(true);
         expect(repository.update).toHaveBeenCalled();
@@ -1674,10 +1731,10 @@ describe('SessionEventService', () => {
         });
 
         await expect(
-          service.updateSessionEvent(eventBId, updateDto),
+          service.updateSessionEvent(eventBId, updateDto, mockUserId),
         ).rejects.toThrow(BadRequestException);
         await expect(
-          service.updateSessionEvent(eventBId, updateDto),
+          service.updateSessionEvent(eventBId, updateDto, mockUserId),
         ).rejects.toThrow(/Circular dependency detected/);
 
         expect(repository.update).not.toHaveBeenCalled();
@@ -1729,7 +1786,11 @@ describe('SessionEventService', () => {
         // Since the existing event has SENTENCE_SIMILARITY type,
         // the service won't validate circular dependencies
         // This test scenario is actually not possible with current implementation
-        const result = await service.updateSessionEvent(eventBId, updateDto);
+        const result = await service.updateSessionEvent(
+          eventBId,
+          updateDto,
+          mockUserId,
+        );
 
         expect(result).toBe(true);
         expect(repository.update).toHaveBeenCalled();
@@ -1759,7 +1820,11 @@ describe('SessionEventService', () => {
         repository.findOne.mockResolvedValueOnce(existingEvent);
         repository.update.mockResolvedValue({ affected: 1 } as any);
 
-        const result = await service.updateSessionEvent(eventId, updateDto);
+        const result = await service.updateSessionEvent(
+          eventId,
+          updateDto,
+          mockUserId,
+        );
 
         expect(result).toBe(true);
         // findOne should only be called once for the initial event lookup

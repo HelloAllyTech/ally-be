@@ -30,6 +30,8 @@ import {
   SessionEventResponseDto,
   UpdateSessionEventDto,
 } from '../dto/session-event.dto';
+import { CurrentUser } from 'src/auth/decorators/user.decorator';
+import { TokenUser } from 'src/auth/type/auth.types';
 
 @ApiTags('SessionEvents')
 @ApiBearerAuth()
@@ -44,8 +46,12 @@ export class SessionEventController {
   @Post()
   async createSessionEvents(
     @Body() createEventsDto: CreateSessionEventsDto,
+    @CurrentUser() currentUser: TokenUser,
   ): Promise<SessionEvents[]> {
-    return this.sessionEventService.createSessionEvents(createEventsDto.events);
+    return this.sessionEventService.createSessionEvents(
+      createEventsDto.events,
+      currentUser.id,
+    );
   }
 
   @ApiOperation({ summary: 'Update Session Event by id' })
@@ -55,8 +61,13 @@ export class SessionEventController {
   async updateSessionEvents(
     @Param('id') id: string,
     @Body() updateEventsDto: UpdateSessionEventDto,
+    @CurrentUser() currentUser: TokenUser,
   ): Promise<boolean> {
-    return this.sessionEventService.updateSessionEvent(id, updateEventsDto);
+    return this.sessionEventService.updateSessionEvent(
+      id,
+      updateEventsDto,
+      currentUser.id,
+    );
   }
 
   @ApiOperation({ summary: 'Get all session events' })
