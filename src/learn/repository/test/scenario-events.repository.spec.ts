@@ -11,6 +11,7 @@ describe('ScenarioEventsRepository', () => {
 
   const mockScenarioEvents = [
     {
+      id: 'event-1',
       scenarioId: 1,
       eventId: 'event-1',
       feedbackStatus: true,
@@ -23,6 +24,7 @@ describe('ScenarioEventsRepository', () => {
       updatedAt: new Date(),
     },
     {
+      id: 'event-2',
       scenarioId: 1,
       eventId: 'event-2',
       feedbackStatus: false,
@@ -325,6 +327,7 @@ describe('ScenarioEventsRepository', () => {
     it('should handle null values in event data', async () => {
       const eventsWithNulls = [
         {
+          id: 'event-null-1',
           scenarioId: 1,
           eventId: 'event-1',
           feedbackStatus: false,
