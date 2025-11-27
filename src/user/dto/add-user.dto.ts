@@ -7,7 +7,6 @@ import {
   IsEnum,
   ArrayNotEmpty,
   IsNotEmpty,
-  IsUUID,
   IsPositive,
   IsNumber,
   MinLength,
@@ -56,7 +55,6 @@ export class AddUserDto {
     description: 'Tenant ID(UUID)',
     example: 'c56a4180-65aa-42ec-a945-5fd21dec0538',
   })
-  @IsUUID()
   @IsNotEmpty()
   @IsString()
   tenantId!: string;

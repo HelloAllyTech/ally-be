@@ -30,6 +30,8 @@ describe('TenantController', () => {
     createdAt: new Date('2023-01-01'),
     updatedAt: new Date('2023-01-01'),
     deletedAt: undefined,
+    createdBy: undefined,
+    updatedBy: undefined,
   };
 
   const mockTenantWithUserCount = {

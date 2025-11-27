@@ -36,6 +36,10 @@ describe('UserController', () => {
     email: 'test@example.com',
     phone: '+1234567890',
     tenantId: 'test-tenant',
+    createdBy: undefined,
+    updatedBy: undefined,
+    suspendedBy: undefined,
+    suspendedAt: undefined,
   };
 
   const mockMinimalUserInfo = {
