@@ -4,7 +4,11 @@ import { SimulationCreditsRepository } from '../../repository/simulation-credits
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { UserService } from 'src/user/service/user.service';
 import { AppConfigService } from 'src/config/config.service';
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 
 describe('SimulationCreditsService', () => {
   let service: SimulationCreditsService;
@@ -85,6 +89,33 @@ describe('SimulationCreditsService', () => {
       expect(mockUserService.isValidUser).not.toHaveBeenCalled();
     });
 
+    it('should throw BadRequestException when targetUserId is undefined', async () => {
+      const tokenUserId = 0;
+      mockPermissionValidator.validatePermissions.mockResolvedValue(false);
+
+      await expect(
+        service.getSimulationCredits(tokenUserId, undefined),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.getSimulationCredits(tokenUserId, undefined),
+      ).rejects.toThrow('User ID is required');
+    });
+
+    it('should throw ForbiddenException when non-system user tries to access another users credits', async () => {
+      const tokenUserId = 1;
+      const targetUserId = 2;
+      mockPermissionValidator.validatePermissions.mockResolvedValue(false);
+
+      await expect(
+        service.getSimulationCredits(tokenUserId, targetUserId),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.getSimulationCredits(tokenUserId, targetUserId),
+      ).rejects.toThrow(
+        "You are not allowed to access this user's simulation credits",
+      );
+    });
+
     it('should return credits for specified user when system access granted', async () => {
       const tokenUserId = 1;
       const targetUserId = 2;
@@ -134,6 +165,29 @@ describe('SimulationCreditsService', () => {
         secondsAllowedPerCredit: 60,
       });
     });
+
+    it('should use default 60 seconds when lifespanSecondsPerCredit is undefined', async () => {
+      const tokenUserId = 1;
+      mockPermissionValidator.validatePermissions.mockResolvedValue(false);
+      mockSimulationCreditsRepository.findByUserId.mockResolvedValue(null);
+
+      // Temporarily set config to undefined
+      mockConfigService.simulationCredits.lifespanSecondsPerCredit = undefined;
+
+      const result = await service.getSimulationCredits(
+        tokenUserId,
+        tokenUserId,
+      );
+
+      expect(result).toEqual({
+        creditLimit: 0,
+        consumedCredits: 0,
+        secondsAllowedPerCredit: 60,
+      });
+
+      // Restore
+      mockConfigService.simulationCredits.lifespanSecondsPerCredit = 60;
+    });
   });
 
   describe('updateSimulationCredits', () => {
@@ -174,6 +228,22 @@ describe('SimulationCreditsService', () => {
 
       await expect(service.updateSimulationCredits(updateDto)).rejects.toThrow(
         BadRequestException,
+      );
+    });
+
+    it('should throw InternalServerErrorException when createOrUpdate fails', async () => {
+      const updateDto = { userId: 1, creditLimit: 150 };
+      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
+      mockSimulationCreditsRepository.findByUserId.mockResolvedValue(
+        mockCredits,
+      );
+      mockSimulationCreditsRepository.createOrUpdate.mockResolvedValue(null);
+
+      await expect(service.updateSimulationCredits(updateDto)).rejects.toThrow(
+        InternalServerErrorException,
+      );
+      await expect(service.updateSimulationCredits(updateDto)).rejects.toThrow(
+        'Failed to update simulation credits',
       );
     });
   });

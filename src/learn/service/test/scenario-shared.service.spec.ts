@@ -29,6 +29,7 @@ describe('ScenarioSharedService', () => {
   beforeEach(async () => {
     const mockScenariosRepo = {
       findBy: jest.fn(),
+      findOne: jest.fn(),
     };
 
     const mockScenarioSessionRepo = {
@@ -145,6 +146,31 @@ describe('ScenarioSharedService', () => {
       expect(result).toBeNull();
       expect(scenarioSessionRepository.findOne).toHaveBeenCalledWith({
         where: { id: 'non-existent-id' },
+      });
+    });
+  });
+
+  describe('getScenarioById', () => {
+    it('should return scenario when found', async () => {
+      const mockScenario = mockScenarios[0];
+      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+
+      const result = await service.getScenarioById(1);
+
+      expect(result).toEqual(mockScenario);
+      expect(scenariosRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1 },
+      });
+    });
+
+    it('should return null when scenario not found', async () => {
+      scenariosRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getScenarioById(999);
+
+      expect(result).toBeNull();
+      expect(scenariosRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 999 },
       });
     });
   });

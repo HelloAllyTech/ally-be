@@ -15,6 +15,7 @@ describe('ScenarioTenantService', () => {
       getScenarioTenant: jest.fn(),
       deleteByTenantsIds: jest.fn(),
       deleteByScenarioIds: jest.fn(),
+      findOne: jest.fn(),
     };
 
     const mockScenarioTenantValidationUtil = {
@@ -336,6 +337,43 @@ describe('ScenarioTenantService', () => {
       expect(
         scenarioTenantRepository.deleteByScenarioIds,
       ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getScenarioTenant', () => {
+    it('should return scenario tenant when found', async () => {
+      const tenantId = 'tenant-123';
+      const scenarioId = 1;
+      const mockScenarioTenant = {
+        scenarioId,
+        tenantId,
+        id: 1,
+      };
+
+      scenarioTenantRepository.findOne.mockResolvedValue(
+        mockScenarioTenant as any,
+      );
+
+      const result = await service.getScenarioTenant(tenantId, scenarioId);
+
+      expect(result).toEqual(mockScenarioTenant);
+      expect(scenarioTenantRepository.findOne).toHaveBeenCalledWith({
+        where: { tenantId, scenarioId },
+      });
+    });
+
+    it('should return null when scenario tenant not found', async () => {
+      const tenantId = 'tenant-456';
+      const scenarioId = 999;
+
+      scenarioTenantRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getScenarioTenant(tenantId, scenarioId);
+
+      expect(result).toBeNull();
+      expect(scenarioTenantRepository.findOne).toHaveBeenCalledWith({
+        where: { tenantId, scenarioId },
+      });
     });
   });
 });
