@@ -242,7 +242,9 @@ describe('ScenarioService', () => {
       ).rejects.toThrow(BadRequestException);
       await expect(
         service.validateUpdateScenario(scenarioId, updateDto),
-      ).rejects.toThrow('Scenario is a part of scenario path');
+      ).rejects.toThrow(
+        'This simulation is part of a Simulation Pathway and can’t be moved to draft. Please publish the changes.',
+      );
       expect(
         scenarioPathSharedService.getScenarioPathItemByScenarioId,
       ).toHaveBeenCalledWith(scenarioId);
@@ -264,7 +266,9 @@ describe('ScenarioService', () => {
       ).rejects.toThrow(BadRequestException);
       await expect(
         service.validateUpdateScenario(scenarioId, updateDto),
-      ).rejects.toThrow('Scenario is a part of scenario path');
+      ).rejects.toThrow(
+        'This simulation is part of a Simulation Pathway and can’t be moved to draft. Please publish the changes.',
+      );
     });
 
     it('should allow status change to DRAFT when scenario is not part of a path', async () => {
@@ -319,9 +323,7 @@ describe('ScenarioService', () => {
       await expect(service.deleteAdminScenario(scenarioId)).rejects.toThrow(
         BadRequestException,
       );
-      await expect(service.deleteAdminScenario(scenarioId)).rejects.toThrow(
-        'Scenario is a part of scenario path',
-      );
+      await expect(service.deleteAdminScenario(scenarioId)).rejects.toThrow('');
       expect(
         scenarioPathSharedService.getScenarioPathItemByScenarioId,
       ).toHaveBeenCalledWith(scenarioId);

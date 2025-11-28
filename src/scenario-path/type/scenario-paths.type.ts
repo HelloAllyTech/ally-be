@@ -55,14 +55,11 @@ export enum SortOrder {
   DESC = 'DESC',
 }
 
-export type ValidateScenarioPathItemInput = CreateScenarioPathItemDto & {
+export type ScenarioPathItemData = CreateScenarioPathItemDto & {
   id?: string;
 };
 
-export type ValidateScenarioPathInput = Omit<
-  CreateScenarioPathDto,
-  'scenarios'
-> & {
+export type ScenarioPathData = Omit<CreateScenarioPathDto, 'scenarios'> & {
   id?: string;
-  scenarios?: ValidateScenarioPathItemInput[];
+  scenarios?: ScenarioPathItemData[];
 };

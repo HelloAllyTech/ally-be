@@ -634,7 +634,9 @@ export class ScenarioService {
           id,
         );
       if (scenarioPathItem) {
-        throw new BadRequestException('Scenario is a part of scenario path');
+        throw new BadRequestException(
+          'This simulation is part of a Simulation Pathway and can’t be moved to draft. Please publish the changes.',
+        );
       }
     }
 
@@ -663,7 +665,9 @@ export class ScenarioService {
     const scenarioPathItem =
       await this.scenarioPathSharedService.getScenarioPathItemByScenarioId(id);
     if (scenarioPathItem) {
-      throw new BadRequestException('Scenario is a part of scenario path');
+      throw new BadRequestException(
+        'This simulation is part of a Simulation Pathway and can’t be moved to draft. Please publish the changes.',
+      );
     }
     await this.dataSource.transaction(async (em) => {
       await em.getRepository(Scenarios).softDelete(id);
