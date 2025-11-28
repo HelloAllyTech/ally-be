@@ -151,6 +151,7 @@ export class UserService {
       role,
       tenantId: user.tenantId,
       phone: user.phone,
+      status: user.status,
     };
   }
 
