@@ -294,11 +294,6 @@ export class ScenarioPathService {
     inputScenarioPathItems?: UpdateScenarioPathItemDto[],
     existingScenarioPathItems?: ValidateScenarioPathItemInput[],
   ): ValidateScenarioPathItemInput[] {
-    // If both are undefined, return true
-    // if (!inputScenarioPathItems && !existingScenarioPathItems) {
-    //   throw new BadRequestException('No scenario path items provided');
-    // }
-
     // If one is undefined and the other is not, return false
     if (!inputScenarioPathItems || !existingScenarioPathItems) {
       throw new BadRequestException('Invalid scenario path items');
