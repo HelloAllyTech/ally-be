@@ -15,6 +15,8 @@ import {
   ScenarioPathStatus,
   ScenarioPathFilterOptions,
   MinimalScenarioPathData,
+  ScenarioPathData,
+  ScenarioPathItemData,
 } from '../type/scenario-paths.type';
 import {
   SCENARIO_PATH_MAX_SCENARIOS,
@@ -180,12 +182,13 @@ export class ScenarioPathService {
       }
     }
 
-    let scenarioPathItems = scenarios;
-    if (!scenarioPathItems) {
+    let existingScenarioPathItems: ScenarioPathItemData[] = [];
+    if (scenarios) {
       const scenarioPathItemsData = await this.scenarioPathItemRepository.find({
         where: { scenarioPathId: id },
       });
-      scenarioPathItems = scenarioPathItemsData.map((item) => ({
+      existingScenarioPathItems = scenarioPathItemsData.map((item) => ({
+        id: item.id,
         scenarioId: item.scenarioId,
         order: item.order,
         messageTitle: item.messageTitle,
@@ -194,24 +197,21 @@ export class ScenarioPathService {
       }));
     }
 
-    const updateScenarioPath = {
+    const updateScenarioPath: ScenarioPathData = {
       title: scenarioPath.title,
       description: scenarioPath.description,
       coverImageUrl: scenarioPath.coverImageUrl,
       isGlobal: scenarioPath.isGlobal,
-      scenarios: scenarioPathItems,
       ...updateScenarioPathDto,
+      scenarios: scenarios ?? existingScenarioPathItems,
     };
+    let updatedScenarioPathItems: ScenarioPathItemData[];
     if (scenarioPathSession) {
-      const isValidScenarioPathItems = this.validateUpdateScenarioPathItems(
-        updateScenarioPathDto?.scenarios,
-        scenarioPathItems,
+      updatedScenarioPathItems = this.validateAndGetUpdatedScenarioPathItems(
+        scenarios,
+        existingScenarioPathItems,
       );
-      if (!isValidScenarioPathItems) {
-        throw new BadRequestException(
-          'Cant add or remove any existing scenarios from a scenario path that has active sessions.',
-        );
-      }
+      updateScenarioPath.scenarios = updatedScenarioPathItems;
     }
 
     await this.validateScenarioPath(updateScenarioPath);
@@ -233,23 +233,28 @@ export class ScenarioPathService {
 
       if (scenarios) {
         const scenarioPathItemRepo = manager.getRepository(ScenarioPathItem);
-        // Delete existing scenario path items
-        await scenarioPathItemRepo.delete({ scenarioPathId: id });
 
-        // Create new scenario path items
-        if (scenarios.length > 0) {
-          const items = scenarios.map((scenario) =>
-            scenarioPathItemRepo.create({
-              scenarioPathId: id,
-              scenarioId: scenario.scenarioId,
-              order: scenario.order,
-              messageTitle: scenario.messageTitle,
-              messageContent: scenario.messageContent,
-              minimumScore: scenario.minimumScore,
-            }),
-          );
+        if (scenarioPathSession) {
+          await scenarioPathItemRepo.save(updatedScenarioPathItems);
+        } else {
+          // Delete existing scenario path items
+          await scenarioPathItemRepo.delete({ scenarioPathId: id });
 
-          await scenarioPathItemRepo.save(items);
+          // Create new scenario path items
+          if (scenarios.length > 0) {
+            const items = scenarios.map((scenario) =>
+              scenarioPathItemRepo.create({
+                scenarioPathId: id,
+                scenarioId: scenario.scenarioId,
+                order: scenario.order,
+                messageTitle: scenario.messageTitle,
+                messageContent: scenario.messageContent,
+                minimumScore: scenario.minimumScore,
+              }),
+            );
+
+            await scenarioPathItemRepo.save(items);
+          }
         }
       }
 
@@ -285,36 +290,42 @@ export class ScenarioPathService {
     });
   }
 
-  private async validateUpdateScenarioPathItems(
+  private validateAndGetUpdatedScenarioPathItems(
     inputScenarioPathItems?: UpdateScenarioPathItemDto[],
-    existingScenarioPathItems?: UpdateScenarioPathItemDto[],
-  ) {
-    // If both are undefined, return true
-    if (!inputScenarioPathItems && !existingScenarioPathItems) {
-      return true;
-    }
-
+    existingScenarioPathItems?: ScenarioPathItemData[],
+  ): ScenarioPathItemData[] {
     // If one is undefined and the other is not, return false
     if (!inputScenarioPathItems || !existingScenarioPathItems) {
-      return false;
+      throw new BadRequestException('Invalid scenario path items');
     }
 
-    if (inputScenarioPathItems.length !== existingScenarioPathItems.length)
-      return false;
+    if (inputScenarioPathItems.length !== existingScenarioPathItems.length) {
+      throw new BadRequestException(
+        'Cannot add or remove scenarios because this scenario path already has active sessions',
+      );
+    }
 
     // Check if all scenarioIds from input exist in existing and their orders match
-    return inputScenarioPathItems.every((inputItem) => {
-      return existingScenarioPathItems.some(
+    const updatedScenarioPathItems: ScenarioPathItemData[] = [];
+    inputScenarioPathItems.forEach((inputItem) => {
+      const existingItem = existingScenarioPathItems.find(
         (existingItem) =>
           existingItem.scenarioId === inputItem.scenarioId &&
           existingItem.order === inputItem.order,
       );
+      if (!existingItem) {
+        throw new BadRequestException('Scenario path item not found');
+      }
+      updatedScenarioPathItems.push({
+        ...inputItem,
+        id: existingItem.id,
+      });
     });
+
+    return updatedScenarioPathItems;
   }
 
-  private async validateScenarioPath(
-    scenarioPath: CreateScenarioPathDto & { id?: string },
-  ) {
+  private async validateScenarioPath(scenarioPath: ScenarioPathData) {
     const scenarios = scenarioPath?.scenarios ?? [];
     const scenariosLength = scenarios.length;
     if (scenarioPath.status === ScenarioPathStatus.ACTIVE) {

@@ -73,6 +73,12 @@ export class ScenarioPathSessionService {
   }
 
   async getScenarioPathSessionByScenarioPathId(scenarioPathId: string) {
+    return this.scenarioPathSessionRepository.findOne({
+      where: { scenarioPathId },
+    });
+  }
+
+  async getUserScenarioPathSessionByScenarioPathId(scenarioPathId: string) {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
       throw new UnauthorizedException('Unauthorized access');
@@ -81,7 +87,6 @@ export class ScenarioPathSessionService {
       where: { scenarioPathId, userId: Number(userId) },
     });
   }
-
   async getUserScenarioPathItems(scenarioPathId: string) {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
@@ -150,7 +155,7 @@ export class ScenarioPathSessionService {
       throw new UnauthorizedException('Unauthorized access');
     }
     const existingScenarioPathSession =
-      await this.getScenarioPathSessionByScenarioPathId(scenarioPathId);
+      await this.getUserScenarioPathSessionByScenarioPathId(scenarioPathId);
     if (existingScenarioPathSession?.id)
       throw new BadRequestException('Scenario path session already exists');
 

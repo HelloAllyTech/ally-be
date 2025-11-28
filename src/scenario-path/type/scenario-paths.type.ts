@@ -1,3 +1,5 @@
+import { CreateScenarioPathItemDto } from '../dto/create-scenario-path-item.dto';
+import { CreateScenarioPathDto } from '../dto/create-scenario-path.dto';
 import { ScenarioPathSession } from '../entity/scenario-path-session.entity';
 import { ScenarioPath } from '../entity/scenario-path.entity';
 
@@ -52,3 +54,12 @@ export enum SortOrder {
   ASC = 'ASC',
   DESC = 'DESC',
 }
+
+export type ScenarioPathItemData = CreateScenarioPathItemDto & {
+  id?: string;
+};
+
+export type ScenarioPathData = Omit<CreateScenarioPathDto, 'scenarios'> & {
+  id?: string;
+  scenarios?: ScenarioPathItemData[];
+};
