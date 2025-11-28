@@ -322,6 +322,9 @@ export class ScenarioPathSessionService {
     if (!currentScenarioPathSessionItem) {
       throw new BadRequestException('Scenario path session item not found');
     }
+    if (currentScenarioPathSessionItem.status === SessionItemStatus.COMPLETED) {
+      return;
+    }
     const currentScenarioPathItem =
       await this.scenarioPathSharedService.getScenarioPathItemById(
         currentScenarioPathSessionItem.scenarioPathItemId,
