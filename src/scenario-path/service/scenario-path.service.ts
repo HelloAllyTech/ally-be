@@ -270,6 +270,7 @@ export class ScenarioPathService {
         const scenarioPathTenantRepo =
           manager.getRepository(ScenarioPathTenant);
         if (updatedScenarioPath?.isGlobal) {
+          await scenarioPathTenantRepo.delete({ scenarioPathId: id });
           const scenarioPathTenantMappings = tenantIds.map((tenantId) => ({
             scenarioPathId: id,
             tenantId: tenantId,
