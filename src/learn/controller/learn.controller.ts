@@ -7,6 +7,7 @@ import {
   Body,
   Put,
   Delete,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -45,6 +46,12 @@ import { DeleteCoverImageDto } from '../dto/delete-cover-image.dto';
 import { ScenarioVideoUploadResponseDto } from '../dto/scenario-video-upload-response.dto';
 import { ScenarioVideoUploadRequestDto } from '../dto/scenario-video-upload-request.dto';
 import { DeleteCoverVideoDto } from '../dto/delete-cover-video.dto';
+import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import { AddScenarioTenantDto } from '../dto/add-scenario-tenant.dto';
+import { ScenarioTenantService } from '../service/scenario-tenant.service';
+import { DeleteScenarioTenantDto } from '../dto/delete-scenario-tenant.dto';
+import { ScenarioSessions } from '../entity/scenario-sessions.entity';
+import { SCENARIO_SESSION_EXAMPLE } from '../constants/scenario-session.constants';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -54,6 +61,7 @@ export class LearnController {
   constructor(
     private readonly scenarioService: ScenarioService,
     private readonly scenarioSessionService: ScenarioSessionService,
+    private readonly scenarioTenantService: ScenarioTenantService,
   ) {}
 
   @Public()
@@ -94,6 +102,18 @@ export class LearnController {
     type: String,
     description: 'Filter by scenario status(comma-separated)',
   })
+  @ApiQuery({
+    name: 'tenantId',
+    required: false,
+    type: String,
+    description: 'TenantId',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Search by title',
+  })
   @Get('admin-scenarios')
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIOS])
   async getAdminScenarios(
@@ -103,13 +123,18 @@ export class LearnController {
     sortBy: ScenarioSortBy = ScenarioSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('status') status?: string,
+    @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
+    @Query('search') search?: string,
   ) {
-    return this.scenarioService.getAdminScenarios(status, {
-      limit,
-      offset,
-      sortBy,
-      order,
-    });
+    return this.scenarioService.getAdminScenarios(
+      { status, tenantId, search },
+      {
+        limit,
+        offset,
+        sortBy,
+        order,
+      },
+    );
   }
 
   // TODO: Remove swagger lock
@@ -130,8 +155,15 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Get a scenario by id' })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the scenario',
+    type: GetAdminScenarioDto,
+  })
   @Get('admin-scenarios/:id')
-  async getAdminScenario(@Param('id') id: number): Promise<Scenarios> {
+  async getAdminScenario(
+    @Param('id') id: number,
+  ): Promise<GetAdminScenarioDto> {
     return this.scenarioService.getAdminScenario(id);
   }
 
@@ -548,5 +580,55 @@ export class LearnController {
   @Delete('cover-image')
   async deleteCoverImage(@Body() deleteCoverImageDto: DeleteCoverImageDto) {
     return this.scenarioService.deleteCoverImage(deleteCoverImageDto);
+  }
+
+  @ApiOperation({ description: 'Assign scenarios to a tenant' })
+  @ApiResponse({
+    description: 'Scenarios assigned to tenant successfully',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_TENANT])
+  @Post('scenario/tenant/:tenantId')
+  async assignScenariosToTenant(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() addScenarioTenantDto: AddScenarioTenantDto,
+  ) {
+    return this.scenarioTenantService.assignScenariosToTenant(
+      tenantId,
+      addScenarioTenantDto,
+    );
+  }
+
+  @ApiOperation({ description: 'Remove scenario from tenants' })
+  @ApiResponse({
+    description: 'Scenario access removed from tenants successfully',
+  })
+  @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_TENANT])
+  @Delete('scenario/tenant/:tenantId')
+  async removeScenariosFromTenant(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() deleteScenarioTenantDto: DeleteScenarioTenantDto,
+  ) {
+    return this.scenarioTenantService.removeScenariosFromTenant(
+      tenantId,
+      deleteScenarioTenantDto,
+    );
+  }
+
+  @ApiOperation({
+    description: 'get scenario session from path session item id',
+  })
+  @ApiResponse({
+    description: 'Scenario session retrieved successfully',
+    type: ScenarioSessions,
+    example: SCENARIO_SESSION_EXAMPLE,
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
+  @Get('scenario-session/scenario-path-session-item/:pathSessionItemId')
+  async getLatestScenarioSessionByPathSessionItemId(
+    @Param('pathSessionItemId', ParseUUIDPipe) pathSessionItemId: string,
+  ): Promise<ScenarioSessions | null> {
+    return this.scenarioSessionService.getLatestScenarioSessionByScenarioPathSessionItemId(
+      pathSessionItemId,
+    );
   }
 }

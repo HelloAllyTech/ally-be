@@ -124,6 +124,7 @@ export class ChatService {
       .andWhere('chat.tenantId = :tenantId', {
         tenantId: ExecutionManager.getTenantId(),
       });
+
     const chat = (await chatQuery.getOne()) as Chat & { details: CallDetails };
     if (!chat) {
       throw new HttpException('Chat not found', 404);
