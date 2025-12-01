@@ -250,19 +250,19 @@ export class ScenarioSessionService {
 
     // Enhance all events with dependentEvents for combination events
     const allEvents = Array.from(eventMap.values()).map((event) => {
+      const { detectionData, ...eventWithoutDetectionData } = event;
       if (event.detectionType === SessionEventDetectionType.COMBINATION) {
-        const detectionData = (event as any).data || event.detectionData;
         const dependentEvents = extractEventIds(detectionData?.expression);
 
         return {
-          ...event,
+          ...eventWithoutDetectionData,
           data: {
-            ...((event as any).data || {}),
+            ...detectionData,
             dependentEvents,
           },
         };
       }
-      return event;
+      return { ...eventWithoutDetectionData, data: detectionData };
     });
 
     const autoTerminationEvent = terminationEvent?.autoTerminationStatus
