@@ -595,6 +595,7 @@ export class ScenarioService {
         const scenarioTenantRepo = entityManager.getRepository(ScenarioTenants);
 
         if (updateScenarioDto.isGlobal) {
+          await scenarioTenantRepo.delete({ scenarioId: id });
           const scenarioTenantMappings = tenantIds.map((tenantId) => ({
             scenarioId: id,
             tenantId: tenantId,
