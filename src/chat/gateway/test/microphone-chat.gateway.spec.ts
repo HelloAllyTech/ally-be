@@ -20,6 +20,7 @@ import { MessageType, Message } from '../../entity/message.entity';
 import { UserChatSessionData } from '../../type/chat.type';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
 import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
 
 // Mock ExecutionManager
@@ -371,6 +372,7 @@ describe('MicrophoneChatGateway', () => {
         role: 'CLIENT',
         tenantId: 'tenant123',
       });
+      mockPermissionsService.getUserPermissions.mockResolvedValue([]);
       mockPermissionValidator.validatePermissions.mockResolvedValue(false);
 
       await gatewayPrivate.authenticateClient(mockSocket);
@@ -385,6 +387,9 @@ describe('MicrophoneChatGateway', () => {
         role: UserRole.COUNSELOR,
         tenantId: 'tenant123',
       });
+      mockPermissionsService.getUserPermissions.mockResolvedValue([
+        PERMISSIONS.START_MICROPHONE_CHAT,
+      ]);
       mockPermissionValidator.validatePermissions.mockResolvedValue(true);
 
       await gatewayPrivate.authenticateClient(mockSocket);

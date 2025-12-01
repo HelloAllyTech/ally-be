@@ -34,4 +34,16 @@ export class User extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   externalId?: string;
+
+  @Column({ nullable: true })
+  createdBy?: number;
+
+  @Column({ nullable: true })
+  updatedBy?: number;
+
+  @Column({ nullable: true })
+  suspendedBy?: number;
+
+  @Column({ nullable: true })
+  suspendedAt?: Date;
 }

@@ -4,7 +4,8 @@ import { SessionEventRepository } from '../session-event.repository';
 import { SessionEvents } from '../../entity/session-events.entity';
 import { SessionEventVisibilityType } from '../../enum/session-event-visibility-type.enum';
 import { Pagination } from 'src/common/type/common.type';
-import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
+import { SessionEventDetectionType } from '../../enum/session-event-detection.enum';
+import { CreateSessionEventDto } from '../../dto/session-event.dto';
 
 describe('SessionEventRepository', () => {
   let repository: SessionEventRepository;
@@ -18,11 +19,11 @@ describe('SessionEventRepository', () => {
     emoji: '👍',
     message: 'Great job!',
     branchInstruction: 'Continue',
-    detectionType: 'SENTENCE_SIMILARITY' as any,
+    detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
-    speaker: SessionEventSpeaker.CARE_GIVER,
+    eventCode: 'SS1',
   };
 
   beforeEach(async () => {
@@ -41,6 +42,7 @@ describe('SessionEventRepository', () => {
 
     const mockDataSource = {
       createEntityManager: jest.fn().mockReturnValue(mockEntityManager),
+      query: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -57,6 +59,12 @@ describe('SessionEventRepository', () => {
 
     // Mock the createQueryBuilder method on the repository instance
     repository.createQueryBuilder = jest.fn().mockReturnValue(queryBuilder);
+    // Mock the query method
+    repository.query = jest.fn();
+    // Mock the create method
+    repository.create = jest.fn();
+    // Mock the save method
+    repository.save = jest.fn();
   });
 
   afterEach(() => {
@@ -276,7 +284,7 @@ describe('SessionEventRepository', () => {
         'sessionEvent',
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'sessionEvent.name ILIKE :searchName',
+        '(sessionEvent.name ILIKE :searchName OR sessionEvent.eventCode ILIKE :searchName)',
       );
       expect(queryBuilder.setParameters).toHaveBeenCalledWith({
         searchName: '%Test%',
@@ -305,7 +313,7 @@ describe('SessionEventRepository', () => {
         { visibilityType: visibilityType },
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'sessionEvent.name ILIKE :searchName',
+        '(sessionEvent.name ILIKE :searchName OR sessionEvent.eventCode ILIKE :searchName)',
       );
       expect(queryBuilder.setParameters).toHaveBeenCalledWith({
         searchName: '%Event%',
@@ -332,7 +340,7 @@ describe('SessionEventRepository', () => {
       );
 
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'sessionEvent.name ILIKE :searchName',
+        '(sessionEvent.name ILIKE :searchName OR sessionEvent.eventCode ILIKE :searchName)',
       );
       expect(queryBuilder.setParameters).toHaveBeenCalledWith({
         searchName: '%Test%',
@@ -369,7 +377,7 @@ describe('SessionEventRepository', () => {
         { visibilityType: visibilityType },
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'sessionEvent.name ILIKE :searchName',
+        '(sessionEvent.name ILIKE :searchName OR sessionEvent.eventCode ILIKE :searchName)',
       );
       expect(queryBuilder.setParameters).toHaveBeenCalledWith({
         searchName: '%Great%',
@@ -411,12 +419,268 @@ describe('SessionEventRepository', () => {
       );
 
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'sessionEvent.name ILIKE :searchName',
+        '(sessionEvent.name ILIKE :searchName OR sessionEvent.eventCode ILIKE :searchName)',
       );
       expect(queryBuilder.setParameters).toHaveBeenCalledWith({
         searchName: "%Test's Event%",
       });
       expect(result).toEqual(expectedEvents);
+    });
+  });
+
+  describe('createSessionEvents', () => {
+    const mockCreateEventDto: CreateSessionEventDto = {
+      name: 'Test Event',
+      description: 'Test description',
+      score: 85,
+      emoji: '👍',
+      message: 'Great job!',
+      branchInstruction: 'Continue',
+      detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+      visibilityType: SessionEventVisibilityType.ACTIVE,
+      detectionData: {
+        sentences: ['Sentence 1', 'Sentence 2'],
+      },
+    };
+
+    it('should create a single session event successfully', async () => {
+      const sequenceValue = 1;
+      const expectedEventCode = 'SS1';
+      const createdEvent = {
+        ...mockCreateEventDto,
+        id: expect.any(String),
+        eventCode: expectedEventCode,
+      };
+
+      (repository.query as jest.Mock).mockResolvedValue([
+        { next_value: sequenceValue },
+      ]);
+      (repository.create as jest.Mock).mockReturnValue(createdEvent);
+      (repository.save as jest.Mock).mockResolvedValue([createdEvent]);
+
+      const result = await repository.createSessionEvents([mockCreateEventDto]);
+
+      expect(repository.query).toHaveBeenCalledWith(
+        `SELECT nextval('session_events_event_code_seq') as next_value`,
+      );
+      expect(repository.create).toHaveBeenCalledWith({
+        ...mockCreateEventDto,
+        eventCode: expectedEventCode,
+      });
+      expect(repository.save).toHaveBeenCalledWith([createdEvent]);
+      expect(result).toEqual([createdEvent]);
+    });
+
+    it('should create multiple session events with unique sequence values', async () => {
+      const createEventDtos = [
+        mockCreateEventDto,
+        { ...mockCreateEventDto, name: 'Second Event' },
+      ];
+
+      (repository.query as jest.Mock)
+        .mockResolvedValueOnce([{ next_value: 1 }])
+        .mockResolvedValueOnce([{ next_value: 2 }]);
+
+      const createdEvent1 = {
+        ...mockCreateEventDto,
+        id: expect.any(String),
+        eventCode: 'SS1',
+      };
+      const createdEvent2 = {
+        ...mockCreateEventDto,
+        name: 'Second Event',
+        id: expect.any(String),
+        eventCode: 'SS2',
+      };
+
+      (repository.create as jest.Mock)
+        .mockReturnValueOnce(createdEvent1)
+        .mockReturnValueOnce(createdEvent2);
+      (repository.save as jest.Mock).mockResolvedValue([
+        createdEvent1,
+        createdEvent2,
+      ]);
+
+      const result = await repository.createSessionEvents(createEventDtos);
+
+      expect(repository.query).toHaveBeenCalledTimes(2);
+      expect(repository.create).toHaveBeenCalledTimes(2);
+      expect(repository.save).toHaveBeenCalledWith([
+        createdEvent1,
+        createdEvent2,
+      ]);
+      expect(result).toEqual([createdEvent1, createdEvent2]);
+    });
+
+    it('should use correct prefix for different detection types', async () => {
+      const detectionTypes = [
+        {
+          type: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          expectedPrefix: 'SS',
+        },
+        {
+          type: SessionEventDetectionType.SEMANTIC_SIMILARITY,
+          expectedPrefix: 'SM',
+        },
+        { type: SessionEventDetectionType.TIME, expectedPrefix: 'TI' },
+        { type: SessionEventDetectionType.SCORE, expectedPrefix: 'SC' },
+        {
+          type: SessionEventDetectionType.COMBINATION,
+          expectedPrefix: 'CO',
+        },
+      ];
+
+      for (const detectionType of detectionTypes) {
+        jest.clearAllMocks();
+
+        const eventDto = {
+          ...mockCreateEventDto,
+          detectionType: detectionType.type,
+        };
+
+        (repository.query as jest.Mock).mockResolvedValue([{ next_value: 1 }]);
+        const createdEvent = {
+          ...eventDto,
+          id: expect.any(String),
+          eventCode: `${detectionType.expectedPrefix}1`,
+        };
+        (repository.create as jest.Mock).mockReturnValue(createdEvent);
+        (repository.save as jest.Mock).mockResolvedValue([createdEvent]);
+
+        await repository.createSessionEvents([eventDto]);
+
+        expect(repository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            eventCode: `${detectionType.expectedPrefix}1`,
+          }),
+        );
+      }
+    });
+
+    it('should use default detection type when not provided', async () => {
+      const eventDtoWithoutDetectionType = {
+        ...mockCreateEventDto,
+        detectionType: undefined,
+      };
+
+      (repository.query as jest.Mock).mockResolvedValue([{ next_value: 1 }]);
+      const createdEvent = {
+        ...eventDtoWithoutDetectionType,
+        id: expect.any(String),
+        eventCode: 'SS1',
+        detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+      };
+      (repository.create as jest.Mock).mockReturnValue(createdEvent);
+      (repository.save as jest.Mock).mockResolvedValue([createdEvent]);
+
+      await repository.createSessionEvents([eventDtoWithoutDetectionType]);
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventCode: 'SS1',
+        }),
+      );
+    });
+
+    it('should handle empty array input', async () => {
+      (repository.save as jest.Mock).mockResolvedValue([]);
+
+      const result = await repository.createSessionEvents([]);
+
+      expect(repository.query).not.toHaveBeenCalled();
+      expect(repository.create).not.toHaveBeenCalled();
+      expect(repository.save).toHaveBeenCalledWith([]);
+      expect(result).toEqual([]);
+    });
+
+    it('should handle null sequence result with fallback', async () => {
+      (repository.query as jest.Mock).mockResolvedValue([{ next_value: null }]);
+      const createdEvent = {
+        ...mockCreateEventDto,
+        id: expect.any(String),
+        eventCode: 'SS0',
+      };
+      (repository.create as jest.Mock).mockReturnValue(createdEvent);
+      (repository.save as jest.Mock).mockResolvedValue([createdEvent]);
+
+      await repository.createSessionEvents([mockCreateEventDto]);
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventCode: 'SS0',
+        }),
+      );
+    });
+
+    it('should handle query error', async () => {
+      const error = new Error('Database query failed');
+      (repository.query as jest.Mock).mockRejectedValue(error);
+
+      await expect(
+        repository.createSessionEvents([mockCreateEventDto]),
+      ).rejects.toThrow('Database query failed');
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should handle save error', async () => {
+      const error = new Error('Save failed');
+      (repository.query as jest.Mock).mockResolvedValue([{ next_value: 1 }]);
+      const createdEvent = {
+        ...mockCreateEventDto,
+        id: expect.any(String),
+        eventCode: 'SS1',
+      };
+      (repository.create as jest.Mock).mockReturnValue(createdEvent);
+      (repository.save as jest.Mock).mockRejectedValue(error);
+
+      await expect(
+        repository.createSessionEvents([mockCreateEventDto]),
+      ).rejects.toThrow('Save failed');
+      expect(repository.query).toHaveBeenCalled();
+      expect(repository.create).toHaveBeenCalled();
+    });
+
+    it('should preserve all event properties when creating', async () => {
+      const fullEventDto: CreateSessionEventDto = {
+        name: 'Full Event',
+        description: 'Full description',
+        score: 90,
+        emoji: '🎉',
+        message: 'Excellent!',
+        branchInstruction: 'Move forward',
+        detectionType: SessionEventDetectionType.SCORE,
+        visibilityType: SessionEventVisibilityType.PASSIVE,
+        detectionData: {
+          score: 85,
+          condition: 'GTE' as any,
+        },
+      };
+
+      (repository.query as jest.Mock).mockResolvedValue([{ next_value: 5 }]);
+      const createdEvent = {
+        ...fullEventDto,
+        id: expect.any(String),
+        eventCode: 'SC5',
+      };
+      (repository.create as jest.Mock).mockReturnValue(createdEvent);
+      (repository.save as jest.Mock).mockResolvedValue([createdEvent]);
+
+      await repository.createSessionEvents([fullEventDto]);
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: fullEventDto.name,
+          description: fullEventDto.description,
+          score: fullEventDto.score,
+          emoji: fullEventDto.emoji,
+          message: fullEventDto.message,
+          branchInstruction: fullEventDto.branchInstruction,
+          detectionType: fullEventDto.detectionType,
+          visibilityType: fullEventDto.visibilityType,
+          detectionData: fullEventDto.detectionData,
+          eventCode: 'SC5',
+        }),
+      );
     });
   });
 });

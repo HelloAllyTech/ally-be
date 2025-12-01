@@ -14,11 +14,10 @@ import { ScenarioVoices } from '../entity/scenario-voices.entity';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
 import { UpdateScenarioVoiceDto } from '../dto/update-scenario-voice.dto';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
-import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
-import { Pagination } from 'src/common/type/common.type';
+import { Pagination, ScenarioFilters } from 'src/common/type/common.type';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
@@ -40,19 +39,14 @@ import {
   UPLOADED_VIDEO_FILE_DURATION_LIMIT,
   UPLOADED_VIDEO_FILE_SIZE_LIMIT,
 } from '../constants/scenario-cover-video.constants';
-
-interface ScenarioData {
-  status?: ScenarioStatus;
-  title?: string;
-  description?: string;
-  coverImageUrl?: string;
-  lifeHistory?: string;
-  voiceId?: string;
-  age?: number;
-  gender?: string;
-  currentLocation?: string;
-  [key: string]: any;
-}
+import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import {
+  formatAutoTerminationEventsList,
+  mapCreateScenarioRequestToEntity,
+} from '../util/scenario.util';
+import { TenantService } from 'src/tenant/service/tenant.service';
+import { ScenarioTenants } from '../entity/scenario-tenants.entity';
+import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 
 @Injectable()
 export class ScenarioService {
@@ -62,10 +56,12 @@ export class ScenarioService {
     private scenariosRepository: ScenariosRepository,
     private scenarioEventsRepository: ScenarioEventsRepository,
     private sessionEventService: SessionEventService,
+    private tenantService: TenantService,
     private scenarioVoiceRepository: ScenarioVoicesRepository,
     private s3Service: S3Service,
     private configService: AppConfigService,
     private dataSource: DataSource,
+    private scenarioPathSharedService: ScenarioPathSharedService,
   ) {}
 
   async getScenarios(): Promise<Scenarios[]> {
@@ -86,9 +82,19 @@ export class ScenarioService {
     });
   }
 
-  async getAdminScenarios(status?: string, options?: Pagination) {
+  async getAdminScenarios(
+    scenarioFilters?: ScenarioFilters,
+    options?: Pagination,
+  ) {
+    const { status, tenantId, search } = scenarioFilters ?? {};
+    if (tenantId) {
+      const tenant = await this.tenantService.findById(tenantId);
+      if (!tenant) {
+        throw new NotFoundException('Tenant not found');
+      }
+    }
     const scenarios = await this.scenariosRepository.getAdminScenarios(
-      status,
+      { status, tenantId, search },
       options,
     );
     const mappedData = scenarios.map((item) => {
@@ -106,6 +112,7 @@ export class ScenarioService {
         createdBy: item.user_name,
         status: item.scenario_status,
         usage: item.usage,
+        isAssignedToTenant: item.isAssignedToTenant,
         isPreviewEnabled,
       };
     });
@@ -192,12 +199,21 @@ export class ScenarioService {
     return scenario;
   }
 
-  async getAdminScenario(id: number): Promise<Scenarios> {
-    const scenario = await this.scenariosRepository.findOne({ where: { id } });
-    if (!scenario) {
+  async getAdminScenario(id: number): Promise<GetAdminScenarioDto> {
+    const result = await this.scenariosRepository.getAdminScenarioById(id);
+
+    if (!result) {
       throw new NotFoundException('Scenario not found');
     }
-    return scenario;
+
+    if (result?.terminationEvent?.eventId) {
+      const eventDetails = await this.sessionEventService.findSessionEventById(
+        result.terminationEvent.eventId,
+      );
+      result.terminationEvent.name = eventDetails?.name;
+    }
+
+    return result;
   }
 
   async getPresignedUrlForScenarioCoverImage(
@@ -358,43 +374,49 @@ export class ScenarioService {
     const createScenarioDtos = await Promise.all(
       createScenariosDto.scenarios.map(async (scenario) => {
         await this.validateCreateScenario(scenario);
-
-        return {
-          createdBy: userId,
-          updatedBy: userId,
-          title: scenario.title,
-          scenario: '',
-          description: scenario.description,
-          coverImageUrl: scenario.coverImageUrl,
-          coverVideoUrl: scenario.coverVideoUrl,
-          status: scenario.status,
-          prompt: scenario.prompt,
-          metadata: {
-            agentGoal: scenario.agentGoal,
-            lifeHistory: scenario.lifeHistory,
-            voiceId: scenario.voiceId,
-            name: scenario.name,
-            age: scenario.age,
-            gender: scenario.gender,
-            genderIdentity: scenario.genderIdentity,
-            sexualOrientation: scenario.sexualOrientation,
-            currentLocation: scenario.currentLocation,
-            profession: scenario.profession,
-            context: scenario.context,
-            sessionBehaviorGuidelines: scenario.sessionBehaviorGuidelines,
-            coreMemories: scenario.coreMemories,
-            personality: scenario.personality,
-            startingState: scenario.startingState,
-            emotionalNeeds: scenario.emotionalNeeds,
-            tone: scenario.tone,
-            openingStatements: scenario.openingStatements,
-          },
-        };
+        return mapCreateScenarioRequestToEntity(scenario, userId);
       }),
     );
 
-    const scenarios = this.scenariosRepository.create(createScenarioDtos);
-    return this.scenariosRepository.save(scenarios);
+    return await this.dataSource.transaction(async (entityManager) => {
+      const scenariosRepo = entityManager.getRepository(Scenarios);
+      const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
+      const scenarios = scenariosRepo.create(createScenarioDtos);
+      const savedScenarios = await scenariosRepo.save(scenarios);
+      const globalScenarios = savedScenarios.filter(
+        (scenario) => scenario.isGlobal,
+      );
+
+      if (globalScenarios.length > 0) {
+        const tenants = await this.tenantService.findAll();
+        const tenantIds = tenants.map((tenant) => tenant.id);
+
+        for (const globalScenario of globalScenarios) {
+          const scenarioTenantRepository =
+            entityManager.getRepository(ScenarioTenants);
+          const scenarioTenant = tenantIds.map((tenantId) =>
+            scenarioTenantRepository.create({
+              scenarioId: globalScenario.id,
+              tenantId,
+            }),
+          );
+          await scenarioTenantRepository.save(scenarioTenant);
+        }
+      }
+      const autoTerminationEventList = formatAutoTerminationEventsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+      const scenarioTerminationEvents = scenarioEventsRepo.create(
+        autoTerminationEventList,
+      );
+
+      if (scenarioTerminationEvents.length > 0) {
+        await scenarioEventsRepo.save(scenarioTerminationEvents);
+      }
+
+      return savedScenarios;
+    });
   }
 
   async validateCreateScenario(
@@ -406,13 +428,15 @@ export class ScenarioService {
       await this.getScenarioVoice(createScenarioDto?.voiceId);
   }
 
-  private validateScenarioStatus(data: ScenarioData): void {
+  private validateScenarioStatus(
+    data: CreateScenarioDto | UpdateScenarioDto,
+  ): void {
     const { status, ...otherFields } = data;
 
     // Validate DRAFT: at least one field besides status must be provided
     if (status === ScenarioStatus.DRAFT) {
-      const hasAtLeastOneField = Object.keys(otherFields).some(
-        (key) => otherFields[key] !== undefined && otherFields[key] !== null,
+      const hasAtLeastOneField = Object.values(otherFields).some(
+        (value) => value !== undefined && value !== null,
       );
 
       if (!hasAtLeastOneField) {
@@ -424,8 +448,17 @@ export class ScenarioService {
 
     // Validate ACTIVE: all required fields must be present
     if (status === ScenarioStatus.ACTIVE) {
+      if (
+        data.autoTerminationStatus &&
+        (!data.terminationEventId || !data.terminationMessage)
+      ) {
+        throw new BadRequestException(
+          'Termination event and message are required for enabling auto termination',
+        );
+      }
+
       const missingFields = SCENARIO_MANDATORY_FIELDS.filter(
-        (field) => !data[field],
+        (field) => !data[field as keyof typeof data],
       );
 
       if (missingFields.length > 0) {
@@ -442,70 +475,144 @@ export class ScenarioService {
     userId: number,
   ): Promise<boolean> {
     const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
-
-    // Build update object
-    const updateData: DeepPartial<Scenarios> = {
-      updatedBy: userId,
-    };
-
-    const updateScenarioObjectFields = [
-      'title',
-      'description',
-      'coverImageUrl',
-      'coverVideoUrl',
-      'status',
-      'prompt',
-    ];
-
-    for (const field of updateScenarioObjectFields) {
-      if (updateScenarioDto[field as keyof UpdateScenarioDto] !== undefined) {
-        updateData[field as keyof Scenarios] = updateScenarioDto[
-          field as keyof UpdateScenarioDto
-        ] as any;
-      }
-    }
-
-    // Handle metadata fields - merge with existing metadata
-    const metadataUpdates: Record<string, any> = {};
-
-    const metadataFieldMap = {
-      agentGoal: updateScenarioDto.agentGoal,
-      name: updateScenarioDto.name,
-      age: updateScenarioDto.age,
-      gender: updateScenarioDto.gender,
-      genderIdentity: updateScenarioDto.genderIdentity,
-      sexualOrientation: updateScenarioDto.sexualOrientation,
-      currentLocation: updateScenarioDto.currentLocation,
-      profession: updateScenarioDto.profession,
-      context: updateScenarioDto.context,
-      sessionBehaviorGuidelines: updateScenarioDto.sessionBehaviorGuidelines,
-      lifeHistory: updateScenarioDto.lifeHistory,
-      coreMemories: updateScenarioDto.coreMemories,
-      personality: updateScenarioDto.personality,
-      startingState: updateScenarioDto.startingState,
-      emotionalNeeds: updateScenarioDto.emotionalNeeds,
-      tone: updateScenarioDto.tone,
-      openingStatements: updateScenarioDto.openingStatements,
-      voiceId: updateScenarioDto.voiceId,
-    };
-
-    // Only include fields that are defined
-    for (const [key, value] of Object.entries(metadataFieldMap)) {
-      if (value !== undefined) {
-        metadataUpdates[key] = value;
-      }
-    }
-
-    // If there are metadata updates, merge with existing metadata
-    if (Object.keys(metadataUpdates).length > 0) {
-      updateData.metadata = {
-        ...scenario.metadata,
-        ...metadataUpdates,
+    return await this.dataSource.transaction(async (entityManager) => {
+      // Build update object
+      const updateData: DeepPartial<Scenarios> = {
+        updatedBy: userId,
       };
-    }
 
-    const updated = await this.scenariosRepository.update(id, updateData);
-    return updated.affected !== 0;
+      const updateScenarioObjectFields = [
+        'title',
+        'description',
+        'coverImageUrl',
+        'coverVideoUrl',
+        'status',
+        'prompt',
+        'isGlobal',
+      ];
+
+      for (const field of updateScenarioObjectFields) {
+        if (updateScenarioDto[field as keyof UpdateScenarioDto] !== undefined) {
+          updateData[field as keyof Scenarios] = updateScenarioDto[
+            field as keyof UpdateScenarioDto
+          ] as any;
+        }
+      }
+
+      // Handle metadata fields - merge with existing metadata
+      const metadataUpdates: Record<string, any> = {};
+
+      const metadataFieldMap = {
+        agentGoal: updateScenarioDto.agentGoal,
+        name: updateScenarioDto.name,
+        age: updateScenarioDto.age,
+        gender: updateScenarioDto.gender,
+        genderIdentity: updateScenarioDto.genderIdentity,
+        sexualOrientation: updateScenarioDto.sexualOrientation,
+        currentLocation: updateScenarioDto.currentLocation,
+        profession: updateScenarioDto.profession,
+        context: updateScenarioDto.context,
+        sessionBehaviorGuidelines: updateScenarioDto.sessionBehaviorGuidelines,
+        lifeHistory: updateScenarioDto.lifeHistory,
+        coreMemories: updateScenarioDto.coreMemories,
+        personality: updateScenarioDto.personality,
+        startingState: updateScenarioDto.startingState,
+        emotionalNeeds: updateScenarioDto.emotionalNeeds,
+        tone: updateScenarioDto.tone,
+        openingStatements: updateScenarioDto.openingStatements,
+        voiceId: updateScenarioDto.voiceId,
+      };
+
+      // Only include fields that are defined
+      for (const [key, value] of Object.entries(metadataFieldMap)) {
+        if (value !== undefined) {
+          metadataUpdates[key] = value;
+        }
+      }
+
+      // If there are metadata updates, merge with existing metadata
+      if (Object.keys(metadataUpdates).length > 0) {
+        updateData.metadata = {
+          ...scenario.metadata,
+          ...metadataUpdates,
+        };
+      }
+
+      const scenarioRepository = entityManager.getRepository(Scenarios);
+      const updated = await scenarioRepository.update(id, updateData);
+      const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
+      const existingScenarioTerminationEvent = await scenarioEventsRepo.findOne(
+        {
+          where: { scenarioId: id, autoTerminationStatus: true },
+        },
+      );
+      // The already existing termination event is not the one in update query or the autoterminationstatus is set to false- delete the event
+      if (
+        existingScenarioTerminationEvent &&
+        (!updateScenarioDto.autoTerminationStatus ||
+          existingScenarioTerminationEvent.eventId !==
+            updateScenarioDto.terminationEventId)
+      ) {
+        await scenarioEventsRepo.delete({
+          scenarioId: id,
+          eventId: existingScenarioTerminationEvent.eventId,
+          autoTerminationStatus: true,
+        });
+      }
+      // If the input termination event id is the same as the existing one - update the message
+      if (
+        existingScenarioTerminationEvent?.eventId ===
+        updateScenarioDto.terminationEventId
+      ) {
+        await scenarioEventsRepo.update(
+          {
+            scenarioId: id,
+            eventId: updateScenarioDto.terminationEventId,
+            autoTerminationStatus: true,
+          },
+          { message: updateScenarioDto.terminationMessage },
+        );
+      } else if (updateScenarioDto.autoTerminationStatus) {
+        const newTerminationEvent = scenarioEventsRepo.create({
+          scenarioId: id,
+          eventId: updateScenarioDto.terminationEventId,
+          autoTerminationStatus: true,
+          message: updateScenarioDto.terminationMessage,
+        });
+        scenarioEventsRepo.save(newTerminationEvent);
+      }
+      if (updated.affected === 0) return false;
+
+      const updatedScenario = await scenarioRepository.findOne({
+        where: { id },
+      });
+      if (
+        updateScenarioDto.isGlobal !== undefined &&
+        updatedScenario?.isGlobal !== scenario.isGlobal
+      ) {
+        const tenants = await this.tenantService.findAll();
+        const tenantIds = tenants.map((tenant) => tenant.id);
+        const scenarioTenantRepo = entityManager.getRepository(ScenarioTenants);
+
+        if (updateScenarioDto.isGlobal) {
+          await scenarioTenantRepo.delete({ scenarioId: id });
+          const scenarioTenantMappings = tenantIds.map((tenantId) => ({
+            scenarioId: id,
+            tenantId: tenantId,
+          }));
+          await scenarioTenantRepo.save(
+            scenarioTenantRepo.create(scenarioTenantMappings),
+          );
+        } else {
+          await scenarioTenantRepo.delete({
+            scenarioId: id,
+            tenantId: In(tenantIds),
+          });
+        }
+      }
+
+      return true;
+    });
   }
 
   async validateUpdateScenario(
@@ -515,6 +622,23 @@ export class ScenarioService {
     const scenario = await this.scenariosRepository.findOne({ where: { id } });
     if (!scenario) {
       throw new NotFoundException('Scenario not found');
+    }
+
+    if (
+      updateScenarioDto?.status &&
+      updateScenarioDto.status !== scenario.status &&
+      (updateScenarioDto.status === ScenarioStatus.DRAFT ||
+        updateScenarioDto.status === ScenarioStatus.ARCHIVED)
+    ) {
+      const scenarioPathItem =
+        await this.scenarioPathSharedService.getScenarioPathItemByScenarioId(
+          id,
+        );
+      if (scenarioPathItem) {
+        throw new BadRequestException(
+          'This simulation is part of a Simulation Pathway and can’t be moved to draft. Please publish the changes.',
+        );
+      }
     }
 
     if (updateScenarioDto.status) {
@@ -539,10 +663,17 @@ export class ScenarioService {
 
   async deleteAdminScenario(id: number): Promise<boolean> {
     await this.getAdminScenario(id);
-
+    const scenarioPathItem =
+      await this.scenarioPathSharedService.getScenarioPathItemByScenarioId(id);
+    if (scenarioPathItem) {
+      throw new BadRequestException(
+        'This simulation is part of a Simulation Pathway and can’t be moved to draft. Please publish the changes.',
+      );
+    }
     await this.dataSource.transaction(async (em) => {
       await em.getRepository(Scenarios).softDelete(id);
       await em.getRepository(ScenarioEvents).softDelete({ scenarioId: id });
+      await em.getRepository(ScenarioTenants).softDelete({ scenarioId: id });
     });
     return true;
   }
@@ -564,59 +695,70 @@ export class ScenarioService {
     if (invalidEventIds.length > 0) {
       throw new BadRequestException(`Invalid event IDs: ${invalidEventIds}`);
     }
-    // Create an array of ScenarioEvents entities to be saved
-    const scenarioEvents = events.map((event) => {
-      const {
-        id,
-        feedbackStatus,
-        score,
-        emoji,
-        message,
-        branchingStatus,
-        branchInstruction,
-      } = event;
+
+    return await this.dataSource.transaction(async (entityManager) => {
+      const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
+
+      // Delete existing non-auto-termination events for this scenario
+      await scenarioEventsRepo.delete({
+        scenarioId,
+        autoTerminationStatus: false,
+      });
+
+      // Create an array of ScenarioEvents entities to be saved
+      const scenarioEvents = events.map((event) => {
+        const {
+          id,
+          feedbackStatus,
+          score,
+          emoji,
+          message,
+          branchingStatus,
+          branchInstruction,
+        } = event;
+        return {
+          scenarioId,
+          eventId: id,
+          autoTerminationStatus: false,
+          score,
+          ...(feedbackStatus
+            ? {
+                feedbackStatus,
+                emoji,
+                message,
+              }
+            : {
+                feedbackStatus: false,
+                emoji: undefined,
+                message: undefined,
+              }),
+          ...(branchingStatus
+            ? {
+                branchingStatus,
+                branchInstruction,
+              }
+            : {
+                branchingStatus: false,
+                branchInstruction: undefined,
+              }),
+        };
+      });
+
+      await scenarioEventsRepo.save(scenarioEvents);
+
       return {
         scenarioId,
-        eventId: id,
-        tenantId: ExecutionManager.getTenantId(),
-        score,
-        ...(feedbackStatus
-          ? {
-              feedbackStatus,
-              emoji,
-              message,
-            }
-          : {
-              feedbackStatus: false,
-              emoji: undefined,
-              message: undefined,
-            }),
-        ...(branchingStatus
-          ? {
-              branchingStatus,
-              branchInstruction,
-            }
-          : {
-              branchingStatus: false,
-              branchInstruction: undefined,
-            }),
+        events: scenarioEvents.map((event) => ({
+          id: event.eventId,
+          feedbackStatus: event.feedbackStatus,
+          score: event.score,
+          emoji: event.emoji,
+          message: event.message,
+          branchingStatus: event.branchingStatus,
+          branchInstruction: event.branchInstruction,
+        })),
       };
     });
-
-    // Save the scenario events to the database
-    await this.scenarioEventsRepository.save(scenarioEvents);
-    return {
-      scenarioId,
-      events: scenarioEvents.map((event) => ({
-        id: event.eventId,
-        feedbackStatus: event.feedbackStatus,
-        score: event.score,
-        emoji: event.emoji,
-        message: event.message,
-        branchingStatus: event.branchingStatus,
-        branchInstruction: event.branchInstruction,
-      })),
-    };
   }
 
   async deleteScenarioEvents(scenarioEvents: DeleteScenarioEventsDto) {

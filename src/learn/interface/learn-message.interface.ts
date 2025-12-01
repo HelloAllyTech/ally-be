@@ -15,5 +15,10 @@ export interface LearnData {
 
 export interface LearnEventData {
   timestamp: Date;
-  event_data: SessionEvents;
+  event_data: LearnEvent;
+}
+
+export interface LearnEvent extends SessionEvents {
+  autoTerminationStatus?: boolean;
+  terminationMessage?: string;
 }
