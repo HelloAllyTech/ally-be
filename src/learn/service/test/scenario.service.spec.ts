@@ -3,14 +3,17 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { S3Service } from 'src/aws/service/s3.service';
 import { AppConfigService } from 'src/config/config.service';
 import { DeleteCoverVideoDto } from 'src/learn/dto/delete-cover-video.dto';
 import { ScenarioVideoUploadRequestDto } from 'src/learn/dto/scenario-video-upload-request.dto';
+import { ScenarioImageUploadRequestDto } from 'src/learn/dto/scenario-image-upload-request.dto';
+import { ScenarioImageUploadContentType } from 'src/learn/enum/scenario-image-upload-content-type.enum';
 import { ScenarioVideoUploadContentType } from 'src/learn/enum/scenario-video-upload-content-type';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { UpdateScenarioDto } from 'src/learn/dto/update-scenario.dto';
+import { CreateScenarioDto } from 'src/learn/dto/create-scenario.dto';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { ScenarioStatus } from 'src/learn/enum/scenario.status.enum';
@@ -38,6 +41,8 @@ describe('ScenarioService', () => {
   let tenantService: jest.Mocked<TenantService>;
   let dataSource: jest.Mocked<DataSource>;
   let scenarioPathSharedService: jest.Mocked<ScenarioPathSharedService>;
+  let mockS3Service: any;
+  let mockConfigService: any;
 
   const mockTenantId = 'tenant-123';
 
@@ -109,7 +114,7 @@ describe('ScenarioService', () => {
       getScenarioVoices: jest.fn(),
     };
 
-    const mockS3Service = {
+    mockS3Service = {
       generatePresignedUrl: jest.fn(),
       uploadFile: jest.fn(),
       deleteFile: jest.fn(),
@@ -117,7 +122,7 @@ describe('ScenarioService', () => {
       sanitizeFileName: jest.fn((fileName) => fileName),
     };
 
-    const mockConfigService = {
+    mockConfigService = {
       s3: {
         learnMediaPublicBucket: 'test-bucket',
       },
@@ -1178,6 +1183,615 @@ describe('ScenarioService', () => {
         bucket: 'test-bucket', // Uses configured bucket, not URL bucket
         key: 'scenario-cover-videos/test.mp4',
       });
+    });
+  });
+
+  describe('getScenarios', () => {
+    it('should return list of active and coming soon scenarios', async () => {
+      const mockScenarios = [
+        { ...mockScenario, status: ScenarioStatus.ACTIVE },
+        { ...mockScenario, id: 2, status: ScenarioStatus.COMING_SOON },
+      ];
+      scenariosRepository.find.mockResolvedValue(mockScenarios as any);
+
+      const result = await service.getScenarios();
+
+      expect(result).toEqual(mockScenarios);
+      expect(scenariosRepository.find).toHaveBeenCalledWith({
+        select: [
+          'id',
+          'title',
+          'scenario',
+          'description',
+          'coverImageUrl',
+          'coverVideoUrl',
+          'status',
+        ],
+        where: {
+          status: In([ScenarioStatus.ACTIVE, ScenarioStatus.COMING_SOON]),
+        },
+        order: { createdAt: 'DESC', id: 'DESC' },
+      });
+    });
+
+    it('should return empty array when no scenarios found', async () => {
+      scenariosRepository.find.mockResolvedValue([]);
+
+      const result = await service.getScenarios();
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getAdminScenarios', () => {
+    it('should return admin scenarios with filters', async () => {
+      const mockAdminScenarios = [
+        {
+          scenario_id: 1,
+          scenario_title: 'Test',
+          scenario_createdAt: new Date(),
+          scenario_updatedAt: new Date(),
+          scenario_scenario: 'content',
+          scenario_description: 'desc',
+          scenario_coverImageUrl: null,
+          scenario_coverVideoUrl: null,
+          user_name: 'Admin',
+          scenario_status: ScenarioStatus.ACTIVE,
+          usage: 5,
+          isAssignedToTenant: true,
+          scenario_metadata: {
+            agentGoal: 'goal',
+            name: 'Test',
+            age: 30,
+            gender: 'male',
+            currentLocation: 'NY',
+            context: 'context',
+            openingStatements: ['hi'],
+          },
+          scenario_prompt: 'prompt',
+        },
+      ];
+      scenariosRepository.getAdminScenarios.mockResolvedValue(
+        mockAdminScenarios as any,
+      );
+
+      const result = await service.getAdminScenarios(
+        { status: ScenarioStatus.ACTIVE },
+        { offset: 0, limit: 10 },
+      );
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toHaveProperty('isPreviewEnabled');
+    });
+
+    it('should throw NotFoundException when tenant not found', async () => {
+      tenantService.findById.mockResolvedValue(null);
+
+      await expect(
+        service.getAdminScenarios({ tenantId: 'invalid' }),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.getAdminScenarios({ tenantId: 'invalid' }),
+      ).rejects.toThrow('Tenant not found');
+    });
+  });
+
+  describe('getScenario', () => {
+    it('should return scenario when found', async () => {
+      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+
+      const result = await service.getScenario(1);
+
+      expect(result).toEqual(mockScenario);
+    });
+
+    it('should throw NotFoundException when scenario not found', async () => {
+      scenariosRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.getScenario(999)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('getAdminScenario', () => {
+    it('should return admin scenario with termination event name', async () => {
+      const mockAdminScenario = {
+        id: 1,
+        title: 'Test',
+        terminationEvent: {
+          eventId: 'event-1',
+        },
+      };
+      scenariosRepository.getAdminScenarioById.mockResolvedValue(
+        mockAdminScenario as any,
+      );
+      sessionEventService.findSessionEventById.mockResolvedValue({
+        id: 'event-1',
+        name: 'Termination Event',
+      } as any);
+
+      const result = await service.getAdminScenario(1);
+
+      expect(result.terminationEvent?.name).toBe('Termination Event');
+    });
+
+    it('should throw NotFoundException when scenario not found', async () => {
+      scenariosRepository.getAdminScenarioById.mockResolvedValue(null);
+
+      await expect(service.getAdminScenario(999)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('getPresignedUrlForScenarioCoverImage', () => {
+    it('should generate presigned URL for valid image upload', async () => {
+      const requestDto: ScenarioImageUploadRequestDto = {
+        fileName: 'test.jpg',
+        fileSize: 1024 * 1024, // 1MB
+        contentType: ScenarioImageUploadContentType.JPEG,
+      };
+      const mockPresignedUrl = 'https://s3.amazonaws.com/presigned';
+      mockS3Service.generatePresignedUrl.mockResolvedValue(mockPresignedUrl);
+
+      const result =
+        await service.getPresignedUrlForScenarioCoverImage(requestDto);
+
+      expect(result.presignedUrl).toBe(mockPresignedUrl);
+      expect(result.coverImageUrl).toContain('scenario-cover-images');
+    });
+
+    it('should throw BadRequestException for invalid file type', async () => {
+      const requestDto: ScenarioImageUploadRequestDto = {
+        fileName: 'test.txt',
+        fileSize: 1024,
+        contentType: 'text/plain' as any,
+      };
+
+      await expect(
+        service.getPresignedUrlForScenarioCoverImage(requestDto),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when file size exceeds limit', async () => {
+      const requestDto: ScenarioImageUploadRequestDto = {
+        fileName: 'test.jpg',
+        fileSize: 3 * 1024 * 1024, // 3MB (exceeds 2MB limit)
+        contentType: ScenarioImageUploadContentType.JPEG,
+      };
+
+      await expect(
+        service.getPresignedUrlForScenarioCoverImage(requestDto),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.getPresignedUrlForScenarioCoverImage(requestDto),
+      ).rejects.toThrow('File size must be less than 2 MB');
+    });
+  });
+
+  describe('getScenarioVoices', () => {
+    it('should return scenario voices', async () => {
+      const mockVoices = [
+        { id: 'voice-1', name: 'Voice 1' },
+        { id: 'voice-2', name: 'Voice 2' },
+      ];
+      scenarioVoiceRepository.getScenarioVoices.mockResolvedValue(
+        mockVoices as any,
+      );
+
+      const result = await service.getScenarioVoices({ offset: 0, limit: 10 });
+
+      expect(result).toEqual(mockVoices);
+    });
+  });
+
+  describe('getScenarioVoice', () => {
+    it('should return scenario voice when found', async () => {
+      const mockVoice = { id: 'voice-1', name: 'Test Voice' };
+      scenarioVoiceRepository.findOne.mockResolvedValue(mockVoice as any);
+
+      const result = await service.getScenarioVoice('voice-1');
+
+      expect(result).toEqual(mockVoice);
+    });
+
+    it('should throw NotFoundException when voice not found', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.getScenarioVoice('invalid')).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.getScenarioVoice('invalid')).rejects.toThrow(
+        'Scenario voice not found',
+      );
+    });
+  });
+
+  describe('createScenarioVoices', () => {
+    it('should create multiple scenario voices', async () => {
+      const createDto = {
+        voices: [
+          { id: 'voice-1', name: 'Voice 1' },
+          { id: 'voice-2', name: 'Voice 2' },
+        ],
+      };
+      scenarioVoiceRepository.create.mockReturnValue(createDto.voices as any);
+      scenarioVoiceRepository.save.mockResolvedValue(createDto.voices as any);
+
+      const result = await service.createScenarioVoices(createDto as any);
+
+      expect(result).toEqual(createDto.voices);
+      expect(scenarioVoiceRepository.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('updateScenarioVoice', () => {
+    it('should update scenario voice successfully', async () => {
+      const mockVoice = { id: 'voice-1', name: 'Old Name' };
+      scenarioVoiceRepository.findOne.mockResolvedValue(mockVoice as any);
+      scenarioVoiceRepository.update.mockResolvedValue({ affected: 1 } as any);
+
+      const result = await service.updateScenarioVoice('voice-1', {
+        name: 'New Name',
+      } as any);
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false when update affects no rows', async () => {
+      const mockVoice = { id: 'voice-1', name: 'Test' };
+      scenarioVoiceRepository.findOne.mockResolvedValue(mockVoice as any);
+      scenarioVoiceRepository.update.mockResolvedValue({ affected: 0 } as any);
+
+      const result = await service.updateScenarioVoice('voice-1', {
+        name: 'New Name',
+      } as any);
+
+      expect(result).toBe(false);
+    });
+
+    it('should throw NotFoundException when voice not found', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.updateScenarioVoice('invalid', { name: 'Test' } as any),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('deleteScenarioEvents', () => {
+    it('should delete scenario events successfully', async () => {
+      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+      scenarioEventsRepository.delete.mockResolvedValue({ affected: 2 } as any);
+
+      const result = await service.deleteScenarioEvents({
+        scenarioId: 1,
+        eventIds: ['event-1', 'event-2'],
+      });
+
+      expect(result).toBe(2);
+    });
+
+    it('should throw BadRequestException when eventIds array is empty', async () => {
+      await expect(
+        service.deleteScenarioEvents({ scenarioId: 1, eventIds: [] }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.deleteScenarioEvents({ scenarioId: 1, eventIds: [] }),
+      ).rejects.toThrow('Event IDs array cannot be empty');
+    });
+
+    it('should throw BadRequestException when no events found to delete', async () => {
+      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+      scenarioEventsRepository.delete.mockResolvedValue({ affected: 0 } as any);
+
+      await expect(
+        service.deleteScenarioEvents({
+          scenarioId: 1,
+          eventIds: ['event-1'],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.deleteScenarioEvents({
+          scenarioId: 1,
+          eventIds: ['event-1'],
+        }),
+      ).rejects.toThrow('No scenario events found to delete');
+    });
+  });
+
+  describe('mapEventsToScenario', () => {
+    it('should map events to scenario successfully', async () => {
+      const createDto = {
+        scenarioId: 1,
+        events: [
+          {
+            id: 'event-1',
+            feedbackStatus: true,
+            score: 10,
+            emoji: '😊',
+            message: 'Great!',
+            branchingStatus: false,
+          },
+        ],
+      };
+      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+      sessionEventService.findByIds.mockResolvedValue([
+        { id: 'event-1' },
+      ] as any);
+      const mockEntityManager = {
+        getRepository: jest.fn().mockReturnValue({
+          delete: jest.fn().mockResolvedValue({ affected: 1 }),
+          save: jest.fn().mockResolvedValue([]),
+        }),
+      };
+      dataSource.transaction.mockImplementation((cb: any) =>
+        cb(mockEntityManager as any),
+      );
+
+      const result = await service.mapEventsToScenario(createDto as any);
+
+      expect(result).toHaveProperty('scenarioId', 1);
+      expect(result).toHaveProperty('events');
+    });
+
+    it('should throw BadRequestException when events array is empty', async () => {
+      await expect(
+        service.mapEventsToScenario({ scenarioId: 1, events: [] } as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.mapEventsToScenario({ scenarioId: 1, events: [] } as any),
+      ).rejects.toThrow('Events array cannot be empty');
+    });
+
+    it('should throw BadRequestException when invalid event IDs provided', async () => {
+      const createDto = {
+        scenarioId: 1,
+        events: [{ id: 'invalid-event' }],
+      };
+      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+      sessionEventService.findByIds.mockResolvedValue([]);
+
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow('Invalid event IDs: invalid-event');
+    });
+  });
+
+  describe('validateCreateScenario', () => {
+    it('should validate scenario successfully', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        agentGoal: 'Goal',
+        lifeHistory: 'History',
+        voiceId: 'voice-1',
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        context: 'Context',
+        openingStatements: ['Hi'],
+      };
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      await expect(
+        service.validateCreateScenario(createDto),
+      ).resolves.not.toThrow();
+    });
+
+    it('should throw error when voice not found', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        agentGoal: 'Goal',
+        lifeHistory: 'History',
+        voiceId: 'invalid-voice',
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        context: 'Context',
+        openingStatements: ['Hi'],
+      };
+      scenarioVoiceRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.validateCreateScenario(createDto)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('createScenarios', () => {
+    it('should create scenarios successfully', async () => {
+      const createDto = {
+        scenarios: [
+          {
+            title: 'Test',
+            description: 'Desc',
+            status: ScenarioStatus.DRAFT,
+            prompt: 'Prompt',
+            isGlobal: false,
+            agentGoal: 'Goal',
+            lifeHistory: 'History',
+            voiceId: 'voice-1',
+            name: 'Test',
+            age: 30,
+            gender: 'Male',
+            currentLocation: 'NY',
+            context: 'Context',
+            openingStatements: ['Hi'],
+          },
+        ],
+      };
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+      const mockEntityManager = {
+        getRepository: jest.fn().mockReturnValue({
+          create: jest.fn().mockReturnValue([{ id: 1 }]),
+          save: jest.fn().mockResolvedValue([{ id: 1, isGlobal: false }]),
+        }),
+      };
+      dataSource.transaction.mockImplementation((cb: any) =>
+        cb(mockEntityManager as any),
+      );
+
+      const result = await service.createScenarios(createDto as any, 1);
+
+      expect(result).toHaveLength(1);
+    });
+
+    it('should create global scenarios and assign to tenants', async () => {
+      const createDto = {
+        scenarios: [
+          {
+            title: 'Global Scenario',
+            description: 'Desc',
+            status: ScenarioStatus.DRAFT,
+            prompt: 'Prompt',
+            isGlobal: true,
+            agentGoal: 'Goal',
+            lifeHistory: 'History',
+            voiceId: 'voice-1',
+            name: 'Test',
+            age: 30,
+            gender: 'Male',
+            currentLocation: 'NY',
+            context: 'Context',
+            openingStatements: ['Hi'],
+          },
+        ],
+      };
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+      tenantService.findAll.mockResolvedValue([
+        { id: 'tenant-1' },
+        { id: 'tenant-2' },
+      ] as any);
+      const mockEntityManager = {
+        getRepository: jest.fn().mockImplementation((entity) => {
+          if (entity === Scenarios) {
+            return {
+              create: jest.fn().mockReturnValue([{ id: 1, isGlobal: true }]),
+              save: jest.fn().mockResolvedValue([{ id: 1, isGlobal: true }]),
+            };
+          }
+          if (entity === ScenarioTenants) {
+            return {
+              create: jest.fn().mockReturnValue([]),
+              save: jest.fn().mockResolvedValue([]),
+            };
+          }
+          return {
+            create: jest.fn().mockReturnValue([]),
+            save: jest.fn().mockResolvedValue([]),
+          };
+        }),
+      };
+      dataSource.transaction.mockImplementation((cb: any) =>
+        cb(mockEntityManager as any),
+      );
+
+      const result = await service.createScenarios(createDto as any, 1);
+
+      expect(result).toHaveLength(1);
+      expect(tenantService.findAll).toHaveBeenCalled();
+    });
+  });
+
+  describe('updateScenario', () => {
+    it('should update scenario successfully', async () => {
+      const updateDto: UpdateScenarioDto = {
+        title: 'Updated Title',
+        agentGoal: 'Updated Goal',
+      };
+      const existingScenario = { ...mockScenario, isGlobal: false };
+      scenariosRepository.findOne.mockResolvedValue(existingScenario);
+      scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+        null,
+      );
+      const mockEntityManager = {
+        getRepository: jest.fn().mockImplementation((entity) => {
+          if (entity === Scenarios) {
+            return {
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              findOne: jest.fn().mockResolvedValue(existingScenario),
+            };
+          }
+          if (entity === ScenarioEvents) {
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }
+          return {
+            findOne: jest.fn().mockResolvedValue(null),
+            delete: jest.fn().mockResolvedValue({ affected: 0 }),
+            update: jest.fn().mockResolvedValue({ affected: 1 }),
+            save: jest.fn().mockResolvedValue({}),
+            create: jest.fn().mockReturnValue([]),
+          };
+        }),
+      };
+      dataSource.transaction.mockImplementation((cb: any) =>
+        cb(mockEntityManager as any),
+      );
+
+      const result = await service.updateScenario(1, updateDto, 1);
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false when update affects no rows', async () => {
+      const updateDto: UpdateScenarioDto = {
+        title: 'Updated Title',
+      };
+      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+      scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+        null,
+      );
+      const mockEntityManager = {
+        getRepository: jest.fn().mockImplementation((entity) => {
+          if (entity === Scenarios) {
+            return {
+              update: jest.fn().mockResolvedValue({ affected: 0 }),
+              findOne: jest.fn().mockResolvedValue(mockScenario),
+            };
+          }
+          if (entity === ScenarioEvents) {
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              update: jest.fn().mockResolvedValue({ affected: 0 }),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+            };
+          }
+          return {
+            findOne: jest.fn().mockResolvedValue(null),
+          };
+        }),
+      };
+      dataSource.transaction.mockImplementation((cb: any) =>
+        cb(mockEntityManager as any),
+      );
+
+      const result = await service.updateScenario(1, updateDto, 1);
+
+      expect(result).toBe(false);
     });
   });
 });
