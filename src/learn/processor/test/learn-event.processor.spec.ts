@@ -72,7 +72,6 @@ describe('LearnEventProcessor', () => {
   beforeEach(async () => {
     const mockScenarioSessionService = {
       getScenarioSessionByRoomId: jest.fn(),
-      handleScenarioSessionEvent: jest.fn(),
       addScenarioSessionEvent: jest.fn(),
     };
 
@@ -115,7 +114,7 @@ describe('LearnEventProcessor', () => {
       scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
         mockScenarioSession,
       );
-      scenarioSessionService.handleScenarioSessionEvent.mockResolvedValue(
+      scenarioSessionService.addScenarioSessionEvent.mockResolvedValue(
         {} as any,
       );
 
@@ -128,7 +127,7 @@ describe('LearnEventProcessor', () => {
         scenarioSessionService.getScenarioSessionByRoomId,
       ).toHaveBeenCalledWith(mockRoomId);
       expect(
-        scenarioSessionService.handleScenarioSessionEvent,
+        scenarioSessionService.addScenarioSessionEvent,
       ).toHaveBeenCalledWith(mockScenarioSession, mockEventData.data.event);
       expect(mockLogger.info).toHaveBeenCalledWith(
         `Scenario session event added: ${mockScenarioSessionId}`,
@@ -150,7 +149,7 @@ describe('LearnEventProcessor', () => {
         scenarioSessionService.getScenarioSessionByRoomId,
       ).not.toHaveBeenCalled();
       expect(
-        scenarioSessionService.handleScenarioSessionEvent,
+        scenarioSessionService.addScenarioSessionEvent,
       ).not.toHaveBeenCalled();
     });
 
@@ -171,7 +170,7 @@ describe('LearnEventProcessor', () => {
         `Scenario session not found: ${mockRoomId}`,
       );
       expect(
-        scenarioSessionService.handleScenarioSessionEvent,
+        scenarioSessionService.addScenarioSessionEvent,
       ).not.toHaveBeenCalled();
     });
 
@@ -186,7 +185,7 @@ describe('LearnEventProcessor', () => {
         `Scenario session not found: ${mockRoomId}`,
       );
       expect(
-        scenarioSessionService.handleScenarioSessionEvent,
+        scenarioSessionService.addScenarioSessionEvent,
       ).not.toHaveBeenCalled();
     });
 
@@ -214,7 +213,7 @@ describe('LearnEventProcessor', () => {
         `Event not found: ${mockRoomId}`,
       );
       expect(
-        scenarioSessionService.handleScenarioSessionEvent,
+        scenarioSessionService.addScenarioSessionEvent,
       ).not.toHaveBeenCalled();
     });
 
@@ -238,7 +237,7 @@ describe('LearnEventProcessor', () => {
         `Event not found: ${mockRoomId}`,
       );
       expect(
-        scenarioSessionService.handleScenarioSessionEvent,
+        scenarioSessionService.addScenarioSessionEvent,
       ).not.toHaveBeenCalled();
     });
 
@@ -262,7 +261,7 @@ describe('LearnEventProcessor', () => {
         `Event not found: ${mockRoomId}`,
       );
       expect(
-        scenarioSessionService.handleScenarioSessionEvent,
+        scenarioSessionService.addScenarioSessionEvent,
       ).not.toHaveBeenCalled();
     });
 
@@ -283,7 +282,7 @@ describe('LearnEventProcessor', () => {
         'Failed to process learn event: "Database connection failed"',
       );
       expect(
-        scenarioSessionService.handleScenarioSessionEvent,
+        scenarioSessionService.addScenarioSessionEvent,
       ).not.toHaveBeenCalled();
     });
 
@@ -292,9 +291,7 @@ describe('LearnEventProcessor', () => {
       scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
         mockScenarioSession,
       );
-      scenarioSessionService.handleScenarioSessionEvent.mockRejectedValue(
-        error,
-      );
+      scenarioSessionService.addScenarioSessionEvent.mockRejectedValue(error);
 
       await expect(processor.process(mockEventData)).rejects.toThrow(
         'Failed to add event',
@@ -307,7 +304,7 @@ describe('LearnEventProcessor', () => {
         scenarioSessionService.getScenarioSessionByRoomId,
       ).toHaveBeenCalledWith(mockRoomId);
       expect(
-        scenarioSessionService.handleScenarioSessionEvent,
+        scenarioSessionService.addScenarioSessionEvent,
       ).toHaveBeenCalledWith(mockScenarioSession, mockEventData.data.event);
       expect(mockLogger.error).toHaveBeenCalledWith(
         'Failed to process learn event: "Failed to add event"',
@@ -378,7 +375,7 @@ describe('LearnEventProcessor', () => {
       scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
         mockScenarioSession,
       );
-      scenarioSessionService.handleScenarioSessionEvent.mockResolvedValue(
+      scenarioSessionService.addScenarioSessionEvent.mockResolvedValue(
         {} as any,
       );
 
@@ -388,7 +385,7 @@ describe('LearnEventProcessor', () => {
         `Processing learn event: ${JSON.stringify(complexEventData)}`,
       );
       expect(
-        scenarioSessionService.handleScenarioSessionEvent,
+        scenarioSessionService.addScenarioSessionEvent,
       ).toHaveBeenCalledWith(mockScenarioSession, complexEventData.data.event);
     });
 
@@ -402,14 +399,14 @@ describe('LearnEventProcessor', () => {
       scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
         sessionWithDifferentTenant,
       );
-      scenarioSessionService.handleScenarioSessionEvent.mockResolvedValue(
+      scenarioSessionService.addScenarioSessionEvent.mockResolvedValue(
         {} as any,
       );
 
       await processor.process(mockEventData);
 
       expect(
-        scenarioSessionService.handleScenarioSessionEvent,
+        scenarioSessionService.addScenarioSessionEvent,
       ).toHaveBeenCalledWith(
         sessionWithDifferentTenant,
         mockEventData.data.event,

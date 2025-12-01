@@ -1,9 +1,6 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseEntity } from 'src/common/entity/base.entity';
-import {
-  ScenarioSessionEventStatus,
-  ScenarioSessionStatus,
-} from '../enum/scenario-session-status.enum';
+import { ScenarioSessionStatus } from '../enum/scenario-session-status.enum';
 
 @Index('scenario_sessions_counselor_id_idx', ['counselorId'])
 @Entity('scenario_sessions')
@@ -25,12 +22,6 @@ export class ScenarioSessions extends BaseEntity {
     default: ScenarioSessionStatus.ACTIVE,
   })
   status!: ScenarioSessionStatus;
-
-  @Column({
-    enum: ScenarioSessionEventStatus,
-    default: ScenarioSessionEventStatus.IN_PROGRESS,
-  })
-  eventStatus!: ScenarioSessionEventStatus;
 
   @Column({ type: 'timestamp', nullable: true })
   startedAt?: Date;
