@@ -21,5 +21,4 @@ export interface LearnEventData {
 export interface LearnEvent extends SessionEvents {
   autoTerminationStatus?: boolean;
   terminationMessage?: string;
-  totalScore?: number;
 }

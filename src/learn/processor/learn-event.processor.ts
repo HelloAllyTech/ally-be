@@ -41,7 +41,7 @@ export class LearnEventProcessor extends BaseEventProcessor {
         return;
       }
 
-      await this.scenarioSessionService.handleScenarioSessionEvent(
+      await this.scenarioSessionService.addScenarioSessionEvent(
         scenarioSession,
         event,
       );

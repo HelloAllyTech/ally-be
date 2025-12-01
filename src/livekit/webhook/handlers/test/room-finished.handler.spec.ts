@@ -6,10 +6,7 @@ import {
 import { ScenarioSessionService } from 'src/learn/service/scenario-session.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
-import {
-  ScenarioSessionEventStatus,
-  ScenarioSessionStatus,
-} from 'src/learn/enum/scenario-session-status.enum';
+import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.enum';
 
 describe('RoomFinishedHandler', () => {
   let handler: RoomFinishedHandler;
@@ -289,7 +286,6 @@ describe('RoomFinishedHandler', () => {
         scenarioId: 42,
         counselorId: 123,
         status: ScenarioSessionStatus.ACTIVE,
-        eventStatus: ScenarioSessionEventStatus.COMPLETED,
         startedAt: new Date('2024-01-01T10:00:00Z'),
         endedAt: undefined,
         score: 85.5,
