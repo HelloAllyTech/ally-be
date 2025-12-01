@@ -253,6 +253,7 @@ export class ScenarioSessionService {
 
     // Enhance all events with dependentEvents for combination events
     const allEvents = Array.from(eventMap.values()).map((event) => {
+      const detectionData = (event as any).data || event.detectionData;
       if (event.detectionType === SessionEventDetectionType.COMBINATION) {
         const detectionData = (event as any).data || event.detectionData;
         const dependentEvents = extractEventIds(detectionData?.expression);
@@ -260,12 +261,17 @@ export class ScenarioSessionService {
         return {
           ...event,
           data: {
-            ...((event as any).data || {}),
+            ...detectionData,
             dependentEvents,
           },
         };
       }
-      return event;
+
+      return {
+        ...event,
+        detectionData: undefined,
+        data: { ...detectionData },
+      };
     });
 
     const autoTerminationEvent = terminationEvent?.autoTerminationStatus
