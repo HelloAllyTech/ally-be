@@ -26,12 +26,10 @@ on:
         description: Choose env
         options:
           - dev
-          - stg
           - prd
   push:
     branches:
       - dev
-      - stg
 
 jobs:
   prepare-env:
