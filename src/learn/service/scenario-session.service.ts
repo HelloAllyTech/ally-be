@@ -8,7 +8,10 @@ import { ScenarioSessionRepository } from '../repository/scenario-session.reposi
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
 import { ScenarioService } from './scenario.service';
-import { ScenarioSessionStatus } from '../enum/scenario-session-status.enum';
+import {
+  ScenarioSessionEventStatus,
+  ScenarioSessionStatus,
+} from '../enum/scenario-session-status.enum';
 import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
@@ -372,6 +375,53 @@ export class ScenarioSessionService {
   }
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
+  async handleEndScenarioSessionEvent(
+    scenarioSession: ScenarioSessions,
+    event: LearnEventData,
+  ) {
+    if (!scenarioSession) {
+      this.logger.error(
+        `Scenario session not found for event ${JSON.stringify(event.event_data.id)}`,
+      );
+      throw new BadRequestException('Scenario session not found');
+    }
+
+    if (!ExecutionManager.getTenantId()) {
+      ExecutionManager.setAuthContext(
+        scenarioSession.counselorId.toString(),
+        scenarioSession.tenantId,
+      );
+    }
+
+    const scenarioSessionId = scenarioSession?.id;
+
+    const score = event.event_data.totalScore;
+
+    let callDuration = 0;
+    if (scenarioSession.startedAt && scenarioSession.endedAt) {
+      callDuration =
+        scenarioSession.endedAt.getTime() -
+          scenarioSession.startedAt.getTime() || 0;
+    }
+    if (scenarioSession.scenarioPathSessionItemId)
+      await this.scenarioPathSessionService.handleEndScenarioPathSession({
+        scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
+        score,
+        callDuration,
+      });
+
+    await this.scenarioSessionRepository.update(scenarioSessionId, {
+      status: ScenarioSessionStatus.ENDED,
+      endedAt: scenarioSession?.endedAt ?? new Date(),
+      score,
+      eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    });
+    this.logger.info(
+      `Updated scenario ${scenarioSessionId} eventStatus to COMPLETED`,
+    );
+  }
+
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async endScenarioSession(scenarioSessionId: string, counselorId: number) {
     const scenarioSession = await this.scenarioSessionRepository.findOne({
       where: {
@@ -379,15 +429,9 @@ export class ScenarioSessionService {
         counselorId,
       },
     });
-
     if (!scenarioSession) {
       throw new BadRequestException('Scenario session not found');
     }
-
-    if (scenarioSession.status !== ScenarioSessionStatus.ACTIVE) {
-      throw new BadRequestException('Scenario session is not active');
-    }
-
     if (!ExecutionManager.getTenantId()) {
       ExecutionManager.setAuthContext(
         counselorId.toString(),
@@ -396,13 +440,12 @@ export class ScenarioSessionService {
     }
 
     const endedAt = scenarioSession.endedAt ?? new Date();
-    const score = await this.calculateScenarioSessionScore(scenarioSessionId);
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
       endedAt,
-      score,
     });
+    this.logger.info(`Updated scenario ${scenarioSessionId} status to ENDED`);
 
     let callDuration = 0;
     if (scenarioSession.startedAt && endedAt) {
@@ -415,12 +458,6 @@ export class ScenarioSessionService {
         scenarioSession.scenarioId,
         callDuration,
       );
-      if (scenarioSession.scenarioPathSessionItemId)
-        await this.scenarioPathSessionService.handleEndScenarioPathSession({
-          scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
-          score,
-          callDuration,
-        });
 
       await this.livekitService.deleteRoom(scenarioSession.roomId);
     } catch (error) {
@@ -435,12 +472,6 @@ export class ScenarioSessionService {
     );
 
     return { message: 'Scenario session ended successfully' };
-  }
-
-  private async calculateScenarioSessionScore(scenarioSessionId: string) {
-    return this.scenarioSessionRepository.getScenarioSessionScore(
-      scenarioSessionId,
-    );
   }
 
   private async consumeSimulationCredits(userId: number, callDuration: number) {
@@ -622,6 +653,20 @@ export class ScenarioSessionService {
       );
 
     return { messages };
+  }
+
+  async handleScenarioSessionEvent(
+    scenarioSession: ScenarioSessions,
+    event: LearnEventData,
+  ) {
+    switch (event.event_data.id) {
+      case 'end-of-session':
+        await this.handleEndScenarioSessionEvent(scenarioSession, event);
+        break;
+      default:
+        this.addScenarioSessionEvent(scenarioSession, event);
+        break;
+    }
   }
 
   async addScenarioSessionEvent(

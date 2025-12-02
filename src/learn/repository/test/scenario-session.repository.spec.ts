@@ -10,7 +10,10 @@ import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { StartScenarioSessionRequestDto } from '../../dto/start-scenario-session-request.dto';
 import { Pagination } from 'src/common/type/common.type';
-import { ScenarioSessionStatus } from '../../enum/scenario-session-status.enum';
+import {
+  ScenarioSessionEventStatus,
+  ScenarioSessionStatus,
+} from '../../enum/scenario-session-status.enum';
 import { ScenarioStatus } from '../../enum/scenario.status.enum';
 import { UserRole } from 'src/common/constants/user.constants';
 import { UserStatus } from 'src/user/constants/user-status.constants';
@@ -50,6 +53,7 @@ describe('ScenarioSessionRepository', () => {
     scenarioId: mockScenarioId,
     counselorId: mockCounselorId,
     status: ScenarioSessionStatus.ACTIVE,
+    eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
     startedAt: new Date('2024-01-01T10:00:00Z'),
     endedAt: undefined,
     score: undefined,
