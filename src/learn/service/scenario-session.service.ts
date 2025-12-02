@@ -380,6 +380,9 @@ export class ScenarioSessionService {
     event: LearnEventData,
   ) {
     if (!scenarioSession) {
+      this.logger.error(
+        `Scenario session not found for event ${JSON.stringify(event.event_data.id)}`,
+      );
       throw new BadRequestException('Scenario session not found');
     }
 
@@ -413,6 +416,9 @@ export class ScenarioSessionService {
       score,
       eventStatus: ScenarioSessionEventStatus.COMPLETED,
     });
+    this.logger.info(
+      `Updated scenario ${scenarioSessionId} eventStatus to COMPLETED`,
+    );
   }
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
@@ -439,6 +445,7 @@ export class ScenarioSessionService {
       status: ScenarioSessionStatus.ENDED,
       endedAt,
     });
+    this.logger.info(`Updated scenario ${scenarioSessionId} status to ENDED`);
 
     let callDuration = 0;
     if (scenarioSession.startedAt && endedAt) {
