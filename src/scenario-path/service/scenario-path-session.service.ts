@@ -253,6 +253,7 @@ export class ScenarioPathSessionService {
       transitionMessageTitle: currentPathItem?.messageTitle,
       transitionMessageContent: currentPathItem?.messageContent,
       isScenarioPathSessionCompleted: !!currentScenarioPathSession?.completedAt,
+      eventStatus: currentScenarioSession?.eventStatus,
     };
     if (
       currentPathSessionItem?.status !== SessionItemStatus.COMPLETED ||
