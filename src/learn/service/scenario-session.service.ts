@@ -664,7 +664,7 @@ export class ScenarioSessionService {
         await this.handleEndScenarioSessionEvent(scenarioSession, event);
         break;
       default:
-        this.addScenarioSessionEvent(scenarioSession, event);
+        await this.addScenarioSessionEvent(scenarioSession, event);
         break;
     }
   }
