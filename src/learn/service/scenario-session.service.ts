@@ -383,6 +383,13 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario session not found');
     }
 
+    if (!ExecutionManager.getTenantId()) {
+      ExecutionManager.setAuthContext(
+        scenarioSession.counselorId.toString(),
+        scenarioSession.tenantId,
+      );
+    }
+
     const scenarioSessionId = scenarioSession?.id;
 
     const score = event.event_data.totalScore;
