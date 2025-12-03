@@ -6,12 +6,6 @@ export type Pagination = {
   order?: 'ASC' | 'DESC';
 };
 
-export type ScenarioFilters = {
-  status?: string;
-  tenantId?: string;
-  search?: string;
-};
-
 export class PaginatedResponse<T> {
   data!: T[];
   count!: number;

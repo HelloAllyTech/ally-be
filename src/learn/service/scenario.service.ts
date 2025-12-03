@@ -17,7 +17,7 @@ import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
-import { Pagination, ScenarioFilters } from 'src/common/type/common.type';
+import { Pagination } from 'src/common/type/common.type';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
@@ -47,6 +47,7 @@ import {
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
+import { ScenarioFilters } from '../type/scenario-filter.type';
 
 @Injectable()
 export class ScenarioService {
@@ -667,7 +668,7 @@ export class ScenarioService {
       await this.scenarioPathSharedService.getScenarioPathItemByScenarioId(id);
     if (scenarioPathItem) {
       throw new BadRequestException(
-        'This simulation is part of a Simulation Pathway and can’t be moved to draft. Please publish the changes.',
+        'This simulation cannot be deleted as it is part of a Simulation Pathway',
       );
     }
     await this.dataSource.transaction(async (em) => {

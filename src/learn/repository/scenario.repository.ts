@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Scenarios } from '../entity/scenarios.entity';
-import { Pagination, ScenarioFilters } from 'src/common/type/common.type';
+import { Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import { ScenarioFilters } from '../type/scenario-filter.type';
 
 @Injectable()
 export class ScenariosRepository extends Repository<Scenarios> {
