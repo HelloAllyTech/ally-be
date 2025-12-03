@@ -253,7 +253,6 @@ export class ScenarioPathSessionService {
       transitionMessageTitle: currentPathItem?.messageTitle,
       transitionMessageContent: currentPathItem?.messageContent,
       isScenarioPathSessionCompleted: !!currentScenarioPathSession?.completedAt,
-      eventStatus: currentScenarioSession?.eventStatus,
     };
     if (
       currentPathSessionItem?.status !== SessionItemStatus.COMPLETED ||
@@ -301,7 +300,7 @@ export class ScenarioPathSessionService {
     callDuration = 0,
   }: {
     scenarioPathSessionItemId: string;
-    score?: number;
+    score: number;
     callDuration: number;
   }) {
     const userId = ExecutionManager.getUserId();
@@ -337,7 +336,7 @@ export class ScenarioPathSessionService {
     // Score less than minimum score -> cant make the session complete
     if (
       currentScenarioPathItem?.minimumScore !== undefined &&
-      (score ?? 0) < currentScenarioPathItem?.minimumScore
+      score < currentScenarioPathItem?.minimumScore
     )
       return;
 
