@@ -6,7 +6,10 @@ import { ScenarioTenantService } from '../../service/scenario-tenant.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { ScenarioStatus } from '../../enum/scenario.status.enum';
-import { ScenarioSessionStatus } from '../../enum/scenario-session-status.enum';
+import {
+  ScenarioSessionEventStatus,
+  ScenarioSessionStatus,
+} from '../../enum/scenario-session-status.enum';
 import { ScenarioSessionMessageType } from '../../enum/scenario-session-message.type.enum';
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
@@ -72,6 +75,7 @@ describe('LearnController', () => {
     scenarioId: 1,
     counselorId: 123,
     status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
     startedAt: new Date(),
     endedAt: new Date(),
     score: 85,
@@ -604,6 +608,7 @@ describe('LearnController', () => {
           scenarioId: 1,
           counselorId: 123,
           status: ScenarioSessionStatus.ACTIVE,
+          eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
           createdAt: new Date(),
           updatedAt: new Date(),
           tenantId: 'tenant-123',
