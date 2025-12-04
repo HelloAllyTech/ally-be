@@ -36,6 +36,10 @@ import { TenantModule } from 'src/tenant/tenant.module';
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { ScenarioTenantValidationShared } from './service/scenario-tenant-validation-shared';
 import { ScenarioPathModule } from 'src/scenario-path/scenario-path.module';
+import { TriggerWarningsService } from './service/trigger-warnings.service';
+import { TriggerWarningsRepository } from './repository/trigger-warnings.repository';
+import { TriggerWarnings } from './entity/trigger-warnings.entity';
+import { ScenarioTriggerWarnings } from './entity/scenario-trigger-warnings.entity';
 
 @Module({
   imports: [
@@ -48,6 +52,8 @@ import { ScenarioPathModule } from 'src/scenario-path/scenario-path.module';
       ScenarioSessionEvents,
       ScenarioVoices,
       SimulationCredits,
+      TriggerWarnings,
+      ScenarioTriggerWarnings,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -77,6 +83,8 @@ import { ScenarioPathModule } from 'src/scenario-path/scenario-path.module';
     ScenarioTenantRepository,
     ScenarioTenantValidationShared,
     TenantsRepository,
+    TriggerWarningsRepository,
+    TriggerWarningsService,
   ],
   exports: [
     LearnMessageProcessor,

@@ -265,4 +265,12 @@ export class AppConfigService {
         ),
     };
   }
+
+  get featureFlags() {
+    return {
+      triggerWarning: this.configService.get<boolean>(
+        'FEATURE_TRIGGER_WARNING',
+      ),
+    };
+  }
 }
