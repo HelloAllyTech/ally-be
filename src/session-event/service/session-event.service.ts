@@ -90,8 +90,9 @@ export class SessionEventService {
         scenarioId,
       );
 
-    const sessionEvents = events.map((event) => {
-      return {
+    return events
+      .filter((event) => !event.scenarioEvents_autoTerminationStatus)
+      .map((event) => ({
         id: event.sessionEvents_id,
         name: event.sessionEvents_name,
         description: event.sessionEvents_description,
@@ -117,9 +118,7 @@ export class SessionEventService {
         createdAt: event.sessionEvents_createdAt,
         updatedAt: event.sessionEvents_updatedAt,
         eventCode: event.sessionEvents_eventCode,
-      };
-    });
-    return sessionEvents;
+      }));
   }
 
   async updateSessionEvent(

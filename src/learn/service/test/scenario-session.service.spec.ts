@@ -662,7 +662,9 @@ describe('ScenarioSessionService', () => {
         serverUrl: 'https://livekit.example.com',
       };
 
-      scenarioService.getScenario.mockResolvedValue(mockScenarioWithMetadata);
+      scenarioService.getAdminScenario.mockResolvedValue(
+        mockScenarioWithMetadata,
+      );
       scenarioService.getScenarioVoice.mockResolvedValue(mockVoice as any);
       sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
@@ -687,7 +689,7 @@ describe('ScenarioSessionService', () => {
         isGlobal: false,
       };
 
-      scenarioService.getScenario.mockResolvedValue(mockInvalidScenario);
+      scenarioService.getAdminScenario.mockResolvedValue(mockInvalidScenario);
 
       await expect(
         service.previewScenario(previewDto as any, mockUserId),

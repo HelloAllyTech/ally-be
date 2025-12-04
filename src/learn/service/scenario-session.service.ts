@@ -218,8 +218,11 @@ export class ScenarioSessionService {
 
     const scenarioVoice = await this.scenarioService.getScenarioVoice(voiceId);
 
-    // triggerEvents: Only IDs from sessionEvents (events associated with this scenario)
+    // triggerEvents: IDs from sessionEvents and termination event
     const triggerEvents = sessionEvents.map((event) => event.id);
+    if (terminationEvent?.eventId) {
+      triggerEvents.push(terminationEvent.eventId);
+    }
 
     // Build a map of existing events for quick lookup
     const eventMap = new Map(sessionEvents.map((event) => [event.id, event]));
@@ -239,7 +242,7 @@ export class ScenarioSessionService {
     });
 
     // Add termination event ID to referenced events if it exists and is not already included
-    if (terminationEvent?.eventId && !eventMap.has(terminationEvent.eventId)) {
+    if (terminationEvent?.eventId) {
       referencedEventIds.add(terminationEvent.eventId);
     }
 
@@ -715,7 +718,7 @@ export class ScenarioSessionService {
     userId: number,
   ) {
     const { scenarioId } = previewScenarioDto;
-    const scenario = await this.scenarioService.getScenario(scenarioId);
+    const scenario = await this.scenarioService.getAdminScenario(scenarioId);
 
     await this.validatePreviewScenario(scenario);
 
@@ -765,6 +768,7 @@ export class ScenarioSessionService {
 
   async endPreviewScenario(roomName: string) {
     await this.livekitService.deleteRoom(roomName);
+    this.logger.info(`Preview scenario room deleted: ${roomName}`);
   }
 
   async getLatestScenarioSessionByScenarioPathSessionItemId(
