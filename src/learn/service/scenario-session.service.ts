@@ -382,13 +382,6 @@ export class ScenarioSessionService {
     scenarioSession: ScenarioSessions,
     event: LearnEventData,
   ) {
-    if (!scenarioSession) {
-      this.logger.error(
-        `Scenario session not found for event ${JSON.stringify(event.event_data.id)}`,
-      );
-      throw new BadRequestException('Scenario session not found');
-    }
-
     if (!ExecutionManager.getTenantId()) {
       ExecutionManager.setAuthContext(
         scenarioSession.counselorId.toString(),
@@ -692,16 +685,6 @@ export class ScenarioSessionService {
       const savedScenarioSessionEvent =
         await scenarioSessionEventsRepo.save(scenarioSessionEvent);
 
-      if (
-        scenarioSession.status === ScenarioSessionStatus.ENDED &&
-        event.event_data.visibilityType === SessionEventVisibilityType.ACTIVE
-      ) {
-        const scenrioSessionRepo =
-          entityManager.getRepository(ScenarioSessions);
-        await scenrioSessionRepo.update(scenarioSession.id, {
-          score: () => `score + ${event.event_data.score ?? 0}`,
-        });
-      }
       return savedScenarioSessionEvent;
     });
 
