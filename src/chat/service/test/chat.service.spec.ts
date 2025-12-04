@@ -78,6 +78,7 @@ describe('ChatService', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     externalId: undefined,
+    termsAndAgreementApproved: false,
   };
 
   const mockMessage: Message = {

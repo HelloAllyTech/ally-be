@@ -8,6 +8,8 @@ import {
   OzonetelUnsubscriptionDto,
 } from '../../dto/ozonetel.dto';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { UserService } from '../../../user/service/user.service';
+import { AppConfigService } from '../../../config/config.service';
 
 describe('OzonetelController', () => {
   let controller: OzonetelController;
@@ -20,6 +22,10 @@ describe('OzonetelController', () => {
 
   const mockPermissionsService = {
     getUserRoles: jest.fn(),
+  };
+
+  const mockUserService = {
+    getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
   };
 
   beforeEach(async () => {
@@ -39,6 +45,18 @@ describe('OzonetelController', () => {
         {
           provide: PermissionsService,
           useValue: mockPermissionsService,
+        },
+        {
+          provide: UserService,
+          useValue: mockUserService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
         },
       ],
     }).compile();

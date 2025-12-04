@@ -14,6 +14,8 @@ import {
 import { ScenarioSessionMessageType } from '../../enum/scenario-session-message.type.enum';
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { UserService } from 'src/user/service/user.service';
+import { AppConfigService } from 'src/config/config.service';
 import { DeleteCoverImageDto } from '../../dto/delete-cover-image.dto';
 import { DeleteCoverVideoDto } from '../../dto/delete-cover-video.dto';
 import { ScenarioVideoUploadRequestDto } from '../../dto/scenario-video-upload-request.dto';
@@ -225,6 +227,10 @@ describe('LearnController', () => {
       assignTriggerWarningsToScenario: jest.fn(),
     };
 
+    const mockUserService = {
+      getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LearnController],
       providers: [
@@ -253,6 +259,18 @@ describe('LearnController', () => {
         {
           provide: TriggerWarningsService,
           useValue: mockTriggerWarningsService,
+        },
+        {
+          provide: UserService,
+          useValue: mockUserService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
         },
       ],
     }).compile();

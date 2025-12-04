@@ -85,6 +85,7 @@ export class ChatService {
     @Inject(forwardRef(() => QueueService))
     private queueService: QueueService,
     private gateway: ChatGateway,
+    @Inject(forwardRef(() => UserService))
     private userService: UserService,
     private eventEmitter: EventEmitter2,
     private readonly cache: RedisService,

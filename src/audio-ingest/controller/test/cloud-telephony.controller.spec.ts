@@ -10,6 +10,8 @@ import {
 import { CloudTelephonyProvider } from '../../../common/constants/chat.constants';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { UserService } from '../../../user/service/user.service';
+import { AppConfigService } from '../../../config/config.service';
 
 describe('CloudTelephonyController', () => {
   let controller: CloudTelephonyController;
@@ -21,6 +23,10 @@ describe('CloudTelephonyController', () => {
 
   const mockPermissionsService = {
     getUserRoles: jest.fn(),
+  };
+
+  const mockUserService = {
+    getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
   };
 
   const mockReflector = {
@@ -38,6 +44,18 @@ describe('CloudTelephonyController', () => {
         {
           provide: PermissionsService,
           useValue: mockPermissionsService,
+        },
+        {
+          provide: UserService,
+          useValue: mockUserService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
         },
         {
           provide: Reflector,

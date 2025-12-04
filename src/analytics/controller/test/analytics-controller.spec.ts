@@ -8,6 +8,7 @@ import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
+import { UserService } from '../../../user/service/user.service';
 import {
   CreateDashboardDto,
   DashboardIdParamDto,
@@ -75,6 +76,12 @@ describe('AnalyticsController', () => {
                 PERMISSIONS.VIEW_ANALYTICS_DASHBOARD,
                 PERMISSIONS.VIEW_ANALYTICS_DASHBOARD_URL,
               ]),
+          },
+        },
+        {
+          provide: UserService,
+          useValue: {
+            getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
           },
         },
         {

@@ -6,6 +6,8 @@ import { CreateRoomDto } from '../../dto/create-room.dto';
 import { JoinRoomDto } from '../../dto/join-room.dto';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
+import { UserService } from '../../../user/service/user.service';
+import { AppConfigService } from '../../../config/config.service';
 
 describe('LiveKitController', () => {
   let controller: LiveKitController;
@@ -57,12 +59,20 @@ describe('LiveKitController', () => {
 
     const mockPermissionsService = {
       getUserRoles: jest.fn().mockResolvedValue(['SUPER_ADMIN']),
+      getUserPermissions: jest.fn().mockResolvedValue(['edit:livekit']),
+    };
+
+    const mockUserService = {
+      getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
     };
 
     const mockReflector = {
       get: jest.fn(),
       getAll: jest.fn(),
-      getAllAndOverride: jest.fn().mockReturnValue(['SUPER_ADMIN']),
+      getAllAndOverride: jest.fn().mockReturnValue({
+        permissions: ['edit:livekit'],
+        operator: 'AND',
+      }),
       getAllAndMerge: jest.fn(),
     };
 
@@ -80,6 +90,18 @@ describe('LiveKitController', () => {
         {
           provide: PermissionsService,
           useValue: mockPermissionsService,
+        },
+        {
+          provide: UserService,
+          useValue: mockUserService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
         },
         {
           provide: Reflector,

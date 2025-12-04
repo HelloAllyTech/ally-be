@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -41,6 +42,7 @@ import {
 import { AddUserResponseDto } from '../dto/user-add-response.dto';
 import { AddUserDto } from '../dto/add-user.dto';
 import { User } from '../entity/user.entity';
+import { SuccessResponse } from 'src/common/type/common.type';
 
 @Controller('v1/users')
 @ApiTags('Users')
@@ -195,5 +197,25 @@ export class UserController {
     @Body() updateUserStatusDto: UpdateUserStatusDto,
   ): Promise<UserUpdateResponseDto> {
     return this.userService.updateUserStatus(id, updateUserStatusDto.status);
+  }
+
+  @Get('terms-and-agreement-status')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary:
+      'Returns the current status of terms and agreement acceptance for the authenticated user',
+  })
+  async getTermsAndAgreementStatus(): Promise<SuccessResponse> {
+    return this.userService.getTermsAndAgreementStatus();
+  }
+
+  @Put('terms-and-agreement-status')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary:
+      'Returns the current status of terms and agreement acceptance for the authenticated user',
+  })
+  async approveTermsAndAgreement(): Promise<SuccessResponse> {
+    return this.userService.approveTermsAndAgreement();
   }
 }

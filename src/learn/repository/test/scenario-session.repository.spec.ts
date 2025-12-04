@@ -89,7 +89,9 @@ describe('ScenarioSessionRepository', () => {
     tenantId: mockTenantId,
     createdAt: new Date(),
     updatedAt: new Date(),
-  } as User;
+    termsAndAgreementApproved: false,
+    termsAndAgreementApprovedAt: undefined,
+  } as unknown as User;
 
   const mockPagination: Pagination = {
     limit: 10,

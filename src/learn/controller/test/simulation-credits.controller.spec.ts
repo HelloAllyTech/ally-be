@@ -6,6 +6,8 @@ import { GetSimulationCreditsDto } from '../../dto/get-simulation-credits.dto';
 import { UpdateSimulationCreditsDto } from '../../dto/update-simulation-credits.dto';
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { UserService } from 'src/user/service/user.service';
+import { AppConfigService } from 'src/config/config.service';
 
 describe('SimulationCreditsController', () => {
   let controller: SimulationCreditsController;
@@ -37,7 +39,24 @@ describe('SimulationCreditsController', () => {
           useValue: mockSimulationCreditsService,
         },
         { provide: Reflector, useValue: {} },
-        { provide: PermissionsService, useValue: {} },
+        {
+          provide: PermissionsService,
+          useValue: { getUserPermissions: jest.fn() },
+        },
+        {
+          provide: UserService,
+          useValue: {
+            getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
+        },
       ],
     }).compile();
 

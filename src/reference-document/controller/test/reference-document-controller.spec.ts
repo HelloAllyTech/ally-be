@@ -11,6 +11,8 @@ import {
 } from 'src/reference-document/dto/reference-document.dto';
 import { ReferenceDocumentService } from 'src/reference-document/service/reference-document.service';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { UserService } from '../../../user/service/user.service';
+import { AppConfigService } from '../../../config/config.service';
 
 describe('ReferenceDocumentController', () => {
   let controller: ReferenceDocumentController;
@@ -38,12 +40,24 @@ describe('ReferenceDocumentController', () => {
     getUserPermissions: jest.fn(),
   };
 
+  const mockUserService = {
+    getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
+  };
+
+  const mockAppConfigService = {
+    featureFlag: {
+      termsAndAgreement: false,
+    },
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ReferenceDocumentController],
       providers: [
         { provide: ReferenceDocumentService, useValue: mockService },
         { provide: PermissionsService, useValue: mockPermissionsService },
+        { provide: UserService, useValue: mockUserService },
+        { provide: AppConfigService, useValue: mockAppConfigService },
         Reflector,
       ],
     })

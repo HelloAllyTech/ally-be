@@ -35,6 +35,7 @@ import { UserGroupService } from 'src/authorization/service/user-group.service';
 import { AddUserDto } from '../dto/add-user.dto';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
+import { SuccessResponse } from 'src/common/type/common.type';
 
 @Injectable()
 export class UserService {
@@ -62,6 +63,51 @@ export class UserService {
       eventType: AUDIT_EVENTS.USER_PROFILE_ACCESS,
     });
     return user || null;
+  }
+
+  async getTermsAndAgreementApproval(id: number): Promise<boolean> {
+    const cachedTermsAndAgreement = await this.cache.get(`user:terms:${id}`);
+    let termsAccepted: boolean;
+    if (cachedTermsAndAgreement) {
+      termsAccepted = cachedTermsAndAgreement === 'true';
+    } else {
+      const user = await this.userRepository.findOne({
+        where: { id, tenantId: ExecutionManager.getTenantId() },
+      });
+      termsAccepted = user?.termsAndAgreementApproved || false;
+      await this.cache.set(`user:terms:${id}`, termsAccepted.toString(), 1800);
+    }
+    return termsAccepted;
+  }
+
+  async getTermsAndAgreementStatus(): Promise<SuccessResponse> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('unauthorized access');
+    }
+    const user = await this.get(Number(userId));
+    return { success: user?.termsAndAgreementApproved || false };
+  }
+
+  async approveTermsAndAgreement(): Promise<SuccessResponse> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('unauthorized access');
+    }
+
+    const user = await this.get(Number(userId));
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    await this.userRepository.update(user.id, {
+      termsAndAgreementApproved: true,
+      termsAndAgreementApprovedAt: new Date(),
+    });
+
+    await this.cache.set(`user:terms:${userId}`, 'true', 1800);
+
+    return { success: true };
   }
 
   async getUserByPhoneNumber(phoneNumber: string): Promise<User | null> {

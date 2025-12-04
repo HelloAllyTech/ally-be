@@ -272,6 +272,9 @@ export class AppConfigService {
         'FEATURE_TRIGGER_WARNING',
         false,
       ),
+      termsAndAgreement:
+        this.configService.get<string>('FEATURE_TERMS_AND_AGREEMENT') ===
+        'true',
     };
   }
 }
