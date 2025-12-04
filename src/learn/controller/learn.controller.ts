@@ -52,6 +52,9 @@ import { ScenarioTenantService } from '../service/scenario-tenant.service';
 import { DeleteScenarioTenantDto } from '../dto/delete-scenario-tenant.dto';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { SCENARIO_SESSION_EXAMPLE } from '../constants/scenario-session.constants';
+import { CreateTriggerWarningDto } from '../dto/trigger-warning.dto';
+import { TriggerWarningsService } from '../service/trigger-warnings.service';
+import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -62,6 +65,7 @@ export class LearnController {
     private readonly scenarioService: ScenarioService,
     private readonly scenarioSessionService: ScenarioSessionService,
     private readonly scenarioTenantService: ScenarioTenantService,
+    private readonly triggerWarningService: TriggerWarningsService,
   ) {}
 
   @Public()
@@ -630,5 +634,78 @@ export class LearnController {
     return this.scenarioSessionService.getLatestScenarioSessionByScenarioPathSessionItemId(
       pathSessionItemId,
     );
+  }
+
+  @ApiOperation({ summary: 'Create a trigger warning' })
+  @ApiResponse({
+    description: 'Trigger warning created successfully',
+    type: TriggerWarnings,
+    example: {
+      name: 'Domestic abuse',
+    },
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('trigger-warnings')
+  async createTriggerWarning(
+    @Body() createTriggerWarningDto: CreateTriggerWarningDto,
+  ) {
+    return this.triggerWarningService.createTriggerWarning(
+      createTriggerWarningDto,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Get trigger warnings based on name filter and add pagination',
+  })
+  @ApiQuery({
+    name: 'name',
+    required: false,
+    type: String,
+    description: 'Name of the trigger warning',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order',
+  })
+  @ApiResponse({
+    description: 'Trigger warnings retrieved successfully',
+    type: TriggerWarnings,
+    isArray: true,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Get('trigger-warnings')
+  async getTriggerWarnings(
+    @Query('name') name?: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order?: SortOrder,
+  ) {
+    return this.triggerWarningService.getTriggerWarnings(name, {
+      limit,
+      offset,
+      sortBy,
+      order,
+    });
   }
 }

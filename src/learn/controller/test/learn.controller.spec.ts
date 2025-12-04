@@ -3,6 +3,7 @@ import { LearnController } from '../learn.controller';
 import { ScenarioService } from '../../service/scenario.service';
 import { ScenarioSessionService } from '../../service/scenario-session.service';
 import { ScenarioTenantService } from '../../service/scenario-tenant.service';
+import { TriggerWarningsService } from '../../service/trigger-warnings.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { ScenarioStatus } from '../../enum/scenario.status.enum';
@@ -218,6 +219,12 @@ describe('LearnController', () => {
       getUserRoles: jest.fn(),
     };
 
+    const mockTriggerWarningsService = {
+      getTriggerWarnings: jest.fn(),
+      createTriggerWarning: jest.fn(),
+      assignTriggerWarningsToScenario: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LearnController],
       providers: [
@@ -242,6 +249,10 @@ describe('LearnController', () => {
         {
           provide: PermissionsService,
           useValue: mockPermissionsService,
+        },
+        {
+          provide: TriggerWarningsService,
+          useValue: mockTriggerWarningsService,
         },
       ],
     }).compile();
