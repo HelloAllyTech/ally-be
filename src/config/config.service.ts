@@ -266,10 +266,11 @@ export class AppConfigService {
     };
   }
 
-  get featureFlags() {
+  get featureFlag() {
     return {
       triggerWarning: this.configService.get<boolean>(
         'FEATURE_TRIGGER_WARNING',
+        false,
       ),
     };
   }

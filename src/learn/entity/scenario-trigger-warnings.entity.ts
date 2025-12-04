@@ -12,6 +12,6 @@ export class ScenarioTriggerWarnings extends BaseWithoutTenantEntity {
   @Column()
   scenarioId!: number;
 
-  @Column()
+  @Column({ type: 'uuid' })
   triggerWarningId!: string;
 }
