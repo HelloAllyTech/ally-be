@@ -5,13 +5,42 @@ import { Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
-import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioFilters } from '../type/scenario-filter.type';
+import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.entity';
+import { TriggerWarnings } from '../entity/trigger-warnings.entity';
+import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { GetScenarioDto } from '../dto/get-scenario.dto';
 
 @Injectable()
 export class ScenariosRepository extends Repository<Scenarios> {
   constructor(private dataSource: DataSource) {
     super(Scenarios, dataSource.createEntityManager());
+  }
+  async getScenarios(): Promise<GetScenarioDto[]> {
+    return await this.createQueryBuilder('scenario')
+      .select([
+        'scenario.id',
+        'scenario.title',
+        'scenario.scenario',
+        'scenario.description',
+        'scenario.coverImageUrl',
+        'scenario.coverVideoUrl',
+        'scenario.status',
+      ])
+      .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
+      .leftJoinAndMapMany(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'tw',
+        'tw.id = stw.triggerWarningId',
+      )
+      .where('scenario.status IN (:...statuses)', {
+        statuses: [ScenarioStatus.ACTIVE],
+      })
+      .orderBy('scenario.createdAt', 'DESC')
+      .addOrderBy('scenario.id', 'DESC')
+      .getMany();
   }
   async getAdminScenarios(
     scenarioFilters?: ScenarioFilters,
@@ -81,6 +110,13 @@ export class ScenariosRepository extends Repository<Scenarios> {
         'scenarioEvent',
         'scenarioEvent.scenarioId = scenario.id AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
         { autoTerminationStatus: true },
+      )
+      .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
+      .leftJoinAndMapMany(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'triggerWarnings',
+        'triggerWarnings.id = stw.triggerWarningId',
       )
       .where('scenario.id = :id', { id })
       .getOne();

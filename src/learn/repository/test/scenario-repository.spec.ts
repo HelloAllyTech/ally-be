@@ -5,6 +5,12 @@ import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { ScenariosRepository } from '../scenario.repository';
+import { GetScenarioDto } from '../../dto/get-scenario.dto';
+import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
+import { TriggerWarnings } from '../../entity/trigger-warnings.entity';
+import { ScenarioStatus } from '../../enum/scenario.status.enum';
+import { ScenarioTriggerWarnings } from '../../entity/scenario-trigger-warnings.entity';
+import { ScenarioEvents } from '../../entity/scenario-events.entity';
 
 describe('ScenariosRepository', () => {
   let repository: ScenariosRepository;
@@ -51,6 +57,8 @@ describe('ScenariosRepository', () => {
 
     mockQueryBuilder = {
       leftJoin: jest.fn().mockReturnThis(),
+      leftJoinAndMapMany: jest.fn().mockReturnThis(),
+      leftJoinAndMapOne: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn(function (callback) {
         if (typeof callback === 'function') {
@@ -58,11 +66,15 @@ describe('ScenariosRepository', () => {
         }
         return this;
       }),
+      where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       offset: jest.fn().mockReturnThis(),
       getRawMany: jest.fn(),
+      getMany: jest.fn(),
+      getOne: jest.fn(),
     } as any;
 
     const mockEntityManager = {
@@ -201,6 +213,233 @@ describe('ScenariosRepository', () => {
         'user',
         'scenario."createdBy"=user.id',
       );
+    });
+  });
+
+  describe('getScenarios', () => {
+    const mockTriggerWarning1: TriggerWarnings = {
+      id: 'uuid-1',
+      name: 'Violence',
+      createdAt: new Date('2025-01-01'),
+      updatedAt: new Date('2025-01-01'),
+    } as TriggerWarnings;
+
+    const mockTriggerWarning2: TriggerWarnings = {
+      id: 'uuid-2',
+      name: 'Substance Abuse',
+      createdAt: new Date('2025-01-01'),
+      updatedAt: new Date('2025-01-01'),
+    } as TriggerWarnings;
+
+    const mockScenarioWithTriggerWarnings: GetScenarioDto = {
+      id: 1,
+      title: 'Test Scenario 1',
+      scenario: 'Test scenario content',
+      description: 'Test description',
+      coverImageUrl: 'https://example.com/image.jpg',
+      coverVideoUrl: undefined,
+      status: ScenarioStatus.ACTIVE,
+      isGlobal: false,
+      triggerWarnings: [mockTriggerWarning1, mockTriggerWarning2],
+      createdAt: new Date('2025-01-01'),
+      updatedAt: new Date('2025-01-01'),
+    } as GetScenarioDto;
+
+    const mockScenarioWithoutTriggerWarnings: GetScenarioDto = {
+      id: 2,
+      title: 'Test Scenario 2',
+      scenario: 'Test scenario content 2',
+      description: 'Test description 2',
+      coverImageUrl: 'https://example.com/image2.jpg',
+      coverVideoUrl: undefined,
+      status: ScenarioStatus.ACTIVE,
+      isGlobal: false,
+      triggerWarnings: [],
+      createdAt: new Date('2025-01-02'),
+      updatedAt: new Date('2025-01-02'),
+    } as GetScenarioDto;
+
+    it('should return empty array when no scenarios found', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+
+      const result = await repository.getScenarios();
+
+      expect(result).toEqual([]);
+      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
+      expect(repository.createQueryBuilder).toHaveBeenCalledWith('scenario');
+      expect(mockQueryBuilder.select).toHaveBeenCalledWith([
+        'scenario.id',
+        'scenario.title',
+        'scenario.scenario',
+        'scenario.description',
+        'scenario.coverImageUrl',
+        'scenario.coverVideoUrl',
+        'scenario.status',
+      ]);
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
+        ScenarioTriggerWarnings,
+        'stw',
+        'stw.scenarioId = scenario.id',
+      );
+      expect(mockQueryBuilder.leftJoinAndMapMany).toHaveBeenCalledWith(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'tw',
+        'tw.id = stw.triggerWarningId',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'scenario.status IN (:...statuses)',
+        { statuses: [ScenarioStatus.ACTIVE] },
+      );
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'scenario.createdAt',
+        'DESC',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'scenario.id',
+        'DESC',
+      );
+    });
+
+    it('should return scenarios with trigger warnings when data exists', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([
+        mockScenarioWithTriggerWarnings,
+        mockScenarioWithoutTriggerWarnings,
+      ]);
+
+      const result = await repository.getScenarios();
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual(mockScenarioWithTriggerWarnings);
+      expect(result[0].triggerWarnings).toHaveLength(2);
+      expect(result[0].triggerWarnings?.[0]).toEqual(mockTriggerWarning1);
+      expect(result[0].triggerWarnings?.[1]).toEqual(mockTriggerWarning2);
+      expect(result[1]).toEqual(mockScenarioWithoutTriggerWarnings);
+      expect(result[1].triggerWarnings).toHaveLength(0);
+      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
+    });
+  });
+
+  describe('getAdminScenarioById', () => {
+    const mockTriggerWarning1: TriggerWarnings = {
+      id: 'uuid-1',
+      name: 'Violence',
+      createdAt: new Date('2025-01-01'),
+      updatedAt: new Date('2025-01-01'),
+    } as TriggerWarnings;
+
+    const mockTriggerWarning2: TriggerWarnings = {
+      id: 'uuid-2',
+      name: 'Substance Abuse',
+      createdAt: new Date('2025-01-01'),
+      updatedAt: new Date('2025-01-01'),
+    } as TriggerWarnings;
+
+    const mockTerminationEvent = {
+      eventId: 'event-1',
+      name: 'Termination Event',
+      autoTerminationStatus: true,
+      message: 'Session terminated',
+    };
+
+    const mockScenarioWithTriggerWarnings: GetAdminScenarioDto = {
+      id: 1,
+      title: 'Test Scenario 1',
+      scenario: 'Test scenario content',
+      description: 'Test description',
+      coverImageUrl: 'https://example.com/image.jpg',
+      coverVideoUrl: undefined,
+      status: ScenarioStatus.ACTIVE,
+      isGlobal: false,
+      terminationEvent: mockTerminationEvent,
+      triggerWarnings: [mockTriggerWarning1, mockTriggerWarning2],
+      createdAt: new Date('2025-01-01'),
+      updatedAt: new Date('2025-01-01'),
+    } as GetAdminScenarioDto;
+
+    const mockScenarioWithoutTriggerWarnings: GetAdminScenarioDto = {
+      id: 2,
+      title: 'Test Scenario 2',
+      scenario: 'Test scenario content 2',
+      description: 'Test description 2',
+      coverImageUrl: 'https://example.com/image2.jpg',
+      coverVideoUrl: undefined,
+      status: ScenarioStatus.ACTIVE,
+      isGlobal: false,
+      terminationEvent: undefined,
+      triggerWarnings: [],
+      createdAt: new Date('2025-01-02'),
+      updatedAt: new Date('2025-01-02'),
+    } as GetAdminScenarioDto;
+
+    it('should return scenario with trigger warnings when found', async () => {
+      const scenarioId = 1;
+      mockQueryBuilder.getOne.mockResolvedValue(
+        mockScenarioWithTriggerWarnings,
+      );
+
+      const result = await repository.getAdminScenarioById(scenarioId);
+
+      expect(result).toEqual(mockScenarioWithTriggerWarnings);
+      expect(result?.triggerWarnings).toHaveLength(2);
+      expect(result?.triggerWarnings?.[0]).toEqual(mockTriggerWarning1);
+      expect(result?.triggerWarnings?.[1]).toEqual(mockTriggerWarning2);
+      expect(mockQueryBuilder.getOne).toHaveBeenCalled();
+      expect(repository.createQueryBuilder).toHaveBeenCalledWith('scenario');
+      expect(mockQueryBuilder.leftJoinAndMapOne).toHaveBeenCalledWith(
+        'scenario.terminationEvent',
+        ScenarioEvents,
+        'scenarioEvent',
+        'scenarioEvent.scenarioId = scenario.id AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        { autoTerminationStatus: true },
+      );
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
+        ScenarioTriggerWarnings,
+        'stw',
+        'stw.scenarioId = scenario.id',
+      );
+      expect(mockQueryBuilder.leftJoinAndMapMany).toHaveBeenCalledWith(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'triggerWarnings',
+        'triggerWarnings.id = stw.triggerWarningId',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith('scenario.id = :id', {
+        id: scenarioId,
+      });
+    });
+
+    it('should return scenario without trigger warnings when found', async () => {
+      const scenarioId = 2;
+      mockQueryBuilder.getOne.mockResolvedValue(
+        mockScenarioWithoutTriggerWarnings,
+      );
+
+      const result = await repository.getAdminScenarioById(scenarioId);
+
+      expect(result).toEqual(mockScenarioWithoutTriggerWarnings);
+      expect(result?.triggerWarnings).toHaveLength(0);
+      expect(result?.triggerWarnings).toEqual([]);
+      expect(mockQueryBuilder.getOne).toHaveBeenCalled();
+      expect(mockQueryBuilder.leftJoinAndMapMany).toHaveBeenCalledWith(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'triggerWarnings',
+        'triggerWarnings.id = stw.triggerWarningId',
+      );
+    });
+
+    it('should return null when scenario is not found', async () => {
+      const scenarioId = 999;
+      mockQueryBuilder.getOne.mockResolvedValue(null);
+
+      const result = await repository.getAdminScenarioById(scenarioId);
+
+      expect(result).toBeNull();
+      expect(mockQueryBuilder.getOne).toHaveBeenCalled();
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith('scenario.id = :id', {
+        id: scenarioId,
+      });
     });
   });
 

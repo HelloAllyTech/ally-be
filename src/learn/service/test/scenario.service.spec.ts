@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { Repository, DataSource, In } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { S3Service } from 'src/aws/service/s3.service';
 import { AppConfigService } from 'src/config/config.service';
 import { DeleteCoverVideoDto } from 'src/learn/dto/delete-cover-video.dto';
@@ -23,6 +23,8 @@ import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
 import { ScenarioService } from '../scenario.service';
 import { ScenarioTenants } from 'src/learn/entity/scenario-tenants.entity';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
+import { TriggerWarningsService } from '../trigger-warnings.service';
+import { ScenarioTriggerWarnings } from 'src/learn/entity/scenario-trigger-warnings.entity';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -80,6 +82,7 @@ describe('ScenarioService', () => {
     };
 
     const mockScenariosRepository = {
+      getScenarios: jest.fn(),
       getAdminScenarios: jest.fn(),
       getAdminScenarioById: jest.fn(),
       find: jest.fn(),
@@ -146,6 +149,13 @@ describe('ScenarioService', () => {
       getScenarioPathWithScenarios: jest.fn(),
     };
 
+    const mockTriggerWarningsService = {
+      getTriggerWarnings: jest.fn(),
+      createTriggerWarning: jest.fn(),
+      assignTriggerWarningsToScenario: jest.fn(),
+      addScenarioTriggerWarnings: jest.fn(),
+    };
+
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -194,6 +204,10 @@ describe('ScenarioService', () => {
         {
           provide: ScenarioPathSharedService,
           useValue: mockScenarioPathSharedService,
+        },
+        {
+          provide: TriggerWarningsService,
+          useValue: mockTriggerWarningsService,
         },
       ],
     }).compile();
@@ -1192,34 +1206,21 @@ describe('ScenarioService', () => {
         { ...mockScenario, status: ScenarioStatus.ACTIVE },
         { ...mockScenario, id: 2, status: ScenarioStatus.COMING_SOON },
       ];
-      scenariosRepository.find.mockResolvedValue(mockScenarios as any);
+      scenariosRepository.getScenarios.mockResolvedValue(mockScenarios as any);
 
       const result = await service.getScenarios();
 
       expect(result).toEqual(mockScenarios);
-      expect(scenariosRepository.find).toHaveBeenCalledWith({
-        select: [
-          'id',
-          'title',
-          'scenario',
-          'description',
-          'coverImageUrl',
-          'coverVideoUrl',
-          'status',
-        ],
-        where: {
-          status: In([ScenarioStatus.ACTIVE, ScenarioStatus.COMING_SOON]),
-        },
-        order: { createdAt: 'DESC', id: 'DESC' },
-      });
+      expect(scenariosRepository.getScenarios).toHaveBeenCalled();
     });
 
     it('should return empty array when no scenarios found', async () => {
-      scenariosRepository.find.mockResolvedValue([]);
+      scenariosRepository.getScenarios.mockResolvedValue([]);
 
       const result = await service.getScenarios();
 
       expect(result).toEqual([]);
+      expect(scenariosRepository.getScenarios).toHaveBeenCalled();
     });
   });
 
@@ -1709,6 +1710,142 @@ describe('ScenarioService', () => {
       expect(result).toHaveLength(1);
       expect(tenantService.findAll).toHaveBeenCalled();
     });
+
+    it('should save trigger warnings when triggerWarningList is filled', async () => {
+      const createDto = {
+        scenarios: [
+          {
+            title: 'Test',
+            description: 'Desc',
+            status: ScenarioStatus.DRAFT,
+            prompt: 'Prompt',
+            isGlobal: false,
+            agentGoal: 'Goal',
+            lifeHistory: 'History',
+            voiceId: 'voice-1',
+            name: 'Test',
+            age: 30,
+            gender: 'Male',
+            currentLocation: 'NY',
+            context: 'Context',
+            openingStatements: ['Hi'],
+            triggerWarningIds: ['uuid-1', 'uuid-2'],
+          },
+        ],
+      };
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+      const mockScenarioTriggerWarningsRepo = {
+        create: jest.fn().mockReturnValue([
+          { scenarioId: 1, triggerWarningId: 'uuid-1' },
+          { scenarioId: 1, triggerWarningId: 'uuid-2' },
+        ]),
+        save: jest.fn().mockResolvedValue([
+          { scenarioId: 1, triggerWarningId: 'uuid-1' },
+          { scenarioId: 1, triggerWarningId: 'uuid-2' },
+        ]),
+      };
+      const mockEntityManager = {
+        getRepository: jest.fn().mockImplementation((entity) => {
+          if (entity === Scenarios) {
+            return {
+              create: jest.fn().mockReturnValue([{ id: 1 }]),
+              save: jest.fn().mockResolvedValue([{ id: 1, isGlobal: false }]),
+            };
+          }
+          if (entity === ScenarioEvents) {
+            return {
+              create: jest.fn().mockReturnValue([]),
+              save: jest.fn().mockResolvedValue([]),
+            };
+          }
+          if (entity === ScenarioTriggerWarnings) {
+            return mockScenarioTriggerWarningsRepo;
+          }
+          return {
+            create: jest.fn().mockReturnValue([]),
+            save: jest.fn().mockResolvedValue([]),
+          };
+        }),
+      };
+      dataSource.transaction.mockImplementation((cb: any) =>
+        cb(mockEntityManager as any),
+      );
+
+      await service.createScenarios(createDto as any, 1);
+
+      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(
+        ScenarioTriggerWarnings,
+      );
+      expect(mockScenarioTriggerWarningsRepo.create).toHaveBeenCalledWith([
+        { scenarioId: 1, triggerWarningId: 'uuid-1' },
+        { scenarioId: 1, triggerWarningId: 'uuid-2' },
+      ]);
+      expect(mockScenarioTriggerWarningsRepo.save).toHaveBeenCalled();
+    });
+
+    it('should not save trigger warnings when feature flag is true but triggerWarningList is empty', async () => {
+      const createDto = {
+        scenarios: [
+          {
+            title: 'Test',
+            description: 'Desc',
+            status: ScenarioStatus.DRAFT,
+            prompt: 'Prompt',
+            isGlobal: false,
+            agentGoal: 'Goal',
+            lifeHistory: 'History',
+            voiceId: 'voice-1',
+            name: 'Test',
+            age: 30,
+            gender: 'Male',
+            currentLocation: 'NY',
+            context: 'Context',
+            openingStatements: ['Hi'],
+            triggerWarningIds: [],
+          },
+        ],
+      };
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+      const mockScenarioTriggerWarningsRepo = {
+        create: jest.fn(),
+        save: jest.fn(),
+      };
+      const mockEntityManager = {
+        getRepository: jest.fn().mockImplementation((entity) => {
+          if (entity === Scenarios) {
+            return {
+              create: jest.fn().mockReturnValue([{ id: 1 }]),
+              save: jest.fn().mockResolvedValue([{ id: 1, isGlobal: false }]),
+            };
+          }
+          if (entity === ScenarioEvents) {
+            return {
+              create: jest.fn().mockReturnValue([]),
+              save: jest.fn().mockResolvedValue([]),
+            };
+          }
+          if (entity === ScenarioTriggerWarnings) {
+            return mockScenarioTriggerWarningsRepo;
+          }
+          return {
+            create: jest.fn().mockReturnValue([]),
+            save: jest.fn().mockResolvedValue([]),
+          };
+        }),
+      };
+      dataSource.transaction.mockImplementation((cb: any) =>
+        cb(mockEntityManager as any),
+      );
+
+      await service.createScenarios(createDto as any, 1);
+
+      expect(mockScenarioTriggerWarningsRepo.create).not.toHaveBeenCalled();
+      expect(mockScenarioTriggerWarningsRepo.save).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateScenario', () => {
@@ -1737,6 +1874,14 @@ describe('ScenarioService', () => {
               update: jest.fn().mockResolvedValue({ affected: 1 }),
               save: jest.fn().mockResolvedValue({}),
               create: jest.fn().mockReturnValue([]),
+            };
+          }
+          if (entity === ScenarioTriggerWarnings) {
+            return {
+              find: jest.fn().mockResolvedValue([]),
+              create: jest.fn(),
+              save: jest.fn(),
+              delete: jest.fn(),
             };
           }
           return {
@@ -1780,6 +1925,14 @@ describe('ScenarioService', () => {
               delete: jest.fn().mockResolvedValue({ affected: 0 }),
             };
           }
+          if (entity === ScenarioTriggerWarnings) {
+            return {
+              find: jest.fn().mockResolvedValue([]),
+              create: jest.fn(),
+              save: jest.fn(),
+              delete: jest.fn(),
+            };
+          }
           return {
             findOne: jest.fn().mockResolvedValue(null),
           };
@@ -1792,6 +1945,371 @@ describe('ScenarioService', () => {
       const result = await service.updateScenario(1, updateDto, 1);
 
       expect(result).toBe(false);
+    });
+
+    describe('trigger warnings', () => {
+      it('should skip trigger warning updates when no triggerWarningIds provided', async () => {
+        const updateDto: UpdateScenarioDto = {
+          title: 'Updated Title',
+        };
+        scenariosRepository.findOne.mockResolvedValue(mockScenario);
+        scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+          null,
+        );
+        const mockScenarioTriggerWarningsRepo = {
+          find: jest.fn().mockResolvedValue([]),
+          create: jest.fn(),
+          save: jest.fn(),
+          delete: jest.fn(),
+        };
+        const mockEntityManager = {
+          getRepository: jest.fn().mockImplementation((entity) => {
+            if (entity === Scenarios) {
+              return {
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                findOne: jest.fn().mockResolvedValue(mockScenario),
+              };
+            }
+            if (entity === ScenarioEvents) {
+              return {
+                findOne: jest.fn().mockResolvedValue(null),
+                delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                save: jest.fn().mockResolvedValue({}),
+                create: jest.fn().mockReturnValue([]),
+              };
+            }
+            if (entity === ScenarioTriggerWarnings) {
+              return mockScenarioTriggerWarningsRepo;
+            }
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }),
+        };
+        dataSource.transaction.mockImplementation((cb: any) =>
+          cb(mockEntityManager as any),
+        );
+
+        await service.updateScenario(1, updateDto, 1);
+
+        expect(mockScenarioTriggerWarningsRepo.find).toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.create).not.toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.save).not.toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.delete).not.toHaveBeenCalled();
+      });
+
+      it('should create all trigger warnings when none exist', async () => {
+        const updateDto: UpdateScenarioDto = {
+          title: 'Updated Title',
+          triggerWarningIds: ['uuid-1', 'uuid-2'],
+        };
+        scenariosRepository.findOne.mockResolvedValue(mockScenario);
+        scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+          null,
+        );
+        const mockScenarioTriggerWarningsRepo = {
+          find: jest.fn().mockResolvedValue([]),
+          create: jest.fn().mockReturnValue([
+            { scenarioId: 1, triggerWarningId: 'uuid-1' },
+            { scenarioId: 1, triggerWarningId: 'uuid-2' },
+          ]),
+          save: jest.fn().mockResolvedValue([]),
+          delete: jest.fn(),
+        };
+        const mockEntityManager = {
+          getRepository: jest.fn().mockImplementation((entity) => {
+            if (entity === Scenarios) {
+              return {
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                findOne: jest.fn().mockResolvedValue(mockScenario),
+              };
+            }
+            if (entity === ScenarioEvents) {
+              return {
+                findOne: jest.fn().mockResolvedValue(null),
+                delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                save: jest.fn().mockResolvedValue({}),
+                create: jest.fn().mockReturnValue([]),
+              };
+            }
+            if (entity === ScenarioTriggerWarnings) {
+              return mockScenarioTriggerWarningsRepo;
+            }
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }),
+        };
+        dataSource.transaction.mockImplementation((cb: any) =>
+          cb(mockEntityManager as any),
+        );
+
+        await service.updateScenario(1, updateDto, 1);
+
+        expect(mockScenarioTriggerWarningsRepo.find).toHaveBeenCalledWith({
+          where: { scenarioId: 1 },
+        });
+        expect(mockScenarioTriggerWarningsRepo.create).toHaveBeenCalledTimes(2);
+        expect(mockScenarioTriggerWarningsRepo.save).toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.delete).not.toHaveBeenCalled();
+      });
+
+      it('should skip updates when trigger warnings are unchanged', async () => {
+        const updateDto: UpdateScenarioDto = {
+          title: 'Updated Title',
+          triggerWarningIds: ['uuid-1', 'uuid-2'],
+        };
+        scenariosRepository.findOne.mockResolvedValue(mockScenario);
+        scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+          null,
+        );
+        const existingTriggerWarnings = [
+          { id: 'stw-1', scenarioId: 1, triggerWarningId: 'uuid-1' },
+          { id: 'stw-2', scenarioId: 1, triggerWarningId: 'uuid-2' },
+        ];
+        const mockScenarioTriggerWarningsRepo = {
+          find: jest.fn().mockResolvedValue(existingTriggerWarnings),
+          create: jest.fn(),
+          save: jest.fn(),
+          delete: jest.fn(),
+        };
+        const mockEntityManager = {
+          getRepository: jest.fn().mockImplementation((entity) => {
+            if (entity === Scenarios) {
+              return {
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                findOne: jest.fn().mockResolvedValue(mockScenario),
+              };
+            }
+            if (entity === ScenarioEvents) {
+              return {
+                findOne: jest.fn().mockResolvedValue(null),
+                delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                save: jest.fn().mockResolvedValue({}),
+                create: jest.fn().mockReturnValue([]),
+              };
+            }
+            if (entity === ScenarioTriggerWarnings) {
+              return mockScenarioTriggerWarningsRepo;
+            }
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }),
+        };
+        dataSource.transaction.mockImplementation((cb: any) =>
+          cb(mockEntityManager as any),
+        );
+
+        await service.updateScenario(1, updateDto, 1);
+
+        expect(mockScenarioTriggerWarningsRepo.find).toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.create).not.toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.save).not.toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.delete).not.toHaveBeenCalled();
+      });
+
+      it('should remove trigger warnings not in the incoming list', async () => {
+        const updateDto: UpdateScenarioDto = {
+          title: 'Updated Title',
+          triggerWarningIds: ['uuid-1'],
+        };
+        scenariosRepository.findOne.mockResolvedValue(mockScenario);
+        scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+          null,
+        );
+        const existingTriggerWarnings = [
+          { id: 'stw-1', scenarioId: 1, triggerWarningId: 'uuid-1' },
+          { id: 'stw-2', scenarioId: 1, triggerWarningId: 'uuid-2' },
+        ];
+        const mockScenarioTriggerWarningsRepo = {
+          find: jest.fn().mockResolvedValue(existingTriggerWarnings),
+          create: jest.fn(),
+          save: jest.fn(),
+          delete: jest.fn().mockResolvedValue({ affected: 1 }),
+        };
+        const mockEntityManager = {
+          getRepository: jest.fn().mockImplementation((entity) => {
+            if (entity === Scenarios) {
+              return {
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                findOne: jest.fn().mockResolvedValue(mockScenario),
+              };
+            }
+            if (entity === ScenarioEvents) {
+              return {
+                findOne: jest.fn().mockResolvedValue(null),
+                delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                save: jest.fn().mockResolvedValue({}),
+                create: jest.fn().mockReturnValue([]),
+              };
+            }
+            if (entity === ScenarioTriggerWarnings) {
+              return mockScenarioTriggerWarningsRepo;
+            }
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }),
+        };
+        dataSource.transaction.mockImplementation((cb: any) =>
+          cb(mockEntityManager as any),
+        );
+
+        await service.updateScenario(1, updateDto, 1);
+
+        expect(mockScenarioTriggerWarningsRepo.find).toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.create).not.toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.save).not.toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.delete).toHaveBeenCalledWith([
+          'stw-2',
+        ]);
+      });
+
+      it('should add new trigger warnings from the incoming list', async () => {
+        const updateDto: UpdateScenarioDto = {
+          title: 'Updated Title',
+          triggerWarningIds: ['uuid-1', 'uuid-2'],
+        };
+        scenariosRepository.findOne.mockResolvedValue(mockScenario);
+        scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+          null,
+        );
+        const existingTriggerWarnings = [
+          { id: 'stw-1', scenarioId: 1, triggerWarningId: 'uuid-1' },
+        ];
+        const mockScenarioTriggerWarningsRepo = {
+          find: jest.fn().mockResolvedValue(existingTriggerWarnings),
+          create: jest
+            .fn()
+            .mockReturnValue([{ scenarioId: 1, triggerWarningId: 'uuid-2' }]),
+          save: jest.fn().mockResolvedValue([]),
+          delete: jest.fn(),
+        };
+        const mockEntityManager = {
+          getRepository: jest.fn().mockImplementation((entity) => {
+            if (entity === Scenarios) {
+              return {
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                findOne: jest.fn().mockResolvedValue(mockScenario),
+              };
+            }
+            if (entity === ScenarioEvents) {
+              return {
+                findOne: jest.fn().mockResolvedValue(null),
+                delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                save: jest.fn().mockResolvedValue({}),
+                create: jest.fn().mockReturnValue([]),
+              };
+            }
+            if (entity === ScenarioTriggerWarnings) {
+              return mockScenarioTriggerWarningsRepo;
+            }
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }),
+        };
+        dataSource.transaction.mockImplementation((cb: any) =>
+          cb(mockEntityManager as any),
+        );
+
+        await service.updateScenario(1, updateDto, 1);
+
+        expect(mockScenarioTriggerWarningsRepo.find).toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.create).toHaveBeenCalledTimes(1);
+        expect(mockScenarioTriggerWarningsRepo.save).toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.delete).not.toHaveBeenCalled();
+      });
+
+      it('should sync trigger warnings by adding new ones and removing old ones', async () => {
+        const updateDto: UpdateScenarioDto = {
+          title: 'Updated Title',
+          triggerWarningIds: ['uuid-1', 'uuid-3'],
+        };
+        scenariosRepository.findOne.mockResolvedValue(mockScenario);
+        scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+          null,
+        );
+        const existingTriggerWarnings = [
+          { id: 'stw-1', scenarioId: 1, triggerWarningId: 'uuid-1' },
+          { id: 'stw-2', scenarioId: 1, triggerWarningId: 'uuid-2' },
+        ];
+        const mockScenarioTriggerWarningsRepo = {
+          find: jest.fn().mockResolvedValue(existingTriggerWarnings),
+          create: jest
+            .fn()
+            .mockReturnValue([{ scenarioId: 1, triggerWarningId: 'uuid-3' }]),
+          save: jest.fn().mockResolvedValue([]),
+          delete: jest.fn().mockResolvedValue({ affected: 1 }),
+        };
+        const mockEntityManager = {
+          getRepository: jest.fn().mockImplementation((entity) => {
+            if (entity === Scenarios) {
+              return {
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                findOne: jest.fn().mockResolvedValue(mockScenario),
+              };
+            }
+            if (entity === ScenarioEvents) {
+              return {
+                findOne: jest.fn().mockResolvedValue(null),
+                delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                save: jest.fn().mockResolvedValue({}),
+                create: jest.fn().mockReturnValue([]),
+              };
+            }
+            if (entity === ScenarioTriggerWarnings) {
+              return mockScenarioTriggerWarningsRepo;
+            }
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }),
+        };
+        dataSource.transaction.mockImplementation((cb: any) =>
+          cb(mockEntityManager as any),
+        );
+
+        await service.updateScenario(1, updateDto, 1);
+
+        expect(mockScenarioTriggerWarningsRepo.find).toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.create).toHaveBeenCalledTimes(1);
+        expect(mockScenarioTriggerWarningsRepo.save).toHaveBeenCalled();
+        expect(mockScenarioTriggerWarningsRepo.delete).toHaveBeenCalledWith([
+          'stw-2',
+        ]);
+      });
     });
   });
 });

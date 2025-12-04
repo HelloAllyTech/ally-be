@@ -1,4 +1,5 @@
 import { Scenarios } from '../entity/scenarios.entity';
+import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 
 class TerminationEventDto {
   eventId?: string;
@@ -9,4 +10,9 @@ class TerminationEventDto {
 
 export class GetAdminScenarioDto extends Scenarios {
   terminationEvent?: TerminationEventDto;
+  triggerWarnings?: TriggerWarnings[];
+}
+
+export class GetScenarioDto extends Scenarios {
+  triggerWarnings?: TriggerWarnings[];
 }

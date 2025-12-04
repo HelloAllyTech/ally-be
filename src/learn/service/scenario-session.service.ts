@@ -46,7 +46,7 @@ import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-p
 import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
 import { extractEventIds } from 'src/session-event/util/session-event.util';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
-import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import {
   ExecutionContextPropagation,
