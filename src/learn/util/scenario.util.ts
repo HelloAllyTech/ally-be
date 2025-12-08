@@ -55,3 +55,16 @@ export const formatAutoTerminationEventsList = (
       };
     })
     .filter((event) => event.eventId && event.autoTerminationStatus);
+
+export const formatScenarioTriggerWarningsList = (
+  createScenariosDto: CreateScenariosDto,
+  savedScenarios: Scenarios[],
+) =>
+  savedScenarios.flatMap((savedScenario, index) => {
+    const correspondingDto = createScenariosDto.scenarios[index];
+    const triggerWarningIds = correspondingDto.triggerWarningIds || [];
+    return triggerWarningIds.map((triggerWarningId) => ({
+      scenarioId: savedScenario.id,
+      triggerWarningId,
+    }));
+  });

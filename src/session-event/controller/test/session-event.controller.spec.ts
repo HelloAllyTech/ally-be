@@ -11,6 +11,8 @@ import {
 } from '../../dto/session-event.dto';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
+import { UserService } from '../../../user/service/user.service';
+import { AppConfigService } from '../../../config/config.service';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventSortBy } from 'src/session-event/enum/session-event-sort-by.enum';
@@ -102,6 +104,10 @@ describe('SessionEventController', () => {
       getUserRoles: jest.fn().mockResolvedValue(['SUPER_ADMIN']),
     };
 
+    const mockUserService = {
+      getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
+    };
+
     const mockReflector = {
       get: jest.fn(),
       getAll: jest.fn(),
@@ -123,6 +129,18 @@ describe('SessionEventController', () => {
         {
           provide: PermissionsService,
           useValue: mockPermissionsService,
+        },
+        {
+          provide: UserService,
+          useValue: mockUserService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
         },
         {
           provide: Reflector,

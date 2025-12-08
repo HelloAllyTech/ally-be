@@ -9,6 +9,7 @@ import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { ChatTypes } from '../../../common/constants/chat.constants';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
+import { UserService } from '../../../user/service/user.service';
 
 describe('SettingsController', () => {
   let controller: SettingsController;
@@ -40,12 +41,17 @@ describe('SettingsController', () => {
       ]),
   };
 
+  const mockUserService = {
+    getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SettingsController],
       providers: [
         { provide: SettingsService, useValue: mockService },
         { provide: PermissionsService, useValue: mockPermissionsService },
+        { provide: UserService, useValue: mockUserService },
         Reflector,
       ],
     })

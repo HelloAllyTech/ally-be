@@ -8,7 +8,10 @@ import { ScenarioSessionRepository } from '../repository/scenario-session.reposi
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
 import { ScenarioService } from './scenario.service';
-import { ScenarioSessionStatus } from '../enum/scenario-session-status.enum';
+import {
+  ScenarioSessionEventStatus,
+  ScenarioSessionStatus,
+} from '../enum/scenario-session-status.enum';
 import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
@@ -43,7 +46,7 @@ import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-p
 import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
 import { extractEventIds } from 'src/session-event/util/session-event.util';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
-import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import {
   ExecutionContextPropagation,
@@ -183,7 +186,7 @@ export class ScenarioSessionService {
         counselorId,
       );
 
-      return { scenarioSession, accessToken };
+      return { scenarioSession, accessToken, scenario };
     } catch (error) {
       // If room creation fails, clean up the session
       await this.scenarioSessionRepository.delete(scenarioSession.id);
@@ -215,8 +218,11 @@ export class ScenarioSessionService {
 
     const scenarioVoice = await this.scenarioService.getScenarioVoice(voiceId);
 
-    // triggerEvents: Only IDs from sessionEvents (events associated with this scenario)
+    // triggerEvents: IDs from sessionEvents and termination event
     const triggerEvents = sessionEvents.map((event) => event.id);
+    if (terminationEvent?.eventId) {
+      triggerEvents.push(terminationEvent.eventId);
+    }
 
     // Build a map of existing events for quick lookup
     const eventMap = new Map(sessionEvents.map((event) => [event.id, event]));
@@ -236,7 +242,7 @@ export class ScenarioSessionService {
     });
 
     // Add termination event ID to referenced events if it exists and is not already included
-    if (terminationEvent?.eventId && !eventMap.has(terminationEvent.eventId)) {
+    if (terminationEvent?.eventId) {
       referencedEventIds.add(terminationEvent.eventId);
     }
 
@@ -372,6 +378,46 @@ export class ScenarioSessionService {
   }
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
+  async handleEndScenarioSessionEvent(
+    scenarioSession: ScenarioSessions,
+    event: LearnEventData,
+  ) {
+    if (!ExecutionManager.getTenantId()) {
+      ExecutionManager.setAuthContext(
+        scenarioSession.counselorId.toString(),
+        scenarioSession.tenantId,
+      );
+    }
+
+    const scenarioSessionId = scenarioSession?.id;
+
+    const score = event.event_data.totalScore;
+
+    let callDuration = 0;
+    const endedAt = scenarioSession.endedAt ?? new Date();
+    if (scenarioSession.startedAt && endedAt) {
+      callDuration =
+        endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
+    }
+    if (scenarioSession.scenarioPathSessionItemId)
+      await this.scenarioPathSessionService.handleEndScenarioPathSession({
+        scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
+        score,
+        callDuration,
+      });
+
+    await this.scenarioSessionRepository.update(scenarioSessionId, {
+      status: ScenarioSessionStatus.ENDED,
+      endedAt,
+      score,
+      eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    });
+    this.logger.info(
+      `Updated scenario ${scenarioSessionId} eventStatus to COMPLETED`,
+    );
+  }
+
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async endScenarioSession(scenarioSessionId: string, counselorId: number) {
     const scenarioSession = await this.scenarioSessionRepository.findOne({
       where: {
@@ -379,15 +425,9 @@ export class ScenarioSessionService {
         counselorId,
       },
     });
-
     if (!scenarioSession) {
       throw new BadRequestException('Scenario session not found');
     }
-
-    if (scenarioSession.status !== ScenarioSessionStatus.ACTIVE) {
-      throw new BadRequestException('Scenario session is not active');
-    }
-
     if (!ExecutionManager.getTenantId()) {
       ExecutionManager.setAuthContext(
         counselorId.toString(),
@@ -396,13 +436,12 @@ export class ScenarioSessionService {
     }
 
     const endedAt = scenarioSession.endedAt ?? new Date();
-    const score = await this.calculateScenarioSessionScore(scenarioSessionId);
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
       endedAt,
-      score,
     });
+    this.logger.info(`Updated scenario ${scenarioSessionId} status to ENDED`);
 
     let callDuration = 0;
     if (scenarioSession.startedAt && endedAt) {
@@ -415,12 +454,6 @@ export class ScenarioSessionService {
         scenarioSession.scenarioId,
         callDuration,
       );
-      if (scenarioSession.scenarioPathSessionItemId)
-        await this.scenarioPathSessionService.handleEndScenarioPathSession({
-          scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
-          score,
-          callDuration,
-        });
 
       await this.livekitService.deleteRoom(scenarioSession.roomId);
     } catch (error) {
@@ -435,12 +468,6 @@ export class ScenarioSessionService {
     );
 
     return { message: 'Scenario session ended successfully' };
-  }
-
-  private async calculateScenarioSessionScore(scenarioSessionId: string) {
-    return this.scenarioSessionRepository.getScenarioSessionScore(
-      scenarioSessionId,
-    );
   }
 
   private async consumeSimulationCredits(userId: number, callDuration: number) {
@@ -624,6 +651,20 @@ export class ScenarioSessionService {
     return { messages };
   }
 
+  async handleScenarioSessionEvent(
+    scenarioSession: ScenarioSessions,
+    event: LearnEventData,
+  ) {
+    switch (event.event_data.id) {
+      case 'end-of-session':
+        await this.handleEndScenarioSessionEvent(scenarioSession, event);
+        break;
+      default:
+        await this.addScenarioSessionEvent(scenarioSession, event);
+        break;
+    }
+  }
+
   async addScenarioSessionEvent(
     scenarioSession: ScenarioSessions,
     event: LearnEventData,
@@ -644,16 +685,6 @@ export class ScenarioSessionService {
       const savedScenarioSessionEvent =
         await scenarioSessionEventsRepo.save(scenarioSessionEvent);
 
-      if (
-        scenarioSession.status === ScenarioSessionStatus.ENDED &&
-        event.event_data.visibilityType === SessionEventVisibilityType.ACTIVE
-      ) {
-        const scenrioSessionRepo =
-          entityManager.getRepository(ScenarioSessions);
-        await scenrioSessionRepo.update(scenarioSession.id, {
-          score: () => `score + ${event.event_data.score ?? 0}`,
-        });
-      }
       return savedScenarioSessionEvent;
     });
 
@@ -670,7 +701,7 @@ export class ScenarioSessionService {
     userId: number,
   ) {
     const { scenarioId } = previewScenarioDto;
-    const scenario = await this.scenarioService.getScenario(scenarioId);
+    const scenario = await this.scenarioService.getAdminScenario(scenarioId);
 
     await this.validatePreviewScenario(scenario);
 
@@ -690,7 +721,7 @@ export class ScenarioSessionService {
       participantName: userId.toString(),
     });
 
-    return { roomName, accessToken };
+    return { roomName, accessToken, scenario };
   }
 
   private async validatePreviewScenario(scenario: Scenarios) {
@@ -720,6 +751,7 @@ export class ScenarioSessionService {
 
   async endPreviewScenario(roomName: string) {
     await this.livekitService.deleteRoom(roomName);
+    this.logger.info(`Preview scenario room deleted: ${roomName}`);
   }
 
   async getLatestScenarioSessionByScenarioPathSessionItemId(

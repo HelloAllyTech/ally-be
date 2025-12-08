@@ -5,6 +5,7 @@ import { PermissionsService } from '../../../authorization/service/permissions.s
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import { Reflector } from '@nestjs/core';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
+import { UserService } from '../../../user/service/user.service';
 
 describe('CacheController', () => {
   let controller: CacheController;
@@ -17,6 +18,10 @@ describe('CacheController', () => {
 
   const mockPermissionsService = {
     getUserPermissions: jest.fn(),
+  };
+
+  const mockUserService = {
+    getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
   };
 
   const mockReflector = {
@@ -32,6 +37,7 @@ describe('CacheController', () => {
       providers: [
         { provide: RedisService, useValue: mockRedisService },
         { provide: PermissionsService, useValue: mockPermissionsService },
+        { provide: UserService, useValue: mockUserService },
         { provide: Reflector, useValue: mockReflector },
       ],
     })

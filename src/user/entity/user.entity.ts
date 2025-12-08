@@ -46,4 +46,10 @@ export class User extends BaseEntity {
 
   @Column({ nullable: true })
   suspendedAt?: Date;
+
+  @Column({ type: 'boolean', default: false })
+  termsAndAgreementApproved!: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  termsAndAgreementApprovedAt?: Date;
 }

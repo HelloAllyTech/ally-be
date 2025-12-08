@@ -27,7 +27,8 @@ export class SetGlobalScenariosAndCreateScenarioTenant1763990791393
 
     await queryRunner.query(`
       UPDATE scenarios 
-      SET "isGlobal" = false
+      SET "isGlobal" = false 
+      WHERE "deletedAt" IS NULL
     `);
   }
 }

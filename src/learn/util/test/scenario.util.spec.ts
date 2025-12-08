@@ -1,6 +1,7 @@
 import {
   mapCreateScenarioRequestToEntity,
   formatAutoTerminationEventsList,
+  formatScenarioTriggerWarningsList,
 } from '../scenario.util';
 import { CreateScenarioDto } from '../../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../../dto/create-scenarios.dto';
@@ -238,6 +239,72 @@ describe('Scenario Util', () => {
       );
 
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('formatScenarioTriggerWarningsList', () => {
+    it('should return empty array when scenarios have no trigger warnings', () => {
+      const createScenariosDto: CreateScenariosDto = {
+        scenarios: [
+          {
+            title: 'Scenario 1',
+            triggerWarningIds: [],
+          } as any,
+          {
+            title: 'Scenario 2',
+            triggerWarningIds: undefined,
+          } as any,
+          {
+            title: 'Scenario 3',
+          } as any,
+        ],
+      };
+
+      const savedScenarios: Scenarios[] = [
+        { id: 1, title: 'Scenario 1' } as Scenarios,
+        { id: 2, title: 'Scenario 2' } as Scenarios,
+        { id: 3, title: 'Scenario 3' } as Scenarios,
+      ];
+
+      const result = formatScenarioTriggerWarningsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it('should flatten multiple trigger warnings from different scenarios into a single list', () => {
+      const createScenariosDto: CreateScenariosDto = {
+        scenarios: [
+          {
+            title: 'Scenario 1',
+            triggerWarningIds: ['uuid-1', 'uuid-2'],
+          } as any,
+          {
+            title: 'Scenario 2',
+            triggerWarningIds: ['uuid-3', 'uuid-4', 'uuid-5'],
+          } as any,
+        ],
+      };
+
+      const savedScenarios: Scenarios[] = [
+        { id: 1, title: 'Scenario 1' } as Scenarios,
+        { id: 2, title: 'Scenario 2' } as Scenarios,
+      ];
+
+      const result = formatScenarioTriggerWarningsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+
+      expect(result).toEqual([
+        { scenarioId: 1, triggerWarningId: 'uuid-1' },
+        { scenarioId: 1, triggerWarningId: 'uuid-2' },
+        { scenarioId: 2, triggerWarningId: 'uuid-3' },
+        { scenarioId: 2, triggerWarningId: 'uuid-4' },
+        { scenarioId: 2, triggerWarningId: 'uuid-5' },
+      ]);
     });
   });
 });

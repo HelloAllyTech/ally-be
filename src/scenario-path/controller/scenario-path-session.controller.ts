@@ -63,7 +63,7 @@ export class ScenarioPathSessionController {
     enum: SortOrder,
     description: 'Sort order',
   })
-  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATHS])
   @Get('/scenario-paths')
   async getUserScenarioPaths(
     @Query('offset') offset?: number,

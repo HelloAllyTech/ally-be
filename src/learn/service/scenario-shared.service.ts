@@ -7,7 +7,7 @@ import { ScenariosRepository } from '../repository/scenario.repository';
 import { Scenarios } from '../entity/scenarios.entity';
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
-import { ScenarioFilters } from 'src/common/type/common.type';
+import { ScenarioFilters } from '../type/scenario-filter.type';
 
 @Injectable()
 export class ScenarioSharedService {

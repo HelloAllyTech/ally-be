@@ -126,9 +126,6 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
           )}`,
         );
       }
-
-      // Wait before next poll cycle
-      await this.sleep(poller.pollInterval);
     }
   }
 
@@ -213,9 +210,5 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
         `No handler successfully processed message ${message.MessageId}. Message will remain in queue.`,
       );
     }
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

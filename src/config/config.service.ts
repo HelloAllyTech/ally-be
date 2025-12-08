@@ -265,4 +265,16 @@ export class AppConfigService {
         ),
     };
   }
+
+  get featureFlag() {
+    return {
+      triggerWarning: this.configService.get<boolean>(
+        'FEATURE_TRIGGER_WARNING',
+        false,
+      ),
+      termsAndAgreement:
+        this.configService.get<string>('FEATURE_TERMS_AND_AGREEMENT') ===
+        'true',
+    };
+  }
 }

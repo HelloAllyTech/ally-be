@@ -6,6 +6,7 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
+  IsNumber,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from 'src/common/constants/user.constants';
@@ -126,6 +127,14 @@ export class GenerateOtpV2ResponseDto {
   })
   @IsBoolean()
   success!: boolean;
+
+  @ApiProperty({
+    description: 'OTP expiration time in seconds',
+    example: 300,
+  })
+  @IsNumber()
+  @IsNotEmpty()
+  expiresIn!: number;
 }
 
 export class VerifyOtpV2ResponseDto {

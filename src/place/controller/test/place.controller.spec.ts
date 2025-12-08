@@ -5,6 +5,8 @@ import { PlaceService } from '../../service/place.service';
 import { Place } from '../../entity/place.entity';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { UserService } from 'src/user/service/user.service';
+import { AppConfigService } from 'src/config/config.service';
 
 describe('PlaceController', () => {
   let controller: PlaceController;
@@ -29,6 +31,10 @@ describe('PlaceController', () => {
     getUserPermissions: jest.fn(),
   };
 
+  const mockUserService = {
+    getTermsAndAgreementApproval: jest.fn(),
+  };
+
   beforeEach(async () => {
     mockPlaceService = {
       searchCities: jest.fn(),
@@ -42,6 +48,18 @@ describe('PlaceController', () => {
         {
           provide: PermissionsService,
           useValue: mockPermissionsService,
+        },
+        {
+          provide: UserService,
+          useValue: mockUserService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
         },
       ],
     }).compile();

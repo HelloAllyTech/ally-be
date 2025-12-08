@@ -6,6 +6,8 @@ import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { ExecutionContext } from '@nestjs/common';
 import { ChangeUserRolesDto } from '../../../user/dto/group.dto';
 import { PERMISSIONS } from '../../constants/permissions.constants';
+import { AppConfigService } from '../../../config/config.service';
+import { UserService } from '../../../user/service/user.service';
 
 describe('AuthorizationController', () => {
   let controller: AuthorizationController;
@@ -37,6 +39,10 @@ describe('AuthorizationController', () => {
       getAllRoles: jest.fn(),
     };
 
+    const mockUserService = {
+      getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthorizationController],
       providers: [
@@ -47,6 +53,18 @@ describe('AuthorizationController', () => {
         {
           provide: GroupService,
           useValue: mockGroupService,
+        },
+        {
+          provide: UserService,
+          useValue: mockUserService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
         },
       ],
     })
