@@ -394,10 +394,10 @@ export class ScenarioSessionService {
     const score = event.event_data.totalScore;
 
     let callDuration = 0;
-    if (scenarioSession.startedAt && scenarioSession.endedAt) {
+    const endedAt = scenarioSession.endedAt ?? new Date();
+    if (scenarioSession.startedAt && endedAt) {
       callDuration =
-        scenarioSession.endedAt.getTime() -
-          scenarioSession.startedAt.getTime() || 0;
+        endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
     }
     if (scenarioSession.scenarioPathSessionItemId)
       await this.scenarioPathSessionService.handleEndScenarioPathSession({
@@ -408,7 +408,7 @@ export class ScenarioSessionService {
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
-      endedAt: scenarioSession?.endedAt ?? new Date(),
+      endedAt,
       score,
       eventStatus: ScenarioSessionEventStatus.COMPLETED,
     });
