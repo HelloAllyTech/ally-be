@@ -219,9 +219,11 @@ export class ScenarioSessionService {
     const scenarioVoice = await this.scenarioService.getScenarioVoice(voiceId);
 
     // triggerEvents: IDs from sessionEvents and termination event
-    const triggerEvents = sessionEvents.map((event) => event.id);
+    const triggerEvents: Set<string> = new Set(
+      sessionEvents.map((event) => event.id),
+    );
     if (terminationEvent?.eventId) {
-      triggerEvents.push(terminationEvent.eventId);
+      triggerEvents.add(terminationEvent.eventId);
     }
 
     // Build a map of existing events for quick lookup
@@ -267,6 +269,7 @@ export class ScenarioSessionService {
             ...detectionData,
             dependentEvents,
           },
+          detectionData: undefined,
         };
       }
 
@@ -291,7 +294,7 @@ export class ScenarioSessionService {
         ...scenarioData,
         voice: scenarioVoice,
         events: allEvents,
-        triggerEvents,
+        triggerEvents: Array.from(triggerEvents),
         autoTerminationEvent,
       },
     };

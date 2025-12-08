@@ -833,7 +833,9 @@ export class ScenarioService {
     const result = await this.scenarioEventsRepository.delete({
       eventId: In(eventIds),
       scenarioId,
+      autoTerminationStatus: false,
     });
+
     if (result.affected === 0) {
       throw new BadRequestException('No scenario events found to delete');
     }
