@@ -85,6 +85,7 @@ describe('ScenarioService', () => {
       getScenarios: jest.fn(),
       getAdminScenarios: jest.fn(),
       getAdminScenarioById: jest.fn(),
+      getScenarioById: jest.fn(),
       find: jest.fn(),
       findOne: jest.fn(),
       create: jest.fn(),
@@ -368,12 +369,17 @@ describe('ScenarioService', () => {
       const mockScenarioTenantsRepo = {
         softDelete: jest.fn().mockResolvedValue({ affected: 1 }),
       };
+      const mockScenarioTriggerWarningsRepo = {
+        delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      };
 
       const mockEntityManager = {
         getRepository: jest.fn((entity) => {
           if (entity === Scenarios) return mockScenariosRepo;
           if (entity === ScenarioEvents) return mockScenarioEventsRepo;
           if (entity === ScenarioTenants) return mockScenarioTenantsRepo;
+          if (entity === ScenarioTriggerWarnings)
+            return mockScenarioTriggerWarningsRepo;
           return {};
         }),
       };
@@ -1334,17 +1340,55 @@ describe('ScenarioService', () => {
 
   describe('getScenario', () => {
     it('should return scenario when found', async () => {
-      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
 
       const result = await service.getScenario(1);
 
       expect(result).toEqual(mockScenario);
+      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
+        1,
+        undefined,
+        undefined,
+      );
     });
 
     it('should throw NotFoundException when scenario not found', async () => {
-      scenariosRepository.findOne.mockResolvedValue(null);
+      scenariosRepository.getScenarioById.mockResolvedValue(null);
 
       await expect(service.getScenario(999)).rejects.toThrow(NotFoundException);
+      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
+        999,
+        undefined,
+        undefined,
+      );
+    });
+
+    it('should pass select parameter to repository', async () => {
+      const selectFields: (keyof Scenarios)[] = ['id', 'metadata'];
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
+
+      const result = await service.getScenario(1, selectFields);
+
+      expect(result).toEqual(mockScenario);
+      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
+        1,
+        selectFields,
+        undefined,
+      );
+    });
+
+    it('should pass EntityManager parameter to repository', async () => {
+      const mockEntityManager = {} as any;
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
+
+      const result = await service.getScenario(1, undefined, mockEntityManager);
+
+      expect(result).toEqual(mockScenario);
+      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
+        1,
+        undefined,
+        mockEntityManager,
+      );
     });
   });
 
@@ -1516,7 +1560,7 @@ describe('ScenarioService', () => {
 
   describe('deleteScenarioEvents', () => {
     it('should delete scenario events successfully', async () => {
-      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
       scenarioEventsRepository.delete.mockResolvedValue({ affected: 2 } as any);
 
       const result = await service.deleteScenarioEvents({
@@ -1537,7 +1581,7 @@ describe('ScenarioService', () => {
     });
 
     it('should throw BadRequestException when no events found to delete', async () => {
-      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
       scenarioEventsRepository.delete.mockResolvedValue({ affected: 0 } as any);
 
       await expect(
@@ -1570,7 +1614,7 @@ describe('ScenarioService', () => {
           },
         ],
       };
-      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
       sessionEventService.findByIds.mockResolvedValue([
         { id: 'event-1' },
       ] as any);
@@ -1604,7 +1648,7 @@ describe('ScenarioService', () => {
         scenarioId: 1,
         events: [{ id: 'invalid-event' }],
       };
-      scenariosRepository.findOne.mockResolvedValue(mockScenario);
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
       sessionEventService.findByIds.mockResolvedValue([]);
 
       await expect(

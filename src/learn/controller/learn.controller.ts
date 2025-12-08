@@ -59,6 +59,7 @@ import { SCENARIO_SESSION_EXAMPLE } from '../constants/scenario-session.constant
 import { CreateTriggerWarningDto } from '../dto/trigger-warning.dto';
 import { TriggerWarningsService } from '../service/trigger-warnings.service';
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
+import { GetScenarioResponse } from '../interface/session.interface';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -167,7 +168,7 @@ export class LearnController {
   @Public()
   @ApiOperation({ summary: 'Get a scenario by id' })
   @Get('scenarios/:id')
-  async getScenario(@Param('id') id: number): Promise<Scenarios> {
+  async getScenario(@Param('id') id: number): Promise<GetScenarioResponse> {
     return this.scenarioService.getScenario(id, [
       'id',
       'title',

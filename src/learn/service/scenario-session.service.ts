@@ -186,7 +186,7 @@ export class ScenarioSessionService {
         counselorId,
       );
 
-      return { scenarioSession, accessToken };
+      return { scenarioSession, accessToken, scenario };
     } catch (error) {
       // If room creation fails, clean up the session
       await this.scenarioSessionRepository.delete(scenarioSession.id);
@@ -721,7 +721,7 @@ export class ScenarioSessionService {
       participantName: userId.toString(),
     });
 
-    return { roomName, accessToken };
+    return { roomName, accessToken, scenario };
   }
 
   private async validatePreviewScenario(scenario: Scenarios) {

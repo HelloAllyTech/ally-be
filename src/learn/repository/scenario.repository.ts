@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
+
 import { Scenarios } from '../entity/scenarios.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
@@ -12,6 +18,7 @@ import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { GetScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioStatus } from '../enum/scenario.status.enum';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
+import { GetScenarioResponse } from '../interface/session.interface';
 
 @Injectable()
 export class ScenariosRepository extends Repository<Scenarios> {
@@ -59,6 +66,29 @@ export class ScenariosRepository extends Repository<Scenarios> {
     return { data, count };
   }
 
+  async getScenarioById(
+    id: number,
+    select?: (keyof Scenarios)[],
+    em?: EntityManager,
+  ): Promise<GetScenarioResponse | null> {
+    const scenarioRepo = em
+      ? em?.getRepository(Scenarios)
+      : this.dataSource.getRepository(Scenarios);
+    const query = scenarioRepo.createQueryBuilder('scenario');
+    if (select) {
+      query?.select(select.map((field) => `scenario.${String(field)}`));
+    }
+    return await query
+      .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
+      .leftJoinAndMapMany(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'tw',
+        'tw.id = stw.triggerWarningId',
+      )
+      .where('scenario.id = :id', { id })
+      .getOne();
+  }
   async getAdminScenarios(
     scenarioFilters?: ScenarioFilters,
     options?: Pagination,
