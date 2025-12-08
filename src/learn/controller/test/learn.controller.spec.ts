@@ -679,8 +679,17 @@ describe('LearnController', () => {
           roomName: 'room-123',
           serverUrl: 'ws://localhost:7880',
         },
+        scenario: {
+          id: 1,
+          title: 'Test Scenario',
+          metadata: {
+            openingStatements: ['Hello'],
+          },
+        },
       };
-      scenarioSessionService.startScenarioSession.mockResolvedValue(mockResult);
+      scenarioSessionService.startScenarioSession.mockResolvedValue(
+        mockResult as any,
+      );
 
       const result = await controller.startScenarioSession(
         mockTokenUser,

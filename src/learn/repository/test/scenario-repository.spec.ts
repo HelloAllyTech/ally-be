@@ -17,6 +17,7 @@ describe('ScenariosRepository', () => {
   let repository: ScenariosRepository;
   let mockQueryBuilder: jest.Mocked<SelectQueryBuilder<Scenarios>>;
   let mockSubQueryBuilder: jest.Mocked<SelectQueryBuilder<ScenarioSessions>>;
+  let mockDataSource: any;
 
   const mockAdminScenariosData = [
     {
@@ -84,8 +85,13 @@ describe('ScenariosRepository', () => {
       createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
     };
 
-    const mockDataSource = {
+    const mockRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
+    };
+
+    mockDataSource = {
       createEntityManager: jest.fn().mockReturnValue(mockEntityManager),
+      getRepository: jest.fn().mockReturnValue(mockRepository),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -470,6 +476,163 @@ describe('ScenariosRepository', () => {
       expect(mockQueryBuilder.where).toHaveBeenCalledWith('scenario.id = :id', {
         id: scenarioId,
       });
+    });
+  });
+
+  describe('getScenarioById', () => {
+    const mockScenario: Scenarios = {
+      id: 1,
+      title: 'Test Scenario',
+      scenario: 'Test scenario content',
+      description: 'Test description',
+      coverImageUrl: 'https://example.com/image.jpg',
+      coverVideoUrl: undefined,
+      status: ScenarioStatus.ACTIVE,
+      prompt: 'Test prompt',
+      isGlobal: false,
+      metadata: {},
+      triggerWarnings: [],
+      createdAt: new Date('2025-01-01'),
+      updatedAt: new Date('2025-01-01'),
+      createdBy: 1,
+      updatedBy: 1,
+    } as Scenarios;
+
+    const mockScenarioWithTriggerWarnings: Scenarios = {
+      ...mockScenario,
+      triggerWarnings: [
+        {
+          id: 'uuid-1',
+          name: 'Violence',
+          createdAt: new Date('2025-01-01'),
+          updatedAt: new Date('2025-01-01'),
+        } as TriggerWarnings,
+      ],
+    } as Scenarios;
+
+    it('should return scenario when found', async () => {
+      const scenarioId = 1;
+      mockQueryBuilder.getOne.mockResolvedValue(mockScenario);
+
+      const result = await repository.getScenarioById(scenarioId);
+
+      expect(result).toEqual(mockScenario);
+      expect(mockQueryBuilder.getOne).toHaveBeenCalled();
+      expect(mockDataSource.getRepository).toHaveBeenCalledWith(Scenarios);
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
+        ScenarioTriggerWarnings,
+        'stw',
+        'stw.scenarioId = scenario.id',
+      );
+      expect(mockQueryBuilder.leftJoinAndMapMany).toHaveBeenCalledWith(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'tw',
+        'tw.id = stw.triggerWarningId',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith('scenario.id = :id', {
+        id: scenarioId,
+      });
+    });
+
+    it('should return null when scenario is not found', async () => {
+      const scenarioId = 999;
+      mockQueryBuilder.getOne.mockResolvedValue(null);
+
+      const result = await repository.getScenarioById(scenarioId);
+
+      expect(result).toBeNull();
+      expect(mockQueryBuilder.getOne).toHaveBeenCalled();
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith('scenario.id = :id', {
+        id: scenarioId,
+      });
+    });
+
+    it('should apply select with prefixed fields when select parameter is provided', async () => {
+      const scenarioId = 1;
+      const selectFields: (keyof Scenarios)[] = ['id', 'title', 'metadata'];
+      mockQueryBuilder.getOne.mockResolvedValue(mockScenario);
+
+      const result = await repository.getScenarioById(scenarioId, selectFields);
+
+      expect(result).toEqual(mockScenario);
+      expect(mockQueryBuilder.select).toHaveBeenCalledWith([
+        'scenario.id',
+        'scenario.title',
+        'scenario.metadata',
+      ]);
+      expect(mockQueryBuilder.getOne).toHaveBeenCalled();
+    });
+
+    it('should use EntityManager repository when em is provided', async () => {
+      const scenarioId = 1;
+      const mockEntityManager = {
+        getRepository: jest.fn().mockReturnValue({
+          createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
+        }),
+      };
+      mockQueryBuilder.getOne.mockResolvedValue(mockScenario);
+      const getRepositorySpy = jest.spyOn(mockDataSource, 'getRepository');
+
+      const result = await repository.getScenarioById(
+        scenarioId,
+        undefined,
+        mockEntityManager as any,
+      );
+
+      expect(result).toEqual(mockScenario);
+      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(Scenarios);
+      expect(getRepositorySpy).not.toHaveBeenCalled();
+      expect(mockQueryBuilder.getOne).toHaveBeenCalled();
+    });
+
+    it('should use default repository when em is not provided', async () => {
+      const scenarioId = 1;
+      mockQueryBuilder.getOne.mockResolvedValue(mockScenario);
+
+      const result = await repository.getScenarioById(scenarioId);
+
+      expect(result).toEqual(mockScenario);
+      expect(mockDataSource.getRepository).toHaveBeenCalledWith(Scenarios);
+      expect(mockQueryBuilder.getOne).toHaveBeenCalled();
+    });
+
+    it('should return scenario with trigger warnings when found', async () => {
+      const scenarioId = 1;
+      mockQueryBuilder.getOne.mockResolvedValue(
+        mockScenarioWithTriggerWarnings,
+      );
+
+      const result = await repository.getScenarioById(scenarioId);
+
+      expect(result).toEqual(mockScenarioWithTriggerWarnings);
+      expect((result as any)?.triggerWarnings).toHaveLength(1);
+      expect(mockQueryBuilder.getOne).toHaveBeenCalled();
+    });
+
+    it('should combine select and EntityManager correctly', async () => {
+      const scenarioId = 1;
+      const selectFields: (keyof Scenarios)[] = ['id', 'metadata'];
+      const mockEntityManager = {
+        getRepository: jest.fn().mockReturnValue({
+          createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
+        }),
+      };
+      mockQueryBuilder.getOne.mockResolvedValue(mockScenario);
+
+      const result = await repository.getScenarioById(
+        scenarioId,
+        selectFields,
+        mockEntityManager as any,
+      );
+
+      expect(result).toEqual(mockScenario);
+      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(Scenarios);
+      expect(mockQueryBuilder.select).toHaveBeenCalledWith([
+        'scenario.id',
+        'scenario.metadata',
+      ]);
+      expect(mockQueryBuilder.getOne).toHaveBeenCalled();
     });
   });
 

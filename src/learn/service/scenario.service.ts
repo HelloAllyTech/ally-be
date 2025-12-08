@@ -55,6 +55,7 @@ import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.ent
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import { ScenarioFilters } from '../type/scenario-filter.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { GetScenarioResponse } from '../interface/session.interface';
 
 @Injectable()
 export class ScenarioService {
@@ -195,16 +196,12 @@ export class ScenarioService {
     id: number,
     select?: (keyof Scenarios)[],
     em?: EntityManager,
-  ) {
-    const scenarioRepo =
-      em?.getRepository(Scenarios) || this.scenariosRepository;
-    const scenario = await scenarioRepo.findOne({
+  ): Promise<GetScenarioResponse> {
+    const scenario = await this.scenariosRepository.getScenarioById(
+      id,
       select,
-      where: {
-        id,
-        status: In([ScenarioStatus.DRAFT, ScenarioStatus.ACTIVE]),
-      },
-    });
+      em,
+    );
 
     if (!scenario) {
       throw new NotFoundException('Scenario not found');
@@ -735,6 +732,9 @@ export class ScenarioService {
       await em.getRepository(Scenarios).softDelete(id);
       await em.getRepository(ScenarioEvents).softDelete({ scenarioId: id });
       await em.getRepository(ScenarioTenants).softDelete({ scenarioId: id });
+      await em.getRepository(ScenarioTriggerWarnings).delete({
+        scenarioId: id,
+      });
     });
     return true;
   }
