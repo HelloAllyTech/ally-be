@@ -39,7 +39,11 @@ import {
   UPLOADED_VIDEO_FILE_DURATION_LIMIT,
   UPLOADED_VIDEO_FILE_SIZE_LIMIT,
 } from '../constants/scenario-cover-video.constants';
-import { GetAdminScenarioDto, GetScenarioDto } from '../dto/get-scenario.dto';
+import {
+  GetAdminScenarioDto,
+  GetScenarioDto,
+  GetScenarioDtoWithPagination,
+} from '../dto/get-scenario.dto';
 import {
   formatAutoTerminationEventsList,
   formatScenarioTriggerWarningsList,
@@ -50,7 +54,7 @@ import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.entity';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import { ScenarioFilters } from '../type/scenario-filter.type';
-import { TriggerWarningsService } from './trigger-warnings.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 @Injectable()
 export class ScenarioService {
@@ -66,11 +70,29 @@ export class ScenarioService {
     private configService: AppConfigService,
     private dataSource: DataSource,
     private scenarioPathSharedService: ScenarioPathSharedService,
-    private triggerWarningsService: TriggerWarningsService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
-    return this.scenariosRepository.getScenarios();
+    const { data } = await this.scenariosRepository.getScenarios();
+    return data;
+  }
+
+  async getPublicScenarios(): Promise<GetScenarioDtoWithPagination> {
+    const { data, count } = await this.scenariosRepository.getScenarios();
+
+    return { data, count };
+  }
+
+  async getScenariosV2(): Promise<GetScenarioDtoWithPagination> {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+    const { data, count } = await this.scenariosRepository.getScenarios({
+      tenantId,
+    });
+
+    return { data, count };
   }
 
   async getAdminScenarios(

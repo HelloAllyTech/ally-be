@@ -16,3 +16,8 @@ export class GetAdminScenarioDto extends Scenarios {
 export class GetScenarioDto extends Scenarios {
   triggerWarnings?: TriggerWarnings[];
 }
+
+export class GetScenarioDtoWithPagination {
+  data!: GetScenarioDto[];
+  count!: number;
+}

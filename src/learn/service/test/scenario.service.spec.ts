@@ -1206,7 +1206,10 @@ describe('ScenarioService', () => {
         { ...mockScenario, status: ScenarioStatus.ACTIVE },
         { ...mockScenario, id: 2, status: ScenarioStatus.COMING_SOON },
       ];
-      scenariosRepository.getScenarios.mockResolvedValue(mockScenarios as any);
+      scenariosRepository.getScenarios.mockResolvedValue({
+        data: mockScenarios,
+        count: mockScenarios.length,
+      });
 
       const result = await service.getScenarios();
 
@@ -1215,12 +1218,64 @@ describe('ScenarioService', () => {
     });
 
     it('should return empty array when no scenarios found', async () => {
-      scenariosRepository.getScenarios.mockResolvedValue([]);
+      scenariosRepository.getScenarios.mockResolvedValue({
+        data: [],
+        count: 0,
+      });
 
       const result = await service.getScenarios();
 
       expect(result).toEqual([]);
       expect(scenariosRepository.getScenarios).toHaveBeenCalled();
+    });
+  });
+
+  describe('getPublicScenarios', () => {
+    it('should return paginated public scenarios', async () => {
+      const mockScenarios = [
+        { ...mockScenario, status: ScenarioStatus.ACTIVE },
+      ];
+      const mockResponse = {
+        data: mockScenarios,
+        count: mockScenarios.length,
+      };
+      scenariosRepository.getScenarios.mockResolvedValue(mockResponse);
+
+      const result = await service.getPublicScenarios();
+
+      expect(result).toEqual(mockResponse);
+      expect(scenariosRepository.getScenarios).toHaveBeenCalled();
+    });
+  });
+
+  describe('getScenariosV2', () => {
+    it('should return paginated scenarios filtered by tenant', async () => {
+      const mockScenarios = [
+        { ...mockScenario, status: ScenarioStatus.ACTIVE },
+      ];
+      const mockResponse = {
+        data: mockScenarios,
+        count: mockScenarios.length,
+      };
+      scenariosRepository.getScenarios.mockResolvedValue(mockResponse);
+
+      const result = await service.getScenariosV2();
+
+      expect(result).toEqual(mockResponse);
+      expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
+        tenantId: mockTenantId,
+      });
+    });
+
+    it('should throw BadRequestException when tenantId is not available', async () => {
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(null);
+
+      await expect(service.getScenariosV2()).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getScenariosV2()).rejects.toThrow(
+        'Tenant ID is required',
+      );
     });
   });
 

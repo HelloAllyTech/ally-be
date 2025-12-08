@@ -8,6 +8,7 @@ import {
   Put,
   Delete,
   ParseUUIDPipe,
+  Version,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -46,7 +47,10 @@ import { DeleteCoverImageDto } from '../dto/delete-cover-image.dto';
 import { ScenarioVideoUploadResponseDto } from '../dto/scenario-video-upload-response.dto';
 import { ScenarioVideoUploadRequestDto } from '../dto/scenario-video-upload-request.dto';
 import { DeleteCoverVideoDto } from '../dto/delete-cover-video.dto';
-import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
+import {
+  GetAdminScenarioDto,
+  GetScenarioDtoWithPagination,
+} from '../dto/get-scenario.dto';
 import { AddScenarioTenantDto } from '../dto/add-scenario-tenant.dto';
 import { ScenarioTenantService } from '../service/scenario-tenant.service';
 import { DeleteScenarioTenantDto } from '../dto/delete-scenario-tenant.dto';
@@ -59,7 +63,10 @@ import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 @ApiTags('Learn')
 @ApiBearerAuth()
 @ApiSecurity('access-token')
-@Controller('v1/learn')
+@Controller({
+  path: 'learn',
+  version: '1',
+})
 export class LearnController {
   constructor(
     private readonly scenarioService: ScenarioService,
@@ -73,6 +80,21 @@ export class LearnController {
   @Get('scenarios')
   async getScenarios(): Promise<Scenarios[]> {
     return this.scenarioService.getScenarios();
+  }
+
+  @Public()
+  @ApiOperation({ summary: 'Get all public scenarios' })
+  @Get('scenarios/public')
+  async getPublicScenarios(): Promise<GetScenarioDtoWithPagination> {
+    return this.scenarioService.getPublicScenarios();
+  }
+
+  @ApiOperation({ summary: 'Get all scenarios' })
+  @Version('2')
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIOS])
+  @Get('scenarios')
+  async getPublicScenariosV2(): Promise<GetScenarioDtoWithPagination> {
+    return this.scenarioService.getScenariosV2();
   }
 
   @ApiOperation({ summary: 'Get all scenarios ' })

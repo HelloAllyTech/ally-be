@@ -9,16 +9,30 @@ import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioFilters } from '../type/scenario-filter.type';
 import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.entity';
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
-import { ScenarioStatus } from '../enum/scenario.status.enum';
 import { GetScenarioDto } from '../dto/get-scenario.dto';
+import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 
 @Injectable()
 export class ScenariosRepository extends Repository<Scenarios> {
   constructor(private dataSource: DataSource) {
     super(Scenarios, dataSource.createEntityManager());
   }
-  async getScenarios(): Promise<GetScenarioDto[]> {
-    return await this.createQueryBuilder('scenario')
+  async getScenarios(filters?: ScenarioFilters): Promise<{
+    data: GetScenarioDto[];
+    count: number;
+  }> {
+    const query = this.createQueryBuilder('scenario');
+    if (filters?.tenantId) {
+      query.innerJoin(
+        ScenarioTenants,
+        'scenarioTenant',
+        'scenarioTenant.scenarioId = scenario.id AND scenarioTenant.tenantId = :tenantId',
+        { tenantId: filters.tenantId },
+      );
+    }
+
+    const [data, count] = await query
       .select([
         'scenario.id',
         'scenario.title',
@@ -40,8 +54,11 @@ export class ScenariosRepository extends Repository<Scenarios> {
       })
       .orderBy('scenario.createdAt', 'DESC')
       .addOrderBy('scenario.id', 'DESC')
-      .getMany();
+      .getManyAndCount();
+
+    return { data, count };
   }
+
   async getAdminScenarios(
     scenarioFilters?: ScenarioFilters,
     options?: Pagination,

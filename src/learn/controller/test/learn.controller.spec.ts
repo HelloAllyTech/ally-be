@@ -179,6 +179,8 @@ describe('LearnController', () => {
   beforeEach(async () => {
     const mockScenarioService = {
       getScenarios: jest.fn(),
+      getPublicScenarios: jest.fn(),
+      getScenariosV2: jest.fn(),
       getScenario: jest.fn(),
       getAdminScenarios: jest.fn(),
       getAdminScenario: jest.fn(),
@@ -322,6 +324,36 @@ describe('LearnController', () => {
       scenarioService.getScenarios.mockRejectedValue(error);
 
       await expect(controller.getScenarios()).rejects.toThrow('Database error');
+    });
+  });
+
+  describe('getPublicScenarios', () => {
+    it('should return paginated public scenarios', async () => {
+      const mockResponse = {
+        data: mockScenarios,
+        count: mockScenarios.length,
+      };
+      scenarioService.getPublicScenarios.mockResolvedValue(mockResponse as any);
+
+      const result = await controller.getPublicScenarios();
+
+      expect(result).toEqual(mockResponse);
+      expect(scenarioService.getPublicScenarios).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getPublicScenariosV2', () => {
+    it('should return paginated scenarios for v2', async () => {
+      const mockResponse = {
+        data: mockScenarios,
+        count: mockScenarios.length,
+      };
+      scenarioService.getScenariosV2.mockResolvedValue(mockResponse as any);
+
+      const result = await controller.getPublicScenariosV2();
+
+      expect(result).toEqual(mockResponse);
+      expect(scenarioService.getScenariosV2).toHaveBeenCalledTimes(1);
     });
   });
 

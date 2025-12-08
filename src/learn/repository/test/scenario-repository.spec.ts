@@ -11,6 +11,7 @@ import { TriggerWarnings } from '../../entity/trigger-warnings.entity';
 import { ScenarioStatus } from '../../enum/scenario.status.enum';
 import { ScenarioTriggerWarnings } from '../../entity/scenario-trigger-warnings.entity';
 import { ScenarioEvents } from '../../entity/scenario-events.entity';
+import { ScenarioTenants } from '../../entity/scenario-tenants.entity';
 
 describe('ScenariosRepository', () => {
   let repository: ScenariosRepository;
@@ -59,6 +60,7 @@ describe('ScenariosRepository', () => {
       leftJoin: jest.fn().mockReturnThis(),
       leftJoinAndMapMany: jest.fn().mockReturnThis(),
       leftJoinAndMapOne: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn(function (callback) {
         if (typeof callback === 'function') {
@@ -74,6 +76,7 @@ describe('ScenariosRepository', () => {
       offset: jest.fn().mockReturnThis(),
       getRawMany: jest.fn(),
       getMany: jest.fn(),
+      getManyAndCount: jest.fn(),
       getOne: jest.fn(),
     } as any;
 
@@ -260,12 +263,12 @@ describe('ScenariosRepository', () => {
     } as GetScenarioDto;
 
     it('should return empty array when no scenarios found', async () => {
-      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockQueryBuilder.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
 
       const result = await repository.getScenarios();
 
-      expect(result).toEqual([]);
-      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
+      expect(result).toEqual({ data: [], count: 0 });
+      expect(mockQueryBuilder.getManyAndCount).toHaveBeenCalled();
       expect(repository.createQueryBuilder).toHaveBeenCalledWith('scenario');
       expect(mockQueryBuilder.select).toHaveBeenCalledWith([
         'scenario.id',
@@ -302,21 +305,48 @@ describe('ScenariosRepository', () => {
     });
 
     it('should return scenarios with trigger warnings when data exists', async () => {
-      mockQueryBuilder.getMany.mockResolvedValue([
-        mockScenarioWithTriggerWarnings,
-        mockScenarioWithoutTriggerWarnings,
-      ]);
+      mockQueryBuilder.getManyAndCount = jest
+        .fn()
+        .mockResolvedValue([
+          [mockScenarioWithTriggerWarnings, mockScenarioWithoutTriggerWarnings],
+          2,
+        ]);
 
       const result = await repository.getScenarios();
 
-      expect(result).toHaveLength(2);
-      expect(result[0]).toEqual(mockScenarioWithTriggerWarnings);
-      expect(result[0].triggerWarnings).toHaveLength(2);
-      expect(result[0].triggerWarnings?.[0]).toEqual(mockTriggerWarning1);
-      expect(result[0].triggerWarnings?.[1]).toEqual(mockTriggerWarning2);
-      expect(result[1]).toEqual(mockScenarioWithoutTriggerWarnings);
-      expect(result[1].triggerWarnings).toHaveLength(0);
-      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
+      expect(result.data).toHaveLength(2);
+      expect(result.count).toBe(2);
+      expect(result.data[0]).toEqual(mockScenarioWithTriggerWarnings);
+      expect(result.data[0].triggerWarnings).toHaveLength(2);
+      expect(result.data[0].triggerWarnings?.[0]).toEqual(mockTriggerWarning1);
+      expect(result.data[0].triggerWarnings?.[1]).toEqual(mockTriggerWarning2);
+      expect(result.data[1]).toEqual(mockScenarioWithoutTriggerWarnings);
+      expect(result.data[1].triggerWarnings).toHaveLength(0);
+      expect(mockQueryBuilder.getManyAndCount).toHaveBeenCalled();
+    });
+
+    it('should apply tenantId filter when provided', async () => {
+      const tenantId = 'c56a4180-65aa-42ec-a945-5fd21dec0538';
+      mockQueryBuilder.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+      mockQueryBuilder.innerJoin = jest.fn().mockReturnThis();
+
+      await repository.getScenarios({ tenantId });
+
+      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
+        ScenarioTenants,
+        'scenarioTenant',
+        'scenarioTenant.scenarioId = scenario.id AND scenarioTenant.tenantId = :tenantId',
+        { tenantId },
+      );
+    });
+
+    it('should not apply tenantId filter when not provided', async () => {
+      mockQueryBuilder.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+      mockQueryBuilder.innerJoin = jest.fn().mockReturnThis();
+
+      await repository.getScenarios();
+
+      expect(mockQueryBuilder.innerJoin).not.toHaveBeenCalled();
     });
   });
 

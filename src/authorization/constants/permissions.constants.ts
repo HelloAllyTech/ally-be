@@ -42,6 +42,7 @@ const PERMISSIONS = {
   VIEW_ANALYTICS_DASHBOARD: 'view:analytics:dashboard',
 
   // === LEARNING MODULE ===
+  VIEW_SCENARIOS: 'view:scenarios',
   EDIT_SCENARIO: 'edit:scenario',
   VIEW_SCENARIO_SESSION: 'view:scenario-session',
   EDIT_SCENARIO_SESSION: 'edit:scenario-session',
@@ -275,6 +276,7 @@ const ADMIN_PERMISSIONS = [
 
 const LEARNER_PERMISSIONS = [
   // Learning focused permissions
+  PERMISSIONS.VIEW_SCENARIOS,
   PERMISSIONS.VIEW_SCENARIO_SESSION,
   PERMISSIONS.EDIT_SCENARIO_SESSION,
   PERMISSIONS.EDIT_SCENARIO_SESSION_FEEDBACK,
