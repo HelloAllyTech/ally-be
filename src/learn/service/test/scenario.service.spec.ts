@@ -2046,6 +2046,275 @@ describe('ScenarioService', () => {
       expect(result).toBe(false);
     });
 
+    describe('custom fields', () => {
+      it('should set customFields as undefined in metadata when customFields is not provided', async () => {
+        const updateDto: UpdateScenarioDto = {
+          title: 'Updated Title',
+          agentGoal: 'Updated Goal',
+        };
+        const existingScenario = { ...mockScenario, isGlobal: false };
+        scenariosRepository.findOne.mockResolvedValue(existingScenario);
+        scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+          null,
+        );
+
+        let capturedUpdateData: any;
+        const mockEntityManager = {
+          getRepository: jest.fn().mockImplementation((entity) => {
+            if (entity === Scenarios) {
+              return {
+                update: jest.fn().mockImplementation((id, data) => {
+                  capturedUpdateData = data;
+                  return { affected: 1 };
+                }),
+                findOne: jest.fn().mockResolvedValue(existingScenario),
+              };
+            }
+            if (entity === ScenarioEvents) {
+              return {
+                findOne: jest.fn().mockResolvedValue(null),
+                delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                save: jest.fn().mockResolvedValue({}),
+                create: jest.fn().mockReturnValue([]),
+              };
+            }
+            if (entity === ScenarioTriggerWarnings) {
+              return {
+                find: jest.fn().mockResolvedValue([]),
+                create: jest.fn(),
+                save: jest.fn(),
+                delete: jest.fn(),
+              };
+            }
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }),
+        };
+        dataSource.transaction.mockImplementation((cb: any) =>
+          cb(mockEntityManager as any),
+        );
+
+        await service.updateScenario(1, updateDto, 1);
+
+        expect(capturedUpdateData.metadata.customFields).toBeUndefined();
+      });
+
+      it('should trim extra properties from customFields and keep only name and value', async () => {
+        const updateDto: UpdateScenarioDto = {
+          title: 'Updated Title',
+          customFields: [
+            {
+              name: 'Field 1',
+              value: 'Value 1',
+              extraProp: 'should be trimmed',
+              anotherExtra: 123,
+            } as any,
+            {
+              name: 'Field 2',
+              value: 'Value 2',
+              id: 'some-id',
+              metadata: { nested: 'data' },
+            } as any,
+          ],
+        };
+        const existingScenario = { ...mockScenario, isGlobal: false };
+        scenariosRepository.findOne.mockResolvedValue(existingScenario);
+        scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+          null,
+        );
+
+        let capturedUpdateData: any;
+        const mockEntityManager = {
+          getRepository: jest.fn().mockImplementation((entity) => {
+            if (entity === Scenarios) {
+              return {
+                update: jest.fn().mockImplementation((id, data) => {
+                  capturedUpdateData = data;
+                  return { affected: 1 };
+                }),
+                findOne: jest.fn().mockResolvedValue(existingScenario),
+              };
+            }
+            if (entity === ScenarioEvents) {
+              return {
+                findOne: jest.fn().mockResolvedValue(null),
+                delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                save: jest.fn().mockResolvedValue({}),
+                create: jest.fn().mockReturnValue([]),
+              };
+            }
+            if (entity === ScenarioTriggerWarnings) {
+              return {
+                find: jest.fn().mockResolvedValue([]),
+                create: jest.fn(),
+                save: jest.fn(),
+                delete: jest.fn(),
+              };
+            }
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }),
+        };
+        dataSource.transaction.mockImplementation((cb: any) =>
+          cb(mockEntityManager as any),
+        );
+
+        await service.updateScenario(1, updateDto, 1);
+
+        expect(capturedUpdateData.metadata.customFields).toEqual([
+          { name: 'Field 1', value: 'Value 1' },
+          { name: 'Field 2', value: 'Value 2' },
+        ]);
+        expect(capturedUpdateData.metadata.customFields).toHaveLength(2);
+        expect(capturedUpdateData.metadata.customFields[0]).not.toHaveProperty(
+          'extraProp',
+        );
+        expect(capturedUpdateData.metadata.customFields[0]).not.toHaveProperty(
+          'anotherExtra',
+        );
+        expect(capturedUpdateData.metadata.customFields[1]).not.toHaveProperty(
+          'id',
+        );
+        expect(capturedUpdateData.metadata.customFields[1]).not.toHaveProperty(
+          'metadata',
+        );
+      });
+
+      it('should handle empty customFields array', async () => {
+        const updateDto: UpdateScenarioDto = {
+          title: 'Updated Title',
+          customFields: [],
+        };
+        const existingScenario = { ...mockScenario, isGlobal: false };
+        scenariosRepository.findOne.mockResolvedValue(existingScenario);
+        scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+          null,
+        );
+
+        let capturedUpdateData: any;
+        const mockEntityManager = {
+          getRepository: jest.fn().mockImplementation((entity) => {
+            if (entity === Scenarios) {
+              return {
+                update: jest.fn().mockImplementation((id, data) => {
+                  capturedUpdateData = data;
+                  return { affected: 1 };
+                }),
+                findOne: jest.fn().mockResolvedValue(existingScenario),
+              };
+            }
+            if (entity === ScenarioEvents) {
+              return {
+                findOne: jest.fn().mockResolvedValue(null),
+                delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                save: jest.fn().mockResolvedValue({}),
+                create: jest.fn().mockReturnValue([]),
+              };
+            }
+            if (entity === ScenarioTriggerWarnings) {
+              return {
+                find: jest.fn().mockResolvedValue([]),
+                create: jest.fn(),
+                save: jest.fn(),
+                delete: jest.fn(),
+              };
+            }
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }),
+        };
+        dataSource.transaction.mockImplementation((cb: any) =>
+          cb(mockEntityManager as any),
+        );
+
+        await service.updateScenario(1, updateDto, 1);
+
+        expect(capturedUpdateData.metadata.customFields).toEqual([]);
+      });
+
+      it('should map customFields with only name and value properties', async () => {
+        const updateDto: UpdateScenarioDto = {
+          title: 'Updated Title',
+          customFields: [
+            { name: 'Field 1', value: 'Value 1' },
+            { name: 'Field 2', value: 'Value 2' },
+          ],
+        };
+        const existingScenario = { ...mockScenario, isGlobal: false };
+        scenariosRepository.findOne.mockResolvedValue(existingScenario);
+        scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
+          null,
+        );
+
+        let capturedUpdateData: any;
+        const mockEntityManager = {
+          getRepository: jest.fn().mockImplementation((entity) => {
+            if (entity === Scenarios) {
+              return {
+                update: jest.fn().mockImplementation((id, data) => {
+                  capturedUpdateData = data;
+                  return { affected: 1 };
+                }),
+                findOne: jest.fn().mockResolvedValue(existingScenario),
+              };
+            }
+            if (entity === ScenarioEvents) {
+              return {
+                findOne: jest.fn().mockResolvedValue(null),
+                delete: jest.fn().mockResolvedValue({ affected: 0 }),
+                update: jest.fn().mockResolvedValue({ affected: 1 }),
+                save: jest.fn().mockResolvedValue({}),
+                create: jest.fn().mockReturnValue([]),
+              };
+            }
+            if (entity === ScenarioTriggerWarnings) {
+              return {
+                find: jest.fn().mockResolvedValue([]),
+                create: jest.fn(),
+                save: jest.fn(),
+                delete: jest.fn(),
+              };
+            }
+            return {
+              findOne: jest.fn().mockResolvedValue(null),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }),
+        };
+        dataSource.transaction.mockImplementation((cb: any) =>
+          cb(mockEntityManager as any),
+        );
+
+        await service.updateScenario(1, updateDto, 1);
+
+        expect(capturedUpdateData.metadata.customFields).toEqual([
+          { name: 'Field 1', value: 'Value 1' },
+          { name: 'Field 2', value: 'Value 2' },
+        ]);
+      });
+    });
+
     describe('trigger warnings', () => {
       it('should skip trigger warning updates when no triggerWarningIds provided', async () => {
         const updateDto: UpdateScenarioDto = {

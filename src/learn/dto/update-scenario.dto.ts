@@ -7,9 +7,13 @@ import {
   IsUUID,
   IsArray,
   IsBoolean,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
 import { ScenarioStatus } from '../enum/scenario.status.enum';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
+import { CustomFieldsDto } from './custom-fields.dto';
 
 export class UpdateScenarioDto {
   @ApiProperty({
@@ -248,4 +252,14 @@ export class UpdateScenarioDto {
   @IsString({ each: true })
   @IsOptional()
   triggerWarningIds?: string[];
+
+  @ApiProperty({
+    description: 'Custom fields',
+    type: [CustomFieldsDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CustomFieldsDto)
+  customFields?: CustomFieldsDto[];
 }

@@ -543,6 +543,10 @@ export class ScenarioService {
         tone: updateScenarioDto.tone,
         openingStatements: updateScenarioDto.openingStatements,
         voiceId: updateScenarioDto.voiceId,
+        customFields: updateScenarioDto.customFields?.map((customField) => ({
+          name: customField.name,
+          value: customField.value,
+        })),
       };
 
       // Only include fields that are defined

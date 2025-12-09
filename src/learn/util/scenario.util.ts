@@ -36,6 +36,10 @@ export const mapCreateScenarioRequestToEntity = (
       emotionalNeeds: scenario.emotionalNeeds,
       tone: scenario.tone,
       openingStatements: scenario.openingStatements,
+      customFields: scenario.customFields?.map((customField) => ({
+        name: customField.name,
+        value: customField.value,
+      })),
     },
   };
 };
