@@ -49,7 +49,15 @@ export class CombinationExpressionRequestDto {
   @IsOptional()
   id?: string;
 }
-
+export class BinaryClassificationExampleDto {
+  @ApiProperty({
+    description: 'Text for the binary classifier',
+    example: 'How are you feeling today?',
+  })
+  @IsString()
+  @IsNotEmpty()
+  text!: string;
+}
 export class DetectionDataDto<T> {
   @ApiProperty({ required: false })
   @IsArray()
@@ -76,6 +84,37 @@ export class DetectionDataDto<T> {
   @ValidateNested()
   @IsOptional()
   expression?: T;
+
+  @ApiProperty({
+    required: false,
+    description: 'Binary classifier name',
+    example: 'Open-Ended Question',
+  })
+  @IsString()
+  @IsOptional()
+  className?: string;
+
+  @ApiProperty({
+    required: false,
+    type: [BinaryClassificationExampleDto],
+    description: 'Positive examples for binary classifier',
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BinaryClassificationExampleDto)
+  @IsOptional()
+  positiveExamples?: BinaryClassificationExampleDto[];
+
+  @ApiProperty({
+    required: false,
+    type: [BinaryClassificationExampleDto],
+    description: 'Negative examples for binary classifier',
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BinaryClassificationExampleDto)
+  @IsOptional()
+  negativeExamples?: BinaryClassificationExampleDto[];
 }
 
 export class DetectionDataRequestDto extends DetectionDataDto<CombinationExpressionRequestDto> {}
