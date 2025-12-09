@@ -108,6 +108,87 @@ describe('Scenario Util', () => {
       expect(result.scenario).toBe('');
       expect(result.metadata.name).toBe(scenario.name);
     });
+
+    it('should map custom fields with only name and value properties', () => {
+      const userId = 789;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with Custom Fields',
+        status: ScenarioStatus.DRAFT,
+        customFields: [
+          { name: 'Field 1', value: 'Value 1' },
+          { name: 'Field 2', value: 'Value 2' },
+        ],
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toEqual([
+        { name: 'Field 1', value: 'Value 1' },
+        { name: 'Field 2', value: 'Value 2' },
+      ]);
+    });
+
+    it('should trim extra properties from custom fields and keep only name and value', () => {
+      const userId = 101;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with Extra Custom Field Properties',
+        status: ScenarioStatus.DRAFT,
+        customFields: [
+          {
+            name: 'Field 1',
+            value: 'Value 1',
+            extraProp: 'should be trimmed',
+            anotherExtra: 123,
+          } as any,
+          {
+            name: 'Field 2',
+            value: 'Value 2',
+            id: 'some-id',
+            metadata: { nested: 'data' },
+          } as any,
+        ],
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toEqual([
+        { name: 'Field 1', value: 'Value 1' },
+        { name: 'Field 2', value: 'Value 2' },
+      ]);
+      expect(result.metadata.customFields).toHaveLength(2);
+      expect(result.metadata.customFields![0]).not.toHaveProperty('extraProp');
+      expect(result.metadata.customFields![0]).not.toHaveProperty(
+        'anotherExtra',
+      );
+      expect(result.metadata.customFields![1]).not.toHaveProperty('id');
+      expect(result.metadata.customFields![1]).not.toHaveProperty('metadata');
+    });
+
+    it('should handle undefined custom fields', () => {
+      const userId = 102;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario without Custom Fields',
+        status: ScenarioStatus.DRAFT,
+        customFields: undefined,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toBeUndefined();
+    });
+
+    it('should handle empty custom fields array', () => {
+      const userId = 103;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with Empty Custom Fields',
+        status: ScenarioStatus.DRAFT,
+        customFields: [],
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toEqual([]);
+    });
   });
 
   describe('formatAutoTerminationEventsList', () => {
