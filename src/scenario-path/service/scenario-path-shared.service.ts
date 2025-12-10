@@ -74,7 +74,9 @@ export class ScenarioPathSharedService {
     const scenarioIds = scenarioPathItems.map((item) => item.scenarioId);
 
     const scenariosData =
-      await this.scenarioSharedService.getScenarioByIds(scenarioIds);
+      await this.scenarioSharedService.getScenarioWithTriggerWarningsByIds(
+        scenarioIds,
+      );
     const scenariosDataMap = new Map(
       scenariosData.map((scenario) => [scenario.id, scenario]),
     );
@@ -92,6 +94,7 @@ export class ScenarioPathSharedService {
         description: scenarioData?.description,
         coverImageUrl: scenarioData?.coverImageUrl,
         coverVideoUrl: scenarioData?.coverVideoUrl,
+        triggerWarnings: scenarioData?.triggerWarnings,
       };
     });
 

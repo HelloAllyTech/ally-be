@@ -25,6 +25,19 @@ export class ScenariosRepository extends Repository<Scenarios> {
   constructor(private dataSource: DataSource) {
     super(Scenarios, dataSource.createEntityManager());
   }
+  async getScenarioWithTriggerWarningsByIds(ids: number[]) {
+    return this.createQueryBuilder('scenario')
+      .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
+      .leftJoinAndMapMany(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'tw',
+        'tw.id = stw.triggerWarningId',
+      )
+      .where('scenario.id IN (:...ids)', { ids })
+      .getMany();
+  }
+
   async getScenarios(filters?: ScenarioFilters): Promise<{
     data: GetScenarioDto[];
     count: number;
@@ -96,13 +109,25 @@ export class ScenariosRepository extends Repository<Scenarios> {
     const { status, tenantId, search } = scenarioFilters ?? {};
     const query = this.createQueryBuilder('scenario')
       .leftJoin(User, 'user', 'scenario."createdBy"=user.id')
+      .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
+      .leftJoin(
+        TriggerWarnings,
+        'triggerWarnings',
+        'triggerWarnings.id = stw.triggerWarningId',
+      )
       .select(['scenario', 'user.name'])
+      .addSelect(
+        `COALESCE(json_agg(json_build_object('id', "triggerWarnings".id, 'name', "triggerWarnings".name)) FILTER (WHERE "triggerWarnings".id IS NOT NULL), '[]')`,
+        'triggerWarnings',
+      )
       .addSelect((subQuery) => {
         return subQuery
           .select('COUNT(*)', 'count')
           .from(ScenarioSessions, 'scenarioSessions')
           .where('scenarioSessions.scenarioId = scenario.id');
-      }, 'usage');
+      }, 'usage')
+      .groupBy('scenario.id')
+      .addGroupBy('user.name');
 
     this.applySearchFilter(query, search);
 

@@ -127,6 +127,7 @@ export class ScenarioService {
         status: item.scenario_status,
         usage: item.usage,
         isAssignedToTenant: item.isAssignedToTenant,
+        triggerWarnings: item.triggerWarnings,
         isPreviewEnabled,
       };
     });
