@@ -16,6 +16,8 @@ import { BadRequestException } from '@nestjs/common';
 import { UserGroupService } from 'src/authorization/service/user-group.service';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
+import { UpdateUserPreferencesDto } from 'src/user/dto/update-user-prefernces.dto';
+import { UserPreferencesRepository } from 'src/user/repository/user-prefernces.repository';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -79,6 +81,11 @@ describe('UserService', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
   } as any;
+
+  const mockUserPreferencesRepository = {
+    upsertUserPreferences: jest.fn(),
+    getUserPreferencesByUserId: jest.fn(),
+  };
 
   beforeEach(async () => {
     mockQueryBuilder = {
@@ -169,6 +176,10 @@ describe('UserService', () => {
         {
           provide: SimulationCreditsService,
           useValue: mockSimulationCreditsService,
+        },
+        {
+          provide: UserPreferencesRepository,
+          useValue: mockUserPreferencesRepository,
         },
       ],
     }).compile();
@@ -968,6 +979,106 @@ describe('UserService', () => {
       await expect(service.approveTermsAndAgreement()).rejects.toThrow(
         'User not found',
       );
+    });
+  });
+
+  describe('UserPreferences', () => {
+    const mockUserPreferences = {
+      id: 1,
+      userId: 1,
+      data: { default_language_id: 1 },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const mockUpdateUserPreferencesDto: UpdateUserPreferencesDto = {
+      default_language_id: 2,
+    };
+
+    // Mock the repository methods
+    const mockUserPreferencesRepository = {
+      upsertUserPreferences: jest.fn(),
+      getUserPreferencesByUserId: jest.fn(),
+    };
+
+    beforeEach(() => {
+      // Reset all mocks before each test
+      jest.clearAllMocks();
+
+      // Mock the private repository
+      (service as any).userPreferencesRepository =
+        mockUserPreferencesRepository;
+    });
+
+    describe('updateUserPreferences', () => {
+      it('should update user preferences successfully', async () => {
+        const userId = 1;
+        mockUserPreferencesRepository.upsertUserPreferences.mockResolvedValue({
+          generatedMaps: [mockUserPreferences],
+        });
+
+        const result = await service.updateUserPreferences(
+          userId,
+          mockUpdateUserPreferencesDto,
+        );
+
+        expect(
+          mockUserPreferencesRepository.upsertUserPreferences,
+        ).toHaveBeenCalledWith(userId, mockUpdateUserPreferencesDto);
+        expect(result).toEqual({ success: true });
+      });
+
+      it('should throw an error when updating preferences fails', async () => {
+        const userId = 1;
+        const error = new Error('Database error');
+        mockUserPreferencesRepository.upsertUserPreferences.mockRejectedValue(
+          error,
+        );
+
+        await expect(
+          service.updateUserPreferences(userId, mockUpdateUserPreferencesDto),
+        ).rejects.toThrow(error);
+      });
+    });
+
+    describe('getUserPreferences', () => {
+      it('should get user preferences successfully', async () => {
+        const userId = 1;
+        mockUserPreferencesRepository.getUserPreferencesByUserId.mockResolvedValue(
+          mockUserPreferences.data,
+        );
+
+        const result = await service.getUserPreferences(userId);
+
+        expect(
+          mockUserPreferencesRepository.getUserPreferencesByUserId,
+        ).toHaveBeenCalledWith(userId);
+        expect(result).toEqual(mockUserPreferences.data);
+      });
+
+      it('should return null when user preferences are not found', async () => {
+        const userId = 999;
+        mockUserPreferencesRepository.getUserPreferencesByUserId.mockResolvedValue(
+          null,
+        );
+
+        const result = await service.getUserPreferences(userId);
+
+        expect(
+          mockUserPreferencesRepository.getUserPreferencesByUserId,
+        ).toHaveBeenCalledWith(userId);
+        expect(result).toBeNull();
+      });
+
+      it('should throw an error when getting preferences fails', async () => {
+        const userId = 1;
+        const error = new Error('Database error');
+        mockUserPreferencesRepository.getUserPreferencesByUserId.mockRejectedValue(
+          error,
+        );
+
+        await expect(service.getUserPreferences(userId)).rejects.toThrow(error);
+      });
     });
   });
 });

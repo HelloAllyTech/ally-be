@@ -13,12 +13,14 @@ import { UpdateUserDto } from '../../dto/update-user.dto';
 import { UpdateUserStatusDto } from '../../dto/update-user-status.dto';
 import { UserSortBy, SortOrder } from '../../enum/user.enum';
 import { BadRequestException } from '@nestjs/common';
+
 import {
   UserListResponseDto,
   UserUpdateResponseDto,
 } from '../../dto/user-response.dto';
 import { AddUserResponseDto } from '../../dto/user-add-response.dto';
 import { AppConfigService } from '../../../config/config.service';
+import { UpdateUserPreferencesDto } from 'src/user/dto/update-user-prefernces.dto';
 
 describe('UserController', () => {
   let controller: UserController;
@@ -70,6 +72,8 @@ describe('UserController', () => {
       updateUserStatus: jest.fn(),
       getTermsAndAgreementStatus: jest.fn(),
       approveTermsAndAgreement: jest.fn(),
+      updateUserPreferences: jest.fn(),
+      getUserPreferences: jest.fn(),
     };
 
     mockGroupService = {
@@ -520,6 +524,86 @@ describe('UserController', () => {
       await expect(controller.approveTermsAndAgreement()).rejects.toThrow(
         'User not found',
       );
+    });
+  });
+
+  describe('User Preferences', () => {
+    const mockPreferences = {
+      id: 1,
+      userId: 1,
+      default_language_id: 1,
+    };
+
+    describe('updateUserPreferences', () => {
+      const updateDto = new UpdateUserPreferencesDto();
+
+      it('should update user preferences successfully', async () => {
+        const expectedResponse = {
+          success: true,
+          data: {
+            ...mockPreferences,
+            ...updateDto,
+          },
+        };
+
+        mockUserService.updateUserPreferences = jest
+          .fn()
+          .mockResolvedValue(expectedResponse);
+
+        const result = await controller.updateUserPreferences(
+          mockTokenUser,
+          updateDto,
+        );
+
+        expect(mockUserService.updateUserPreferences).toHaveBeenCalledWith(
+          mockTokenUser.id,
+          updateDto,
+        );
+        expect(result).toEqual(expectedResponse);
+      });
+
+      it('should throw error when service fails', async () => {
+        const error = new Error('Update failed');
+        mockUserService.updateUserPreferences = jest
+          .fn()
+          .mockRejectedValue(error);
+
+        await expect(
+          controller.updateUserPreferences(mockTokenUser, updateDto),
+        ).rejects.toThrow(error);
+      });
+    });
+
+    describe('getUserPreferences', () => {
+      it('should return user preferences successfully', async () => {
+        mockUserService.getUserPreferences = jest
+          .fn()
+          .mockResolvedValue(mockPreferences);
+
+        const result = await controller.getUserPreferences(mockTokenUser);
+
+        expect(mockUserService.getUserPreferences).toHaveBeenCalledWith(
+          mockTokenUser.id,
+        );
+        expect(result).toEqual(mockPreferences);
+      });
+
+      it('should return null when user has no preferences', async () => {
+        mockUserService.getUserPreferences = jest.fn().mockResolvedValue(null);
+
+        const result = await controller.getUserPreferences(mockTokenUser);
+
+        expect(result).toBeNull();
+      });
+
+      it('should throw error when service fails', async () => {
+        const error = new Error('Failed to fetch preferences');
+        mockUserService.getUserPreferences = jest.fn().mockRejectedValue(error);
+
+        await expect(
+          controller.getUserPreferences(mockTokenUser),
+        ).rejects.toThrow(error);
+      });
     });
   });
 });

@@ -5,6 +5,8 @@ const PERMISSIONS = {
   VIEW_USERS: 'view:users',
   EDIT_USER_STATUS: 'edit:user:status',
   VIEW_USER_ROLES: 'view:user:roles',
+  EDIT_USER_PREFERENCES: 'edit:user:preferences',
+  VIEW_USER_PREFERENCES: 'view:user:preferences',
 
   // === CHAT MANAGEMENT ===
   VIEW_CHAT: 'view:chat',
