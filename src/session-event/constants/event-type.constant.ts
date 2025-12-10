@@ -7,4 +7,5 @@ export const EVENT_TYPE_PREFIX_MAP: Record<SessionEventDetectionType, string> =
     [SessionEventDetectionType.TIME]: 'TI',
     [SessionEventDetectionType.SCORE]: 'SC',
     [SessionEventDetectionType.COMBINATION]: 'CO',
+    [SessionEventDetectionType.BINARY_CLASSIFIER]: 'BC',
   };

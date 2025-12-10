@@ -116,6 +116,12 @@ export const mapRequestToDbDetectionDataByType = (
       return {
         expression: formattedExpression,
       };
+    case SessionEventDetectionType.BINARY_CLASSIFIER:
+      return {
+        className: eventDetectiondata.className,
+        positiveExamples: eventDetectiondata.positiveExamples,
+        negativeExamples: eventDetectiondata.negativeExamples,
+      };
     default:
       return undefined;
   }

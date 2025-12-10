@@ -4,6 +4,7 @@ export enum SessionEventDetectionType {
   TIME = 'TIME',
   SCORE = 'SCORE',
   COMBINATION = 'COMBINATION',
+  BINARY_CLASSIFIER = 'BINARY_CLASSIFIER',
 }
 
 export enum SessionEventDetectionCondition {
