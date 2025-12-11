@@ -22,9 +22,13 @@ import { ScenarioPathSession } from '../entity/scenario-path-session.entity';
 import { ScenarioPathSessionItem } from '../entity/scenario-path-session-item.entity';
 import { AppConfigService } from 'src/config/config.service';
 import { GetUpcomingScenarioPathItemResponseDto } from '../dto/get-scenario-path.dto';
+import { LoggerService } from 'src/logger/logger.service';
 
 @Injectable()
 export class ScenarioPathSessionService {
+  private readonly logger = LoggerService.getInstance(
+    ScenarioPathSessionService.name,
+  );
   constructor(
     private readonly scenarioPathSessionRepository: ScenarioPathSessionRepository,
     private readonly scenarioPathSharedService: ScenarioPathSharedService,
@@ -87,6 +91,7 @@ export class ScenarioPathSessionService {
       where: { scenarioPathId, userId: Number(userId) },
     });
   }
+
   async getUserScenarioPathItems(scenarioPathId: string) {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
@@ -156,8 +161,12 @@ export class ScenarioPathSessionService {
     }
     const existingScenarioPathSession =
       await this.getUserScenarioPathSessionByScenarioPathId(scenarioPathId);
-    if (existingScenarioPathSession?.id)
+    if (existingScenarioPathSession?.id) {
+      this.logger.error(
+        `Scenario path session already exists for userId: ${userId} and scenarioPathId: ${scenarioPathId}`,
+      );
       throw new BadRequestException('Scenario path session already exists');
+    }
 
     return await this.dataSource.transaction(
       async (entityManager: EntityManager) => {
@@ -181,6 +190,9 @@ export class ScenarioPathSessionService {
             scenarioPathId,
           );
         if (!scenarioPathItems || scenarioPathItems.length === 0) {
+          this.logger.error(
+            `Error: No scenario path items available for userId: ${userId} and scenarioPathId: ${scenarioPathId}`,
+          );
           throw new BadRequestException(
             'No sub simulations available for this scenario path',
           );
@@ -213,6 +225,9 @@ export class ScenarioPathSessionService {
     const scenarioPathSessionItemId =
       currentScenarioSession?.scenarioPathSessionItemId;
     if (!scenarioPathSessionItemId) {
+      this.logger.info(
+        `Scenario path session item not found for scenarioSessionId: ${scenarioSessionId}`,
+      );
       return null;
     }
     const userId = ExecutionManager.getUserId();
@@ -224,6 +239,9 @@ export class ScenarioPathSessionService {
         where: { id: scenarioPathSessionItemId, userId: Number(userId) },
       });
     if (!currentPathSessionItem) {
+      this.logger.error(
+        `Error: Scenario path session item not found for userId: ${userId} and scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
+      );
       throw new BadRequestException('Scenario path session item not found');
     }
     const currentPathItem =
@@ -313,6 +331,9 @@ export class ScenarioPathSessionService {
       this.configService.simulationPath
         .simulationPathItemMinDurationForCompletion ?? 0;
     if (callDurationInSeconds < callDurationRequiredForCompletionInSeconds) {
+      this.logger.info(
+        `Call duration ${callDurationInSeconds} is less than required ${callDurationRequiredForCompletionInSeconds} for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
+      );
       return;
     }
 
@@ -321,16 +342,27 @@ export class ScenarioPathSessionService {
         where: { id: scenarioPathSessionItemId },
       });
     if (!currentScenarioPathSessionItem) {
+      this.logger.error(
+        `Scenario path session item not found for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
+      );
       throw new BadRequestException('Scenario path session item not found');
     }
+
     if (currentScenarioPathSessionItem.status === SessionItemStatus.COMPLETED) {
+      this.logger.info(
+        `Scenario path session item already completed for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
+      );
       return;
     }
+
     const currentScenarioPathItem =
       await this.scenarioPathSharedService.getScenarioPathItemById(
         currentScenarioPathSessionItem.scenarioPathItemId,
       );
     if (!currentScenarioPathItem) {
+      this.logger.error(
+        `Error: Scenario path item not found for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
+      );
       throw new BadRequestException('Scenario path item not found');
     }
 
@@ -338,14 +370,21 @@ export class ScenarioPathSessionService {
     if (
       currentScenarioPathItem?.minimumScore !== undefined &&
       (score ?? 0) < currentScenarioPathItem?.minimumScore
-    )
+    ) {
+      this.logger.info(
+        `Score ${score} is less than minimum score ${currentScenarioPathItem?.minimumScore} for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
+      );
       return;
+    }
 
     const currentScenarioPathSession =
       await this.scenarioPathSessionRepository.findOne({
         where: { id: currentScenarioPathSessionItem.scenarioPathSessionId },
       });
     if (!currentScenarioPathSession) {
+      this.logger.error(
+        `Error: Scenario path session not found for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
+      );
       throw new BadRequestException('Scenario path session not found');
     }
 
@@ -376,6 +415,9 @@ export class ScenarioPathSessionService {
             completedScenarios:
               (currentScenarioPathSession?.completedScenarios ?? 0) + 1,
           });
+          this.logger.info(
+            `All scenario path items are complete for scenarioPathSessionId: ${currentScenarioPathSession.id}`,
+          );
           return;
         }
         await scenarioPathSessionRepo.update(currentScenarioPathSession.id, {
@@ -395,17 +437,26 @@ export class ScenarioPathSessionService {
             status: SessionItemStatus.UNLOCKED,
           });
           await scenarioPathSessionItemRepo.save(nextSessionItemEntity);
+          this.logger.info(
+            `Unlocked next scenario path item for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
+          );
           return;
         }
         if (
           nextScenarioPathSessionItem?.id &&
           nextScenarioPathSessionItem?.status === SessionItemStatus.LOCKED
         ) {
+          this.logger.info(
+            `Next scenario path item is locked for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
+          );
           await scenarioPathSessionItemRepo.update(
             nextScenarioPathSessionItem.id,
             {
               status: SessionItemStatus.UNLOCKED,
             },
+          );
+          this.logger.info(
+            `Unlocked next scenario path item for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
           );
         }
         return;
