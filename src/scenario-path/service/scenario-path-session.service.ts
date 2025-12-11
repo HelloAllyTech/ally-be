@@ -257,7 +257,10 @@ export class ScenarioPathSessionService {
     }
     const currentScenarioPathSession =
       await this.scenarioPathSessionRepository.findOne({
-        where: { scenarioPathId: currentPathItem?.scenarioPathId },
+        where: {
+          scenarioPathId: currentPathItem?.scenarioPathId,
+          userId: Number(userId),
+        },
       });
 
     const currentSession = {
@@ -426,7 +429,10 @@ export class ScenarioPathSessionService {
         });
         const nextScenarioPathSessionItem =
           await this.scenarioPathSessionItemRepository.findOne({
-            where: { scenarioPathItemId: nextScenarioPathItem?.id },
+            where: {
+              scenarioPathItemId: nextScenarioPathItem?.id,
+              userId: Number(userId),
+            },
           });
         if (!nextScenarioPathSessionItem?.id) {
           // No entry created for next scenario
