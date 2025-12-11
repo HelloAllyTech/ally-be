@@ -71,6 +71,8 @@ describe('ScenariosRepository', () => {
       }),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      addGroupBy: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       addOrderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
@@ -147,7 +149,7 @@ describe('ScenariosRepository', () => {
         { tenantId },
       );
       expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        'CASE WHEN "scenarioTenants".id IS NOT NULL THEN true ELSE false END',
+        'BOOL_OR("scenarioTenants".id IS NOT NULL)',
         'isAssignedToTenant',
       );
     });
@@ -157,8 +159,8 @@ describe('ScenariosRepository', () => {
 
       await repository.getAdminScenarios();
 
-      // Should only have the User join, not the scenario_tenants join
-      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledTimes(1);
+      // Should have the User, ScenarioTriggerWarnings, and TriggerWarnings joins, but not the scenario_tenants join
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledTimes(3);
       expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
         User,
         'user',
@@ -216,7 +218,8 @@ describe('ScenariosRepository', () => {
 
       await repository.getAdminScenarios(undefined, undefined);
 
-      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledTimes(1);
+      // Should have the User, ScenarioTriggerWarnings, and TriggerWarnings joins, but not the scenario_tenants join
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledTimes(3);
       expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
         User,
         'user',

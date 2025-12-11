@@ -20,6 +20,7 @@ jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
     getUserId: jest.fn(),
     getTenantId: jest.fn(),
+    getExecutionId: jest.fn(),
   },
 }));
 

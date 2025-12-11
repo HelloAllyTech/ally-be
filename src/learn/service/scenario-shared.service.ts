@@ -8,6 +8,7 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioFilters } from '../type/scenario-filter.type';
+import { GetScenarioDto } from '../dto/get-scenario.dto';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -27,6 +28,14 @@ export class ScenarioSharedService {
       id: In(scenarioIds),
       ...(filters?.status && { status: In([filters.status]) }),
     });
+  }
+
+  async getScenarioWithTriggerWarningsByIds(
+    scenarioIds: number[],
+  ): Promise<GetScenarioDto[]> {
+    return this.scenariosRepository.getScenarioWithTriggerWarningsByIds(
+      scenarioIds,
+    );
   }
 
   async getScenarioById(scenarioId: number): Promise<Scenarios | null> {
