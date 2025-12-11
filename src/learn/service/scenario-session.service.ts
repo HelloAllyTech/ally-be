@@ -46,6 +46,7 @@ import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-p
 import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
 import { extractEventIds } from 'src/session-event/util/session-event.util';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
+import { MAX_COMBINATION_EVENT_DEPTH } from 'src/session-event/constants/event.constant';
 import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import {
@@ -198,18 +199,9 @@ export class ScenarioSessionService {
     scenario: GetAdminScenarioDto,
     sessionEvents: SessionEvents[],
   ) {
-    if (!scenario.metadata?.lifeHistory) {
-      this.logger.error(
-        `Scenario metadata lifeHistory is required for scenario ${scenario.id}`,
-      );
-      throw new BadRequestException(
-        'Scenario details are not complete. Please contact admin.',
-      );
-    }
-
     const { metadata, terminationEvent, ...scenarioDataWithoutMetadata } =
       scenario;
-    const { voiceId, ...promptData } = metadata;
+    const { voiceId, ...promptData } = metadata as Record<string, any>;
 
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
@@ -218,42 +210,68 @@ export class ScenarioSessionService {
 
     const scenarioVoice = await this.scenarioService.getScenarioVoice(voiceId);
 
-    // triggerEvents: IDs from sessionEvents and termination event
-    const triggerEvents: Set<string> = new Set(
-      sessionEvents.map((event) => event.id),
-    );
-    if (terminationEvent?.eventId) {
-      triggerEvents.add(terminationEvent.eventId);
+    const triggerEvents = new Set<string>();
+    const eventMap = new Map<string, SessionEvents>();
+
+    // Add initial session events to the map
+    sessionEvents.forEach((event) => {
+      triggerEvents.add(event.id);
+      eventMap.set(event.id, event);
+    });
+
+    // Add termination event ID to be fetched if needed
+    const idsToProcess = new Set<string>();
+    if (terminationEvent?.eventId && !eventMap.has(terminationEvent.eventId)) {
+      idsToProcess.add(terminationEvent.eventId);
     }
 
-    // Build a map of existing events for quick lookup
-    const eventMap = new Map(sessionEvents.map((event) => [event.id, event]));
-    const referencedEventIds = new Set<string>();
-
-    // Extract all event IDs referenced in combination events
+    // Extract all event IDs referenced in combination events (initial pass)
     sessionEvents.forEach((event) => {
       if (event.detectionType === SessionEventDetectionType.COMBINATION) {
         const detectionData = (event as any).data || event.detectionData;
         const dependentIds = extractEventIds(detectionData?.expression);
         dependentIds.forEach((id) => {
           if (!eventMap.has(id)) {
-            referencedEventIds.add(id);
+            idsToProcess.add(id);
           }
         });
       }
     });
 
-    // Add termination event ID to referenced events if it exists and is not already included
-    if (terminationEvent?.eventId) {
-      referencedEventIds.add(terminationEvent.eventId);
+    // Recursively fetch nested combination events with depth limiting
+    let currentDepth = 0;
+    while (
+      idsToProcess.size > 0 &&
+      currentDepth < MAX_COMBINATION_EVENT_DEPTH
+    ) {
+      const idsToFetch = Array.from(idsToProcess);
+      idsToProcess.clear();
+
+      const fetchedEvents =
+        await this.sessionEventService.findByIds(idsToFetch);
+
+      for (const event of fetchedEvents) {
+        eventMap.set(event.id, event);
+
+        // If the fetched event is also a combination, extract its dependencies
+        if (event.detectionType === SessionEventDetectionType.COMBINATION) {
+          const detectionData = event.detectionData;
+          const childIds = extractEventIds(detectionData?.expression);
+          childIds.forEach((id) => {
+            if (!eventMap.has(id)) {
+              idsToProcess.add(id);
+            }
+          });
+        }
+      }
+
+      currentDepth++;
     }
 
-    // Fetch any missing events (referenced in combinations or termination event)
-    if (referencedEventIds.size > 0) {
-      const missingEvents = await this.sessionEventService.findByIds(
-        Array.from(referencedEventIds),
+    if (idsToProcess.size > 0 && currentDepth >= MAX_COMBINATION_EVENT_DEPTH) {
+      this.logger.warn(
+        `Maximum combination event depth (${MAX_COMBINATION_EVENT_DEPTH}) exceeded while resolving events`,
       );
-      missingEvents.forEach((event) => eventMap.set(event.id, event));
     }
 
     // Enhance all events with dependentEvents for combination events

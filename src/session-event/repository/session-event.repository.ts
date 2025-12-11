@@ -12,7 +12,7 @@ import { SessionEventVisibilityType } from '../enum/session-event-visibility-typ
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { CreateSessionEventDto } from '../dto/session-event.dto';
 import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
-import { EVENT_TYPE_PREFIX_MAP } from '../constants/event-type.constant';
+import { EVENT_TYPE_PREFIX_MAP } from '../constants/event.constant';
 
 @Injectable()
 export class SessionEventRepository extends Repository<SessionEvents> {
