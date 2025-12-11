@@ -167,7 +167,7 @@ export class ScenariosRepository extends Repository<Scenarios> {
           { tenantId },
         )
         .addSelect(
-          'CASE WHEN "scenarioTenants".id IS NOT NULL THEN true ELSE false END',
+          'BOOL_OR("scenarioTenants".id IS NOT NULL)',
           'isAssignedToTenant',
         );
     }

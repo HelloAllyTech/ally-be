@@ -149,7 +149,7 @@ describe('ScenariosRepository', () => {
         { tenantId },
       );
       expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        'CASE WHEN "scenarioTenants".id IS NOT NULL THEN true ELSE false END',
+        'BOOL_OR("scenarioTenants".id IS NOT NULL)',
         'isAssignedToTenant',
       );
     });
