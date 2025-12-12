@@ -21,32 +21,34 @@ export class LearnEventProcessor extends BaseEventProcessor {
 
     const { room_id, data: learnData } = data;
 
-    if (room_id.startsWith('preview-')) {
-      return;
-    }
-
     const { event } = learnData;
 
     try {
-      const scenarioSession =
-        await this.scenarioSessionService.getScenarioSessionByRoomId(room_id);
-
-      if (!scenarioSession) {
-        this.logger.warn(`Scenario session not found: ${room_id}`);
+      if (room_id.startsWith('preview-')) {
+        if (event?.event_data.autoTerminationStatus) {
+          await this.scenarioSessionService.endPreviewScenario(room_id);
+        }
         return;
+      } else {
+        const scenarioSession =
+          await this.scenarioSessionService.getScenarioSessionByRoomId(room_id);
+
+        if (!scenarioSession) {
+          this.logger.warn(`Scenario session not found: ${room_id}`);
+          return;
+        }
+
+        if (!event) {
+          this.logger.warn(`Event not found: ${room_id}`);
+          return;
+        }
+
+        await this.scenarioSessionService.handleScenarioSessionEvent(
+          scenarioSession,
+          event,
+        );
+        this.logger.info(`Scenario session event added: ${scenarioSession.id}`);
       }
-
-      if (!event) {
-        this.logger.warn(`Event not found: ${room_id}`);
-        return;
-      }
-
-      await this.scenarioSessionService.addScenarioSessionEvent(
-        scenarioSession,
-        event,
-      );
-
-      this.logger.info(`Scenario session event added: ${scenarioSession.id}`);
     } catch (error) {
       this.logger.error(
         `Failed to process learn event: ${JSON.stringify(error.message)}`,

@@ -16,6 +16,8 @@ import { BadRequestException } from '@nestjs/common';
 import { UserGroupService } from 'src/authorization/service/user-group.service';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
+import { UpdateUserPreferencesDto } from 'src/user/dto/update-user-prefernces.dto';
+import { UserPreferencesRepository } from 'src/user/repository/user-prefernces.repository';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -62,7 +64,9 @@ describe('UserService', () => {
     updatedBy: undefined,
     suspendedBy: undefined,
     suspendedAt: undefined,
-  } as User;
+    termsAndAgreementApproved: false,
+    termsAndAgreementApprovedAt: undefined,
+  } as unknown as User;
 
   const mockChat = {
     id: 1,
@@ -77,6 +81,11 @@ describe('UserService', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
   } as any;
+
+  const mockUserPreferencesRepository = {
+    upsertUserPreferences: jest.fn(),
+    getUserPreferencesByUserId: jest.fn(),
+  };
 
   beforeEach(async () => {
     mockQueryBuilder = {
@@ -167,6 +176,10 @@ describe('UserService', () => {
         {
           provide: SimulationCreditsService,
           useValue: mockSimulationCreditsService,
+        },
+        {
+          provide: UserPreferencesRepository,
+          useValue: mockUserPreferencesRepository,
         },
       ],
     }).compile();
@@ -841,6 +854,230 @@ describe('UserService', () => {
       expect(result).toBe(false);
       expect(mockUsersRepository.exists).toHaveBeenCalledWith({
         where: { id: 999 },
+      });
+    });
+  });
+
+  describe('getTermsAndAgreementApproval', () => {
+    it('should return cached terms approval status when available', async () => {
+      mockCache.get.mockResolvedValue('true');
+      const result = await service.getTermsAndAgreementApproval(1);
+      expect(result).toBe(true);
+      expect(mockCache.get).toHaveBeenCalledWith('user:terms:1');
+    });
+
+    it('should return false from cache when cached value is false', async () => {
+      mockCache.get.mockResolvedValue('false');
+      const result = await service.getTermsAndAgreementApproval(1);
+      expect(result).toBe(false);
+    });
+
+    it('should fetch from database and cache when not in cache', async () => {
+      const userWithApproval = { ...mockUser, termsAndAgreementApproved: true };
+      mockCache.get.mockResolvedValue(null);
+      mockUsersRepository.findOne.mockResolvedValue(userWithApproval);
+      mockCache.set.mockResolvedValue(undefined);
+
+      const result = await service.getTermsAndAgreementApproval(1);
+
+      expect(result).toBe(true);
+      expect(mockUsersRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1, tenantId: 'test-tenant' },
+      });
+      expect(mockCache.set).toHaveBeenCalledWith('user:terms:1', 'true', 1800);
+    });
+
+    it('should return false when user not found', async () => {
+      mockCache.get.mockResolvedValue(null);
+      mockUsersRepository.findOne.mockResolvedValue(null);
+      mockCache.set.mockResolvedValue(undefined);
+
+      const result = await service.getTermsAndAgreementApproval(1);
+
+      expect(result).toBe(false);
+      expect(mockCache.set).toHaveBeenCalledWith('user:terms:1', 'false', 1800);
+    });
+  });
+
+  describe('getTermsAndAgreementStatus', () => {
+    it('should return success true when user has approved terms', async () => {
+      const userId = '123';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      const userWithApproval = { ...mockUser, termsAndAgreementApproved: true };
+      mockUsersRepository.findOne.mockResolvedValue(userWithApproval);
+
+      const result = await service.getTermsAndAgreementStatus();
+
+      expect(result).toEqual({ success: true });
+      expect(mockUsersRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 123, tenantId: 'test-tenant' },
+      });
+    });
+
+    it('should return success false when user has not approved terms', async () => {
+      const userId = '123';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockUsersRepository.findOne.mockResolvedValue(mockUser);
+
+      const result = await service.getTermsAndAgreementStatus();
+
+      expect(result).toEqual({ success: false });
+    });
+
+    it('should throw BadRequestException when userId is undefined', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(undefined);
+
+      await expect(service.getTermsAndAgreementStatus()).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getTermsAndAgreementStatus()).rejects.toThrow(
+        'unauthorized access',
+      );
+    });
+
+    it('should return success false when user not found', async () => {
+      const userId = '123';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockUsersRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getTermsAndAgreementStatus();
+
+      expect(result).toEqual({ success: false });
+    });
+  });
+
+  describe('approveTermsAndAgreement', () => {
+    it('should approve terms and agreement successfully', async () => {
+      const userId = '456';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockUsersRepository.findOne.mockResolvedValue(mockUser);
+      mockUsersRepository.update.mockResolvedValue({ affected: 1 });
+      mockCache.set.mockResolvedValue(undefined);
+
+      const result = await service.approveTermsAndAgreement();
+
+      expect(result).toEqual({ success: true });
+      expect(mockUsersRepository.update).toHaveBeenCalledWith(mockUser.id, {
+        termsAndAgreementApproved: true,
+        termsAndAgreementApprovedAt: expect.any(Date),
+      });
+      expect(mockCache.set).toHaveBeenCalledWith(
+        'user:terms:456',
+        'true',
+        1800,
+      );
+    });
+
+    it('should throw BadRequestException when user not found', async () => {
+      const userId = '456';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockUsersRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.approveTermsAndAgreement()).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.approveTermsAndAgreement()).rejects.toThrow(
+        'User not found',
+      );
+    });
+  });
+
+  describe('UserPreferences', () => {
+    const mockUserPreferences = {
+      id: 1,
+      userId: 1,
+      data: { default_language_id: 1 },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const mockUpdateUserPreferencesDto: UpdateUserPreferencesDto = {
+      default_language_id: 2,
+    };
+
+    // Mock the repository methods
+    const mockUserPreferencesRepository = {
+      upsertUserPreferences: jest.fn(),
+      getUserPreferencesByUserId: jest.fn(),
+    };
+
+    beforeEach(() => {
+      // Reset all mocks before each test
+      jest.clearAllMocks();
+
+      // Mock the private repository
+      (service as any).userPreferencesRepository =
+        mockUserPreferencesRepository;
+    });
+
+    describe('updateUserPreferences', () => {
+      it('should update user preferences successfully', async () => {
+        const userId = 1;
+        mockUserPreferencesRepository.upsertUserPreferences.mockResolvedValue({
+          generatedMaps: [mockUserPreferences],
+        });
+
+        const result = await service.updateUserPreferences(
+          userId,
+          mockUpdateUserPreferencesDto,
+        );
+
+        expect(
+          mockUserPreferencesRepository.upsertUserPreferences,
+        ).toHaveBeenCalledWith(userId, mockUpdateUserPreferencesDto);
+        expect(result).toEqual({ success: true });
+      });
+
+      it('should throw an error when updating preferences fails', async () => {
+        const userId = 1;
+        const error = new Error('Database error');
+        mockUserPreferencesRepository.upsertUserPreferences.mockRejectedValue(
+          error,
+        );
+
+        await expect(
+          service.updateUserPreferences(userId, mockUpdateUserPreferencesDto),
+        ).rejects.toThrow(error);
+      });
+    });
+
+    describe('getUserPreferences', () => {
+      it('should get user preferences successfully', async () => {
+        const userId = 1;
+        mockUserPreferencesRepository.getUserPreferencesByUserId.mockResolvedValue(
+          mockUserPreferences.data,
+        );
+
+        const result = await service.getUserPreferences(userId);
+
+        expect(
+          mockUserPreferencesRepository.getUserPreferencesByUserId,
+        ).toHaveBeenCalledWith(userId);
+        expect(result).toEqual(mockUserPreferences.data);
+      });
+
+      it('should return null when user preferences are not found', async () => {
+        const userId = 999;
+        mockUserPreferencesRepository.getUserPreferencesByUserId.mockResolvedValue(
+          null,
+        );
+
+        const result = await service.getUserPreferences(userId);
+
+        expect(
+          mockUserPreferencesRepository.getUserPreferencesByUserId,
+        ).toHaveBeenCalledWith(userId);
+        expect(result).toBeNull();
+      });
+
+      it('should throw an error when getting preferences fails', async () => {
+        const userId = 1;
+        const error = new Error('Database error');
+        mockUserPreferencesRepository.getUserPreferencesByUserId.mockRejectedValue(
+          error,
+        );
+
+        await expect(service.getUserPreferences(userId)).rejects.toThrow(error);
       });
     });
   });

@@ -1636,6 +1636,480 @@ describe('SessionEventService', () => {
       });
     });
 
+    describe('getAllNestedEventsWithMap', () => {
+      it('should return empty result when event does not exist', async () => {
+        repository.find.mockResolvedValue([]);
+
+        const result = await service.getAllNestedEventsWithMap('non-existent');
+
+        expect(result.eventIds).toEqual([]);
+        expect(result.eventsMap.size).toBe(0);
+      });
+
+      it('should return single event when it is not a combination event', async () => {
+        const simpleEvent: SessionEvents = {
+          id: 'simple-event',
+          name: 'Simple Event',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'SS1',
+        };
+
+        repository.find.mockResolvedValue([simpleEvent]);
+
+        const result = await service.getAllNestedEventsWithMap('simple-event');
+
+        expect(result.eventIds).toEqual([]);
+        expect(result.eventsMap.size).toBe(1);
+        expect(result.eventsMap.get('simple-event')).toEqual(simpleEvent);
+      });
+
+      it('should recursively fetch nested combination events', async () => {
+        const eventA: SessionEvents = {
+          id: 'event-a',
+          name: 'Event A',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'EVT_A',
+        };
+
+        const eventB: SessionEvents = {
+          id: 'event-b',
+          name: 'Event B',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'EVT_B',
+        };
+
+        // Combination event that references A and B
+        const combinationEvent: SessionEvents = {
+          id: 'combo-event',
+          name: 'Combination Event',
+          detectionType: SessionEventDetectionType.COMBINATION,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionData: {
+            expression: {
+              type: CombinationExpressionType.AND,
+              left: {
+                type: CombinationExpressionType.IDENTIFIER,
+                id: 'event-a',
+              },
+              right: {
+                type: CombinationExpressionType.IDENTIFIER,
+                id: 'event-b',
+              },
+            },
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'CO1',
+        };
+
+        // First call returns the combination event
+        repository.find.mockResolvedValueOnce([combinationEvent]);
+        // Second call returns the child events
+        repository.find.mockResolvedValueOnce([eventA, eventB]);
+
+        const result = await service.getAllNestedEventsWithMap('combo-event');
+
+        expect(result.eventIds).toContain('event-a');
+        expect(result.eventIds).toContain('event-b');
+        expect(result.eventsMap.size).toBe(3);
+        expect(result.eventsMap.get('combo-event')).toEqual(combinationEvent);
+        expect(result.eventsMap.get('event-a')).toEqual(eventA);
+        expect(result.eventsMap.get('event-b')).toEqual(eventB);
+      });
+
+      it('should handle deeply nested combination events (3 levels)', async () => {
+        const leafEventA: SessionEvents = {
+          id: 'leaf-a',
+          name: 'Leaf A',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'SS1',
+        };
+
+        const leafEventB: SessionEvents = {
+          id: 'leaf-b',
+          name: 'Leaf B',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'SS2',
+        };
+
+        // Level 2 combination event
+        const level2Event: SessionEvents = {
+          id: 'level-2',
+          name: 'Level 2',
+          detectionType: SessionEventDetectionType.COMBINATION,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionData: {
+            expression: {
+              type: CombinationExpressionType.AND,
+              left: {
+                type: CombinationExpressionType.IDENTIFIER,
+                id: 'leaf-a',
+              },
+              right: {
+                type: CombinationExpressionType.IDENTIFIER,
+                id: 'leaf-b',
+              },
+            },
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'CO2',
+        };
+
+        // Level 1 (root) combination event
+        const rootEvent: SessionEvents = {
+          id: 'root',
+          name: 'Root',
+          detectionType: SessionEventDetectionType.COMBINATION,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionData: {
+            expression: {
+              type: CombinationExpressionType.IDENTIFIER,
+              id: 'level-2',
+            },
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'CO1',
+        };
+
+        // First call: root event
+        repository.find.mockResolvedValueOnce([rootEvent]);
+        // Second call: level-2 event
+        repository.find.mockResolvedValueOnce([level2Event]);
+        // Third call: leaf events
+        repository.find.mockResolvedValueOnce([leafEventA, leafEventB]);
+
+        const result = await service.getAllNestedEventsWithMap('root');
+
+        expect(result.eventIds).toContain('level-2');
+        expect(result.eventIds).toContain('leaf-a');
+        expect(result.eventIds).toContain('leaf-b');
+        expect(result.eventsMap.size).toBe(4);
+      });
+
+      it('should throw BadRequestException when max depth (5) is exceeded', async () => {
+        // Create a chain of 6 events to exceed depth 5
+        const createChainEvent = (
+          id: string,
+          nextId: string | null,
+        ): SessionEvents => ({
+          id,
+          name: `Event ${id}`,
+          detectionType: nextId
+            ? SessionEventDetectionType.COMBINATION
+            : SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionData: nextId
+            ? {
+                expression: {
+                  type: CombinationExpressionType.IDENTIFIER,
+                  id: nextId,
+                },
+              }
+            : undefined,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: `EVT_${id}`,
+        });
+
+        const events = [
+          createChainEvent('event-0', 'event-1'),
+          createChainEvent('event-1', 'event-2'),
+          createChainEvent('event-2', 'event-3'),
+          createChainEvent('event-3', 'event-4'),
+          createChainEvent('event-4', 'event-5'),
+          createChainEvent('event-5', 'event-6'),
+          createChainEvent('event-6', null),
+        ];
+
+        // Mock find to return each event in the chain
+        repository.find.mockImplementation(async (options: any) => {
+          const ids = options?.where?.id?._value || [];
+          return events.filter((e) => ids.includes(e.id));
+        });
+
+        await expect(
+          service.getAllNestedEventsWithMap('event-0', 5),
+        ).rejects.toThrow(BadRequestException);
+        await expect(
+          service.getAllNestedEventsWithMap('event-0', 5),
+        ).rejects.toThrow(/Maximum combination event depth \(5\) exceeded/);
+      });
+
+      it('should handle circular references at depth 5 without infinite loop', async () => {
+        // Create a cycle: event-0 -> event-1 -> event-2 -> event-3 -> event-4 -> event-0
+        const createCycleEvent = (
+          id: string,
+          nextId: string,
+        ): SessionEvents => ({
+          id,
+          name: `Event ${id}`,
+          detectionType: SessionEventDetectionType.COMBINATION,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionData: {
+            expression: {
+              type: CombinationExpressionType.IDENTIFIER,
+              id: nextId,
+            },
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: `EVT_${id}`,
+        });
+
+        const events = [
+          createCycleEvent('event-0', 'event-1'),
+          createCycleEvent('event-1', 'event-2'),
+          createCycleEvent('event-2', 'event-3'),
+          createCycleEvent('event-3', 'event-4'),
+          createCycleEvent('event-4', 'event-0'), // Creates cycle back to event-0
+        ];
+
+        // Mock find to return events - since we're processing in batches,
+        // already-seen events won't be re-processed
+        repository.find.mockImplementation(async (options: any) => {
+          const ids = options?.where?.id?._value || [];
+          return events.filter((e) => ids.includes(e.id));
+        });
+
+        // With maxDepth of 5, this should complete since we track visited events
+        const result = await service.getAllNestedEventsWithMap('event-0', 5);
+
+        // All events should be in the map
+        expect(result.eventsMap.size).toBe(5);
+        expect(result.eventsMap.has('event-0')).toBe(true);
+        expect(result.eventsMap.has('event-4')).toBe(true);
+      });
+
+      it('should deduplicate event IDs when same event is referenced multiple times', async () => {
+        const sharedEvent: SessionEvents = {
+          id: 'shared-event',
+          name: 'Shared Event',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'SS1',
+        };
+
+        // Root event references the same shared event in both left and right
+        const rootEvent: SessionEvents = {
+          id: 'root',
+          name: 'Root',
+          detectionType: SessionEventDetectionType.COMBINATION,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionData: {
+            expression: {
+              type: CombinationExpressionType.AND,
+              left: {
+                type: CombinationExpressionType.IDENTIFIER,
+                id: 'shared-event',
+              },
+              right: {
+                type: CombinationExpressionType.IDENTIFIER,
+                id: 'shared-event',
+              },
+            },
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'CO1',
+        };
+
+        repository.find.mockResolvedValueOnce([rootEvent]);
+        repository.find.mockResolvedValueOnce([sharedEvent]);
+
+        const result = await service.getAllNestedEventsWithMap('root');
+
+        // Should only have one instance of shared-event in eventIds
+        expect(
+          result.eventIds.filter((id) => id === 'shared-event').length,
+        ).toBe(1);
+        expect(result.eventsMap.size).toBe(2);
+      });
+    });
+
+    describe('getImmediateEventIdsInCombinationExpression', () => {
+      it('should return empty array when event does not exist', async () => {
+        repository.findOne.mockResolvedValue(null);
+
+        const result =
+          await service.getImmediateEventIdsInCombinationExpression(
+            'non-existent',
+          );
+
+        expect(result).toEqual([]);
+      });
+
+      it('should return immediate child event IDs only', async () => {
+        const combinationEvent: SessionEvents = {
+          id: 'combo',
+          name: 'Combo',
+          detectionType: SessionEventDetectionType.COMBINATION,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionData: {
+            expression: {
+              type: CombinationExpressionType.AND,
+              left: {
+                type: CombinationExpressionType.IDENTIFIER,
+                id: 'child-a',
+              },
+              right: {
+                type: CombinationExpressionType.IDENTIFIER,
+                id: 'child-b',
+              },
+            },
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'CO1',
+        };
+
+        repository.findOne.mockResolvedValue(combinationEvent);
+
+        const result =
+          await service.getImmediateEventIdsInCombinationExpression('combo');
+
+        expect(result).toContain('child-a');
+        expect(result).toContain('child-b');
+        expect(result.length).toBe(2);
+      });
+
+      it('should return empty array for non-combination event', async () => {
+        const simpleEvent: SessionEvents = {
+          id: 'simple',
+          name: 'Simple',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionData: {
+            sentences: ['test'],
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'SS1',
+        };
+
+        repository.findOne.mockResolvedValue(simpleEvent);
+
+        const result =
+          await service.getImmediateEventIdsInCombinationExpression('simple');
+
+        expect(result).toEqual([]);
+      });
+    });
+
+    describe('validateCreateSessionEvents - deduplication', () => {
+      const mockUserId = 1;
+
+      it('should correctly validate when same event ID is referenced multiple times', async () => {
+        const sharedEventId = 'shared-event';
+
+        const sharedEvent: SessionEvents = {
+          id: sharedEventId,
+          name: 'Shared Event',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'EVT_SHARED',
+        };
+
+        // Create two combination events that both reference the same shared event
+        const createEventDto1: CreateSessionEventDto = {
+          name: 'Combo 1',
+          detectionType: SessionEventDetectionType.COMBINATION,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionData: {
+            expression: {
+              type: CombinationExpressionRequestType.NOT,
+              left: { id: sharedEventId },
+            },
+          },
+        };
+
+        const createEventDto2: CreateSessionEventDto = {
+          name: 'Combo 2',
+          detectionType: SessionEventDetectionType.COMBINATION,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionData: {
+            expression: {
+              type: CombinationExpressionRequestType.NOT,
+              left: { id: sharedEventId },
+            },
+          },
+        };
+
+        // findByIds should be called with deduplicated array (only one shared-event)
+        repository.findByIds.mockResolvedValue([sharedEvent]);
+        repository.findOne.mockResolvedValue(null);
+        repository.createSessionEvents.mockResolvedValue([
+          mockSessionEvent,
+          mockSessionEvent,
+        ]);
+
+        const result = await service.createSessionEvents(
+          [createEventDto1, createEventDto2],
+          mockUserId,
+        );
+
+        expect(result).toBeDefined();
+        // findByIds should be called with deduplicated IDs
+        expect(repository.findByIds).toHaveBeenCalledWith([sharedEventId]);
+      });
+
+      it('should validate all referenced IDs exist after deduplication', async () => {
+        const eventAId = 'event-a';
+        const eventBId = 'event-b';
+
+        // Create combination event referencing A and B
+        const createEventDto: CreateSessionEventDto = {
+          name: 'Combo',
+          detectionType: SessionEventDetectionType.COMBINATION,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionData: {
+            expression: {
+              type: CombinationExpressionRequestType.AND,
+              left: { id: eventAId },
+              right: { id: eventBId },
+            },
+          },
+        };
+
+        // Only return event A (event B is missing)
+        repository.findByIds.mockResolvedValue([
+          {
+            id: eventAId,
+            name: 'Event A',
+            detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+            visibilityType: SessionEventVisibilityType.ACTIVE,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            eventCode: 'EVT_A',
+          } as SessionEvents,
+        ]);
+
+        await expect(
+          service.createSessionEvents([createEventDto], mockUserId),
+        ).rejects.toThrow('Invalid combination expression event IDs');
+      });
+    });
+
     describe('updateSessionEvent - circular dependency validation', () => {
       const mockUserId = 1;
 

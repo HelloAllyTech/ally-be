@@ -1,6 +1,7 @@
 import {
   mapCreateScenarioRequestToEntity,
   formatAutoTerminationEventsList,
+  formatScenarioTriggerWarningsList,
 } from '../scenario.util';
 import { CreateScenarioDto } from '../../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../../dto/create-scenarios.dto';
@@ -106,6 +107,87 @@ describe('Scenario Util', () => {
       expect(result.title).toBe(scenario.title);
       expect(result.scenario).toBe('');
       expect(result.metadata.name).toBe(scenario.name);
+    });
+
+    it('should map custom fields with only name and value properties', () => {
+      const userId = 789;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with Custom Fields',
+        status: ScenarioStatus.DRAFT,
+        customFields: [
+          { name: 'Field 1', value: 'Value 1' },
+          { name: 'Field 2', value: 'Value 2' },
+        ],
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toEqual([
+        { name: 'Field 1', value: 'Value 1' },
+        { name: 'Field 2', value: 'Value 2' },
+      ]);
+    });
+
+    it('should trim extra properties from custom fields and keep only name and value', () => {
+      const userId = 101;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with Extra Custom Field Properties',
+        status: ScenarioStatus.DRAFT,
+        customFields: [
+          {
+            name: 'Field 1',
+            value: 'Value 1',
+            extraProp: 'should be trimmed',
+            anotherExtra: 123,
+          } as any,
+          {
+            name: 'Field 2',
+            value: 'Value 2',
+            id: 'some-id',
+            metadata: { nested: 'data' },
+          } as any,
+        ],
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toEqual([
+        { name: 'Field 1', value: 'Value 1' },
+        { name: 'Field 2', value: 'Value 2' },
+      ]);
+      expect(result.metadata.customFields).toHaveLength(2);
+      expect(result.metadata.customFields![0]).not.toHaveProperty('extraProp');
+      expect(result.metadata.customFields![0]).not.toHaveProperty(
+        'anotherExtra',
+      );
+      expect(result.metadata.customFields![1]).not.toHaveProperty('id');
+      expect(result.metadata.customFields![1]).not.toHaveProperty('metadata');
+    });
+
+    it('should handle undefined custom fields', () => {
+      const userId = 102;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario without Custom Fields',
+        status: ScenarioStatus.DRAFT,
+        customFields: undefined,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toBeUndefined();
+    });
+
+    it('should handle empty custom fields array', () => {
+      const userId = 103;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with Empty Custom Fields',
+        status: ScenarioStatus.DRAFT,
+        customFields: [],
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toEqual([]);
     });
   });
 
@@ -238,6 +320,72 @@ describe('Scenario Util', () => {
       );
 
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('formatScenarioTriggerWarningsList', () => {
+    it('should return empty array when scenarios have no trigger warnings', () => {
+      const createScenariosDto: CreateScenariosDto = {
+        scenarios: [
+          {
+            title: 'Scenario 1',
+            triggerWarningIds: [],
+          } as any,
+          {
+            title: 'Scenario 2',
+            triggerWarningIds: undefined,
+          } as any,
+          {
+            title: 'Scenario 3',
+          } as any,
+        ],
+      };
+
+      const savedScenarios: Scenarios[] = [
+        { id: 1, title: 'Scenario 1' } as Scenarios,
+        { id: 2, title: 'Scenario 2' } as Scenarios,
+        { id: 3, title: 'Scenario 3' } as Scenarios,
+      ];
+
+      const result = formatScenarioTriggerWarningsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it('should flatten multiple trigger warnings from different scenarios into a single list', () => {
+      const createScenariosDto: CreateScenariosDto = {
+        scenarios: [
+          {
+            title: 'Scenario 1',
+            triggerWarningIds: ['uuid-1', 'uuid-2'],
+          } as any,
+          {
+            title: 'Scenario 2',
+            triggerWarningIds: ['uuid-3', 'uuid-4', 'uuid-5'],
+          } as any,
+        ],
+      };
+
+      const savedScenarios: Scenarios[] = [
+        { id: 1, title: 'Scenario 1' } as Scenarios,
+        { id: 2, title: 'Scenario 2' } as Scenarios,
+      ];
+
+      const result = formatScenarioTriggerWarningsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+
+      expect(result).toEqual([
+        { scenarioId: 1, triggerWarningId: 'uuid-1' },
+        { scenarioId: 1, triggerWarningId: 'uuid-2' },
+        { scenarioId: 2, triggerWarningId: 'uuid-3' },
+        { scenarioId: 2, triggerWarningId: 'uuid-4' },
+        { scenarioId: 2, triggerWarningId: 'uuid-5' },
+      ]);
     });
   });
 });

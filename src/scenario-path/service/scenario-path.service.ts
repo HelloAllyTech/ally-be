@@ -270,6 +270,7 @@ export class ScenarioPathService {
         const scenarioPathTenantRepo =
           manager.getRepository(ScenarioPathTenant);
         if (updatedScenarioPath?.isGlobal) {
+          await scenarioPathTenantRepo.delete({ scenarioPathId: id });
           const scenarioPathTenantMappings = tenantIds.map((tenantId) => ({
             scenarioPathId: id,
             tenantId: tenantId,
@@ -498,19 +499,19 @@ export class ScenarioPathService {
 
         await scenarioPathItemRepo.save(newScenarioPathItems);
       }
-
-      const tenants = await this.tenantService.findAll();
-      const tenantIds = tenants.map((tenant) => tenant.id);
-      const scenarioPathTenantRepository =
-        manager.getRepository(ScenarioPathTenant);
-      const scenarioPathTenant = tenantIds.map((tenantId) =>
-        scenarioPathTenantRepository.create({
-          scenarioPathId: newScenarioPathData.id,
-          tenantId,
-        }),
-      );
-      await scenarioPathTenantRepository.save(scenarioPathTenant);
-
+      if (newScenarioPathData.isGlobal) {
+        const tenants = await this.tenantService.findAll();
+        const tenantIds = tenants.map((tenant) => tenant.id);
+        const scenarioPathTenantRepository =
+          manager.getRepository(ScenarioPathTenant);
+        const scenarioPathTenant = tenantIds.map((tenantId) =>
+          scenarioPathTenantRepository.create({
+            scenarioPathId: newScenarioPathData.id,
+            tenantId,
+          }),
+        );
+        await scenarioPathTenantRepository.save(scenarioPathTenant);
+      }
       this.logger.info(`Scenario path ${id} duplicated successfully`);
       return this.getMinimalScenarioPathData(newScenarioPathData);
     });

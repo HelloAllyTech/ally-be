@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { forwardRef, Global, Module } from '@nestjs/common';
 import { AuthService } from './service/auth.service';
 import { AuthController } from './controller/auth.controller';
 import { JwtModule } from '@nestjs/jwt';
@@ -9,6 +9,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { RefreshToken } from './entity/refresh-token.entity';
 import { User } from '../user/entity/user.entity';
+import { UserModule } from 'src/user/user.module';
 
 @Global()
 @Module({
@@ -16,6 +17,7 @@ import { User } from '../user/entity/user.entity';
     JwtModule.register({}), // Empty config since we're using different configs for access and refresh tokens
     TypeOrmModule.forFeature([User, RefreshToken]),
     ConfigModule,
+    forwardRef(() => UserModule),
   ],
   providers: [AuthService, JwtStrategy, JwtRefreshStrategy, PermissionsGuard],
   controllers: [AuthController],

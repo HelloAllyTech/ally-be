@@ -94,7 +94,7 @@ export class ScenarioPathController {
     enum: SortOrder,
     description: 'Sort order',
   })
-  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_PATH])
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_PATHS])
   @Get('scenario-paths')
   async getScenarioPaths(
     @Query('status') status?: string,

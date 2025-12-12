@@ -3,13 +3,19 @@ import { LearnController } from '../learn.controller';
 import { ScenarioService } from '../../service/scenario.service';
 import { ScenarioSessionService } from '../../service/scenario-session.service';
 import { ScenarioTenantService } from '../../service/scenario-tenant.service';
+import { TriggerWarningsService } from '../../service/trigger-warnings.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { ScenarioStatus } from '../../enum/scenario.status.enum';
-import { ScenarioSessionStatus } from '../../enum/scenario-session-status.enum';
+import {
+  ScenarioSessionEventStatus,
+  ScenarioSessionStatus,
+} from '../../enum/scenario-session-status.enum';
 import { ScenarioSessionMessageType } from '../../enum/scenario-session-message.type.enum';
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { UserService } from 'src/user/service/user.service';
+import { AppConfigService } from 'src/config/config.service';
 import { DeleteCoverImageDto } from '../../dto/delete-cover-image.dto';
 import { DeleteCoverVideoDto } from '../../dto/delete-cover-video.dto';
 import { ScenarioVideoUploadRequestDto } from '../../dto/scenario-video-upload-request.dto';
@@ -72,6 +78,7 @@ describe('LearnController', () => {
     scenarioId: 1,
     counselorId: 123,
     status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
     startedAt: new Date(),
     endedAt: new Date(),
     score: 85,
@@ -172,6 +179,8 @@ describe('LearnController', () => {
   beforeEach(async () => {
     const mockScenarioService = {
       getScenarios: jest.fn(),
+      getPublicScenarios: jest.fn(),
+      getScenariosV2: jest.fn(),
       getScenario: jest.fn(),
       getAdminScenarios: jest.fn(),
       getAdminScenario: jest.fn(),
@@ -214,6 +223,16 @@ describe('LearnController', () => {
       getUserRoles: jest.fn(),
     };
 
+    const mockTriggerWarningsService = {
+      getTriggerWarnings: jest.fn(),
+      createTriggerWarning: jest.fn(),
+      assignTriggerWarningsToScenario: jest.fn(),
+    };
+
+    const mockUserService = {
+      getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LearnController],
       providers: [
@@ -238,6 +257,22 @@ describe('LearnController', () => {
         {
           provide: PermissionsService,
           useValue: mockPermissionsService,
+        },
+        {
+          provide: TriggerWarningsService,
+          useValue: mockTriggerWarningsService,
+        },
+        {
+          provide: UserService,
+          useValue: mockUserService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
         },
       ],
     }).compile();
@@ -289,6 +324,36 @@ describe('LearnController', () => {
       scenarioService.getScenarios.mockRejectedValue(error);
 
       await expect(controller.getScenarios()).rejects.toThrow('Database error');
+    });
+  });
+
+  describe('getPublicScenarios', () => {
+    it('should return paginated public scenarios', async () => {
+      const mockResponse = {
+        data: mockScenarios,
+        count: mockScenarios.length,
+      };
+      scenarioService.getPublicScenarios.mockResolvedValue(mockResponse as any);
+
+      const result = await controller.getPublicScenarios();
+
+      expect(result).toEqual(mockResponse);
+      expect(scenarioService.getPublicScenarios).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getPublicScenariosV2', () => {
+    it('should return paginated scenarios for v2', async () => {
+      const mockResponse = {
+        data: mockScenarios,
+        count: mockScenarios.length,
+      };
+      scenarioService.getScenariosV2.mockResolvedValue(mockResponse as any);
+
+      const result = await controller.getPublicScenariosV2();
+
+      expect(result).toEqual(mockResponse);
+      expect(scenarioService.getScenariosV2).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -604,6 +669,7 @@ describe('LearnController', () => {
           scenarioId: 1,
           counselorId: 123,
           status: ScenarioSessionStatus.ACTIVE,
+          eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
           createdAt: new Date(),
           updatedAt: new Date(),
           tenantId: 'tenant-123',
@@ -613,8 +679,17 @@ describe('LearnController', () => {
           roomName: 'room-123',
           serverUrl: 'ws://localhost:7880',
         },
+        scenario: {
+          id: 1,
+          title: 'Test Scenario',
+          metadata: {
+            openingStatements: ['Hello'],
+          },
+        },
       };
-      scenarioSessionService.startScenarioSession.mockResolvedValue(mockResult);
+      scenarioSessionService.startScenarioSession.mockResolvedValue(
+        mockResult as any,
+      );
 
       const result = await controller.startScenarioSession(
         mockTokenUser,

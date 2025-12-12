@@ -25,6 +25,8 @@ import {
   SessionEventResponseDto,
   UpdateSessionEventDto,
 } from '../dto/session-event.dto';
+import { MAX_COMBINATION_EVENT_DEPTH } from '../constants/event.constant';
+
 @Injectable()
 export class SessionEventService {
   constructor(
@@ -54,7 +56,9 @@ export class SessionEventService {
   private async validateCreateSessionEvents(
     events: Partial<SessionEvents>[],
   ): Promise<void> {
-    const combinationExpressionEventIds: string[] = [];
+    // Use Set for deduplication to avoid false validation failures
+    const combinationExpressionEventIds = new Set<string>();
+
     for (const event of events) {
       if (
         event.detectionType === SessionEventDetectionType.COMBINATION &&
@@ -66,18 +70,20 @@ export class SessionEventService {
           this.sessionEventRepository,
         );
 
-        combinationExpressionEventIds.push(
-          ...extractEventIds(event.detectionData?.expression),
-        );
+        const extractedIds = extractEventIds(event.detectionData?.expression);
+        extractedIds.forEach((id) => combinationExpressionEventIds.add(id));
+      }
+    }
 
-        const eventDetails = await this.sessionEventRepository.findByIds(
-          combinationExpressionEventIds,
+    // Validate all referenced event IDs exist (only once, after collecting all)
+    if (combinationExpressionEventIds.size > 0) {
+      const eventDetails = await this.sessionEventRepository.findByIds(
+        Array.from(combinationExpressionEventIds),
+      );
+      if (eventDetails?.length !== combinationExpressionEventIds.size) {
+        throw new BadRequestException(
+          'Invalid combination expression event IDs',
         );
-        if (eventDetails?.length !== combinationExpressionEventIds.length) {
-          throw new BadRequestException(
-            'Invalid combination expression event IDs',
-          );
-        }
       }
     }
   }
@@ -90,8 +96,9 @@ export class SessionEventService {
         scenarioId,
       );
 
-    const sessionEvents = events.map((event) => {
-      return {
+    return events
+      .filter((event) => !event.autoTerminationStatus) // Filter out auto termination events to get correct feedback messages
+      .map((event) => ({
         id: event.sessionEvents_id,
         name: event.sessionEvents_name,
         description: event.sessionEvents_description,
@@ -117,9 +124,7 @@ export class SessionEventService {
         createdAt: event.sessionEvents_createdAt,
         updatedAt: event.sessionEvents_updatedAt,
         eventCode: event.sessionEvents_eventCode,
-      };
-    });
-    return sessionEvents;
+      }));
   }
 
   async updateSessionEvent(
@@ -237,5 +242,83 @@ export class SessionEventService {
       });
     });
     return true;
+  }
+
+  /**
+   * Gets immediate child event IDs from a combination event expression.
+   * Note: This only returns direct children, not nested combination event dependencies.
+   * Use getAllNestedEventsWithMap for recursive resolution.
+   */
+  async getImmediateEventIdsInCombinationExpression(
+    eventId: string,
+  ): Promise<string[]> {
+    const event = await this.sessionEventRepository.findOne({
+      where: { id: eventId },
+    });
+    if (!event) return [];
+    return extractEventIds(event.detectionData?.expression);
+  }
+
+  /**
+   * Recursively fetches all event IDs from a combination event,
+   * including nested combination events, with depth limiting and batch fetching.
+   *
+   * @param eventId - The root combination event ID to start from
+   * @param maxDepth - Maximum recursion depth (defaults to MAX_COMBINATION_EVENT_DEPTH)
+   * @returns Object containing all unique event IDs and a map of eventId -> SessionEvents
+   */
+  async getAllNestedEventsWithMap(
+    eventId: string,
+    maxDepth: number = MAX_COMBINATION_EVENT_DEPTH,
+  ): Promise<{
+    eventIds: string[];
+    eventsMap: Map<string, SessionEvents>;
+  }> {
+    const allEventIds = new Set<string>();
+    const eventsMap = new Map<string, SessionEvents>();
+    let toProcess: string[] = [eventId];
+    let currentDepth = 0;
+
+    while (toProcess.length > 0 && currentDepth < maxDepth) {
+      // Filter out already processed IDs
+      const idsToFetch = toProcess.filter((id) => !eventsMap.has(id));
+      toProcess = [];
+
+      if (idsToFetch.length === 0) break;
+
+      // Batch fetch all events we need
+      const events = await this.sessionEventRepository.find({
+        where: { id: In(idsToFetch) },
+      });
+
+      for (const event of events) {
+        eventsMap.set(event.id, event);
+
+        // If it's a combination event, collect child IDs for next iteration
+        if (event.detectionType === SessionEventDetectionType.COMBINATION) {
+          const childIds = extractEventIds(event.detectionData?.expression);
+
+          for (const childId of childIds) {
+            allEventIds.add(childId);
+            if (!eventsMap.has(childId)) {
+              toProcess.push(childId);
+            }
+          }
+        }
+      }
+
+      currentDepth++;
+    }
+
+    if (toProcess.length > 0 && currentDepth >= maxDepth) {
+      throw new BadRequestException(
+        `Maximum combination event depth (${maxDepth}) exceeded. This may indicate circular dependencies or overly complex event structures.`,
+      );
+    }
+
+    return {
+      eventIds: Array.from(allEventIds),
+      eventsMap,
+    };
   }
 }

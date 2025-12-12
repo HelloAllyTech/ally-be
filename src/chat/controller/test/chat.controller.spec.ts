@@ -12,6 +12,8 @@ import { AddNoteDto } from '../../dto/notes.dto';
 import { SummaryFeedbackDto } from '../../dto/summary-feedback.dto';
 import { CallInfoDto } from '../../dto/chat.response.dto';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { UserService } from '../../../user/service/user.service';
+import { AppConfigService } from '../../../config/config.service';
 
 describe('ChatController', () => {
   let controller: ChatController;
@@ -132,6 +134,20 @@ describe('ChatController', () => {
             hasPermission: jest.fn(),
             getUserPermissions: jest.fn(),
             getUserRoles: jest.fn().mockResolvedValue(['CLIENT']),
+          },
+        },
+        {
+          provide: UserService,
+          useValue: {
+            getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
           },
         },
         {

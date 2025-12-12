@@ -1,7 +1,9 @@
-import { Global, Module } from '@nestjs/common';
+import { forwardRef, Global, Module } from '@nestjs/common';
 import { RedisService } from './service/redis.service';
 import { RedisModule as NestRedisModule } from '@liaoliaots/nestjs-redis';
 import { CacheController } from './controller/cache.controller';
+import { UserModule } from 'src/user/user.module';
+
 @Global()
 @Module({
   imports: [
@@ -14,6 +16,7 @@ import { CacheController } from './controller/cache.controller';
         },
       ],
     }),
+    forwardRef(() => UserModule),
   ],
   providers: [RedisService],
   exports: [RedisService],

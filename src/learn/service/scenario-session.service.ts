@@ -8,7 +8,10 @@ import { ScenarioSessionRepository } from '../repository/scenario-session.reposi
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
 import { ScenarioService } from './scenario.service';
-import { ScenarioSessionStatus } from '../enum/scenario-session-status.enum';
+import {
+  ScenarioSessionEventStatus,
+  ScenarioSessionStatus,
+} from '../enum/scenario-session-status.enum';
 import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
@@ -43,7 +46,8 @@ import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-p
 import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
 import { extractEventIds } from 'src/session-event/util/session-event.util';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
-import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import { MAX_COMBINATION_EVENT_DEPTH } from 'src/session-event/constants/event.constant';
+import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import {
   ExecutionContextPropagation,
@@ -183,7 +187,7 @@ export class ScenarioSessionService {
         counselorId,
       );
 
-      return { scenarioSession, accessToken };
+      return { scenarioSession, accessToken, scenario };
     } catch (error) {
       // If room creation fails, clean up the session
       await this.scenarioSessionRepository.delete(scenarioSession.id);
@@ -195,18 +199,9 @@ export class ScenarioSessionService {
     scenario: GetAdminScenarioDto,
     sessionEvents: SessionEvents[],
   ) {
-    if (!scenario.metadata?.lifeHistory) {
-      this.logger.error(
-        `Scenario metadata lifeHistory is required for scenario ${scenario.id}`,
-      );
-      throw new BadRequestException(
-        'Scenario details are not complete. Please contact admin.',
-      );
-    }
-
     const { metadata, terminationEvent, ...scenarioDataWithoutMetadata } =
       scenario;
-    const { voiceId, ...promptData } = metadata;
+    const { voiceId, ...promptData } = metadata as Record<string, any>;
 
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
@@ -215,37 +210,68 @@ export class ScenarioSessionService {
 
     const scenarioVoice = await this.scenarioService.getScenarioVoice(voiceId);
 
-    // triggerEvents: Only IDs from sessionEvents (events associated with this scenario)
-    const triggerEvents = sessionEvents.map((event) => event.id);
+    const triggerEvents = new Set<string>();
+    const eventMap = new Map<string, SessionEvents>();
 
-    // Build a map of existing events for quick lookup
-    const eventMap = new Map(sessionEvents.map((event) => [event.id, event]));
-    const referencedEventIds = new Set<string>();
+    // Add initial session events to the map
+    sessionEvents.forEach((event) => {
+      triggerEvents.add(event.id);
+      eventMap.set(event.id, event);
+    });
 
-    // Extract all event IDs referenced in combination events
+    // Add termination event ID to be fetched if needed
+    const idsToProcess = new Set<string>();
+    if (terminationEvent?.eventId && !eventMap.has(terminationEvent.eventId)) {
+      idsToProcess.add(terminationEvent.eventId);
+    }
+
+    // Extract all event IDs referenced in combination events (initial pass)
     sessionEvents.forEach((event) => {
       if (event.detectionType === SessionEventDetectionType.COMBINATION) {
         const detectionData = (event as any).data || event.detectionData;
         const dependentIds = extractEventIds(detectionData?.expression);
         dependentIds.forEach((id) => {
           if (!eventMap.has(id)) {
-            referencedEventIds.add(id);
+            idsToProcess.add(id);
           }
         });
       }
     });
 
-    // Add termination event ID to referenced events if it exists and is not already included
-    if (terminationEvent?.eventId && !eventMap.has(terminationEvent.eventId)) {
-      referencedEventIds.add(terminationEvent.eventId);
+    // Recursively fetch nested combination events with depth limiting
+    let currentDepth = 0;
+    while (
+      idsToProcess.size > 0 &&
+      currentDepth < MAX_COMBINATION_EVENT_DEPTH
+    ) {
+      const idsToFetch = Array.from(idsToProcess);
+      idsToProcess.clear();
+
+      const fetchedEvents =
+        await this.sessionEventService.findByIds(idsToFetch);
+
+      for (const event of fetchedEvents) {
+        eventMap.set(event.id, event);
+
+        // If the fetched event is also a combination, extract its dependencies
+        if (event.detectionType === SessionEventDetectionType.COMBINATION) {
+          const detectionData = event.detectionData;
+          const childIds = extractEventIds(detectionData?.expression);
+          childIds.forEach((id) => {
+            if (!eventMap.has(id)) {
+              idsToProcess.add(id);
+            }
+          });
+        }
+      }
+
+      currentDepth++;
     }
 
-    // Fetch any missing events (referenced in combinations or termination event)
-    if (referencedEventIds.size > 0) {
-      const missingEvents = await this.sessionEventService.findByIds(
-        Array.from(referencedEventIds),
+    if (idsToProcess.size > 0 && currentDepth >= MAX_COMBINATION_EVENT_DEPTH) {
+      this.logger.warn(
+        `Maximum combination event depth (${MAX_COMBINATION_EVENT_DEPTH}) exceeded while resolving events`,
       );
-      missingEvents.forEach((event) => eventMap.set(event.id, event));
     }
 
     // Enhance all events with dependentEvents for combination events
@@ -261,6 +287,7 @@ export class ScenarioSessionService {
             ...detectionData,
             dependentEvents,
           },
+          detectionData: undefined,
         };
       }
 
@@ -285,7 +312,7 @@ export class ScenarioSessionService {
         ...scenarioData,
         voice: scenarioVoice,
         events: allEvents,
-        triggerEvents,
+        triggerEvents: Array.from(triggerEvents),
         autoTerminationEvent,
       },
     };
@@ -372,6 +399,46 @@ export class ScenarioSessionService {
   }
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
+  async handleEndScenarioSessionEvent(
+    scenarioSession: ScenarioSessions,
+    event: LearnEventData,
+  ) {
+    if (!ExecutionManager.getTenantId()) {
+      ExecutionManager.setAuthContext(
+        scenarioSession.counselorId.toString(),
+        scenarioSession.tenantId,
+      );
+    }
+
+    const scenarioSessionId = scenarioSession?.id;
+
+    const score = event.event_data.totalScore;
+
+    let callDuration = 0;
+    const endedAt = scenarioSession.endedAt ?? new Date();
+    if (scenarioSession.startedAt && endedAt) {
+      callDuration =
+        endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
+    }
+    if (scenarioSession.scenarioPathSessionItemId)
+      await this.scenarioPathSessionService.handleEndScenarioPathSession({
+        scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
+        score,
+        callDuration,
+      });
+
+    await this.scenarioSessionRepository.update(scenarioSessionId, {
+      status: ScenarioSessionStatus.ENDED,
+      endedAt,
+      score,
+      eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    });
+    this.logger.info(
+      `Updated scenario ${scenarioSessionId} eventStatus to COMPLETED`,
+    );
+  }
+
+  @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async endScenarioSession(scenarioSessionId: string, counselorId: number) {
     const scenarioSession = await this.scenarioSessionRepository.findOne({
       where: {
@@ -379,15 +446,9 @@ export class ScenarioSessionService {
         counselorId,
       },
     });
-
     if (!scenarioSession) {
       throw new BadRequestException('Scenario session not found');
     }
-
-    if (scenarioSession.status !== ScenarioSessionStatus.ACTIVE) {
-      throw new BadRequestException('Scenario session is not active');
-    }
-
     if (!ExecutionManager.getTenantId()) {
       ExecutionManager.setAuthContext(
         counselorId.toString(),
@@ -396,13 +457,12 @@ export class ScenarioSessionService {
     }
 
     const endedAt = scenarioSession.endedAt ?? new Date();
-    const score = await this.calculateScenarioSessionScore(scenarioSessionId);
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
       endedAt,
-      score,
     });
+    this.logger.info(`Updated scenario ${scenarioSessionId} status to ENDED`);
 
     let callDuration = 0;
     if (scenarioSession.startedAt && endedAt) {
@@ -415,12 +475,6 @@ export class ScenarioSessionService {
         scenarioSession.scenarioId,
         callDuration,
       );
-      if (scenarioSession.scenarioPathSessionItemId)
-        await this.scenarioPathSessionService.handleEndScenarioPathSession({
-          scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
-          score,
-          callDuration,
-        });
 
       await this.livekitService.deleteRoom(scenarioSession.roomId);
     } catch (error) {
@@ -435,12 +489,6 @@ export class ScenarioSessionService {
     );
 
     return { message: 'Scenario session ended successfully' };
-  }
-
-  private async calculateScenarioSessionScore(scenarioSessionId: string) {
-    return this.scenarioSessionRepository.getScenarioSessionScore(
-      scenarioSessionId,
-    );
   }
 
   private async consumeSimulationCredits(userId: number, callDuration: number) {
@@ -624,6 +672,20 @@ export class ScenarioSessionService {
     return { messages };
   }
 
+  async handleScenarioSessionEvent(
+    scenarioSession: ScenarioSessions,
+    event: LearnEventData,
+  ) {
+    switch (event.event_data.id) {
+      case 'end-of-session':
+        await this.handleEndScenarioSessionEvent(scenarioSession, event);
+        break;
+      default:
+        await this.addScenarioSessionEvent(scenarioSession, event);
+        break;
+    }
+  }
+
   async addScenarioSessionEvent(
     scenarioSession: ScenarioSessions,
     event: LearnEventData,
@@ -644,16 +706,6 @@ export class ScenarioSessionService {
       const savedScenarioSessionEvent =
         await scenarioSessionEventsRepo.save(scenarioSessionEvent);
 
-      if (
-        scenarioSession.status === ScenarioSessionStatus.ENDED &&
-        event.event_data.visibilityType === SessionEventVisibilityType.ACTIVE
-      ) {
-        const scenrioSessionRepo =
-          entityManager.getRepository(ScenarioSessions);
-        await scenrioSessionRepo.update(scenarioSession.id, {
-          score: () => `score + ${event.event_data.score ?? 0}`,
-        });
-      }
       return savedScenarioSessionEvent;
     });
 
@@ -670,7 +722,7 @@ export class ScenarioSessionService {
     userId: number,
   ) {
     const { scenarioId } = previewScenarioDto;
-    const scenario = await this.scenarioService.getScenario(scenarioId);
+    const scenario = await this.scenarioService.getAdminScenario(scenarioId);
 
     await this.validatePreviewScenario(scenario);
 
@@ -690,7 +742,7 @@ export class ScenarioSessionService {
       participantName: userId.toString(),
     });
 
-    return { roomName, accessToken };
+    return { roomName, accessToken, scenario };
   }
 
   private async validatePreviewScenario(scenario: Scenarios) {
@@ -720,6 +772,7 @@ export class ScenarioSessionService {
 
   async endPreviewScenario(roomName: string) {
     await this.livekitService.deleteRoom(roomName);
+    this.logger.info(`Preview scenario room deleted: ${roomName}`);
   }
 
   async getLatestScenarioSessionByScenarioPathSessionItemId(

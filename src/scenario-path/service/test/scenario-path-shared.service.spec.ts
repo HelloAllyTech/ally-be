@@ -48,6 +48,7 @@ describe('ScenarioPathSharedService', () => {
   const mockScenarioSharedService = {
     getScenarioByIds: jest.fn(),
     getScenarioSessionById: jest.fn(),
+    getScenarioWithTriggerWarningsByIds: jest.fn(),
   };
 
   const mockScenarioPathTenantService = {
@@ -246,7 +247,9 @@ describe('ScenarioPathSharedService', () => {
         deletedAt: null,
       } as any);
       scenarioPathItemRepository.find.mockResolvedValue(mockScenarioPathItems);
-      scenarioSharedService.getScenarioByIds.mockResolvedValue(mockScenarios);
+      scenarioSharedService.getScenarioWithTriggerWarningsByIds.mockResolvedValue(
+        mockScenarios,
+      );
 
       const result = await service.getScenarioPathWithScenarios(
         'path-1',
@@ -298,15 +301,17 @@ describe('ScenarioPathSharedService', () => {
       expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1' },
       });
-      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
-        1, 2,
-      ]);
+      expect(
+        scenarioSharedService.getScenarioWithTriggerWarningsByIds,
+      ).toHaveBeenCalledWith([1, 2]);
     });
 
     it('returns scenario path with scenarios when tenantId is not provided', async () => {
       scenarioPathRepository.findOne.mockResolvedValue(mockScenarioPath);
       scenarioPathItemRepository.find.mockResolvedValue(mockScenarioPathItems);
-      scenarioSharedService.getScenarioByIds.mockResolvedValue(mockScenarios);
+      scenarioSharedService.getScenarioWithTriggerWarningsByIds.mockResolvedValue(
+        mockScenarios,
+      );
 
       const result = await service.getScenarioPathWithScenarios('path-1');
 
@@ -355,9 +360,9 @@ describe('ScenarioPathSharedService', () => {
       expect(scenarioPathItemRepository.find).toHaveBeenCalledWith({
         where: { scenarioPathId: 'path-1' },
       });
-      expect(scenarioSharedService.getScenarioByIds).toHaveBeenCalledWith([
-        1, 2,
-      ]);
+      expect(
+        scenarioSharedService.getScenarioWithTriggerWarningsByIds,
+      ).toHaveBeenCalledWith([1, 2]);
     });
 
     it('throws BadRequestException when tenant does not have access', async () => {

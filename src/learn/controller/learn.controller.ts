@@ -8,6 +8,7 @@ import {
   Put,
   Delete,
   ParseUUIDPipe,
+  Version,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -46,22 +47,33 @@ import { DeleteCoverImageDto } from '../dto/delete-cover-image.dto';
 import { ScenarioVideoUploadResponseDto } from '../dto/scenario-video-upload-response.dto';
 import { ScenarioVideoUploadRequestDto } from '../dto/scenario-video-upload-request.dto';
 import { DeleteCoverVideoDto } from '../dto/delete-cover-video.dto';
-import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import {
+  GetAdminScenarioDto,
+  GetScenarioDtoWithPagination,
+} from '../dto/get-scenario.dto';
 import { AddScenarioTenantDto } from '../dto/add-scenario-tenant.dto';
 import { ScenarioTenantService } from '../service/scenario-tenant.service';
 import { DeleteScenarioTenantDto } from '../dto/delete-scenario-tenant.dto';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { SCENARIO_SESSION_EXAMPLE } from '../constants/scenario-session.constants';
+import { CreateTriggerWarningDto } from '../dto/trigger-warning.dto';
+import { TriggerWarningsService } from '../service/trigger-warnings.service';
+import { TriggerWarnings } from '../entity/trigger-warnings.entity';
+import { GetScenarioResponse } from '../interface/session.interface';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
 @ApiSecurity('access-token')
-@Controller('v1/learn')
+@Controller({
+  path: 'learn',
+  version: '1',
+})
 export class LearnController {
   constructor(
     private readonly scenarioService: ScenarioService,
     private readonly scenarioSessionService: ScenarioSessionService,
     private readonly scenarioTenantService: ScenarioTenantService,
+    private readonly triggerWarningService: TriggerWarningsService,
   ) {}
 
   @Public()
@@ -69,6 +81,21 @@ export class LearnController {
   @Get('scenarios')
   async getScenarios(): Promise<Scenarios[]> {
     return this.scenarioService.getScenarios();
+  }
+
+  @Public()
+  @ApiOperation({ summary: 'Get all public scenarios' })
+  @Get('scenarios/public')
+  async getPublicScenarios(): Promise<GetScenarioDtoWithPagination> {
+    return this.scenarioService.getPublicScenarios();
+  }
+
+  @ApiOperation({ summary: 'Get all scenarios' })
+  @Version('2')
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIOS])
+  @Get('scenarios')
+  async getPublicScenariosV2(): Promise<GetScenarioDtoWithPagination> {
+    return this.scenarioService.getScenariosV2();
   }
 
   @ApiOperation({ summary: 'Get all scenarios ' })
@@ -141,7 +168,7 @@ export class LearnController {
   @Public()
   @ApiOperation({ summary: 'Get a scenario by id' })
   @Get('scenarios/:id')
-  async getScenario(@Param('id') id: number): Promise<Scenarios> {
+  async getScenario(@Param('id') id: number): Promise<GetScenarioResponse> {
     return this.scenarioService.getScenario(id, [
       'id',
       'title',
@@ -630,5 +657,78 @@ export class LearnController {
     return this.scenarioSessionService.getLatestScenarioSessionByScenarioPathSessionItemId(
       pathSessionItemId,
     );
+  }
+
+  @ApiOperation({ summary: 'Create a trigger warning' })
+  @ApiResponse({
+    description: 'Trigger warning created successfully',
+    type: TriggerWarnings,
+    example: {
+      name: 'Domestic abuse',
+    },
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('trigger-warnings')
+  async createTriggerWarning(
+    @Body() createTriggerWarningDto: CreateTriggerWarningDto,
+  ) {
+    return this.triggerWarningService.createTriggerWarning(
+      createTriggerWarningDto,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Get trigger warnings based on name filter and add pagination',
+  })
+  @ApiQuery({
+    name: 'name',
+    required: false,
+    type: String,
+    description: 'Name of the trigger warning',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order',
+  })
+  @ApiResponse({
+    description: 'Trigger warnings retrieved successfully',
+    type: TriggerWarnings,
+    isArray: true,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Get('trigger-warnings')
+  async getTriggerWarnings(
+    @Query('name') name?: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order?: SortOrder,
+  ) {
+    return this.triggerWarningService.getTriggerWarnings(name, {
+      limit,
+      offset,
+      sortBy,
+      order,
+    });
   }
 }

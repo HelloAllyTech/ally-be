@@ -67,6 +67,9 @@ export const validationSchema = Joi.object({
   ENABLE_AUDIT_LOGS_TO_CLOUDWATCH: Joi.boolean().default(false),
   ENABLE_CONSOLE_AUDIT_LOGS: Joi.boolean().default(false),
 
+  // FEATURE FLAGS
+  FEATURE_TRIGGER_WARNING: Joi.boolean().default(false),
+
   // LiveKit
   LIVEKIT_API_KEY: Joi.string().required(),
   LIVEKIT_API_SECRET: Joi.string().required(),

@@ -1,16 +1,106 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
+
 import { Scenarios } from '../entity/scenarios.entity';
-import { Pagination, ScenarioFilters } from 'src/common/type/common.type';
+import { Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
-import { GetAdminScenarioDto } from '../dto/get-admin-scenario.dto';
+import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
+import { ScenarioFilters } from '../type/scenario-filter.type';
+import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.entity';
+import { TriggerWarnings } from '../entity/trigger-warnings.entity';
+import { GetScenarioDto } from '../dto/get-scenario.dto';
+import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { ScenarioTenants } from '../entity/scenario-tenants.entity';
+import { GetScenarioResponse } from '../interface/session.interface';
 
 @Injectable()
 export class ScenariosRepository extends Repository<Scenarios> {
   constructor(private dataSource: DataSource) {
     super(Scenarios, dataSource.createEntityManager());
+  }
+  async getScenarioWithTriggerWarningsByIds(ids: number[]) {
+    return this.createQueryBuilder('scenario')
+      .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
+      .leftJoinAndMapMany(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'tw',
+        'tw.id = stw.triggerWarningId',
+      )
+      .where('scenario.id IN (:...ids)', { ids })
+      .getMany();
+  }
+
+  async getScenarios(filters?: ScenarioFilters): Promise<{
+    data: GetScenarioDto[];
+    count: number;
+  }> {
+    const query = this.createQueryBuilder('scenario');
+    if (filters?.tenantId) {
+      query.innerJoin(
+        ScenarioTenants,
+        'scenarioTenant',
+        'scenarioTenant.scenarioId = scenario.id AND scenarioTenant.tenantId = :tenantId',
+        { tenantId: filters.tenantId },
+      );
+    }
+
+    const [data, count] = await query
+      .select([
+        'scenario.id',
+        'scenario.title',
+        'scenario.scenario',
+        'scenario.description',
+        'scenario.coverImageUrl',
+        'scenario.coverVideoUrl',
+        'scenario.status',
+      ])
+      .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
+      .leftJoinAndMapMany(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'tw',
+        'tw.id = stw.triggerWarningId',
+      )
+      .where('scenario.status IN (:...statuses)', {
+        statuses: [ScenarioStatus.ACTIVE],
+      })
+      .orderBy('scenario.createdAt', 'DESC')
+      .addOrderBy('scenario.id', 'DESC')
+      .getManyAndCount();
+
+    return { data, count };
+  }
+
+  async getScenarioById(
+    id: number,
+    select?: (keyof Scenarios)[],
+    em?: EntityManager,
+  ): Promise<GetScenarioResponse | null> {
+    const scenarioRepo = em
+      ? em?.getRepository(Scenarios)
+      : this.dataSource.getRepository(Scenarios);
+    const query = scenarioRepo.createQueryBuilder('scenario');
+    if (select) {
+      query?.select(select.map((field) => `scenario.${String(field)}`));
+    }
+    return await query
+      .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
+      .leftJoinAndMapMany(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'tw',
+        'tw.id = stw.triggerWarningId',
+      )
+      .where('scenario.id = :id', { id })
+      .getOne();
   }
   async getAdminScenarios(
     scenarioFilters?: ScenarioFilters,
@@ -19,13 +109,25 @@ export class ScenariosRepository extends Repository<Scenarios> {
     const { status, tenantId, search } = scenarioFilters ?? {};
     const query = this.createQueryBuilder('scenario')
       .leftJoin(User, 'user', 'scenario."createdBy"=user.id')
+      .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
+      .leftJoin(
+        TriggerWarnings,
+        'triggerWarnings',
+        'triggerWarnings.id = stw.triggerWarningId',
+      )
       .select(['scenario', 'user.name'])
+      .addSelect(
+        `COALESCE(json_agg(json_build_object('id', "triggerWarnings".id, 'name', "triggerWarnings".name)) FILTER (WHERE "triggerWarnings".id IS NOT NULL), '[]')`,
+        'triggerWarnings',
+      )
       .addSelect((subQuery) => {
         return subQuery
           .select('COUNT(*)', 'count')
           .from(ScenarioSessions, 'scenarioSessions')
           .where('scenarioSessions.scenarioId = scenario.id');
-      }, 'usage');
+      }, 'usage')
+      .groupBy('scenario.id')
+      .addGroupBy('user.name');
 
     this.applySearchFilter(query, search);
 
@@ -65,7 +167,7 @@ export class ScenariosRepository extends Repository<Scenarios> {
           { tenantId },
         )
         .addSelect(
-          'CASE WHEN "scenarioTenants".id IS NOT NULL THEN true ELSE false END',
+          'BOOL_OR("scenarioTenants".id IS NOT NULL)',
           'isAssignedToTenant',
         );
     }
@@ -80,6 +182,13 @@ export class ScenariosRepository extends Repository<Scenarios> {
         'scenarioEvent',
         'scenarioEvent.scenarioId = scenario.id AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
         { autoTerminationStatus: true },
+      )
+      .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
+      .leftJoinAndMapMany(
+        'scenario.triggerWarnings',
+        TriggerWarnings,
+        'triggerWarnings',
+        'triggerWarnings.id = stw.triggerWarningId',
       )
       .where('scenario.id = :id', { id })
       .getOne();

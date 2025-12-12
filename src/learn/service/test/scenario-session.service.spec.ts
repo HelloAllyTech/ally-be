@@ -484,17 +484,32 @@ describe('ScenarioSessionService', () => {
       ).rejects.toThrow(new BadRequestException('Scenario session not found'));
     });
 
-    it('should throw BadRequestException when scenario session is not active', async () => {
+    it('should successfully end scenario session even when already ended', async () => {
       const inactiveSession = {
         ...mockScenarioSession,
         status: ScenarioSessionStatus.ENDED,
       };
       scenarioSessionRepository.findOne.mockResolvedValue(inactiveSession);
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(0);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
 
-      await expect(
-        service.endScenarioSession(mockScenarioSessionId, mockCounselorId),
-      ).rejects.toThrow(
-        new BadRequestException('Scenario session is not active'),
+      const result = await service.endScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+
+      expect(result).toEqual({
+        message: 'Scenario session ended successfully',
+      });
+      expect(scenarioSessionRepository.update).toHaveBeenCalledWith(
+        mockScenarioSessionId,
+        expect.objectContaining({
+          status: ScenarioSessionStatus.ENDED,
+        }),
       );
     });
 
@@ -647,7 +662,9 @@ describe('ScenarioSessionService', () => {
         serverUrl: 'https://livekit.example.com',
       };
 
-      scenarioService.getScenario.mockResolvedValue(mockScenarioWithMetadata);
+      scenarioService.getAdminScenario.mockResolvedValue(
+        mockScenarioWithMetadata,
+      );
       scenarioService.getScenarioVoice.mockResolvedValue(mockVoice as any);
       sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
@@ -672,7 +689,7 @@ describe('ScenarioSessionService', () => {
         isGlobal: false,
       };
 
-      scenarioService.getScenario.mockResolvedValue(mockInvalidScenario);
+      scenarioService.getAdminScenario.mockResolvedValue(mockInvalidScenario);
 
       await expect(
         service.previewScenario(previewDto as any, mockUserId),
