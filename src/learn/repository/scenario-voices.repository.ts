@@ -48,7 +48,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
         'voices',
       )
       .from('languages', 'la')
-      .innerJoin('scenario_voices', 'sv', 'la.id = sv.language_id')
+      .innerJoin('scenario_voices', 'sv', 'la.id = sv.languageId')
       .groupBy('la.id, la.value, la.label')
       .having('COUNT(sv.id) > 0');
 
@@ -75,7 +75,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       .addSelect('la.label', 'label')
       // IMPORTANT: start from the languages table so `la` refers to languages
       .from('languages', 'la')
-      .leftJoin('scenario_voices', 'sv', 'sv.language_id = la.id');
+      .leftJoin('scenario_voices', 'sv', 'sv.languageId = la.id');
 
     // always dedupe by language
     query.groupBy('la.id, la.value, la.label');

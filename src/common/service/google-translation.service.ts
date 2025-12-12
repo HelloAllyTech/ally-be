@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TranslationServiceClient } from '@google-cloud/translate';
 import { LoggerService } from 'src/logger/logger.service';
-
+import { AppConfigService } from 'src/config/config.service';
 type TranslateOptions = {
   chunkSize?: number; // number of strings per API request (default 100)
   concurrency?: number; // how many languages to translate in parallel (default: all)
@@ -16,15 +16,15 @@ export class GoogleTranslationsService {
   private client: any;
   private projectId: string;
   private location = 'global'; // change if you want region-specific models
-  constructor() {
-    this.projectId = process.env.PROJECT_ID || '';
+  constructor(private readonly config: AppConfigService) {
+    this.projectId = this.config.googleCloudTranslationConfig.projectId || '';
 
     // Instantiate the v3 client
     this.client = new TranslationServiceClient();
 
     // Check for required environment variables (optional, but recommended)
-    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-      console.log('GOOGLE_APPLICATION_CREDENTIALS is  set!');
+    if (this.config.googleCloudTranslationConfig.credentials) {
+      console.log('GOOGLE_APPLICATION_CREDENTIALS is set!');
     }
     if (this.projectId) {
       console.log('PROJECT_ID is set!');

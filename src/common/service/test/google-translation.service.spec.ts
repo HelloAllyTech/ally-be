@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { GoogleTranslationsService } from '../google-translation.service';
 import { TranslationServiceClient } from '@google-cloud/translate';
 import { LoggerService } from 'src/logger/logger.service';
+import { AppConfigService } from 'src/config/config.service';
 
 describe('GoogleTranslationsService', () => {
   let service: GoogleTranslationsService;
@@ -12,6 +13,12 @@ describe('GoogleTranslationsService', () => {
   let mockLogger: jest.Mocked<Partial<LoggerService>> & {
     error: jest.Mock;
     getInstance: jest.Mock;
+  };
+  let mockConfigService: jest.Mocked<Partial<AppConfigService>> & {
+    googleCloudTranslationConfig: {
+      projectId: string;
+      credentials?: string;
+    };
   };
 
   beforeEach(async () => {
@@ -32,6 +39,14 @@ describe('GoogleTranslationsService', () => {
       error: jest.fn(),
     };
 
+    // Mock AppConfigService
+    mockConfigService = {
+      googleCloudTranslationConfig: {
+        projectId: 'test-project-id',
+        credentials: 'test-credentials',
+      },
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GoogleTranslationsService,
@@ -42,6 +57,10 @@ describe('GoogleTranslationsService', () => {
         {
           provide: LoggerService,
           useValue: mockLogger,
+        },
+        {
+          provide: AppConfigService,
+          useValue: mockConfigService,
         },
       ],
     }).compile();

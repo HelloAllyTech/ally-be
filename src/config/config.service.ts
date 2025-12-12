@@ -277,4 +277,13 @@ export class AppConfigService {
         'true',
     };
   }
+
+  get googleCloudTranslationConfig() {
+    return {
+      credentials: this.configService.get<string>(
+        'GOOGLE_APPLICATION_CREDENTIALS',
+      ),
+      projectId: this.configService.get<string>('PROJECT_ID'),
+    };
+  }
 }
