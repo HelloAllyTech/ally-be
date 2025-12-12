@@ -7,7 +7,6 @@ import { SharedLanguageService } from 'src/language/service/shared-language.serv
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { SessionEventTranslationsRepository } from '../../repository/session-event-translation.repository';
 import { SessionEvents } from '../../entity/session-events.entity';
-import { SessionEventsTranslation } from '../../entity/session-event-translation.entity';
 
 describe('SessionEventTranslationService', () => {
   let service: SessionEventTranslationService;

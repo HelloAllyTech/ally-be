@@ -53,7 +53,6 @@ describe('ScenarioService', () => {
   let mockConfigService: any;
   let scenarioTranslationsRepository: jest.Mocked<ScenarioTranslationsRepository>;
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
-  let scenarioEventsTranslationsRepository: jest.Mocked<ScenarioEventsTranslationsRepository>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   const mockTenantId = 'tenant-123';
 
@@ -285,9 +284,6 @@ describe('ScenarioService', () => {
     scenarioPathSharedService = module.get(ScenarioPathSharedService);
     scenarioTranslationsRepository = module.get(ScenarioTranslationsRepository);
     sharedLanguageService = module.get(SharedLanguageService);
-    scenarioEventsTranslationsRepository = module.get(
-      ScenarioEventsTranslationsRepository,
-    );
     scenarioSharedService = module.get(ScenarioSharedService);
   });
 
@@ -2750,7 +2746,11 @@ describe('ScenarioService', () => {
   });
 
   describe('persistTranslationsForScenarios', () => {
-    let persistTranslationsForScenarios: Function;
+    let persistTranslationsForScenarios: (
+      scenarios: any[],
+      metadataExtractor: (scenario: any) => Record<string, any>,
+      languageVoicesExtractor?: () => Record<string, any>,
+    ) => Promise<void>;
     let mockLogger: any;
 
     beforeEach(() => {
@@ -3189,7 +3189,10 @@ describe('ScenarioService', () => {
   describe('buildTranslatedMetadataForLanguageCodes', () => {
     let mockGoogleTranslationsService: any;
     let mockLogger: any;
-    let buildTranslatedMetadataForLanguageCodes: Function;
+    let buildTranslatedMetadataForLanguageCodes: (
+      metadata: Record<string, any>,
+      languageCodes: string[],
+    ) => Promise<Record<string, any>>;
 
     beforeEach(() => {
       mockGoogleTranslationsService = {
