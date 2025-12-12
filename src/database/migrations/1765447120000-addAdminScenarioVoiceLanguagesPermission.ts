@@ -8,7 +8,6 @@ export class AddAdminScenarioVoiceLanguagesPermission1765447120000
     await queryRunner.query(`
       INSERT INTO "permissions" ("name") 
       VALUES ('view:admin:scenario-voice-languages')
-      ON CONFLICT ("name") DO NOTHING
     `);
 
     // Assign the permission to the SUPER_ADMIN group

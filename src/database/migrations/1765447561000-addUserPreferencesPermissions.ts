@@ -10,7 +10,6 @@ export class AddUserPreferencesPermissions1765447530000
       VALUES 
         ('edit:user:preferences'),
         ('view:user:preferences')
-      ON CONFLICT ("name") DO NOTHING
     `);
 
     // Assign permissions to LEARNER group
