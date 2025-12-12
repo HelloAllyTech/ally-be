@@ -368,19 +368,18 @@ jobs:
           
           echo "Generating changelog from $PREVIOUS_TAG to $TAG"
           
-          # Generate changelog
-          cat > CHANGELOG.md << 'EOF'
-          ## What's Changed
+          # Generate changelog with proper formatting
+          echo "## What's Changed" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
           
-          EOF
+          # Get commits since last tag (limit to 100 to avoid issues)
+          git log $PREVIOUS_TAG..master --pretty=format:"- %s (%h) @%an" --no-merges | head -100 >> CHANGELOG.md
           
-          # Get commits since last tag
-          git log $PREVIOUS_TAG..master --pretty=format:"- %s (%h) @%an" --no-merges >> CHANGELOG.md
-          
-          # Output for release notes
-          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          # Use a unique delimiter that won't appear in commit messages
+          DELIMITER="CHANGELOG_END_$(date +%s)"
+          echo "CHANGELOG<<${DELIMITER}" >> $GITHUB_OUTPUT
           cat CHANGELOG.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "${DELIMITER}" >> $GITHUB_OUTPUT
 
       - name: Create Release Draft
         uses: softprops/action-gh-release@v1
