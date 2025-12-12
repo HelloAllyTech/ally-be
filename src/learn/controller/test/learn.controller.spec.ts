@@ -131,6 +131,9 @@ describe('LearnController', () => {
 
   const mockStartScenarioSessionDto = {
     scenarioId: 1,
+    languageId: 4,
+    voiceId: 'voice-123',
+    language: 'en-IN',
   };
 
   const mockAddFeedbackDto = {
@@ -198,6 +201,8 @@ describe('LearnController', () => {
       updateScenarioVoice: jest.fn(),
       deleteCoverImage: jest.fn(),
       deleteCoverVideo: jest.fn(),
+      getAdminScenarioVoiceLanguages: jest.fn(),
+      getAvailableLanguages: jest.fn(),
     };
 
     const mockScenarioSessionService = {
@@ -811,6 +816,7 @@ describe('LearnController', () => {
             voiceId: 'openai-voice-new',
             provider: 'openai',
             config: { speed: 1.0 },
+            languageId: 1,
           },
         ],
       };
@@ -1055,6 +1061,128 @@ describe('LearnController', () => {
           pathSessionItemId,
         ),
       ).rejects.toThrow('Database error');
+    });
+  });
+
+  describe('getAdminScenarioVoiceLanguages', () => {
+    const mockLanguages = [
+      {
+        language_id: 1,
+        value: 'en-IN',
+        label: 'English (India)',
+        voices: [
+          {
+            id: 'cxsx-shans-ssbs8w',
+            name: 'Priya (Female)',
+          },
+        ],
+      },
+      {
+        language_id: 2,
+        value: 'hi-IN',
+        label: 'Hindi (India)',
+        voices: [
+          {
+            id: 'cxsx-shans-ssbs8q',
+            name: 'Priya (Female)',
+          },
+        ],
+      },
+    ];
+
+    it('should return languages with active filter', async () => {
+      scenarioService.getAdminScenarioVoiceLanguages.mockResolvedValue(
+        mockLanguages,
+      );
+      const result = await controller.getAdminScenarioVoiceLanguages(true);
+      expect(result).toEqual(mockLanguages);
+      expect(
+        scenarioService.getAdminScenarioVoiceLanguages,
+      ).toHaveBeenCalledWith(true);
+    });
+
+    it('should return all languages when no filter is provided', async () => {
+      scenarioService.getAdminScenarioVoiceLanguages.mockResolvedValue(
+        mockLanguages,
+      );
+      const result = await controller.getAdminScenarioVoiceLanguages(undefined);
+      expect(result).toEqual(mockLanguages);
+      expect(
+        scenarioService.getAdminScenarioVoiceLanguages,
+      ).toHaveBeenCalledWith(undefined);
+    });
+
+    it('should handle errors from service', async () => {
+      scenarioService.getAdminScenarioVoiceLanguages.mockRejectedValue(
+        new Error('Service error'),
+      );
+      await expect(
+        controller.getAdminScenarioVoiceLanguages(true),
+      ).rejects.toThrow('Service error');
+    });
+  });
+
+  describe('getLanguages', () => {
+    const mockAvailableLanguages = [
+      { language_id: 1, value: 'en-IN', label: 'English (India)' },
+      { language_id: 2, value: 'hi-IN', label: 'Hindi (India)' },
+    ];
+
+    it('should return languages with both filters', async () => {
+      scenarioService.getAvailableLanguages.mockResolvedValue(
+        mockAvailableLanguages,
+      );
+      const result = await controller.getLanguages(true, true);
+      expect(result).toEqual(mockAvailableLanguages);
+      expect(scenarioService.getAvailableLanguages).toHaveBeenCalledWith(
+        true,
+        true,
+      );
+    });
+
+    it('should handle only active filter', async () => {
+      scenarioService.getAvailableLanguages.mockResolvedValue(
+        mockAvailableLanguages,
+      );
+      const result = await controller.getLanguages(true, undefined);
+      expect(result).toEqual(mockAvailableLanguages);
+      expect(scenarioService.getAvailableLanguages).toHaveBeenCalledWith(
+        true,
+        undefined,
+      );
+    });
+
+    it('should handle only hasVoices filter', async () => {
+      scenarioService.getAvailableLanguages.mockResolvedValue(
+        mockAvailableLanguages,
+      );
+      const result = await controller.getLanguages(undefined, true);
+      expect(result).toEqual(mockAvailableLanguages);
+      expect(scenarioService.getAvailableLanguages).toHaveBeenCalledWith(
+        undefined,
+        true,
+      );
+    });
+
+    it('should return all languages when no filters are provided', async () => {
+      scenarioService.getAvailableLanguages.mockResolvedValue(
+        mockAvailableLanguages,
+      );
+      const result = await controller.getLanguages(undefined, undefined);
+      expect(result).toEqual(mockAvailableLanguages);
+      expect(scenarioService.getAvailableLanguages).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+      );
+    });
+
+    it('should handle errors from service', async () => {
+      scenarioService.getAvailableLanguages.mockRejectedValue(
+        new Error('Service error'),
+      );
+      await expect(controller.getLanguages(true, true)).rejects.toThrow(
+        'Service error',
+      );
     });
   });
 });

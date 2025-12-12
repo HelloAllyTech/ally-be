@@ -25,11 +25,17 @@ import { ScenarioTenants } from 'src/learn/entity/scenario-tenants.entity';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import { TriggerWarningsService } from '../trigger-warnings.service';
 import { ScenarioTriggerWarnings } from 'src/learn/entity/scenario-trigger-warnings.entity';
+import { GoogleTranslationsService } from 'src/common/service/google-translation.service';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { ScenarioEventsTranslationsRepository } from 'src/learn/repository/scenario-events-translations.repository';
+import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
+import { ScenarioSharedService } from '../scenario-shared.service';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
     getTenantId: jest.fn(),
+    getExecutionId: jest.fn().mockReturnValue('test-execution-id'), // Add this line
   },
 }));
 
@@ -45,7 +51,10 @@ describe('ScenarioService', () => {
   let scenarioPathSharedService: jest.Mocked<ScenarioPathSharedService>;
   let mockS3Service: any;
   let mockConfigService: any;
-
+  let scenarioTranslationsRepository: jest.Mocked<ScenarioTranslationsRepository>;
+  let sharedLanguageService: jest.Mocked<SharedLanguageService>;
+  let scenarioEventsTranslationsRepository: jest.Mocked<ScenarioEventsTranslationsRepository>;
+  let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   const mockTenantId = 'tenant-123';
 
   const mockScenario: Scenarios = {
@@ -157,6 +166,38 @@ describe('ScenarioService', () => {
       addScenarioTriggerWarnings: jest.fn(),
     };
 
+    const mockScenarioTranslationsRepository = {
+      getScenarioTranslationsByScenarioId: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue({
+        id: 1,
+        metadata: { title: 'Prueba' },
+      }),
+      createScenarioTranslations: jest.fn(),
+      updateScenarioTranslations: jest.fn(),
+    };
+
+    const mockGoogleTranslationsService = {
+      translateObjectToLanguages: jest.fn(),
+    };
+
+    const mockSharedLanguageService = {
+      getSharedLanguages: jest.fn(),
+      getValidLanguages: jest.fn(),
+    };
+
+    const mockScenarioSharedService = {
+      getScenarioByIds: jest.fn(),
+      getScenarioSessionById: jest.fn(),
+      getUniqueLanguagesFromScenarioTranslations: jest.fn(),
+    };
+
+    const mockScenarioEventsTranslationsRepository = {
+      getScenarioEventsTranslationsByScenarioId: jest.fn(),
+      getScenarioEventsTranslationsByScenarioIdEventId: jest.fn(),
+      createTranslations: jest.fn(),
+      updateTranslations: jest.fn(),
+    };
+
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -210,6 +251,26 @@ describe('ScenarioService', () => {
           provide: TriggerWarningsService,
           useValue: mockTriggerWarningsService,
         },
+        {
+          provide: ScenarioTranslationsRepository,
+          useValue: mockScenarioTranslationsRepository,
+        },
+        {
+          provide: GoogleTranslationsService,
+          useValue: mockGoogleTranslationsService,
+        },
+        {
+          provide: SharedLanguageService,
+          useValue: mockSharedLanguageService,
+        },
+        {
+          provide: ScenarioSharedService,
+          useValue: mockScenarioSharedService,
+        },
+        {
+          provide: ScenarioEventsTranslationsRepository,
+          useValue: mockScenarioEventsTranslationsRepository,
+        },
       ],
     }).compile();
 
@@ -222,6 +283,12 @@ describe('ScenarioService', () => {
     tenantService = module.get(TenantService);
     dataSource = module.get(DataSource);
     scenarioPathSharedService = module.get(ScenarioPathSharedService);
+    scenarioTranslationsRepository = module.get(ScenarioTranslationsRepository);
+    sharedLanguageService = module.get(SharedLanguageService);
+    scenarioEventsTranslationsRepository = module.get(
+      ScenarioEventsTranslationsRepository,
+    );
+    scenarioSharedService = module.get(ScenarioSharedService);
   });
 
   afterEach(() => {
@@ -1724,7 +1791,7 @@ describe('ScenarioService', () => {
             isGlobal: false,
             agentGoal: 'Goal',
             lifeHistory: 'History',
-            voiceId: 'voice-1',
+            languageVoices: { 1: 'voice-1' },
             name: 'Test',
             age: 30,
             gender: 'Male',
@@ -1763,7 +1830,7 @@ describe('ScenarioService', () => {
             isGlobal: true,
             agentGoal: 'Goal',
             lifeHistory: 'History',
-            voiceId: 'voice-1',
+            languageVoices: { 1: 'voice-1' },
             name: 'Test',
             age: 30,
             gender: 'Male',
@@ -1821,7 +1888,7 @@ describe('ScenarioService', () => {
             isGlobal: false,
             agentGoal: 'Goal',
             lifeHistory: 'History',
-            voiceId: 'voice-1',
+            languageVoices: { 1: 'voice-1' },
             name: 'Test',
             age: 30,
             gender: 'Male',
@@ -1895,7 +1962,8 @@ describe('ScenarioService', () => {
             isGlobal: false,
             agentGoal: 'Goal',
             lifeHistory: 'History',
-            voiceId: 'voice-1',
+            // voiceId: 'voice-1',
+            languageVoices: { 1: 'voice-1' },
             name: 'Test',
             age: 30,
             gender: 'Male',
@@ -2678,6 +2746,577 @@ describe('ScenarioService', () => {
           'stw-2',
         ]);
       });
+    });
+  });
+
+  describe('persistTranslationsForScenarios', () => {
+    let persistTranslationsForScenarios: Function;
+    let mockLogger: any;
+
+    beforeEach(() => {
+      // Make private method accessible for testing
+      persistTranslationsForScenarios = (
+        service as any
+      ).persistTranslationsForScenarios.bind(service);
+
+      mockLogger = {
+        debug: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      };
+
+      (service as any).logger = mockLogger;
+
+      // Mock the sanitizeMetadata method
+      (service as any).sanitizeMetadata = jest.fn((data) => ({
+        ...data,
+      }));
+
+      // Mock the buildTranslatedMetadataForLanguageCodes method
+      (service as any).buildTranslatedMetadataForLanguageCodes = jest.fn(
+        async (data, codes) => {
+          // Return a simple translation map where each code gets the original data
+          return codes.reduce((acc: any, code: string) => {
+            acc[code] = { ...data };
+            return acc;
+          }, {});
+        },
+      );
+    });
+
+    it('should skip scenarios with empty metadata', async () => {
+      const scenarios = [{ id: 1, name: 'Scenario 1' }];
+
+      const metadataExtractor = jest.fn(() => ({}));
+      const languageVoicesExtractor = jest.fn(() => ({}));
+
+      await persistTranslationsForScenarios(
+        scenarios,
+        metadataExtractor,
+        languageVoicesExtractor,
+      );
+
+      expect(metadataExtractor).toHaveBeenCalledWith(scenarios[0]);
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('no non-empty metadata, skipping'),
+      );
+      expect(
+        scenarioTranslationsRepository.createScenarioTranslations,
+      ).not.toHaveBeenCalled();
+      expect(
+        scenarioTranslationsRepository.updateScenarioTranslations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should skip scenarios with no valid languages', async () => {
+      const scenarios = [{ id: 1, name: 'Scenario 1' }];
+
+      const metadataExtractor = jest.fn(() => ({ title: 'Test Title' }));
+      const languageVoicesExtractor = jest.fn(() => ({}));
+
+      // Mock getValidLanguages to return empty languages array
+      sharedLanguageService.getValidLanguages.mockResolvedValue({
+        languages: [], // This should trigger the warning
+        languagesMap: {},
+      });
+
+      await persistTranslationsForScenarios(
+        scenarios,
+        metadataExtractor,
+        languageVoicesExtractor,
+      );
+
+      // Verify the warning was logged
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('no valid languages, skipping'),
+      );
+
+      // Verify no DB operations were performed
+      expect(
+        scenarioTranslationsRepository.createScenarioTranslations,
+      ).not.toHaveBeenCalled();
+      expect(
+        scenarioTranslationsRepository.updateScenarioTranslations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should create new translations for new language IDs', async () => {
+      const scenarios = [{ id: 1, name: 'Scenario 1' }];
+
+      const metadataExtractor = jest.fn(() => ({
+        title: 'Test Title',
+        description: 'Test Description',
+      }));
+
+      const languageVoicesExtractor = jest.fn(() => ({
+        1: 'voice-1',
+        2: 'voice-2',
+      }));
+
+      sharedLanguageService.getValidLanguages.mockResolvedValue({
+        languages: [
+          {
+            id: 1,
+            translationCode: 'en',
+            value: 'en-IN',
+            label: 'English (India)',
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+          {
+            id: 2,
+            translationCode: 'es',
+            value: 'es-ES',
+            label: 'Spanish (Spain)',
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+        languagesMap: {},
+      });
+
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
+        [],
+      );
+
+      await persistTranslationsForScenarios(
+        scenarios,
+        metadataExtractor,
+        languageVoicesExtractor,
+      );
+
+      expect(
+        scenarioTranslationsRepository.createScenarioTranslations,
+      ).toHaveBeenCalledWith([
+        {
+          scenarioId: 1,
+          languageId: 1,
+          metadata: {
+            title: 'Test Title',
+            description: 'Test Description',
+          },
+        },
+        {
+          scenarioId: 1,
+          languageId: 2,
+          metadata: {
+            title: 'Test Title',
+            description: 'Test Description',
+          },
+        },
+      ]);
+
+      expect(
+        scenarioTranslationsRepository.updateScenarioTranslations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should update existing translations for existing language IDs', async () => {
+      const scenarios = [{ id: 1, name: 'Scenario 1' }];
+
+      const metadataExtractor = jest.fn(() => ({
+        title: 'Updated Title',
+        description: 'Updated Description',
+      }));
+
+      const languageVoicesExtractor = jest.fn(() => ({
+        1: 'voice-1',
+      }));
+
+      sharedLanguageService.getValidLanguages.mockResolvedValue({
+        languages: [
+          {
+            id: 1,
+            translationCode: 'en',
+            value: 'en-IN',
+            label: 'English (India)',
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+        languagesMap: {},
+      });
+
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
+        [
+          {
+            scenarioId: 1,
+            languageId: 1,
+            id: '1',
+            metadata: {},
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      );
+
+      await persistTranslationsForScenarios(
+        scenarios,
+        metadataExtractor,
+        languageVoicesExtractor,
+      );
+
+      expect(
+        scenarioTranslationsRepository.updateScenarioTranslations,
+      ).toHaveBeenCalledWith([
+        {
+          scenarioId: 1,
+          languageId: 1,
+          metadata: expect.objectContaining({
+            title: 'Updated Title',
+            description: 'Updated Description',
+          }),
+        },
+      ]);
+
+      expect(
+        scenarioTranslationsRepository.createScenarioTranslations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should handle errors for individual scenarios without failing the entire batch', async () => {
+      const scenarios = [
+        { id: 1, name: 'Scenario 1' },
+        { id: 2, name: 'Scenario 2' },
+      ];
+
+      const metadataExtractor = jest.fn((scenario) => ({
+        title: `Title for ${scenario.name}`,
+      }));
+
+      const languageVoicesExtractor = jest.fn(() => ({
+        1: 'voice-1',
+      }));
+
+      sharedLanguageService.getValidLanguages.mockResolvedValue({
+        languages: [
+          {
+            id: 1,
+            translationCode: 'en',
+            value: 'en-IN',
+            label: 'English (India)',
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+        languagesMap: {},
+      });
+
+      // First call succeeds, second call throws
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId
+        .mockResolvedValueOnce([])
+        .mockRejectedValueOnce(new Error('Database error'));
+
+      await persistTranslationsForScenarios(
+        scenarios,
+        metadataExtractor,
+        languageVoicesExtractor,
+      );
+
+      // First scenario should be processed
+      expect(
+        scenarioTranslationsRepository.createScenarioTranslations,
+      ).toHaveBeenCalledTimes(1);
+
+      // Error should be logged but not thrown
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('unexpected error processing scenario 2'),
+        expect.any(Object),
+      );
+    });
+  });
+
+  describe('createUpdateScenarioEventsTranslations', () => {
+    let mockLogger: any;
+
+    beforeEach(() => {
+      mockLogger = {
+        warn: jest.fn(),
+        debug: jest.fn(),
+      };
+
+      (service as any).logger = mockLogger;
+
+      // Mock the persistScenarioEventTranslations method
+      (service as any).persistScenarioEventTranslations = jest.fn();
+    });
+
+    it('should skip when no valid language codes are found', async () => {
+      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [],
+      );
+
+      await service.createUpdateScenarioEventsTranslations([{ id: 1 }]);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('no valid languages, skipping'),
+      );
+      expect(service.persistScenarioEventTranslations).not.toHaveBeenCalled();
+    });
+
+    it('should skip when no valid languages are returned from shared service', async () => {
+      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [1, 2],
+      );
+      (service as any).sharedLanguageService = {
+        getValidLanguages: jest.fn().mockResolvedValue({ languages: [] }),
+      };
+
+      await service.createUpdateScenarioEventsTranslations([{ id: 1 }]);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('no valid languages, skipping'),
+      );
+      expect(service.persistScenarioEventTranslations).not.toHaveBeenCalled();
+    });
+
+    it('should call persistScenarioEventTranslations with correct parameters', async () => {
+      const scenarioEvents = [
+        {
+          id: 1,
+          scenarioId: 100,
+          eventId: 'event-1',
+          message: 'Test message',
+          branchInstruction: 'Test branch',
+        },
+      ];
+
+      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [1, 2],
+      );
+      (service as any).sharedLanguageService = {
+        getValidLanguages: jest.fn().mockResolvedValue({
+          languages: [
+            { id: 1, translationCode: 'en' },
+            { id: 2, translationCode: 'es' },
+          ],
+        }),
+      };
+
+      await service.createUpdateScenarioEventsTranslations(scenarioEvents);
+
+      expect(service.persistScenarioEventTranslations).toHaveBeenCalledWith(
+        scenarioEvents,
+        expect.any(Function),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 1, translationCode: 'en' }),
+          expect.objectContaining({ id: 2, translationCode: 'es' }),
+        ]),
+      );
+
+      // Test the metadata extractor function
+      const metadataExtractor = (
+        service.persistScenarioEventTranslations as jest.Mock
+      ).mock.calls[0][1];
+      const metadata = metadataExtractor(scenarioEvents[0]);
+      expect(metadata).toEqual({
+        message: 'Test message',
+        branchInstruction: 'Test branch',
+      });
+    });
+
+    // it('should handle errors gracefully', async () => {
+    //   // Mock the error to be thrown
+    //   scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockRejectedValue(
+    //     new Error('DB error'),
+    //   );
+
+    //   // Mock the logger to prevent actual logging during test
+    //   mockLogger.warn.mockImplementation(() => {});
+
+    //   // The method should handle the error internally and not throw
+    //   await service.createUpdateScenarioEventsTranslations([{ id: 1 }]);
+
+    //   // Verify the error was logged
+    //   expect(mockLogger.warn).toHaveBeenCalledWith(
+    //     expect.stringContaining('no valid languages, skipping'),
+    //   );
+
+    //   // Verify no further processing happened
+    //   expect(service.persistScenarioEventTranslations).not.toHaveBeenCalled();
+    // });
+  });
+
+  describe('sanitizeMetadata', () => {
+    it('should remove null and undefined values from metadata', () => {
+      const input = {
+        title: 'Test Title',
+        description: null,
+        tags: undefined,
+        active: true,
+      };
+
+      const result = (service as any).sanitizeMetadata(input);
+
+      expect(result).toEqual({
+        title: 'Test Title',
+        active: true,
+      });
+    });
+
+    it('should trim string values', () => {
+      const input = {
+        title: '  Test Title  ',
+        description: '  Some description  ',
+        active: true,
+      };
+
+      const result = (service as any).sanitizeMetadata(input);
+
+      expect(result).toEqual({
+        title: 'Test Title',
+        description: 'Some description',
+        active: true,
+      });
+    });
+
+    it('should handle empty objects', () => {
+      const input = {};
+      const result = (service as any).sanitizeMetadata(input);
+      expect(result).toEqual({});
+    });
+
+    it('should handle null or undefined input', () => {
+      expect((service as any).sanitizeMetadata(null)).toEqual({});
+      expect((service as any).sanitizeMetadata(undefined)).toEqual({});
+    });
+  });
+
+  describe('buildTranslatedMetadataForLanguageCodes', () => {
+    let mockGoogleTranslationsService: any;
+    let mockLogger: any;
+    let buildTranslatedMetadataForLanguageCodes: Function;
+
+    beforeEach(() => {
+      mockGoogleTranslationsService = {
+        translateObjectToLanguages: jest.fn(),
+      };
+      mockLogger = {
+        debug: jest.fn(),
+        error: jest.fn(),
+      };
+
+      (service as any).googleTranslationsService =
+        mockGoogleTranslationsService;
+      (service as any).logger = mockLogger;
+
+      // Get reference to the private method
+      buildTranslatedMetadataForLanguageCodes = (
+        service as any
+      ).buildTranslatedMetadataForLanguageCodes.bind(service);
+    });
+
+    it('should return empty object when no language codes are provided', async () => {
+      const result = await buildTranslatedMetadataForLanguageCodes(
+        { title: 'Test' },
+        [],
+      );
+
+      expect(result).toEqual({});
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('no language codes provided'),
+      );
+    });
+
+    it('should return empty object when metadata is empty', async () => {
+      const result = await buildTranslatedMetadataForLanguageCodes({}, [
+        'en',
+        'es',
+      ]);
+
+      expect(result).toEqual({});
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('no metadata to translate'),
+      );
+    });
+
+    it('should call translation service with correct parameters', async () => {
+      const metadata = { title: 'Test Title', description: 'Test Description' };
+      const languageCodes = ['en', 'es'];
+
+      mockGoogleTranslationsService.translateObjectToLanguages.mockResolvedValue(
+        {
+          en: { ...metadata, translated: true },
+          es: { ...metadata, translated: true },
+        },
+      );
+
+      const result = await buildTranslatedMetadataForLanguageCodes(
+        metadata,
+        languageCodes,
+      );
+
+      expect(
+        mockGoogleTranslationsService.translateObjectToLanguages,
+      ).toHaveBeenCalledWith(metadata, ['en', 'es']);
+      expect(result).toEqual({
+        en: { ...metadata, translated: true },
+        es: { ...metadata, translated: true },
+      });
+    });
+
+    it('should handle translation service errors gracefully', async () => {
+      const metadata = { title: 'Test' };
+      const error = new Error('Translation failed');
+
+      mockGoogleTranslationsService.translateObjectToLanguages.mockRejectedValue(
+        error,
+      );
+
+      const result = await buildTranslatedMetadataForLanguageCodes(metadata, [
+        'en',
+      ]);
+
+      expect(result).toEqual({});
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('translation call failed'),
+        expect.objectContaining({
+          err: error,
+          languageCodes: ['en'],
+        }),
+      );
+    });
+
+    it('should trim and filter invalid language codes', async () => {
+      const metadata = { title: 'Test' };
+      const languageCodes = [' en ', '  ', 'es', 123, null, undefined];
+
+      mockGoogleTranslationsService.translateObjectToLanguages.mockResolvedValue(
+        {
+          en: { ...metadata, translated: true },
+          es: { ...metadata, translated: true },
+        },
+      );
+
+      await buildTranslatedMetadataForLanguageCodes(
+        metadata,
+        languageCodes as any,
+      );
+
+      expect(
+        mockGoogleTranslationsService.translateObjectToLanguages,
+      ).toHaveBeenCalledWith(
+        metadata,
+        ['en', 'es'], // Only valid, trimmed codes should be passed
+      );
+    });
+
+    it('should handle empty response from translation service', async () => {
+      const metadata = { title: 'Test' };
+
+      mockGoogleTranslationsService.translateObjectToLanguages.mockResolvedValue(
+        null,
+      );
+
+      const result = await buildTranslatedMetadataForLanguageCodes(metadata, [
+        'en',
+      ]);
+
+      expect(result).toEqual({});
     });
   });
 });

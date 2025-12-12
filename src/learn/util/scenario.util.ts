@@ -40,6 +40,7 @@ export const mapCreateScenarioRequestToEntity = (
         name: customField.name,
         value: customField.value,
       })),
+      languageVoices: scenario.languageVoices,
     },
   };
 };

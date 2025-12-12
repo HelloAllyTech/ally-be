@@ -4,11 +4,12 @@ export const SCENARIO_MANDATORY_FIELDS = [
   'coverImageUrl',
   'agentGoal',
   'lifeHistory',
-  'voiceId',
+  // 'voiceId',
   'name',
   'age',
   'gender',
   'currentLocation',
   'context',
   'openingStatements',
+  'languageVoices',
 ];

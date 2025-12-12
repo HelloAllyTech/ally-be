@@ -5,8 +5,6 @@ const PERMISSIONS = {
   VIEW_USERS: 'view:users',
   EDIT_USER_STATUS: 'edit:user:status',
   VIEW_USER_ROLES: 'view:user:roles',
-  EDIT_USER_PREFERENCES: 'edit:user:preferences',
-  VIEW_USER_PREFERENCES: 'view:user:preferences',
 
   // === CHAT MANAGEMENT ===
   VIEW_CHAT: 'view:chat',
@@ -64,6 +62,8 @@ const PERMISSIONS = {
   EDIT_SCENARIO_TENANT: 'edit:scenario-tenant',
   DELETE_SCENARIO_TENANT: 'delete:scenario-tenant',
   VIEW_ADMIN_SCENARIO_VOICE_LANGUAGES: 'view:admin:scenario-voice-languages',
+  EDIT_USER_PREFERENCES: 'edit:user:preferences',
+  VIEW_USER_PREFERENCES: 'view:user:preferences',
 
   // === SETTINGS ===
   VIEW_SETTINGS_SUMMARY_FIELDS: 'view:settings:summary-fields',
@@ -296,6 +296,8 @@ const LEARNER_PERMISSIONS = [
   PERMISSIONS.EDIT_SCENARIO_PATH,
 
   PERMISSIONS.REQUIRE_TERMS_AND_AGREEMENT_APPROVAL,
+  PERMISSIONS.EDIT_USER_PREFERENCES,
+  PERMISSIONS.VIEW_USER_PREFERENCES,
 ];
 
 const CLIENT_PERMISSIONS = [

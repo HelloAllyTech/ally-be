@@ -32,6 +32,7 @@ import {
 } from '../dto/session-event.dto';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
+import { SuccessResponse } from 'src/common/type/common.type';
 
 @ApiTags('SessionEvents')
 @ApiBearerAuth()
@@ -149,5 +150,12 @@ export class SessionEventController {
     return this.sessionEventService.deleteSessionEvents(
       deleteEventsDto.eventIds,
     );
+  }
+
+  @ApiOperation({ summary: 'Process passive session events' })
+  @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
+  @Post('translate-passive')
+  async translatePassiveSessionEvents(): Promise<SuccessResponse> {
+    return await this.sessionEventService.translatePassiveSessionEvents();
   }
 }

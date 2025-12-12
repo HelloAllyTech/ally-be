@@ -10,7 +10,7 @@ describe('SharedLanguageService', () => {
   const mockLanguage1: Languages = {
     id: 1,
     value: 'hi-IN',
-    label: 'Hindi',
+    label: 'Hindi (India)',
     translationCode: 'hi',
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -28,7 +28,7 @@ describe('SharedLanguageService', () => {
   const mockLanguage3: Languages = {
     id: 3,
     value: 'mr-IN',
-    label: 'Marathi',
+    label: 'Marathi (India)',
     translationCode: 'mr',
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -82,7 +82,7 @@ describe('SharedLanguageService', () => {
 
   describe('getValidLanguages', () => {
     it('should return filtered languages excluding English and with language map', async () => {
-      const languageIds = [1, 2, 3]; // Includes English (id: 2)
+      const languageIds = [1, 2, 3];
       const allLanguages = [mockLanguage1, mockLanguage2, mockLanguage3];
       const expectedFiltered = [mockLanguage1, mockLanguage3]; // English should be filtered out
 
@@ -98,7 +98,6 @@ describe('SharedLanguageService', () => {
       // Should include the default language (id: 2) in the query
       expect(languagesRepository.getLanguagesById).toHaveBeenCalledWith([
         ...languageIds,
-        2,
       ]);
     });
 
@@ -110,7 +109,7 @@ describe('SharedLanguageService', () => {
 
       expect(result.languages).toEqual([]);
       expect(result.languagesMap).toEqual({});
-      expect(languagesRepository.getLanguagesById).toHaveBeenCalledWith([2]); // Only the default language ID
+      expect(languagesRepository.getLanguagesById).toHaveBeenCalledWith([]); // Only the default language ID
     });
 
     it('should handle when only English is in the results', async () => {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Languages } from '../entity/languages.entity';
 import { LanguagesRepository } from '../repository/languages.repository';
+import { DEFAULT_LANGUAGE_CODE } from '../constants/language.constant';
 
 @Injectable()
 export class SharedLanguageService {
@@ -16,9 +17,11 @@ export class SharedLanguageService {
   }
 
   async getValidLanguages(languageIds: number[]) {
-    let languages = await this.getLanguagesByIds([...languageIds, 2]);
+    let languages = await this.getLanguagesByIds([...languageIds]);
 
-    languages = languages.filter((language) => !language.value.includes('en'));
+    languages = languages.filter(
+      (language) => !language.value.includes(DEFAULT_LANGUAGE_CODE),
+    );
     const languagesMap: Record<string, (typeof languages)[number]> = {};
 
     languages.forEach((language) => {

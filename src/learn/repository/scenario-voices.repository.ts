@@ -37,4 +37,63 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       query.limit(options.limit);
     }
   }
+
+  async getLanguagesWithVoices(active?: boolean) {
+    const query = this.createQueryBuilder()
+      .select('la.id', 'language_id')
+      .addSelect('la.value', 'value')
+      .addSelect('la.label', 'label')
+      .addSelect(
+        `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name))`,
+        'voices',
+      )
+      .from('languages', 'la')
+      .innerJoin('scenario_voices', 'sv', 'la.id = sv.language_id')
+      .groupBy('la.id, la.value, la.label')
+      .having('COUNT(sv.id) > 0');
+
+    if (active !== undefined) {
+      query.where('la.active = :active', { active });
+    } else {
+      query.where('la.active = true');
+    }
+
+    const rows = await query.getRawMany();
+
+    return rows.map((r) => ({
+      language_id: Number(r.language_id),
+      value: r.value,
+      label: r.label,
+      voices: typeof r.voices === 'string' ? JSON.parse(r.voices) : r.voices,
+    }));
+  }
+
+  async getAvailableLanguages(active?: boolean, hasVoices?: boolean) {
+    const query = this.createQueryBuilder()
+      .select('CAST(la.id AS INTEGER)', 'language_id')
+      .addSelect('la.value', 'value')
+      .addSelect('la.label', 'label')
+      // IMPORTANT: start from the languages table so `la` refers to languages
+      .from('languages', 'la')
+      .leftJoin('scenario_voices', 'sv', 'sv.language_id = la.id');
+
+    // always dedupe by language
+    query.groupBy('la.id, la.value, la.label');
+
+    // hasVoices filter (both male & female)
+    if (hasVoices) {
+      query
+        .andWhere(`sv.config->>'gender' IN ('male', 'female')`)
+        .having(`COUNT(DISTINCT LOWER(sv.config->>'gender')) = 2`);
+    }
+
+    // active filter — pass boolean (or cast if your column is text)
+    if (active !== undefined) {
+      query.andWhere('la.active = :active', { active });
+    } else {
+      query.andWhere('la.active = true');
+    }
+
+    return await query.getRawMany();
+  }
 }

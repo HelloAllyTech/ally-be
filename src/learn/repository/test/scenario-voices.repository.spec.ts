@@ -156,6 +156,7 @@ describe('ScenarioVoicesRepository', () => {
           config: {},
           createdAt: new Date(),
           updatedAt: new Date(),
+          languageId: 1,
         } as ScenarioVoices,
       ];
 

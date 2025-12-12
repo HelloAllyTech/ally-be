@@ -43,6 +43,9 @@ describe('ScenarioSessionRepository', () => {
   const mockCounselorId = 123;
   const mockScenarioSessionId = 'session-123';
   const mockScenarioId = 1;
+  const mockLanguageId = 4;
+  const mockVoiceId = 'voice-123';
+  const mockLanguage = 'en-IN';
   const mockUuid = 'uuid-123';
 
   const mockUuidV4 = uuidv4 as jest.Mock;
@@ -391,6 +394,9 @@ describe('ScenarioSessionRepository', () => {
     it('should create a new scenario session', async () => {
       const mockStartDto: StartScenarioSessionRequestDto = {
         scenarioId: mockScenarioId,
+        languageId: mockLanguageId,
+        voiceId: mockVoiceId,
+        language: mockLanguage,
       };
 
       mockUuidV4.mockReturnValue(mockUuid);
@@ -411,7 +417,11 @@ describe('ScenarioSessionRepository', () => {
         counselorId: mockCounselorId,
         startedAt: mockDate,
         tenantId: mockTenantId,
-        metadata: { sessionName: 'SS-1-2024-01-01' },
+        metadata: {
+          sessionName: 'SS-1-2024-01-01',
+          voiceId: mockVoiceId,
+          languageId: mockLanguageId,
+        },
       });
 
       expect(repository.query).toHaveBeenCalledWith(
@@ -426,6 +436,8 @@ describe('ScenarioSessionRepository', () => {
         tenantId: mockTenantId,
         metadata: {
           sessionName: 'SS-1-2024-01-01',
+          voiceId: mockVoiceId,
+          languageId: mockLanguageId,
         },
       });
       expect(repository.save).toHaveBeenCalled();
@@ -437,6 +449,9 @@ describe('ScenarioSessionRepository', () => {
     it('should handle sequence query with no result', async () => {
       const mockStartDto: StartScenarioSessionRequestDto = {
         scenarioId: mockScenarioId,
+        languageId: mockLanguageId,
+        voiceId: mockVoiceId,
+        language: mockLanguage,
       };
 
       mockUuidV4.mockReturnValue(mockUuid);
@@ -454,7 +469,11 @@ describe('ScenarioSessionRepository', () => {
         counselorId: mockCounselorId,
         startedAt: mockDate,
         tenantId: mockTenantId,
-        metadata: { sessionName: 'SS-undefined-2024-01-01' },
+        metadata: {
+          sessionName: 'SS-undefined-2024-01-01',
+          voiceId: mockVoiceId,
+          languageId: mockLanguageId,
+        },
       };
 
       const result = await repository.createScenarioSession(
@@ -473,6 +492,8 @@ describe('ScenarioSessionRepository', () => {
         tenantId: mockTenantId,
         metadata: {
           sessionName: 'SS-undefined-2024-01-01',
+          voiceId: mockVoiceId,
+          languageId: mockLanguageId,
         },
       });
 
