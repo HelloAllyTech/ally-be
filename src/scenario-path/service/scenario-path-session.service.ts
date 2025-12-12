@@ -293,7 +293,10 @@ export class ScenarioPathSessionService {
     if (nextScenarioData?.pathItem?.id) {
       nextScenarioSessionItem =
         await this.scenarioPathSessionItemRepository.findOne({
-          where: { scenarioPathItemId: nextScenarioData?.pathItem?.id },
+          where: {
+            scenarioPathItemId: nextScenarioData?.pathItem?.id,
+            userId: Number(userId),
+          },
         });
     }
 
