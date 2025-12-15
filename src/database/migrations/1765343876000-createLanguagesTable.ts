@@ -40,18 +40,18 @@ export class CreateLanguagesTable1765343876000 implements MigrationInterface {
 
     // Insert languages data
     await queryRunner.query(`
-      INSERT INTO "languages" ("value", "label", "translationCode") VALUES
-          (DEFAULT, 'en-IN', 'English (India)', true, 'en'),
-          (DEFAULT, 'hi-IN', 'Hindi (India)', true, 'hi'),
-          (DEFAULT, 'bn-IN', 'Bengali (India)', true, 'bn'),
-          (DEFAULT, 'te-IN', 'Telugu (India)', true, 'te'),
-          (DEFAULT, 'mr-IN', 'Marathi (India)', true, 'mr'),
-          (DEFAULT, 'ta-IN', 'Tamil (India)', true, 'ta'),
-          (DEFAULT, 'gu-IN', 'Gujarati (India)', true, 'gu'),
-          (DEFAULT, 'kn-IN', 'Kannada (India)', true, 'kn'),
-          (DEFAULT, 'ml-IN', 'Malayalam (India)', true, 'ml'),
-          (DEFAULT, 'pa-IN', 'Punjabi (India)', true, 'pa'),
-          (DEFAULT, 'or-IN', 'Odia (India)', true, 'or')
+       INSERT INTO "languages" ("value", "label", "active", "translationCode") VALUES
+          ('en-IN', 'English (India)', true, 'en'),
+          ('hi-IN', 'Hindi (India)', true, 'hi'),
+          ('bn-IN', 'Bengali (India)', true, 'bn'),
+          ('te-IN', 'Telugu (India)', true, 'te'),
+          ('mr-IN', 'Marathi (India)', true, 'mr'),
+          ('ta-IN', 'Tamil (India)', true, 'ta'),
+          ('gu-IN', 'Gujarati (India)', true, 'gu'),
+          ('kn-IN', 'Kannada (India)', true, 'kn'),
+          ('ml-IN', 'Malayalam (India)', true, 'ml'),
+          ('pa-IN', 'Punjabi (India)', true, 'pa'),
+          ('or-IN', 'Odia (India)', true, 'or');
     `);
 
     // Update existing scenario_voices with languageId 1 as we have only one language for now
