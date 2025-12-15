@@ -168,7 +168,10 @@ export class ScenarioSessionService {
     let sessionEvents = [];
 
     // If language is not English, get translated session events
-    if (startScenarioSessionDto.languageId !== DEFAULT_LANGUAGE_ID) {
+    if (
+      startScenarioSessionDto?.languageId &&
+      startScenarioSessionDto?.languageId !== DEFAULT_LANGUAGE_ID
+    ) {
       sessionEvents =
         await this.sessionEventTranslationService.getSessionEventsTranslationsByScenarioId(
           startScenarioSessionDto.scenarioId,
@@ -184,7 +187,7 @@ export class ScenarioSessionService {
     // Determine voiceId from scenario metadata
     const voiceId =
       scenario?.metadata?.languageVoices?.[
-        startScenarioSessionDto.languageId
+        startScenarioSessionDto?.languageId
       ] ?? scenario?.metadata?.voiceId;
 
     if (!voiceId) {
@@ -212,8 +215,8 @@ export class ScenarioSessionService {
     try {
       // To add language and languageId to scenario metadata
       if (scenario?.metadata) {
-        scenario.metadata.language = startScenarioSessionDto.language;
-        scenario.metadata.languageId = startScenarioSessionDto.languageId;
+        scenario.metadata.language = startScenarioSessionDto?.language;
+        scenario.metadata.languageId = startScenarioSessionDto?.languageId;
       }
 
       // Prepare room metadata with events and dependencies

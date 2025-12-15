@@ -31,6 +31,7 @@ export class StartScenarioSessionRequestDto {
     description: 'Language Code',
     example: 'en-IN, en-US',
   })
+  @IsOptional()
   @IsString()
   language!: string;
 
@@ -38,6 +39,7 @@ export class StartScenarioSessionRequestDto {
     description: 'Language ID',
     example: 4,
   })
+  @IsOptional()
   @IsNumber()
   languageId!: number;
 

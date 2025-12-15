@@ -127,7 +127,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         createScenarioSessionDto.scenarioPathSessionItemId,
       metadata: {
         sessionName: `SS-${sessionId}-${date}`,
-        languageId: createScenarioSessionDto.languageId,
+        languageId: createScenarioSessionDto?.languageId,
         voiceId: createScenarioSessionDto.voiceId,
       },
     });

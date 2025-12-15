@@ -451,26 +451,6 @@ export class ScenarioService {
         await scenarioTriggerWarningsRepo.save(scenarioTriggerWarnings);
       }
 
-      await this.persistTranslationsForScenarios(
-        savedScenarios,
-        (scenario) =>
-          this.sanitizeMetadata({
-            title: scenario.title,
-            description: scenario.description,
-            tone: scenario.metadata?.tone,
-            emotionalNeeds: scenario.metadata?.emotionalNeeds,
-            personality: scenario.metadata?.personality,
-            lifeHistory: scenario.metadata?.lifeHistory,
-            coreMemories: scenario.metadata?.coreMemories,
-            startingState: scenario.metadata?.startingState,
-            agentGoal: scenario.metadata?.agentGoal,
-            context: scenario.metadata?.context,
-            sessionBehaviorGuidelines:
-              scenario.metadata?.sessionBehaviorGuidelines,
-          }),
-        (scenario) => scenario.metadata?.languageVoices,
-      );
-
       return savedScenarios;
     });
   }
@@ -601,26 +581,6 @@ export class ScenarioService {
 
       const scenarioRepository = entityManager.getRepository(Scenarios);
       const updated = await scenarioRepository.update(id, updateData);
-      await this.persistTranslationsForScenarios(
-        [scenario], // single-item array so helper can reuse same logic
-        () =>
-          this.sanitizeMetadata({
-            title: updateScenarioDto.title,
-            description: updateScenarioDto.description,
-            tone: updateScenarioDto.tone,
-            emotionalNeeds: updateScenarioDto.emotionalNeeds,
-            personality: updateScenarioDto.personality,
-            lifeHistory: scenario.metadata?.lifeHistory,
-            coreMemories: updateScenarioDto.coreMemories,
-            startingState: updateScenarioDto.startingState,
-            agentGoal: updateScenarioDto.agentGoal,
-            context: updateScenarioDto.context,
-            sessionBehaviorGuidelines:
-              updateScenarioDto.sessionBehaviorGuidelines,
-          }),
-        () => updateScenarioDto.languageVoices,
-        // this.scenarioTranslationsRepository.updateScenarioTranslations,
-      );
 
       const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
       const existingScenarioTerminationEvent = await scenarioEventsRepo.findOne(
@@ -866,8 +826,6 @@ export class ScenarioService {
       });
 
       await scenarioEventsRepo.save(scenarioEvents);
-
-      await this.createUpdateScenarioEventsTranslations(scenarioEvents);
 
       return {
         scenarioId,

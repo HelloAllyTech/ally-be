@@ -21,14 +21,6 @@ export class GoogleTranslationsService {
 
     // Instantiate the v3 client
     this.client = new TranslationServiceClient();
-
-    // Check for required environment variables (optional, but recommended)
-    if (this.config.googleCloudTranslationConfig.credentials) {
-      console.log('GOOGLE_APPLICATION_CREDENTIALS is set!');
-    }
-    if (this.projectId) {
-      console.log('PROJECT_ID is set!');
-    }
   }
 
   // Recursively extract strings and store their path

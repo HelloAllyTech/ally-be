@@ -4,7 +4,6 @@ export const SCENARIO_MANDATORY_FIELDS = [
   'coverImageUrl',
   'agentGoal',
   'lifeHistory',
-  // 'voiceId',
   'name',
   'age',
   'gender',
