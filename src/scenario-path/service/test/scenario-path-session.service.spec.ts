@@ -801,55 +801,6 @@ describe('ScenarioPathSessionService', () => {
       );
     });
 
-    it('should unlock existing locked next session item', async () => {
-      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
-      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
-      scenarioPathSessionItemRepository.findOne
-        .mockResolvedValueOnce(mockSessionItem as any)
-        .mockResolvedValueOnce({
-          id: 'session-item-2',
-          status: SessionItemStatus.LOCKED,
-        } as any);
-      scenarioPathSharedService.getScenarioPathItemById.mockResolvedValue(
-        mockPathItem as any,
-      );
-      repository.findOne.mockResolvedValue(mockPathSession as any);
-      scenarioPathSharedService.getNextPathItemByCurrentItemId.mockResolvedValue(
-        { id: 'path-item-2' } as any,
-      );
-
-      const mockSessionItemRepo = {
-        update: jest.fn().mockResolvedValue({}),
-      };
-      const mockSessionRepo = {
-        update: jest.fn().mockResolvedValue({}),
-      };
-
-      const mockEntityManager = {
-        getRepository: jest.fn((entity) => {
-          if (entity === ScenarioPathSessionItem) return mockSessionItemRepo;
-          if (entity === ScenarioPathSession) return mockSessionRepo;
-        }),
-      };
-
-      mockDataSource.transaction.mockImplementation(async (callback) =>
-        callback(mockEntityManager as any),
-      );
-
-      await service.handleEndScenarioPathSession({
-        scenarioPathSessionItemId: 'session-item-1',
-        score: 80,
-        callDuration: 10000,
-      });
-
-      expect(mockSessionItemRepo.update).toHaveBeenCalledWith(
-        'session-item-2',
-        {
-          status: SessionItemStatus.UNLOCKED,
-        },
-      );
-    });
-
     it('should throw UnauthorizedException when user is not authenticated', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
 

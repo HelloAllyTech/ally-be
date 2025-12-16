@@ -16,7 +16,7 @@ import { UpdateScenarioDto } from 'src/learn/dto/update-scenario.dto';
 import { CreateScenarioDto } from 'src/learn/dto/create-scenario.dto';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
-import { ScenarioStatus } from 'src/learn/enum/scenario.status.enum';
+import { ScenarioStatus } from 'src/learn/type/scenario.type';
 import { ScenarioEventsRepository } from 'src/learn/repository/scenario-events.repository';
 import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
 import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
@@ -133,6 +133,9 @@ describe('ScenarioService', () => {
       aws: {
         region: 'us-east-1',
       },
+      featureFlag: {
+        scenarioCustomFields: true,
+      },
     };
 
     const mockTenantService = {
@@ -152,6 +155,11 @@ describe('ScenarioService', () => {
 
     const mockTriggerWarningsService = {
       getTriggerWarnings: jest.fn(),
+      getTriggerWarningsByIds: jest
+        .fn()
+        .mockImplementation((ids: string[]) =>
+          Promise.resolve(ids.map((id) => ({ id }))),
+        ),
       createTriggerWarning: jest.fn(),
       assignTriggerWarningsToScenario: jest.fn(),
       addScenarioTriggerWarnings: jest.fn(),
@@ -1951,7 +1959,7 @@ describe('ScenarioService', () => {
     it('should update scenario successfully', async () => {
       const updateDto: UpdateScenarioDto = {
         title: 'Updated Title',
-        agentGoal: 'Updated Goal',
+        name: 'Updated Name',
       };
       const existingScenario = { ...mockScenario, isGlobal: false };
       scenariosRepository.findOne.mockResolvedValue(existingScenario);
@@ -2050,7 +2058,7 @@ describe('ScenarioService', () => {
       it('should set customFields as undefined in metadata when customFields is not provided', async () => {
         const updateDto: UpdateScenarioDto = {
           title: 'Updated Title',
-          agentGoal: 'Updated Goal',
+          name: 'Updated Name',
         };
         const existingScenario = { ...mockScenario, isGlobal: false };
         scenariosRepository.findOne.mockResolvedValue(existingScenario);

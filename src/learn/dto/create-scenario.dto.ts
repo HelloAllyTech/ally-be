@@ -12,7 +12,11 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-import { ScenarioStatus } from '../enum/scenario.status.enum';
+import {
+  ScenarioDifficultyLevel,
+  ScenarioResponseLength,
+  ScenarioStatus,
+} from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
 
@@ -180,6 +184,34 @@ export class CreateScenarioDto {
   @IsString()
   @IsOptional()
   startingState?: string;
+
+  // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove coreMemories, lifeHistory, startingState, emotionalNeeds, sessionBehaviorGuidelines, agentGoal
+  @ApiProperty({
+    description: 'Difficulty level of the scenario',
+    example: ScenarioDifficultyLevel.EASY,
+    enum: ScenarioDifficultyLevel,
+  })
+  @IsEnum(ScenarioDifficultyLevel)
+  @IsOptional()
+  difficultyLevel?: ScenarioDifficultyLevel;
+
+  @ApiProperty({
+    description: 'Response length of the scenario',
+    example: ScenarioResponseLength.VERY_BRIEF,
+    enum: ScenarioResponseLength,
+  })
+  @IsEnum(ScenarioResponseLength)
+  @IsOptional()
+  responseLength?: ScenarioResponseLength;
+
+  @ApiProperty({
+    description: 'Your dialogues',
+    example: ['Absolutely', 'Probably'],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  sampleDialogues?: string[];
 
   @ApiProperty({
     description: 'Emotional needs of the AI client persona',

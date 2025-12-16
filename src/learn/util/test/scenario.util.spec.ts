@@ -6,7 +6,7 @@ import {
 import { CreateScenarioDto } from '../../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../../dto/create-scenarios.dto';
 import { Scenarios } from '../../entity/scenarios.entity';
-import { ScenarioStatus } from '../../enum/scenario.status.enum';
+import { ScenarioStatus } from '../../type/scenario.type';
 import {
   Gender,
   GenderIdentity,
@@ -58,9 +58,8 @@ describe('Scenario Util', () => {
         status: scenario.status,
         prompt: scenario.prompt,
         isGlobal: scenario.isGlobal,
+        difficultyLevel: scenario.difficultyLevel,
         metadata: {
-          agentGoal: scenario.agentGoal,
-          lifeHistory: scenario.lifeHistory,
           voiceId: scenario.voiceId,
           name: scenario.name,
           age: scenario.age,
@@ -70,13 +69,11 @@ describe('Scenario Util', () => {
           currentLocation: scenario.currentLocation,
           profession: scenario.profession,
           context: scenario.context,
-          sessionBehaviorGuidelines: scenario.sessionBehaviorGuidelines,
-          coreMemories: scenario.coreMemories,
-          personality: scenario.personality,
-          startingState: scenario.startingState,
-          emotionalNeeds: scenario.emotionalNeeds,
           tone: scenario.tone,
           openingStatements: scenario.openingStatements,
+          sampleDialogues: scenario.sampleDialogues,
+          responseLength: scenario.responseLength,
+          customFields: scenario.customFields,
         },
       });
     });

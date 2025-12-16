@@ -1,4 +1,4 @@
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
@@ -20,6 +20,12 @@ export class TriggerWarningsService {
       name,
       options,
     );
+  }
+
+  async getTriggerWarningsByIds(ids: string[]) {
+    return await this.triggerWarningsRepository.find({
+      where: { id: In(ids) },
+    });
   }
 
   async createTriggerWarning(createTriggerWarningDto: CreateTriggerWarningDto) {

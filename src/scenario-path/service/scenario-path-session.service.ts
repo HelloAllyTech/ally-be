@@ -408,6 +408,9 @@ export class ScenarioPathSessionService {
             status: SessionItemStatus.COMPLETED,
           },
         );
+        this.logger.info(
+          `Updated scenario path session item status to COMPLETED for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
+        );
 
         const nextScenarioPathItem =
           await this.scenarioPathSharedService.getNextPathItemByCurrentItemId(
@@ -422,7 +425,7 @@ export class ScenarioPathSessionService {
               (currentScenarioPathSession?.completedScenarios ?? 0) + 1,
           });
           this.logger.info(
-            `All scenario path items are complete for scenarioPathSessionId: ${currentScenarioPathSession.id}`,
+            `Updated scenario path session to completed for scenarioPathSessionId: ${currentScenarioPathSession.id}`,
           );
           return;
         }
@@ -437,6 +440,9 @@ export class ScenarioPathSessionService {
               userId: Number(userId),
             },
           });
+
+        // If no entry created for next scenario path item, create one
+        // Wouldnt reach ideally
         if (!nextScenarioPathSessionItem?.id) {
           // No entry created for next scenario
           const nextSessionItemEntity = scenarioPathSessionItemRepo.create({
@@ -447,26 +453,9 @@ export class ScenarioPathSessionService {
           });
           await scenarioPathSessionItemRepo.save(nextSessionItemEntity);
           this.logger.info(
-            `Unlocked next scenario path item for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
+            `Created and unlocked next scenario path item for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
           );
           return;
-        }
-        if (
-          nextScenarioPathSessionItem?.id &&
-          nextScenarioPathSessionItem?.status === SessionItemStatus.LOCKED
-        ) {
-          this.logger.info(
-            `Next scenario path item is locked for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
-          );
-          await scenarioPathSessionItemRepo.update(
-            nextScenarioPathSessionItem.id,
-            {
-              status: SessionItemStatus.UNLOCKED,
-            },
-          );
-          this.logger.info(
-            `Unlocked next scenario path item for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
-          );
         }
         return;
       },

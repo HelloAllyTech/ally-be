@@ -268,10 +268,10 @@ export class AppConfigService {
 
   get featureFlag() {
     return {
-      triggerWarning: this.configService.get<boolean>(
-        'FEATURE_TRIGGER_WARNING',
-        false,
-      ),
+      // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove this feature flag
+      scenarioCustomFields:
+        this.configService.get<string>('FEATURE_SCENARIO_CUSTOM_FIELDS') ===
+        'true',
       termsAndAgreement:
         this.configService.get<string>('FEATURE_TERMS_AND_AGREEMENT') ===
         'true',

@@ -6,7 +6,7 @@ import { ScenarioSessionRepository } from '../../repository/scenario-session.rep
 import { ScenarioPathItemRepository } from 'src/scenario-path/repository/scenario-path-item.repository';
 import { Scenarios } from '../../entity/scenarios.entity';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
-import { ScenarioStatus } from '../../enum/scenario.status.enum';
+import { ScenarioStatus } from '../../type/scenario.type';
 import { ScenarioFilters } from 'src/learn/type/scenario-filter.type';
 
 describe('ScenarioSharedService', () => {

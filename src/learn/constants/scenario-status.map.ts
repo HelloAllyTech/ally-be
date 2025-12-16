@@ -1,4 +1,4 @@
-import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { ScenarioStatus } from '../type/scenario.type';
 
 export const SCENARIO_STATUS_MAP = new Map<ScenarioStatus, ScenarioStatus[]>([
   [ScenarioStatus.DRAFT, [ScenarioStatus.DRAFT, ScenarioStatus.ACTIVE]],

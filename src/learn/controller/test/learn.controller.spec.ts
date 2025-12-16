@@ -6,7 +6,7 @@ import { ScenarioTenantService } from '../../service/scenario-tenant.service';
 import { TriggerWarningsService } from '../../service/trigger-warnings.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { TokenUser } from 'src/auth/type/auth.types';
-import { ScenarioStatus } from '../../enum/scenario.status.enum';
+import { ScenarioStatus } from '../../type/scenario.type';
 import {
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
