@@ -162,10 +162,9 @@ export const LANGUAGE_STT_PROVIDER_CONFIG = {
   },
   'mr-IN': {
     stt: {
-      provider: 'google',
+      provider: 'sarvam',
       config: {
-        model: 'chirp_2',
-        location: 'asia-southeast1',
+        model: 'saarika:v2.5',
       },
     },
   },
