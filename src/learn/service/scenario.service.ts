@@ -469,6 +469,9 @@ export class ScenarioService {
             context: scenario.metadata?.context,
             sessionBehaviorGuidelines:
               scenario.metadata?.sessionBehaviorGuidelines,
+            openingStatements: scenario.metadata?.openingStatements,
+            sexualOrientation: scenario.metadata?.sexualOrientation,
+            genderIdentity: scenario.metadata?.genderIdentity,
           }),
         (scenario) => scenario.metadata?.languageVoices,
       );
@@ -614,13 +617,16 @@ export class ScenarioService {
               tone: updateScenarioDto.tone,
               emotionalNeeds: updateScenarioDto.emotionalNeeds,
               personality: updateScenarioDto.personality,
-              lifeHistory: scenario.metadata?.lifeHistory,
+              lifeHistory: updateScenarioDto.lifeHistory,
               coreMemories: updateScenarioDto.coreMemories,
               startingState: updateScenarioDto.startingState,
               agentGoal: updateScenarioDto.agentGoal,
               context: updateScenarioDto.context,
               sessionBehaviorGuidelines:
                 updateScenarioDto.sessionBehaviorGuidelines,
+              openingStatements: updateScenarioDto.openingStatements,
+              sexualOrientation: updateScenarioDto.sexualOrientation,
+              genderIdentity: updateScenarioDto.genderIdentity,
             }),
           () => updateScenarioDto.languageVoices,
         );

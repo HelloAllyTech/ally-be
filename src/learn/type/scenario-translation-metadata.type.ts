@@ -10,4 +10,7 @@ export type MetadataShape = {
   agentGoal?: string;
   context?: string;
   sessionBehaviorGuidelines?: string;
+  openingStatements?: string[];
+  sexualOrientation?: string;
+  genderIdentity?: string;
 };

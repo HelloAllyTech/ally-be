@@ -237,4 +237,7 @@ export const SCENARIO_SESSION_TRANSLATABLE_FIELDS = [
   'startingState',
   'emotionalNeeds',
   'sessionBehaviorGuidelines',
+  'openingStatements',
+  'sexualOrientation',
+  'genderIdentity',
 ];
