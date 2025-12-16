@@ -159,6 +159,10 @@ export class SessionEventService {
       updatedBy: userId,
     });
 
+    this.sessionEventTranslationService.createUpdateSessionEventTranslations([
+      { ...formattedEventDto, id },
+    ]);
+
     return updated.affected !== 0;
   }
 

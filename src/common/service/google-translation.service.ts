@@ -19,6 +19,7 @@ export class GoogleTranslationsService {
   constructor(private readonly config: AppConfigService) {
     this.projectId = this.config.googleCloudTranslationConfig.projectId || '';
 
+    // Google only accepts credentials from a local JSON file path (not HTTP URLs or other sources).
     // Instantiate the v3 client
     this.client = new TranslationServiceClient();
   }

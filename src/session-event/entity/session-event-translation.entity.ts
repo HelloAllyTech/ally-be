@@ -1,6 +1,6 @@
 import {
   Entity,
-  PrimaryColumn,
+  PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
   UpdateDateColumn,
@@ -13,7 +13,7 @@ import {
   'languageId',
 ])
 export class SessionEventsTranslation {
-  @PrimaryColumn({ type: 'int' })
+  @PrimaryGeneratedColumn({ type: 'int' })
   id!: number;
 
   @Column({ type: 'varchar', name: 'sessionEventId' })

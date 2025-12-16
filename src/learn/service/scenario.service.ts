@@ -451,6 +451,28 @@ export class ScenarioService {
         await scenarioTriggerWarningsRepo.save(scenarioTriggerWarnings);
       }
 
+      await this.persistTranslationsForScenarios(
+        savedScenarios.filter(
+          (scenario) => scenario.status == ScenarioStatus.ACTIVE,
+        ),
+        (scenario) =>
+          this.sanitizeMetadata({
+            title: scenario.title,
+            description: scenario.description,
+            tone: scenario.metadata?.tone,
+            emotionalNeeds: scenario.metadata?.emotionalNeeds,
+            personality: scenario.metadata?.personality,
+            lifeHistory: scenario.metadata?.lifeHistory,
+            coreMemories: scenario.metadata?.coreMemories,
+            startingState: scenario.metadata?.startingState,
+            agentGoal: scenario.metadata?.agentGoal,
+            context: scenario.metadata?.context,
+            sessionBehaviorGuidelines:
+              scenario.metadata?.sessionBehaviorGuidelines,
+          }),
+        (scenario) => scenario.metadata?.languageVoices,
+      );
+
       return savedScenarios;
     });
   }
@@ -581,6 +603,28 @@ export class ScenarioService {
 
       const scenarioRepository = entityManager.getRepository(Scenarios);
       const updated = await scenarioRepository.update(id, updateData);
+
+      if (scenario.status == ScenarioStatus.ACTIVE) {
+        await this.persistTranslationsForScenarios(
+          [scenario], // single-item array so helper can reuse same logic
+          () =>
+            this.sanitizeMetadata({
+              title: updateScenarioDto.title,
+              description: updateScenarioDto.description,
+              tone: updateScenarioDto.tone,
+              emotionalNeeds: updateScenarioDto.emotionalNeeds,
+              personality: updateScenarioDto.personality,
+              lifeHistory: scenario.metadata?.lifeHistory,
+              coreMemories: updateScenarioDto.coreMemories,
+              startingState: updateScenarioDto.startingState,
+              agentGoal: updateScenarioDto.agentGoal,
+              context: updateScenarioDto.context,
+              sessionBehaviorGuidelines:
+                updateScenarioDto.sessionBehaviorGuidelines,
+            }),
+          () => updateScenarioDto.languageVoices,
+        );
+      }
 
       const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
       const existingScenarioTerminationEvent = await scenarioEventsRepo.findOne(
@@ -827,6 +871,8 @@ export class ScenarioService {
 
       await scenarioEventsRepo.save(scenarioEvents);
 
+      await this.createUpdateScenarioEventsTranslations(scenarioEvents);
+
       return {
         scenarioId,
         events: scenarioEvents.map((event) => ({
@@ -1004,6 +1050,9 @@ export class ScenarioService {
     metadataExtractor: (scenario: Scenarios) => MetadataShape,
     languageVoicesExtractor: (scenario: Scenarios) => any,
   ) {
+    if (!scenarios.length) {
+      return;
+    }
     // If you expect many scenarios at once and want fewer DB calls, implement batching here.
     for (const scenario of scenarios) {
       try {
@@ -1023,11 +1072,7 @@ export class ScenarioService {
         const languageIds = Object.keys(languageVoices).map(Number);
 
         const { languages } =
-          await this.sharedLanguageService.getValidLanguages([
-            ...languageIds,
-            2,
-            11,
-          ]);
+          await this.sharedLanguageService.getValidLanguages(languageIds);
 
         const languagesFiltered = (languages ?? []).filter(
           (l: any) => l && l.translationCode && l.translationCode.trim() !== '',
