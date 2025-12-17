@@ -16,7 +16,11 @@ export class UserPreferencesRepository extends Repository<UserPreferences> {
       .getOne();
   }
 
-  async upsertUserPreferences(userId: number, incoming: Record<string, any>) {
+  async upsertUserPreferences(
+    userId: number,
+    tenantId: string,
+    incoming: Record<string, any>,
+  ) {
     const jsonStr = JSON.stringify(incoming);
 
     const result = await this.createQueryBuilder()
@@ -25,6 +29,7 @@ export class UserPreferencesRepository extends Repository<UserPreferences> {
       .values({
         // use parameter binding for scalar value
         userId: () => ':userId',
+        tenantId: () => ':tenantId',
         // cast parameter to jsonb
         data: () => 'CAST(:data AS jsonb)',
         createdAt: () => 'now()',
@@ -36,8 +41,8 @@ export class UserPreferencesRepository extends Repository<UserPreferences> {
          SET "data" = "user_preferences"."data" || excluded."data",
              "updatedAt" = now()`,
       )
-      .returning(['id', 'userId', 'data', 'createdAt', 'updatedAt'])
-      .setParameters({ userId, data: jsonStr })
+      .returning(['id', 'userId', 'tenantId', 'data', 'createdAt', 'updatedAt'])
+      .setParameters({ userId, tenantId, data: jsonStr })
       .execute();
 
     return result;

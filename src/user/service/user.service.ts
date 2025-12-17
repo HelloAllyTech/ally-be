@@ -545,10 +545,12 @@ export class UserService {
 
   async updateUserPreferences(
     userId: number,
+    tenantId: string,
     updateUserPreferencesDto: UpdateUserPreferencesDto,
   ): Promise<UserUpdateResponseDto> {
     await this.userPreferencesRepository.upsertUserPreferences(
       userId,
+      tenantId,
       updateUserPreferencesDto,
     );
 

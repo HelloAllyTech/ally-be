@@ -31,7 +31,7 @@ describe('ScenarioEventsTranslationsRepository', () => {
       const eventId = 'evt-1';
       const mockTranslations = [
         {
-          id: 1,
+          id: 'string',
           scenarioId: 1,
           eventId: 'event-1',
           languageId: 2,

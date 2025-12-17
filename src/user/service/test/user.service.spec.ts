@@ -986,6 +986,7 @@ describe('UserService', () => {
     const mockUserPreferences = {
       id: 1,
       userId: 1,
+      tenantId: 'tenant123',
       data: { default_language_id: 1 },
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -1019,12 +1020,17 @@ describe('UserService', () => {
 
         const result = await service.updateUserPreferences(
           userId,
+          'tenant123',
           mockUpdateUserPreferencesDto,
         );
 
         expect(
           mockUserPreferencesRepository.upsertUserPreferences,
-        ).toHaveBeenCalledWith(userId, mockUpdateUserPreferencesDto);
+        ).toHaveBeenCalledWith(
+          userId,
+          'tenant123',
+          mockUpdateUserPreferencesDto,
+        );
         expect(result).toEqual({ success: true });
       });
 
@@ -1036,7 +1042,11 @@ describe('UserService', () => {
         );
 
         await expect(
-          service.updateUserPreferences(userId, mockUpdateUserPreferencesDto),
+          service.updateUserPreferences(
+            userId,
+            'tenant123',
+            mockUpdateUserPreferencesDto,
+          ),
         ).rejects.toThrow(error);
       });
     });

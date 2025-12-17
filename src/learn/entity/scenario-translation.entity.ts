@@ -2,9 +2,13 @@ import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 
 @Entity('scenario_translations')
-@Index(['scenarioId', 'languageId'], { unique: true })
+@Index(
+  'uq_scenario_translations_scenarioId_languageId_idx',
+  ['scenarioId', 'languageId'],
+  { unique: true },
+)
 export class ScenarioTranslations extends BaseWithoutTenantEntity {
-  @PrimaryGeneratedColumn()
+  @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Column()

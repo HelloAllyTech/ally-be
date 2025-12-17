@@ -113,6 +113,7 @@ describe('UserPreferencesRepository', () => {
         result: {
           id: 11,
           userId: 321,
+          tenantId: 'tenant123',
           data: incoming,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -158,7 +159,7 @@ describe('UserPreferencesRepository', () => {
           execute,
         } as QB);
 
-      const res = await repo.upsertUserPreferences(321, incoming);
+      const res = await repo.upsertUserPreferences(321, 'tenant123', incoming);
 
       expect(createQueryBuilder).toHaveBeenCalled();
       expect(insert).toHaveBeenCalled();
@@ -170,12 +171,14 @@ describe('UserPreferencesRepository', () => {
       expect(returning).toHaveBeenCalledWith([
         'id',
         'userId',
+        'tenantId',
         'data',
         'createdAt',
         'updatedAt',
       ]);
       expect(setParameters).toHaveBeenCalledWith({
         userId: 321,
+        tenantId: 'tenant123',
         data: JSON.stringify(incoming),
       });
       expect(execute).toHaveBeenCalled();
@@ -219,12 +222,13 @@ describe('UserPreferencesRepository', () => {
         execute,
       } as QB);
 
-      await expect(repo.upsertUserPreferences(7, incoming)).rejects.toThrow(
-        'db error',
-      );
+      await expect(
+        repo.upsertUserPreferences(7, 'tenant123', incoming),
+      ).rejects.toThrow('db error');
 
       expect(setParameters).toHaveBeenCalledWith({
         userId: 7,
+        tenantId: 'tenant123',
         data: JSON.stringify(incoming),
       });
       expect(execute).toHaveBeenCalled();

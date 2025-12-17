@@ -227,7 +227,11 @@ export class UserController {
     @CurrentUser() tokenUser: TokenUser,
     @Body() body: UpdateUserPreferencesDto,
   ): Promise<UserUpdateResponseDto> {
-    return this.userService.updateUserPreferences(tokenUser.id, body);
+    return this.userService.updateUserPreferences(
+      tokenUser.id,
+      tokenUser.tenantId,
+      body,
+    );
   }
 
   @Get('/me/preferences')

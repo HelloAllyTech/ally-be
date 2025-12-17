@@ -15,6 +15,6 @@ export class ScenarioVoices extends BaseWithoutTenantEntity {
   @Column({ type: 'jsonb', nullable: true })
   config?: Record<string, any>;
 
-  @Column()
+  @Column({ default: 1 }) // en-IN/English India (default language)
   languageId!: number;
 }

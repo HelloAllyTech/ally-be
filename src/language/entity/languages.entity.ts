@@ -1,25 +1,21 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('languages')
-export class Languages {
-  @PrimaryGeneratedColumn('increment')
+@Index('uq_languages_value_idx', ['value'], { unique: true })
+export class Languages extends BaseWithoutTenantEntity {
+  @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column({ type: 'text' })
+  @Column()
   value!: string;
 
-  @Column({ type: 'text' })
+  @Column()
   label!: string;
 
   @Column({ type: 'boolean', default: true })
   active!: boolean;
 
-  @Column({ name: 'createdat', type: 'timestamptz', default: () => 'now()' })
-  createdAt!: Date;
-
-  @Column({ name: 'updatedat', type: 'timestamptz', default: () => 'now()' })
-  updatedAt!: Date;
-
-  @Column({ name: 'translationCode', type: 'text', default: '' })
+  @Column({ default: '' })
   translationCode!: string;
 }

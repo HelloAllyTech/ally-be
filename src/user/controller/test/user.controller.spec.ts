@@ -557,6 +557,7 @@ describe('UserController', () => {
 
         expect(mockUserService.updateUserPreferences).toHaveBeenCalledWith(
           mockTokenUser.id,
+          mockTokenUser.tenantId,
           updateDto,
         );
         expect(result).toEqual(expectedResponse);

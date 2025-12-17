@@ -1,36 +1,31 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  Unique,
-  CreateDateColumn,
-  UpdateDateColumn,
-} from 'typeorm';
+import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
 
 @Entity('scenario_events_translations')
-@Unique('ux_scenario_event_lang', ['scenarioId', 'eventId', 'languageId'])
-export class ScenarioEventsTranslation {
-  @PrimaryGeneratedColumn()
-  id!: number;
+@Index(
+  'uq_scenario_events_translations_scenarioId_eventId_languageId_idx',
+  ['scenarioId', 'eventId', 'languageId'],
+  {
+    unique: true,
+  },
+)
+// @Index('uq_user_preferences_user_id_idx', ['userId'], { unique: true })
+export class ScenarioEventsTranslation extends BaseWithoutTenantEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
 
-  @Column({ type: 'int', name: 'scenarioId' })
+  @Column()
   scenarioId!: number;
 
-  @Column({ type: 'varchar', name: 'eventId' })
+  @Column()
   eventId!: string;
 
-  @Column({ type: 'int', name: 'languageId' })
+  @Column()
   languageId!: number;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ nullable: true })
   message?: string;
 
-  @Column({ type: 'varchar', nullable: true, name: 'branchInstruction' })
+  @Column({ nullable: true })
   branchInstruction?: string;
-
-  @CreateDateColumn({ type: 'timestamp', name: 'createdAt' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ type: 'timestamp', name: 'updatedAt' })
-  updatedAt!: Date;
 }

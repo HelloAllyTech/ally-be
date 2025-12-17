@@ -1,39 +1,30 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  Unique,
-} from 'typeorm';
+import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
 
 @Entity({ name: 'session_events_translations' })
-@Unique('session_events_translations_sessionEventId_languageId_key', [
-  'sessionEventId',
-  'languageId',
-])
-export class SessionEventsTranslation {
-  @PrimaryGeneratedColumn({ type: 'int' })
-  id!: number;
+@Index(
+  'uq_session_events_translations_sessionEventId_languageId_idx',
+  ['sessionEventId', 'languageId'],
+  {
+    unique: true,
+  },
+)
+export class SessionEventsTranslation extends BaseWithoutTenantEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
 
-  @Column({ type: 'varchar', name: 'sessionEventId' })
+  @Column()
   sessionEventId!: string;
 
-  @Column({ type: 'int', name: 'languageId' })
+  @Column()
   languageId!: number;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ nullable: true })
   message?: string;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ nullable: true })
   branchInstruction?: string;
 
   @Column({ type: 'jsonb', nullable: true })
   detectionData?: Record<string, any>;
-
-  @CreateDateColumn({ name: 'createdAt' })
-  createdAt!: Date;
-
-  @UpdateDateColumn({ name: 'updatedAt' })
-  updatedAt!: Date;
 }
