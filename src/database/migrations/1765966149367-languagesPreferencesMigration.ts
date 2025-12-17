@@ -109,5 +109,9 @@ export class LanguagesPreferencesMigration1765966149367
     ALTER TABLE "scenario_voices"
     DROP COLUMN "languageId"
   `);
+
+    await queryRunner.query(`
+    TRUNCATE TABLE "languages"
+  `);
   }
 }
