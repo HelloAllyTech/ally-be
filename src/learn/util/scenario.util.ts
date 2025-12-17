@@ -74,7 +74,7 @@ export const mapCreateScenarioRequestToEntity = (
       context: scenario.context,
       tone: scenario.tone,
       openingStatements: scenario.openingStatements,
-      sampleDialogues: scenario.sampleDialogues,
+      agentDialogues: scenario.agentDialogues,
       responseLength: scenario.responseLength,
       customFields: scenario.customFields?.map((customField) => ({
         name: customField.name,
@@ -175,7 +175,7 @@ export const mapUpdateScenarioRequestToEntity = (
           'context',
           'tone',
           'openingStatements',
-          'sampleDialogues',
+          'agentDialogues',
           'responseLength',
           'voiceId',
           'customFields',

@@ -71,7 +71,7 @@ describe('Scenario Util', () => {
           context: scenario.context,
           tone: scenario.tone,
           openingStatements: scenario.openingStatements,
-          sampleDialogues: scenario.sampleDialogues,
+          agentDialogues: scenario.agentDialogues,
           responseLength: scenario.responseLength,
           customFields: scenario.customFields,
         },

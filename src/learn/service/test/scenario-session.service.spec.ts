@@ -653,7 +653,7 @@ describe('ScenarioSessionService', () => {
           context: 'Context',
           openingStatements: ['Opening'],
           responseLength: 'short',
-          sampleDialogues: 'Sample dialogue',
+          agentDialogues: 'Sample dialogue',
         },
         isGlobal: false,
       };

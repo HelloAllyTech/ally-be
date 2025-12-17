@@ -211,7 +211,7 @@ export class CreateScenarioDto {
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  sampleDialogues?: string[];
+  agentDialogues?: string[];
 
   @ApiProperty({
     description: 'Emotional needs of the AI client persona',
