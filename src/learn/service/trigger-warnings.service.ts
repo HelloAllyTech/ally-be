@@ -28,6 +28,12 @@ export class TriggerWarningsService {
     });
   }
 
+  async getTriggerWarningsByScenarioId(scenarioId: number) {
+    return await this.triggerWarningsScenarioRepository.find({
+      where: { scenarioId },
+    });
+  }
+
   async createTriggerWarning(createTriggerWarningDto: CreateTriggerWarningDto) {
     const triggerWarning = this.triggerWarningsRepository.create(
       createTriggerWarningDto,

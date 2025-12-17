@@ -252,6 +252,13 @@ export class LearnController {
     );
   }
 
+  @ApiOperation({ summary: 'Duplicate scenario' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('scenarios/:id/duplicate')
+  async duplicateScenario(@Param('id') id: number): Promise<Scenarios> {
+    return this.scenarioService.duplicateScenario(id);
+  }
+
   @ApiOperation({ summary: 'Preview a scenario' })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
   @Post('scenarios/preview')

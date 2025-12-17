@@ -198,6 +198,7 @@ describe('LearnController', () => {
       updateScenarioVoice: jest.fn(),
       deleteCoverImage: jest.fn(),
       deleteCoverVideo: jest.fn(),
+      duplicateScenario: jest.fn(),
     };
 
     const mockScenarioSessionService = {
@@ -1055,6 +1056,36 @@ describe('LearnController', () => {
           pathSessionItemId,
         ),
       ).rejects.toThrow('Database error');
+    });
+  });
+  describe('duplicateScenario', () => {
+    it('should duplicate a scenario by id', async () => {
+      const scenarioId = 1;
+      const mockDuplicatedScenario = {
+        ...mockScenarioResponse,
+        id: 999,
+        title: 'Test Scenario (Copy)',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      scenarioService.duplicateScenario.mockResolvedValue(
+        mockDuplicatedScenario as any,
+      );
+      const result = await controller.duplicateScenario(scenarioId);
+      expect(result).toEqual(mockDuplicatedScenario);
+      expect(scenarioService.duplicateScenario).toHaveBeenCalledWith(
+        scenarioId,
+      );
+      expect(scenarioService.duplicateScenario).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle errors when scenario does not exist', async () => {
+      const scenarioId = 999;
+      const error = new Error('Scenario not found');
+      scenarioService.duplicateScenario.mockRejectedValue(error);
+      await expect(controller.duplicateScenario(scenarioId)).rejects.toThrow(
+        'Scenario not found',
+      );
     });
   });
 });

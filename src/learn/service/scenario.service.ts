@@ -658,6 +658,86 @@ export class ScenarioService {
     });
   }
 
+  async duplicateScenario(id: number): Promise<Scenarios> {
+    const scenario = await this.scenariosRepository.findOne({ where: { id } });
+    if (!scenario) {
+      throw new NotFoundException('Scenario not found ');
+    }
+
+    const scenarioEvents = await this.scenarioEventsRepository.find({
+      where: { scenarioId: id },
+    });
+
+    const triggerWarnings =
+      await this.triggerWarningsService.getTriggerWarningsByScenarioId(id);
+
+    const newScenario = {
+      title: `Copy of ${scenario.title}`,
+      description: scenario.description,
+      coverImageUrl: scenario.coverImageUrl,
+      coverVideoUrl: scenario.coverVideoUrl,
+      status: ScenarioStatus.DRAFT,
+      prompt: scenario.prompt,
+      metadata: scenario.metadata,
+      isGlobal: scenario.isGlobal,
+      scenario: scenario.scenario,
+      createdBy: Number(ExecutionManager.getUserId()),
+      updatedBy: Number(ExecutionManager.getUserId()),
+    };
+
+    return await this.dataSource.transaction(async (manager) => {
+      const scenarioRepo = manager.getRepository(Scenarios);
+      const scenarioEventRepo = manager.getRepository(ScenarioEvents);
+      const triggerWarningsScenarioRepo = manager.getRepository(
+        ScenarioTriggerWarnings,
+      );
+
+      const newScenarioData = await scenarioRepo.save(newScenario);
+
+      if (scenarioEvents.length > 0) {
+        const newScenarioEvents = scenarioEvents.map((item) =>
+          scenarioEventRepo.create({
+            scenarioId: newScenarioData.id,
+            autoTerminationStatus: item.autoTerminationStatus,
+            branchingStatus: item.branchingStatus,
+            branchInstruction: item.branchInstruction,
+            emoji: item.emoji,
+            eventId: item.eventId,
+            feedbackStatus: item.feedbackStatus,
+            message: item.message,
+            score: item.score,
+          }),
+        );
+        await scenarioEventRepo.save(newScenarioEvents);
+      }
+
+      if (triggerWarnings.length > 0) {
+        const newScenarioTriggerWarnings = triggerWarnings.map((item) =>
+          triggerWarningsScenarioRepo.create({
+            scenarioId: newScenarioData.id,
+            triggerWarningId: item.triggerWarningId,
+          }),
+        );
+        await triggerWarningsScenarioRepo.save(newScenarioTriggerWarnings);
+      }
+
+      if (newScenarioData.isGlobal) {
+        const tenants = await this.tenantService.findAll();
+        const tenantIds = tenants.map((tenant) => tenant.id);
+        const scenarioTenantRepo = manager.getRepository(ScenarioTenants);
+        const scenarioTenants = tenantIds.map((tenantId) =>
+          scenarioTenantRepo.create({
+            scenarioId: newScenarioData.id,
+            tenantId,
+          }),
+        );
+        await scenarioTenantRepo.save(scenarioTenants);
+      }
+      this.logger.info(`Scenario ${id} duplicated successfully`);
+      return newScenarioData;
+    });
+  }
+
   async validateUpdateScenario(
     id: number,
     updateScenarioDto: UpdateScenarioDto,
