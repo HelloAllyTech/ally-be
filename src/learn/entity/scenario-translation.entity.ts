@@ -3,7 +3,7 @@ import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.e
 
 @Entity('scenario_translations')
 @Index(
-  'uq_scenario_translations_scenarioId_languageId_idx',
+  'uq_scenario_translations_scenario_id_language_id_idx',
   ['scenarioId', 'languageId'],
   { unique: true },
 )

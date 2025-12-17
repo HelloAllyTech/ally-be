@@ -21,30 +21,18 @@ export class UserPreferencesRepository extends Repository<UserPreferences> {
     tenantId: string,
     incoming: Record<string, any>,
   ) {
-    const jsonStr = JSON.stringify(incoming);
+    let preferences = await this.findOne({ where: { userId } });
 
-    const result = await this.createQueryBuilder()
-      .insert()
-      .into(UserPreferences)
-      .values({
-        // use parameter binding for scalar value
-        userId: () => ':userId',
-        tenantId: () => ':tenantId',
-        // cast parameter to jsonb
-        data: () => 'CAST(:data AS jsonb)',
-        createdAt: () => 'now()',
-        updatedAt: () => 'now()',
-      })
-      .onConflict(
-        // quote camelCase column names so Postgres doesn't lowercase them
-        `("userId") DO UPDATE 
-         SET "data" = "user_preferences"."data" || excluded."data",
-             "updatedAt" = now()`,
-      )
-      .returning(['id', 'userId', 'tenantId', 'data', 'createdAt', 'updatedAt'])
-      .setParameters({ userId, tenantId, data: jsonStr })
-      .execute();
+    if (preferences) {
+      preferences.data = { ...preferences.data, ...incoming };
+    } else {
+      preferences = this.create({
+        userId,
+        tenantId,
+        data: incoming,
+      });
+    }
 
-    return result;
+    return await this.save(preferences);
   }
 }

@@ -22,10 +22,23 @@ export class LanguagesPreferencesMigration1765966149367
           ('or-IN', 'Odia (India)', true, 'or');
     `);
 
-    // Update existing scenario_voices with languageId 1 as we have only one language for now
+    await queryRunner.query(
+      `ALTER TABLE "scenario_voices" ADD "languageId" integer`,
+    );
+
     await queryRunner.query(`
-      UPDATE "scenario_voices" sv
-      SET "languageId" = 1
+      UPDATE "scenario_voices"
+      SET "languageId" = (
+        SELECT id
+        FROM "languages"
+        WHERE label = 'English (India)'
+        LIMIT 1
+      )
+    `);
+
+    await queryRunner.query(`
+      ALTER TABLE "scenario_voices"
+      ALTER COLUMN "languageId" SET NOT NULL
     `);
 
     await queryRunner.query(`
@@ -71,34 +84,30 @@ export class LanguagesPreferencesMigration1765966149367
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Remove permissions from all groups
     await queryRunner.query(`
-      DELETE FROM "group_permissions"
-      WHERE "permissionId" IN (
-        SELECT "id" FROM "permissions" 
-        WHERE "name" IN ('edit:user:preferences', 'view:user:preferences')
+    DELETE FROM "group_permissions"
+    WHERE "permissionId" IN (
+      SELECT "id" FROM "permissions"
+      WHERE "name" IN (
+        'edit:user:preferences',
+        'view:user:preferences',
+        'view:admin:scenario-voice-languages'
       )
-    `);
+    )
+  `);
 
-    // Remove the permissions
     await queryRunner.query(`
-      DELETE FROM "permissions" 
-      WHERE "name" IN ('edit:user:preferences', 'view:user:preferences')
-    `);
+    DELETE FROM "permissions"
+    WHERE "name" IN (
+      'edit:user:preferences',
+      'view:user:preferences',
+      'view:admin:scenario-voice-languages'
+    )
+  `);
 
-    // Remove the permission from the SUPER_ADMIN group
     await queryRunner.query(`
-      DELETE FROM "group_permissions"
-      WHERE "permissionId" IN (
-        SELECT "id" FROM "permissions" 
-        WHERE "name" = 'view:admin:scenario-voice-languages'
-      )
-    `);
-
-    // Remove the permission
-    await queryRunner.query(`
-      DELETE FROM "permissions" 
-      WHERE "name" = 'view:admin:scenario-voice-languages'
-    `);
+    ALTER TABLE "scenario_voices"
+    DROP COLUMN "languageId"
+  `);
   }
 }

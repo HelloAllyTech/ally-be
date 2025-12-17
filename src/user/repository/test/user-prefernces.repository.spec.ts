@@ -1,7 +1,6 @@
 // user-preferences.repository.spec.ts
 import { DataSource, EntityManager, QueryRunner } from 'typeorm';
 import { UserPreferencesRepository } from '../user-prefernces.repository';
-import { UserPreferences } from 'src/user/entity/user-preferences.entity';
 
 type QB = any;
 
@@ -102,136 +101,87 @@ describe('UserPreferencesRepository', () => {
   });
 
   describe('upsertUserPreferences', () => {
-    it('inserts when not existing and returns result', async () => {
+    it('creates preferences when none exist', async () => {
       const incoming = { locale: 'en-IN' };
-      const execResult = {
-        // mimic Postgres returning rows shape
-        raw: [],
-        generatedMaps: [],
-        // TypeORM sometimes returns 'identifiers' and 'raw'. We'll assert the execute() return is forwarded.
-        // Use a simple object for the test
-        result: {
-          id: 11,
-          userId: 321,
-          tenantId: 'tenant123',
-          data: incoming,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      };
 
-      // Build the chainable query builder methods used by upsertUserPreferences
-      const execute = jest.fn().mockResolvedValue(execResult);
-      const setParameters = jest.fn().mockReturnValue({ execute });
-      const returning = jest.fn().mockReturnValue({ setParameters, execute });
-      const onConflict = jest
-        .fn()
-        .mockReturnValue({ returning, setParameters, execute });
-      const values = jest
-        .fn()
-        .mockReturnValue({ onConflict, returning, setParameters, execute });
-      const into = jest.fn().mockReturnValue({
-        values,
-        onConflict,
-        returning,
-        setParameters,
-        execute,
-      });
-      const insert = jest.fn().mockReturnValue({
-        into,
-        values,
-        onConflict,
-        returning,
-        setParameters,
-        execute,
-      });
-
-      // We also expect the test to call createQueryBuilder() (no alias passed)
-      const createQueryBuilder = jest
-        .spyOn(repo as any, 'createQueryBuilder')
-        .mockReturnValue({
-          insert,
-          into,
-          values,
-          onConflict,
-          returning,
-          setParameters,
-          execute,
-        } as QB);
-
-      const res = await repo.upsertUserPreferences(321, 'tenant123', incoming);
-
-      expect(createQueryBuilder).toHaveBeenCalled();
-      expect(insert).toHaveBeenCalled();
-      expect(into).toHaveBeenCalledWith(UserPreferences);
-      // check that values were provided (userId & data are parameters functions, so we at least assert values called)
-      expect(values).toHaveBeenCalled();
-      // onConflict SQL should be set
-      expect(onConflict).toHaveBeenCalled();
-      expect(returning).toHaveBeenCalledWith([
-        'id',
-        'userId',
-        'tenantId',
-        'data',
-        'createdAt',
-        'updatedAt',
-      ]);
-      expect(setParameters).toHaveBeenCalledWith({
+      const createdEntity = {
         userId: 321,
         tenantId: 'tenant123',
-        data: JSON.stringify(incoming),
+        data: incoming,
+      };
+
+      const savedEntity = {
+        ...createdEntity,
+        id: 'uuid',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      jest.spyOn(repo, 'findOne').mockResolvedValue(null as any);
+      jest.spyOn(repo, 'create').mockReturnValue(createdEntity as any);
+      jest.spyOn(repo, 'save').mockResolvedValue(savedEntity as any);
+
+      const result = await repo.upsertUserPreferences(
+        321,
+        'tenant123',
+        incoming,
+      );
+
+      expect(repo.findOne).toHaveBeenCalledWith({ where: { userId: 321 } });
+
+      expect(repo.create).toHaveBeenCalledWith({
+        userId: 321,
+        tenantId: 'tenant123',
+        data: incoming,
       });
-      expect(execute).toHaveBeenCalled();
-      expect(res).toBe(execResult);
+
+      expect(repo.save).toHaveBeenCalledWith(createdEntity);
+      expect(result).toBe(savedEntity);
     });
 
-    it('propagates errors from execute()', async () => {
-      const incoming = { foo: 'bar' };
-      const execute = jest.fn().mockRejectedValue(new Error('db error'));
-      const setParameters = jest.fn().mockReturnValue({ execute });
-      const returning = jest.fn().mockReturnValue({ setParameters, execute });
-      const onConflict = jest
-        .fn()
-        .mockReturnValue({ returning, setParameters, execute });
-      const values = jest
-        .fn()
-        .mockReturnValue({ onConflict, returning, setParameters, execute });
-      const into = jest.fn().mockReturnValue({
-        values,
-        onConflict,
-        returning,
-        setParameters,
-        execute,
-      });
-      const insert = jest.fn().mockReturnValue({
-        into,
-        values,
-        onConflict,
-        returning,
-        setParameters,
-        execute,
+    it('updates existing preferences by merging data', async () => {
+      const existing = {
+        userId: 321,
+        tenantId: 'tenant123',
+        data: { theme: 'dark' },
+      };
+
+      const incoming = { locale: 'en-IN' };
+
+      const saved = {
+        ...existing,
+        data: { theme: 'dark', locale: 'en-IN' },
+      };
+
+      jest.spyOn(repo, 'findOne').mockResolvedValue(existing as any);
+      jest.spyOn(repo, 'save').mockResolvedValue(saved as any);
+
+      const result = await repo.upsertUserPreferences(
+        321,
+        'tenant123',
+        incoming,
+      );
+
+      expect(repo.findOne).toHaveBeenCalledWith({ where: { userId: 321 } });
+
+      expect(repo.save).toHaveBeenCalledWith({
+        ...existing,
+        data: { theme: 'dark', locale: 'en-IN' },
       });
 
-      jest.spyOn(repo as any, 'createQueryBuilder').mockReturnValue({
-        insert,
-        into,
-        values,
-        onConflict,
-        returning,
-        setParameters,
-        execute,
-      } as QB);
+      expect(result).toBe(saved);
+    });
+
+    it('propagates errors from save()', async () => {
+      const incoming = { locale: 'en-IN' };
+
+      jest.spyOn(repo, 'findOne').mockResolvedValue(null as any);
+      jest.spyOn(repo, 'create').mockReturnValue({} as any);
+      jest.spyOn(repo, 'save').mockRejectedValue(new Error('db error'));
 
       await expect(
-        repo.upsertUserPreferences(7, 'tenant123', incoming),
+        repo.upsertUserPreferences(1, 'tenant123', incoming),
       ).rejects.toThrow('db error');
-
-      expect(setParameters).toHaveBeenCalledWith({
-        userId: 7,
-        tenantId: 'tenant123',
-        data: JSON.stringify(incoming),
-      });
-      expect(execute).toHaveBeenCalled();
     });
   });
 });
