@@ -112,30 +112,6 @@ export class UserService {
     return { success: true };
   }
 
-  async getUserByPhoneNumber(phoneNumber: string): Promise<User | null> {
-    const cachedUser = await this.cache.get(`user_${phoneNumber}`);
-    if (cachedUser) {
-      return JSON.parse(cachedUser);
-    }
-    const user = await this.userRepository.findOne({
-      where: { phone: phoneNumber },
-    });
-    if (user) {
-      await this.cache.set(`user_${phoneNumber}`, JSON.stringify(user));
-      return user;
-    }
-    return null;
-  }
-
-  async getUsersByPhoneNumbers(phoneNumbers: string[]): Promise<User[] | null> {
-    return this.userRepository.find({
-      where: {
-        phone: In(phoneNumbers),
-        tenantId: ExecutionManager.getTenantId(),
-      },
-    });
-  }
-
   async getUsersByIds(ids: number[]): Promise<User[]> {
     return this.userRepository.find({
       where: {
@@ -201,33 +177,6 @@ export class UserService {
       phone: user.phone,
       status: user.status,
     };
-  }
-
-  async createUser({
-    phoneNumber,
-    name,
-    email,
-    status,
-    username,
-    tenantId,
-  }: {
-    phoneNumber: string;
-    name?: string;
-    email?: string;
-    status?: UserStatus;
-    username?: string;
-    tenantId?: string;
-  }) {
-    // TODO: Add phone number to the user table and update this query
-    const user = this.userRepository.create({
-      phone: phoneNumber,
-      name: name || 'Anonymous user',
-      email: email || `${phoneNumber}@placeholder.com`,
-      status: status || UserStatus.ACTIVE,
-      username: username || `${phoneNumber}_user`,
-      tenantId: tenantId || 'anonyumous_tenant',
-    });
-    return this.userRepository.save(user);
   }
 
   async getCounselorNames(limit?: number, offset?: number, search?: string) {

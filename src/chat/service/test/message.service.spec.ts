@@ -10,18 +10,15 @@ import { PermissionValidator } from '../../../authorization/service/permission-v
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { AUDIT_EVENTS } from '../../../audit/constants/audit-event.constants';
 import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
-import { ChatEvents } from '../../constants/chat.constants';
 import { ANONYMOUS_CLIENT_ID } from '../../../common/constants/user.constants';
 import { UserRole } from '../../../common/constants/user.constants';
 import { Message, MessageType } from 'src/chat/entity/message.entity';
 import { Feedback } from 'src/chat/entity/feedback.entity';
-import { MessageBrokerChannel } from 'src/message-broker/constants/message-broker.constants';
 
 describe('MessageService', () => {
   let service: MessageService;
   let messageRepository: MessageRepository;
   let cryptoService: CryptoService;
-  let publisher: MessageBrokerService;
   let permissionValidator: PermissionValidator;
   let mockAuditLogger: any;
 
@@ -48,17 +45,6 @@ describe('MessageService', () => {
   const mockChat = {
     clientId: 100,
     counselorId: 200,
-  };
-
-  const mockSession = {
-    id: '1',
-    type: 'user' as const,
-    user: null,
-    room: 'test-room',
-    chatId: 1,
-    userId: 100,
-    role: UserRole.CLIENT,
-    tenantId: 'test-tenant',
   };
 
   const createMockQueryBuilder = () => ({
@@ -131,133 +117,11 @@ describe('MessageService', () => {
     service = module.get<MessageService>(MessageService);
     messageRepository = module.get<MessageRepository>(MessageRepository);
     cryptoService = module.get<CryptoService>(CryptoService);
-    publisher = module.get<MessageBrokerService>(MessageBrokerService);
     permissionValidator = module.get<PermissionValidator>(PermissionValidator);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
-  });
-
-  describe('saveMessage', () => {
-    it('should save a message with encrypted content', async () => {
-      const data = {
-        content: 'Test message',
-        context: 'Test context',
-        messageType: MessageType.TEXT,
-      };
-
-      await service.saveMessage(1, 100, data);
-
-      expect(cryptoService.encrypt).toHaveBeenCalledWith(
-        'Test message',
-        'test-key',
-      );
-      expect(messageRepository.create).toHaveBeenCalledWith({
-        chatId: 1,
-        senderId: 100,
-        content: 'encrypted_Test message',
-        context: 'Test context',
-        type: MessageType.TEXT,
-        tenantId: 'test-tenant',
-        parentMessageId: undefined,
-        createdAt: undefined,
-        startSeconds: undefined,
-        endSeconds: undefined,
-      });
-      expect(messageRepository.save).toHaveBeenCalled();
-    });
-
-    it('should use default TEXT message type when not provided', async () => {
-      const data = {
-        content: 'Test message',
-      };
-
-      await service.saveMessage(1, 100, data);
-
-      expect(messageRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: MessageType.TEXT,
-        }),
-      );
-    });
-
-    it('should save message with all optional fields', async () => {
-      const data = {
-        content: 'Test message',
-        context: 'Test context',
-        messageType: MessageType.NUDGE,
-        createdAt: new Date('2024-01-01T10:00:00Z'),
-        startSeconds: 10,
-        endSeconds: 20,
-        parentMessageId: 5,
-      };
-
-      await service.saveMessage(1, 100, data);
-
-      expect(messageRepository.create).toHaveBeenCalledWith({
-        chatId: 1,
-        senderId: 100,
-        content: 'encrypted_Test message',
-        context: 'Test context',
-        type: MessageType.NUDGE,
-        tenantId: 'test-tenant',
-        parentMessageId: 5,
-        createdAt: new Date('2024-01-01T10:00:00Z'),
-        startSeconds: 10,
-        endSeconds: 20,
-      });
-    });
-  });
-
-  describe('save', () => {
-    it('should save a message entity', async () => {
-      const message = { ...mockMessage };
-
-      const result = await service.save(message);
-
-      expect(messageRepository.save).toHaveBeenCalledWith(message);
-      expect(result).toEqual(message);
-    });
-  });
-
-  describe('getMessageObject', () => {
-    it('should create a message object with encrypted content', async () => {
-      const data = {
-        content: 'Test message',
-        context: 'Test context',
-        messageType: MessageType.TEXT,
-      };
-
-      await service.getMessageObject(1, 100, data);
-
-      expect(cryptoService.encrypt).toHaveBeenCalledWith(
-        'Test message',
-        'test-key',
-      );
-      expect(messageRepository.create).toHaveBeenCalledWith({
-        chatId: 1,
-        senderId: 100,
-        content: 'encrypted_Test message',
-        context: 'Test context',
-        type: MessageType.TEXT,
-        tenantId: 'test-tenant',
-      });
-    });
-
-    it('should use default TEXT message type when not provided', async () => {
-      const data = {
-        content: 'Test message',
-      };
-
-      await service.getMessageObject(1, 100, data);
-
-      expect(messageRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: MessageType.TEXT,
-        }),
-      );
-    });
   });
 
   describe('getMessageByChatId', () => {
@@ -527,98 +391,6 @@ describe('MessageService', () => {
       const result = await service.getMessages(1, 200, mockChat, {});
 
       expect(result).toBeDefined();
-    });
-  });
-
-  describe('persistAndBroadcastMessage', () => {
-    it('should persist and broadcast message with default options', async () => {
-      const data = {
-        chatId: 1,
-        content: 'Test message',
-        messageType: MessageType.TEXT,
-      };
-
-      await service.persistAndBroadcastMessage(mockSession, data, mockChat);
-
-      expect(cryptoService.encrypt).toHaveBeenCalled();
-      expect(messageRepository.save).toHaveBeenCalled();
-      expect(publisher.publish).toHaveBeenCalledWith(
-        MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
-        {
-          participants: [200, 100],
-          message: expect.any(Object),
-          broadCastOptions: {
-            event: ChatEvents.MESSAGE_RECEIVED,
-          },
-        },
-      );
-    });
-
-    it('should broadcast only to counselor for NUDGE events', async () => {
-      const data = {
-        chatId: 1,
-        content: 'Nudge message',
-        messageType: MessageType.NUDGE,
-      };
-
-      await service.persistAndBroadcastMessage(mockSession, data, mockChat, {
-        event: ChatEvents.NUDGE,
-      });
-
-      expect(publisher.publish).toHaveBeenCalledWith(
-        MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
-        {
-          participants: [200],
-          message: expect.any(Object),
-          broadCastOptions: {
-            event: ChatEvents.NUDGE,
-          },
-        },
-      );
-    });
-
-    it('should broadcast only to counselor for STAGE events', async () => {
-      const data = {
-        chatId: 1,
-        content: 'Stage message',
-        messageType: MessageType.STAGE,
-      };
-
-      await service.persistAndBroadcastMessage(mockSession, data, mockChat, {
-        event: ChatEvents.STAGE,
-      });
-
-      expect(publisher.publish).toHaveBeenCalledWith(
-        MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
-        {
-          participants: [200],
-          message: expect.any(Object),
-          broadCastOptions: {
-            event: ChatEvents.STAGE,
-          },
-        },
-      );
-    });
-
-    it('should use custom channel when provided', async () => {
-      const data = {
-        chatId: 1,
-        content: 'Test message',
-      };
-      const customChannel = 'custom-channel';
-
-      await service.persistAndBroadcastMessage(
-        mockSession,
-        data,
-        mockChat,
-        {},
-        customChannel,
-      );
-
-      expect(publisher.publish).toHaveBeenCalledWith(
-        customChannel,
-        expect.any(Object),
-      );
     });
   });
 

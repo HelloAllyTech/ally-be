@@ -36,7 +36,6 @@ export class AppConfigService {
   get ai() {
     return {
       apiUrl: this.configService.get<string>('AI_SERVICE_API_URL'),
-      deepgramApiKey: this.configService.get<string>('DEEPGRAM_API_KEY')!,
       sentenceCompletionRequired:
         this.configService.get<string>('SENTENCE_COMPLETION_REQUIRED') ===
         'true',
@@ -115,12 +114,6 @@ export class AppConfigService {
           'SMTP_SECRET_ACCESS_KEY',
         ),
       },
-    };
-  }
-
-  get audioIngest() {
-    return {
-      integration: this.configService.get<string>('AUDIO_INGEST_INTEGRATION'),
     };
   }
 

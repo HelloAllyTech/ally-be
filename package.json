@@ -36,7 +36,6 @@
     "@aws-sdk/client-ses": "^3.823.0",
     "@aws-sdk/client-sqs": "^3.859.0",
     "@aws-sdk/s3-request-presigner": "^3.839.0",
-    "@deepgram/sdk": "^3.11.1",
     "@google-cloud/translate": "^9.3.0",
     "@liaoliaots/nestjs-redis": "^10.0.0",
     "@nest-lab/throttler-storage-redis": "^1.1.0",

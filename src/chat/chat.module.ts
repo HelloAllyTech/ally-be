@@ -5,10 +5,8 @@ import { Message } from './entity/message.entity';
 import { ChatService } from './service/chat.service';
 import { ChatSummaryService } from './service/chat-summary.service';
 import { AudioUploadService } from './service/audio-upload.service';
-import { QueueModule } from '../queue/queue.module';
 import { ChatController } from './controller/chat.controller';
 import { AudioUploadController } from './controller/audio-upload.controller';
-import { ChatGateway } from './gateway/chat.gateway';
 import { UserModule } from '../user/user.module';
 import { Feedback } from './entity/feedback.entity';
 import { FeedbackService } from './service/feedback.service';
@@ -42,7 +40,6 @@ import { ChatFeedbackService } from './service/chat-feedback.service';
     TypeOrmModule.forFeature([Message, Feedback, CallDetails, SummaryFeedback]),
     TypeOrmModule.forFeature([Chat, ChatRepository]),
     forwardRef(() => UserModule),
-    forwardRef(() => QueueModule),
     forwardRef(() => AiModule),
     SettingsModule,
     forwardRef(() => BrokerModule),
@@ -55,7 +52,6 @@ import { ChatFeedbackService } from './service/chat-feedback.service';
     ChatService,
     ChatSummaryService,
     AudioUploadService,
-    ChatGateway,
     MicrophoneChatGateway,
     FeedbackService,
     ChatEventConsumer,
@@ -81,18 +77,13 @@ import { ChatFeedbackService } from './service/chat-feedback.service';
     AiChatIntegrationService,
     ChatFeedbackService,
     FeedbackService,
-    ChatGateway,
     ChatAiService,
     AudioUploadService,
   ],
 })
 export class ChatModule implements OnModuleInit {
-  constructor(
-    private readonly chatGateway: ChatGateway,
-    private readonly microphoneChatGateway: MicrophoneChatGateway,
-  ) {}
+  constructor(private readonly microphoneChatGateway: MicrophoneChatGateway) {}
   onModuleInit() {
-    this.chatGateway.subscribeToWebRTCChatMessage();
     this.microphoneChatGateway.subscribeToMicrophoneChatMessage();
   }
 }
