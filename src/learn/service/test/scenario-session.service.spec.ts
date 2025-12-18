@@ -31,8 +31,12 @@ import { SimulationCreditsService } from '../simulation-credits.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
-import { SCENARIO_SESSION_TRANSLATABLE_FIELDS } from 'src/learn/constants/scenario-session.constants';
+import {
+  DEFAULT_LANGUAGE_CODE,
+  SCENARIO_SESSION_TRANSLATABLE_FIELDS,
+} from 'src/learn/constants/scenario-session.constants';
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -67,6 +71,7 @@ describe('ScenarioSessionService', () => {
   let scenarioTranslationRepository: jest.Mocked<ScenarioTranslationsRepository>;
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let mockConfigService: any;
+  let sharedLanguageService: jest.Mocked<SharedLanguageService>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -235,6 +240,11 @@ describe('ScenarioSessionService', () => {
       getSessionEventsTranslationsByScenarioId: jest.fn().mockResolvedValue([]),
     };
 
+    const mockSharedLanguageService = {
+      getLanguagesByIds: jest.fn(),
+      getLanguageByLanguageCode: jest.fn(),
+    };
+
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -307,6 +317,10 @@ describe('ScenarioSessionService', () => {
           provide: SessionEventTranslationService,
           useValue: mockSessionEventTranslationService,
         },
+        {
+          provide: SharedLanguageService,
+          useValue: mockSharedLanguageService,
+        },
       ],
     }).compile();
 
@@ -330,6 +344,7 @@ describe('ScenarioSessionService', () => {
     scenarioPathSharedService = module.get(ScenarioPathSharedService);
     scenarioTranslationRepository = module.get(ScenarioTranslationsRepository);
     sessionEventTranslationService = module.get(SessionEventTranslationService);
+    sharedLanguageService = module.get(SharedLanguageService);
   });
 
   afterEach(() => {
@@ -732,6 +747,7 @@ describe('ScenarioSessionService', () => {
           currentLocation: 'New York',
           context: 'Context',
           openingStatements: ['Opening', 'Opening 2'],
+          // language ID 1 will be returned as default language
           languageVoices: { 1: 'voice-123' },
           difficultyLevel: 'medium',
           responseLength: 'medium',
@@ -740,19 +756,30 @@ describe('ScenarioSessionService', () => {
           agentDialogues: ['Hello, how can I help you?'],
         },
       };
+
       const mockTokenResponse = {
         token: 'access-token-123',
         roomName: 'preview-room',
         serverUrl: 'https://livekit.example.com',
       };
+
       const mockPreviewDto = { scenarioId: mockScenarioId };
 
       scenarioService.getAdminScenario.mockResolvedValue(
         scenarioWithoutVoiceId as any,
       );
+
       sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
       );
+
+      // 👇 Mock default language lookup
+      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue({
+        id: 1,
+        value: DEFAULT_LANGUAGE_CODE,
+        label: 'English (India)',
+      } as any);
+
       livekitService.createRoom.mockResolvedValue({} as any);
       livekitService.generateAccessToken.mockResolvedValue(mockTokenResponse);
 
@@ -850,7 +877,6 @@ describe('ScenarioSessionService', () => {
       const result = await (service as any).getScenarioTranslationData(
         metadata,
         1,
-        1,
       );
       expect(result).toEqual({
         voiceId: 'test-voice',
@@ -876,9 +902,11 @@ describe('ScenarioSessionService', () => {
       const metadata = {
         voiceId: 'test-voice',
         title: 'Test',
-        language: 'es',
+        language: 'es-ES',
         description: 'Test description',
         instructions: 'Test instructions',
+        languageId: 2,
+        defaultLanguageId: 1,
       };
 
       // Save the original fields and replace with our test fields
@@ -894,7 +922,6 @@ describe('ScenarioSessionService', () => {
         const result = await (service as any).getScenarioTranslationData(
           metadata,
           1,
-          2, // Non-English language ID
         );
 
         expect(result).toEqual({
@@ -903,7 +930,8 @@ describe('ScenarioSessionService', () => {
             title: 'Prueba',
             description: 'Descripción de prueba',
             instructions: 'Instrucciones de prueba',
-            language: 'es',
+            language: 'es-ES',
+            languageId: 2,
           },
         });
 
@@ -1105,6 +1133,28 @@ describe('ScenarioSessionService', () => {
       expect(scenarioSessionRepository.delete).toHaveBeenCalledWith(
         mockCreatedSession.id,
       );
+    });
+  });
+
+  describe('getLanguageDetailsForScenarioSession', () => {
+    it('should return language details', async () => {
+      const languageDetails = await (
+        service as any
+      ).getLanguageDetailsForScenarioSession(
+        mockCounselorId,
+        mockScenarioSessionId,
+      );
+      expect(languageDetails).toBeDefined();
+    });
+    it('should return null languageDetails if languageDetails is not found', async () => {
+      const mockReturnData = {
+        enLanguageDetails: undefined,
+        languageDetails: null,
+      };
+      const languageDetails = await (
+        service as any
+      ).getLanguageDetailsForScenarioSession(1);
+      expect(languageDetails).toEqual(mockReturnData);
     });
   });
 });

@@ -28,14 +28,6 @@ export class StartScenarioSessionRequestDto {
   ttl?: number;
 
   @ApiProperty({
-    description: 'Language Code',
-    example: 'en-IN, en-US',
-  })
-  @IsOptional()
-  @IsString()
-  language!: string;
-
-  @ApiProperty({
     description: 'Language ID',
     example: 4,
   })

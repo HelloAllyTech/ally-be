@@ -49,22 +49,6 @@ export class CreateScenarioDto {
   languageVoices?: Record<string, string>;
 
   @ApiProperty({
-    description: 'Array of languages',
-    example: [{ label: 'English (India)', value: 'en' }],
-    type: 'array',
-    items: {
-      type: 'object',
-      properties: {
-        label: { type: 'string' },
-        value: { type: 'string' },
-      },
-    },
-  })
-  @IsArray()
-  @IsOptional()
-  languages?: { label: string; value: string }[];
-
-  @ApiProperty({
     description: 'Cover image URL of the scenario',
     example: 'https://example.com/cover-image.png',
   })

@@ -11,20 +11,11 @@ export class LanguagesRepository extends Repository<Languages> {
   getLanguagesById(ids: number[]): Promise<Languages[]> {
     return this.find({
       select: ['id', 'value', 'label', 'translationCode'],
-      where: { id: In(ids) },
+      where: { id: In(ids), active: true },
     });
   }
 
-  async createLanguage(languageData: Partial<Languages>): Promise<Languages> {
-    const language = this.create(languageData);
-    return this.save(language);
-  }
-
-  async updateLanguage(
-    id: number,
-    updateData: Partial<Languages>,
-  ): Promise<Languages | null> {
-    await this.update(id, { ...updateData, updatedAt: new Date() });
-    return this.findOne({ where: { id } });
+  getLanguageByLanguageCode(languageCode: string): Promise<Languages | null> {
+    return this.findOne({ where: { value: languageCode } });
   }
 }

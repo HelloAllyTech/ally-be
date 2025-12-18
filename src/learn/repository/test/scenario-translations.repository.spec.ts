@@ -30,39 +30,6 @@ describe('ScenarioEventsTranslationsRepository', () => {
     jest.clearAllMocks();
   });
 
-  describe('getScenarioEventsTranslationsByScenarioIdEventId', () => {
-    it('should call find with correct where clause and return results', async () => {
-      const scenarioId = 42;
-      const eventId = 'EVT_1';
-      const expected: ScenarioEventsTranslation[] = [
-        {
-          id: 1,
-          scenarioId,
-          eventId,
-          languageId: 4,
-          message: 'Hello',
-          branchInstruction: null,
-        } as unknown as ScenarioEventsTranslation,
-      ];
-
-      // spy on inherited find
-      const findSpy = jest
-        .spyOn(repository, 'find')
-        .mockResolvedValue(expected);
-
-      const result =
-        await repository.getScenarioEventsTranslationsByScenarioIdEventId(
-          scenarioId,
-          eventId,
-        );
-
-      expect(findSpy).toHaveBeenCalledWith({
-        where: { scenarioId, eventId },
-      });
-      expect(result).toBe(expected);
-    });
-  });
-
   describe('createTranslations', () => {
     it('should call create and save and return success response', async () => {
       const translations: CreateScenarioEventsTranslationDto[] = [

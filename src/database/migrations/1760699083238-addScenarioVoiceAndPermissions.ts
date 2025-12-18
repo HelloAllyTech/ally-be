@@ -8,7 +8,7 @@ export class AddScenarioVoiceAndPermissions1760699083238
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TABLE "scenario_voices" ("createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "id" uuid NOT NULL DEFAULT uuid_generate_v4(), "name" character varying NOT NULL, "provider" character varying NOT NULL, "config" jsonb, "languageId" integer NOT NULL, CONSTRAINT "PK_d5a350cba54e9486908f9c82020" PRIMARY KEY ("id"))`,
+      `CREATE TABLE "scenario_voices" ("createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), "id" uuid NOT NULL DEFAULT uuid_generate_v4(), "name" character varying NOT NULL, "provider" character varying NOT NULL, "config" jsonb, CONSTRAINT "PK_d5a350cba54e9486908f9c82020" PRIMARY KEY ("id"))`,
     );
 
     await queryRunner.query(

@@ -45,7 +45,6 @@ describe('ScenarioSessionRepository', () => {
   const mockScenarioId = 1;
   const mockLanguageId = 4;
   const mockVoiceId = 'voice-123';
-  const mockLanguage = 'en-IN';
   const mockUuid = 'uuid-123';
 
   const mockUuidV4 = uuidv4 as jest.Mock;
@@ -396,7 +395,6 @@ describe('ScenarioSessionRepository', () => {
         scenarioId: mockScenarioId,
         languageId: mockLanguageId,
         voiceId: mockVoiceId,
-        language: mockLanguage,
       };
 
       mockUuidV4.mockReturnValue(mockUuid);
@@ -451,7 +449,6 @@ describe('ScenarioSessionRepository', () => {
         scenarioId: mockScenarioId,
         languageId: mockLanguageId,
         voiceId: mockVoiceId,
-        language: mockLanguage,
       };
 
       mockUuidV4.mockReturnValue(mockUuid);

@@ -625,11 +625,17 @@ export class ScenarioService {
           eventId: existingScenarioTerminationEvent.eventId,
           autoTerminationStatus: true,
         });
+
+        this.scenarioEventTranslationsRepository.delete({
+          scenarioId: id,
+          eventId: existingScenarioTerminationEvent.eventId,
+        });
       }
       // If the input termination event id is the same as the existing one - update the message
       if (
         existingScenarioTerminationEvent?.eventId ===
-        updateScenarioDto.terminationEventId
+          updateScenarioDto.terminationEventId &&
+        updateScenarioDto.autoTerminationStatus
       ) {
         await scenarioEventsRepo.update(
           {
@@ -639,6 +645,14 @@ export class ScenarioService {
           },
           { message: updateScenarioDto.terminationMessage },
         );
+        // Create/update the translation for the new termination event
+        this.createUpdateScenarioEventsTranslations([
+          {
+            scenarioId: id,
+            eventId: updateScenarioDto.terminationEventId,
+            message: updateScenarioDto.terminationMessage,
+          },
+        ]);
       } else if (updateScenarioDto.autoTerminationStatus) {
         const newTerminationEvent = scenarioEventsRepo.create({
           scenarioId: id,
@@ -647,6 +661,8 @@ export class ScenarioService {
           message: updateScenarioDto.terminationMessage,
         });
         scenarioEventsRepo.save(newTerminationEvent);
+        // Create/update the translation for the new termination event
+        this.createUpdateScenarioEventsTranslations([newTerminationEvent]);
       }
       if (updated.affected === 0) return false;
 
@@ -1334,7 +1350,7 @@ export class ScenarioService {
           eventId: scenarioEvent.eventId,
           languageId: Number(language.id),
           message: translatedData.message ?? '',
-          branchInstruction: translatedData.branchInstruction ?? 'undefined',
+          branchInstruction: translatedData.branchInstruction ?? '',
         });
 
         if (!translatedList.length) {

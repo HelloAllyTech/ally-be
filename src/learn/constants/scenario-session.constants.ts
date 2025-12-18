@@ -1,3 +1,5 @@
+import { LanguageCode } from '../enum/scenario-language';
+
 export const DEFAULT_SCENARIO_SESSION_TTL_SECONDS = 1200; // 20 minutes
 
 export const SCENARIO_SESSION_EXAMPLE = {
@@ -13,7 +15,7 @@ export const SCENARIO_SESSION_EXAMPLE = {
 };
 
 // Default language id for "en-IN"
-export const DEFAULT_LANGUAGE_ID = 1;
+export const DEFAULT_LANGUAGE_CODE = LanguageCode.EN_IN;
 
 export const STT_LLM_PROVIDER_CONFIG = {
   // Speech-to-Text service configuration
@@ -33,24 +35,18 @@ export const STT_LLM_PROVIDER_CONFIG = {
   },
 };
 
-export const LANGUAGE_LLM_PROVIDER_CONFIG = {
-  'en-IN': {
+export const LANGUAGE_LLM_PROVIDER_CONFIG: Record<
+  LanguageCode,
+  {
     llm: {
-      provider: 'openai', // Chosen LLM provider
+      provider: 'openai' | 'google';
       config: {
-        model: 'gpt-4o-mini', // OpenAI model used for response generation
-      },
-    },
-  },
-  'hi-IN': {
-    llm: {
-      provider: 'openai',
-      config: {
-        model: 'gpt-4o-mini',
-      },
-    },
-  },
-  'ml-IN': {
+        model: string;
+      };
+    };
+  }
+> = {
+  [LanguageCode.EN_IN]: {
     llm: {
       provider: 'openai',
       config: {
@@ -58,7 +54,26 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG = {
       },
     },
   },
-  'bn-IN': {
+
+  [LanguageCode.HI_IN]: {
+    llm: {
+      provider: 'openai',
+      config: {
+        model: 'gpt-4o-mini',
+      },
+    },
+  },
+
+  [LanguageCode.ML_IN]: {
+    llm: {
+      provider: 'openai',
+      config: {
+        model: 'gpt-4o-mini',
+      },
+    },
+  },
+
+  [LanguageCode.BN_IN]: {
     llm: {
       provider: 'google',
       config: {
@@ -66,7 +81,8 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG = {
       },
     },
   },
-  'mr-IN': {
+
+  [LanguageCode.MR_IN]: {
     llm: {
       provider: 'google',
       config: {
@@ -74,7 +90,8 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG = {
       },
     },
   },
-  'te-IN': {
+
+  [LanguageCode.TE_IN]: {
     llm: {
       provider: 'google',
       config: {
@@ -82,7 +99,8 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG = {
       },
     },
   },
-  'ta-IN': {
+
+  [LanguageCode.TA_IN]: {
     llm: {
       provider: 'google',
       config: {
@@ -90,7 +108,8 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG = {
       },
     },
   },
-  'gu-IN': {
+
+  [LanguageCode.GU_IN]: {
     llm: {
       provider: 'google',
       config: {
@@ -98,7 +117,8 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG = {
       },
     },
   },
-  'kn-IN': {
+
+  [LanguageCode.KN_IN]: {
     llm: {
       provider: 'google',
       config: {
@@ -106,7 +126,8 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG = {
       },
     },
   },
-  'pa-IN': {
+
+  [LanguageCode.PA_IN]: {
     llm: {
       provider: 'google',
       config: {
@@ -114,7 +135,8 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG = {
       },
     },
   },
-  'or-IN': {
+
+  [LanguageCode.OR_IN]: {
     llm: {
       provider: 'google',
       config: {
@@ -124,34 +146,28 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG = {
   },
 };
 
-export const LANGUAGE_STT_PROVIDER_CONFIG = {
-  'en-IN': {
+export const LANGUAGE_STT_PROVIDER_CONFIG: Record<
+  LanguageCode,
+  {
     stt: {
-      provider: 'deepgram', // Chosen STT provider
+      provider: 'deepgram' | 'google' | 'sarvam';
       config: {
-        model: 'nova-3', // Deepgram model used for speech transcription
+        model: string;
+        location?: string;
+      };
+    };
+  }
+> = {
+  [LanguageCode.EN_IN]: {
+    stt: {
+      provider: 'deepgram',
+      config: {
+        model: 'nova-3',
       },
     },
   },
-  'hi-IN': {
-    stt: {
-      provider: 'google',
-      config: {
-        model: 'chirp_2',
-        location: 'asia-southeast1',
-      },
-    },
-  },
-  'ml-IN': {
-    stt: {
-      provider: 'google',
-      config: {
-        model: 'chirp_2',
-        location: 'asia-southeast1',
-      },
-    },
-  },
-  'bn-IN': {
+
+  [LanguageCode.HI_IN]: {
     stt: {
       provider: 'google',
       config: {
@@ -160,7 +176,28 @@ export const LANGUAGE_STT_PROVIDER_CONFIG = {
       },
     },
   },
-  'mr-IN': {
+
+  [LanguageCode.ML_IN]: {
+    stt: {
+      provider: 'google',
+      config: {
+        model: 'chirp_2',
+        location: 'asia-southeast1',
+      },
+    },
+  },
+
+  [LanguageCode.BN_IN]: {
+    stt: {
+      provider: 'google',
+      config: {
+        model: 'chirp_2',
+        location: 'asia-southeast1',
+      },
+    },
+  },
+
+  [LanguageCode.MR_IN]: {
     stt: {
       provider: 'sarvam',
       config: {
@@ -168,7 +205,8 @@ export const LANGUAGE_STT_PROVIDER_CONFIG = {
       },
     },
   },
-  'te-IN': {
+
+  [LanguageCode.TE_IN]: {
     stt: {
       provider: 'google',
       config: {
@@ -177,7 +215,8 @@ export const LANGUAGE_STT_PROVIDER_CONFIG = {
       },
     },
   },
-  'ta-IN': {
+
+  [LanguageCode.TA_IN]: {
     stt: {
       provider: 'google',
       config: {
@@ -186,7 +225,8 @@ export const LANGUAGE_STT_PROVIDER_CONFIG = {
       },
     },
   },
-  'gu-IN': {
+
+  [LanguageCode.GU_IN]: {
     stt: {
       provider: 'google',
       config: {
@@ -195,7 +235,8 @@ export const LANGUAGE_STT_PROVIDER_CONFIG = {
       },
     },
   },
-  'kn-IN': {
+
+  [LanguageCode.KN_IN]: {
     stt: {
       provider: 'google',
       config: {
@@ -204,7 +245,8 @@ export const LANGUAGE_STT_PROVIDER_CONFIG = {
       },
     },
   },
-  'pa-IN': {
+
+  [LanguageCode.PA_IN]: {
     stt: {
       provider: 'google',
       config: {
@@ -213,7 +255,8 @@ export const LANGUAGE_STT_PROVIDER_CONFIG = {
       },
     },
   },
-  'or-IN': {
+
+  [LanguageCode.OR_IN]: {
     stt: {
       provider: 'google',
       config: {
@@ -225,7 +268,7 @@ export const LANGUAGE_STT_PROVIDER_CONFIG = {
 };
 
 // List of fields that need translation
-export const SCENARIO_SESSION_TRANSLATABLE_FIELDS = [
+export const SCENARIO_SESSION_TRANSLATABLE_FIELDS: string[] = [
   'title',
   'description',
   'tone',

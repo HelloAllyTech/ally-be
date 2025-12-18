@@ -10,6 +10,6 @@ export class UserPreferences extends BaseEntity {
   @Column()
   userId!: number;
 
-  @Column({ type: 'jsonb', default: () => `'{"default_language_id": 1}'` })
+  @Column({ type: 'jsonb' })
   data!: Record<string, any>;
 }

@@ -33,4 +33,10 @@ export class SharedLanguageService {
       languagesMap,
     };
   }
+
+  async getLanguageByLanguageCode(
+    languageCode: string,
+  ): Promise<Languages | null> {
+    return this.languagesRepository.getLanguageByLanguageCode(languageCode);
+  }
 }
