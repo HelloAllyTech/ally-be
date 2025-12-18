@@ -15,7 +15,6 @@ import { MessageRepository } from '../../repository/message.repository';
 import { CallDetailsRepository } from '../../repository/call-details.repository';
 import { SummaryFeedbackRepository } from '../../repository/summary-feedback.repository';
 import { QueueService } from '../../../queue/service/queue.service';
-import { ChatGateway } from '../../gateway/chat.gateway';
 import { UserService } from '../../../user/service/user.service';
 import { AiService } from '../../../ai/service/ai.service';
 import { RedisService } from '../../../redis/service/redis.service';
@@ -39,18 +38,15 @@ import {
   AudioChatProvider,
   AudioChatPlatform,
 } from '../../../common/constants/chat.constants';
-import { ChatEvents } from '../../constants/chat.constants';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 
 describe('ChatService', () => {
   let service: ChatService;
   let chatRepository: ChatRepository;
   let callDetailsRepository: Repository<CallDetails>;
-  let queueService: QueueService;
   let userService: UserService;
   let messageService: MessageService;
   let cache: RedisService;
-  let dataSource: DataSource;
   let permissionValidator: PermissionValidator;
 
   const mockChat: Chat = {
@@ -291,20 +287,10 @@ describe('ChatService', () => {
           },
         },
         {
-          provide: ChatGateway,
-          useValue: {
-            sendMessagesToRoom: jest.fn(),
-            sendMessagesToRoomUsingPublish: jest.fn(),
-            handleDeepgramTranscript: jest.fn(),
-          },
-        },
-        {
           provide: UserService,
           useValue: {
             get: jest.fn(),
             getMinimalUserInfo: jest.fn(),
-            getUsersByPhoneNumbers: jest.fn(),
-            createUser: jest.fn(),
             getCounselorNames: jest.fn(),
           },
         },
@@ -411,11 +397,9 @@ describe('ChatService', () => {
     callDetailsRepository = module.get<CallDetailsRepository>(
       CallDetailsRepository,
     );
-    queueService = module.get<QueueService>(QueueService);
     userService = module.get<UserService>(UserService);
     messageService = module.get<MessageService>(MessageService);
     cache = module.get<RedisService>(RedisService);
-    dataSource = module.get<DataSource>(DataSource);
     permissionValidator = module.get<PermissionValidator>(PermissionValidator);
 
     // Mock ExecutionManager
@@ -603,105 +587,6 @@ describe('ChatService', () => {
     });
   });
 
-  describe('requestChat', () => {
-    it('should create a new chat when no active chats exist', async () => {
-      const mockNewChat = { ...mockChat, id: 2 };
-      const mockQueueEntry = { entryId: 1, chatId: 2 };
-
-      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(null);
-      jest.spyOn(chatRepository, 'create').mockReturnValue(mockNewChat as any);
-      jest.spyOn(chatRepository, 'save').mockResolvedValue(mockNewChat as any);
-      jest
-        .spyOn(callDetailsRepository, 'save')
-        .mockResolvedValue(mockCallDetails as any);
-      jest
-        .spyOn(queueService, 'enqueue')
-        .mockResolvedValue(mockQueueEntry as any);
-
-      const mockTransaction = jest.fn().mockImplementation((callback) =>
-        callback({
-          getRepository: jest.fn().mockReturnValue({
-            findOne: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockReturnValue(mockNewChat),
-            save: jest.fn().mockResolvedValue(mockNewChat),
-          }),
-        }),
-      );
-      jest.spyOn(dataSource, 'transaction').mockImplementation(mockTransaction);
-
-      const result = await service.requestChat(1);
-
-      expect(result).toEqual(mockQueueEntry);
-      expect(queueService.enqueue).toHaveBeenCalledWith(
-        { userId: 1, chatId: 2, priority: 1 },
-        expect.any(Object),
-      );
-    });
-
-    it('should throw HttpException when user has active chat', async () => {
-      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat);
-
-      const mockTransaction = jest.fn().mockImplementation((callback) =>
-        callback({
-          getRepository: jest.fn().mockReturnValue({
-            findOne: jest.fn().mockResolvedValue(mockChat),
-          }),
-        }),
-      );
-      jest.spyOn(dataSource, 'transaction').mockImplementation(mockTransaction);
-
-      await expect(service.requestChat(1)).rejects.toThrow(HttpException);
-      await expect(service.requestChat(1)).rejects.toThrow(
-        'You already have an active or waiting chat session',
-      );
-    });
-  });
-
-  describe('addNewChatWithCounselor', () => {
-    it('should create a new chat with counselor', async () => {
-      const mockNewChat = { ...mockChat, id: 2, counselorId: 2 };
-
-      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(null);
-      jest.spyOn(chatRepository, 'create').mockReturnValue(mockNewChat as any);
-      jest.spyOn(chatRepository, 'save').mockResolvedValue(mockNewChat as any);
-
-      const mockTransaction = jest.fn().mockImplementation((callback) =>
-        callback({
-          getRepository: jest.fn().mockReturnValue({
-            findOne: jest.fn().mockResolvedValue(null),
-            create: jest.fn().mockReturnValue(mockNewChat),
-            save: jest.fn().mockResolvedValue(mockNewChat),
-          }),
-        }),
-      );
-      jest.spyOn(dataSource, 'transaction').mockImplementation(mockTransaction);
-
-      const result = await service.addNewChatWithCounselor(2, 1);
-
-      expect(result).toEqual(mockNewChat);
-    });
-
-    it('should throw HttpException when active chat exists', async () => {
-      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat);
-
-      const mockTransaction = jest.fn().mockImplementation((callback) =>
-        callback({
-          getRepository: jest.fn().mockReturnValue({
-            findOne: jest.fn().mockResolvedValue(mockChat),
-          }),
-        }),
-      );
-      jest.spyOn(dataSource, 'transaction').mockImplementation(mockTransaction);
-
-      await expect(service.addNewChatWithCounselor(2, 1)).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.addNewChatWithCounselor(2, 1)).rejects.toThrow(
-        'You already have an active or waiting chat session',
-      );
-    });
-  });
-
   describe('getChatById', () => {
     it('should return cached chat when available', async () => {
       const serializedChat = JSON.parse(JSON.stringify(mockChat));
@@ -739,372 +624,6 @@ describe('ChatService', () => {
       const result = await service.getChatById(1);
 
       expect(result).toBeNull();
-    });
-  });
-
-  describe('addCouncilorToChat', () => {
-    it('should add counselor to chat successfully', async () => {
-      const mockChatWithoutCounselor = {
-        ...mockChat,
-        counselorId: undefined,
-      };
-      const mockUpdatedChat = {
-        ...mockChat,
-        counselorId: 2,
-        status: ChatStatus.ACTIVE,
-      };
-
-      jest
-        .spyOn(chatRepository, 'findOne')
-        .mockResolvedValue(mockChatWithoutCounselor);
-      jest
-        .spyOn(chatRepository, 'save')
-        .mockResolvedValue(mockUpdatedChat as any);
-      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
-
-      const result = await service.addCouncilorToChat(2, 1);
-
-      expect(result).toEqual(mockUpdatedChat);
-      expect(chatRepository.save).toHaveBeenCalledWith({
-        ...mockChat,
-        counselorId: 2,
-        status: ChatStatus.ACTIVE,
-        startedAt: expect.any(Date),
-      });
-      expect(callDetailsRepository.update).toHaveBeenCalledWith(
-        { chatId: 1, tenantId: 'test-tenant' },
-        { startTime: expect.any(Date) },
-      );
-    });
-
-    it('should throw HttpException when chat not found', async () => {
-      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(null);
-
-      await expect(service.addCouncilorToChat(2, 1)).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.addCouncilorToChat(2, 1)).rejects.toThrow(
-        'Chat not found',
-      );
-    });
-
-    it('should throw HttpException when chat already has counselor', async () => {
-      const chatWithCounselor = { ...mockChat, counselorId: 3 };
-      jest
-        .spyOn(chatRepository, 'findOne')
-        .mockResolvedValue(chatWithCounselor);
-
-      await expect(service.addCouncilorToChat(2, 1)).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.addCouncilorToChat(2, 1)).rejects.toThrow(
-        'Chat already has a counselor',
-      );
-    });
-  });
-
-  describe('startCall', () => {
-    it('should start a call with valid participants', async () => {
-      const participantPhoneNumbers = ['+1234567890', '+0987654321'];
-      const mockCounselor = {
-        ...mockUser,
-        phone: '+1234567890',
-        id: 2,
-      };
-      const mockClient = {
-        ...mockUser,
-        phone: '+0987654321',
-        id: 1,
-      };
-      const mockNewChat = { ...mockChat, id: 2, counselorId: 2, clientId: 1 };
-      const mockChatResponse = {
-        chatId: 2,
-        clientId: 1,
-        counselorId: 2,
-        status: ChatStatus.ACTIVE,
-        messages: [],
-      };
-
-      jest
-        .spyOn(userService, 'getUsersByPhoneNumbers')
-        .mockResolvedValue([mockCounselor, mockClient]);
-      jest
-        .spyOn(service, 'getParticipantRoles')
-        .mockResolvedValue({ 1: ['CLIENT'], 2: ['COUNSELOR'] });
-      jest
-        .spyOn(service, 'addNewChatWithCounselor')
-        .mockResolvedValue(mockNewChat as any);
-      jest
-        .spyOn(service, 'getChatResponse')
-        .mockResolvedValue(mockChatResponse as any);
-      jest
-        .spyOn(service['gateway'], 'sendMessagesToRoomUsingPublish')
-        .mockImplementation(() => {});
-      const result = await service.startCall(participantPhoneNumbers);
-
-      expect(result).toEqual(mockNewChat);
-      expect(service.addNewChatWithCounselor).toHaveBeenCalledWith(2, 1);
-      expect(service.getChatResponse).toHaveBeenCalledWith(mockNewChat);
-      expect(
-        service['gateway'].sendMessagesToRoomUsingPublish,
-      ).toHaveBeenCalledWith(ChatEvents.CALL_STARTED, [2, 1], {
-        type: ChatEvents.CALL_STARTED,
-        payload: mockChatResponse,
-      });
-    });
-
-    it('should throw HttpException when insufficient participants', async () => {
-      await expect(service.startCall(['+1234567890'])).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.startCall(['+1234567890'])).rejects.toThrow(
-        'Need at least 2 participants',
-      );
-    });
-
-    it('should throw HttpException when no counselor found', async () => {
-      const participantPhoneNumbers = ['+1234567890', '+0987654321'];
-      const mockClient1 = {
-        ...mockUser,
-        phone: '+1234567890',
-        id: 1,
-      };
-      const mockClient2 = {
-        ...mockUser,
-        phone: '+0987654321',
-        id: 2,
-      };
-
-      jest
-        .spyOn(userService, 'getUsersByPhoneNumbers')
-        .mockResolvedValue([mockClient1, mockClient2]);
-      jest
-        .spyOn(service, 'getParticipantRoles')
-        .mockResolvedValue({ 1: ['CLIENT'], 2: ['CLIENT'] });
-      await expect(service.startCall(participantPhoneNumbers)).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.startCall(participantPhoneNumbers)).rejects.toThrow(
-        'Counselor not found',
-      );
-    });
-
-    it('should throw HttpException when participant list is empty', async () => {
-      await expect(service.startCall([])).rejects.toThrow(HttpException);
-      await expect(service.startCall([])).rejects.toThrow(
-        'Need at least 2 participants',
-      );
-    });
-
-    it('should throw HttpException when participant list is null', async () => {
-      await expect(service.startCall(null as any)).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.startCall(null as any)).rejects.toThrow(
-        'Need at least 2 participants',
-      );
-    });
-
-    it('should throw HttpException when participant list is undefined', async () => {
-      await expect(service.startCall(undefined as any)).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.startCall(undefined as any)).rejects.toThrow(
-        'Need at least 2 participants',
-      );
-    });
-
-    it('should throw HttpException when client phone number not found', async () => {
-      const participantPhoneNumbers = ['+1234567890', '+1234567890']; // Same phone number twice
-      const mockCounselor = {
-        ...mockUser,
-        phone: '+1234567890',
-        id: 2,
-      };
-
-      jest
-        .spyOn(userService, 'getUsersByPhoneNumbers')
-        .mockResolvedValue([mockCounselor, mockCounselor]); // Return same counselor twice
-      jest
-        .spyOn(service, 'getParticipantRoles')
-        .mockResolvedValue({ 2: ['COUNSELOR'] });
-      await expect(service.startCall(participantPhoneNumbers)).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.startCall(participantPhoneNumbers)).rejects.toThrow(
-        'Client phone number not found',
-      );
-    });
-
-    it('should throw HttpException when getUsersByPhoneNumbers fails', async () => {
-      const participantPhoneNumbers = ['+1234567890', '+0987654321'];
-
-      jest
-        .spyOn(userService, 'getUsersByPhoneNumbers')
-        .mockRejectedValue(new Error('Database error'));
-
-      await expect(service.startCall(participantPhoneNumbers)).rejects.toThrow(
-        'Database error',
-      );
-    });
-
-    it('should throw HttpException when createUser fails', async () => {
-      const participantPhoneNumbers = ['+1234567890', '+0987654321'];
-      const mockCounselor = {
-        ...mockUser,
-        phone: '+1234567890',
-        id: 2,
-      };
-
-      jest
-        .spyOn(userService, 'getUsersByPhoneNumbers')
-        .mockResolvedValue([mockCounselor, mockCounselor]); // Return same counselor twice
-      jest
-        .spyOn(service, 'getParticipantRoles')
-        .mockResolvedValue({ 2: ['COUNSELOR'] });
-      jest
-        .spyOn(userService, 'createUser')
-        .mockRejectedValue(new Error('Failed to create user'));
-
-      await expect(service.startCall(participantPhoneNumbers)).rejects.toThrow(
-        'Failed to create user',
-      );
-    });
-
-    it('should throw HttpException when addNewChatWithCounselor fails', async () => {
-      const participantPhoneNumbers = ['+1234567890', '+0987654321'];
-      const mockCounselor = {
-        ...mockUser,
-        phone: '+1234567890',
-      };
-      const mockClient = {
-        ...mockUser,
-        phone: '+0987654321',
-      };
-
-      jest
-        .spyOn(userService, 'getUsersByPhoneNumbers')
-        .mockResolvedValue([mockCounselor, mockClient]);
-      jest
-        .spyOn(service, 'addNewChatWithCounselor')
-        .mockRejectedValue(new Error('Failed to create chat'));
-
-      await expect(service.startCall(participantPhoneNumbers)).rejects.toThrow(
-        'Failed to create chat',
-      );
-    });
-  });
-
-  describe('accept', () => {
-    it('should accept a chat successfully', async () => {
-      const mockUpdatedChat = {
-        ...mockChat,
-        counselorId: 2,
-        status: ChatStatus.ACTIVE,
-      };
-      const mockQueueEntry = { entryId: 1, chatId: 1 };
-
-      jest.spyOn(service, 'getChatsByCouncilorId').mockResolvedValue(null);
-      jest
-        .spyOn(service, 'addCouncilorToChat')
-        .mockResolvedValue(mockUpdatedChat as any);
-      jest
-        .spyOn(queueService, 'getQueueByChatId')
-        .mockResolvedValue(mockQueueEntry as any);
-      jest
-        .spyOn(queueService, 'updateQueueStatus')
-        .mockResolvedValue({} as any);
-      jest.spyOn(service, 'getChatResponse').mockResolvedValue({} as any);
-
-      const mockTransaction = jest.fn().mockImplementation((callback) =>
-        callback({
-          getRepository: jest.fn().mockReturnValue({
-            findOne: jest.fn().mockResolvedValue(null),
-          }),
-        }),
-      );
-      jest.spyOn(dataSource, 'transaction').mockImplementation(mockTransaction);
-
-      await service.accept(2, 1);
-
-      expect(service.addCouncilorToChat).toHaveBeenCalledWith(
-        2,
-        1,
-        expect.any(Object),
-      );
-      expect(queueService.updateQueueStatus).toHaveBeenCalledWith(
-        1,
-        'MATCHED',
-        expect.any(Object),
-      );
-    });
-
-    it('should throw HttpException when counselor has active chat', async () => {
-      jest.spyOn(service, 'getChatsByCouncilorId').mockResolvedValue(mockChat);
-
-      const mockTransaction = jest.fn().mockImplementation((callback) =>
-        callback({
-          getRepository: jest.fn().mockReturnValue({
-            findOne: jest.fn().mockResolvedValue(mockChat),
-          }),
-        }),
-      );
-      jest.spyOn(dataSource, 'transaction').mockImplementation(mockTransaction);
-
-      await expect(service.accept(2, 1)).rejects.toThrow(HttpException);
-      await expect(service.accept(2, 1)).rejects.toThrow(
-        'You already have an active chat session',
-      );
-    });
-
-    it('should throw HttpException when chat not found in queue', async () => {
-      const mockUpdatedChat = {
-        ...mockChat,
-        counselorId: 2,
-        status: ChatStatus.ACTIVE,
-      };
-
-      jest.spyOn(service, 'getChatsByCouncilorId').mockResolvedValue(null);
-      jest
-        .spyOn(service, 'addCouncilorToChat')
-        .mockResolvedValue(mockUpdatedChat as any);
-      jest.spyOn(queueService, 'getQueueByChatId').mockResolvedValue(null); // No queue entry found
-
-      const mockTransaction = jest.fn().mockImplementation((callback) =>
-        callback({
-          getRepository: jest.fn().mockReturnValue({
-            findOne: jest.fn().mockResolvedValue(null),
-          }),
-        }),
-      );
-      jest.spyOn(dataSource, 'transaction').mockImplementation(mockTransaction);
-
-      await expect(service.accept(2, 1)).rejects.toThrow(HttpException);
-      await expect(service.accept(2, 1)).rejects.toThrow(
-        'Chat not found in queue',
-      );
-    });
-  });
-
-  describe('saveMessage', () => {
-    it('should save a message successfully', async () => {
-      const messageData = {
-        content: 'Test message',
-        context: 'Test context',
-        messageType: MessageType.TEXT,
-        createdAt: new Date(),
-        startSeconds: 10,
-        endSeconds: 20,
-        parentMessageId: 1,
-      };
-
-      jest
-        .spyOn(messageService, 'saveMessage')
-        .mockResolvedValue(mockMessage as any);
-
-      const result = await service.saveMessage(1, 1, messageData);
-
-      expect(result).toEqual(mockMessage);
     });
   });
 
@@ -1166,111 +685,6 @@ describe('ChatService', () => {
       const result = await service.isChatEnded(1);
 
       expect(result).toBe(false);
-    });
-  });
-
-  describe('cancelCallByClient', () => {
-    it('should cancel call successfully', async () => {
-      const mockPausedChat = {
-        ...mockChat,
-        status: ChatStatus.PAUSED,
-      };
-      jest
-        .spyOn(chatRepository, 'findOne')
-        .mockResolvedValue(mockPausedChat as any);
-      jest
-        .spyOn(callDetailsRepository, 'findOne')
-        .mockResolvedValue(mockCallDetails as any);
-      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
-      jest.spyOn(chatRepository, 'update').mockResolvedValue({} as any);
-      jest.spyOn(cache, 'del').mockResolvedValue(undefined);
-
-      const result = await service.cancelCallByClient(1, 1);
-
-      expect(result).toEqual({ success: true });
-      expect(chatRepository.update).toHaveBeenCalledWith(1, {
-        status: ChatStatus.CANCELLED,
-        startedAt: expect.any(Date),
-        endedAt: expect.any(Date),
-      });
-    });
-
-    it('should throw HttpException when chat not found', async () => {
-      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(null);
-
-      await expect(service.cancelCallByClient(1, 1)).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.cancelCallByClient(1, 1)).rejects.toThrow(
-        'Chat not found',
-      );
-    });
-
-    it('should throw HttpException when user not authorized', async () => {
-      const otherUserChat = { ...mockChat, clientId: 2 };
-      jest
-        .spyOn(chatRepository, 'findOne')
-        .mockResolvedValue(otherUserChat as any);
-
-      await expect(service.cancelCallByClient(1, 1)).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.cancelCallByClient(1, 1)).rejects.toThrow(
-        'You are not authorized to cancel this call',
-      );
-    });
-
-    it('should throw HttpException when call already ended', async () => {
-      const endedChat = { ...mockChat, status: ChatStatus.ENDED };
-      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(endedChat as any);
-
-      await expect(service.cancelCallByClient(1, 1)).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.cancelCallByClient(1, 1)).rejects.toThrow(
-        'Call is already ended',
-      );
-    });
-
-    it('should throw HttpException when call is active', async () => {
-      const activeChat = { ...mockChat, status: ChatStatus.ACTIVE };
-      jest
-        .spyOn(chatRepository, 'findOne')
-        .mockResolvedValue(activeChat as any);
-
-      await expect(service.cancelCallByClient(1, 1)).rejects.toThrow(
-        HttpException,
-      );
-      await expect(service.cancelCallByClient(1, 1)).rejects.toThrow(
-        'Call is currently active and cannot be cancelled by client',
-      );
-    });
-  });
-
-  describe('createChat', () => {
-    it('should create a chat successfully', async () => {
-      const mockNewChat = { ...mockChat, id: 2 };
-      jest.spyOn(chatRepository, 'create').mockReturnValue(mockNewChat as any);
-      jest.spyOn(chatRepository, 'save').mockResolvedValue(mockNewChat as any);
-      jest
-        .spyOn(callDetailsRepository, 'save')
-        .mockResolvedValue(mockCallDetails as any);
-
-      const result = await service.createChat(1, undefined);
-
-      expect(result).toEqual(mockNewChat);
-      expect(chatRepository.create).toHaveBeenCalledWith({
-        clientId: 1,
-        status: ChatStatus.PAUSED,
-        tenantId: 'test-tenant',
-      });
-      expect(callDetailsRepository.save).toHaveBeenCalledWith({
-        chatId: 2,
-        tenantId: 'test-tenant',
-        callInfo: {
-          provider: AudioChatProvider.WEBRTC,
-        },
-      });
     });
   });
 
@@ -1401,34 +815,6 @@ describe('ChatService', () => {
     });
   });
 
-  describe('getMessageObject', () => {
-    it('should create message object', async () => {
-      const messageData = {
-        content: 'Test message',
-        context: 'Test context',
-        messageType: MessageType.TEXT,
-      };
-      jest
-        .spyOn(messageService, 'getMessageObject')
-        .mockReturnValue(mockMessage as any);
-
-      const result = await service.getMessageObject(1, 1, messageData);
-
-      expect(result).toEqual(mockMessage);
-    });
-  });
-
-  describe('save', () => {
-    it('should save message', async () => {
-      jest.spyOn(messageService, 'save').mockResolvedValue(mockMessage as any);
-
-      const result = await service.save(mockMessage);
-
-      expect(result).toEqual(mockMessage);
-      expect(messageService.save).toHaveBeenCalledWith(mockMessage);
-    });
-  });
-
   describe('getCounselorChat', () => {
     it('should return counselor chat', async () => {
       const mockCounselorChat = { ...mockChat, counselorId: 2 };
@@ -1527,37 +913,6 @@ describe('ChatService', () => {
       const result = await service.getMyChats(1);
 
       expect(result).toEqual([]);
-    });
-  });
-
-  describe('handleDeepgramTranscript', () => {
-    it('should handle deepgram transcript', async () => {
-      const mockSession = { userId: 1, role: 'CLIENT' };
-      const mockMetadata = {
-        confidence: 0.9,
-        isFinal: true,
-        isSentenceComplete: true,
-        currentTranscriptBuffer: 'Test transcript',
-        currentTranscriptCreatedAt: new Date(),
-      };
-
-      jest
-        .spyOn(service, 'handleDeepgramTranscript')
-        .mockResolvedValue(undefined);
-
-      await service.handleDeepgramTranscript(
-        mockSession as any,
-        1,
-        'Test transcript',
-        mockMetadata,
-      );
-
-      expect(service.handleDeepgramTranscript).toHaveBeenCalledWith(
-        mockSession,
-        1,
-        'Test transcript',
-        mockMetadata,
-      );
     });
   });
 

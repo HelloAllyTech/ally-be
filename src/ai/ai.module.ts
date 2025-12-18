@@ -2,8 +2,6 @@ import { Module, forwardRef } from '@nestjs/common';
 import { AiService } from './service/ai.service';
 import { AiEventService } from './service/ai-event.service';
 import { AiEventConsumer } from './consumer/ai-event.consumer';
-import { DeepgramService } from './service/deepgram.service';
-import { TranscriptionService } from './service/transcription.service';
 import { SqsService } from '../aws/service/sqs.service';
 import { ChatModule } from '../chat/chat.module';
 import { ProcessorRegistry } from './processors/processor-registry';
@@ -19,8 +17,6 @@ import { LearnModule } from 'src/learn/learn.module';
     AiService,
     AiEventService,
     AiEventConsumer,
-    { provide: 'transcriptionService', useClass: DeepgramService },
-    TranscriptionService,
     SqsService,
     ProcessorRegistry,
     TranscribeResultProcessor,
@@ -28,6 +24,6 @@ import { LearnModule } from 'src/learn/learn.module';
     TranscriptionRequestDlqConsumer,
     TranscriptionResponseDlqConsumer,
   ],
-  exports: [AiService, AiEventService, TranscriptionService, ProcessorRegistry],
+  exports: [AiService, AiEventService, ProcessorRegistry],
 })
 export class AiModule {}

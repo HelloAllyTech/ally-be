@@ -36,9 +36,6 @@ import {
   DeleteChatResponseDto,
 } from '../dto/chat.response.dto';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
-import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
-import { CallStartDto } from '../dto/call-start.dto';
 import { Response } from 'express';
 import { GetMessagesResponse } from '../dto/message.response.dto';
 import { CallLogSortBy, SortOrder } from '../dto/call-log.request.dto';
@@ -65,12 +62,6 @@ export class ChatController {
   @Get('my-chat')
   async getMyChats(@CurrentUser() tokenUser: TokenUser) {
     return this.service.getMyChats(tokenUser.id);
-  }
-
-  @AuthRoles(UserRole.CLIENT)
-  @Post('request')
-  async requestChat(@CurrentUser() tokenUser: TokenUser) {
-    return this.service.requestChat(tokenUser.id);
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_CHAT_COUNSELOR])
@@ -329,31 +320,10 @@ export class ChatController {
     return this.service.getAllTags(limit, offset, search);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_CALL_START])
-  @Post('call-start')
-  async callStart(@Body() params: CallStartDto) {
-    return this.service.startCall(params.participantPhoneNumbers);
-  }
-
-  @AuthPermissions([PERMISSIONS.EDIT_CALL_ACCEPT])
-  @Post(':id/accept')
-  async accept(@CurrentUser() tokenUser: TokenUser, @Param('id') id: string) {
-    return this.service.accept(tokenUser.id, parseInt(id));
-  }
-
   @AuthPermissions([PERMISSIONS.EDIT_CALL_END])
   @Post(':id/end')
   async endChat(@Param('id') id: string) {
     return this.service.endChat(parseInt(id));
-  }
-
-  @AuthRoles(UserRole.CLIENT)
-  @Post(':id/cancel')
-  async cancelCallByClient(
-    @CurrentUser() tokenUser: TokenUser,
-    @Param('id') id: string,
-  ) {
-    return this.service.cancelCallByClient(tokenUser.id, parseInt(id));
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_MESSAGES])

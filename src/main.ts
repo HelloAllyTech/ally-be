@@ -9,7 +9,6 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import { AudioIngestGateway } from './audio-ingest/gateway/audio.ingest.gateway';
 import { AppConfigService } from './config/config.service';
 
 async function bootstrap() {
@@ -77,21 +76,6 @@ async function bootstrap() {
       .build();
     const documentFactory = () => SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('api-docs', app, documentFactory);
-    const audioIngestGateway = app.get(AudioIngestGateway);
-    const httpServer = app.getHttpServer();
-    // Route upgrade requests for `/ws` manually to raw ws
-    httpServer.on('upgrade', (request: any, socket: any, head: any) => {
-      const { url } = request;
-
-      if (url?.startsWith('/ws')) {
-        audioIngestGateway
-          .getWss()
-          .handleUpgrade(request, socket, head, (ws: any) => {
-            audioIngestGateway.getWss().emit('connection', ws, request);
-          });
-      }
-      // Socket.IO or other upgrades fall through and are handled by Nest/SIO
-    });
     await app.listen(port);
     logger.log(`Application is running on: http://localhost:${port}`);
   } catch (error) {

@@ -1,13 +1,9 @@
 import { forwardRef, Module, OnModuleInit } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { AudioIngestService } from './service/audio-ingest.service';
 import { OzonetelService } from './service/ozonetel.service';
-import { ExotelConferenceCallService } from './service/exotel-conference-call.service';
 import { AiModule } from '../ai/ai.module';
 import { ChatModule } from '../chat/chat.module';
 import { UserModule } from '../user/user.module';
-import { AudioIngestGateway } from './gateway/audio.ingest.gateway';
-import { ProviderFactory } from '../factory/provider.factory';
 import { BrokerModule } from '../message-broker/broker.module';
 import { AudioModule } from 'src/audio/audio.module';
 import { CloudTelephonyGateway } from './gateway/cloud-telephony.gateway';
@@ -36,12 +32,8 @@ import { AwsModule } from '../aws/aws.module';
     AwsModule,
   ],
   providers: [
-    AudioIngestService,
-    ExotelConferenceCallService,
-    AudioIngestGateway,
     CloudTelephonyGateway,
     JwtService,
-    ProviderFactory.getAudioIngestFactory(),
     CloudTelephonyService,
     CloudTelephonyRepository,
     OzonetelService,

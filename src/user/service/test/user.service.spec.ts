@@ -199,49 +199,6 @@ describe('UserService', () => {
     });
   });
 
-  describe('getUserByPhoneNumber', () => {
-    it('should return cached user when found in cache', async () => {
-      const cachedUser = JSON.stringify(mockUser);
-      mockCache.get.mockResolvedValue(cachedUser);
-      const result = await service.getUserByPhoneNumber('+1234567890');
-      expect(result).toEqual(JSON.parse(cachedUser));
-    });
-
-    it('should return user from database and cache it when not in cache', async () => {
-      mockCache.get.mockResolvedValue(null);
-      mockUsersRepository.findOne.mockResolvedValue(mockUser);
-      const result = await service.getUserByPhoneNumber('+1234567890');
-      expect(result).toEqual(mockUser);
-      expect(mockCache.set).toHaveBeenCalledWith(
-        'user_+1234567890',
-        JSON.stringify(mockUser),
-      );
-    });
-
-    it('should return null when user not found in cache or database', async () => {
-      mockCache.get.mockResolvedValue(null);
-      mockUsersRepository.findOne.mockResolvedValue(null);
-      const result = await service.getUserByPhoneNumber('+1234567890');
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('getUsersByPhoneNumbers', () => {
-    it('should return users by phone numbers', async () => {
-      const phoneNumbers = ['+1234567890', '+0987654321'];
-      const users = [mockUser];
-      mockUsersRepository.find.mockResolvedValue(users);
-      const result = await service.getUsersByPhoneNumbers(phoneNumbers);
-      expect(result).toEqual(users);
-      expect(mockUsersRepository.find).toHaveBeenCalledWith({
-        where: {
-          phone: expect.any(Object),
-          tenantId: 'test-tenant',
-        },
-      });
-    });
-  });
-
   describe('getUsersByIds', () => {
     it('should return users by ids', async () => {
       const ids = [1, 2];
@@ -312,51 +269,6 @@ describe('UserService', () => {
       ]);
       const result = await service.getMinimalUserInfo(mockUser);
       expect(result && result.role).toBe(UserRole.CLIENT);
-    });
-  });
-
-  describe('createUser', () => {
-    it('should create and save user with all parameters', async () => {
-      const userData = {
-        phoneNumber: '+1234567890',
-        name: 'New User',
-        email: 'new@example.com',
-        status: UserStatus.ACTIVE,
-        username: 'newuser',
-        tenantId: 'test-tenant',
-      };
-      const createdUser = {
-        ...mockUser,
-        ...userData,
-        phone: userData.phoneNumber,
-      };
-      mockUsersRepository.create.mockReturnValue(createdUser);
-      mockUsersRepository.save.mockResolvedValue(createdUser);
-      const result = await service.createUser(userData);
-      expect(result).toEqual(createdUser);
-      expect(mockUsersRepository.create).toHaveBeenCalledWith({
-        phone: userData.phoneNumber,
-        name: userData.name,
-        email: userData.email,
-        status: userData.status,
-        username: userData.username,
-        tenantId: userData.tenantId,
-      });
-    });
-
-    it('should create user with default values when optional params not provided', async () => {
-      const userData = { phoneNumber: '+1234567890' };
-      mockUsersRepository.create.mockReturnValue(mockUser);
-      mockUsersRepository.save.mockResolvedValue(mockUser);
-      await service.createUser(userData);
-      expect(mockUsersRepository.create).toHaveBeenCalledWith({
-        phone: userData.phoneNumber,
-        name: 'Anonymous user',
-        email: `${userData.phoneNumber}@placeholder.com`,
-        status: UserStatus.ACTIVE,
-        username: `${userData.phoneNumber}_user`,
-        tenantId: 'anonyumous_tenant',
-      });
     });
   });
 
