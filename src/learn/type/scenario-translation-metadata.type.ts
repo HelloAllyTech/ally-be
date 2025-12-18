@@ -13,4 +13,5 @@ export type MetadataShape = {
   openingStatements?: string[];
   sexualOrientation?: string;
   genderIdentity?: string;
+  customFields?: { name: string; value: string }[];
 };

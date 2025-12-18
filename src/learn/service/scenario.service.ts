@@ -20,7 +20,7 @@ import { SessionEventService } from 'src/session-event/service/session-event.ser
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
-import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { ScenarioStatus } from '../type/scenario.type';
 import { SCENARIO_STATUS_MAP } from 'src/learn/constants/scenario-status.map';
 import { S3Service } from 'src/aws/service/s3.service';
 import { AppConfigService } from 'src/config/config.service';
@@ -28,7 +28,6 @@ import { ScenarioImageUploadRequestDto } from '../dto/scenario-image-upload-requ
 import { ScenarioImageUploadResponseDto } from '../dto/scenario-image-upload-response.dto';
 import { ScenarioImageUploadContentType } from '../enum/scenario-image-upload-content-type.enum';
 import { ScenarioEventsRepository } from '../repository/scenario-events.repository';
-import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
 import { DeleteCoverImageDto } from '../dto/delete-cover-image.dto';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioVideoUploadRequestDto } from '../dto/scenario-video-upload-request.dto';
@@ -47,7 +46,10 @@ import {
 import {
   formatAutoTerminationEventsList,
   formatScenarioTriggerWarningsList,
+  getActiveScenarioMandatoryFields,
   mapCreateScenarioRequestToEntity,
+  mapCreateScenarioRequestToEntityWithoutCustomFields,
+  mapUpdateScenarioRequestToEntity,
 } from '../util/scenario.util';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
@@ -151,7 +153,11 @@ export class ScenarioService {
   private checkPreviewEnabled(item: any): boolean {
     const metadata = item.scenario_metadata || {};
 
-    const missingFields = SCENARIO_MANDATORY_FIELDS.filter((field) => {
+    // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS):  Update logic
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
+      this.configService.featureFlag.scenarioCustomFields,
+    );
+    const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter((field) => {
       let value = undefined;
 
       if (metadata.hasOwnProperty(field)) {
@@ -398,7 +404,13 @@ export class ScenarioService {
     const createScenarioDtos = await Promise.all(
       createScenariosDto.scenarios.map(async (scenario) => {
         await this.validateCreateScenario(scenario);
-        return mapCreateScenarioRequestToEntity(scenario, userId);
+        // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS):  Update logic
+        return this.configService.featureFlag.scenarioCustomFields
+          ? mapCreateScenarioRequestToEntity(scenario, userId)
+          : mapCreateScenarioRequestToEntityWithoutCustomFields(
+              scenario,
+              userId,
+            );
       }),
     );
 
@@ -472,6 +484,7 @@ export class ScenarioService {
             openingStatements: scenario.metadata?.openingStatements,
             sexualOrientation: scenario.metadata?.sexualOrientation,
             genderIdentity: scenario.metadata?.genderIdentity,
+            customFields: scenario.metadata?.customFields,
           }),
         (scenario) => scenario.metadata?.languageVoices,
       );
@@ -487,6 +500,23 @@ export class ScenarioService {
 
     if (createScenarioDto.voiceId)
       await this.getScenarioVoice(createScenarioDto?.voiceId);
+    if (
+      createScenarioDto.triggerWarningIds &&
+      createScenarioDto.triggerWarningIds.length > 0
+    ) {
+      await this.validateTriggerWarnings(createScenarioDto.triggerWarningIds);
+    }
+  }
+
+  private async validateTriggerWarnings(triggerWarningIds: string[]) {
+    const uniqueTriggerWarningIds = [...new Set(triggerWarningIds)];
+    const triggerWarnings =
+      await this.triggerWarningsService.getTriggerWarningsByIds(
+        uniqueTriggerWarningIds,
+      );
+    if (triggerWarnings.length !== uniqueTriggerWarningIds.length) {
+      throw new BadRequestException('Invalid trigger warning IDs');
+    }
   }
 
   private validateScenarioStatus(
@@ -518,7 +548,11 @@ export class ScenarioService {
         );
       }
 
-      const missingFields = SCENARIO_MANDATORY_FIELDS.filter(
+      // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Update logic
+      const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
+        this.configService.featureFlag.scenarioCustomFields,
+      );
+      const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
         (field) => !data[field as keyof typeof data],
       );
 
@@ -537,72 +571,12 @@ export class ScenarioService {
   ): Promise<boolean> {
     const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
     return await this.dataSource.transaction(async (entityManager) => {
-      // Build update object
-      const updateData: DeepPartial<Scenarios> = {
-        updatedBy: userId,
-      };
-
-      const updateScenarioObjectFields = [
-        'title',
-        'description',
-        'coverImageUrl',
-        'coverVideoUrl',
-        'status',
-        'prompt',
-        'isGlobal',
-      ];
-
-      for (const field of updateScenarioObjectFields) {
-        if (updateScenarioDto[field as keyof UpdateScenarioDto] !== undefined) {
-          updateData[field as keyof Scenarios] = updateScenarioDto[
-            field as keyof UpdateScenarioDto
-          ] as any;
-        }
-      }
-
-      // Handle metadata fields - merge with existing metadata
-      const metadataUpdates: Record<string, any> = {};
-
-      const metadataFieldMap = {
-        agentGoal: updateScenarioDto.agentGoal,
-        name: updateScenarioDto.name,
-        age: updateScenarioDto.age,
-        gender: updateScenarioDto.gender,
-        genderIdentity: updateScenarioDto.genderIdentity,
-        sexualOrientation: updateScenarioDto.sexualOrientation,
-        currentLocation: updateScenarioDto.currentLocation,
-        profession: updateScenarioDto.profession,
-        context: updateScenarioDto.context,
-        sessionBehaviorGuidelines: updateScenarioDto.sessionBehaviorGuidelines,
-        lifeHistory: updateScenarioDto.lifeHistory,
-        coreMemories: updateScenarioDto.coreMemories,
-        personality: updateScenarioDto.personality,
-        startingState: updateScenarioDto.startingState,
-        emotionalNeeds: updateScenarioDto.emotionalNeeds,
-        tone: updateScenarioDto.tone,
-        openingStatements: updateScenarioDto.openingStatements,
-        voiceId: updateScenarioDto.voiceId,
-        customFields: updateScenarioDto.customFields?.map((customField) => ({
-          name: customField.name,
-          value: customField.value,
-        })),
-        languageVoices: updateScenarioDto.languageVoices,
-      };
-
-      // Only include fields that are defined
-      for (const [key, value] of Object.entries(metadataFieldMap)) {
-        if (value !== undefined) {
-          metadataUpdates[key] = value;
-        }
-      }
-
-      // If there are metadata updates, merge with existing metadata
-      if (Object.keys(metadataUpdates).length > 0) {
-        updateData.metadata = {
-          ...scenario.metadata,
-          ...metadataUpdates,
-        };
-      }
+      const updateData = mapUpdateScenarioRequestToEntity(
+        updateScenarioDto,
+        scenario,
+        userId,
+        this.configService.featureFlag.scenarioCustomFields,
+      );
 
       const scenarioRepository = entityManager.getRepository(Scenarios);
       const updated = await scenarioRepository.update(id, updateData);
@@ -627,6 +601,7 @@ export class ScenarioService {
               openingStatements: updateScenarioDto.openingStatements,
               sexualOrientation: updateScenarioDto.sexualOrientation,
               genderIdentity: updateScenarioDto.genderIdentity,
+              customFields: updateScenarioDto?.customFields,
             }),
           () => updateScenarioDto.languageVoices,
         );
@@ -711,12 +686,16 @@ export class ScenarioService {
       const existingTriggerWarningIds = existingTriggerWarnings?.map(
         (warning) => warning.triggerWarningId,
       );
-      // Getting triggerWranings that need to be added
-      const newTriggerWarningIds = !existingTriggerWarningIds
-        ? updateScenarioDto?.triggerWarningIds
-        : updateScenarioDto?.triggerWarningIds?.filter(
-            (id) => !existingTriggerWarningIds?.includes(id),
-          );
+      // Getting triggerWarnings that need to be added
+      const newTriggerWarningIds = [
+        ...new Set(
+          !existingTriggerWarningIds
+            ? updateScenarioDto?.triggerWarningIds
+            : updateScenarioDto?.triggerWarningIds?.filter(
+                (id) => !existingTriggerWarningIds?.includes(id),
+              ),
+        ),
+      ];
       if (newTriggerWarningIds && newTriggerWarningIds.length > 0) {
         const scenarioTriggerWarningList = newTriggerWarningIds.map(
           (triggerWarningId) =>
@@ -740,6 +719,86 @@ export class ScenarioService {
       }
 
       return true;
+    });
+  }
+
+  async duplicateScenario(id: number): Promise<Scenarios> {
+    const scenario = await this.scenariosRepository.findOne({ where: { id } });
+    if (!scenario) {
+      throw new NotFoundException('Scenario not found ');
+    }
+
+    const scenarioEvents = await this.scenarioEventsRepository.find({
+      where: { scenarioId: id },
+    });
+
+    const triggerWarnings =
+      await this.triggerWarningsService.getTriggerWarningsByScenarioId(id);
+
+    const newScenario = {
+      title: `Copy of ${scenario.title}`,
+      description: scenario.description,
+      coverImageUrl: scenario.coverImageUrl,
+      coverVideoUrl: scenario.coverVideoUrl,
+      status: ScenarioStatus.DRAFT,
+      prompt: scenario.prompt,
+      metadata: scenario.metadata,
+      isGlobal: scenario.isGlobal,
+      scenario: scenario.scenario,
+      createdBy: Number(ExecutionManager.getUserId()),
+      updatedBy: Number(ExecutionManager.getUserId()),
+    };
+
+    return await this.dataSource.transaction(async (manager) => {
+      const scenarioRepo = manager.getRepository(Scenarios);
+      const scenarioEventRepo = manager.getRepository(ScenarioEvents);
+      const triggerWarningsScenarioRepo = manager.getRepository(
+        ScenarioTriggerWarnings,
+      );
+
+      const newScenarioData = await scenarioRepo.save(newScenario);
+
+      if (scenarioEvents.length > 0) {
+        const newScenarioEvents = scenarioEvents.map((item) =>
+          scenarioEventRepo.create({
+            scenarioId: newScenarioData.id,
+            autoTerminationStatus: item.autoTerminationStatus,
+            branchingStatus: item.branchingStatus,
+            branchInstruction: item.branchInstruction,
+            emoji: item.emoji,
+            eventId: item.eventId,
+            feedbackStatus: item.feedbackStatus,
+            message: item.message,
+            score: item.score,
+          }),
+        );
+        await scenarioEventRepo.save(newScenarioEvents);
+      }
+
+      if (triggerWarnings.length > 0) {
+        const newScenarioTriggerWarnings = triggerWarnings.map((item) =>
+          triggerWarningsScenarioRepo.create({
+            scenarioId: newScenarioData.id,
+            triggerWarningId: item.triggerWarningId,
+          }),
+        );
+        await triggerWarningsScenarioRepo.save(newScenarioTriggerWarnings);
+      }
+
+      if (newScenarioData.isGlobal) {
+        const tenants = await this.tenantService.findAll();
+        const tenantIds = tenants.map((tenant) => tenant.id);
+        const scenarioTenantRepo = manager.getRepository(ScenarioTenants);
+        const scenarioTenants = tenantIds.map((tenantId) =>
+          scenarioTenantRepo.create({
+            scenarioId: newScenarioData.id,
+            tenantId,
+          }),
+        );
+        await scenarioTenantRepo.save(scenarioTenants);
+      }
+      this.logger.info(`Scenario ${id} duplicated successfully`);
+      return newScenarioData;
     });
   }
 
@@ -784,6 +843,12 @@ export class ScenarioService {
 
     if (updateScenarioDto.voiceId) {
       await this.getScenarioVoice(updateScenarioDto?.voiceId);
+    }
+    if (
+      updateScenarioDto.triggerWarningIds &&
+      updateScenarioDto.triggerWarningIds.length > 0
+    ) {
+      await this.validateTriggerWarnings(updateScenarioDto.triggerWarningIds);
     }
 
     return scenario;

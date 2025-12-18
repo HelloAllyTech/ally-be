@@ -40,7 +40,7 @@ import { DuplicateScenarioPathResponseDto } from '../dto/duplicate-scenario-path
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioPathTenant } from '../entity/scenario-path-tenant.entity';
 import { UpdateScenarioPathItemDto } from '../dto/update-scenario-path-item.dto';
-import { ScenarioStatus } from 'src/learn/enum/scenario.status.enum';
+import { ScenarioStatus } from 'src/learn/type/scenario.type';
 
 @Injectable()
 export class ScenarioPathService {

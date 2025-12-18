@@ -16,7 +16,7 @@ import { ScenarioFilters } from '../type/scenario-filter.type';
 import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.entity';
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { GetScenarioDto } from '../dto/get-scenario.dto';
-import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { ScenarioStatus } from '../type/scenario.type';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { GetScenarioResponse } from '../interface/session.interface';
 

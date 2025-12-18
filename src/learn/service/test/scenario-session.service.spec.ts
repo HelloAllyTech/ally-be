@@ -15,7 +15,10 @@ import { ScenarioSessionEvents } from 'src/learn/entity/scenario-session-events.
 import { ScenarioSessionFeedbacks } from 'src/learn/entity/scenario-session-feedbacks.entity';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.enum';
-import { ScenarioStatus } from 'src/learn/enum/scenario.status.enum';
+import {
+  ScenarioStatus,
+  ScenarioDifficultyLevel,
+} from 'src/learn/type/scenario.type';
 import { ScenarioSessionMessagesRepository } from 'src/learn/repository/scenario-session-messages.repository';
 import { ScenarioSessionRepository } from 'src/learn/repository/scenario-session.repository';
 import { LiveKitService } from 'src/livekit/service/livekit.service';
@@ -235,6 +238,9 @@ describe('ScenarioSessionService', () => {
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
+      },
+      featureFlag: {
+        scenarioCustomFields: true,
       },
     };
 
@@ -664,16 +670,19 @@ describe('ScenarioSessionService', () => {
         description: 'Test Description',
         coverImageUrl: 'https://example.com/cover.jpg',
         status: ScenarioStatus.DRAFT,
+        difficultyLevel: ScenarioDifficultyLevel.EASY,
         metadata: {
-          agentGoal: 'Help the client',
-          lifeHistory: 'Life history',
           voiceId: 'voice-123',
           name: 'Test Client',
           age: 25,
           gender: 'female',
+          genderIdentity: 'Female/Woman',
+          sexualOrientation: 'Heterosexual (straight)',
           currentLocation: 'New York',
           context: 'Context',
-          openingStatements: ['Opening', 'Opening 2'],
+          openingStatements: ['Opening'],
+          responseLength: 'short',
+          agentDialogues: 'Sample dialogue',
           languageVoices: { 1: 'voice-123' },
         },
         isGlobal: false,
@@ -724,6 +733,11 @@ describe('ScenarioSessionService', () => {
           context: 'Context',
           openingStatements: ['Opening', 'Opening 2'],
           languageVoices: { 1: 'voice-123' },
+          difficultyLevel: 'medium',
+          responseLength: 'medium',
+          genderIdentity: 'female',
+          sexualOrientation: 'heterosexual',
+          agentDialogues: ['Hello, how can I help you?'],
         },
       };
       const mockTokenResponse = {

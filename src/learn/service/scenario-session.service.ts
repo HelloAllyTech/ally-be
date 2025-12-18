@@ -46,8 +46,7 @@ import {
 } from '../constants/scenario-session.constants';
 import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
-import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
-import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { ScenarioStatus } from '../type/scenario.type';
 import { ScenarioTenantService } from './scenario-tenant.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
@@ -63,6 +62,7 @@ import {
 import { ScenarioTranslationsRepository } from '../repository/scenario-translations.repository';
 import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
 import { LanguageCode } from '../type/scenario-language-voice.type';
+import { getActiveScenarioMandatoryFields } from '../util/scenario.util';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -239,7 +239,22 @@ export class ScenarioSessionService {
         counselorId,
       );
 
-      return { scenarioSession, accessToken, scenario };
+      const mappedScenarioData = {
+        id: scenario?.id,
+        title: scenario?.title,
+        description: scenario?.description,
+        coverImageUrl: scenario?.coverImageUrl,
+        coverVideoUrl: scenario?.coverVideoUrl,
+        status: scenario?.status,
+        difficultyLevel: scenario?.difficultyLevel,
+        triggerWarnings: scenario?.triggerWarnings,
+        metadata: {
+          name: scenario?.metadata?.name,
+          title: scenario?.metadata?.title,
+          age: scenario?.metadata?.age,
+        },
+      };
+      return { scenarioSession, accessToken, scenario: mappedScenarioData };
     } catch (error) {
       // If room creation fails, clean up the session
       await this.scenarioSessionRepository.delete(scenarioSession.id);
@@ -838,7 +853,10 @@ export class ScenarioSessionService {
       ...(metadata ?? {}),
     };
 
-    const missingFields = SCENARIO_MANDATORY_FIELDS.filter(
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
+      this.configService.featureFlag.scenarioCustomFields,
+    );
+    const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
       (field) => !flatScenario[field as keyof typeof flatScenario],
     );
     if (missingFields.length > 0) {

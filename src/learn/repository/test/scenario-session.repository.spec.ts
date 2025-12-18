@@ -14,7 +14,7 @@ import {
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from '../../enum/scenario-session-status.enum';
-import { ScenarioStatus } from '../../enum/scenario.status.enum';
+import { ScenarioStatus } from '../../type/scenario.type';
 import { UserRole } from 'src/common/constants/user.constants';
 import { UserStatus } from 'src/user/constants/user-status.constants';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';

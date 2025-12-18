@@ -8,7 +8,7 @@ import { ScenariosRepository } from '../scenario.repository';
 import { GetScenarioDto } from '../../dto/get-scenario.dto';
 import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { TriggerWarnings } from '../../entity/trigger-warnings.entity';
-import { ScenarioStatus } from '../../enum/scenario.status.enum';
+import { ScenarioStatus } from '../../type/scenario.type';
 import { ScenarioTriggerWarnings } from '../../entity/scenario-trigger-warnings.entity';
 import { ScenarioEvents } from '../../entity/scenario-events.entity';
 import { ScenarioTenants } from '../../entity/scenario-tenants.entity';

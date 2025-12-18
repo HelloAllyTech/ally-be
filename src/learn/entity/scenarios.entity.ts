@@ -5,7 +5,7 @@ import {
   Entity,
   DeleteDateColumn,
 } from 'typeorm';
-import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { ScenarioDifficultyLevel, ScenarioStatus } from '../type/scenario.type';
 
 @Entity('scenarios')
 export class Scenarios extends BaseWithoutTenantEntity {
@@ -47,4 +47,11 @@ export class Scenarios extends BaseWithoutTenantEntity {
 
   @Column({ default: false })
   isGlobal!: boolean;
+
+  @Column({
+    nullable: true,
+    enum: ScenarioDifficultyLevel,
+    default: ScenarioDifficultyLevel.MEDIUM,
+  })
+  difficultyLevel?: ScenarioDifficultyLevel;
 }
