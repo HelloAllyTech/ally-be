@@ -38,7 +38,6 @@ import {
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
-import { config } from 'process';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
