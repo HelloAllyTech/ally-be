@@ -104,6 +104,7 @@ describe('SessionEventTranslationsRepository', () => {
         {
           sessionEventId: 'event-1',
           languageId: 1,
+          name: 'New name',
           message: 'New message',
           branchInstruction: 'Test branch instruction',
           detectionData: { sentences: ['value-1', 'value-2'] },
@@ -132,6 +133,7 @@ describe('SessionEventTranslationsRepository', () => {
         {
           sessionEventId: 'event-1',
           languageId: 1,
+          name: 'Updated name',
           message: 'Updated message',
           branchInstruction: 'Updated instruction',
           detectionData: { sentences: ['updated'] },

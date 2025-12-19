@@ -35,6 +35,7 @@ export class SessionEventTranslationService {
     await this.persistSessionEventTranslations(
       events, // array of session events or single-element array
       (sessionEvent) => ({
+        name: sessionEvent.name,
         message: sessionEvent.message,
         branchInstruction: sessionEvent.branchInstruction,
         detectionData: sessionEvent.detectionData,
@@ -100,6 +101,7 @@ export class SessionEventTranslationService {
       try {
         const rawMetadata = metadataExtractor(sessionEvent);
         const sanitized = this.sanitizeSessionEventMetadata({
+          name: rawMetadata?.name,
           message: rawMetadata?.message,
           branchInstruction: rawMetadata?.branchInstruction,
           detectionData: rawMetadata?.detectionData,
@@ -144,6 +146,7 @@ export class SessionEventTranslationService {
           translatedList.push({
             sessionEventId: sessionEvent.id,
             languageId: Number(language.id),
+            name: translatedData.name ?? '',
             message: translatedData.message ?? '',
             branchInstruction: translatedData.branchInstruction ?? '',
             detectionData: translatedData.detectionData ?? {},
@@ -196,24 +199,22 @@ export class SessionEventTranslationService {
   }
 
   private sanitizeSessionEventMetadata(
-    data: SessionEventMetadata,
+    data?: SessionEventMetadata | null,
   ): Partial<SessionEventMetadata> {
+    if (!data) return {};
+
     const cleaned: Partial<SessionEventMetadata> = {};
 
-    if (data == null) return cleaned;
-
-    if (typeof data.message === 'string' && data.message.trim() !== '') {
-      cleaned.message = data.message.trim();
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) {
+          (cleaned as Record<string, unknown>)[key] = trimmed;
+        }
+      } else if (value != null) {
+        (cleaned as Record<string, unknown>)[key] = value;
+      }
     }
-
-    if (
-      typeof data.branchInstruction === 'string' &&
-      data.branchInstruction.trim() !== ''
-    ) {
-      cleaned.branchInstruction = data.branchInstruction.trim();
-    }
-
-    if (data.detectionData) cleaned.detectionData = data.detectionData;
 
     return cleaned;
   }

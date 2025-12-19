@@ -209,9 +209,9 @@ describe('SessionEventTranslationService', () => {
       });
     });
 
-    it('should handle empty or null values', () => {
+    it('should remove empty strings and null values', () => {
       const metadata = {
-        message: '  ',
+        message: '   ',
         branchInstruction: null,
         detectionData: null,
       };
@@ -219,6 +219,44 @@ describe('SessionEventTranslationService', () => {
       const result = (service as any).sanitizeSessionEventMetadata(metadata);
 
       expect(result).toEqual({});
+    });
+
+    it('should ignore undefined values', () => {
+      const metadata = {
+        message: undefined,
+        branchInstruction: undefined,
+        detectionData: undefined,
+      };
+
+      const result = (service as any).sanitizeSessionEventMetadata(metadata);
+
+      expect(result).toEqual({});
+    });
+
+    it('should preserve non-string metadata fields', () => {
+      const metadata = {
+        detectionData: { foo: 'bar' },
+      };
+
+      const result = (service as any).sanitizeSessionEventMetadata(metadata);
+
+      expect(result).toEqual({
+        detectionData: { foo: 'bar' },
+      });
+    });
+
+    it('should dynamically sanitize additional string fields', () => {
+      const metadata = {
+        message: '  hello ',
+        customField: '  world  ',
+      };
+
+      const result = (service as any).sanitizeSessionEventMetadata(metadata);
+
+      expect(result).toEqual({
+        message: 'hello',
+        customField: 'world',
+      });
     });
   });
 });

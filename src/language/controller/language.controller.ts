@@ -23,7 +23,7 @@ export class LanguageController {
 
   @ApiOperation({ summary: 'Create language' })
   @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
-  @Post('/')
+  @Post('')
   async createLanguage(@Body() createLanguagesDto: CreateLanguagesDto) {
     return this.languageService.createLanguages(createLanguagesDto);
   }

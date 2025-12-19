@@ -38,6 +38,7 @@ export class SessionEventTranslationsRepository extends Repository<SessionEvents
       for (const translation of scenarioEventTranslations) {
         const {
           sessionEventId,
+          name,
           languageId,
           message,
           branchInstruction,
@@ -46,7 +47,7 @@ export class SessionEventTranslationsRepository extends Repository<SessionEvents
         await transactionalEntityManager.update(
           SessionEventsTranslation,
           { sessionEventId, languageId }, // Selection criteria
-          { message, branchInstruction, detectionData }, // Fields to update
+          { message, branchInstruction, detectionData, name }, // Fields to update
         );
       }
     });
@@ -87,7 +88,7 @@ export class SessionEventTranslationsRepository extends Repository<SessionEvents
       `"sessionEvents"."createdAt" AS "sessionEvents_createdAt"`,
       `"sessionEvents"."updatedAt" AS "sessionEvents_updatedAt"`,
       `"sessionEvents"."id" AS "sessionEvents_id"`,
-      `"sessionEvents"."name" AS "sessionEvents_name"`,
+      `COALESCE("sessionTranslations"."name", "sessionEvents"."name") AS "sessionEvents_name"`,
       `"sessionEvents"."description" AS "sessionEvents_description"`,
       `"sessionEvents"."score" AS "sessionEvents_score"`,
       `"sessionEvents"."emoji" AS "sessionEvents_emoji"`,

@@ -20,6 +20,9 @@ export class SessionEventsTranslation extends BaseWithoutTenantEntity {
   languageId!: number;
 
   @Column({ nullable: true })
+  name?: string;
+
+  @Column({ nullable: true })
   message?: string;
 
   @Column({ nullable: true })
