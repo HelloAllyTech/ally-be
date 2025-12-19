@@ -3,7 +3,7 @@ import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
 
 @Entity('scenario_events_translations')
 @Index(
-  'uq_scenario_events_translations_scenario_id_event_id_lang_id_idx',
+  'uq_scenario_events_translations_scen_id_evt_id_lang_id_idx',
   ['scenarioId', 'eventId', 'languageId'],
   {
     unique: true,

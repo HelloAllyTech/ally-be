@@ -16,13 +16,13 @@ export class UserPreferencesSessionEvents1766129656910
       `ALTER TABLE "user_preferences" ALTER COLUMN "data" DROP DEFAULT`,
     );
     await queryRunner.query(
-      `CREATE UNIQUE INDEX "uq_scenario_events_translations_scenario_id_event_id_lang_id_idx" ON "scenario_events_translations" ("scenarioId", "eventId", "languageId") `,
+      `CREATE UNIQUE INDEX "uq_scenario_events_translations_scen_id_evt_id_lang_id_idx" ON "scenario_events_translations" ("scenarioId", "eventId", "languageId") `,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `DROP INDEX "public"."uq_scenario_events_translations_scenario_id_event_id_lang_id_idx"`,
+      `DROP INDEX "public"."uq_scenario_events_translations_scen_id_evt_id_lang_id_idx"`,
     );
     await queryRunner.query(
       `ALTER TABLE "user_preferences" ALTER COLUMN "data" SET DEFAULT '{"default_language_id": 1}'`,
