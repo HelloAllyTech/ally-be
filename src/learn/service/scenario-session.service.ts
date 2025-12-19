@@ -64,6 +64,7 @@ import { SessionEventTranslationService } from 'src/session-event/service/sessio
 import { LanguageCode } from '../type/scenario-language-voice.type';
 import { getActiveScenarioMandatoryFields } from '../util/scenario.util';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -87,6 +88,7 @@ export class ScenarioSessionService {
     private scenarioTranslationRepository: ScenarioTranslationsRepository,
     private sessionEventTranslationService: SessionEventTranslationService,
     private sharedLanguageService: SharedLanguageService,
+    private scenarioVoicesRepository: ScenarioVoicesRepository,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -205,11 +207,18 @@ export class ScenarioSessionService {
       }
     }
 
-    // Determine voiceId from scenario metadata
-    const voiceId =
-      scenario?.metadata?.languageVoices?.[
-        startScenarioSessionDto?.languageId
-      ] ?? scenario?.metadata?.voiceId;
+    // Determine voiceId from scenario metadata languageVoices
+    let voiceId =
+      scenario?.metadata?.languageVoices?.[startScenarioSessionDto?.languageId];
+
+    // If voiceId is not found, get fallback voice
+    if (!voiceId) {
+      const voiceDetails = await this.getFallbackVoiceForLanguageGender(
+        startScenarioSessionDto?.languageId,
+        scenario?.metadata?.gender,
+      );
+      voiceId = voiceDetails?.id;
+    }
 
     if (!voiceId) {
       throw new BadRequestException('Voice not found');
@@ -284,6 +293,17 @@ export class ScenarioSessionService {
       await this.scenarioSessionRepository.delete(scenarioSession.id);
       throw error;
     }
+  }
+
+  private async getFallbackVoiceForLanguageGender(
+    languageId: number,
+    gender: string,
+  ) {
+    const voiceDetails = await this.scenarioVoicesRepository.getFallbackVoice(
+      languageId,
+      gender,
+    );
+    return voiceDetails;
   }
 
   private async createRoomMetadata(

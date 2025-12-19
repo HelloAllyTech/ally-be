@@ -37,6 +37,8 @@ import {
 } from 'src/learn/constants/scenario-session.constants';
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
+import { config } from 'process';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -72,6 +74,7 @@ describe('ScenarioSessionService', () => {
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let mockConfigService: any;
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
+  let scenarioVoicesRepository: jest.Mocked<ScenarioVoicesRepository>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -245,6 +248,10 @@ describe('ScenarioSessionService', () => {
       getLanguageByLanguageCode: jest.fn(),
     };
 
+    const mockScenarioVoicesRepository = {
+      getFallbackVoice: jest.fn().mockResolvedValue([]),
+    };
+
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -321,6 +328,10 @@ describe('ScenarioSessionService', () => {
           provide: SharedLanguageService,
           useValue: mockSharedLanguageService,
         },
+        {
+          provide: ScenarioVoicesRepository,
+          useValue: mockScenarioVoicesRepository,
+        },
       ],
     }).compile();
 
@@ -345,6 +356,7 @@ describe('ScenarioSessionService', () => {
     scenarioTranslationRepository = module.get(ScenarioTranslationsRepository);
     sessionEventTranslationService = module.get(SessionEventTranslationService);
     sharedLanguageService = module.get(SharedLanguageService);
+    scenarioVoicesRepository = module.get(ScenarioVoicesRepository);
   });
 
   afterEach(() => {
@@ -1025,6 +1037,17 @@ describe('ScenarioSessionService', () => {
         roomName: 'new-room-id',
         serverUrl: 'https://livekit.example.com',
       };
+      const mockFallbackVoice = {
+        id: 'voice-123',
+        voiceId: 'openai-voice-id',
+        config: {
+          age: 'adult',
+          name: 'priyanka',
+          model: 'aura-2-luna-en',
+          gender: 'female',
+          voiceId: 'aura-2-luna-en',
+        },
+      };
 
       scenarioService.getAdminScenario.mockResolvedValue(
         mockScenarioWithMetadata as any,
@@ -1040,6 +1063,9 @@ describe('ScenarioSessionService', () => {
       );
       sessionEventTranslationService.getSessionEventsTranslationsByScenarioId.mockResolvedValue(
         mockSessionEvents,
+      );
+      scenarioVoicesRepository.getFallbackVoice.mockResolvedValue(
+        mockFallbackVoice,
       );
       sessionEventService.findByIds.mockResolvedValue([]);
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
@@ -1100,6 +1126,18 @@ describe('ScenarioSessionService', () => {
         id: 'new-session-id',
         roomId: 'new-room-id',
       };
+
+      const mockFallbackVoice = {
+        id: 'voice-123',
+        voiceId: 'openai-voice-id',
+        config: {
+          age: 'adult',
+          name: 'priyanka',
+          model: 'aura-2-luna-en',
+          gender: 'female',
+          voiceId: 'aura-2-luna-en',
+        },
+      };
       const roomError = new Error('Room creation failed');
 
       scenarioService.getAdminScenario.mockResolvedValue(
@@ -1113,6 +1151,9 @@ describe('ScenarioSessionService', () => {
       } as any);
       sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
+      );
+      scenarioVoicesRepository.getFallbackVoice.mockResolvedValue(
+        mockFallbackVoice,
       );
       sessionEventService.findByIds.mockResolvedValue([]);
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
@@ -1155,6 +1196,15 @@ describe('ScenarioSessionService', () => {
         service as any
       ).getLanguageDetailsForScenarioSession(1);
       expect(languageDetails).toEqual(mockReturnData);
+    });
+  });
+
+  describe('getFallbackVoiceForLanguageGender', () => {
+    it('should return fallback voice for language and gender', async () => {
+      const fallbackVoice = await (
+        service as any
+      ).getFallbackVoiceForLanguageGender(1, 'female');
+      expect(fallbackVoice).toBeDefined();
     });
   });
 });

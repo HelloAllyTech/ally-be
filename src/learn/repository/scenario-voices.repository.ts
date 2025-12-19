@@ -60,6 +60,10 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
 
     const rows = await query.getRawMany();
 
+    if (!rows) {
+      return [];
+    }
+
     return rows.map((r) => ({
       language_id: Number(r.language_id),
       value: r.value,
@@ -95,5 +99,19 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     }
 
     return await query.getRawMany();
+  }
+
+  async getFallbackVoice(languageId: number, gender: string) {
+    const query = this.createQueryBuilder()
+      .select('sv.id', 'id')
+      .addSelect('sv.name', 'name')
+      .addSelect('sv.config', 'config')
+      .from('scenario_voices', 'sv')
+      .where('sv.languageId = :languageId', { languageId })
+      .andWhere(`sv.config->>'gender' = :gender`, { gender })
+      .orderBy('RANDOM()')
+      .limit(1);
+
+    return await query.getRawOne();
   }
 }

@@ -17,6 +17,18 @@ describe('ScenarioVoicesRepository', () => {
       offset: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       getMany: jest.fn(),
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn(),
+      getRawOne: jest.fn(),
+      from: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      having: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({}),
     } as any;
 
     const mockEntityManager = {
@@ -226,6 +238,25 @@ describe('ScenarioVoicesRepository', () => {
 
       expect(queryBuilder.offset).not.toHaveBeenCalled();
       expect(queryBuilder.limit).toHaveBeenCalledWith(10);
+    });
+  });
+
+  describe('getFallbackVoice', () => {
+    it('should return fallback voice', async () => {
+      const mockVoice = {
+        id: 'voice-1',
+        name: 'Voice 1',
+        config: {
+          gender: 'female',
+        },
+      };
+
+      queryBuilder.getRawOne = jest.fn().mockResolvedValue(mockVoice);
+
+      const result = await repository.getFallbackVoice(1, 'female');
+
+      expect(result).toEqual(mockVoice);
+      expect(queryBuilder.getRawOne).toHaveBeenCalled();
     });
   });
 });
