@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ScenarioTranslations } from '../entity/scenario-translation.entity';
 import { SuccessResponse } from 'src/common/type/common.type';
+import {
+  CreateScenarioTranslation,
+  UpdateScenarioTranslation,
+} from '../interface/scenario-translation.interface';
 
 @Injectable()
 export class ScenarioTranslationsRepository extends Repository<ScenarioTranslations> {
@@ -26,11 +30,7 @@ export class ScenarioTranslationsRepository extends Repository<ScenarioTranslati
   }
 
   async createScenarioTranslations(
-    scenarioTranslations: Array<{
-      scenarioId: number;
-      languageId: number;
-      metadata: any;
-    }>, // Changed string to number
+    scenarioTranslations: Array<CreateScenarioTranslation>, // Changed string to number
   ): Promise<SuccessResponse> {
     await this.save(this.create(scenarioTranslations));
     return {
@@ -39,11 +39,7 @@ export class ScenarioTranslationsRepository extends Repository<ScenarioTranslati
   }
 
   async updateScenarioTranslations(
-    scenarioTranslations: Array<{
-      scenarioId: number;
-      languageId: number;
-      metadata: any;
-    }>,
+    scenarioTranslations: Array<UpdateScenarioTranslation>,
   ): Promise<SuccessResponse> {
     // Use a transaction to ensure all updates succeed or fail together
     await this.dataSource.transaction(async (transactionalEntityManager) => {

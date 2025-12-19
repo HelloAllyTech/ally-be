@@ -2,9 +2,9 @@ import { DataSource } from 'typeorm';
 import { ScenarioEventsTranslationsRepository } from '../scenario-events-translations.repository';
 import { ScenarioEventsTranslation } from 'src/learn/entity/scenario-events-translation.entity';
 import {
-  CreateScenarioEventsTranslationDto,
-  UpdateScenarioEventsTranslationDto,
-} from 'src/learn/dto/scenario-events-translation.dto';
+  CreateScenarioEventsTranslation,
+  UpdateScenarioEventsTranslation,
+} from 'src/learn/interface/scenario-events-translation.interface';
 
 describe('ScenarioEventsTranslationsRepository', () => {
   let repository: ScenarioEventsTranslationsRepository;
@@ -32,13 +32,13 @@ describe('ScenarioEventsTranslationsRepository', () => {
 
   describe('createTranslations', () => {
     it('should call create and save and return success response', async () => {
-      const translations: CreateScenarioEventsTranslationDto[] = [
+      const translations: CreateScenarioEventsTranslation[] = [
         {
           scenarioId: 1,
           eventId: 'E1',
           languageId: 2,
           message: 'msg',
-          branchInstruction: undefined,
+          branchInstruction: 'instruction',
         },
       ];
 
@@ -64,7 +64,7 @@ describe('ScenarioEventsTranslationsRepository', () => {
 
   describe('updateTranslations', () => {
     it('should call DataSource.transaction and update each translation', async () => {
-      const translations: UpdateScenarioEventsTranslationDto[] = [
+      const translations: UpdateScenarioEventsTranslation[] = [
         {
           scenarioId: 10,
           eventId: 'EV_A',
@@ -119,13 +119,13 @@ describe('ScenarioEventsTranslationsRepository', () => {
     });
 
     it('should not include undefined fields in update payload', async () => {
-      const translations: UpdateScenarioEventsTranslationDto[] = [
+      const translations: UpdateScenarioEventsTranslation[] = [
         {
           scenarioId: 99,
           eventId: 'EV_TEST',
           languageId: 4,
           // both message and branchInstruction undefined -> nothing should update (but transaction should still run)
-        } as UpdateScenarioEventsTranslationDto,
+        },
       ];
 
       const transactionalEntityManager = {

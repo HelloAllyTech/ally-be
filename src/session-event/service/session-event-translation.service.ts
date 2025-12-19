@@ -6,6 +6,7 @@ import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service
 import { SessionEventTranslationsRepository } from '../repository/session-event-translation.repository';
 import { SessionEventMetadata } from '../type/session-event-translation-data.type';
 import { SessionEvents } from '../entity/session-events.entity';
+import { CreateSessionEventTranslation } from '../interface/session-events-translation.interface';
 
 @Injectable()
 export class SessionEventTranslationService {
@@ -133,13 +134,7 @@ export class SessionEventTranslationService {
           );
 
         // Map translated map back to sessionEventId + languageId
-        const translatedList: Array<{
-          sessionEventId: string;
-          languageId: number;
-          message: string;
-          branchInstruction: string;
-          detectionData: Record<string, any>;
-        }> = [];
+        const translatedList: Array<CreateSessionEventTranslation> = [];
 
         for (const language of languagesFiltered) {
           const code = language.translationCode.trim();

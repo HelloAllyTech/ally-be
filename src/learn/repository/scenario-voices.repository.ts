@@ -68,7 +68,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     }));
   }
 
-  async getAvailableLanguages(active?: boolean, hasVoices?: boolean) {
+  async getLanguagesForScenario(active?: boolean, hasVoices?: boolean) {
     const query = this.createQueryBuilder()
       .select('CAST(la.id AS INTEGER)', 'language_id')
       .addSelect('la.value', 'value')

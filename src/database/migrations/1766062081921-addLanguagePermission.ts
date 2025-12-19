@@ -5,14 +5,14 @@ export class AddLanguagePermission1766062081921 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      INSERT INTO "permissions" ("name") VALUES ('edit:admin:admin')
+      INSERT INTO "permissions" ("name") VALUES ('edit:admin:language')
     `);
 
     await queryRunner.query(`
       INSERT INTO "group_permissions" ("groupId", "permissionId")
       SELECT g."id", p."id"
       FROM "groups" g, "permissions" p
-      WHERE g."name" = 'SUPER_ADMIN' AND p."name" = 'edit:admin:admin'
+      WHERE g."name" = 'SUPER_ADMIN' AND p."name" = 'edit:admin:language'
     `);
   }
 
@@ -20,12 +20,12 @@ export class AddLanguagePermission1766062081921 implements MigrationInterface {
     await queryRunner.query(`
       DELETE FROM "group_permissions"
       WHERE "permissionId" IN (
-        SELECT "id" FROM "permissions" WHERE "name" = 'edit:admin:admin'
+        SELECT "id" FROM "permissions" WHERE "name" = 'edit:admin:language'
       )
     `);
 
     await queryRunner.query(`
-      DELETE FROM "permissions" WHERE "name" = 'edit:admin:admin'
+      DELETE FROM "permissions" WHERE "name" = 'edit:admin:language'
     `);
   }
 }

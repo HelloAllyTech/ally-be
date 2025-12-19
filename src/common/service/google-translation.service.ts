@@ -2,113 +2,151 @@ import { Injectable } from '@nestjs/common';
 import { TranslationServiceClient } from '@google-cloud/translate';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
-type TranslateOptions = {
-  chunkSize?: number; // number of strings per API request (default 100)
-  concurrency?: number; // how many languages to translate in parallel (default: all)
-  mimeType?: 'text/plain' | 'text/html';
-};
+import { TranslateOptions } from '../type/google.translation.type';
 
 @Injectable()
 export class GoogleTranslationsService {
   private readonly logger = LoggerService.getInstance(
     GoogleTranslationsService.name,
   );
-  private client: any;
-  private projectId: string;
-  private location = 'global'; // change if you want region-specific models
-  constructor(private readonly config: AppConfigService) {
-    this.projectId = this.config.googleCloudTranslationConfig.projectId || '';
 
-    // Google only accepts credentials from a local JSON file path (not HTTP URLs or other sources).
-    // Instantiate the v3 client
-    this.client = new TranslationServiceClient();
+  private translationClient: TranslationServiceClient;
+  private projectId: string;
+  private readonly location = 'global';
+
+  constructor(private readonly configService: AppConfigService) {
+    this.projectId =
+      this.configService.googleCloudTranslationConfig.projectId || '';
+
+    this.translationClient = new TranslationServiceClient();
   }
 
-  // Recursively extract strings and store their path
-  private extractStrings(
-    obj: any,
-    path: (string | number)[] = [],
-    out: { path: (string | number)[]; value: string }[] = [],
-  ) {
-    if (obj === null || obj === undefined) return out;
-    if (typeof obj === 'string') {
-      out.push({ path: path.slice(), value: obj });
-      return out;
+  /* ------------------------------------------------------------------
+   * Utility: Recursively extract all string values and their paths
+   * ------------------------------------------------------------------ */
+  private extractStringsFromObject(
+    sourceValue: any,
+    currentPath: (string | number)[] = [],
+    extractedStrings: { path: (string | number)[]; value: string }[] = [],
+  ): { path: (string | number)[]; value: string }[] {
+    if (sourceValue === null || sourceValue === undefined) {
+      return extractedStrings;
     }
-    if (Array.isArray(obj)) {
-      obj.forEach((v, i) => this.extractStrings(v, [...path, i], out));
-      return out;
+
+    if (typeof sourceValue === 'string') {
+      extractedStrings.push({
+        path: [...currentPath],
+        value: sourceValue,
+      });
+      return extractedStrings;
     }
-    if (typeof obj === 'object') {
-      Object.keys(obj).forEach((k) =>
-        this.extractStrings(obj[k], [...path, k], out),
+
+    if (Array.isArray(sourceValue)) {
+      sourceValue.forEach((childValue, index) =>
+        this.extractStringsFromObject(
+          childValue,
+          [...currentPath, index],
+          extractedStrings,
+        ),
+      );
+      return extractedStrings;
+    }
+
+    if (typeof sourceValue === 'object') {
+      Object.keys(sourceValue).forEach((key) =>
+        this.extractStringsFromObject(
+          sourceValue[key],
+          [...currentPath, key],
+          extractedStrings,
+        ),
       );
     }
-    return out;
+
+    return extractedStrings;
   }
 
-  // Recreate a copy and set a value at the path
-  private setAtPath(root: any, path: (string | number)[], value: any) {
-    let cur = root;
-    for (let i = 0; i < path.length - 1; i++) {
-      const p = path[i];
-      const next = path[i + 1];
-      if (cur[p] === undefined) {
-        cur[p] = typeof next === 'number' ? [] : {};
+  /* ------------------------------------------------------------------
+   * Utility: Set a value inside an object using a path
+   * ------------------------------------------------------------------ */
+  private setValueAtPath(
+    rootObject: any,
+    path: (string | number)[],
+    valueToSet: any,
+  ): void {
+    let currentNode = rootObject;
+
+    for (let index = 0; index < path.length - 1; index++) {
+      const pathKey = path[index];
+      const nextPathKey = path[index + 1];
+
+      if (currentNode[pathKey] === undefined) {
+        currentNode[pathKey] = typeof nextPathKey === 'number' ? [] : {};
       }
-      cur = cur[p];
+
+      currentNode = currentNode[pathKey];
     }
-    cur[path[path.length - 1]] = value;
+
+    currentNode[path[path.length - 1]] = valueToSet;
   }
 
-  // chunker utility
-  private chunkArray<T>(arr: T[], size: number): T[][] {
-    const out: T[][] = [];
-    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-    return out;
+  /* ------------------------------------------------------------------
+   * Utility: Split array into chunks
+   * ------------------------------------------------------------------ */
+  private chunkArray<T>(items: T[], chunkSize: number): T[][] {
+    const result: T[][] = [];
+
+    for (let index = 0; index < items.length; index += chunkSize) {
+      result.push(items.slice(index, index + chunkSize));
+    }
+
+    return result;
   }
 
-  // translate multiple strings to a single language, with chunking
-  private async translateManyToLangChunked(
-    contents: string[],
-    targetLanguage: string,
+  /* ------------------------------------------------------------------
+   * Translate multiple strings into one language with chunking
+   * ------------------------------------------------------------------ */
+  private async translateStringsToLanguage(
+    sourceStrings: string[],
+    targetLanguageCode: string,
     mimeType: 'text/plain' | 'text/html',
     chunkSize: number,
   ): Promise<string[]> {
-    if (!contents || contents.length === 0) return [];
-
-    const chunks = this.chunkArray(contents, chunkSize);
-    const parent = this.client.locationPath(this.projectId, this.location);
-
-    const results: string[] = [];
-    for (const chunk of chunks) {
-      const request = {
-        parent,
-        contents: chunk,
-        mimeType,
-        targetLanguageCode: targetLanguage,
-      };
-
-      const [response] = await this.client.translateText(request);
-
-      const translated = (response.translations || []).map(
-        (t: any) => t.translatedText || '',
-      );
-      results.push(...translated);
+    if (!sourceStrings.length) {
+      return [];
     }
 
-    return results;
+    const parentPath = this.translationClient.locationPath(
+      this.projectId,
+      this.location,
+    );
+
+    const stringChunks = this.chunkArray(sourceStrings, chunkSize);
+    const translatedResults: string[] = [];
+
+    for (const chunk of stringChunks) {
+      const request = {
+        parent: parentPath,
+        contents: chunk,
+        mimeType,
+        targetLanguageCode,
+      };
+
+      const [response] = await this.translationClient.translateText(request);
+
+      const translatedTexts = (response.translations || []).map(
+        (translation: any) => translation.translatedText || '',
+      );
+
+      translatedResults.push(...translatedTexts);
+    }
+
+    return translatedResults;
   }
 
-  /* ------------ main dynamic function ------------ */
-
-  /**
-   * Translate any object's string fields into multiple languages.
-   * @param sourceObject - any JSON-able object
-   * @param targetLanguages - ISO language codes, e.g. ['fr','es']
-   * @param options - chunkSize, concurrency, mimeType
-   * @returns Record<lang, translatedObject>
-   */
+  /* ------------------------------------------------------------------
+   * PUBLIC API
+   * Translate any object's string fields into multiple languages
+   * ------------------------------------------------------------------ */
   async translateObjectToLanguages(
     sourceObject: any,
     targetLanguages: string[],
@@ -121,14 +159,14 @@ export class GoogleTranslationsService {
     } = options;
 
     // 1) extract strings
-    const extracted = this.extractStrings(sourceObject);
+    const extracted = this.extractStringsFromObject(sourceObject);
     const sourceStrings = extracted.map((e) => e.value);
 
     // If no strings -> return shallow copies for each language
     if (sourceStrings.length === 0) {
       const emptyResult: Record<string, any> = {};
-      for (const lang of targetLanguages)
-        emptyResult[lang] = JSON.parse(JSON.stringify(sourceObject));
+      for (const language of targetLanguages)
+        emptyResult[language] = JSON.parse(JSON.stringify(sourceObject));
       return emptyResult;
     }
 
@@ -139,15 +177,15 @@ export class GoogleTranslationsService {
       langBatches.push(targetLanguages.slice(i, i + concurrency));
     }
 
-    const out: Record<string, any> = {};
+    const translatedResult: Record<string, any> = {};
 
     for (const batch of langBatches) {
       // translate this batch in parallel
-      const promises = batch.map(async (lang) => {
+      const promises = batch.map(async (language) => {
         try {
-          const translatedTexts = await this.translateManyToLangChunked(
+          const translatedTexts = await this.translateStringsToLanguage(
             sourceStrings,
-            lang,
+            language,
             mimeType,
             chunkSize,
           );
@@ -155,26 +193,27 @@ export class GoogleTranslationsService {
           // rebuild object
           const translatedObj = JSON.parse(JSON.stringify(sourceObject));
           for (let i = 0; i < extracted.length; i++) {
-            this.setAtPath(
+            this.setValueAtPath(
               translatedObj,
               extracted[i].path,
               translatedTexts[i],
             );
           }
-          return { lang, translatedObj };
+          return { language, translatedObj };
         } catch (err) {
           this.logger.error(
-            `Translation failed for language ${lang}`,
+            `Translation failed for language ${language}`,
             err as any,
           );
-          return { lang, translatedObj: null };
+          return { language, translatedObj: null };
         }
       });
 
-      const results = await Promise.all(promises);
-      for (const r of results) out[r.lang] = r.translatedObj;
+      const batchResults = await Promise.all(promises);
+      for (const result of batchResults)
+        translatedResult[result.language] = result.translatedObj;
     }
 
-    return out;
+    return translatedResult;
   }
 }

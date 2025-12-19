@@ -201,8 +201,8 @@ describe('LearnController', () => {
       updateScenarioVoice: jest.fn(),
       deleteCoverImage: jest.fn(),
       deleteCoverVideo: jest.fn(),
-      getAdminScenarioVoiceLanguages: jest.fn(),
-      getAvailableLanguages: jest.fn(),
+      getScenarioVoiceLanguagesForAdmin: jest.fn(),
+      getLanguagesForScenario: jest.fn(),
       duplicateScenario: jest.fn(),
     };
 
@@ -1065,7 +1065,7 @@ describe('LearnController', () => {
     });
   });
 
-  describe('getAdminScenarioVoiceLanguages', () => {
+  describe('getScenarioVoiceLanguagesForAdmin', () => {
     const mockLanguages = [
       {
         language_id: 1,
@@ -1092,98 +1092,102 @@ describe('LearnController', () => {
     ];
 
     it('should return languages with active filter', async () => {
-      scenarioService.getAdminScenarioVoiceLanguages.mockResolvedValue(
+      scenarioService.getScenarioVoiceLanguagesForAdmin.mockResolvedValue(
         mockLanguages,
       );
-      const result = await controller.getAdminScenarioVoiceLanguages(true);
+      const result = await controller.getScenarioVoiceLanguagesForAdmin(true);
       expect(result).toEqual(mockLanguages);
       expect(
-        scenarioService.getAdminScenarioVoiceLanguages,
+        scenarioService.getScenarioVoiceLanguagesForAdmin,
       ).toHaveBeenCalledWith(true);
     });
 
     it('should return all languages when no filter is provided', async () => {
-      scenarioService.getAdminScenarioVoiceLanguages.mockResolvedValue(
+      scenarioService.getScenarioVoiceLanguagesForAdmin.mockResolvedValue(
         mockLanguages,
       );
-      const result = await controller.getAdminScenarioVoiceLanguages(undefined);
+      const result =
+        await controller.getScenarioVoiceLanguagesForAdmin(undefined);
       expect(result).toEqual(mockLanguages);
       expect(
-        scenarioService.getAdminScenarioVoiceLanguages,
+        scenarioService.getScenarioVoiceLanguagesForAdmin,
       ).toHaveBeenCalledWith(undefined);
     });
 
     it('should handle errors from service', async () => {
-      scenarioService.getAdminScenarioVoiceLanguages.mockRejectedValue(
+      scenarioService.getScenarioVoiceLanguagesForAdmin.mockRejectedValue(
         new Error('Service error'),
       );
       await expect(
-        controller.getAdminScenarioVoiceLanguages(true),
+        controller.getScenarioVoiceLanguagesForAdmin(true),
       ).rejects.toThrow('Service error');
     });
   });
 
-  describe('getLanguages', () => {
+  describe('getLanguagesForScenario', () => {
     const mockAvailableLanguages = [
       { language_id: 1, value: 'en-IN', label: 'English (India)' },
       { language_id: 2, value: 'hi-IN', label: 'Hindi (India)' },
     ];
 
     it('should return languages with both filters', async () => {
-      scenarioService.getAvailableLanguages.mockResolvedValue(
+      scenarioService.getLanguagesForScenario.mockResolvedValue(
         mockAvailableLanguages,
       );
-      const result = await controller.getLanguages(true, true);
+      const result = await controller.getLanguagesForScenario(true, true);
       expect(result).toEqual(mockAvailableLanguages);
-      expect(scenarioService.getAvailableLanguages).toHaveBeenCalledWith(
+      expect(scenarioService.getLanguagesForScenario).toHaveBeenCalledWith(
         true,
         true,
       );
     });
 
     it('should handle only active filter', async () => {
-      scenarioService.getAvailableLanguages.mockResolvedValue(
+      scenarioService.getLanguagesForScenario.mockResolvedValue(
         mockAvailableLanguages,
       );
-      const result = await controller.getLanguages(true, undefined);
+      const result = await controller.getLanguagesForScenario(true, undefined);
       expect(result).toEqual(mockAvailableLanguages);
-      expect(scenarioService.getAvailableLanguages).toHaveBeenCalledWith(
+      expect(scenarioService.getLanguagesForScenario).toHaveBeenCalledWith(
         true,
         undefined,
       );
     });
 
     it('should handle only hasVoices filter', async () => {
-      scenarioService.getAvailableLanguages.mockResolvedValue(
+      scenarioService.getLanguagesForScenario.mockResolvedValue(
         mockAvailableLanguages,
       );
-      const result = await controller.getLanguages(undefined, true);
+      const result = await controller.getLanguagesForScenario(undefined, true);
       expect(result).toEqual(mockAvailableLanguages);
-      expect(scenarioService.getAvailableLanguages).toHaveBeenCalledWith(
+      expect(scenarioService.getLanguagesForScenario).toHaveBeenCalledWith(
         undefined,
         true,
       );
     });
 
     it('should return all languages when no filters are provided', async () => {
-      scenarioService.getAvailableLanguages.mockResolvedValue(
+      scenarioService.getLanguagesForScenario.mockResolvedValue(
         mockAvailableLanguages,
       );
-      const result = await controller.getLanguages(undefined, undefined);
+      const result = await controller.getLanguagesForScenario(
+        undefined,
+        undefined,
+      );
       expect(result).toEqual(mockAvailableLanguages);
-      expect(scenarioService.getAvailableLanguages).toHaveBeenCalledWith(
+      expect(scenarioService.getLanguagesForScenario).toHaveBeenCalledWith(
         undefined,
         undefined,
       );
     });
 
     it('should handle errors from service', async () => {
-      scenarioService.getAvailableLanguages.mockRejectedValue(
+      scenarioService.getLanguagesForScenario.mockRejectedValue(
         new Error('Service error'),
       );
-      await expect(controller.getLanguages(true, true)).rejects.toThrow(
-        'Service error',
-      );
+      await expect(
+        controller.getLanguagesForScenario(true, true),
+      ).rejects.toThrow('Service error');
     });
     describe('duplicateScenario', () => {
       it('should duplicate a scenario by id', async () => {

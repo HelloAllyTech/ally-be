@@ -66,8 +66,8 @@ describe('GoogleTranslationsService', () => {
     }).compile();
 
     service = module.get<GoogleTranslationsService>(GoogleTranslationsService);
-    // Override the client with our mock
-    (service as any).client = mockTranslationClient;
+    // Override the translationClient with our mock
+    (service as any).translationClient = mockTranslationClient;
     (service as any).projectId = 'test-project';
   });
 

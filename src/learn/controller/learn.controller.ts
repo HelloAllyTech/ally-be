@@ -751,10 +751,10 @@ export class LearnController {
   })
   @Get('scenario-voice-languages')
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_VOICE_LANGUAGES])
-  async getAdminScenarioVoiceLanguages(
+  async getScenarioVoiceLanguagesForAdmin(
     @Query('active') active?: boolean,
   ): Promise<ScenarioVoiceLanguage[]> {
-    return this.scenarioService.getAdminScenarioVoiceLanguages(active);
+    return this.scenarioService.getScenarioVoiceLanguagesForAdmin(active);
   }
 
   @ApiOperation({ summary: 'Get languages' })
@@ -770,11 +770,11 @@ export class LearnController {
     type: Boolean,
     description: 'Filter by has voices',
   })
-  @Get('languages')
-  async getLanguages(
+  @Get('scenario-languages')
+  async getLanguagesForScenario(
     @Query('active') active?: boolean,
     @Query('hasVoices') hasVoices?: boolean,
   ): Promise<AvailableLanguage[]> {
-    return this.scenarioService.getAvailableLanguages(active, hasVoices);
+    return this.scenarioService.getLanguagesForScenario(active, hasVoices);
   }
 }

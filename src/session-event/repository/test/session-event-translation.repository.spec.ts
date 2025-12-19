@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource, Repository } from 'typeorm';
 import { SessionEventTranslationsRepository } from '../session-event-translation.repository';
 import { SessionEventsTranslation } from 'src/session-event/entity/session-event-translation.entity';
-import { CreateScenarioEventTranslationDto } from 'src/session-event/dto/session-event-translation.dto';
+import { CreateSessionEventTranslation } from 'src/session-event/interface/session-events-translation.interface';
 
 describe('SessionEventTranslationsRepository', () => {
   let repository: SessionEventTranslationsRepository;
@@ -100,7 +100,7 @@ describe('SessionEventTranslationsRepository', () => {
 
   describe('createSessionEventTranslations', () => {
     it('should create new translations', async () => {
-      const newTranslations: CreateScenarioEventTranslationDto[] = [
+      const newTranslations: CreateSessionEventTranslation[] = [
         {
           sessionEventId: 'event-1',
           languageId: 1,

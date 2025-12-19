@@ -65,6 +65,11 @@ import { SharedLanguageService } from '../../language/service/shared-language.se
 import { ScenarioSharedService } from './scenario-shared.service';
 import { ScenarioEventsTranslationsRepository } from '../repository/scenario-events-translations.repository';
 import { MetadataShape } from '../type/scenario-translation-metadata.type';
+import { CreateScenarioTranslation } from '../interface/scenario-translation.interface';
+import {
+  CreateScenarioEventsTranslation,
+  ScenarioEventsTranslationData,
+} from '../interface/scenario-events-translation.interface';
 
 @Injectable()
 export class ScenarioService {
@@ -1040,12 +1045,12 @@ export class ScenarioService {
     return updated.affected !== 0;
   }
 
-  async getAdminScenarioVoiceLanguages(active?: boolean) {
+  async getScenarioVoiceLanguagesForAdmin(active?: boolean) {
     return this.scenarioVoiceRepository.getLanguagesWithVoices(active);
   }
 
-  async getAvailableLanguages(active?: boolean, hasVoices?: boolean) {
-    return this.scenarioVoiceRepository.getAvailableLanguages(
+  async getLanguagesForScenario(active?: boolean, hasVoices?: boolean) {
+    return this.scenarioVoiceRepository.getLanguagesForScenario(
       active,
       hasVoices,
     );
@@ -1182,11 +1187,7 @@ export class ScenarioService {
           );
 
         // Build translatedList: map back to languageId
-        const translatedList: Array<{
-          scenarioId: number;
-          languageId: number;
-          metadata: MetadataShape;
-        }> = [];
+        const translatedList: Array<CreateScenarioTranslation> = [];
         for (const language of languagesFiltered) {
           const code = language.translationCode.trim();
           const translatedData = translatedMap[code];
@@ -1327,18 +1328,12 @@ export class ScenarioService {
       );
 
       const translatedMap = (await this.buildTranslatedMetadataForLanguageCodes(
-        sanitized as Partial<{ message: string; branchInstruction: string }>,
+        sanitized as Partial<ScenarioEventsTranslationData>,
         languageCodes,
-      )) as Record<string, { message?: string; branchInstruction?: string }>;
+      )) as Record<string, ScenarioEventsTranslationData>;
 
       // Map translated map back to sessionEventId + languageId
-      const translatedList: Array<{
-        scenarioId: number;
-        eventId: string;
-        languageId: number;
-        message: string;
-        branchInstruction: string;
-      }> = [];
+      const translatedList: Array<CreateScenarioEventsTranslation> = [];
 
       for (const language of languagesFiltered) {
         const code = language.translationCode.trim();

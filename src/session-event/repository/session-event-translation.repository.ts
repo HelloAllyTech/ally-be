@@ -3,9 +3,9 @@ import { Brackets, DataSource, Repository } from 'typeorm';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { SessionEventsTranslation } from '../entity/session-event-translation.entity';
 import {
-  CreateScenarioEventTranslationDto,
-  UpdateScenarioEventTranslationDto,
-} from '../dto/session-event-translation.dto';
+  CreateSessionEventTranslation,
+  UpdateSessionEventTranslation,
+} from '../interface/session-events-translation.interface';
 
 @Injectable()
 export class SessionEventTranslationsRepository extends Repository<SessionEventsTranslation> {
@@ -22,7 +22,7 @@ export class SessionEventTranslationsRepository extends Repository<SessionEvents
   }
 
   async createSessionEventTranslations(
-    scenarioEventTranslations: CreateScenarioEventTranslationDto[],
+    scenarioEventTranslations: CreateSessionEventTranslation[],
   ): Promise<SuccessResponse> {
     await this.save(this.create(scenarioEventTranslations));
     return {
@@ -31,7 +31,7 @@ export class SessionEventTranslationsRepository extends Repository<SessionEvents
   }
 
   async updateSessionTranslations(
-    scenarioEventTranslations: UpdateScenarioEventTranslationDto[],
+    scenarioEventTranslations: UpdateSessionEventTranslation[],
   ): Promise<SuccessResponse> {
     // Use a transaction to ensure all updates succeed or fail together
     await this.dataSource.transaction(async (transactionalEntityManager) => {

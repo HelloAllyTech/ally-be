@@ -62,7 +62,7 @@ const PERMISSIONS = {
   VIEW_ADMIN_SCENARIO_VOICE_LANGUAGES: 'view:admin:scenario-voice-languages',
   EDIT_USER_PREFERENCES: 'edit:user:preferences',
   VIEW_USER_PREFERENCES: 'view:user:preferences',
-  EDIT_LANGUAGE: 'edit:admin:admin',
+  EDIT_LANGUAGE: 'edit:admin:language',
 
   // === SETTINGS ===
   VIEW_SETTINGS_SUMMARY_FIELDS: 'view:settings:summary-fields',
