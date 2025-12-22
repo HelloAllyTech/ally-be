@@ -9,6 +9,7 @@ import {
   IsArray,
   IsBoolean,
   ValidateNested,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -292,6 +293,7 @@ export class CreateScenarioDto {
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(3)
   @ValidateNested({ each: true })
   @Type(() => CustomFieldsDto)
   customFields?: CustomFieldsDto[];
