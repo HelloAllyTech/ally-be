@@ -246,17 +246,24 @@ describe('ScenarioVoicesRepository', () => {
       const mockVoice = {
         id: 'voice-1',
         name: 'Voice 1',
+        languageId: 1,
         config: {
           gender: 'female',
         },
       };
 
-      queryBuilder.getRawOne = jest.fn().mockResolvedValue(mockVoice);
+      jest.spyOn(repository, 'findOne').mockResolvedValue(mockVoice as any);
 
       const result = await repository.getFallbackVoice(1, 'female');
 
       expect(result).toEqual(mockVoice);
-      expect(queryBuilder.getRawOne).toHaveBeenCalled();
+      expect(repository.findOne).toHaveBeenCalledWith({
+        select: ['id', 'name', 'config'],
+        where: {
+          languageId: 1,
+          config: expect.anything(), // Raw(...) matcher
+        },
+      });
     });
   });
 });

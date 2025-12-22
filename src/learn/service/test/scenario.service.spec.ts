@@ -3266,12 +3266,10 @@ describe('ScenarioService', () => {
     let persistTranslationsForScenarios: (
       scenarios: any[],
       metadataExtractor: (scenario: any) => Record<string, any>,
-      languageVoicesExtractor?: () => Record<string, any>,
     ) => Promise<void>;
     let mockLogger: any;
 
     beforeEach(() => {
-      // Make private method accessible for testing
       persistTranslationsForScenarios = (
         service as any
       ).persistTranslationsForScenarios.bind(service);
@@ -3284,39 +3282,36 @@ describe('ScenarioService', () => {
 
       (service as any).logger = mockLogger;
 
-      // Mock the sanitizeMetadata method
-      (service as any).sanitizeMetadata = jest.fn((data) => ({
-        ...data,
-      }));
+      (service as any).sanitizeMetadata = jest.fn((data) => ({ ...data }));
 
-      // Mock the buildTranslatedMetadataForLanguageCodes method
       (service as any).buildTranslatedMetadataForLanguageCodes = jest.fn(
-        async (data, codes) => {
-          // Return a simple translation map where each code gets the original data
-          return codes.reduce((acc: any, code: string) => {
+        async (data, codes) =>
+          codes.reduce((acc: any, code: string) => {
             acc[code] = { ...data };
             return acc;
-          }, {});
-        },
+          }, {}),
       );
+
+      (service as any).getLanguagesForScenario = jest.fn();
+
+      scenarioTranslationsRepository.createScenarioTranslations = jest.fn();
+      scenarioTranslationsRepository.updateScenarioTranslations = jest.fn();
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId =
+        jest.fn();
     });
 
     it('should skip scenarios with empty metadata', async () => {
-      const scenarios = [{ id: 1, name: 'Scenario 1' }];
+      const scenarios = [{ id: 1 }];
 
       const metadataExtractor = jest.fn(() => ({}));
-      const languageVoicesExtractor = jest.fn(() => ({}));
 
-      await persistTranslationsForScenarios(
-        scenarios,
-        metadataExtractor,
-        languageVoicesExtractor,
-      );
+      await persistTranslationsForScenarios(scenarios, metadataExtractor);
 
       expect(metadataExtractor).toHaveBeenCalledWith(scenarios[0]);
       expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.stringContaining('no non-empty metadata, skipping'),
       );
+
       expect(
         scenarioTranslationsRepository.createScenarioTranslations,
       ).not.toHaveBeenCalled();
@@ -3326,29 +3321,28 @@ describe('ScenarioService', () => {
     });
 
     it('should skip scenarios with no valid languages', async () => {
-      const scenarios = [{ id: 1, name: 'Scenario 1' }];
+      const scenarios = [{ id: 1 }];
 
-      const metadataExtractor = jest.fn(() => ({ title: 'Test Title' }));
-      const languageVoicesExtractor = jest.fn(() => ({}));
+      const metadataExtractor = jest.fn(() => ({
+        title: 'Test',
+        description: 'Test',
+      }));
 
-      // Mock getValidLanguages to return empty languages array
-      sharedLanguageService.getValidLanguages.mockResolvedValue({
-        languages: [], // This should trigger the warning
-        languagesMap: {},
-      });
+      (service as any).getLanguagesForScenario.mockResolvedValue([
+        {
+          translationCode: '',
+          value: 'en-US',
+          label: 'English (US)',
+          language_id: 1,
+        },
+      ]);
 
-      await persistTranslationsForScenarios(
-        scenarios,
-        metadataExtractor,
-        languageVoicesExtractor,
-      );
+      await persistTranslationsForScenarios(scenarios, metadataExtractor);
 
-      // Verify the warning was logged
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.stringContaining('no valid languages, skipping'),
       );
 
-      // Verify no DB operations were performed
       expect(
         scenarioTranslationsRepository.createScenarioTranslations,
       ).not.toHaveBeenCalled();
@@ -3357,7 +3351,7 @@ describe('ScenarioService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('should create new translations for new language IDs', async () => {
+    it('should create translations for new language IDs', async () => {
       const scenarios = [{ id: 1, name: 'Scenario 1' }];
 
       const metadataExtractor = jest.fn(() => ({
@@ -3365,56 +3359,30 @@ describe('ScenarioService', () => {
         description: 'Test Description',
       }));
 
-      const languageVoicesExtractor = jest.fn(() => ({
-        1: 'voice-1',
-        2: 'voice-2',
-      }));
-
-      sharedLanguageService.getValidLanguages.mockResolvedValue({
-        languages: [
-          {
-            id: 1,
-            translationCode: 'en',
-            value: 'en-IN',
-            label: 'English (India)',
-            active: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-          {
-            id: 2,
-            translationCode: 'es',
-            value: 'es-ES',
-            label: 'Spanish (Spain)',
-            active: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-        ],
-        languagesMap: {},
-      });
+      (service as any).getLanguagesForScenario.mockResolvedValue([
+        {
+          language_id: 1,
+          translationCode: 'en',
+          value: 'en-IN',
+          label: 'English (India)',
+        },
+        {
+          language_id: 2,
+          translationCode: 'es',
+          value: 'es-ES',
+          label: 'Spanish (Spain)',
+        },
+      ]);
 
       scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
         [],
       );
 
-      await persistTranslationsForScenarios(
-        scenarios,
-        metadataExtractor,
-        languageVoicesExtractor,
-      );
+      await persistTranslationsForScenarios(scenarios, metadataExtractor);
 
       expect(
         scenarioTranslationsRepository.createScenarioTranslations,
       ).toHaveBeenCalledWith([
-        {
-          scenarioId: 1,
-          languageId: 1,
-          metadata: {
-            title: 'Test Title',
-            description: 'Test Description',
-          },
-        },
         {
           scenarioId: 1,
           languageId: 2,
@@ -3430,7 +3398,7 @@ describe('ScenarioService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('should update existing translations for existing language IDs', async () => {
+    it('should update existing translations', async () => {
       const scenarios = [{ id: 1, name: 'Scenario 1' }];
 
       const metadataExtractor = jest.fn(() => ({
@@ -3438,31 +3406,20 @@ describe('ScenarioService', () => {
         description: 'Updated Description',
       }));
 
-      const languageVoicesExtractor = jest.fn(() => ({
-        1: 'voice-1',
-      }));
-
-      sharedLanguageService.getValidLanguages.mockResolvedValue({
-        languages: [
-          {
-            id: 1,
-            translationCode: 'en',
-            value: 'en-IN',
-            label: 'English (India)',
-            active: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-        ],
-        languagesMap: {},
-      });
+      (service as any).getLanguagesForScenario.mockResolvedValue([
+        {
+          language_id: 2,
+          translationCode: 'hi',
+          value: 'hi-IN',
+        },
+      ]);
 
       scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
         [
           {
             scenarioId: 1,
-            languageId: 1,
-            id: '1',
+            languageId: 2,
+            id: '2',
             metadata: {},
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -3470,18 +3427,14 @@ describe('ScenarioService', () => {
         ],
       );
 
-      await persistTranslationsForScenarios(
-        scenarios,
-        metadataExtractor,
-        languageVoicesExtractor,
-      );
+      await persistTranslationsForScenarios(scenarios, metadataExtractor);
 
       expect(
         scenarioTranslationsRepository.updateScenarioTranslations,
       ).toHaveBeenCalledWith([
         {
           scenarioId: 1,
-          languageId: 1,
+          languageId: 2,
           metadata: expect.objectContaining({
             title: 'Updated Title',
             description: 'Updated Description',
@@ -3494,52 +3447,33 @@ describe('ScenarioService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('should handle errors for individual scenarios without failing the entire batch', async () => {
+    it('should continue processing when one scenario throws an error', async () => {
       const scenarios = [
         { id: 1, name: 'Scenario 1' },
         { id: 2, name: 'Scenario 2' },
       ];
 
-      const metadataExtractor = jest.fn((scenario) => ({
-        title: `Title for ${scenario.name}`,
-      }));
+      const metadataExtractor = jest.fn(() => ({ title: 'Test' }));
 
-      const languageVoicesExtractor = jest.fn(() => ({
-        1: 'voice-1',
-      }));
+      (service as any).getLanguagesForScenario.mockResolvedValue([
+        {
+          language_id: 2,
+          translationCode: 'hi',
+          value: 'hi-IN',
+          label: 'Hindi (India)',
+        },
+      ]);
 
-      sharedLanguageService.getValidLanguages.mockResolvedValue({
-        languages: [
-          {
-            id: 1,
-            translationCode: 'en',
-            value: 'en-IN',
-            label: 'English (India)',
-            active: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-        ],
-        languagesMap: {},
-      });
-
-      // First call succeeds, second call throws
       scenarioTranslationsRepository.getScenarioTranslationsByScenarioId
         .mockResolvedValueOnce([])
         .mockRejectedValueOnce(new Error('Database error'));
 
-      await persistTranslationsForScenarios(
-        scenarios,
-        metadataExtractor,
-        languageVoicesExtractor,
-      );
+      await persistTranslationsForScenarios(scenarios, metadataExtractor);
 
-      // First scenario should be processed
       expect(
         scenarioTranslationsRepository.createScenarioTranslations,
       ).toHaveBeenCalledTimes(1);
 
-      // Error should be logged but not thrown
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.stringContaining('unexpected error processing scenario 2'),
         expect.any(Object),
@@ -3579,9 +3513,10 @@ describe('ScenarioService', () => {
       scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
         [1, 2],
       );
-      (service as any).sharedLanguageService = {
-        getValidLanguages: jest.fn().mockResolvedValue({ languages: [] }),
-      };
+      sharedLanguageService.getValidLanguages.mockResolvedValue({
+        languages: [],
+        languagesMap: {},
+      });
 
       await service.createUpdateScenarioEventsTranslations([{ id: 1 }]);
 
@@ -3605,14 +3540,37 @@ describe('ScenarioService', () => {
       scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
         [1, 2],
       );
-      (service as any).sharedLanguageService = {
-        getValidLanguages: jest.fn().mockResolvedValue({
-          languages: [
-            { id: 1, translationCode: 'en' },
-            { id: 2, translationCode: 'es' },
-          ],
-        }),
-      };
+      const mockLanguages = [
+        {
+          id: 1,
+          value: 'en',
+          label: 'English',
+          active: true,
+          translationCode: 'en',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: 2,
+          value: 'es',
+          label: 'Spanish',
+          active: true,
+          translationCode: 'es',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      sharedLanguageService.getValidLanguages.mockResolvedValue({
+        languages: mockLanguages,
+        languagesMap: mockLanguages.reduce(
+          (acc, lang) => ({
+            ...acc,
+            [lang.translationCode]: lang,
+          }),
+          {},
+        ),
+      });
 
       await service.createUpdateScenarioEventsTranslations(scenarioEvents);
 

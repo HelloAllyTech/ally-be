@@ -70,6 +70,7 @@ import {
   CreateScenarioEventsTranslation,
   ScenarioEventsTranslationData,
 } from '../interface/scenario-events-translation.interface';
+import { DEFAULT_LANGUAGE_CODE } from '../constants/scenario-session.constants';
 
 @Injectable()
 export class ScenarioService {
@@ -491,7 +492,6 @@ export class ScenarioService {
             genderIdentity: scenario.metadata?.genderIdentity,
             customFields: scenario.metadata?.customFields,
           }),
-        (scenario) => scenario.metadata?.languageVoices,
       );
 
       return savedScenarios;
@@ -608,7 +608,6 @@ export class ScenarioService {
               genderIdentity: updateScenarioDto.genderIdentity,
               customFields: updateScenarioDto?.customFields,
             }),
-          () => updateScenarioDto.languageVoices,
         );
       }
 
@@ -1140,7 +1139,6 @@ export class ScenarioService {
   private async persistTranslationsForScenarios(
     scenarios: Array<Scenarios>,
     metadataExtractor: (scenario: Scenarios) => MetadataShape,
-    languageVoicesExtractor: (scenario: Scenarios) => any,
   ) {
     if (!scenarios.length) {
       return;
@@ -1159,15 +1157,15 @@ export class ScenarioService {
           continue;
         }
 
-        const languageVoices = languageVoicesExtractor(scenario) || {};
-
-        const languageIds = Object.keys(languageVoices).map(Number);
-
-        const { languages } =
-          await this.sharedLanguageService.getValidLanguages(languageIds);
+        // Picking all languages with voices
+        const languages = await this.getLanguagesForScenario(true, true);
 
         const languagesFiltered = (languages ?? []).filter(
-          (l: any) => l && l.translationCode && l.translationCode.trim() !== '',
+          (l: any) =>
+            l &&
+            l.translationCode &&
+            l.translationCode.trim() !== '' &&
+            !l.value.includes(DEFAULT_LANGUAGE_CODE),
         );
         if (!languagesFiltered.length) {
           this.logger?.warn?.(
@@ -1195,7 +1193,7 @@ export class ScenarioService {
             continue;
           translatedList.push({
             scenarioId: scenario.id,
-            languageId: Number(language.id),
+            languageId: Number(language.language_id),
             metadata: translatedData as MetadataShape,
           });
         }

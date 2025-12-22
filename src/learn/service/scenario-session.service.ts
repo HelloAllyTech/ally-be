@@ -168,25 +168,23 @@ export class ScenarioSessionService {
       startScenarioSessionDto.scenarioPathSessionItemId,
     );
 
+    const languageId = startScenarioSessionDto?.languageId;
+
     const { enLanguageDetails, languageDetails } =
-      await this.getLanguageDetailsForScenarioSession(
-        startScenarioSessionDto.languageId,
-      );
+      await this.getLanguageDetailsForScenarioSession(languageId);
 
     // Get all session events for this scenario
     let sessionEvents = [];
 
     // Check if language is not English
     const isOtherLanguage =
-      startScenarioSessionDto?.languageId &&
-      enLanguageDetails &&
-      startScenarioSessionDto.languageId !== enLanguageDetails.id;
+      languageId && enLanguageDetails && languageId !== enLanguageDetails.id;
 
     // If language is not English, get translated session events
     sessionEvents = isOtherLanguage
       ? await this.sessionEventTranslationService.getSessionEventsTranslationsByScenarioId(
           startScenarioSessionDto.scenarioId,
-          startScenarioSessionDto.languageId,
+          languageId,
         )
       : await this.sessionEventService.getSessionEventsByScenarioId(
           startScenarioSessionDto.scenarioId,
@@ -207,14 +205,15 @@ export class ScenarioSessionService {
       }
     }
 
-    // Determine voiceId from scenario metadata languageVoices
-    let voiceId =
-      scenario?.metadata?.languageVoices?.[startScenarioSessionDto?.languageId];
+    // Determine voiceId from scenario metadata languageVoices if languageId is provided or from metadata voiceId if languageId is not provided
+    let voiceId = languageId
+      ? scenario?.metadata?.languageVoices?.[languageId]
+      : scenario?.metadata?.voiceId;
 
-    // If voiceId is not found, get fallback voice
-    if (!voiceId) {
+    // If voiceId is not found, get fallback voice for language and gender
+    if (!voiceId && languageId) {
       const voiceDetails = await this.getFallbackVoiceForLanguageGender(
-        startScenarioSessionDto?.languageId,
+        languageId,
         scenario?.metadata?.gender,
       );
       voiceId = voiceDetails?.id;
@@ -247,7 +246,9 @@ export class ScenarioSessionService {
       if (scenario?.metadata) {
         scenario.metadata.language =
           languageDetails?.value ?? DEFAULT_LANGUAGE_CODE;
-        scenario.metadata.languageId = startScenarioSessionDto?.languageId;
+
+        scenario.metadata.languageId = languageId ?? enLanguageDetails?.id;
+
         // Added defaultLanguageId to metadata to avoid database calls and use it for translation checks in createRoomMetadata.
         scenario.metadata.defaultLanguageId = enLanguageDetails?.id;
       }

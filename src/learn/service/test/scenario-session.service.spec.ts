@@ -1038,7 +1038,7 @@ describe('ScenarioSessionService', () => {
       };
       const mockFallbackVoice = {
         id: 'voice-123',
-        voiceId: 'openai-voice-id',
+        name: 'Test Voice',
         config: {
           age: 'adult',
           name: 'priyanka',
@@ -1064,7 +1064,7 @@ describe('ScenarioSessionService', () => {
         mockSessionEvents,
       );
       scenarioVoicesRepository.getFallbackVoice.mockResolvedValue(
-        mockFallbackVoice,
+        mockFallbackVoice as any,
       );
       sessionEventService.findByIds.mockResolvedValue([]);
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
@@ -1128,7 +1128,7 @@ describe('ScenarioSessionService', () => {
 
       const mockFallbackVoice = {
         id: 'voice-123',
-        voiceId: 'openai-voice-id',
+        name: 'Test Voice',
         config: {
           age: 'adult',
           name: 'priyanka',
@@ -1152,7 +1152,7 @@ describe('ScenarioSessionService', () => {
         mockSessionEvents,
       );
       scenarioVoicesRepository.getFallbackVoice.mockResolvedValue(
-        mockFallbackVoice,
+        mockFallbackVoice as any,
       );
       sessionEventService.findByIds.mockResolvedValue([]);
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);

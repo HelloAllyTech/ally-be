@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
+import { DataSource, Raw, Repository, SelectQueryBuilder } from 'typeorm';
 import { ScenarioVoices } from '../entity/scenario-voices.entity';
 import { Pagination } from 'src/common/type/common.type';
 
@@ -77,6 +77,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       .select('CAST(la.id AS INTEGER)', 'language_id')
       .addSelect('la.value', 'value')
       .addSelect('la.label', 'label')
+      .addSelect('la.translationCode', 'translationCode')
       // IMPORTANT: start from the languages table so `la` refers to languages
       .from('languages', 'la')
       .leftJoin('scenario_voices', 'sv', 'sv.languageId = la.id');
@@ -102,16 +103,12 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
   }
 
   async getFallbackVoice(languageId: number, gender: string) {
-    const query = this.createQueryBuilder()
-      .select('sv.id', 'id')
-      .addSelect('sv.name', 'name')
-      .addSelect('sv.config', 'config')
-      .from('scenario_voices', 'sv')
-      .where('sv.languageId = :languageId', { languageId })
-      .andWhere(`sv.config->>'gender' = :gender`, { gender })
-      .orderBy('RANDOM()')
-      .limit(1);
-
-    return await query.getRawOne();
+    return await this.findOne({
+      select: ['id', 'name', 'config'],
+      where: {
+        languageId,
+        config: Raw((alias) => `${alias} ->> 'gender' = :gender`, { gender }),
+      },
+    });
   }
 }
