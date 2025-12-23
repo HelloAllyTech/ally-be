@@ -8,4 +8,11 @@ export class PreviewScenarioDto {
   })
   @IsNumber()
   scenarioId!: number;
+
+  @ApiProperty({
+    description: 'Language ID',
+    example: 1,
+  })
+  @IsNumber()
+  languageId!: number;
 }
