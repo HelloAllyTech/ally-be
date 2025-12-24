@@ -1038,7 +1038,9 @@ export class ScenarioSessionService {
     };
   }
 
-  private async getLanguageDetailsForScenarioSession(languageId: number) {
+  private async getLanguageDetailsForScenarioSession(
+    languageId: number | undefined,
+  ) {
     const enLanguageDetails =
       await this.sharedLanguageService.getLanguageByLanguageCode(
         DEFAULT_LANGUAGE_CODE,
