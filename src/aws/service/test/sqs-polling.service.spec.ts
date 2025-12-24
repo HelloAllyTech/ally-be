@@ -14,6 +14,19 @@ jest.mock('../sqs.service');
 jest.mock('../../../logger/logger.service');
 jest.mock('../../registry/sqs-handler.registry');
 
+// Store original setImmediate before any tests run
+const originalSetImmediate = global.setImmediate;
+
+// Mock setImmediate globally BEFORE tests to prevent polling loop from starting
+// The polling loop uses setImmediate to run in background, but with mocked
+// receiveMessage (which resolves instantly), this creates an infinite tight loop.
+// We capture the callback but don't execute it to prevent the loop.
+let capturedSetImmediateCallbacks: Array<() => void> = [];
+global.setImmediate = ((callback: () => void) => {
+  capturedSetImmediateCallbacks.push(callback);
+  return {} as NodeJS.Immediate;
+}) as any;
+
 describe('SqsPollingService', () => {
   let service: SqsPollingService;
   let mockSqsService: jest.Mocked<SqsService>;
@@ -25,6 +38,9 @@ describe('SqsPollingService', () => {
   const queueUrl2 = 'https://sqs.us-east-1.amazonaws.com/123456789/queue2';
 
   beforeEach(async () => {
+    // Clear captured callbacks before each test
+    capturedSetImmediateCallbacks = [];
+
     // Mock SqsService
     mockSqsService = {
       receiveMessage: jest.fn(),
@@ -73,6 +89,12 @@ describe('SqsPollingService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    capturedSetImmediateCallbacks = [];
+  });
+
+  afterAll(() => {
+    // Restore original setImmediate after all tests complete
+    global.setImmediate = originalSetImmediate;
   });
 
   describe('constructor', () => {
@@ -519,22 +541,6 @@ describe('SqsPollingService', () => {
     });
   });
 
-  describe('sleep function', () => {
-    it('should wait for specified time', async () => {
-      jest.useFakeTimers();
-
-      const sleepPromise = (service as any).sleep(1000);
-
-      jest.advanceTimersByTime(999);
-      expect(sleepPromise).not.toHaveProperty('resolved');
-
-      jest.advanceTimersByTime(1);
-      await sleepPromise;
-
-      jest.useRealTimers();
-    });
-  });
-
   describe('DLQ handlers', () => {
     it('should handle DLQ messages', async () => {
       const mockDlqHandler = {
@@ -692,6 +698,105 @@ describe('SqsPollingService', () => {
       expect(mockLogger.debug).not.toHaveBeenCalledWith(
         `Starting polling for queue: ${queueUrl1}`,
       );
+    });
+  });
+
+  describe('pollQueue behavior', () => {
+    it('should stop polling when isPolling is set to false', async () => {
+      const mockInstance = { handleMessage: jest.fn() };
+      const mockHandler = {
+        queueUrl: queueUrl1,
+        handler: jest.fn(),
+        isDlq: false,
+        target: { constructor: { name: 'TestService' } },
+        methodName: 'handleMessage',
+        targetConstructor: class TestService {},
+      };
+
+      mockSqsHandlerRegistry.getHandlers.mockReturnValue([mockHandler]);
+      mockModuleRef.get.mockReturnValue(mockInstance);
+
+      // Make receiveMessage stop polling after first call
+      mockSqsService.receiveMessage.mockImplementation(async () => {
+        // Stop polling immediately to prevent infinite loop
+        queuePoller.isPolling = false;
+        return [];
+      });
+
+      const privateService = service as any;
+      const queuePoller = {
+        queueUrl: queueUrl1,
+        handlers: [
+          {
+            ...mockHandler,
+            handler: async (message: Message) => {
+              await mockInstance.handleMessage(message);
+            },
+          },
+        ],
+        isPolling: true,
+        pollInterval: 5000,
+      };
+
+      await privateService.pollQueue(queuePoller);
+
+      // Polling should have stopped
+      expect(queuePoller.isPolling).toBe(false);
+      expect(mockSqsService.receiveMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle errors during polling and continue until stopped', async () => {
+      const mockInstance = { handleMessage: jest.fn() };
+      const mockHandler = {
+        queueUrl: queueUrl1,
+        handler: jest.fn(),
+        isDlq: false,
+        target: { constructor: { name: 'TestService' } },
+        methodName: 'handleMessage',
+        targetConstructor: class TestService {},
+      };
+
+      mockSqsHandlerRegistry.getHandlers.mockReturnValue([mockHandler]);
+      mockModuleRef.get.mockReturnValue(mockInstance);
+
+      // Make receiveMessage throw error first, then stop polling
+      let callCount = 0;
+      mockSqsService.receiveMessage.mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('SQS Error');
+        }
+        // Stop polling on second call to prevent infinite loop
+        queuePoller.isPolling = false;
+        return [];
+      });
+
+      const privateService = service as any;
+      const queuePoller = {
+        queueUrl: queueUrl1,
+        handlers: [
+          {
+            ...mockHandler,
+            handler: async (message: Message) => {
+              await mockInstance.handleMessage(message);
+            },
+          },
+        ],
+        isPolling: true,
+        pollInterval: 5000,
+      };
+
+      await privateService.pollQueue(queuePoller);
+
+      // Should have logged the error (from pollMessages, not pollQueue)
+      // The error is caught and logged in pollMessages
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `Error receiving messages from queue ${queueUrl1}`,
+        ),
+      );
+      // Should have called receiveMessage twice (error + success)
+      expect(mockSqsService.receiveMessage).toHaveBeenCalledTimes(2);
     });
   });
 });

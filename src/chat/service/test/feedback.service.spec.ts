@@ -47,7 +47,10 @@ describe('FeedbackService', () => {
       findOne: jest.fn(),
     };
 
-    // Mock ExecutionManager
+    // Mock ExecutionManager.getUserId()
+    jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('2');
+
+    // Mock ExecutionManager.getTenantId()
     mockGetTenantId = jest
       .spyOn(ExecutionManager, 'getTenantId')
       .mockReturnValue('test-tenant');
@@ -118,7 +121,7 @@ describe('FeedbackService', () => {
 
       expect(result).toEqual(mockFeedbacks);
       expect(mockFeedbackRepository.find).toHaveBeenCalledWith({
-        where: { messageId: 1, tenantId: 'test-tenant' },
+        where: { messageId: 1, tenantId: 'test-tenant', userId: 2 },
       });
     });
 
@@ -129,7 +132,7 @@ describe('FeedbackService', () => {
 
       expect(result).toEqual([]);
       expect(mockFeedbackRepository.find).toHaveBeenCalledWith({
-        where: { messageId: 999, tenantId: 'test-tenant' },
+        where: { messageId: 999, tenantId: 'test-tenant', userId: 2 },
       });
     });
   });
@@ -145,7 +148,7 @@ describe('FeedbackService', () => {
 
       expect(result).toEqual(updatedFeedback);
       expect(mockFeedbackRepository.findOne).toHaveBeenCalledWith({
-        where: { feedbackId: 1, tenantId: 'test-tenant' },
+        where: { feedbackId: 1, tenantId: 'test-tenant', userId: 2 },
       });
       expect(mockFeedbackRepository.save).toHaveBeenCalledWith({
         ...mockFeedback,
@@ -245,7 +248,7 @@ describe('FeedbackService', () => {
       await service.findByMessageId(1);
 
       expect(mockFeedbackRepository.find).toHaveBeenCalledWith({
-        where: { messageId: 1, tenantId: 'different-tenant' },
+        where: { messageId: 1, tenantId: 'different-tenant', userId: 2 },
       });
     });
 
@@ -257,8 +260,31 @@ describe('FeedbackService', () => {
       await service.update(1, mockUpdateFeedbackDto);
 
       expect(mockFeedbackRepository.findOne).toHaveBeenCalledWith({
-        where: { feedbackId: 1, tenantId: 'different-tenant' },
+        where: { feedbackId: 1, tenantId: 'different-tenant', userId: 2 },
       });
+    });
+  });
+
+  describe('authorization', () => {
+    it('should throw ForbiddenException when updating feedback from different user', async () => {
+      mockFeedbackRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.update(1, mockUpdateFeedbackDto)).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.update(1, mockUpdateFeedbackDto)).rejects.toThrow(
+        'Feedback with ID 1 not found',
+      );
+    });
+
+    it('should allow update when feedback belongs to current user', async () => {
+      const updatedFeedback = { ...mockFeedback, ...mockUpdateFeedbackDto };
+      mockFeedbackRepository.findOne.mockResolvedValue(mockFeedback);
+      mockFeedbackRepository.save.mockResolvedValue(updatedFeedback);
+
+      const result = await service.update(1, mockUpdateFeedbackDto);
+
+      expect(result).toEqual(updatedFeedback);
     });
   });
 });

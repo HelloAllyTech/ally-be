@@ -2,7 +2,6 @@ import { Injectable, HttpException } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { LoggerService } from '../../logger/logger.service';
 import { CryptoService } from '../../common/service/crypto.service';
-import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { AppConfigService } from '../../config/config.service';
 import { AuditLoggerService } from '../../audit/service/audit-logger.service';
 import { PermissionValidator } from '../../authorization/service/permission-validator.service';
@@ -10,16 +9,10 @@ import { MessageRepository } from '../repository/message.repository';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
-import { ChatEvents } from '../constants/chat.constants';
 import { ANONYMOUS_CLIENT_ID } from '../../common/constants/user.constants';
 import { Pagination } from '../../common/type/common.type';
-import {
-  MessageWithFeedback,
-  SendMessageWebSocketData,
-  UserChatSessionData,
-} from '../type/chat.type';
+import { MessageWithFeedback } from '../type/chat.type';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
-import { MessageBrokerChannel } from 'src/message-broker/constants/message-broker.constants';
 import { User } from 'src/user/entity/user.entity';
 import { Feedback } from '../entity/feedback.entity';
 import { MessageType, Message } from '../entity/message.entity';
@@ -32,65 +25,9 @@ export class MessageService {
   constructor(
     private messageRepository: MessageRepository,
     private cryptoService: CryptoService,
-    private readonly publisher: MessageBrokerService,
     private readonly config: AppConfigService,
     private permissionValidator: PermissionValidator,
   ) {}
-
-  async saveMessage(
-    chatId: number,
-    senderId: number,
-    data: {
-      content: string;
-      context?: string;
-      messageType?: MessageType;
-      createdAt?: Date;
-      startSeconds?: number;
-      endSeconds?: number;
-      parentMessageId?: number;
-    },
-  ) {
-    const encryptedContent = await this.cryptoService.encrypt(
-      data.content,
-      this.config.phiData?.phiDataEncryptionKey,
-    );
-    const message = this.messageRepository.create({
-      chatId,
-      senderId,
-      content: encryptedContent,
-      context: data.context,
-      type: data.messageType || MessageType.TEXT,
-      tenantId: ExecutionManager.getTenantId(),
-      parentMessageId: data.parentMessageId,
-      createdAt: data.createdAt,
-      startSeconds: data.startSeconds,
-      endSeconds: data.endSeconds,
-    });
-    return this.messageRepository.save(message);
-  }
-
-  async save(message: Message) {
-    return this.messageRepository.save(message);
-  }
-
-  async getMessageObject(
-    chatId: number,
-    senderId: number,
-    data: { content: string; context?: string; messageType?: MessageType },
-  ) {
-    const encryptedContent = await this.cryptoService.encrypt(
-      data.content,
-      this.config.phiData?.phiDataEncryptionKey,
-    );
-    return this.messageRepository.create({
-      chatId,
-      senderId,
-      content: encryptedContent,
-      context: data.context,
-      type: data.messageType || MessageType.TEXT,
-      tenantId: ExecutionManager.getTenantId(),
-    });
-  }
 
   async getMessageByChatId(
     chatId: number,
@@ -209,38 +146,6 @@ export class MessageService {
       data: messages.map((message) => this.formatMessage(message)),
       count,
     };
-  }
-
-  async persistAndBroadcastMessage(
-    session: UserChatSessionData,
-    data: SendMessageWebSocketData,
-    chat: { counselorId?: number | null; clientId: number },
-    broadCastOptions: {
-      event?: ChatEvents;
-    } = {
-      event: ChatEvents.MESSAGE_RECEIVED,
-    },
-    channel: string = MessageBrokerChannel.CHAT_MESSAGE_WEBRTC,
-  ) {
-    const chatId = data.chatId;
-    const senderId = session.userId;
-    const message = await this.saveMessage(chatId, senderId, data);
-    // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
-    const participants = [chat?.counselorId!];
-    if (
-      broadCastOptions.event != ChatEvents.NUDGE &&
-      broadCastOptions.event != ChatEvents.STAGE
-    ) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
-      participants.push(chat?.clientId!);
-    }
-
-    this.publisher.publish(channel, {
-      participants,
-      message,
-      broadCastOptions,
-    });
-    return message;
   }
 
   async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {

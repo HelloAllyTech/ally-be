@@ -36,7 +36,6 @@ export class AppConfigService {
   get ai() {
     return {
       apiUrl: this.configService.get<string>('AI_SERVICE_API_URL'),
-      deepgramApiKey: this.configService.get<string>('DEEPGRAM_API_KEY')!,
       sentenceCompletionRequired:
         this.configService.get<string>('SENTENCE_COMPLETION_REQUIRED') ===
         'true',
@@ -101,6 +100,7 @@ export class AppConfigService {
       accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID'),
       secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY'),
       sessionToken: this.configService.get<string>('AWS_SESSION_TOKEN'),
+      endpointUrl: this.configService.get<string>('AWS_ENDPOINT_URL'),
     };
   }
 
@@ -114,12 +114,6 @@ export class AppConfigService {
           'SMTP_SECRET_ACCESS_KEY',
         ),
       },
-    };
-  }
-
-  get audioIngest() {
-    return {
-      integration: this.configService.get<string>('AUDIO_INGEST_INTEGRATION'),
     };
   }
 
@@ -253,6 +247,27 @@ export class AppConfigService {
       lifespanSecondsPerCredit: this.configService.get<number>(
         'SIMULATION_SESSION_SECONDS_PER_CREDIT',
       ),
+    };
+  }
+
+  get simulationPath() {
+    return {
+      simulationPathItemMinDurationForCompletion:
+        this.configService.get<number>(
+          'SCENARIO_PATH_ITEM_MIN_DURATION_FOR_COMPLETION',
+        ),
+    };
+  }
+
+  get featureFlag() {
+    return {
+      // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove this feature flag
+      scenarioCustomFields:
+        this.configService.get<string>('FEATURE_SCENARIO_CUSTOM_FIELDS') ===
+        'true',
+      termsAndAgreement:
+        this.configService.get<string>('FEATURE_TERMS_AND_AGREEMENT') ===
+        'true',
     };
   }
 }

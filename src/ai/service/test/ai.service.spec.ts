@@ -4,19 +4,9 @@ import axios from 'axios';
 import { AiService } from '../ai.service';
 import { AppConfigService } from '../../../config/config.service';
 import { LoggerService } from '../../../logger/logger.service';
-import { createClient } from '@deepgram/sdk';
 
 // Mock external dependencies
 jest.mock('axios');
-jest.mock('@deepgram/sdk', () => ({
-  createClient: jest.fn(() => ({
-    listen: {
-      prerecorded: {
-        transcribeUrl: jest.fn(),
-      },
-    },
-  })),
-}));
 
 const mockedAxios = axios as any;
 
@@ -27,10 +17,8 @@ describe('AiService', () => {
 
   const mockConfig = {
     ai: {
-      deepgramApiKey: 'test-deepgram-key',
       apiUrl: 'https://test-ai-api.com',
-      apiKey: 'test-api-key',
-      timeout: 30000,
+      outboundApiKey: 'test-outbound-api-key',
     },
   };
 
@@ -78,10 +66,6 @@ describe('AiService', () => {
   describe('constructor', () => {
     it('should be defined', () => {
       expect(service).toBeDefined();
-    });
-
-    it('should initialize deepgram client', () => {
-      expect(createClient).toHaveBeenCalledWith(mockConfig.ai.deepgramApiKey);
     });
 
     it('should set logger instance', () => {
@@ -414,13 +398,12 @@ describe('AiService', () => {
       expect(result).toBeUndefined();
     });
 
-    it('should handle missing deepgram API key', async () => {
+    it('should handle missing outbound API key', async () => {
       const serviceWithoutKey = new AiService(
-        { ai: { ...mockConfig.ai, deepgramApiKey: '' } } as any,
+        { ai: { ...mockConfig.ai, outboundApiKey: '' } } as any,
         eventEmitter,
       );
 
-      expect(createClient).toHaveBeenCalledWith('');
       expect(serviceWithoutKey).toBeDefined();
     });
   });

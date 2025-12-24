@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { DataSource, Not, Repository } from 'typeorm';
 import { Tenant, TenantStatus } from '../entity/tenant.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { TenantsRepository } from '../repository/tenant.repository';
@@ -15,6 +15,9 @@ import { Pagination } from 'src/common/type/common.type';
 import { UpdateTenantDto } from '../dto/update-tenant.dto';
 import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
 import { UserRepository } from 'src/user/repository/user.repository';
+import { TenantScenarioSharedService } from './tenant-scenario-shared';
+import { TenantScenarioPathSharedService } from './tenant-scenario-path-shared';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 @Injectable()
 export class TenantService {
@@ -24,12 +27,17 @@ export class TenantService {
     @InjectRepository(Tenant)
     private readonly tenantRepository: Repository<Tenant>,
     private readonly tenantsRepository: TenantsRepository,
+    private readonly tenantScenarioSharedService: TenantScenarioSharedService,
+    private readonly tenantScenarioPathSharedService: TenantScenarioPathSharedService,
     @Inject(forwardRef(() => UserRepository))
     private readonly userRepository: UserRepository,
+    private readonly dataSource: DataSource,
   ) {}
+
   async findAll(): Promise<Tenant[]> {
     return this.tenantRepository.find();
   }
+
   async create(tenantData: Partial<Tenant>): Promise<Tenant> {
     const existingTenant = await this.tenantRepository.findOne({
       where: [{ name: tenantData.name }, { code: tenantData.code }],
@@ -45,8 +53,45 @@ export class TenantService {
       );
     }
 
-    const tenant = this.tenantRepository.create(tenantData);
-    return this.tenantRepository.save(tenant);
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+
+    if (userId) {
+      tenantData = {
+        ...tenantData,
+        ...(userId ? { createdBy: userId, updatedBy: userId } : {}),
+      };
+    }
+
+    try {
+      const result = await this.dataSource.transaction(
+        async (entityManager) => {
+          const tenant = entityManager.create(Tenant, tenantData);
+          const savedTenant = await entityManager.save(Tenant, tenant);
+
+          await this.tenantScenarioSharedService.assignGlobalScenariosToTenant(
+            savedTenant.id,
+            entityManager,
+          );
+
+          await this.tenantScenarioPathSharedService.assignGlobalScenarioPathsToTenant(
+            savedTenant.id,
+            entityManager,
+          );
+
+          return savedTenant;
+        },
+      );
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Failed to create tenant: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Failed to create tenant: ${error.message}`,
+      );
+    }
   }
 
   async findById(id: string): Promise<Tenant | null> {
@@ -150,7 +195,16 @@ export class TenantService {
         );
       }
     }
-    await this.tenantRepository.update(id, updateTenantDto as Partial<Tenant>);
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+    const updatedTenantData = {
+      ...updateTenantDto,
+      ...(userId ? { updatedBy: userId } : {}),
+    };
+    await this.tenantRepository.update(
+      id,
+      updatedTenantData as Partial<Tenant>,
+    );
     return this.findById(id);
   }
 }

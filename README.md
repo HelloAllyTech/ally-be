@@ -93,6 +93,8 @@ Configure log level via `LOG_LEVEL` environment variable:
 
 ## 🧭 Getting Started
 
+### Docker Setup
+
 ### Step 1: Clone the Repository
 
 ```bash
@@ -100,13 +102,7 @@ git clone <repository-url>
 cd ally-be
 ```
 
-### Step 2: Install Dependencies
-
-```bash
-npm install
-```
-
-### Step 3: Configure Environment
+### Step 2: Configure Environment
 
 1. Copy the sample environment file:
    ```bash
@@ -116,7 +112,7 @@ npm install
 
 2. Edit `docker.env` and `.env` and fill in all required variables (see [Environment Configuration](#-environment-configuration) above)
 
-### Step 4: Start Docker Services
+### Step 3: Start Docker Services
 
 Start PostgreSQL, Redis, LocalStack and SQS using Docker Compose:
 
@@ -127,24 +123,39 @@ make sure the SQS URLs in your .env file match the ones shown in the Docker outp
 Note: The app in Docker will not start automatically at the moment — it requires manual execution. The steps for running it manually are detailed in the following sections.
 
 
-### Step 5: Run Database Migrations
+### Step 4: Run Database Migrations
 
 ```bash
 npm run migration:run
 ```
 
-### Step 6: Start the Application
+The application will be available at:
+- **Swagger Docs**: http://localhost:8001/api-docs
+- **Health Check**: http://localhost:8001/api/health
 
-#### Development Mode (with hot-reload)
+### Alternative Setup (instead of using the app service in Docker Compose)
+
+### Step 1: Install Dependencies
+
+```bash
+npm install
+```
+
+### Step 2: Run Database Migrations
+
+```bash
+npm run migration:run
+```
+
+### Step 3: Start the Application
 
 ```bash
 npm run start:dev
 ```
 
 The application will be available at:
-- **API**: http://localhost:8000/api
-- **Swagger Docs**: http://localhost:8000/api-docs
-- **Health Check**: http://localhost:8000/api/health
+- **Swagger Docs**: http://localhost:8001/api-docs
+- **Health Check**: http://localhost:8001/api/health
 
 #### Production Mode
 
@@ -181,6 +192,42 @@ npm run migration:show
 - **Database**: Value from `DB_DATABASE` in `docker.env`
 - **Username**: Value from `DB_USERNAME` in `docker.env`
 - **Password**: Value from `DB_PASSWORD` in `docker.env`
+
+---
+
+## 🌱 Database Seeding
+
+Seed scripts are located in `src/database/seeds/` and can be run to populate the database with initial data.
+
+### Running Seeds
+
+```bash
+# Run a specific seed by providing the file path
+npm run seed -- src/database/seeds/<seed-file>.ts
+```
+
+### Available Seeds
+
+| Seed File | Description | Dependencies |
+|-----------|-------------|--------------|
+| `admin_user.ts` | Creates an admin user with SUPER_ADMIN role | Requires `groups` table to have SUPER_ADMIN group |
+| `user-tenant.ts` | Creates a tenant and sample users (Counselor, Learner, Admin) via API | Requires app to be running, admin user to exist |
+| `scenarios-pathway.ts` | Creates sample scenarios and a learning pathway via API | Requires app to be running, admin user to exist |
+
+### Seed Execution Order
+
+For a fresh database, run seeds in this order:
+
+```bash
+# 1. Create admin user (direct DB access)
+npm run seed -- src/database/seeds/admin_user.ts
+
+# 2. Create tenant and users (requires app running)
+npm run seed -- src/database/seeds/user-tenant.ts
+
+# 3. Create scenarios and pathway (requires app running)
+npm run seed -- src/database/seeds/scenarios-pathway.ts
+```
 
 ---
 

@@ -12,6 +12,8 @@ import { AddNoteDto } from '../../dto/notes.dto';
 import { SummaryFeedbackDto } from '../../dto/summary-feedback.dto';
 import { CallInfoDto } from '../../dto/chat.response.dto';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { UserService } from '../../../user/service/user.service';
+import { AppConfigService } from '../../../config/config.service';
 
 describe('ChatController', () => {
   let controller: ChatController;
@@ -75,16 +77,12 @@ describe('ChatController', () => {
     // Create explicit mock objects
     mockChatService = {
       getMyChats: jest.fn(),
-      requestChat: jest.fn(),
       getCounselorChat: jest.fn(),
       getCallLogs: jest.fn(),
       getAdminCallLogs: jest.fn(),
       getCounselorNames: jest.fn(),
       getAllTags: jest.fn(),
-      startCall: jest.fn(),
-      accept: jest.fn(),
       endChat: jest.fn(),
-      cancelCallByClient: jest.fn(),
       getMessages: jest.fn(),
       createFeedback: jest.fn(),
       getFeedback: jest.fn(),
@@ -135,6 +133,20 @@ describe('ChatController', () => {
           },
         },
         {
+          provide: UserService,
+          useValue: {
+            getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
+        },
+        {
           provide: 'Reflector',
           useValue: {
             getAllAndOverride: jest.fn(),
@@ -164,20 +176,6 @@ describe('ChatController', () => {
 
       expect(result).toEqual(mockChat);
       expect(mockChatService.getMyChats).toHaveBeenCalledWith(mockTokenUser.id);
-    });
-  });
-
-  describe('requestChat', () => {
-    it('should request a new chat', async () => {
-      const mockQueueEntry = { entryId: 1, chatId: 1, priority: 1 };
-      mockChatService.requestChat.mockResolvedValue(mockQueueEntry);
-
-      const result = await controller.requestChat(mockTokenUser);
-
-      expect(result).toEqual(mockQueueEntry);
-      expect(mockChatService.requestChat).toHaveBeenCalledWith(
-        mockTokenUser.id,
-      );
     });
   });
 
@@ -350,37 +348,6 @@ describe('ChatController', () => {
     });
   });
 
-  describe('callStart', () => {
-    it('should start a call', async () => {
-      const callStartDto = {
-        participantPhoneNumbers: ['+1234567890', '+0987654321'],
-      };
-
-      mockChatService.startCall.mockResolvedValue(mockChat);
-
-      const result = await controller.callStart(callStartDto);
-
-      expect(result).toEqual(mockChat);
-      expect(mockChatService.startCall).toHaveBeenCalledWith(
-        callStartDto.participantPhoneNumbers,
-      );
-    });
-  });
-
-  describe('accept', () => {
-    it('should accept a chat', async () => {
-      mockChatService.accept.mockResolvedValue(mockChat);
-
-      const result = await controller.accept(mockCounselorUser, '1');
-
-      expect(result).toEqual(mockChat);
-      expect(mockChatService.accept).toHaveBeenCalledWith(
-        mockCounselorUser.id,
-        1,
-      );
-    });
-  });
-
   describe('endChat', () => {
     it('should end a chat', async () => {
       mockChatService.endChat.mockResolvedValue(mockChat);
@@ -389,21 +356,6 @@ describe('ChatController', () => {
 
       expect(result).toEqual(mockChat);
       expect(mockChatService.endChat).toHaveBeenCalledWith(1);
-    });
-  });
-
-  describe('cancelCallByClient', () => {
-    it('should cancel call by client', async () => {
-      const mockResult = { success: true };
-      mockChatService.cancelCallByClient.mockResolvedValue(mockResult);
-
-      const result = await controller.cancelCallByClient(mockTokenUser, '1');
-
-      expect(result).toEqual(mockResult);
-      expect(mockChatService.cancelCallByClient).toHaveBeenCalledWith(
-        mockTokenUser.id,
-        1,
-      );
     });
   });
 

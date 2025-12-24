@@ -7,6 +7,8 @@ import {
   Body,
   Put,
   Delete,
+  ParseUUIDPipe,
+  Version,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -32,7 +34,7 @@ import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { Public } from 'src/auth/decorators/auth.metadata';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
-import { ScenarioSortBy } from '../enum/scenario-sort-by.enum';
+import { ScenarioSortBy } from '../type/scenario.type';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
@@ -45,15 +47,33 @@ import { DeleteCoverImageDto } from '../dto/delete-cover-image.dto';
 import { ScenarioVideoUploadResponseDto } from '../dto/scenario-video-upload-response.dto';
 import { ScenarioVideoUploadRequestDto } from '../dto/scenario-video-upload-request.dto';
 import { DeleteCoverVideoDto } from '../dto/delete-cover-video.dto';
+import {
+  GetAdminScenarioDto,
+  GetScenarioDtoWithPagination,
+} from '../dto/get-scenario.dto';
+import { AddScenarioTenantDto } from '../dto/add-scenario-tenant.dto';
+import { ScenarioTenantService } from '../service/scenario-tenant.service';
+import { DeleteScenarioTenantDto } from '../dto/delete-scenario-tenant.dto';
+import { ScenarioSessions } from '../entity/scenario-sessions.entity';
+import { SCENARIO_SESSION_EXAMPLE } from '../constants/scenario-session.constants';
+import { CreateTriggerWarningDto } from '../dto/trigger-warning.dto';
+import { TriggerWarningsService } from '../service/trigger-warnings.service';
+import { TriggerWarnings } from '../entity/trigger-warnings.entity';
+import { GetScenarioResponse } from '../interface/session.interface';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
 @ApiSecurity('access-token')
-@Controller('v1/learn')
+@Controller({
+  path: 'learn',
+  version: '1',
+})
 export class LearnController {
   constructor(
     private readonly scenarioService: ScenarioService,
     private readonly scenarioSessionService: ScenarioSessionService,
+    private readonly scenarioTenantService: ScenarioTenantService,
+    private readonly triggerWarningService: TriggerWarningsService,
   ) {}
 
   @Public()
@@ -61,6 +81,21 @@ export class LearnController {
   @Get('scenarios')
   async getScenarios(): Promise<Scenarios[]> {
     return this.scenarioService.getScenarios();
+  }
+
+  @Public()
+  @ApiOperation({ summary: 'Get all public scenarios' })
+  @Get('scenarios/public')
+  async getPublicScenarios(): Promise<GetScenarioDtoWithPagination> {
+    return this.scenarioService.getPublicScenarios();
+  }
+
+  @ApiOperation({ summary: 'Get all scenarios' })
+  @Version('2')
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIOS])
+  @Get('scenarios')
+  async getPublicScenariosV2(): Promise<GetScenarioDtoWithPagination> {
+    return this.scenarioService.getScenariosV2();
   }
 
   @ApiOperation({ summary: 'Get all scenarios ' })
@@ -94,6 +129,18 @@ export class LearnController {
     type: String,
     description: 'Filter by scenario status(comma-separated)',
   })
+  @ApiQuery({
+    name: 'tenantId',
+    required: false,
+    type: String,
+    description: 'TenantId',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Search by title',
+  })
   @Get('admin-scenarios')
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIOS])
   async getAdminScenarios(
@@ -103,20 +150,25 @@ export class LearnController {
     sortBy: ScenarioSortBy = ScenarioSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('status') status?: string,
+    @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
+    @Query('search') search?: string,
   ) {
-    return this.scenarioService.getAdminScenarios(status, {
-      limit,
-      offset,
-      sortBy,
-      order,
-    });
+    return this.scenarioService.getAdminScenarios(
+      { status, tenantId, search },
+      {
+        limit,
+        offset,
+        sortBy,
+        order,
+      },
+    );
   }
 
   // TODO: Remove swagger lock
   @Public()
   @ApiOperation({ summary: 'Get a scenario by id' })
   @Get('scenarios/:id')
-  async getScenario(@Param('id') id: number): Promise<Scenarios> {
+  async getScenario(@Param('id') id: number): Promise<GetScenarioResponse> {
     return this.scenarioService.getScenario(id, [
       'id',
       'title',
@@ -130,8 +182,15 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Get a scenario by id' })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the scenario',
+    type: GetAdminScenarioDto,
+  })
   @Get('admin-scenarios/:id')
-  async getAdminScenario(@Param('id') id: number): Promise<Scenarios> {
+  async getAdminScenario(
+    @Param('id') id: number,
+  ): Promise<GetAdminScenarioDto> {
     return this.scenarioService.getAdminScenario(id);
   }
 
@@ -191,6 +250,13 @@ export class LearnController {
       updateScenarioDto,
       tokenUser.id,
     );
+  }
+
+  @ApiOperation({ summary: 'Duplicate scenario' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('scenarios/:id/duplicate')
+  async duplicateScenario(@Param('id') id: number): Promise<Scenarios> {
+    return this.scenarioService.duplicateScenario(id);
   }
 
   @ApiOperation({ summary: 'Preview a scenario' })
@@ -548,5 +614,128 @@ export class LearnController {
   @Delete('cover-image')
   async deleteCoverImage(@Body() deleteCoverImageDto: DeleteCoverImageDto) {
     return this.scenarioService.deleteCoverImage(deleteCoverImageDto);
+  }
+
+  @ApiOperation({ description: 'Assign scenarios to a tenant' })
+  @ApiResponse({
+    description: 'Scenarios assigned to tenant successfully',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_TENANT])
+  @Post('scenario/tenant/:tenantId')
+  async assignScenariosToTenant(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() addScenarioTenantDto: AddScenarioTenantDto,
+  ) {
+    return this.scenarioTenantService.assignScenariosToTenant(
+      tenantId,
+      addScenarioTenantDto,
+    );
+  }
+
+  @ApiOperation({ description: 'Remove scenario from tenants' })
+  @ApiResponse({
+    description: 'Scenario access removed from tenants successfully',
+  })
+  @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_TENANT])
+  @Delete('scenario/tenant/:tenantId')
+  async removeScenariosFromTenant(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() deleteScenarioTenantDto: DeleteScenarioTenantDto,
+  ) {
+    return this.scenarioTenantService.removeScenariosFromTenant(
+      tenantId,
+      deleteScenarioTenantDto,
+    );
+  }
+
+  @ApiOperation({
+    description: 'get scenario session from path session item id',
+  })
+  @ApiResponse({
+    description: 'Scenario session retrieved successfully',
+    type: ScenarioSessions,
+    example: SCENARIO_SESSION_EXAMPLE,
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
+  @Get('scenario-session/scenario-path-session-item/:pathSessionItemId')
+  async getLatestScenarioSessionByPathSessionItemId(
+    @Param('pathSessionItemId', ParseUUIDPipe) pathSessionItemId: string,
+  ): Promise<ScenarioSessions | null> {
+    return this.scenarioSessionService.getLatestScenarioSessionByScenarioPathSessionItemId(
+      pathSessionItemId,
+    );
+  }
+
+  @ApiOperation({ summary: 'Create a trigger warning' })
+  @ApiResponse({
+    description: 'Trigger warning created successfully',
+    type: TriggerWarnings,
+    example: {
+      name: 'Domestic abuse',
+    },
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('trigger-warnings')
+  async createTriggerWarning(
+    @Body() createTriggerWarningDto: CreateTriggerWarningDto,
+  ) {
+    return this.triggerWarningService.createTriggerWarning(
+      createTriggerWarningDto,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Get trigger warnings based on name filter and add pagination',
+  })
+  @ApiQuery({
+    name: 'name',
+    required: false,
+    type: String,
+    description: 'Name of the trigger warning',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order',
+  })
+  @ApiResponse({
+    description: 'Trigger warnings retrieved successfully',
+    type: TriggerWarnings,
+    isArray: true,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Get('trigger-warnings')
+  async getTriggerWarnings(
+    @Query('name') name?: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order?: SortOrder,
+  ) {
+    return this.triggerWarningService.getTriggerWarnings(name, {
+      limit,
+      offset,
+      sortBy,
+      order,
+    });
   }
 }

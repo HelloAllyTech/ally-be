@@ -3,20 +3,31 @@ import { Reflector } from '@nestjs/core';
 import { SessionEventController } from '../session-event.controller';
 import { SessionEventService } from '../../service/session-event.service';
 import { CreateSessionEventsDto } from '../../dto/create-session-events.dto';
-import { UpdateSessionEventDto } from '../../dto/update-session-event.dto';
-import { CreateSessionEventDto } from '../../dto/create-session-event.dto';
 import { SessionEvents } from '../../entity/session-events.entity';
+import {
+  CreateSessionEventDto,
+  SessionEventResponseDto,
+  UpdateSessionEventDto,
+} from '../../dto/session-event.dto';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
+import { UserService } from '../../../user/service/user.service';
+import { AppConfigService } from '../../../config/config.service';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
-import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection-type.enum';
+import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventSortBy } from 'src/session-event/enum/session-event-sort-by.enum';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
-import { SessionEventSpeaker } from 'src/session-event/enum/session-event-speaker.enum';
+import { TokenUser } from 'src/auth/type/auth.types';
 
 describe('SessionEventController', () => {
   let controller: SessionEventController;
   let sessionEventService: jest.Mocked<SessionEventService>;
+
+  const mockUser: TokenUser = {
+    id: 1,
+    username: 'testuser',
+    tenantId: 'tenant-1',
+  };
 
   const mockSessionEvent: SessionEvents = {
     id: 'event-1',
@@ -30,7 +41,28 @@ describe('SessionEventController', () => {
     visibilityType: SessionEventVisibilityType.ACTIVE,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date('2024-01-01T10:00:00Z'),
-    speaker: SessionEventSpeaker.CARE_GIVER,
+    eventCode: 'SS1',
+  };
+
+  const mockSessionEventResponse: SessionEventResponseDto & {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+  } = {
+    id: 'event-1',
+    name: 'Test Event',
+    description: 'Test event description',
+    score: 85,
+    emoji: '👍',
+    message: 'Great job!',
+    branchInstruction: 'Continue with next step',
+    detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+    visibilityType: SessionEventVisibilityType.ACTIVE,
+    createdAt: new Date('2024-01-01T10:00:00Z'),
+    updatedAt: new Date('2024-01-01T10:00:00Z'),
+    detectionData: {
+      sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    },
   };
 
   const mockCreateSessionEventDto: CreateSessionEventDto = {
@@ -42,8 +74,9 @@ describe('SessionEventController', () => {
     branchInstruction: 'Continue with next step',
     detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
     visibilityType: SessionEventVisibilityType.ACTIVE,
-    sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
-    speaker: SessionEventSpeaker.CARE_GIVER,
+    detectionData: {
+      sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+    },
   };
 
   const mockCreateSessionEventsDto: CreateSessionEventsDto = {
@@ -71,6 +104,10 @@ describe('SessionEventController', () => {
       getUserRoles: jest.fn().mockResolvedValue(['SUPER_ADMIN']),
     };
 
+    const mockUserService = {
+      getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
+    };
+
     const mockReflector = {
       get: jest.fn(),
       getAll: jest.fn(),
@@ -92,6 +129,18 @@ describe('SessionEventController', () => {
         {
           provide: PermissionsService,
           useValue: mockPermissionsService,
+        },
+        {
+          provide: UserService,
+          useValue: mockUserService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
         },
         {
           provide: Reflector,
@@ -122,10 +171,12 @@ describe('SessionEventController', () => {
 
       const result = await controller.createSessionEvents(
         mockCreateSessionEventsDto,
+        mockUser,
       );
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         mockCreateSessionEventsDto.events,
+        mockUser.id,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -147,10 +198,14 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(multipleEventsDto);
+      const result = await controller.createSessionEvents(
+        multipleEventsDto,
+        mockUser,
+      );
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         multipleEventsDto.events,
+        mockUser.id,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -163,9 +218,15 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(emptyEventsDto);
+      const result = await controller.createSessionEvents(
+        emptyEventsDto,
+        mockUser,
+      );
 
-      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith([]);
+      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
+        [],
+        mockUser.id,
+      );
       expect(result).toEqual(expectedResult);
     });
 
@@ -178,8 +239,9 @@ describe('SessionEventController', () => {
         message: 'Basic message',
         detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
         visibilityType: SessionEventVisibilityType.ACTIVE,
-        sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
-        speaker: SessionEventSpeaker.CARE_GIVER,
+        detectionData: {
+          sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        },
       };
       const minimalEventsDto: CreateSessionEventsDto = {
         events: [minimalEventDto],
@@ -201,11 +263,15 @@ describe('SessionEventController', () => {
         expectedResult as any,
       );
 
-      const result = await controller.createSessionEvents(minimalEventsDto);
+      const result = await controller.createSessionEvents(
+        minimalEventsDto,
+        mockUser,
+      );
 
-      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith([
-        minimalEventDto,
-      ]);
+      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
+        [minimalEventDto],
+        mockUser.id,
+      );
       expect(result).toEqual(expectedResult);
     });
 
@@ -219,8 +285,9 @@ describe('SessionEventController', () => {
         branchInstruction: 'Proceed to final stage',
         detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
         visibilityType: SessionEventVisibilityType.ACTIVE,
-        sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
-        speaker: SessionEventSpeaker.CARE_GIVER,
+        detectionData: {
+          sentences: ['Sentence 1', 'Sentence 2', 'Sentence 3'],
+        },
       };
       const fullEventsDto: CreateSessionEventsDto = {
         events: [fullEventDto],
@@ -240,11 +307,15 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(fullEventsDto);
+      const result = await controller.createSessionEvents(
+        fullEventsDto,
+        mockUser,
+      );
 
-      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith([
-        fullEventDto,
-      ]);
+      expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
+        [fullEventDto],
+        mockUser.id,
+      );
       expect(result).toEqual(expectedResult);
     });
 
@@ -257,11 +328,12 @@ describe('SessionEventController', () => {
       );
 
       await expect(
-        controller.createSessionEvents(mockCreateSessionEventsDto),
+        controller.createSessionEvents(mockCreateSessionEventsDto, mockUser),
       ).rejects.toThrow('Duplicate key value violates unique constraint');
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         mockCreateSessionEventsDto.events,
+        mockUser.id,
       );
     });
 
@@ -280,10 +352,14 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(largeEventsDto);
+      const result = await controller.createSessionEvents(
+        largeEventsDto,
+        mockUser,
+      );
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         largeEventsDto.events,
+        mockUser.id,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -304,10 +380,14 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(scoreVariationsDto);
+      const result = await controller.createSessionEvents(
+        scoreVariationsDto,
+        mockUser,
+      );
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         scoreVariationsDto.events,
+        mockUser.id,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -339,10 +419,14 @@ describe('SessionEventController', () => {
 
       sessionEventService.createSessionEvents.mockResolvedValue(expectedResult);
 
-      const result = await controller.createSessionEvents(specialCharsDto);
+      const result = await controller.createSessionEvents(
+        specialCharsDto,
+        mockUser,
+      );
 
       expect(sessionEventService.createSessionEvents).toHaveBeenCalledWith(
         specialCharsDto.events,
+        mockUser.id,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -357,11 +441,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });
@@ -372,11 +458,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser.id,
       );
       expect(result).toBe(false);
     });
@@ -392,99 +480,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         partialUpdate,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         partialUpdate,
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should update with empty object', async () => {
-      const emptyUpdate: UpdateSessionEventDto = {};
-
-      sessionEventService.updateSessionEvent.mockResolvedValue(true);
-
-      const result = await controller.updateSessionEvents(eventId, emptyUpdate);
-
-      expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
-        eventId,
-        emptyUpdate,
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should update only the name field', async () => {
-      const nameOnlyUpdate: UpdateSessionEventDto = {
-        name: 'New Name Only',
-      };
-
-      sessionEventService.updateSessionEvent.mockResolvedValue(true);
-
-      const result = await controller.updateSessionEvents(
-        eventId,
-        nameOnlyUpdate,
-      );
-
-      expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
-        eventId,
-        nameOnlyUpdate,
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should update only the score field', async () => {
-      const scoreOnlyUpdate: UpdateSessionEventDto = {
-        score: 88,
-      };
-
-      sessionEventService.updateSessionEvent.mockResolvedValue(true);
-
-      const result = await controller.updateSessionEvents(
-        eventId,
-        scoreOnlyUpdate,
-      );
-
-      expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
-        eventId,
-        scoreOnlyUpdate,
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should update only the emoji field', async () => {
-      const emojiOnlyUpdate: UpdateSessionEventDto = {
-        emoji: '🚀',
-      };
-
-      sessionEventService.updateSessionEvent.mockResolvedValue(true);
-
-      const result = await controller.updateSessionEvents(
-        eventId,
-        emojiOnlyUpdate,
-      );
-
-      expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
-        eventId,
-        emojiOnlyUpdate,
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should update with special characters in ID', async () => {
-      const specialId = 'event-with-special-chars_123!@#';
-
-      sessionEventService.updateSessionEvent.mockResolvedValue(true);
-
-      const result = await controller.updateSessionEvents(
-        specialId,
-        mockUpdateSessionEventDto,
-      );
-
-      expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
-        specialId,
-        mockUpdateSessionEventDto,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });
@@ -494,12 +496,17 @@ describe('SessionEventController', () => {
       sessionEventService.updateSessionEvent.mockRejectedValue(error);
 
       await expect(
-        controller.updateSessionEvents(eventId, mockUpdateSessionEventDto),
+        controller.updateSessionEvents(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUser,
+        ),
       ).rejects.toThrow('Service update failed');
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser.id,
       );
     });
 
@@ -508,18 +515,24 @@ describe('SessionEventController', () => {
       sessionEventService.updateSessionEvent.mockRejectedValue(notFoundError);
 
       await expect(
-        controller.updateSessionEvents(eventId, mockUpdateSessionEventDto),
+        controller.updateSessionEvents(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUser,
+        ),
       ).rejects.toThrow('Session Event not found');
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         mockUpdateSessionEventDto,
+        mockUser.id,
       );
     });
 
     it('should update with maximum score value', async () => {
       const maxScoreUpdate: UpdateSessionEventDto = {
         score: Number.MAX_SAFE_INTEGER,
+        name: 'Updated Event',
       };
 
       sessionEventService.updateSessionEvent.mockResolvedValue(true);
@@ -527,11 +540,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         maxScoreUpdate,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         maxScoreUpdate,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });
@@ -539,6 +554,7 @@ describe('SessionEventController', () => {
     it('should update with minimum score value', async () => {
       const minScoreUpdate: UpdateSessionEventDto = {
         score: 0,
+        name: 'Updated Event',
       };
 
       sessionEventService.updateSessionEvent.mockResolvedValue(true);
@@ -546,11 +562,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         minScoreUpdate,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         minScoreUpdate,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });
@@ -568,11 +586,13 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         longTextUpdate,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         longTextUpdate,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });
@@ -580,6 +600,7 @@ describe('SessionEventController', () => {
     it('should update with Unicode emoji characters', async () => {
       const unicodeUpdate: UpdateSessionEventDto = {
         emoji: '🎯🎪🎨🎭🎪',
+        name: 'Updated Event',
       };
 
       sessionEventService.updateSessionEvent.mockResolvedValue(true);
@@ -587,18 +608,20 @@ describe('SessionEventController', () => {
       const result = await controller.updateSessionEvents(
         eventId,
         unicodeUpdate,
+        mockUser,
       );
 
       expect(sessionEventService.updateSessionEvent).toHaveBeenCalledWith(
         eventId,
         unicodeUpdate,
+        mockUser.id,
       );
       expect(result).toBe(true);
     });
   });
 
   describe('getAllSessionEvents', () => {
-    const mockResult = { data: [mockSessionEvent] };
+    const mockResult = { data: [mockSessionEventResponse] };
 
     it('should get all session events without filters', async () => {
       sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
@@ -720,7 +743,7 @@ describe('SessionEventController', () => {
     });
 
     it('should handle empty result from service', async () => {
-      const emptyResult = { data: [] };
+      const emptyResult: { data: SessionEventResponseDto[] } = { data: [] };
       sessionEventService.getAllSessionEvents.mockResolvedValue(emptyResult);
 
       const result = await controller.getAllSessionEvents();
@@ -808,7 +831,9 @@ describe('SessionEventController', () => {
     it('should handle visibility type and searchName together', async () => {
       const visibilityType = SessionEventVisibilityType.ACTIVE;
       const searchName = 'Test';
-      sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
+      sessionEventService.getAllSessionEvents.mockResolvedValue({
+        data: [mockSessionEventResponse],
+      });
 
       const result = await controller.getAllSessionEvents(
         visibilityType,

@@ -18,6 +18,7 @@ import {
   UserUpdateResponseDto,
 } from '../../dto/user-response.dto';
 import { AddUserResponseDto } from '../../dto/user-add-response.dto';
+import { AppConfigService } from '../../../config/config.service';
 
 describe('UserController', () => {
   let controller: UserController;
@@ -36,6 +37,10 @@ describe('UserController', () => {
     email: 'test@example.com',
     phone: '+1234567890',
     tenantId: 'test-tenant',
+    createdBy: undefined,
+    updatedBy: undefined,
+    suspendedBy: undefined,
+    suspendedAt: undefined,
   };
 
   const mockMinimalUserInfo = {
@@ -63,6 +68,8 @@ describe('UserController', () => {
       addUser: jest.fn(),
       updateUser: jest.fn(),
       updateUserStatus: jest.fn(),
+      getTermsAndAgreementStatus: jest.fn(),
+      approveTermsAndAgreement: jest.fn(),
     };
 
     mockGroupService = {
@@ -79,6 +86,14 @@ describe('UserController', () => {
         {
           provide: PermissionsService,
           useValue: { checkPermission: jest.fn() },
+        },
+        {
+          provide: AppConfigService,
+          useValue: {
+            featureFlag: {
+              termsAndAgreement: false,
+            },
+          },
         },
       ],
     }).compile();
@@ -453,6 +468,58 @@ describe('UserController', () => {
       );
 
       expect(result.success).toBe(false);
+    });
+  });
+
+  describe('getTermsAndAgreementStatus', () => {
+    it('should return terms and agreement status', async () => {
+      const mockResponse = { success: true };
+      mockUserService.getTermsAndAgreementStatus.mockResolvedValue(
+        mockResponse,
+      );
+
+      const result = await controller.getTermsAndAgreementStatus();
+
+      expect(mockUserService.getTermsAndAgreementStatus).toHaveBeenCalled();
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return false when user has not approved terms', async () => {
+      const mockResponse = { success: false };
+      mockUserService.getTermsAndAgreementStatus.mockResolvedValue(
+        mockResponse,
+      );
+
+      const result = await controller.getTermsAndAgreementStatus();
+
+      expect(result).toEqual(mockResponse);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('approveTermsAndAgreement', () => {
+    it('should approve terms and agreement successfully', async () => {
+      const mockResponse = { success: true };
+      mockUserService.approveTermsAndAgreement.mockResolvedValue(mockResponse);
+
+      const result = await controller.approveTermsAndAgreement();
+
+      expect(mockUserService.approveTermsAndAgreement).toHaveBeenCalled();
+      expect(result).toEqual(mockResponse);
+      expect(result.success).toBe(true);
+    });
+
+    it('should handle approval failure', async () => {
+      mockUserService.approveTermsAndAgreement.mockRejectedValue(
+        new BadRequestException('User not found'),
+      );
+
+      await expect(controller.approveTermsAndAgreement()).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(controller.approveTermsAndAgreement()).rejects.toThrow(
+        'User not found',
+      );
     });
   });
 });

@@ -1,4 +1,3 @@
-import { createClient, DeepgramClient } from '@deepgram/sdk';
 import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import axios from 'axios';
@@ -39,20 +38,12 @@ import {
 @Injectable()
 export class AiService {
   logger = LoggerService.getInstance(AiService.name);
-  private readonly deepgramClient: DeepgramClient;
   private readonly alertThresholdTimeout = 3 * 60 * 1000; // 3 minutes
   private readonly maxTimeout = 5 * 60 * 1000; // 5 minutes
   constructor(
     private config: AppConfigService,
     private eventEmitter: EventEmitter2,
-  ) {
-    this.deepgramClient = createClient(config.ai.deepgramApiKey);
-  }
-
-  // async transcribeAudioWithDeepgram(liveClient: LiveClient, audioBuffer: Buffer): Promise<string> {
-  //   const live = this.deepgramClient.listen.live({ model: 'nova-3' });
-  //   live.
-  // }
+  ) {}
 
   async transcribeAudioFromBuffer(audioBuffer: Buffer): Promise<string> {
     try {

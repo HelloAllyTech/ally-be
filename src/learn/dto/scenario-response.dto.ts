@@ -1,4 +1,4 @@
-import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { ScenarioStatus } from '../type/scenario.type';
 
 export class ScenarioResponse {
   id!: number;

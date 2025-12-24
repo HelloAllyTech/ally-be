@@ -5,7 +5,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Not, Repository } from 'typeorm';
+import { In, Not } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../entity/user.entity';
 import { QueueService } from '../../queue/service/queue.service';
@@ -35,6 +35,7 @@ import { UserGroupService } from 'src/authorization/service/user-group.service';
 import { AddUserDto } from '../dto/add-user.dto';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
+import { SuccessResponse } from 'src/common/type/common.type';
 
 @Injectable()
 export class UserService {
@@ -42,13 +43,12 @@ export class UserService {
 
   constructor(
     @InjectRepository(User)
-    private userRepository: Repository<User>,
     private queueService: QueueService,
     private readonly cache: RedisService,
     private groupRepository: GroupRepository,
     private userGroupRepository: UserGroupRepository,
     private readonly tenantService: TenantService,
-    private readonly usersRepository: UserRepository,
+    private readonly userRepository: UserRepository,
     private readonly groupService: GroupService,
     @Inject(forwardRef(() => SimulationCreditsService))
     private readonly simulationCreditsService: SimulationCreditsService,
@@ -65,28 +65,49 @@ export class UserService {
     return user || null;
   }
 
-  async getUserByPhoneNumber(phoneNumber: string): Promise<User | null> {
-    const cachedUser = await this.cache.get(`user_${phoneNumber}`);
-    if (cachedUser) {
-      return JSON.parse(cachedUser);
+  async getTermsAndAgreementApproval(id: number): Promise<boolean> {
+    const cachedTermsAndAgreement = await this.cache.get(`user:terms:${id}`);
+    let termsAccepted: boolean;
+    if (cachedTermsAndAgreement) {
+      termsAccepted = cachedTermsAndAgreement === 'true';
+    } else {
+      const user = await this.userRepository.findOne({
+        where: { id, tenantId: ExecutionManager.getTenantId() },
+      });
+      termsAccepted = user?.termsAndAgreementApproved || false;
+      await this.cache.set(`user:terms:${id}`, termsAccepted.toString(), 1800);
     }
-    const user = await this.userRepository.findOne({
-      where: { phone: phoneNumber },
-    });
-    if (user) {
-      await this.cache.set(`user_${phoneNumber}`, JSON.stringify(user));
-      return user;
-    }
-    return null;
+    return termsAccepted;
   }
 
-  async getUsersByPhoneNumbers(phoneNumbers: string[]): Promise<User[] | null> {
-    return this.userRepository.find({
-      where: {
-        phone: In(phoneNumbers),
-        tenantId: ExecutionManager.getTenantId(),
-      },
+  async getTermsAndAgreementStatus(): Promise<SuccessResponse> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('unauthorized access');
+    }
+    const user = await this.get(Number(userId));
+    return { success: user?.termsAndAgreementApproved || false };
+  }
+
+  async approveTermsAndAgreement(): Promise<SuccessResponse> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('unauthorized access');
+    }
+
+    const user = await this.get(Number(userId));
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    await this.userRepository.update(user.id, {
+      termsAndAgreementApproved: true,
+      termsAndAgreementApprovedAt: new Date(),
     });
+
+    await this.cache.set(`user:terms:${userId}`, 'true', 1800);
+
+    return { success: true };
   }
 
   async getUsersByIds(ids: number[]): Promise<User[]> {
@@ -152,34 +173,8 @@ export class UserService {
       role,
       tenantId: user.tenantId,
       phone: user.phone,
+      status: user.status,
     };
-  }
-
-  async createUser({
-    phoneNumber,
-    name,
-    email,
-    status,
-    username,
-    tenantId,
-  }: {
-    phoneNumber: string;
-    name?: string;
-    email?: string;
-    status?: UserStatus;
-    username?: string;
-    tenantId?: string;
-  }) {
-    // TODO: Add phone number to the user table and update this query
-    const user = this.userRepository.create({
-      phone: phoneNumber,
-      name: name || 'Anonymous user',
-      email: email || `${phoneNumber}@placeholder.com`,
-      status: status || UserStatus.ACTIVE,
-      username: username || `${phoneNumber}_user`,
-      tenantId: tenantId || 'anonyumous_tenant',
-    });
-    return this.userRepository.save(user);
   }
 
   async getCounselorNames(limit?: number, offset?: number, search?: string) {
@@ -227,7 +222,7 @@ export class UserService {
   }
 
   async getAllUsers(filters: UserFilterOptions): Promise<UserListResponseDto> {
-    const result = await this.usersRepository.getAllUsers(filters, true);
+    const result = await this.userRepository.getAllUsers(filters, true);
     if (result.users.length === 0) {
       return { data: [], count: 0 };
     }
@@ -296,7 +291,19 @@ export class UserService {
         );
       }
     }
-    const updated = await this.userRepository.update(id, body as Partial<User>);
+
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+    const updatedUserData = {
+      ...body,
+      ...(userId ? { updatedBy: userId } : {}),
+    };
+
+    const updated = await this.userRepository.update(
+      id,
+      updatedUserData as Partial<User>,
+    );
+
     const updatedUser = await this.userRepository.findOne({ where: { id } });
     this.auditLogger.log({
       eventType: AUDIT_EVENTS.USER_UPDATED,
@@ -306,6 +313,7 @@ export class UserService {
         username: updatedUser?.username,
         email: updatedUser?.email,
         phone: updatedUser?.phone,
+        updatedBy: userId,
       },
     });
 
@@ -327,8 +335,26 @@ export class UserService {
         `User with ID ${id} is already ${newStatus.toLowerCase()}`,
       );
     }
-    user.status = newStatus;
-    await this.userRepository.save(user);
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+    const updatedUserData = {
+      status: newStatus,
+      ...(userId ? { updatedBy: userId } : {}),
+      ...(newStatus === UserStatus.SUSPENDED && userId
+        ? { suspendedBy: userId, suspendedAt: new Date() }
+        : {}),
+    };
+    await this.userRepository.update(id, updatedUserData as Partial<User>);
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.USER_UPDATED,
+      tenantId: user.tenantId,
+      userId: user.id,
+      details: {
+        message: 'User status updated',
+        status: newStatus,
+        updatedBy: userId,
+      },
+    });
     return { success: true };
   }
 
@@ -346,9 +372,11 @@ export class UserService {
       throw new BadRequestException('Phone number already registered');
     }
 
+    const isSuperAdmin = userData.roles.includes(UserRole.SUPER_ADMIN);
+
     if (!userData.tenantId) {
       throw new BadRequestException('Tenant ID is required');
-    } else {
+    } else if (!isSuperAdmin) {
       const tenant = await this.tenantService.findById(userData.tenantId);
       if (!tenant) {
         throw new BadRequestException(' Tenant is not valid');
@@ -374,6 +402,8 @@ export class UserService {
       ? await bcrypt.hash(userData.password, 10)
       : undefined;
 
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
     const newUser = this.userRepository.create({
       email: userData.email,
       password: hashedPassword,
@@ -384,6 +414,7 @@ export class UserService {
       phone: userData.phone,
       tenantId: userData.tenantId,
       externalId: userData.externalId,
+      ...(userId ? { createdBy: userId, updatedBy: userId } : {}),
     });
 
     // Save user
@@ -418,6 +449,8 @@ export class UserService {
         username: savedUser.username,
         email: savedUser.email,
         phone: savedUser.phone,
+        createdBy: userId,
+        updatedBy: userId,
       },
     });
 

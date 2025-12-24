@@ -24,7 +24,8 @@
     "migration:create": "npm run typeorm -- migration:create src/database/migrations/$npm_config_name",
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
-    "migration:show": "npm run typeorm -- migration:show -d src/database/data-source.ts"
+    "migration:show": "npm run typeorm -- migration:show -d src/database/data-source.ts",
+    "seed": "ts-node"
   },
   "pre-commit": [
     "lint",
@@ -36,7 +37,6 @@
     "@aws-sdk/client-ses": "^3.823.0",
     "@aws-sdk/client-sqs": "^3.859.0",
     "@aws-sdk/s3-request-presigner": "^3.839.0",
-    "@deepgram/sdk": "^3.11.1",
     "@liaoliaots/nestjs-redis": "^10.0.0",
     "@nest-lab/throttler-storage-redis": "^1.1.0",
     "@nestjs/common": "^10.4.16",

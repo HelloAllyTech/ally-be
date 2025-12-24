@@ -33,3 +33,7 @@ export type RequestWithUser = Request & {
     tenantId: string;
   };
 };
+
+export type SuccessResponse = {
+  success: boolean;
+};

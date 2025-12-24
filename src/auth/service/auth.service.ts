@@ -295,7 +295,7 @@ export class AuthService {
     if (!user) {
       this.logger.error(`User not found for email ${email}`);
       this.logOtpGenerationError(email, 'User not found');
-      return { success: true };
+      return { success: true, expiresIn: this.OTP_TTL };
     }
 
     const userGroups = await this.groupService.getUserGroupNames(user.id);
@@ -305,12 +305,12 @@ export class AuthService {
     if (!hasAllowedRoles) {
       this.logger.error(`User not authorized for email ${email}`);
       this.logOtpGenerationError(email, 'User not authorized');
-      return { success: true };
+      return { success: true, expiresIn: this.OTP_TTL };
     }
 
     const isTestAccount = await this.handleTestAccountOtp(email);
     if (isTestAccount) {
-      return { success: true };
+      return { success: true, expiresIn: this.OTP_TTL };
     }
 
     const otp = AuthUtil.generateOtp();
@@ -322,6 +322,7 @@ export class AuthService {
     });
     return {
       success: true,
+      expiresIn: this.OTP_TTL,
     };
   }
 

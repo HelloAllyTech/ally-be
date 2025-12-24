@@ -7,6 +7,7 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 import { SummaryFeedbackResponse } from '../dto/call-log.response.dto';
 import { CallDetails } from '../entity/call.details.entity';
+import { ChatRepository } from '../repository/chat.repository';
 
 @Injectable()
 export class ChatFeedbackService {
@@ -15,6 +16,7 @@ export class ChatFeedbackService {
   constructor(
     private callDetailsRepository: CallDetailsRepository,
     private summaryFeedbackRepository: SummaryFeedbackRepository,
+    private chatRepository: ChatRepository,
     private dataSource: DataSource,
   ) {}
 
@@ -23,6 +25,17 @@ export class ChatFeedbackService {
     summaryFeedbackDto: SummaryFeedbackDto,
   ): Promise<SummaryFeedbackResponse> {
     return this.dataSource.transaction(async (entityManager) => {
+      const userId = Number(ExecutionManager.getUserId());
+      const chat = await this.chatRepository.findOne({
+        where: {
+          counselorId: userId,
+          id: chatId,
+          tenantId: ExecutionManager.getTenantId(),
+        },
+      });
+      if (!chat) {
+        throw new NotFoundException(`Chat not found`);
+      }
       const callDetailsRepo =
         entityManager.getRepository(CallDetails) || this.callDetailsRepository;
       const summaryFeedbackRepo = this.summaryFeedbackRepository;

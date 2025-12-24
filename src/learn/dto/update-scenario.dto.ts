@@ -6,9 +6,18 @@ import {
   IsNumber,
   IsUUID,
   IsArray,
+  IsBoolean,
+  ValidateNested,
 } from 'class-validator';
-import { ScenarioStatus } from '../enum/scenario.status.enum';
+import { Type } from 'class-transformer';
+
+import {
+  ScenarioDifficultyLevel,
+  ScenarioResponseLength,
+  ScenarioStatus,
+} from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
+import { CustomFieldsDto } from './custom-fields.dto';
 
 export class UpdateScenarioDto {
   @ApiProperty({
@@ -175,6 +184,34 @@ export class UpdateScenarioDto {
   @IsOptional()
   startingState?: string;
 
+  // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove coreMemories, lifeHistory, startingState, emotionalNeeds, sessionBehaviorGuidelines, agentGoal
+  @ApiProperty({
+    description: 'Difficulty level of the scenario',
+    example: ScenarioDifficultyLevel.EASY,
+    enum: ScenarioDifficultyLevel,
+  })
+  @IsEnum(ScenarioDifficultyLevel)
+  @IsOptional()
+  difficultyLevel?: ScenarioDifficultyLevel;
+
+  @ApiProperty({
+    description: 'Response length of the scenario',
+    example: ScenarioResponseLength.VERY_BRIEF,
+    enum: ScenarioResponseLength,
+  })
+  @IsEnum(ScenarioResponseLength)
+  @IsOptional()
+  responseLength?: ScenarioResponseLength;
+
+  @ApiProperty({
+    description: 'Your dialogues',
+    example: ['Absolutely', 'Probably'],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  agentDialogues?: string[];
+
   @ApiProperty({
     description: 'Emotional needs of the AI client persona',
     example: 'Emotional needs of the AI client persona',
@@ -207,4 +244,54 @@ export class UpdateScenarioDto {
   @IsUUID()
   @IsOptional()
   voiceId?: string;
+
+  @ApiProperty({
+    description: 'AutoTermination status',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  autoTerminationStatus?: boolean;
+
+  @ApiProperty({
+    description: 'Termination message',
+    example: 'Termination message',
+  })
+  @IsOptional()
+  @IsString()
+  terminationMessage?: string;
+
+  @ApiProperty({
+    description: 'Termination event ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  @IsString()
+  terminationEventId?: string;
+
+  @ApiProperty({ description: 'Global tenant visibility', example: false })
+  isGlobal?: boolean;
+
+  @ApiProperty({
+    description: 'Trigger warning IDs',
+    example: [
+      '123e4567-e89b-12d3-a456-426614174000',
+      '123e4567-e89b-12d3-a456-426614174001',
+    ],
+    type: [String],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  triggerWarningIds?: string[];
+
+  @ApiProperty({
+    description: 'Custom fields',
+    type: [CustomFieldsDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CustomFieldsDto)
+  customFields?: CustomFieldsDto[];
 }

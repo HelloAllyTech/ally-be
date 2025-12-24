@@ -28,13 +28,13 @@ export const validationSchema = Joi.object({
   AI_SERVICE_API_URL: Joi.string().required(),
   AI_SERVICE_API_KEY: Joi.string().required(), // inbound (AI -> BE)
   AI_SERVICE_OUTBOUND_API_KEY: Joi.string().required(), // outbound (BE -> AI)
-  DEEPGRAM_API_KEY: Joi.string().required(),
 
   // AWS
   AWS_REGION: Joi.string().default('us-east-1'),
   AWS_ACCESS_KEY_ID: Joi.string().optional(),
   AWS_SECRET_ACCESS_KEY: Joi.string().optional(),
   AWS_SESSION_TOKEN: Joi.string().optional(),
+  AWS_ENDPOINT_URL: Joi.string().optional(),
 
   // SOURCE EMAIL
   SOURCE_EMAIL: Joi.string().required(),
@@ -66,6 +66,9 @@ export const validationSchema = Joi.object({
   ENABLE_AUDIT_LOGS_TO_CLOUDWATCH: Joi.boolean().default(false),
   ENABLE_CONSOLE_AUDIT_LOGS: Joi.boolean().default(false),
 
+  // FEATURE FLAGS
+  FEATURE_TRIGGER_WARNING: Joi.boolean().default(false),
+
   // LiveKit
   LIVEKIT_API_KEY: Joi.string().required(),
   LIVEKIT_API_SECRET: Joi.string().required(),
@@ -81,4 +84,6 @@ export const validationSchema = Joi.object({
   APP_BASE_URL: Joi.string().required(),
 
   LEARN_MEDIA_PUBLIC_S3_BUCKET: Joi.string().required(),
+
+  SCENARIO_PATH_ITEM_MIN_DURATION_FOR_COMPLETION: Joi.string().required(),
 });
