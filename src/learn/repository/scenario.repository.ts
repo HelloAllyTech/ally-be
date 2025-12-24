@@ -26,6 +26,9 @@ export class ScenariosRepository extends Repository<Scenarios> {
     super(Scenarios, dataSource.createEntityManager());
   }
   async getScenarioWithTriggerWarningsByIds(ids: number[]) {
+    if (ids.length === 0) {
+      return [];
+    }
     return this.createQueryBuilder('scenario')
       .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
       .leftJoinAndMapMany(
