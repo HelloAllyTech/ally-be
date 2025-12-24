@@ -876,7 +876,7 @@ export class ScenarioSessionService {
     // Update termination (Translated Version) event if language is not English
     if (isOtherLanguage && scenario?.terminationEvent?.eventId) {
       const translatedTerminationEvent = sessionEvents.find(
-        (event) => event.id === scenario?.terminationEvent?.eventId,
+        (event) => event.id === scenario.terminationEvent?.eventId,
       );
 
       if (translatedTerminationEvent) {
@@ -1037,15 +1037,13 @@ export class ScenarioSessionService {
     };
   }
 
-  private async getLanguageDetailsForScenarioSession(
-    startScenarioSessionDtoLanguageId: number | undefined,
-  ) {
+  private async getLanguageDetailsForScenarioSession(languageId: number) {
     const enLanguageDetails =
       await this.sharedLanguageService.getLanguageByLanguageCode(
         DEFAULT_LANGUAGE_CODE,
       );
 
-    if (!startScenarioSessionDtoLanguageId) {
+    if (!languageId) {
       return {
         enLanguageDetails: enLanguageDetails,
         languageDetails: null,
@@ -1053,7 +1051,7 @@ export class ScenarioSessionService {
     }
 
     const languageDetails = await this.sharedLanguageService.getLanguagesByIds([
-      startScenarioSessionDtoLanguageId,
+      languageId,
     ]);
 
     return {
