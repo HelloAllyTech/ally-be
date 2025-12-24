@@ -875,8 +875,9 @@ export class ScenarioSessionService {
 
     // Update termination (Translated Version) event if language is not English
     if (isOtherLanguage && scenario?.terminationEvent?.eventId) {
+      const terminationEventId = scenario.terminationEvent.eventId;
       const translatedTerminationEvent = sessionEvents.find(
-        (event) => event.id === scenario.terminationEvent?.eventId,
+        (event) => event.id === terminationEventId,
       );
 
       if (translatedTerminationEvent) {
