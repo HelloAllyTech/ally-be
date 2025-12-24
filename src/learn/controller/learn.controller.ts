@@ -771,6 +771,7 @@ export class LearnController {
     description: 'Filter by has voices',
   })
   @Get('scenario-languages')
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_LANGUAGES])
   async getLanguagesForScenario(
     @Query('active') active?: boolean,
     @Query('hasVoices') hasVoices?: boolean,

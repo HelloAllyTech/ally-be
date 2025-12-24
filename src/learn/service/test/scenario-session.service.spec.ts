@@ -31,13 +31,10 @@ import { SimulationCreditsService } from '../simulation-credits.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
-import {
-  DEFAULT_LANGUAGE_CODE,
-  SCENARIO_SESSION_TRANSLATABLE_FIELDS,
-} from 'src/learn/constants/scenario-session.constants';
+import { SCENARIO_SESSION_TRANSLATABLE_FIELDS } from 'src/learn/constants/scenario-session.constants';
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
-import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -72,7 +69,6 @@ describe('ScenarioSessionService', () => {
   let scenarioTranslationRepository: jest.Mocked<ScenarioTranslationsRepository>;
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let mockConfigService: any;
-  let sharedLanguageService: jest.Mocked<SharedLanguageService>;
   let scenarioVoicesRepository: jest.Mocked<ScenarioVoicesRepository>;
 
   const mockTenantId = 'tenant-123';
@@ -354,7 +350,6 @@ describe('ScenarioSessionService', () => {
     scenarioPathSharedService = module.get(ScenarioPathSharedService);
     scenarioTranslationRepository = module.get(ScenarioTranslationsRepository);
     sessionEventTranslationService = module.get(SessionEventTranslationService);
-    sharedLanguageService = module.get(SharedLanguageService);
     scenarioVoicesRepository = module.get(ScenarioVoicesRepository);
   });
 
@@ -751,7 +746,7 @@ describe('ScenarioSessionService', () => {
         metadata: {
           agentGoal: 'Help the client',
           lifeHistory: 'Life history',
-          voiceId: undefined,
+          voiceId: 'voice-123',
           name: 'Test Client',
           age: 25,
           gender: 'female',
@@ -774,7 +769,19 @@ describe('ScenarioSessionService', () => {
         serverUrl: 'https://livekit.example.com',
       };
 
-      const mockPreviewDto = { scenarioId: mockScenarioId };
+      const mockFallbackVoice = {
+        id: 'voice-123',
+        name: 'Test Voice',
+        config: {
+          age: 'adult',
+          name: 'priyanka',
+          model: 'aura-2-luna-en',
+          gender: 'female',
+          voiceId: 'aura-2-luna-en',
+        },
+      };
+
+      const mockPreviewDto = { scenarioId: mockScenarioId, languageId: 1 };
 
       scenarioService.getAdminScenario.mockResolvedValue(
         scenarioWithoutVoiceId as any,
@@ -784,12 +791,12 @@ describe('ScenarioSessionService', () => {
         mockSessionEvents,
       );
 
-      // 👇 Mock default language lookup
-      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue({
-        id: 1,
-        value: DEFAULT_LANGUAGE_CODE,
-        label: 'English (India)',
-      } as any);
+      sessionEventTranslationService.getSessionEventsTranslationsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      scenarioVoicesRepository.getFallbackVoice.mockResolvedValue(
+        mockFallbackVoice as any,
+      );
 
       livekitService.createRoom.mockResolvedValue({} as any);
       livekitService.generateAccessToken.mockResolvedValue(mockTokenResponse);

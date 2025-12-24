@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber } from 'class-validator';
+import { IsNumber, IsOptional } from 'class-validator';
 
 export class PreviewScenarioDto {
   @ApiProperty({
@@ -8,4 +8,12 @@ export class PreviewScenarioDto {
   })
   @IsNumber()
   scenarioId!: number;
+
+  @ApiProperty({
+    description: 'Language ID',
+    example: 1,
+  })
+  @IsNumber()
+  @IsOptional()
+  languageId?: number;
 }

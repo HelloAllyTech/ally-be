@@ -852,29 +852,72 @@ export class ScenarioSessionService {
     previewScenarioDto: PreviewScenarioDto,
     userId: number,
   ) {
-    const { scenarioId } = previewScenarioDto;
+    const { scenarioId, languageId } = previewScenarioDto;
+
     const scenario = await this.scenarioService.getAdminScenario(scenarioId);
 
     await this.validatePreviewScenario(scenario);
 
-    const sessionEvents =
-      await this.sessionEventService.getSessionEventsByScenarioId(scenarioId);
+    const { enLanguageDetails, languageDetails } =
+      await this.getLanguageDetailsForScenarioSession(languageId);
 
-    // If voiceId is not set, will pick from languageVoices using default language
-    if (scenario.metadata && !scenario.metadata?.voiceId) {
-      const defaultLanguageDetails =
-        await this.sharedLanguageService.getLanguageByLanguageCode(
-          DEFAULT_LANGUAGE_CODE,
-        );
-      if (defaultLanguageDetails) {
-        scenario.metadata.voiceId =
-          scenario.metadata?.languageVoices[defaultLanguageDetails.id];
+    // Check if language is not English
+    const isOtherLanguage =
+      languageId && enLanguageDetails && languageId !== enLanguageDetails.id;
+
+    // If language is not English, get translated session events
+    const sessionEvents = isOtherLanguage
+      ? await this.sessionEventTranslationService.getSessionEventsTranslationsByScenarioId(
+          scenarioId,
+          languageId,
+        )
+      : await this.sessionEventService.getSessionEventsByScenarioId(scenarioId);
+
+    // Update termination (Translated Version) event if language is not English
+    if (isOtherLanguage && scenario?.terminationEvent?.eventId) {
+      const terminationEventId = scenario.terminationEvent.eventId;
+      const translatedTerminationEvent = sessionEvents.find(
+        (event) => event.id === terminationEventId,
+      );
+
+      if (translatedTerminationEvent) {
+        scenario.terminationEvent = {
+          ...translatedTerminationEvent,
+          eventId: translatedTerminationEvent.id,
+          autoTerminationStatus: true,
+        };
       }
     }
 
-    if (!scenario.metadata?.voiceId) {
+    // Determine voiceId from scenario metadata languageVoices if languageId is provided or from metadata voiceId if languageId is not provided
+    let voiceId = languageId
+      ? scenario?.metadata?.languageVoices?.[languageId]
+      : scenario?.metadata?.voiceId;
+
+    // If languageId is provided and voiceId is not found, get fallback voice for language and gender
+    if (!voiceId && languageId) {
+      const voiceDetails = await this.getFallbackVoiceForLanguageGender(
+        languageId,
+        scenario?.metadata?.gender,
+      );
+      voiceId = voiceDetails?.id;
+    }
+
+    if (!voiceId) {
       throw new BadRequestException('Voice ID not found for scenario');
     }
+
+    // To add voice, language and languageId to scenario metadata
+    if (scenario?.metadata) {
+      scenario.metadata.voiceId = voiceId;
+      scenario.metadata.language =
+        languageDetails?.value ?? DEFAULT_LANGUAGE_CODE;
+      scenario.metadata.languageId = languageId ?? enLanguageDetails?.id;
+
+      // Added defaultLanguageId to metadata to avoid database calls and use it for translation checks in createRoomMetadata.
+      scenario.metadata.defaultLanguageId = enLanguageDetails?.id;
+    }
+
     const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
     const roomName = `preview-${scenarioId}-${v4()}`;
 
@@ -996,15 +1039,22 @@ export class ScenarioSessionService {
   }
 
   private async getLanguageDetailsForScenarioSession(
-    startScenarioSessionDtoLanguageId: number,
+    languageId: number | undefined,
   ) {
     const enLanguageDetails =
       await this.sharedLanguageService.getLanguageByLanguageCode(
         DEFAULT_LANGUAGE_CODE,
       );
 
+    if (!languageId) {
+      return {
+        enLanguageDetails: enLanguageDetails,
+        languageDetails: null,
+      };
+    }
+
     const languageDetails = await this.sharedLanguageService.getLanguagesByIds([
-      startScenarioSessionDtoLanguageId,
+      languageId,
     ]);
 
     return {
