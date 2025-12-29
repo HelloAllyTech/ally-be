@@ -171,10 +171,28 @@ jobs:
 
       - name: Download Google Credentials from S3
         run: |
+          ENV=${{ github.event.inputs.Environment }}
           # Create a directory for the credentials
           mkdir -p gcloud/
+
+          # Check Environment variable and download accordingly
+          if [[ $ENV == 'prd' ]]; then
+            echo "Using PRD Google credentials"
+            S3_URL="${{ secrets.GOOGLE_CREDENTIALS_S3_URL_PRD }}"
+          else
+            echo "Using non-PRD Google credentials"
+            S3_URL="${{ secrets.GOOGLE_CREDENTIALS_S3_URL }}"
+          fi
+
+          # Set the S3 URL based on the environment
+          if [ -z "$S3_URL" ]; then
+            echo "Google credentials S3 URL is not set"
+          exit 1
+          fi
+
           # Download the credentials file from S3
-          aws s3 cp ${{ secrets.GOOGLE_CREDENTIALS_S3_URL }} gcloud/application_default_credentials.json
+          aws s3 cp "$S3_URL" gcloud/application_default_credentials.json
+          
           # Set the environment variable
           echo "GOOGLE_APPLICATION_CREDENTIALS=gcloud/application_default_credentials.json" >> $GITHUB_ENV
 
