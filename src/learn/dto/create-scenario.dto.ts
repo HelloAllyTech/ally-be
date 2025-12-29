@@ -20,6 +20,7 @@ import {
 } from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
+import { MAX_CUSTOM_FIELDS_COUNT } from '../constants/scenario.constants';
 
 export class CreateScenarioDto {
   @ApiProperty({
@@ -293,7 +294,7 @@ export class CreateScenarioDto {
   })
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(3)
+  @ArrayMaxSize(MAX_CUSTOM_FIELDS_COUNT)
   @ValidateNested({ each: true })
   @Type(() => CustomFieldsDto)
   customFields?: CustomFieldsDto[];
