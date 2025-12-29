@@ -237,6 +237,7 @@ export class ScenarioSessionService {
     // Add termination event ID to be fetched if needed
     const idsToProcess = new Set<string>();
     if (terminationEvent?.eventId && !eventMap.has(terminationEvent.eventId)) {
+      triggerEvents.add(terminationEvent.eventId);
       idsToProcess.add(terminationEvent.eventId);
     }
 
