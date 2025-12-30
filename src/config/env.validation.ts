@@ -86,4 +86,10 @@ export const validationSchema = Joi.object({
   LEARN_MEDIA_PUBLIC_S3_BUCKET: Joi.string().required(),
 
   SCENARIO_PATH_ITEM_MIN_DURATION_FOR_COMPLETION: Joi.string().required(),
+
+  GOOGLE_APPLICATION_CREDENTIALS: Joi.string()
+    .required()
+    .pattern(/\.json$/, 'JSON file path'),
+
+  PROJECT_ID: Joi.string().required(),
 });

@@ -8,7 +8,7 @@ import { DataSource, In } from 'typeorm';
 
 import { SessionEvents } from '../entity/session-events.entity';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
-import { Pagination } from 'src/common/type/common.type';
+import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { SessionEventRepository } from '../repository/session-event.repository';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
 import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
@@ -27,11 +27,13 @@ import {
 } from '../dto/session-event.dto';
 import { MAX_COMBINATION_EVENT_DEPTH } from '../constants/event.constant';
 
+import { SessionEventTranslationService } from './session-event-translation.service';
 @Injectable()
 export class SessionEventService {
   constructor(
     private readonly sessionEventRepository: SessionEventRepository,
     private readonly dataSource: DataSource,
+    private readonly sessionEventTranslationService: SessionEventTranslationService,
   ) {}
 
   async createSessionEvents(
@@ -154,6 +156,11 @@ export class SessionEventService {
       ...formattedEventDto,
       updatedBy: userId,
     });
+
+    this.sessionEventTranslationService.createUpdateSessionEventTranslations([
+      { ...formattedEventDto, id },
+    ]);
+
     return updated.affected !== 0;
   }
 
@@ -318,5 +325,24 @@ export class SessionEventService {
       eventIds: Array.from(allEventIds),
       eventsMap,
     };
+  }
+
+  /**
+   * Translates passive session events and updates their translations.
+   *
+   * @returns {Promise<SuccessResponse>} - A success response object.
+   */
+  async translatePassiveSessionEvents(): Promise<SuccessResponse> {
+    // Get all passive session events
+    const passiveEvents = await this.sessionEventRepository.getAllSessionEvents(
+      SessionEventVisibilityType.PASSIVE,
+    );
+
+    // Create or update translations for passive events
+    this.sessionEventTranslationService.createUpdateSessionEventTranslations(
+      passiveEvents,
+    );
+
+    return { success: true };
   }
 }

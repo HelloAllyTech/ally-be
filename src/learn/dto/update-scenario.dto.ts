@@ -8,6 +8,7 @@ import {
   IsArray,
   IsBoolean,
   ValidateNested,
+  IsObject,
   ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -37,6 +38,16 @@ export class UpdateScenarioDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @ApiProperty({
+    description: 'Mapping of language IDs to voice IDs',
+    example: { '1': '0000000-1111-2222-3333-444444444444' },
+    type: 'object',
+    additionalProperties: { type: 'string', format: 'uuid' },
+  })
+  @IsObject()
+  @IsOptional()
+  languageVoices?: Record<string, string>;
 
   @ApiProperty({
     description: 'Cover image URL of the scenario',

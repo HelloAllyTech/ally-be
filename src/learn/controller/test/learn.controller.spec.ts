@@ -131,6 +131,9 @@ describe('LearnController', () => {
 
   const mockStartScenarioSessionDto = {
     scenarioId: 1,
+    languageId: 4,
+    voiceId: 'voice-123',
+    language: 'en-IN',
   };
 
   const mockAddFeedbackDto = {
@@ -198,6 +201,8 @@ describe('LearnController', () => {
       updateScenarioVoice: jest.fn(),
       deleteCoverImage: jest.fn(),
       deleteCoverVideo: jest.fn(),
+      getScenarioVoiceLanguagesForAdmin: jest.fn(),
+      getLanguagesForScenario: jest.fn(),
       duplicateScenario: jest.fn(),
     };
 
@@ -812,6 +817,7 @@ describe('LearnController', () => {
             voiceId: 'openai-voice-new',
             provider: 'openai',
             config: { speed: 1.0 },
+            languageId: 1,
           },
         ],
       };
@@ -1058,34 +1064,160 @@ describe('LearnController', () => {
       ).rejects.toThrow('Database error');
     });
   });
-  describe('duplicateScenario', () => {
-    it('should duplicate a scenario by id', async () => {
-      const scenarioId = 1;
-      const mockDuplicatedScenario = {
-        ...mockScenarioResponse,
-        id: 999,
-        title: 'Test Scenario (Copy)',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      scenarioService.duplicateScenario.mockResolvedValue(
-        mockDuplicatedScenario as any,
+
+  describe('getScenarioVoiceLanguagesForAdmin', () => {
+    const mockLanguages = [
+      {
+        language_id: 1,
+        value: 'en-IN',
+        label: 'English (India)',
+        voices: [
+          {
+            id: 'cxsx-shans-ssbs8w',
+            name: 'Priya (Female)',
+          },
+        ],
+      },
+      {
+        language_id: 2,
+        value: 'hi-IN',
+        label: 'Hindi (India)',
+        voices: [
+          {
+            id: 'cxsx-shans-ssbs8q',
+            name: 'Priya (Female)',
+          },
+        ],
+      },
+    ];
+
+    it('should return languages with active filter', async () => {
+      scenarioService.getScenarioVoiceLanguagesForAdmin.mockResolvedValue(
+        mockLanguages,
       );
-      const result = await controller.duplicateScenario(scenarioId);
-      expect(result).toEqual(mockDuplicatedScenario);
-      expect(scenarioService.duplicateScenario).toHaveBeenCalledWith(
-        scenarioId,
-      );
-      expect(scenarioService.duplicateScenario).toHaveBeenCalledTimes(1);
+      const result = await controller.getScenarioVoiceLanguagesForAdmin(true);
+      expect(result).toEqual(mockLanguages);
+      expect(
+        scenarioService.getScenarioVoiceLanguagesForAdmin,
+      ).toHaveBeenCalledWith(true);
     });
 
-    it('should handle errors when scenario does not exist', async () => {
-      const scenarioId = 999;
-      const error = new Error('Scenario not found');
-      scenarioService.duplicateScenario.mockRejectedValue(error);
-      await expect(controller.duplicateScenario(scenarioId)).rejects.toThrow(
-        'Scenario not found',
+    it('should return all languages when no filter is provided', async () => {
+      scenarioService.getScenarioVoiceLanguagesForAdmin.mockResolvedValue(
+        mockLanguages,
       );
+      const result =
+        await controller.getScenarioVoiceLanguagesForAdmin(undefined);
+      expect(result).toEqual(mockLanguages);
+      expect(
+        scenarioService.getScenarioVoiceLanguagesForAdmin,
+      ).toHaveBeenCalledWith(undefined);
+    });
+
+    it('should handle errors from service', async () => {
+      scenarioService.getScenarioVoiceLanguagesForAdmin.mockRejectedValue(
+        new Error('Service error'),
+      );
+      await expect(
+        controller.getScenarioVoiceLanguagesForAdmin(true),
+      ).rejects.toThrow('Service error');
+    });
+  });
+
+  describe('getLanguagesForScenario', () => {
+    const mockAvailableLanguages = [
+      { language_id: 1, value: 'en-IN', label: 'English (India)' },
+      { language_id: 2, value: 'hi-IN', label: 'Hindi (India)' },
+    ];
+
+    it('should return languages with both filters', async () => {
+      scenarioService.getLanguagesForScenario.mockResolvedValue(
+        mockAvailableLanguages,
+      );
+      const result = await controller.getLanguagesForScenario(true, true);
+      expect(result).toEqual(mockAvailableLanguages);
+      expect(scenarioService.getLanguagesForScenario).toHaveBeenCalledWith(
+        true,
+        true,
+      );
+    });
+
+    it('should handle only active filter', async () => {
+      scenarioService.getLanguagesForScenario.mockResolvedValue(
+        mockAvailableLanguages,
+      );
+      const result = await controller.getLanguagesForScenario(true, undefined);
+      expect(result).toEqual(mockAvailableLanguages);
+      expect(scenarioService.getLanguagesForScenario).toHaveBeenCalledWith(
+        true,
+        undefined,
+      );
+    });
+
+    it('should handle only hasVoices filter', async () => {
+      scenarioService.getLanguagesForScenario.mockResolvedValue(
+        mockAvailableLanguages,
+      );
+      const result = await controller.getLanguagesForScenario(undefined, true);
+      expect(result).toEqual(mockAvailableLanguages);
+      expect(scenarioService.getLanguagesForScenario).toHaveBeenCalledWith(
+        undefined,
+        true,
+      );
+    });
+
+    it('should return all languages when no filters are provided', async () => {
+      scenarioService.getLanguagesForScenario.mockResolvedValue(
+        mockAvailableLanguages,
+      );
+      const result = await controller.getLanguagesForScenario(
+        undefined,
+        undefined,
+      );
+      expect(result).toEqual(mockAvailableLanguages);
+      expect(scenarioService.getLanguagesForScenario).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+      );
+    });
+
+    it('should handle errors from service', async () => {
+      scenarioService.getLanguagesForScenario.mockRejectedValue(
+        new Error('Service error'),
+      );
+      await expect(
+        controller.getLanguagesForScenario(true, true),
+      ).rejects.toThrow('Service error');
+    });
+    describe('duplicateScenario', () => {
+      it('should duplicate a scenario by id', async () => {
+        const scenarioId = 1;
+        const mockDuplicatedScenario = {
+          ...mockScenarioResponse,
+          id: 999,
+          title: 'Test Scenario (Copy)',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        scenarioService.duplicateScenario.mockResolvedValue(
+          mockDuplicatedScenario as any,
+        );
+        const result = await controller.duplicateScenario(scenarioId);
+        expect(result).toEqual(mockDuplicatedScenario);
+        expect(scenarioService.duplicateScenario).toHaveBeenCalledWith(
+          scenarioId,
+        );
+        expect(scenarioService.duplicateScenario).toHaveBeenCalledTimes(1);
+      });
+
+      it('should handle errors when scenario does not exist', async () => {
+        const scenarioId = 999;
+        const error = new Error('Scenario not found');
+        scenarioService.duplicateScenario.mockRejectedValue(error);
+        await expect(controller.duplicateScenario(scenarioId)).rejects.toThrow(
+          'Scenario not found',
+        );
+      });
     });
   });
 });

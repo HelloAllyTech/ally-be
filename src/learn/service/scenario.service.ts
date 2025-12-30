@@ -59,6 +59,18 @@ import { ScenarioFilters } from '../type/scenario-filter.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { GetScenarioResponse } from '../interface/session.interface';
 import { TriggerWarningsService } from './trigger-warnings.service';
+import { ScenarioTranslationsRepository } from '../repository/scenario-translations.repository';
+import { GoogleTranslationsService } from 'src/common/service/google-translation.service';
+import { SharedLanguageService } from '../../language/service/shared-language.service';
+import { ScenarioSharedService } from './scenario-shared.service';
+import { ScenarioEventsTranslationsRepository } from '../repository/scenario-events-translations.repository';
+import { MetadataShape } from '../type/scenario-translation-metadata.type';
+import { CreateScenarioTranslation } from '../interface/scenario-translation.interface';
+import {
+  CreateScenarioEventsTranslation,
+  ScenarioEventsTranslationData,
+} from '../interface/scenario-events-translation.interface';
+import { DEFAULT_LANGUAGE_CODE } from '../constants/scenario-session.constants';
 
 @Injectable()
 export class ScenarioService {
@@ -75,6 +87,11 @@ export class ScenarioService {
     private dataSource: DataSource,
     private scenarioPathSharedService: ScenarioPathSharedService,
     private triggerWarningsService: TriggerWarningsService,
+    private scenarioTranslationsRepository: ScenarioTranslationsRepository,
+    private googleTranslationsService: GoogleTranslationsService,
+    private sharedLanguageService: SharedLanguageService,
+    private scenarioSharedService: ScenarioSharedService,
+    private scenarioEventTranslationsRepository: ScenarioEventsTranslationsRepository,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -452,6 +469,31 @@ export class ScenarioService {
         await scenarioTriggerWarningsRepo.save(scenarioTriggerWarnings);
       }
 
+      await this.persistTranslationsForScenarios(
+        savedScenarios.filter(
+          (scenario) => scenario.status == ScenarioStatus.ACTIVE,
+        ),
+        (scenario) =>
+          this.sanitizeMetadata({
+            title: scenario.title,
+            description: scenario.description,
+            tone: scenario.metadata?.tone,
+            emotionalNeeds: scenario.metadata?.emotionalNeeds,
+            personality: scenario.metadata?.personality,
+            lifeHistory: scenario.metadata?.lifeHistory,
+            coreMemories: scenario.metadata?.coreMemories,
+            startingState: scenario.metadata?.startingState,
+            agentGoal: scenario.metadata?.agentGoal,
+            context: scenario.metadata?.context,
+            sessionBehaviorGuidelines:
+              scenario.metadata?.sessionBehaviorGuidelines,
+            openingStatements: scenario.metadata?.openingStatements,
+            sexualOrientation: scenario.metadata?.sexualOrientation,
+            genderIdentity: scenario.metadata?.genderIdentity,
+            customFields: scenario.metadata?.customFields,
+          }),
+      );
+
       return savedScenarios;
     });
   }
@@ -543,6 +585,32 @@ export class ScenarioService {
 
       const scenarioRepository = entityManager.getRepository(Scenarios);
       const updated = await scenarioRepository.update(id, updateData);
+
+      if (scenario.status == ScenarioStatus.ACTIVE) {
+        await this.persistTranslationsForScenarios(
+          [scenario], // single-item array so helper can reuse same logic
+          () =>
+            this.sanitizeMetadata({
+              title: updateScenarioDto.title,
+              description: updateScenarioDto.description,
+              tone: updateScenarioDto.tone,
+              emotionalNeeds: updateScenarioDto.emotionalNeeds,
+              personality: updateScenarioDto.personality,
+              lifeHistory: updateScenarioDto.lifeHistory,
+              coreMemories: updateScenarioDto.coreMemories,
+              startingState: updateScenarioDto.startingState,
+              agentGoal: updateScenarioDto.agentGoal,
+              context: updateScenarioDto.context,
+              sessionBehaviorGuidelines:
+                updateScenarioDto.sessionBehaviorGuidelines,
+              openingStatements: updateScenarioDto.openingStatements,
+              sexualOrientation: updateScenarioDto.sexualOrientation,
+              genderIdentity: updateScenarioDto.genderIdentity,
+              customFields: updateScenarioDto?.customFields,
+            }),
+        );
+      }
+
       const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
       const existingScenarioTerminationEvent = await scenarioEventsRepo.findOne(
         {
@@ -561,11 +629,17 @@ export class ScenarioService {
           eventId: existingScenarioTerminationEvent.eventId,
           autoTerminationStatus: true,
         });
+
+        this.scenarioEventTranslationsRepository.delete({
+          scenarioId: id,
+          eventId: existingScenarioTerminationEvent.eventId,
+        });
       }
       // If the input termination event id is the same as the existing one - update the message
       if (
         existingScenarioTerminationEvent?.eventId ===
-        updateScenarioDto.terminationEventId
+          updateScenarioDto.terminationEventId &&
+        updateScenarioDto.autoTerminationStatus
       ) {
         await scenarioEventsRepo.update(
           {
@@ -575,6 +649,14 @@ export class ScenarioService {
           },
           { message: updateScenarioDto.terminationMessage },
         );
+        // Create/update the translation for the new termination event
+        this.createUpdateScenarioEventsTranslations([
+          {
+            scenarioId: id,
+            eventId: updateScenarioDto.terminationEventId,
+            message: updateScenarioDto.terminationMessage,
+          },
+        ]);
       } else if (updateScenarioDto.autoTerminationStatus) {
         const newTerminationEvent = scenarioEventsRepo.create({
           scenarioId: id,
@@ -583,6 +665,8 @@ export class ScenarioService {
           message: updateScenarioDto.terminationMessage,
         });
         scenarioEventsRepo.save(newTerminationEvent);
+        // Create/update the translation for the new termination event
+        this.createUpdateScenarioEventsTranslations([newTerminationEvent]);
       }
       if (updated.affected === 0) return false;
 
@@ -878,6 +962,8 @@ export class ScenarioService {
 
       await scenarioEventsRepo.save(scenarioEvents);
 
+      await this.createUpdateScenarioEventsTranslations(scenarioEvents);
+
       return {
         scenarioId,
         events: scenarioEvents.map((event) => ({
@@ -956,5 +1042,353 @@ export class ScenarioService {
     );
 
     return updated.affected !== 0;
+  }
+
+  async getScenarioVoiceLanguagesForAdmin(active?: boolean) {
+    return this.scenarioVoiceRepository.getLanguagesWithVoices(active);
+  }
+
+  async getLanguagesForScenario(active?: boolean, hasVoices?: boolean) {
+    return this.scenarioVoiceRepository.getLanguagesForScenario(
+      active,
+      hasVoices,
+    );
+  }
+
+  /**
+   * Sanitize metadata: remove null/undefined values and trim strings
+   */
+  private sanitizeMetadata<T extends Record<string, any>>(
+    metadata: T,
+  ): Partial<T> {
+    const cleaned: Partial<T> = {};
+
+    for (const key in metadata) {
+      if (!Object.prototype.hasOwnProperty.call(metadata, key)) continue;
+      const value = metadata[key as keyof T];
+      if (value === null || value === undefined) {
+        continue;
+      }
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed === '') {
+          continue;
+        }
+
+        cleaned[key as keyof T] = trimmed as any;
+      } else {
+        cleaned[key as keyof T] = value;
+      }
+    }
+
+    return cleaned;
+  }
+
+  /**
+   * Build translated metadata map for a list of language codes.
+   * Returns an object: { [langCode]: Partial<MetadataShape> }
+   */
+  private async buildTranslatedMetadataForLanguageCodes(
+    metadataObj:
+      | Partial<MetadataShape>
+      | Partial<{ message: string; branchInstruction: string }>,
+    languageCodes: string[],
+  ): Promise<Record<string, Partial<MetadataShape>>> {
+    // validation
+    const codes = (languageCodes ?? [])
+      .map((c) => (typeof c === 'string' ? c.trim() : ''))
+      .filter(Boolean);
+    if (!codes.length) {
+      this.logger?.debug?.(
+        '[buildTranslatedMetadataForLanguageCodes] no language codes provided',
+      );
+      return {};
+    }
+    if (!metadataObj || Object.keys(metadataObj).length === 0) {
+      this.logger?.debug?.(
+        '[buildTranslatedMetadataForLanguageCodes] no metadata to translate',
+      );
+      return {};
+    }
+
+    // Delegate to external translations service. It should itself validate/truncate and handle retries.
+    // Expect translateObjectToLanguages to accept a sanitized metadata object and array of codes.
+    try {
+      const translated =
+        await this.googleTranslationsService.translateObjectToLanguages(
+          metadataObj,
+          codes,
+        );
+      // Expect translated to be a map { langCode: { tone: '...', ... } }
+      return translated ?? {};
+    } catch (err) {
+      this.logger?.error?.(
+        '[buildTranslatedMetadataForLanguageCodes] translation call failed',
+        { err, languageCodes: codes },
+      );
+      // bubble up or return empty map to continue processing other languages
+      return {};
+    }
+  }
+
+  /**
+   * Persist translations for scenarios:
+   * - creates new translations for new languageIds
+   * - updates existing translations for existing languageIds
+   */
+  private async persistTranslationsForScenarios(
+    scenarios: Array<Scenarios>,
+    metadataExtractor: (scenario: Scenarios) => MetadataShape,
+  ) {
+    if (!scenarios.length) {
+      return;
+    }
+    // If you expect many scenarios at once and want fewer DB calls, implement batching here.
+    for (const scenario of scenarios) {
+      try {
+        const rawMetadata = metadataExtractor(scenario);
+
+        const sanitized = this.sanitizeMetadata(rawMetadata);
+
+        if (!sanitized || Object.keys(sanitized).length === 0) {
+          this.logger?.debug?.(
+            `[persistTranslationsForScenarios] scenario ${scenario.id}: no non-empty metadata, skipping`,
+          );
+          continue;
+        }
+
+        // Picking all languages with voices
+        const languages = await this.getLanguagesForScenario(true, true);
+
+        const languagesFiltered = (languages ?? []).filter(
+          (l: any) =>
+            l &&
+            l.translationCode &&
+            l.translationCode.trim() !== '' &&
+            !l.value.includes(DEFAULT_LANGUAGE_CODE),
+        );
+        if (!languagesFiltered.length) {
+          this.logger?.warn?.(
+            `[persistTranslationsForScenarios] scenario ${scenario.id}: no valid languages, skipping`,
+          );
+          continue;
+        }
+
+        const languageCodes = languagesFiltered.map((l: any) =>
+          l.translationCode.trim(),
+        );
+
+        const translatedMap =
+          await this.buildTranslatedMetadataForLanguageCodes(
+            sanitized as Partial<MetadataShape>,
+            languageCodes,
+          );
+
+        // Build translatedList: map back to languageId
+        const translatedList: Array<CreateScenarioTranslation> = [];
+        for (const language of languagesFiltered) {
+          const code = language.translationCode.trim();
+          const translatedData = translatedMap[code];
+          if (!translatedData || Object.keys(translatedData).length === 0)
+            continue;
+          translatedList.push({
+            scenarioId: scenario.id,
+            languageId: Number(language.language_id),
+            metadata: translatedData as MetadataShape,
+          });
+        }
+
+        if (!translatedList.length) {
+          this.logger?.debug?.(
+            `[persistTranslationsForScenarios] scenario ${scenario.id}: no translations after mapping, skipping DB ops`,
+          );
+          continue;
+        }
+
+        // Fetch existing translations for this scenario to split create vs update
+        const existingTranslations =
+          await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
+            scenario.id,
+          );
+
+        const existingLanguageIdSet = new Set(
+          (existingTranslations ?? []).map((r) => Number(r.languageId)),
+        );
+
+        const toCreate: Array<any> = [];
+        const toUpdate: Array<any> = [];
+
+        for (const t of translatedList) {
+          if (existingLanguageIdSet.has(Number(t.languageId))) toUpdate.push(t);
+          else toCreate.push(t);
+        }
+
+        // Persist creates first
+        if (toCreate.length) {
+          await this.scenarioTranslationsRepository.createScenarioTranslations(
+            toCreate,
+          );
+        }
+
+        if (toUpdate.length) {
+          await this.scenarioTranslationsRepository.updateScenarioTranslations(
+            toUpdate,
+          );
+        }
+      } catch (outerErr) {
+        this.logger?.error?.(
+          `[persistTranslationsForScenarios] unexpected error processing scenario ${scenario.id}`,
+          { outerErr },
+        );
+      }
+    }
+  }
+
+  /**
+   * Persist translations for scenario events:
+   * - creates new translations for new languageIds
+   * - updates existing translations for existing languageIds
+   */
+  async createUpdateScenarioEventsTranslations(scenarioEvents: any[]) {
+    const validLanguagesCodes =
+      await this.scenarioSharedService.getUniqueLanguagesFromScenarioTranslations();
+
+    if (
+      !Array.isArray(validLanguagesCodes) ||
+      validLanguagesCodes.length == 0
+    ) {
+      this.logger?.warn?.(
+        `[createUpdateScenarioEventsTranslations] no valid languages, skipping`,
+      );
+      return;
+    }
+
+    const { languages } =
+      await this.sharedLanguageService.getValidLanguages(validLanguagesCodes);
+
+    if (!languages || !languages.length) {
+      this.logger?.warn?.(
+        `[createUpdateScenarioEventsTranslations] no valid languages, skipping`,
+      );
+      return;
+    }
+
+    await this.persistScenarioEventTranslations(
+      scenarioEvents, // array of session events or single-element array
+      (sessionEvent) => ({
+        message: sessionEvent.message,
+        branchInstruction: sessionEvent.branchInstruction,
+      }),
+      languages,
+    );
+  }
+
+  /**
+   * Persist translations for scenario events:
+   * - creates new translations for new languageIds
+   * - updates existing translations for existing languageIds
+   */
+  async persistScenarioEventTranslations(
+    scenarioEvents: Array<any>,
+    metadataExtractor: (scenarioEvent: any) => {
+      message: string;
+      branchInstruction: string;
+    },
+    languages: any,
+  ) {
+    for (const scenarioEvent of scenarioEvents) {
+      const rawMetadata = metadataExtractor(scenarioEvent);
+      const sanitized = this.sanitizeMetadata({
+        message: rawMetadata?.message,
+        branchInstruction: rawMetadata?.branchInstruction,
+      });
+
+      if (!sanitized || Object.keys(sanitized).length === 0) {
+        this.logger?.debug?.(
+          `[persistSessionEventTranslations] ${scenarioEvent.id}: no non-empty metadata, skipping`,
+        );
+        continue;
+      }
+
+      const languagesFiltered = (languages ?? []).filter(
+        (l: any) => l && l.translationCode && l.translationCode.trim() !== '',
+      );
+
+      if (!languagesFiltered.length) {
+        this.logger?.warn?.(
+          `[persistSessionEventTranslations] ${scenarioEvent.id}: no valid languages, skipping`,
+        );
+        continue;
+      }
+
+      const languageCodes = languagesFiltered.map((l: any) =>
+        l.translationCode.trim(),
+      );
+
+      const translatedMap = (await this.buildTranslatedMetadataForLanguageCodes(
+        sanitized as Partial<ScenarioEventsTranslationData>,
+        languageCodes,
+      )) as Record<string, ScenarioEventsTranslationData>;
+
+      // Map translated map back to sessionEventId + languageId
+      const translatedList: Array<CreateScenarioEventsTranslation> = [];
+
+      for (const language of languagesFiltered) {
+        const code = language.translationCode.trim();
+        const translatedData = translatedMap[code];
+        if (!translatedData || Object.keys(translatedData).length === 0)
+          continue;
+        translatedList.push({
+          scenarioId: scenarioEvent.scenarioId,
+          eventId: scenarioEvent.eventId,
+          languageId: Number(language.id),
+          message: translatedData.message ?? '',
+          branchInstruction: translatedData.branchInstruction ?? '',
+        });
+
+        if (!translatedList.length) {
+          this.logger?.debug?.(
+            `[persistScenarioEventTranslations] ${scenarioEvent.id}: no translations after mapping, skipping DB ops`,
+          );
+          continue;
+        }
+      }
+
+      // Fetch existing translations for this sessionEvent to split create vs update
+      const existingTranslations =
+        await this.scenarioEventTranslationsRepository.getScenarioEventsTranslationsByScenarioIdEventId(
+          scenarioEvent.scenarioId,
+          scenarioEvent.eventId,
+        );
+
+      const existingTranslationKeySet = new Set(
+        (existingTranslations ?? []).map((r) => `${r.eventId}-${r.languageId}`),
+      );
+
+      const toCreate: Array<any> = [];
+      const toUpdate: Array<any> = [];
+
+      for (const t of translatedList) {
+        const key = `${t.eventId}-${t.languageId}`;
+
+        if (existingTranslationKeySet.has(key)) {
+          toUpdate.push(t);
+        } else {
+          toCreate.push(t);
+        }
+      }
+
+      if (toCreate.length) {
+        await this.scenarioEventTranslationsRepository.createTranslations(
+          toCreate,
+        );
+      }
+
+      if (toUpdate.length) {
+        await this.scenarioEventTranslationsRepository.updateTranslations(
+          toUpdate,
+        );
+      }
+    }
   }
 }

@@ -36,7 +36,8 @@ import { AddUserDto } from '../dto/add-user.dto';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
 import { SuccessResponse } from 'src/common/type/common.type';
-
+import { UserPreferencesRepository } from '../repository/user-prefernces.repository';
+import { UpdateUserPreferencesDto } from '../dto/update-user-prefernces.dto';
 @Injectable()
 export class UserService {
   private readonly auditLogger = AuditLoggerService.getInstance();
@@ -47,6 +48,7 @@ export class UserService {
     private readonly cache: RedisService,
     private groupRepository: GroupRepository,
     private userGroupRepository: UserGroupRepository,
+    private userPreferencesRepository: UserPreferencesRepository,
     private readonly tenantService: TenantService,
     private readonly userRepository: UserRepository,
     private readonly groupService: GroupService,
@@ -488,5 +490,23 @@ export class UserService {
 
   async isValidUser(id: number): Promise<boolean> {
     return this.userRepository.exists({ where: { id } });
+  }
+
+  async updateUserPreferences(
+    userId: number,
+    tenantId: string,
+    updateUserPreferencesDto: UpdateUserPreferencesDto,
+  ): Promise<UserUpdateResponseDto> {
+    await this.userPreferencesRepository.upsertUserPreferences(
+      userId,
+      tenantId,
+      updateUserPreferencesDto,
+    );
+
+    return { success: true };
+  }
+
+  async getUserPreferences(userId: number): Promise<any> {
+    return this.userPreferencesRepository.getUserPreferencesByUserId(userId);
   }
 }

@@ -14,4 +14,7 @@ export class ScenarioVoices extends BaseWithoutTenantEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   config?: Record<string, any>;
+
+  @Column()
+  languageId!: number;
 }

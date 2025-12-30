@@ -80,6 +80,7 @@ export const mapCreateScenarioRequestToEntity = (
         name: customField.name,
         value: customField.value,
       })),
+      languageVoices: scenario.languageVoices,
     },
   };
 };
@@ -179,6 +180,7 @@ export const mapUpdateScenarioRequestToEntity = (
           'responseLength',
           'voiceId',
           'customFields',
+          'languageVoices',
         ]
       : [
           'agentGoal',
@@ -199,6 +201,7 @@ export const mapUpdateScenarioRequestToEntity = (
           'tone',
           'openingStatements',
           'voiceId',
+          'languageVoices',
         ];
 
   // Handle metadata fields - merge with existing metadata

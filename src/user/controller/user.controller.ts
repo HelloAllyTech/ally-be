@@ -43,6 +43,7 @@ import { AddUserResponseDto } from '../dto/user-add-response.dto';
 import { AddUserDto } from '../dto/add-user.dto';
 import { User } from '../entity/user.entity';
 import { SuccessResponse } from 'src/common/type/common.type';
+import { UpdateUserPreferencesDto } from '../dto/update-user-prefernces.dto';
 
 @Controller('v1/users')
 @ApiTags('Users')
@@ -217,5 +218,26 @@ export class UserController {
   })
   async approveTermsAndAgreement(): Promise<SuccessResponse> {
     return this.userService.approveTermsAndAgreement();
+  }
+
+  @Post('/preferences')
+  @ApiOperation({ summary: 'Create/Update user preferences' })
+  @AuthPermissions([PERMISSIONS.EDIT_USER_PREFERENCES])
+  async updateUserPreferences(
+    @CurrentUser() tokenUser: TokenUser,
+    @Body() body: UpdateUserPreferencesDto,
+  ): Promise<UserUpdateResponseDto> {
+    return this.userService.updateUserPreferences(
+      tokenUser.id,
+      tokenUser.tenantId,
+      body,
+    );
+  }
+
+  @Get('/me/preferences')
+  @AuthPermissions([PERMISSIONS.VIEW_USER_PREFERENCES])
+  @ApiOperation({ summary: 'Get user preferences' })
+  async getUserPreferences(@CurrentUser() tokenUser: TokenUser) {
+    return this.userService.getUserPreferences(tokenUser.id);
   }
 }

@@ -1,4 +1,5 @@
 import { forwardRef, Module } from '@nestjs/common';
+import { LanguageModule } from '../language/language.module';
 import { LearnController } from './controller/learn.controller';
 import { ScenarioService } from './service/scenario.service';
 import { Scenarios } from './entity/scenarios.entity';
@@ -32,7 +33,6 @@ import { ScenarioSharedService } from './service/scenario-shared.service';
 import { ScenarioTenantService } from './service/scenario-tenant.service';
 import { ScenarioTenantRepository } from './repository/scenario-tenant.repository';
 import { TenantModule } from 'src/tenant/tenant.module';
-
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { ScenarioTenantValidationShared } from './service/scenario-tenant-validation-shared';
 import { ScenarioPathModule } from 'src/scenario-path/scenario-path.module';
@@ -40,6 +40,9 @@ import { TriggerWarningsService } from './service/trigger-warnings.service';
 import { TriggerWarningsRepository } from './repository/trigger-warnings.repository';
 import { TriggerWarnings } from './entity/trigger-warnings.entity';
 import { ScenarioTriggerWarnings } from './entity/scenario-trigger-warnings.entity';
+import { ScenarioTranslationsRepository } from './repository/scenario-translations.repository';
+import { SessionEventTranslationsRepository } from 'src/session-event/repository/session-event-translation.repository';
+import { ScenarioEventsTranslationsRepository } from './repository/scenario-events-translations.repository';
 
 @Module({
   imports: [
@@ -62,6 +65,7 @@ import { ScenarioTriggerWarnings } from './entity/scenario-trigger-warnings.enti
     forwardRef(() => UserModule),
     AwsModule,
     forwardRef(() => ScenarioPathModule),
+    LanguageModule,
   ],
   controllers: [LearnController, SimulationCreditsController],
   providers: [
@@ -85,6 +89,10 @@ import { ScenarioTriggerWarnings } from './entity/scenario-trigger-warnings.enti
     TenantsRepository,
     TriggerWarningsRepository,
     TriggerWarningsService,
+    ScenariosRepository,
+    ScenarioTranslationsRepository,
+    SessionEventTranslationsRepository,
+    ScenarioEventsTranslationsRepository,
   ],
   exports: [
     LearnMessageProcessor,
