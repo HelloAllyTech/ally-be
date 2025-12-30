@@ -144,6 +144,15 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG: Record<
       },
     },
   },
+
+  [LanguageCode.EN_GLOBAL]: {
+    llm: {
+      provider: 'openai',
+      config: {
+        model: 'gpt-4o-mini',
+      },
+    },
+  },
 };
 
 export const LANGUAGE_STT_PROVIDER_CONFIG: Record<
@@ -262,6 +271,15 @@ export const LANGUAGE_STT_PROVIDER_CONFIG: Record<
       config: {
         model: 'chirp_2',
         location: 'asia-southeast1',
+      },
+    },
+  },
+
+  [LanguageCode.EN_GLOBAL]: {
+    stt: {
+      provider: 'deepgram',
+      config: {
+        model: 'nova-3',
       },
     },
   },

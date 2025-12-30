@@ -10,6 +10,7 @@ export enum LanguageCode {
   KN_IN = 'kn-IN',
   PA_IN = 'pa-IN',
   OR_IN = 'or-IN',
+  EN_GLOBAL = 'en-GLOBAL',
 }
 
 export enum LLMProvider {
