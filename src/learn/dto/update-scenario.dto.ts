@@ -9,6 +9,7 @@ import {
   IsBoolean,
   ValidateNested,
   IsObject,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -19,6 +20,7 @@ import {
 } from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
+import { MAX_CUSTOM_FIELDS_COUNT } from '../constants/scenario.constants';
 
 export class UpdateScenarioDto {
   @ApiProperty({
@@ -302,6 +304,7 @@ export class UpdateScenarioDto {
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(MAX_CUSTOM_FIELDS_COUNT)
   @ValidateNested({ each: true })
   @Type(() => CustomFieldsDto)
   customFields?: CustomFieldsDto[];

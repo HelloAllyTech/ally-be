@@ -98,35 +98,33 @@ export class SessionEventService {
         scenarioId,
       );
 
-    return events
-      .filter((event) => !event.autoTerminationStatus) // Filter out auto termination events to get correct feedback messages
-      .map((event) => ({
-        id: event.sessionEvents_id,
-        name: event.sessionEvents_name,
-        description: event.sessionEvents_description,
-        score: event.scenarioEvents_score ?? event.sessionEvents_score,
-        emoji:
-          (event.scenarioEvents_feedbackStatus ?? true)
-            ? event.scenarioEvents_emoji
-            : event.sessionEvents_emoji,
-        message:
-          (event.scenarioEvents_feedbackStatus ?? true)
-            ? event.scenarioEvents_message
-            : event.sessionEvents_message,
-        branchInstruction:
-          (event.scenarioEvents_branchingStatus ?? true)
-            ? (event.scenarioEvents_branchInstruction ??
-              event.sessionEvents_branchInstruction)
-            : null,
-        detectionType: event.sessionEvents_detectionType,
-        data: event.sessionEvents_detectionData,
-        visibilityType: event.sessionEvents_visibilityType,
-        feedbackStatus: event.scenarioEvents_feedbackStatus,
-        speaker: event.sessionEvents_speaker,
-        createdAt: event.sessionEvents_createdAt,
-        updatedAt: event.sessionEvents_updatedAt,
-        eventCode: event.sessionEvents_eventCode,
-      }));
+    return events.map((event) => ({
+      id: event.sessionEvents_id,
+      name: event.sessionEvents_name,
+      description: event.sessionEvents_description,
+      score: event.scenarioEvents_score ?? event.sessionEvents_score,
+      emoji:
+        (event.scenarioEvents_feedbackStatus ?? true)
+          ? event.scenarioEvents_emoji
+          : event.sessionEvents_emoji,
+      message:
+        (event.scenarioEvents_feedbackStatus ?? true)
+          ? event.scenarioEvents_message
+          : event.sessionEvents_message,
+      branchInstruction:
+        (event.scenarioEvents_branchingStatus ?? true)
+          ? (event.scenarioEvents_branchInstruction ??
+            event.sessionEvents_branchInstruction)
+          : null,
+      detectionType: event.sessionEvents_detectionType,
+      data: event.sessionEvents_detectionData,
+      visibilityType: event.sessionEvents_visibilityType,
+      feedbackStatus: event.scenarioEvents_feedbackStatus,
+      speaker: event.sessionEvents_speaker,
+      createdAt: event.sessionEvents_createdAt,
+      updatedAt: event.sessionEvents_updatedAt,
+      eventCode: event.sessionEvents_eventCode,
+    }));
   }
 
   async updateSessionEvent(
