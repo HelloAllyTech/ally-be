@@ -410,7 +410,6 @@ jobs:
             ---
             
             **Note**: This is a draft release. Please review and publish when ready.
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
