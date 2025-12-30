@@ -1,0 +1,22 @@
+export enum UserRole {
+  CLIENT = 'CLIENT',
+  COUNSELOR = 'COUNSELOR',
+  SUPER_ADMIN = 'SUPER_ADMIN',
+  ADMIN = 'ADMIN',
+  LEARNER = 'LEARNER',
+}
+
+export enum PreferenceName {
+  SUMMARY_HIDDEN_FIELDS = 'SUMMARY_HIDDEN_FIELDS',
+  NUDGE_STATUS = 'NUDGE_STATUS',
+  HIDDEN_CHAT_TYPES = 'HIDDEN_CHAT_TYPES',
+}
+
+export enum PreferenceRelatedEntity {
+  ORGANIZATION = 'ORGANIZATION',
+  COUNSELOR = 'COUNSELOR',
+}
+
+export const ANONYMOUS_CLIENT_ID = -1;
+
+export const PLACEHOLDER_CHAT_ID = -99;

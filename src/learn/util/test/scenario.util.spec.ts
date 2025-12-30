@@ -1,0 +1,388 @@
+import {
+  mapCreateScenarioRequestToEntity,
+  formatAutoTerminationEventsList,
+  formatScenarioTriggerWarningsList,
+} from '../scenario.util';
+import { CreateScenarioDto } from '../../dto/create-scenario.dto';
+import { CreateScenariosDto } from '../../dto/create-scenarios.dto';
+import { Scenarios } from '../../entity/scenarios.entity';
+import { ScenarioStatus } from '../../type/scenario.type';
+import {
+  Gender,
+  GenderIdentity,
+  SexualOrientation,
+} from 'src/learn/enum/gender.enum';
+
+describe('Scenario Util', () => {
+  describe('mapCreateScenarioRequestToEntity', () => {
+    it('should map create scenario DTO to entity with all fields', () => {
+      const userId = 123;
+      const scenario: CreateScenarioDto = {
+        title: 'Test Scenario',
+        description: 'Test Description',
+        coverImageUrl: 'https://example.com/image.jpg',
+        coverVideoUrl: 'https://example.com/video.mp4',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'You are a counselor',
+        isGlobal: true,
+        agentGoal: 'Help the client',
+        lifeHistory: 'Life history',
+        voiceId: 'voice-123',
+        name: 'John Doe',
+        age: 30,
+        gender: Gender.MALE,
+        genderIdentity: GenderIdentity.MALE_MAN,
+        sexualOrientation: SexualOrientation.HETEROSEXUAL,
+        currentLocation: 'New York',
+        profession: 'Engineer',
+        context: 'Context',
+        sessionBehaviorGuidelines: 'Guidelines',
+        coreMemories: 'Core memories',
+        personality: 'Friendly',
+        startingState: 'Calm',
+        emotionalNeeds: 'Support',
+        tone: 'Warm',
+        openingStatements: ['Hello', 'Welcome'],
+      };
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result).toEqual({
+        createdBy: userId,
+        updatedBy: userId,
+        title: scenario.title,
+        scenario: '',
+        description: scenario.description,
+        coverImageUrl: scenario.coverImageUrl,
+        coverVideoUrl: scenario.coverVideoUrl,
+        status: scenario.status,
+        prompt: scenario.prompt,
+        isGlobal: scenario.isGlobal,
+        difficultyLevel: scenario.difficultyLevel,
+        metadata: {
+          voiceId: scenario.voiceId,
+          name: scenario.name,
+          age: scenario.age,
+          gender: scenario.gender,
+          genderIdentity: scenario.genderIdentity,
+          sexualOrientation: scenario.sexualOrientation,
+          currentLocation: scenario.currentLocation,
+          profession: scenario.profession,
+          context: scenario.context,
+          tone: scenario.tone,
+          openingStatements: scenario.openingStatements,
+          agentDialogues: scenario.agentDialogues,
+          responseLength: scenario.responseLength,
+          customFields: scenario.customFields,
+        },
+      });
+    });
+
+    it('should map create scenario DTO with minimal fields', () => {
+      const userId = 456;
+      const scenario: CreateScenarioDto = {
+        title: 'Minimal Scenario',
+        description: 'Minimal Description',
+        status: ScenarioStatus.ACTIVE,
+        prompt: 'Minimal Prompt',
+        isGlobal: false,
+        agentGoal: 'Goal',
+        lifeHistory: 'History',
+        voiceId: 'voice-456',
+        name: 'Jane',
+        age: 25,
+        gender: Gender.FEMALE,
+        currentLocation: 'LA',
+        context: 'Context',
+        openingStatements: ['Hi'],
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.createdBy).toBe(userId);
+      expect(result.updatedBy).toBe(userId);
+      expect(result.title).toBe(scenario.title);
+      expect(result.scenario).toBe('');
+      expect(result.metadata.name).toBe(scenario.name);
+    });
+
+    it('should map custom fields with only name and value properties', () => {
+      const userId = 789;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with Custom Fields',
+        status: ScenarioStatus.DRAFT,
+        customFields: [
+          { name: 'Field 1', value: 'Value 1' },
+          { name: 'Field 2', value: 'Value 2' },
+        ],
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toEqual([
+        { name: 'Field 1', value: 'Value 1' },
+        { name: 'Field 2', value: 'Value 2' },
+      ]);
+    });
+
+    it('should trim extra properties from custom fields and keep only name and value', () => {
+      const userId = 101;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with Extra Custom Field Properties',
+        status: ScenarioStatus.DRAFT,
+        customFields: [
+          {
+            name: 'Field 1',
+            value: 'Value 1',
+            extraProp: 'should be trimmed',
+            anotherExtra: 123,
+          } as any,
+          {
+            name: 'Field 2',
+            value: 'Value 2',
+            id: 'some-id',
+            metadata: { nested: 'data' },
+          } as any,
+        ],
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toEqual([
+        { name: 'Field 1', value: 'Value 1' },
+        { name: 'Field 2', value: 'Value 2' },
+      ]);
+      expect(result.metadata.customFields).toHaveLength(2);
+      expect(result.metadata.customFields![0]).not.toHaveProperty('extraProp');
+      expect(result.metadata.customFields![0]).not.toHaveProperty(
+        'anotherExtra',
+      );
+      expect(result.metadata.customFields![1]).not.toHaveProperty('id');
+      expect(result.metadata.customFields![1]).not.toHaveProperty('metadata');
+    });
+
+    it('should handle undefined custom fields', () => {
+      const userId = 102;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario without Custom Fields',
+        status: ScenarioStatus.DRAFT,
+        customFields: undefined,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toBeUndefined();
+    });
+
+    it('should handle empty custom fields array', () => {
+      const userId = 103;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with Empty Custom Fields',
+        status: ScenarioStatus.DRAFT,
+        customFields: [],
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.customFields).toEqual([]);
+    });
+  });
+
+  describe('formatAutoTerminationEventsList', () => {
+    it('should format auto termination events list with all events enabled', () => {
+      const createScenariosDto: CreateScenariosDto = {
+        scenarios: [
+          {
+            terminationEventId: 'event-1',
+            autoTerminationStatus: true,
+            terminationMessage: 'Session ended',
+          } as any,
+          {
+            terminationEventId: 'event-2',
+            autoTerminationStatus: true,
+            terminationMessage: 'Time is up',
+          } as any,
+        ],
+      };
+
+      const savedScenarios: Scenarios[] = [
+        { id: 1, title: 'Scenario 1' } as Scenarios,
+        { id: 2, title: 'Scenario 2' } as Scenarios,
+      ];
+
+      const result = formatAutoTerminationEventsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+
+      expect(result).toEqual([
+        {
+          scenarioId: 1,
+          eventId: 'event-1',
+          autoTerminationStatus: true,
+          message: 'Session ended',
+        },
+        {
+          scenarioId: 2,
+          eventId: 'event-2',
+          autoTerminationStatus: true,
+          message: 'Time is up',
+        },
+      ]);
+    });
+
+    it('should filter out events with autoTerminationStatus false', () => {
+      const createScenariosDto: CreateScenariosDto = {
+        scenarios: [
+          {
+            terminationEventId: 'event-1',
+            autoTerminationStatus: true,
+            terminationMessage: 'Session ended',
+          } as any,
+          {
+            terminationEventId: 'event-2',
+            autoTerminationStatus: false,
+            terminationMessage: 'Not used',
+          } as any,
+        ],
+      };
+
+      const savedScenarios: Scenarios[] = [
+        { id: 1, title: 'Scenario 1' } as Scenarios,
+        { id: 2, title: 'Scenario 2' } as Scenarios,
+      ];
+
+      const result = formatAutoTerminationEventsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        scenarioId: 1,
+        eventId: 'event-1',
+        autoTerminationStatus: true,
+        message: 'Session ended',
+      });
+    });
+
+    it('should filter out events without eventId', () => {
+      const createScenariosDto: CreateScenariosDto = {
+        scenarios: [
+          {
+            terminationEventId: undefined,
+            autoTerminationStatus: true,
+            terminationMessage: 'Session ended',
+          } as any,
+          {
+            terminationEventId: 'event-2',
+            autoTerminationStatus: true,
+            terminationMessage: 'Time is up',
+          } as any,
+        ],
+      };
+
+      const savedScenarios: Scenarios[] = [
+        { id: 1, title: 'Scenario 1' } as Scenarios,
+        { id: 2, title: 'Scenario 2' } as Scenarios,
+      ];
+
+      const result = formatAutoTerminationEventsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].scenarioId).toBe(2);
+    });
+
+    it('should return empty array when no events match criteria', () => {
+      const createScenariosDto: CreateScenariosDto = {
+        scenarios: [
+          {
+            terminationEventId: undefined,
+            autoTerminationStatus: false,
+            terminationMessage: 'Not used',
+          } as any,
+        ],
+      };
+
+      const savedScenarios: Scenarios[] = [
+        { id: 1, title: 'Scenario 1' } as Scenarios,
+      ];
+
+      const result = formatAutoTerminationEventsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('formatScenarioTriggerWarningsList', () => {
+    it('should return empty array when scenarios have no trigger warnings', () => {
+      const createScenariosDto: CreateScenariosDto = {
+        scenarios: [
+          {
+            title: 'Scenario 1',
+            triggerWarningIds: [],
+          } as any,
+          {
+            title: 'Scenario 2',
+            triggerWarningIds: undefined,
+          } as any,
+          {
+            title: 'Scenario 3',
+          } as any,
+        ],
+      };
+
+      const savedScenarios: Scenarios[] = [
+        { id: 1, title: 'Scenario 1' } as Scenarios,
+        { id: 2, title: 'Scenario 2' } as Scenarios,
+        { id: 3, title: 'Scenario 3' } as Scenarios,
+      ];
+
+      const result = formatScenarioTriggerWarningsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it('should flatten multiple trigger warnings from different scenarios into a single list', () => {
+      const createScenariosDto: CreateScenariosDto = {
+        scenarios: [
+          {
+            title: 'Scenario 1',
+            triggerWarningIds: ['uuid-1', 'uuid-2'],
+          } as any,
+          {
+            title: 'Scenario 2',
+            triggerWarningIds: ['uuid-3', 'uuid-4', 'uuid-5'],
+          } as any,
+        ],
+      };
+
+      const savedScenarios: Scenarios[] = [
+        { id: 1, title: 'Scenario 1' } as Scenarios,
+        { id: 2, title: 'Scenario 2' } as Scenarios,
+      ];
+
+      const result = formatScenarioTriggerWarningsList(
+        createScenariosDto,
+        savedScenarios,
+      );
+
+      expect(result).toEqual([
+        { scenarioId: 1, triggerWarningId: 'uuid-1' },
+        { scenarioId: 1, triggerWarningId: 'uuid-2' },
+        { scenarioId: 2, triggerWarningId: 'uuid-3' },
+        { scenarioId: 2, triggerWarningId: 'uuid-4' },
+        { scenarioId: 2, triggerWarningId: 'uuid-5' },
+      ]);
+    });
+  });
+});

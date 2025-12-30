@@ -1,0 +1,274 @@
+# Set the following GitHub action Repository Variables
+#
+# ECR_REPOSITORY
+#
+# PRD_AWS_ROLE
+# PRD_AWS_REGION
+#
+# STG_AWS_ROLE
+# STG_AWS_REGION
+#
+# DEV_AWS_ROLE
+# DEV_AWS_REGION
+
+name: Deploy ally-core
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      Environment:
+        required: true
+        type: choice
+        description: Choose env
+        options:
+          - dev
+          - prd
+  push:
+    branches:
+      - dev
+
+jobs:
+  prepare-env:
+    name: Prepare Env
+    runs-on: ubuntu-22.04
+    timeout-minutes: 2
+    outputs:
+      AWS_ROLE: ${{ steps.vars.outputs.AWS_ROLE }}
+      AWS_REGION: ${{ steps.vars.outputs.AWS_REGION }}
+      ECR_REPOSITORY: ${{steps.vars.outputs.ECR_REPOSITORY}}
+      ENV: ${{ steps.vars.outputs.ENV }}
+      PROJECT_PREFIX: ${{ steps.vars.outputs.PROJECT_PREFIX }}
+      PROJECT_REGION: ${{ steps.vars.outputs.PROJECT_REGION }}
+      SUBNETS: ${{ steps.vars.outputs.SUBNETS }}
+      SECURITY_GROUPS: ${{ steps.vars.outputs.SECURITY_GROUPS }}
+      ECS_CLUSTER: ${{ steps.set_env.outputs.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ steps.set_env.outputs.ECS_SERVICE }}
+      ECR_IMAGE: ${{ steps.set_env.outputs.ECR_IMAGE }}
+      TASK_DEFINITION: ${{ steps.set_env.outputs.TASK_DEFINITION }}
+      CONTAINER_NAME: ${{ steps.set_env.outputs.CONTAINER_NAME }}
+      ENVIRONMENT_BUCKET: ${{ steps.set_env.outputs.ENVIRONMENT_BUCKET }}
+
+    steps:
+      - id: vars
+        shell: bash
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          ENV=${{ github.event.inputs.Environment }}
+          echo $BRANCH
+          if [ -z "$ENV" ]
+          then
+            case $BRANCH in
+              "dev")
+                ENV="dev"
+                ;;
+              "stg")
+                ENV="stg"
+                ;;
+              "master")
+                ENV="prd"
+                ;;
+              *)
+                echo "ENV not configured" && exit 1
+                ;;
+            esac
+          fi
+          if [[ $ENV == 'prd' ]]
+          then
+            echo "AWS_ROLE=PRD_AWS_ROLE" >> $GITHUB_OUTPUT
+            echo "AWS_REGION=PRD_AWS_REGION" >> $GITHUB_OUTPUT
+            echo "ECR_REPOSITORY=PRD_ECR_REPOSITORY" >> $GITHUB_OUTPUT
+            echo "PROJECT_PREFIX=ally-prd" >> $GITHUB_OUTPUT
+            echo "PROJECT_REGION=mb" >> $GITHUB_OUTPUT
+            echo "SUBNETS=[\"subnet-0803b15022d8454d1\", \"subnet-0a9aebefcd504a6eb\"]" >> $GITHUB_OUTPUT
+            echo "SECURITY_GROUPS=[\"sg-0802e74f0bf59122d\"]" >> $GITHUB_OUTPUT
+          elif [ $ENV == 'stg' ]
+          then
+            echo "AWS_ROLE=STG_AWS_ROLE" >> $GITHUB_OUTPUT
+            echo "AWS_REGION=STG_AWS_REGION" >> $GITHUB_OUTPUT
+            echo "ECR_REPOSITORY=STG_ECR_REPOSITORY" >> $GITHUB_OUTPUT
+            echo "PROJECT_PREFIX=life-stg" >> $GITHUB_OUTPUT
+            echo "PROJECT_REGION=mb" >> $GITHUB_OUTPUT
+            echo "SUBNETS=[\"subnet-0dba00ff102403871\", \"subnet-0bdc7c7e7c05968ef\", \"subnet-099f96828b28b88c2\"]" >> $GITHUB_OUTPUT
+            echo "SECURITY_GROUPS=[\"sg-04aee0dcf738cae5a\"]" >> $GITHUB_OUTPUT
+          elif [ $ENV == 'dev' ]
+          then
+            echo "AWS_ROLE=DEV_AWS_ROLE" >> $GITHUB_OUTPUT
+            echo "AWS_REGION=DEV_AWS_REGION" >> $GITHUB_OUTPUT
+            echo "ECR_REPOSITORY=DEV_ECR_REPOSITORY" >> $GITHUB_OUTPUT
+            echo "PROJECT_PREFIX=ally-dev" >> $GITHUB_OUTPUT
+            echo "PROJECT_REGION=sg" >> $GITHUB_OUTPUT
+            echo "SUBNETS=[\"subnet-054f2c036aed7aef4\", \"subnet-0f845d1ddc4b6f471\", \"subnet-0b837159d4f98a0b9\"]" >> $GITHUB_OUTPUT
+            echo "SECURITY_GROUPS=[\"sg-05f0c1b5ae75e1320\"]" >> $GITHUB_OUTPUT
+          else
+            echo "Branch not configured!"
+            exit 1
+          fi
+          echo "ENV=$ENV"  >> $GITHUB_OUTPUT
+          echo ":rocket: Environment - $ENV " >> $GITHUB_STEP_SUMMARY
+      - name: set variables
+        id: set_env
+        run: |
+          PROJECT_PREFIX=${{ steps.vars.outputs.PROJECT_PREFIX }}
+          PROJECT_REGION=${{  steps.vars.outputs.PROJECT_REGION  }}
+          echo "ECS_CLUSTER=$PROJECT_PREFIX-$PROJECT_REGION-ecs-cluster"  >> $GITHUB_OUTPUT
+          echo "ECS_SERVICE=$PROJECT_PREFIX-svc-core" >> $GITHUB_OUTPUT
+          echo "ECR_IMAGE=$PROJECT_PREFIX-ecr-core" >> $GITHUB_OUTPUT
+          echo "TASK_DEFINITION=$PROJECT_PREFIX-td-core" >> $GITHUB_OUTPUT
+          echo "CONTAINER_NAME=$PROJECT_PREFIX-cntr-core" >> $GITHUB_OUTPUT
+          echo "ENVIRONMENT_BUCKET=$PROJECT_PREFIX-s3-environment"  >> $GITHUB_OUTPUT
+          echo ":seedling: Branch:${GITHUB_REF#refs/heads/}" >> $GITHUB_STEP_SUMMARY
+
+  test:
+    name: Run Tests
+    needs: prepare-env
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test -- --forceExit --detectOpenHandles
+
+  build:
+    needs:
+      - prepare-env
+      - test
+    runs-on: ubuntu-22.04
+    env:
+      AWS_ROLE: ${{ needs.prepare-env.outputs.AWS_ROLE }}
+      AWS_REGION: ${{ needs.prepare-env.outputs.AWS_REGION }}
+      ECR_IMAGE: ${{ needs.prepare-env.outputs.ECR_IMAGE }}
+      ECR_REPOSITORY: ${{needs.prepare-env.outputs.ECR_REPOSITORY}}
+    outputs:
+      APP_IMAGE: ${{ steps.build-push.outputs.APP_IMAGE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars[env.AWS_ROLE] }}
+          aws-region: ${{ vars[env.AWS_REGION] }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Download Google Credentials from S3
+        run: |
+          ENV=${{ github.event.inputs.Environment }}
+          # Create a directory for the credentials
+          mkdir -p gcloud/
+
+          # Check Environment variable and download accordingly
+          if [[ $ENV == 'prd' ]]; then
+            echo "Using PRD Google credentials"
+            S3_URL="${{ secrets.GOOGLE_CREDENTIALS_S3_URL_PRD }}"
+          else
+            echo "Using non-PRD Google credentials"
+            S3_URL="${{ secrets.GOOGLE_CREDENTIALS_S3_URL }}"
+          fi
+
+          # Set the S3 URL based on the environment
+          if [ -z "$S3_URL" ]; then
+            echo "Google credentials S3 URL is not set"
+          exit 1
+          fi
+
+          # Download the credentials file from S3
+          aws s3 cp "$S3_URL" gcloud/application_default_credentials.json
+          
+          # Set the environment variable
+          echo "GOOGLE_APPLICATION_CREDENTIALS=gcloud/application_default_credentials.json" >> $GITHUB_ENV
+
+      - name: Build and Push Docker image
+        id: build-push
+        run: |
+          echo ${{ vars[env.ECR_REPOSITORY] }}
+          ECR_IMAGE_TAG="${ECR_IMAGE}:${GITHUB_SHA::7}-$GITHUB_RUN_NUMBER"
+          docker build -t $ECR_IMAGE_TAG .
+          docker tag $ECR_IMAGE_TAG ${{ vars[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG
+          docker push ${{ vars[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG
+          echo "APP_IMAGE=${{ vars[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  run-db-migration:
+    name: Run the DB migration
+    runs-on: ubuntu-22.04
+    permissions:
+      id-token: write
+      pull-requests: write
+      contents: read
+    needs:
+      - prepare-env
+      - test
+      - build
+    env:
+      PROJECT_PREFIX: ${{needs.prepare-env.outputs.PROJECT_PREFIX}}
+      AWS_ROLE: ${{ needs.prepare-env.outputs.AWS_ROLE }}
+      AWS_REGION: ${{ needs.prepare-env.outputs.AWS_REGION }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: run db migration
+        id: run_db_migration
+        uses: ./.github/actions/run-migration
+        with:
+          aws-region: ${{ vars[env.AWS_REGION] }}
+          aws-role: ${{ vars[env.AWS_ROLE] }}
+          task-definition: "${{ needs.prepare-env.outputs.TASK_DEFINITION }}-dbmigrate"
+          container-name: "${{ needs.prepare-env.outputs.CONTAINER_NAME }}-dbmigrate"
+          ecs-cluster: ${{ needs.prepare-env.outputs.ECS_CLUSTER }}
+          image: ${{ needs.build.outputs.APP_IMAGE }}
+          subnets: ${{ needs.prepare-env.outputs.SUBNETS }}
+          security-groups: ${{ needs.prepare-env.outputs.SECURITY_GROUPS }}
+
+  deploy:
+    needs:
+      - build
+      - prepare-env
+      - run-db-migration
+    runs-on: ubuntu-22.04
+    env:
+      AWS_ROLE: ${{ needs.prepare-env.outputs.AWS_ROLE }}
+      AWS_REGION: ${{ needs.prepare-env.outputs.AWS_REGION }}
+      ECR_IMAGE: ${{ needs.prepare-env.outputs.ECR_IMAGE }}
+      ECS_SERVICE: ${{ needs.prepare-env.outputs.ECS_SERVICE }}
+      ECS_CLUSTER: ${{ needs.prepare-env.outputs.ECS_CLUSTER }}
+      TASK_DEFINITION: ${{ needs.prepare-env.outputs.TASK_DEFINITION }}
+      ECR_REPOSITORY: ${{needs.prepare-env.outputs.ECR_REPOSITORY}}
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars[env.AWS_ROLE] }}
+          aws-region: ${{ vars[env.AWS_REGION] }}
+
+      - name: Update ECS Task Definition
+        run: |
+          ECR_IMAGE_TAG="${ECR_IMAGE}:${GITHUB_SHA::7}-$GITHUB_RUN_NUMBER"
+          TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition "${TASK_DEFINITION}")
+          echo "$TASK_DEFINITION" | jq --arg IMAGE "${{ vars[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG" \
+            '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > taskDefinition.json
+      - name: Deploy to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: taskDefinition.json
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true

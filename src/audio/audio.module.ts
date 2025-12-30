@@ -1,0 +1,33 @@
+import { forwardRef, Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { BroadcastMessageService } from './service/broadcast-message.service';
+import { StreamFileProcessorService } from './service/stream-file-processor.service';
+import { AwsModule } from '../aws/aws.module';
+import { ChatAudioUploadsService } from './service/chat-audio-uploads.service';
+import { ChatModule } from '../chat/chat.module';
+import { AiModule } from '../ai/ai.module';
+import { BrokerModule } from '../message-broker/broker.module';
+import { ChatAudioUploadRepository } from './repository/chat-audio-upload.repository';
+import { ChatAudioUploads } from './entity/chat-audio-uploads.entity';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([ChatAudioUploads]),
+    AwsModule,
+    forwardRef(() => ChatModule),
+    AiModule,
+    BrokerModule,
+  ],
+  providers: [
+    StreamFileProcessorService,
+    BroadcastMessageService,
+    ChatAudioUploadsService,
+    ChatAudioUploadRepository,
+  ],
+  exports: [
+    StreamFileProcessorService,
+    BroadcastMessageService,
+    ChatAudioUploadsService,
+  ],
+})
+export class AudioModule {}

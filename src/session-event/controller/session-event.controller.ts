@@ -1,0 +1,161 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
+import { SessionEvents } from '../entity/session-events.entity';
+import { CreateSessionEventsDto } from '../dto/create-session-events.dto';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { SessionEventService } from '../service/session-event.service';
+import { SortOrder } from 'src/chat/dto/call-log.request.dto';
+import { SessionEventSortBy } from '../enum/session-event-sort-by.enum';
+import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
+import { DeleteSessionEventsDto } from '../dto/delete-session-events.dto';
+import {
+  SessionEventResponseDto,
+  UpdateSessionEventDto,
+} from '../dto/session-event.dto';
+import { CurrentUser } from 'src/auth/decorators/user.decorator';
+import { TokenUser } from 'src/auth/type/auth.types';
+import { SuccessResponse } from 'src/common/type/common.type';
+
+@ApiTags('SessionEvents')
+@ApiBearerAuth()
+@ApiSecurity('access-token')
+@Controller('v1/session-events')
+export class SessionEventController {
+  constructor(private readonly sessionEventService: SessionEventService) {}
+
+  @ApiOperation({ summary: 'Create session events' })
+  @ApiBody({ type: CreateSessionEventsDto })
+  @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
+  @Post()
+  async createSessionEvents(
+    @Body() createEventsDto: CreateSessionEventsDto,
+    @CurrentUser() currentUser: TokenUser,
+  ): Promise<SessionEvents[]> {
+    return this.sessionEventService.createSessionEvents(
+      createEventsDto.events,
+      currentUser.id,
+    );
+  }
+
+  @ApiOperation({ summary: 'Update Session Event by id' })
+  @ApiBody({ type: UpdateSessionEventDto })
+  @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
+  @Put('events/:id')
+  async updateSessionEvents(
+    @Param('id') id: string,
+    @Body() updateEventsDto: UpdateSessionEventDto,
+    @CurrentUser() currentUser: TokenUser,
+  ): Promise<boolean> {
+    return this.sessionEventService.updateSessionEvent(
+      id,
+      updateEventsDto,
+      currentUser.id,
+    );
+  }
+
+  @ApiOperation({ summary: 'Get all session events' })
+  @ApiQuery({
+    name: 'visibilityType',
+    required: false,
+    enum: SessionEventVisibilityType,
+    description: 'Filter by session event visibility type',
+  })
+  @ApiQuery({
+    name: 'searchName',
+    required: false,
+    type: String,
+    description: 'Search by session event name',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SESSION_EVENTS])
+  @Get()
+  async getAllSessionEvents(
+    @Query('visibilityType') visibilityType?: SessionEventVisibilityType,
+    @Query('searchName') searchName?: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy: SessionEventSortBy = SessionEventSortBy.CREATED_AT,
+    @Query('order') order: SortOrder = SortOrder.DESC,
+  ): Promise<{ data: SessionEventResponseDto[] }> {
+    return this.sessionEventService.getAllSessionEvents(
+      visibilityType,
+      searchName,
+      {
+        limit,
+        offset,
+        sortBy,
+        order,
+      },
+    );
+  }
+
+  @ApiOperation({ summary: 'Get session event by id' })
+  @ApiParam({ name: 'id', description: 'Session event id' })
+  @AuthPermissions([PERMISSIONS.VIEW_SESSION_EVENTS])
+  @Get('events/:id')
+  async getSessionEventById(
+    @Param('id') id: string,
+  ): Promise<SessionEventResponseDto> {
+    return this.sessionEventService.getSessionEventById(id);
+  }
+
+  @ApiOperation({ summary: 'Delete session events' })
+  @ApiBody({ type: DeleteSessionEventsDto })
+  @AuthPermissions([PERMISSIONS.DELETE_SESSION_EVENTS])
+  @Delete('events')
+  async deleteSessionEvents(
+    @Body() deleteEventsDto: DeleteSessionEventsDto,
+  ): Promise<boolean> {
+    return this.sessionEventService.deleteSessionEvents(
+      deleteEventsDto.eventIds,
+    );
+  }
+
+  @ApiOperation({ summary: 'Process passive session events' })
+  @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
+  @Post('translate-passive')
+  async translatePassiveSessionEvents(): Promise<SuccessResponse> {
+    return await this.sessionEventService.translatePassiveSessionEvents();
+  }
+}

@@ -1,0 +1,424 @@
+# Production Release Pipeline
+#
+# This workflow handles production releases with semantic versioning (major.minor.patch)
+# 
+# Required GitHub Action Repository Variables:
+# PRD_AWS_ROLE
+# PRD_AWS_REGION
+# PRD_ECR_REPOSITORY
+#
+# Usage:
+# - Manually trigger this workflow from GitHub Actions
+# - Specify the version tag in format: v{major}.{minor}.{patch} (e.g., v1.0.0, v1.2.3, v2.0.0)
+# - The workflow will create the tag and release draft automatically
+
+name: Production Release
+
+permissions:
+  id-token: write
+  contents: write  # Required for creating releases and tags
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        required: true
+        type: string
+        description: 'Version tag (e.g., v1.0.0, v1.2.3, v2.0.0)'
+
+jobs:
+  validate-and-tag:
+    name: Validate Version and Create Tag
+    runs-on: ubuntu-22.04
+    timeout-minutes: 2
+    outputs:
+      VERSION: ${{ steps.parse-version.outputs.VERSION }}
+      MAJOR: ${{ steps.parse-version.outputs.MAJOR }}
+      MINOR: ${{ steps.parse-version.outputs.MINOR }}
+      PATCH: ${{ steps.parse-version.outputs.PATCH }}
+      TAG: ${{ steps.parse-version.outputs.TAG }}
+    
+    steps:
+      - name: Checkout master branch
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      
+      - name: Parse and validate version
+        id: parse-version
+        run: |
+          TAG="${{ github.event.inputs.version_tag }}"
+          echo "Processing tag: $TAG"
+          
+          # Validate tag format (v{major}.{minor}.{patch})
+          if [[ ! $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Error: Tag must be in format v{major}.{minor}.{patch} (e.g., v1.0.0)"
+            exit 1
+          fi
+          
+          # Check if tag already exists
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "❌ Error: Tag $TAG already exists"
+            exit 1
+          fi
+          
+          # Check if tag is newer than latest existing tag
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          
+          if [ -n "$LATEST_TAG" ]; then
+            echo "Latest existing tag: $LATEST_TAG"
+            echo "New tag: $TAG"
+            
+            # Compare versions using sort -V (version sort)
+            HIGHER=$(printf "%s\n%s" "$LATEST_TAG" "$TAG" | sort -V | tail -n 1)
+            
+            if [ "$HIGHER" != "$TAG" ]; then
+              echo "❌ Error: Tag $TAG is not newer than the latest tag $LATEST_TAG"
+              echo "Please use a version higher than $LATEST_TAG"
+              echo ""
+              echo "Current latest: $LATEST_TAG"
+              echo "You tried:      $TAG"
+              exit 1
+            fi
+            
+            echo "✅ Version validation passed: $TAG is newer than $LATEST_TAG"
+          else
+            echo "ℹ️  No previous tags found. This will be the first release."
+          fi
+          
+          # Remove 'v' prefix and parse version components
+          VERSION=${TAG#v}
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          PATCH=$(echo $VERSION | cut -d. -f3)
+          
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "MAJOR=$MAJOR" >> $GITHUB_OUTPUT
+          echo "MINOR=$MINOR" >> $GITHUB_OUTPUT
+          echo "PATCH=$PATCH" >> $GITHUB_OUTPUT
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          
+          echo "## :rocket: Release Version" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag**: $TAG" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$LATEST_TAG" ]; then
+            echo "- **Previous Tag**: $LATEST_TAG" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **First Release**: Yes ✨" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- **Full Version**: $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- **Major**: $MAJOR" >> $GITHUB_STEP_SUMMARY
+          echo "- **Minor**: $MINOR" >> $GITHUB_STEP_SUMMARY
+          echo "- **Patch**: $PATCH" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: master" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Create and push tag
+        run: |
+          TAG="${{ steps.parse-version.outputs.TAG }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release version ${{ steps.parse-version.outputs.VERSION }}"
+          git push origin "$TAG"
+          echo "✅ Tag $TAG created and pushed" >> $GITHUB_STEP_SUMMARY
+
+  prepare-env:
+    name: Prepare Production Environment
+    needs: validate-and-tag
+    runs-on: ubuntu-22.04
+    timeout-minutes: 2
+    outputs:
+      AWS_ROLE: ${{ steps.vars.outputs.AWS_ROLE }}
+      AWS_REGION: ${{ steps.vars.outputs.AWS_REGION }}
+      ECR_REPOSITORY: ${{ steps.vars.outputs.ECR_REPOSITORY }}
+      ENV: ${{ steps.vars.outputs.ENV }}
+      PROJECT_PREFIX: ${{ steps.vars.outputs.PROJECT_PREFIX }}
+      PROJECT_REGION: ${{ steps.vars.outputs.PROJECT_REGION }}
+      SUBNETS: ${{ steps.vars.outputs.SUBNETS }}
+      SECURITY_GROUPS: ${{ steps.vars.outputs.SECURITY_GROUPS }}
+      ECS_CLUSTER: ${{ steps.set_env.outputs.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ steps.set_env.outputs.ECS_SERVICE }}
+      ECR_IMAGE: ${{ steps.set_env.outputs.ECR_IMAGE }}
+      TASK_DEFINITION: ${{ steps.set_env.outputs.TASK_DEFINITION }}
+      CONTAINER_NAME: ${{ steps.set_env.outputs.CONTAINER_NAME }}
+      ENVIRONMENT_BUCKET: ${{ steps.set_env.outputs.ENVIRONMENT_BUCKET }}
+
+    steps:
+      - id: vars
+        shell: bash
+        run: |
+          # Production release always uses prd environment
+          ENV="prd"
+          echo "AWS_ROLE=PRD_AWS_ROLE" >> $GITHUB_OUTPUT
+          echo "AWS_REGION=PRD_AWS_REGION" >> $GITHUB_OUTPUT
+          echo "ECR_REPOSITORY=PRD_ECR_REPOSITORY" >> $GITHUB_OUTPUT
+          echo "PROJECT_PREFIX=ally-prd" >> $GITHUB_OUTPUT
+          echo "PROJECT_REGION=mb" >> $GITHUB_OUTPUT
+          echo "SUBNETS=[\"subnet-0803b15022d8454d1\", \"subnet-0a9aebefcd504a6eb\"]" >> $GITHUB_OUTPUT
+          echo "SECURITY_GROUPS=[\"sg-0802e74f0bf59122d\"]" >> $GITHUB_OUTPUT
+          echo "ENV=$ENV" >> $GITHUB_OUTPUT
+          echo ":rocket: Environment - $ENV" >> $GITHUB_STEP_SUMMARY
+          
+      - name: Set variables
+        id: set_env
+        run: |
+          PROJECT_PREFIX=${{ steps.vars.outputs.PROJECT_PREFIX }}
+          PROJECT_REGION=${{ steps.vars.outputs.PROJECT_REGION }}
+          echo "ECS_CLUSTER=$PROJECT_PREFIX-$PROJECT_REGION-ecs-cluster" >> $GITHUB_OUTPUT
+          echo "ECS_SERVICE=$PROJECT_PREFIX-svc-core" >> $GITHUB_OUTPUT
+          echo "ECR_IMAGE=$PROJECT_PREFIX-ecr-core" >> $GITHUB_OUTPUT
+          echo "TASK_DEFINITION=$PROJECT_PREFIX-td-core" >> $GITHUB_OUTPUT
+          echo "CONTAINER_NAME=$PROJECT_PREFIX-cntr-core" >> $GITHUB_OUTPUT
+          echo "ENVIRONMENT_BUCKET=$PROJECT_PREFIX-s3-environment" >> $GITHUB_OUTPUT
+          echo ":label: Tag: ${{ needs.validate-and-tag.outputs.TAG }}" >> $GITHUB_STEP_SUMMARY
+
+  test:
+    name: Run Tests
+    needs:
+      - validate-and-tag
+      - prepare-env
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test -- --forceExit --detectOpenHandles
+
+  build:
+    needs:
+      - validate-and-tag
+      - prepare-env
+      - test
+    runs-on: ubuntu-22.04
+    env:
+      AWS_ROLE: ${{ needs.prepare-env.outputs.AWS_ROLE }}
+      AWS_REGION: ${{ needs.prepare-env.outputs.AWS_REGION }}
+      ECR_IMAGE: ${{ needs.prepare-env.outputs.ECR_IMAGE }}
+      ECR_REPOSITORY: ${{ needs.prepare-env.outputs.ECR_REPOSITORY }}
+    outputs:
+      APP_IMAGE: ${{ steps.build-push.outputs.APP_IMAGE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars[env.AWS_ROLE] }}
+          aws-region: ${{ vars[env.AWS_REGION] }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Download Google Credentials from S3
+        run: |
+          # Create a directory for the credentials
+          mkdir -p gcloud/
+
+           # Download and Copy the credentials file from S3
+          aws s3 cp ${{ secrets.GOOGLE_CREDENTIALS_S3_URL_PRD }} gcloud/application_default_credentials.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=gcloud/application_default_credentials.json" >> $GITHUB_ENV
+
+      - name: Build and Push Docker image with version tags
+        id: build-push
+        run: |
+          VERSION=${{ needs.validate-and-tag.outputs.VERSION }}
+          MAJOR=${{ needs.validate-and-tag.outputs.MAJOR }}
+          MINOR=${{ needs.validate-and-tag.outputs.MINOR }}
+          
+          # Build the image
+          docker build -t $ECR_IMAGE .
+          
+          # Tag with multiple version tags
+          ECR_REPO=${{ vars[env.ECR_REPOSITORY] }}
+          docker tag $ECR_IMAGE $ECR_REPO/$ECR_IMAGE:$VERSION
+          docker tag $ECR_IMAGE $ECR_REPO/$ECR_IMAGE:$MAJOR.$MINOR
+          docker tag $ECR_IMAGE $ECR_REPO/$ECR_IMAGE:$MAJOR
+          docker tag $ECR_IMAGE $ECR_REPO/$ECR_IMAGE:latest
+          docker tag $ECR_IMAGE $ECR_REPO/$ECR_IMAGE:${GITHUB_SHA::7}-$GITHUB_RUN_NUMBER
+          
+          # Push all tags
+          docker push $ECR_REPO/$ECR_IMAGE:$VERSION
+          docker push $ECR_REPO/$ECR_IMAGE:$MAJOR.$MINOR
+          docker push $ECR_REPO/$ECR_IMAGE:$MAJOR
+          docker push $ECR_REPO/$ECR_IMAGE:latest
+          docker push $ECR_REPO/$ECR_IMAGE:${GITHUB_SHA::7}-$GITHUB_RUN_NUMBER
+          
+          echo "APP_IMAGE=$ECR_REPO/$ECR_IMAGE:$VERSION" >> $GITHUB_OUTPUT
+          
+          echo "## :package: Docker Images Pushed" >> $GITHUB_STEP_SUMMARY
+          echo "- \`$ECR_REPO/$ECR_IMAGE:$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`$ECR_REPO/$ECR_IMAGE:$MAJOR.$MINOR\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`$ECR_REPO/$ECR_IMAGE:$MAJOR\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`$ECR_REPO/$ECR_IMAGE:latest\`" >> $GITHUB_STEP_SUMMARY
+
+  run-db-migration:
+    name: Run DB Migration
+    runs-on: ubuntu-22.04
+    permissions:
+      id-token: write
+      pull-requests: write
+      contents: read
+    needs:
+      - prepare-env
+      - test
+      - build
+    env:
+      PROJECT_PREFIX: ${{ needs.prepare-env.outputs.PROJECT_PREFIX }}
+      AWS_ROLE: ${{ needs.prepare-env.outputs.AWS_ROLE }}
+      AWS_REGION: ${{ needs.prepare-env.outputs.AWS_REGION }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          
+      - name: Run DB migration
+        id: run_db_migration
+        uses: ./.github/actions/run-migration
+        with:
+          aws-region: ${{ vars[env.AWS_REGION] }}
+          aws-role: ${{ vars[env.AWS_ROLE] }}
+          task-definition: "${{ needs.prepare-env.outputs.TASK_DEFINITION }}-dbmigrate"
+          container-name: "${{ needs.prepare-env.outputs.CONTAINER_NAME }}-dbmigrate"
+          ecs-cluster: ${{ needs.prepare-env.outputs.ECS_CLUSTER }}
+          image: ${{ needs.build.outputs.APP_IMAGE }}
+          subnets: ${{ needs.prepare-env.outputs.SUBNETS }}
+          security-groups: ${{ needs.prepare-env.outputs.SECURITY_GROUPS }}
+
+  deploy:
+    needs:
+      - build
+      - prepare-env
+      - run-db-migration
+    runs-on: ubuntu-22.04
+    env:
+      AWS_ROLE: ${{ needs.prepare-env.outputs.AWS_ROLE }}
+      AWS_REGION: ${{ needs.prepare-env.outputs.AWS_REGION }}
+      ECR_IMAGE: ${{ needs.prepare-env.outputs.ECR_IMAGE }}
+      ECS_SERVICE: ${{ needs.prepare-env.outputs.ECS_SERVICE }}
+      ECS_CLUSTER: ${{ needs.prepare-env.outputs.ECS_CLUSTER }}
+      TASK_DEFINITION: ${{ needs.prepare-env.outputs.TASK_DEFINITION }}
+      ECR_REPOSITORY: ${{ needs.prepare-env.outputs.ECR_REPOSITORY }}
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars[env.AWS_ROLE] }}
+          aws-region: ${{ vars[env.AWS_REGION] }}
+
+      - name: Update ECS Task Definition
+        run: |
+          TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition "${TASK_DEFINITION}")
+          echo "$TASK_DEFINITION" | jq --arg IMAGE "${{ needs.build.outputs.APP_IMAGE }}" \
+            '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > taskDefinition.json
+            
+      - name: Deploy to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: taskDefinition.json
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+  create-release:
+    name: Create Release Draft
+    needs:
+      - validate-and-tag
+      - prepare-env
+      - build
+      - deploy
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0  # Fetch all history for changelog generation
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION=${{ needs.validate-and-tag.outputs.VERSION }}
+          TAG=${{ needs.validate-and-tag.outputs.TAG }}
+          
+          # Fetch the newly created tag
+          git fetch origin tag "$TAG"
+          
+          # Get previous tag
+          PREVIOUS_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -v "^$TAG$" | head -n 1)
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "No previous tag found, using first commit"
+            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+          
+          echo "Generating changelog from $PREVIOUS_TAG to $TAG"
+          
+          # Generate changelog with proper formatting
+          echo "## What's Changed" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          
+          # Get commits since last tag (limit to 100 to avoid issues)
+          git log $PREVIOUS_TAG..master --pretty=format:"- %s (%h) @%an" --no-merges | head -100 >> CHANGELOG.md
+          
+          # Use a unique delimiter that won't appear in commit messages
+          DELIMITER="CHANGELOG_END_$(date +%s)"
+          echo "CHANGELOG<<${DELIMITER}" >> $GITHUB_OUTPUT
+          cat CHANGELOG.md >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "${DELIMITER}" >> $GITHUB_OUTPUT
+
+      - name: Create Release Draft
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          name: Release v${{ needs.validate-and-tag.outputs.VERSION }}
+          tag_name: ${{ needs.validate-and-tag.outputs.TAG }}
+          body: |
+            ## Release v${{ needs.validate-and-tag.outputs.VERSION }}
+            
+            ### Version Information
+            - **Version**: ${{ needs.validate-and-tag.outputs.VERSION }}
+            - **Major**: ${{ needs.validate-and-tag.outputs.MAJOR }}
+            - **Minor**: ${{ needs.validate-and-tag.outputs.MINOR }}
+            - **Patch**: ${{ needs.validate-and-tag.outputs.PATCH }}
+            
+            ### Deployment Information
+            - **Service**: ally-core (Backend)
+            - **Environment**: Production
+            - **Branch**: master
+            - **ECS Cluster**: ${{ needs.prepare-env.outputs.ECS_CLUSTER }}
+            - **ECS Service**: ${{ needs.prepare-env.outputs.ECS_SERVICE }}
+            - **Docker Image**: ${{ needs.build.outputs.APP_IMAGE }}
+            
+            ${{ steps.changelog.outputs.CHANGELOG }}
+            
+            ---
+            
+            **Note**: This is a draft release. Please review and publish when ready.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

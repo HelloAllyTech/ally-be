@@ -1,0 +1,114 @@
+import { Injectable } from '@nestjs/common';
+import { DataSource, Raw, Repository, SelectQueryBuilder } from 'typeorm';
+import { ScenarioVoices } from '../entity/scenario-voices.entity';
+import { Pagination } from 'src/common/type/common.type';
+
+@Injectable()
+export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
+  constructor(private dataSource: DataSource) {
+    super(ScenarioVoices, dataSource.createEntityManager());
+  }
+
+  async getScenarioVoices(options: Pagination): Promise<ScenarioVoices[]> {
+    const query = this.createQueryBuilder('scenarioVoice');
+    this.applySorting(query, options);
+    this.applyPagination(query, options);
+    return query.getMany();
+  }
+
+  private applySorting(
+    query: SelectQueryBuilder<ScenarioVoices>,
+    options: Pagination,
+  ) {
+    query.orderBy(
+      `scenarioVoice.${options.sortBy || 'createdAt'}`,
+      options.order || 'ASC',
+    );
+  }
+
+  private applyPagination(
+    query: SelectQueryBuilder<ScenarioVoices>,
+    options: Pagination,
+  ) {
+    if (options.offset) {
+      query.offset(options.offset);
+    }
+    if (options.limit) {
+      query.limit(options.limit);
+    }
+  }
+
+  async getLanguagesWithVoices(active?: boolean) {
+    const query = this.createQueryBuilder()
+      .select('la.id', 'language_id')
+      .addSelect('la.value', 'value')
+      .addSelect('la.label', 'label')
+      .addSelect(
+        `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name))`,
+        'voices',
+      )
+      .from('languages', 'la')
+      .innerJoin('scenario_voices', 'sv', 'la.id = sv.languageId')
+      .groupBy('la.id, la.value, la.label')
+      .having('COUNT(sv.id) > 0');
+
+    if (active !== undefined) {
+      query.where('la.active = :active', { active });
+    } else {
+      query.where('la.active = true');
+    }
+
+    const rows = await query.getRawMany();
+
+    if (!rows) {
+      return [];
+    }
+
+    return rows.map((r) => ({
+      language_id: Number(r.language_id),
+      value: r.value,
+      label: r.label,
+      voices: typeof r.voices === 'string' ? JSON.parse(r.voices) : r.voices,
+    }));
+  }
+
+  async getLanguagesForScenario(active?: boolean, hasVoices?: boolean) {
+    const query = this.createQueryBuilder()
+      .select('CAST(la.id AS INTEGER)', 'language_id')
+      .addSelect('la.value', 'value')
+      .addSelect('la.label', 'label')
+      .addSelect('la.translationCode', 'translationCode')
+      // IMPORTANT: start from the languages table so `la` refers to languages
+      .from('languages', 'la')
+      .leftJoin('scenario_voices', 'sv', 'sv.languageId = la.id');
+
+    // always dedupe by language
+    query.groupBy('la.id, la.value, la.label');
+
+    // hasVoices filter (both male & female)
+    if (hasVoices) {
+      query
+        .andWhere(`sv.config->>'gender' IN ('male', 'female')`)
+        .having(`COUNT(DISTINCT LOWER(sv.config->>'gender')) = 2`);
+    }
+
+    // active filter — pass boolean (or cast if your column is text)
+    if (active !== undefined) {
+      query.andWhere('la.active = :active', { active });
+    } else {
+      query.andWhere('la.active = true');
+    }
+
+    return await query.getRawMany();
+  }
+
+  async getFallbackVoice(languageId: number, gender: string) {
+    return await this.findOne({
+      select: ['id', 'name', 'config'],
+      where: {
+        languageId,
+        config: Raw((alias) => `${alias} ->> 'gender' = :gender`, { gender }),
+      },
+    });
+  }
+}
