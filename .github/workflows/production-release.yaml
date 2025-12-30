@@ -379,6 +379,7 @@ jobs:
           DELIMITER="CHANGELOG_END_$(date +%s)"
           echo "CHANGELOG<<${DELIMITER}" >> $GITHUB_OUTPUT
           cat CHANGELOG.md >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
           echo "${DELIMITER}" >> $GITHUB_OUTPUT
 
       - name: Create Release Draft
