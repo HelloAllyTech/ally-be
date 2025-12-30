@@ -18,6 +18,6 @@ export class CreateLanguagesDto {
   })
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => CreateLanguagesDto)
+  @Type(() => CreateLanguageDto)
   languages!: CreateLanguageDto[];
 }
