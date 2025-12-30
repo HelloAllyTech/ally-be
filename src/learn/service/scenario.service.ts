@@ -887,9 +887,9 @@ export class ScenarioService {
       await em.getRepository(Scenarios).softDelete(id);
       await em.getRepository(ScenarioEvents).softDelete({ scenarioId: id });
       await em.getRepository(ScenarioTenants).softDelete({ scenarioId: id });
-      // await em.getRepository(ScenarioTriggerWarnings).delete({
-      //   scenarioId: id,
-      // });
+      await em.getRepository(ScenarioTriggerWarnings).delete({
+        scenarioId: id,
+      });
     });
     return true;
   }
