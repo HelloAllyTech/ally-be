@@ -3,9 +3,8 @@ import { MicrophoneChatGateway } from '../microphone-chat.gateway';
 import { ChatService } from '../../service/chat.service';
 import { StreamFileProcessorService } from '../../../audio/service/stream-file-processor.service';
 import { MessageBrokerService } from '../../../message-broker/service/message-broker.service';
-import { JwtService } from '@nestjs/jwt';
-import { AppConfigService } from '../../../config/config.service';
 import { BroadcastMessageService } from '../../../audio/service/broadcast-message.service';
+import { WebSocketAuthMiddleware } from '../../../auth/middlewares/ws-auth.middleware';
 import {
   PLACEHOLDER_CHAT_ID,
   UserRole,
@@ -20,7 +19,6 @@ import { MessageType, Message } from '../../entity/message.entity';
 import { UserChatSessionData } from '../../type/chat.type';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
-import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
 import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
 
 // Mock ExecutionManager
@@ -71,7 +69,7 @@ describe('MicrophoneChatGateway', () => {
   let mockChatService: any;
   let mockStreamFileProcessorService: any;
   let mockPublisher: any;
-  let mockJwtService: any;
+  let mockWebSocketAuthMiddleware: any;
   let mockBroadcastMessageService: any;
   let mockPermissionsService: any;
   let mockPermissionValidator: any;
@@ -108,6 +106,14 @@ describe('MicrophoneChatGateway', () => {
       handshake: {
         auth: { token: 'valid-token' },
       },
+      data: {
+        user: {
+          id: 1,
+          username: 'testuser',
+          role: UserRole.COUNSELOR,
+          tenantId: 'tenant123',
+        },
+      },
       join: jest.fn(),
       disconnect: jest.fn(),
       on: jest.fn(),
@@ -118,6 +124,7 @@ describe('MicrophoneChatGateway', () => {
     mockServer = {
       to: jest.fn().mockReturnThis(),
       emit: jest.fn(),
+      use: jest.fn(),
     };
 
     // Create explicit mock objects
@@ -138,8 +145,8 @@ describe('MicrophoneChatGateway', () => {
       subscribe: jest.fn(),
     };
 
-    mockJwtService = {
-      verifyAsync: jest.fn(),
+    mockWebSocketAuthMiddleware = {
+      webSocketMiddleware: jest.fn().mockReturnValue(jest.fn()),
     };
 
     mockBroadcastMessageService = {
@@ -170,18 +177,8 @@ describe('MicrophoneChatGateway', () => {
           useValue: mockPublisher,
         },
         {
-          provide: JwtService,
-          useValue: mockJwtService,
-        },
-        {
-          provide: AppConfigService,
-          useValue: {
-            jwt: {
-              accessToken: {
-                secret: 'test-secret',
-              },
-            },
-          },
+          provide: WebSocketAuthMiddleware,
+          useValue: mockWebSocketAuthMiddleware,
         },
         {
           provide: BroadcastMessageService,
@@ -209,14 +206,28 @@ describe('MicrophoneChatGateway', () => {
     jest.clearAllMocks();
   });
 
-  describe('handleConnection', () => {
-    it('should handle client connection and set up event listeners', async () => {
-      jest
-        .spyOn(gatewayPrivate, 'authenticateClient')
-        .mockResolvedValue(undefined);
+  describe('afterInit', () => {
+    it('should set up authentication middleware', () => {
+      gateway.afterInit(mockServer);
 
+      expect(
+        mockWebSocketAuthMiddleware.webSocketMiddleware,
+      ).toHaveBeenCalled();
+      expect(mockServer.use).toHaveBeenCalled();
+    });
+  });
+
+  describe('handleConnection', () => {
+    it('should handle client connection with authenticated user and set up event listeners', async () => {
       await gateway.handleConnection(mockSocket);
 
+      expect(mockSocket.join).toHaveBeenCalledWith('user-1');
+      expect(mockPublisher.publish).toHaveBeenCalledWith(
+        MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
+        expect.objectContaining({
+          participants: [1],
+        }),
+      );
       expect(mockSocket.on).toHaveBeenCalledWith(
         'connect_error',
         expect.any(Function),
@@ -225,13 +236,19 @@ describe('MicrophoneChatGateway', () => {
         'disconnect',
         expect.any(Function),
       );
+      expect(gatewayPrivate.sessions[mockSocket.id]).toBeDefined();
+    });
+
+    it('should disconnect client when no user data is found', async () => {
+      mockSocket.data.user = null;
+
+      await gateway.handleConnection(mockSocket);
+
+      expect(mockSocket.disconnect).toHaveBeenCalled();
+      expect(mockSocket.join).not.toHaveBeenCalled();
     });
 
     it('should call handleDisconnect when disconnect event is triggered', async () => {
-      jest
-        .spyOn(gatewayPrivate, 'authenticateClient')
-        .mockResolvedValue(undefined);
-      // Mock the handleDisconnect method
       gatewayPrivate.handleDisconnect = jest.fn().mockResolvedValue(undefined);
 
       await gateway.handleConnection(mockSocket);
@@ -345,58 +362,6 @@ describe('MicrophoneChatGateway', () => {
       expect(mockServer.to).toHaveBeenCalledWith('user-1');
       expect(mockServer.to).toHaveBeenCalledWith('user-2');
       expect(mockServer.emit).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  describe('authenticateClient', () => {
-    it('should disconnect client when no token provided', async () => {
-      mockSocket.handshake.auth = {};
-
-      await gatewayPrivate.authenticateClient(mockSocket);
-
-      expect(mockSocket.disconnect).toHaveBeenCalled();
-    });
-
-    it('should disconnect client when JWT verification fails', async () => {
-      mockJwtService.verifyAsync.mockRejectedValue(new Error('Invalid token'));
-
-      await gatewayPrivate.authenticateClient(mockSocket);
-
-      expect(mockSocket.disconnect).toHaveBeenCalled();
-    });
-
-    it('should disconnect client when user does not have permission', async () => {
-      mockJwtService.verifyAsync.mockResolvedValue({
-        sub: '1',
-        username: 'testuser',
-        role: 'CLIENT',
-        tenantId: 'tenant123',
-      });
-      mockPermissionsService.getUserPermissions.mockResolvedValue([]);
-      mockPermissionValidator.validatePermissions.mockResolvedValue(false);
-
-      await gatewayPrivate.authenticateClient(mockSocket);
-
-      expect(mockSocket.disconnect).toHaveBeenCalled();
-    });
-
-    it('should authenticate client successfully', async () => {
-      mockJwtService.verifyAsync.mockResolvedValue({
-        sub: '1',
-        username: 'testuser',
-        role: UserRole.COUNSELOR,
-        tenantId: 'tenant123',
-      });
-      mockPermissionsService.getUserPermissions.mockResolvedValue([
-        PERMISSIONS.START_MICROPHONE_CHAT,
-      ]);
-      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
-
-      await gatewayPrivate.authenticateClient(mockSocket);
-
-      expect(mockSocket.join).toHaveBeenCalledWith('user-1');
-      expect(mockPublisher.publish).toHaveBeenCalled();
-      expect(gatewayPrivate.sessions[mockSocket.id]).toBeDefined();
     });
   });
 
