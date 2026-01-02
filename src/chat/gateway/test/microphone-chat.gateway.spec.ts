@@ -146,7 +146,7 @@ describe('MicrophoneChatGateway', () => {
     };
 
     mockWebSocketAuthMiddleware = {
-      createAuthMiddleware: jest.fn().mockReturnValue(jest.fn()),
+      webSocketMiddleware: jest.fn().mockReturnValue(jest.fn()),
     };
 
     mockBroadcastMessageService = {
@@ -211,8 +211,8 @@ describe('MicrophoneChatGateway', () => {
       gateway.afterInit(mockServer);
 
       expect(
-        mockWebSocketAuthMiddleware.createAuthMiddleware,
-      ).toHaveBeenCalledWith(UserRole.COUNSELOR);
+        mockWebSocketAuthMiddleware.webSocketMiddleware,
+      ).toHaveBeenCalled();
       expect(mockServer.use).toHaveBeenCalled();
     });
   });

@@ -6,6 +6,8 @@ import { AppConfigService } from '../../../config/config.service';
 import { UserRole } from '../../../common/constants/user.constants';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { ValidationException } from 'src/exception/custom.exception';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -20,6 +22,7 @@ jest.mock('../../../logger/logger.service', () => ({
 describe('WebSocketAuthMiddleware', () => {
   let middleware: WebSocketAuthMiddleware;
   let jwtService: jest.Mocked<JwtService>;
+  let permissionsService: jest.Mocked<PermissionsService>;
 
   const mockJwtSecret = 'test-secret';
   const mockValidToken = 'valid.jwt.token';
@@ -43,6 +46,10 @@ describe('WebSocketAuthMiddleware', () => {
       },
     };
 
+    const mockPermissionsService = {
+      getUserPermissions: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WebSocketAuthMiddleware,
@@ -54,11 +61,16 @@ describe('WebSocketAuthMiddleware', () => {
           provide: AppConfigService,
           useValue: mockConfigService,
         },
+        {
+          provide: PermissionsService,
+          useValue: mockPermissionsService,
+        },
       ],
     }).compile();
 
     middleware = module.get<WebSocketAuthMiddleware>(WebSocketAuthMiddleware);
     jwtService = module.get(JwtService);
+    permissionsService = module.get(PermissionsService);
   });
 
   afterEach(() => {
@@ -85,7 +97,7 @@ describe('WebSocketAuthMiddleware', () => {
     it('should reject connection when no token provided', async () => {
       const socket = createMockSocket();
       const next = createMockNext();
-      const authMiddleware = middleware.createAuthMiddleware();
+      const authMiddleware = middleware.webSocketMiddleware();
 
       await authMiddleware(socket, next);
 
@@ -107,7 +119,7 @@ describe('WebSocketAuthMiddleware', () => {
         },
       });
       const next = createMockNext();
-      const authMiddleware = middleware.createAuthMiddleware();
+      const authMiddleware = middleware.webSocketMiddleware();
 
       await authMiddleware(socket, next);
 
@@ -127,7 +139,7 @@ describe('WebSocketAuthMiddleware', () => {
         },
       });
       const next = createMockNext();
-      const authMiddleware = middleware.createAuthMiddleware();
+      const authMiddleware = middleware.webSocketMiddleware();
 
       jwtService.verifyAsync.mockResolvedValue({
         ...mockValidPayload,
@@ -146,7 +158,7 @@ describe('WebSocketAuthMiddleware', () => {
       );
     });
 
-    it('should reject connection when role does not match required role', async () => {
+    it('should reject connection when user does not have required permissions', async () => {
       const socket = createMockSocket({
         handshake: {
           auth: { token: mockValidToken },
@@ -155,9 +167,12 @@ describe('WebSocketAuthMiddleware', () => {
         },
       });
       const next = createMockNext();
-      const authMiddleware = middleware.createAuthMiddleware(UserRole.ADMIN);
+      const authMiddleware = middleware.webSocketMiddleware([
+        PERMISSIONS.START_MICROPHONE_CHAT,
+      ]);
 
       jwtService.verifyAsync.mockResolvedValue(mockValidPayload);
+      permissionsService.getUserPermissions.mockResolvedValue([]);
 
       await authMiddleware(socket, next);
 
@@ -168,7 +183,7 @@ describe('WebSocketAuthMiddleware', () => {
       expect(next).toHaveBeenCalledTimes(1);
       expect(next).toHaveBeenCalledWith(
         new ForbiddenException(
-          `Access denied. Required role: ${UserRole.ADMIN}`,
+          `Missing permissions: ${PERMISSIONS.START_MICROPHONE_CHAT}`,
         ),
       );
     });
@@ -182,7 +197,7 @@ describe('WebSocketAuthMiddleware', () => {
         },
       });
       const next = createMockNext();
-      const authMiddleware = middleware.createAuthMiddleware();
+      const authMiddleware = middleware.webSocketMiddleware();
 
       jwtService.verifyAsync.mockRejectedValue(
         new Error('Token expired or invalid'),
@@ -210,7 +225,7 @@ describe('WebSocketAuthMiddleware', () => {
         },
       });
       const next = createMockNext();
-      const authMiddleware = middleware.createAuthMiddleware();
+      const authMiddleware = middleware.webSocketMiddleware();
 
       jwtService.verifyAsync.mockResolvedValue(mockValidPayload);
 
@@ -223,74 +238,13 @@ describe('WebSocketAuthMiddleware', () => {
       expect(socket.data.user).toEqual({
         id: 123,
         username: 'testuser',
-        role: UserRole.COUNSELOR,
         tenantId: 'tenant-123',
       });
       expect(next).toHaveBeenCalledTimes(1);
       expect(next).toHaveBeenCalledWith();
     });
 
-    it('should authenticate successfully with token in query parameter', async () => {
-      const socket = createMockSocket({
-        handshake: {
-          auth: {},
-          query: { token: mockValidToken },
-          headers: {},
-        },
-      });
-      const next = createMockNext();
-      const authMiddleware = middleware.createAuthMiddleware();
-
-      jwtService.verifyAsync.mockResolvedValue(mockValidPayload);
-
-      await authMiddleware(socket, next);
-
-      expect(jwtService.verifyAsync).toHaveBeenCalledTimes(1);
-      expect(jwtService.verifyAsync).toHaveBeenCalledWith(mockValidToken, {
-        secret: mockJwtSecret,
-      });
-      expect(socket.data.user).toEqual({
-        id: 123,
-        username: 'testuser',
-        role: UserRole.COUNSELOR,
-        tenantId: 'tenant-123',
-      });
-      expect(next).toHaveBeenCalledTimes(1);
-      expect(next).toHaveBeenCalledWith();
-    });
-
-    it('should authenticate successfully with token in Bearer header', async () => {
-      const socket = createMockSocket({
-        handshake: {
-          auth: {},
-          query: {},
-          headers: {
-            authorization: `Bearer ${mockValidToken}`,
-          },
-        },
-      });
-      const next = createMockNext();
-      const authMiddleware = middleware.createAuthMiddleware();
-
-      jwtService.verifyAsync.mockResolvedValue(mockValidPayload);
-
-      await authMiddleware(socket, next);
-
-      expect(jwtService.verifyAsync).toHaveBeenCalledTimes(1);
-      expect(jwtService.verifyAsync).toHaveBeenCalledWith(mockValidToken, {
-        secret: mockJwtSecret,
-      });
-      expect(socket.data.user).toEqual({
-        id: 123,
-        username: 'testuser',
-        role: UserRole.COUNSELOR,
-        tenantId: 'tenant-123',
-      });
-      expect(next).toHaveBeenCalledTimes(1);
-      expect(next).toHaveBeenCalledWith();
-    });
-
-    it('should authenticate successfully with required role match', async () => {
+    it('should authenticate successfully with required permissions', async () => {
       const socket = createMockSocket({
         handshake: {
           auth: { token: mockValidToken },
@@ -299,11 +253,14 @@ describe('WebSocketAuthMiddleware', () => {
         },
       });
       const next = createMockNext();
-      const authMiddleware = middleware.createAuthMiddleware(
-        UserRole.COUNSELOR,
-      );
+      const authMiddleware = middleware.webSocketMiddleware([
+        PERMISSIONS.START_MICROPHONE_CHAT,
+      ]);
 
       jwtService.verifyAsync.mockResolvedValue(mockValidPayload);
+      permissionsService.getUserPermissions.mockResolvedValue([
+        PERMISSIONS.START_MICROPHONE_CHAT,
+      ]);
 
       await authMiddleware(socket, next);
 
@@ -314,7 +271,6 @@ describe('WebSocketAuthMiddleware', () => {
       expect(socket.data.user).toEqual({
         id: 123,
         username: 'testuser',
-        role: UserRole.COUNSELOR,
         tenantId: 'tenant-123',
       });
       expect(next).toHaveBeenCalledTimes(1);

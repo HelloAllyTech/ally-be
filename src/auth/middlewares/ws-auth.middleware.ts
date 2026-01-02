@@ -3,12 +3,12 @@ import { JwtService } from '@nestjs/jwt';
 import { Socket } from 'socket.io';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
-import { UserRole } from '../../common/constants/user.constants';
 import {
   UnauthorizedException,
   ForbiddenException,
   ValidationException,
 } from '../../exception/custom.exception';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
 
 @Injectable()
 export class WebSocketAuthMiddleware {
@@ -19,9 +19,10 @@ export class WebSocketAuthMiddleware {
   constructor(
     private jwtService: JwtService,
     private configService: AppConfigService,
+    private permissionService: PermissionsService,
   ) {}
 
-  createAuthMiddleware(requiredRole?: UserRole) {
+  webSocketMiddleware(permissions?: string[]) {
     return async (socket: Socket, next: (err?: Error) => void) => {
       try {
         this.logger.info(
@@ -54,27 +55,35 @@ export class WebSocketAuthMiddleware {
           return next(error);
         }
 
-        // Role-based authorization
-        if (requiredRole && payload.role !== requiredRole) {
-          const error = new ForbiddenException(
-            `Access denied. Required role: ${requiredRole}`,
-          );
-          this.logger.error(
-            `User ${userId} does not have required role. Expected: ${requiredRole}, Got: ${payload.role}`,
-          );
-          return next(error);
-        }
+        // Check for required permissions
+        if (permissions && permissions.length > 0) {
+          const userPermissions =
+            await this.permissionService.getUserPermissions(userId);
 
+          const userHasPermission = permissions.every((permission) =>
+            userPermissions.includes(permission),
+          );
+
+          if (!userHasPermission) {
+            this.logger.error(
+              `User ${userId} missing permissions: ${permissions.join(', ')}`,
+            );
+            return next(
+              new ForbiddenException(
+                `Missing permissions: ${permissions.join(', ')}`,
+              ),
+            );
+          }
+        }
         // Attach authenticated user data to socket
         socket.data.user = {
           id: userId,
           username: payload.username,
-          role: payload.role,
           tenantId: payload.tenantId,
         };
 
         this.logger.info(
-          `Socket ${socket.id} authenticated successfully for user ${userId} with role ${payload.role}`,
+          `Socket ${socket.id} authenticated successfully for user ${userId}`,
         );
 
         next(); // Allow connection to proceed
@@ -93,17 +102,6 @@ export class WebSocketAuthMiddleware {
   }
 
   private extractToken(socket: Socket): string | null {
-    return (
-      socket.handshake.auth?.token ||
-      socket.handshake.query?.token ||
-      this.extractBearerToken(socket.handshake.headers.authorization)
-    );
-  }
-
-  private extractBearerToken(authorization: string | undefined): string | null {
-    if (!authorization || !authorization.startsWith('Bearer ')) {
-      return null;
-    }
-    return authorization.substring(7);
+    return socket.handshake.auth?.token;
   }
 }

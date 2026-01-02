@@ -21,7 +21,6 @@ import { AudioModule } from '../audio/audio.module';
 import { AiModule } from '../ai/ai.module';
 
 import { AwsModule } from 'src/aws/aws.module';
-import { WebSocketAuthMiddleware } from 'src/auth/middlewares/ws-auth.middleware';
 import { NotificationModule } from '../notification/notification.module';
 import { ChatRepository } from './repository/chat.repository';
 import { SummaryFeedback } from './entity/summary-feedback.entity';
@@ -50,7 +49,6 @@ import { ChatFeedbackService } from './service/chat-feedback.service';
   ],
   controllers: [ChatController, AudioUploadController],
   providers: [
-    WebSocketAuthMiddleware,
     ChatService,
     ChatSummaryService,
     AudioUploadService,

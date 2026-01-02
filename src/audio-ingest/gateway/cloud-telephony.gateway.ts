@@ -7,7 +7,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { LoggerService } from '../../logger/logger.service';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ChatService } from '../../chat/service/chat.service';
 import {
   PLACEHOLDER_CHAT_ID,
@@ -23,11 +23,9 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
 import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
 import { Message } from '../../chat/entity/message.entity';
-import { JwtService } from '@nestjs/jwt';
-import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { WebSocketAuthMiddleware } from 'src/auth/middlewares/ws-auth.middleware';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -46,22 +44,51 @@ export class CloudTelephonyGateway
   constructor(
     private chatService: ChatService,
     private publisher: MessageBrokerService,
-    private jwtService: JwtService,
-    private configService: AppConfigService,
     private broadcastMessageService: BroadcastMessageService,
-    private permissionValidator: PermissionValidator,
+    private webSocketAuthMiddleware: WebSocketAuthMiddleware,
   ) {}
 
   @WebSocketServer() server!: Server;
+  afterInit(server: Server) {
+    this.logger.info('Cloud telephony WS initialized; registering middleware');
+
+    server.use(
+      this.webSocketAuthMiddleware.webSocketMiddleware([
+        PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
+      ]),
+    );
+  }
 
   async handleConnection(client: Socket) {
     this.logger.info(`Client connected to cloud telephony chat: ${client.id}`);
+    const user = client.data.user;
+    if (!user) {
+      this.logger.error(
+        `No user data found for authenticated client ${client.id}`,
+      );
+      client.disconnect();
+      return;
+    }
+    const room = `user-${user.id}`;
+    client.join(room);
 
-    await this.authenticateClient(client);
+    this.sessions[client.id] = {
+      id: client.id,
+      userId: +user.id,
+      user: null,
+      type: 'user',
+      role: UserRole.COUNSELOR,
+      room,
+      chatId: PLACEHOLDER_CHAT_ID,
+      tenantId: user.tenantId,
+    };
 
+    this.logger.info(
+      `Client ${client.id} authenticated and joined room ${room}`,
+    );
     client.on('connect_error', (err) => {
       this.logger.error(
-        `❌ Connection error for client ${client.id}: with error ${err.message}`,
+        `Connection error for client ${client.id}: with error ${err.message}`,
       );
     });
 
@@ -74,7 +101,7 @@ export class CloudTelephonyGateway
   }
 
   async handleDisconnect(client: Socket) {
-    this.logger.info(`🔴 Client disconnected: ${client.id}`);
+    this.logger.info(`Client disconnected: ${client.id}`);
     const sid = client.id;
     const session = this.sessions[sid];
     if (!session) {
@@ -119,64 +146,6 @@ export class CloudTelephonyGateway
         payload: message,
       });
     });
-  }
-
-  private async authenticateClient(client: Socket) {
-    const token = client.handshake.auth?.token;
-    if (!token) {
-      this.logger.error(`No JWT token provided for client ${client.id}`);
-      client.disconnect();
-      return;
-    }
-
-    try {
-      const payload = await this.jwtService.verifyAsync(token, {
-        secret: this.configService.jwt.accessToken.secret,
-      });
-
-      const hasAccess = await this.permissionValidator.validatePermissions(
-        payload.sub,
-        [PERMISSIONS.START_CLOUD_TELEPHONY_CHAT],
-      );
-
-      if (!hasAccess) {
-        throw new UnauthorizedException(
-          `User ${payload.sub} does not have access to cloud telephony`,
-        );
-      }
-      const userId = parseInt(payload.sub);
-
-      const user = {
-        id: userId,
-        username: payload.username,
-        role: payload.role,
-        tenantId: payload.tenantId,
-      };
-
-      const room = `user-${userId}`;
-      client.join(room);
-
-      this.sessions[client.id] = {
-        id: client.id,
-        userId: +userId,
-        user: null,
-        type: 'user',
-        role: UserRole.COUNSELOR,
-        room,
-        chatId: PLACEHOLDER_CHAT_ID,
-        tenantId: user.tenantId,
-      };
-
-      this.logger.info(
-        `Client ${client.id} authenticated and joined room ${room}`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `JWT verification failed for client ${client.id}:`,
-        error,
-      );
-      client.disconnect();
-    }
   }
 
   @SubscribeMessage(ChatEvents.AUDIO_CHAT_PAUSED)

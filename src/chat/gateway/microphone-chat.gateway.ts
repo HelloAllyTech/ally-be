@@ -35,6 +35,7 @@ import { WebSocketAuthMiddleware } from 'src/auth/middlewares/ws-auth.middleware
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -69,7 +70,9 @@ export class MicrophoneChatGateway
     );
 
     server.use(
-      this.webSocketAuthMiddleware.createAuthMiddleware(UserRole.COUNSELOR),
+      this.webSocketAuthMiddleware.webSocketMiddleware([
+        PERMISSIONS.START_MICROPHONE_CHAT,
+      ]),
     );
   }
 
@@ -115,7 +118,7 @@ export class MicrophoneChatGateway
 
     client.on('connect_error', (err) => {
       this.logger.error(
-        `❌ Connection error for client co ${client.id} with error ${err.message}`,
+        `Connection error for client co ${client.id} with error ${err.message}`,
       );
     });
 
@@ -128,7 +131,7 @@ export class MicrophoneChatGateway
   }
 
   async handleDisconnect(client: Socket) {
-    this.logger.info(`🔴 Client disconnected: ${client.id}`);
+    this.logger.info(`Client disconnected: ${client.id}`);
     const clientId = client.id;
     const session = this.sessions[clientId];
     if (!session) {
@@ -157,7 +160,7 @@ export class MicrophoneChatGateway
         });
       } catch (error) {
         this.logger.error(
-          `❌ Failed to end chat for client ${clientId} | session chatId: ${session.chatId} | error: ${error.message}`,
+          `Failed to end chat for client ${clientId} | session chatId: ${session.chatId} | error: ${error.message}`,
         );
         this.auditLogger.log({
           eventType: AUDIT_EVENTS.CALL_END_FAILED,
@@ -264,7 +267,7 @@ export class MicrophoneChatGateway
     );
 
     if (activeChat) {
-      this.logger.error(`❌ User ${session.userId} already has an active chat`);
+      this.logger.error(`User ${session.userId} already has an active chat`);
       this.logErrorAudioCallAuditEvent(
         session,
         activeChat.id,
@@ -308,7 +311,7 @@ export class MicrophoneChatGateway
       );
     } catch (error) {
       this.logger.error(
-        `❌ Failed to start call stream for client ${client.id}:`,
+        `Failed to start call stream for client ${client.id}:`,
         error,
       );
       client.disconnect();
