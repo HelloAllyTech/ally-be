@@ -10,6 +10,7 @@ import { ConfigModule } from '@nestjs/config';
 import { RefreshToken } from './entity/refresh-token.entity';
 import { User } from '../user/entity/user.entity';
 import { UserModule } from 'src/user/user.module';
+import { WebSocketAuthMiddleware } from './middlewares/ws-auth.middleware';
 
 @Global()
 @Module({
@@ -19,8 +20,14 @@ import { UserModule } from 'src/user/user.module';
     ConfigModule,
     forwardRef(() => UserModule),
   ],
-  providers: [AuthService, JwtStrategy, JwtRefreshStrategy, PermissionsGuard],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    JwtRefreshStrategy,
+    PermissionsGuard,
+    WebSocketAuthMiddleware,
+  ],
   controllers: [AuthController],
-  exports: [AuthService, PermissionsGuard],
+  exports: [AuthService, PermissionsGuard, WebSocketAuthMiddleware],
 })
 export class AuthModule {}

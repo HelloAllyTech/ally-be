@@ -1,11 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { CloudTelephonyGateway } from '../cloud-telephony.gateway';
 import { ChatService } from '../../../chat/service/chat.service';
 import { MessageBrokerService } from '../../../message-broker/service/message-broker.service';
-import { AppConfigService } from '../../../config/config.service';
 import { BroadcastMessageService } from '../../../audio/service/broadcast-message.service';
 import { LoggerService } from '../../../logger/logger.service';
 import { ChatEvents } from '../../../chat/constants/chat.constants';
@@ -16,7 +13,7 @@ import {
 import { MessageBrokerChannel } from '../../../message-broker/constants/message-broker.constants';
 import { Message } from '../../../chat/entity/message.entity';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
-import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
+import { WebSocketAuthMiddleware } from '../../../auth/middlewares/ws-auth.middleware';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -43,22 +40,14 @@ describe('CloudTelephonyGateway', () => {
   let gateway: CloudTelephonyGateway;
   let chatService: jest.Mocked<ChatService>;
   let messageBrokerService: jest.Mocked<MessageBrokerService>;
-  let jwtService: jest.Mocked<JwtService>;
   let broadcastMessageService: jest.Mocked<BroadcastMessageService>;
   let mockServer: jest.Mocked<Server>;
   let mockSocket: jest.Mocked<Socket>;
   let mockLogger: any;
 
-  const mockPermissionValidator = {
-    validatePermissions: jest.fn().mockResolvedValue(true),
+  const mockWebSocketAuthMiddleware = {
+    webSocketMiddleware: jest.fn().mockReturnValue(jest.fn()),
   } as any;
-
-  const mockJwtPayload = {
-    sub: '123',
-    username: 'test-counselor',
-    role: UserRole.COUNSELOR,
-    tenantId: 'tenant-123',
-  };
 
   const mockSession = {
     id: 'socket-123',
@@ -91,18 +80,6 @@ describe('CloudTelephonyGateway', () => {
       subscribe: jest.fn(),
     };
 
-    const mockJwtService = {
-      verifyAsync: jest.fn(),
-    };
-
-    const mockConfigService = {
-      jwt: {
-        accessToken: {
-          secret: 'test-secret',
-        },
-      },
-    };
-
     const mockBroadcastMessageService = {
       broadcastUserDisconnectedMessage: jest.fn(),
     };
@@ -112,6 +89,13 @@ describe('CloudTelephonyGateway', () => {
       handshake: {
         auth: {
           token: 'valid-jwt-token',
+        },
+      },
+      data: {
+        user: {
+          id: 123,
+          username: 'test-counselor',
+          tenantId: 'tenant-123',
         },
       },
       join: jest.fn(),
@@ -124,6 +108,7 @@ describe('CloudTelephonyGateway', () => {
     mockServer = {
       to: jest.fn().mockReturnThis(),
       emit: jest.fn(),
+      use: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -138,20 +123,12 @@ describe('CloudTelephonyGateway', () => {
           useValue: mockMessageBrokerService,
         },
         {
-          provide: JwtService,
-          useValue: mockJwtService,
-        },
-        {
-          provide: AppConfigService,
-          useValue: mockConfigService,
-        },
-        {
           provide: BroadcastMessageService,
           useValue: mockBroadcastMessageService,
         },
         {
-          provide: PermissionValidator,
-          useValue: mockPermissionValidator,
+          provide: WebSocketAuthMiddleware,
+          useValue: mockWebSocketAuthMiddleware,
         },
       ],
     }).compile();
@@ -159,40 +136,21 @@ describe('CloudTelephonyGateway', () => {
     gateway = module.get<CloudTelephonyGateway>(CloudTelephonyGateway);
     chatService = module.get(ChatService);
     messageBrokerService = module.get(MessageBrokerService);
-    jwtService = module.get(JwtService);
     broadcastMessageService = module.get(BroadcastMessageService);
     mockLogger = LoggerService.getInstance(CloudTelephonyGateway.name);
 
     // Set up the WebSocket server mock
     gateway.server = mockServer;
-
-    // Set up default mocks for ChatService (will be set up in individual tests as needed)
-    // chatService mocks are set up in individual tests
-
-    // Set up default mocks for PermissionValidator (already set in mock definition)
   });
 
   afterEach(() => {
     jest.clearAllMocks();
-
-    // Reset PermissionValidator mock to return true by default (user has permission)
-    mockPermissionValidator.validatePermissions.mockResolvedValue(true);
   });
 
   describe('handleConnection', () => {
     it('should authenticate client and set up session on successful connection', async () => {
-      jwtService.verifyAsync.mockResolvedValue(mockJwtPayload);
-
-      // Mock permission validation to return true (user has permission)
-      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
-
       // Call handleConnection
       await gateway.handleConnection(mockSocket);
-
-      // Verify JWT verification was called
-      expect(jwtService.verifyAsync).toHaveBeenCalledWith('valid-jwt-token', {
-        secret: 'test-secret',
-      });
 
       // Verify socket joined the room
       expect(mockSocket.join).toHaveBeenCalledWith('user-123');
@@ -209,50 +167,18 @@ describe('CloudTelephonyGateway', () => {
       );
     });
 
-    it('should disconnect client when no JWT token is provided', async () => {
-      mockSocket.handshake.auth = {};
+    it('should disconnect client when no user data is found', async () => {
+      mockSocket.data.user = null;
 
       await gateway.handleConnection(mockSocket);
 
       expect(mockLogger.error).toHaveBeenCalledWith(
-        'No JWT token provided for client socket-123',
-      );
-      expect(mockSocket.disconnect).toHaveBeenCalled();
-    });
-
-    it('should disconnect client when JWT verification fails', async () => {
-      jwtService.verifyAsync.mockRejectedValue(new Error('Invalid token'));
-
-      await gateway.handleConnection(mockSocket);
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'JWT verification failed for client socket-123:',
-        expect.any(Error),
-      );
-      expect(mockSocket.disconnect).toHaveBeenCalled();
-    });
-
-    it('should disconnect client when user does not have required permission', async () => {
-      jwtService.verifyAsync.mockResolvedValue({
-        ...mockJwtPayload,
-        role: UserRole.CLIENT,
-      });
-
-      // Mock permission validation to return false (user does NOT have permission)
-      mockPermissionValidator.validatePermissions.mockResolvedValue(false);
-
-      await gateway.handleConnection(mockSocket);
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'JWT verification failed for client socket-123:',
-        expect.any(UnauthorizedException),
+        'No user data found for authenticated client socket-123',
       );
       expect(mockSocket.disconnect).toHaveBeenCalled();
     });
 
     it('should set up event listeners for connect_error and disconnect', async () => {
-      jwtService.verifyAsync.mockResolvedValue(mockJwtPayload);
-
       await gateway.handleConnection(mockSocket);
 
       expect(mockSocket.on).toHaveBeenCalledWith(
@@ -285,7 +211,7 @@ describe('CloudTelephonyGateway', () => {
       );
       expect(gateway['sessions']['socket-123']).toBeUndefined();
       expect(mockLogger.info).toHaveBeenCalledWith(
-        '🔴 Client disconnected: socket-123',
+        'Client disconnected: socket-123',
       );
     });
 
@@ -501,12 +427,6 @@ describe('CloudTelephonyGateway', () => {
 
   describe('Integration Tests', () => {
     it('should handle complete connection lifecycle', async () => {
-      // Mock successful authentication
-      jwtService.verifyAsync.mockResolvedValue(mockJwtPayload);
-
-      // Mock permission validation to return true (user has permission)
-      mockPermissionValidator.validatePermissions.mockResolvedValue(true);
-
       // Handle connection
       await gateway.handleConnection(mockSocket);
 
@@ -549,21 +469,7 @@ describe('CloudTelephonyGateway', () => {
   });
 
   describe('Error Handling', () => {
-    it('should handle various service errors gracefully', async () => {
-      // Test JWT verification error
-      jwtService.verifyAsync.mockRejectedValue(new Error('Token expired'));
-
-      await gateway.handleConnection(mockSocket);
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'JWT verification failed for client socket-123:',
-        expect.any(Error),
-      );
-      expect(mockSocket.disconnect).toHaveBeenCalled();
-
-      // Reset mocks
-      jest.clearAllMocks();
-
+    it('should handle chat service errors gracefully', async () => {
       // Test chat service error
       gateway['sessions']['socket-123'] = mockSession;
       chatService.pauseOrResumeChat.mockRejectedValue(
@@ -573,9 +479,9 @@ describe('CloudTelephonyGateway', () => {
       await expect(
         gateway.handleAudioChatPaused(mockSocket, { chatId: 456 }),
       ).rejects.toThrow('Chat service error');
+    });
 
-      // Reset mocks
-      jest.clearAllMocks();
+    it('should handle broadcast service errors gracefully', async () => {
       gateway['sessions']['socket-123'] = mockSession;
 
       // Test broadcast service error

@@ -4,10 +4,11 @@ import {
   OnGatewayDisconnect,
   WebSocketServer,
   SubscribeMessage,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { LoggerService } from '../../logger/logger.service';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ChatService } from '../service/chat.service';
 import {
   AudioChatPlatform,
@@ -29,13 +30,12 @@ import { MessageBrokerService } from '../../message-broker/service/message-broke
 import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
 import { Message, MessageType } from '../entity/message.entity';
 import { ChatStatus } from '../entity/chat.entity';
-import { JwtService } from '@nestjs/jwt';
-import { AppConfigService } from '../../config/config.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
+import { WebSocketAuthMiddleware } from 'src/auth/middlewares/ws-auth.middleware';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
-import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -43,7 +43,7 @@ import { PermissionValidator } from 'src/authorization/service/permission-valida
 })
 @Injectable()
 export class MicrophoneChatGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   private readonly logger = LoggerService.getInstance(
     MicrophoneChatGateway.name,
@@ -57,22 +57,68 @@ export class MicrophoneChatGateway
     private chatService: ChatService,
     private streamFileProcessorService: StreamFileProcessorService,
     private publisher: MessageBrokerService,
-    private jwtService: JwtService,
-    private configService: AppConfigService,
     private broadcastMessageService: BroadcastMessageService,
+    private webSocketAuthMiddleware: WebSocketAuthMiddleware,
     private permissionValidator: PermissionValidator,
   ) {}
 
   @WebSocketServer() server!: Server;
 
+  afterInit(server: Server) {
+    this.logger.info(
+      'WebSocket server initialized, setting up authentication middleware',
+    );
+
+    server.use(
+      this.webSocketAuthMiddleware.webSocketMiddleware([
+        PERMISSIONS.START_MICROPHONE_CHAT,
+      ]),
+    );
+  }
+
   async handleConnection(client: Socket) {
     this.logger.info(`Client connected to microphone chat: ${client.id}`);
+    const user = client.data.user;
+    if (!user) {
+      this.logger.error(
+        `No user data found for authenticated client ${client.id}`,
+      );
+      client.disconnect();
+      return;
+    }
+    const room = `user-${user.id}`;
+    await client.join(room);
+    this.sessions[client.id] = {
+      id: client.id,
+      userId: user.id,
+      user: null,
+      type: 'user',
+      role: UserRole.COUNSELOR,
+      room,
+      provider: AudioChatProvider.MICROPHONE,
+      chatId: PLACEHOLDER_CHAT_ID,
+      tenantId: user.tenantId,
+    };
 
-    this.authenticateClient(client);
+    this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
+      participants: [user.id],
+      message: {
+        userId: user.id,
+        content: 'User session created',
+        messageType: MessageType.SYSTEM,
+      },
+      broadCastOptions: {
+        event: ChatEvents.SESSION_CREATED,
+      },
+    });
+
+    this.logger.info(
+      `Client ${client.id} authenticated and joined room ${room}`,
+    );
 
     client.on('connect_error', (err) => {
       this.logger.error(
-        `❌ Connection error for client co ${client.id} with error ${err.message}`,
+        `Connection error for client co ${client.id} with error ${err.message}`,
       );
     });
 
@@ -85,7 +131,7 @@ export class MicrophoneChatGateway
   }
 
   async handleDisconnect(client: Socket) {
-    this.logger.info(`🔴 Client disconnected: ${client.id}`);
+    this.logger.info(`Client disconnected: ${client.id}`);
     const clientId = client.id;
     const session = this.sessions[clientId];
     if (!session) {
@@ -114,7 +160,7 @@ export class MicrophoneChatGateway
         });
       } catch (error) {
         this.logger.error(
-          `❌ Failed to end chat for client ${clientId} | session chatId: ${session.chatId} | error: ${error.message}`,
+          `Failed to end chat for client ${clientId} | session chatId: ${session.chatId} | error: ${error.message}`,
         );
         this.auditLogger.log({
           eventType: AUDIT_EVENTS.CALL_END_FAILED,
@@ -129,6 +175,7 @@ export class MicrophoneChatGateway
         });
       }
     }
+    // Broadcast disconnection
     this.broadcastMessageService.broadcastUserDisconnectedMessage(
       MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE,
       {
@@ -167,76 +214,6 @@ export class MicrophoneChatGateway
         payload: message,
       });
     });
-  }
-
-  private async authenticateClient(client: Socket) {
-    const token = client.handshake.auth?.token;
-    if (!token) {
-      this.logger.error(`No JWT token provided for client ${client.id}`);
-      client.disconnect();
-      return;
-    }
-
-    try {
-      const payload = await this.jwtService.verifyAsync(token, {
-        secret: this.configService.jwt.accessToken.secret,
-      });
-
-      const userId = parseInt(payload.sub);
-      const hasAccess = await this.permissionValidator.validatePermissions(
-        userId,
-        [PERMISSIONS.START_MICROPHONE_CHAT],
-      );
-
-      if (!hasAccess) {
-        throw new UnauthorizedException(
-          `User ${payload.sub} does not have permission to start microphone chat`,
-        );
-      }
-
-      const user = {
-        id: userId,
-        username: payload.username,
-        tenantId: payload.tenantId,
-      };
-
-      const room = `user-${userId}`;
-      client.join(room);
-
-      this.sessions[client.id] = {
-        id: client.id,
-        userId: +userId,
-        user: null,
-        type: 'user',
-        role: UserRole.COUNSELOR,
-        room,
-        provider: AudioChatProvider.MICROPHONE,
-        chatId: PLACEHOLDER_CHAT_ID,
-        tenantId: user.tenantId,
-      };
-
-      this.publisher.publish(MessageBrokerChannel.CHAT_MESSAGE_MICROPHONE, {
-        participants: [+userId],
-        message: {
-          userId: +userId,
-          content: 'User session created',
-          messageType: MessageType.SYSTEM,
-        },
-        broadCastOptions: {
-          event: ChatEvents.SESSION_CREATED,
-        },
-      });
-
-      this.logger.info(
-        `Client ${client.id} authenticated and joined room ${room}`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `JWT verification failed for client ${client.id}:`,
-        error,
-      );
-      client.disconnect();
-    }
   }
 
   private async logErrorAudioCallAuditEvent(
@@ -290,7 +267,7 @@ export class MicrophoneChatGateway
     );
 
     if (activeChat) {
-      this.logger.error(`❌ User ${session.userId} already has an active chat`);
+      this.logger.error(`User ${session.userId} already has an active chat`);
       this.logErrorAudioCallAuditEvent(
         session,
         activeChat.id,
@@ -299,7 +276,6 @@ export class MicrophoneChatGateway
       client.disconnect();
       return;
     }
-
     // Start call stream with chat creation in transaction
     try {
       await this.streamFileProcessorService.startCallStream(
@@ -335,7 +311,7 @@ export class MicrophoneChatGateway
       );
     } catch (error) {
       this.logger.error(
-        `❌ Failed to start call stream for client ${client.id}:`,
+        `Failed to start call stream for client ${client.id}:`,
         error,
       );
       client.disconnect();
