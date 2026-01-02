@@ -475,9 +475,15 @@ export class AuthService {
 
   async verifyGoogleIdToken(idToken: string): Promise<TokenPayload> {
     try {
+      const allowedAudiences = [
+        this.configService.googleAuth.androidClientId,
+        this.configService.googleAuth.iosClientId,
+        this.configService.googleAuth.webClientId,
+      ] as string[];
+
       const ticket = await this.googleClient.verifyIdToken({
         idToken,
-        audience: this.configService.googleAuth.clientId,
+        audience: allowedAudiences,
       });
 
       const payload = ticket.getPayload();

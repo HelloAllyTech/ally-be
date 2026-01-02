@@ -94,5 +94,7 @@ export const validationSchema = Joi.object({
   PROJECT_ID: Joi.string().required(),
 
   //google oauth
-  GOOGLE_CLIENT_ID: Joi.string().required(),
+  GOOGLE_WEB_CLIENT_ID: Joi.string().required(),
+  GOOGLE_IOS_CLIENT_ID: Joi.string().required(),
+  GOOGLE_ANDROID_CLIENT_ID: Joi.string().required(),
 });
