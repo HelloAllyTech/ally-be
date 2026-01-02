@@ -282,7 +282,11 @@ export class AppConfigService {
 
   get googleAuth() {
     return {
-      clientId: this.configService.get<string>('GOOGLE_CLIENT_ID'),
+      webClientId: this.configService.get<string>('GOOGLE_WEB_CLIENT_ID'),
+      iosClientId: this.configService.get<string>('GOOGLE_IOS_CLIENT_ID'),
+      androidClientId: this.configService.get<string>(
+        'GOOGLE_ANDROID_CLIENT_ID',
+      ),
     };
   }
 }
