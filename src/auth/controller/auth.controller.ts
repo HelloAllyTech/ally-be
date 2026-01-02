@@ -27,6 +27,7 @@ import { ApiBody, ApiTags } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { GoogleIdTokenDto } from '../dto/google-token.dto';
 
 @Controller({
   path: 'auth',
@@ -134,5 +135,17 @@ export class AuthController {
     return await this.permissionsService.getUserPermissions(
       parseInt(req.user.id),
     );
+  }
+
+  @Post('google')
+  async googleAuth(
+    @Body() googleIdTokenDto: GoogleIdTokenDto,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
+    const payload = await this.authService.verifyGoogleIdToken(
+      googleIdTokenDto.idToken,
+    );
+    const user = await this.authService.findGoogleUser(payload);
+
+    return this.authService.generateTokens(user);
   }
 }

@@ -19,6 +19,7 @@ import { AuthUtil } from '../util/auth.util';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { GroupService } from 'src/authorization/service/group.service';
+import { OAuth2Client, TokenPayload } from 'google-auth-library';
 import {
   GenerateOtpV2Dto,
   GenerateOtpV2ResponseDto,
@@ -37,6 +38,7 @@ export class AuthService {
   private userGroupRepository: Repository<UserGroup>;
   private groupRepository: Repository<Group>;
   private readonly auditLogger = AuditLoggerService.getInstance();
+  private readonly googleClient: OAuth2Client;
   constructor(
     private dataSource: DataSource,
     private jwtService: JwtService,
@@ -52,6 +54,7 @@ export class AuthService {
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
     this.OTP_TTL = +this.configService.otp.ttl;
+    this.googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID!);
   }
 
   // ... existing validateUser and validateUserById methods ...
@@ -76,7 +79,7 @@ export class AuthService {
     return result;
   }
 
-  private async generateTokens(
+  async generateTokens(
     user: User,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const payload = {
@@ -468,5 +471,34 @@ export class AuthService {
 
   private getOtpKey(email: string) {
     return `otp:${email}`;
+  }
+
+  async verifyGoogleIdToken(idToken: string): Promise<TokenPayload> {
+    try {
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken,
+        audience: this.configService.googleAuth.clientId,
+      });
+
+      const payload = ticket.getPayload();
+
+      if (!payload) {
+        throw new UnauthorizedException('Invalid Google token');
+      }
+      return payload;
+    } catch {
+      throw new UnauthorizedException('Invalid Google token');
+    }
+  }
+
+  async findGoogleUser(payload: TokenPayload) {
+    const { email } = payload;
+    const user = await this.userRepository.findOne({
+      where: { email },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    return user;
   }
 }
