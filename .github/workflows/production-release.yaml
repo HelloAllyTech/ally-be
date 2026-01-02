@@ -227,6 +227,15 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Download Google Credentials from S3
+        run: |
+          # Create a directory for the credentials
+          mkdir -p gcloud/
+
+           # Download and Copy the credentials file from S3
+          aws s3 cp ${{ secrets.GOOGLE_CREDENTIALS_S3_URL_PRD }} gcloud/application_default_credentials.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=gcloud/application_default_credentials.json" >> $GITHUB_ENV
+
       - name: Build and Push Docker image with version tags
         id: build-push
         run: |
@@ -379,6 +388,7 @@ jobs:
           DELIMITER="CHANGELOG_END_$(date +%s)"
           echo "CHANGELOG<<${DELIMITER}" >> $GITHUB_OUTPUT
           cat CHANGELOG.md >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
           echo "${DELIMITER}" >> $GITHUB_OUTPUT
 
       - name: Create Release Draft
@@ -409,7 +419,6 @@ jobs:
             ---
             
             **Note**: This is a draft release. Please review and publish when ready.
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

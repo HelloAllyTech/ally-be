@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsObject } from 'class-validator';
+import { IsString, IsNotEmpty, IsObject, IsNumber } from 'class-validator';
 
 export class CreateScenarioVoiceDto {
   @ApiProperty({
@@ -28,4 +28,12 @@ export class CreateScenarioVoiceDto {
   @IsObject()
   @IsNotEmpty()
   config!: Record<string, any>;
+
+  @ApiProperty({
+    description: 'Language ID for the scenario voice',
+    example: 1,
+  })
+  @IsNumber()
+  @IsNotEmpty()
+  languageId!: number;
 }

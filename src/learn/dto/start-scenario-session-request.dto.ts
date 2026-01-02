@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber, Max, IsOptional, IsString } from 'class-validator';
+import { IsNumber, Max, IsString, IsOptional } from 'class-validator';
 import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from '../constants/scenario-session.constants';
 
 export class StartScenarioSessionRequestDto {
@@ -26,4 +26,20 @@ export class StartScenarioSessionRequestDto {
   @IsNumber()
   @Max(DEFAULT_SCENARIO_SESSION_TTL_SECONDS)
   ttl?: number;
+
+  @ApiProperty({
+    description: 'Language ID',
+    example: 4,
+  })
+  @IsOptional()
+  @IsNumber()
+  languageId!: number;
+
+  @ApiProperty({
+    description: 'Voice ID',
+    example: 'voice-123',
+  })
+  @IsOptional()
+  @IsString()
+  voiceId?: string;
 }

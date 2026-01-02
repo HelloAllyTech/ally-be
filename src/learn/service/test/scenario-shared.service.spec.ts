@@ -8,11 +8,13 @@ import { Scenarios } from '../../entity/scenarios.entity';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
 import { ScenarioStatus } from '../../type/scenario.type';
 import { ScenarioFilters } from 'src/learn/type/scenario-filter.type';
+import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 
 describe('ScenarioSharedService', () => {
   let service: ScenarioSharedService;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
   let scenarioSessionRepository: jest.Mocked<ScenarioSessionRepository>;
+  let scenarioTranslationsRepository: jest.Mocked<ScenarioTranslationsRepository>;
 
   const mockScenarios: Scenarios[] = [
     { id: 1, title: 'Scenario 1', status: ScenarioStatus.ACTIVE } as Scenarios,
@@ -40,6 +42,10 @@ describe('ScenarioSharedService', () => {
       findOne: jest.fn(),
     };
 
+    const mockScenarioTranslationsRepository = {
+      getUniqueLanguagesFromScenarioTranslations: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSharedService,
@@ -55,12 +61,17 @@ describe('ScenarioSharedService', () => {
           provide: ScenarioPathItemRepository,
           useValue: mockScenarioPathItemRepo,
         },
+        {
+          provide: ScenarioTranslationsRepository,
+          useValue: mockScenarioTranslationsRepository,
+        },
       ],
     }).compile();
 
     service = module.get<ScenarioSharedService>(ScenarioSharedService);
     scenariosRepository = module.get(ScenariosRepository);
     scenarioSessionRepository = module.get(ScenarioSessionRepository);
+    scenarioTranslationsRepository = module.get(ScenarioTranslationsRepository);
 
     jest.clearAllMocks();
   });
@@ -172,6 +183,41 @@ describe('ScenarioSharedService', () => {
       expect(scenariosRepository.findOne).toHaveBeenCalledWith({
         where: { id: 999 },
       });
+    });
+  });
+
+  describe('getUniqueLanguagesFromScenarioTranslations', () => {
+    it('should return unique language IDs from scenario translations', async () => {
+      // Mock the repository method
+      scenarioTranslationsRepository.getUniqueLanguagesFromScenarioTranslations =
+        jest.fn().mockResolvedValue([1, 2, 3]);
+
+      const result = await service.getUniqueLanguagesFromScenarioTranslations();
+
+      expect(result).toEqual([1, 2, 3]);
+      expect(
+        scenarioTranslationsRepository.getUniqueLanguagesFromScenarioTranslations,
+      ).toHaveBeenCalled();
+    });
+
+    it('should return an empty array when no translations exist', async () => {
+      scenarioTranslationsRepository.getUniqueLanguagesFromScenarioTranslations =
+        jest.fn().mockResolvedValue([]);
+
+      const result = await service.getUniqueLanguagesFromScenarioTranslations();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should handle repository errors gracefully', async () => {
+      const error = new Error('Database error');
+      scenarioTranslationsRepository.getUniqueLanguagesFromScenarioTranslations =
+        jest.fn().mockRejectedValue(error);
+
+      // Option 1: Test that the error is re-thrown
+      await expect(
+        service.getUniqueLanguagesFromScenarioTranslations(),
+      ).rejects.toThrow('Database error');
     });
   });
 });

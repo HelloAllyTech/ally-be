@@ -22,7 +22,6 @@ export const SCENARIO_MANDATORY_FIELDS: (keyof CreateScenarioDto)[] = [
   'description',
   'coverImageUrl',
   'difficultyLevel',
-  'voiceId',
   'name',
   'age',
   'gender',
@@ -33,5 +32,7 @@ export const SCENARIO_MANDATORY_FIELDS: (keyof CreateScenarioDto)[] = [
   'sexualOrientation',
   'context',
   'openingStatements',
+  'voiceId',
+  'languageVoices',
   'agentDialogues',
 ];

@@ -36,7 +36,14 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
 import { v4 } from 'uuid';
-import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from '../constants/scenario-session.constants';
+import {
+  DEFAULT_LANGUAGE_CODE,
+  DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
+  LANGUAGE_LLM_PROVIDER_CONFIG,
+  LANGUAGE_STT_PROVIDER_CONFIG,
+  SCENARIO_SESSION_TRANSLATABLE_FIELDS,
+  STT_LLM_PROVIDER_CONFIG,
+} from '../constants/scenario-session.constants';
 import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
 import { ScenarioStatus } from '../type/scenario.type';
@@ -52,7 +59,12 @@ import {
   ExecutionContextPropagation,
   WithExecutionContext,
 } from 'src/common/decorator/execution.context.decorator';
+import { ScenarioTranslationsRepository } from '../repository/scenario-translations.repository';
+import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
+import { LanguageCode } from '../type/scenario-language-voice.type';
 import { getActiveScenarioMandatoryFields } from '../util/scenario.util';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -73,6 +85,10 @@ export class ScenarioSessionService {
     private simulationCreditsService: SimulationCreditsService,
     private configService: AppConfigService,
     private scenarioPathSharedService: ScenarioPathSharedService,
+    private scenarioTranslationRepository: ScenarioTranslationsRepository,
+    private sessionEventTranslationService: SessionEventTranslationService,
+    private sharedLanguageService: SharedLanguageService,
+    private scenarioVoicesRepository: ScenarioVoicesRepository,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -152,21 +168,91 @@ export class ScenarioSessionService {
       startScenarioSessionDto.scenarioPathSessionItemId,
     );
 
+    const languageId = startScenarioSessionDto?.languageId;
+
+    const { enLanguageDetails, languageDetails } =
+      await this.getLanguageDetailsForScenarioSession(languageId);
+
     // Get all session events for this scenario
-    const sessionEvents =
-      await this.sessionEventService.getSessionEventsByScenarioId(
-        startScenarioSessionDto.scenarioId,
+    let sessionEvents = [];
+
+    // Check if language is not English
+    const isOtherLanguage =
+      languageId && enLanguageDetails && languageId !== enLanguageDetails.id;
+
+    // If language is not English, get translated session events
+    sessionEvents = isOtherLanguage
+      ? await this.sessionEventTranslationService.getSessionEventsTranslationsByScenarioId(
+          startScenarioSessionDto.scenarioId,
+          languageId,
+        )
+      : await this.sessionEventService.getSessionEventsByScenarioId(
+          startScenarioSessionDto.scenarioId,
+        );
+
+    // Update termination (Translated Version) event if language is not English
+    if (isOtherLanguage && scenario?.terminationEvent?.eventId) {
+      const translatedTerminationEvent = sessionEvents.find(
+        (event) => event.id === scenario?.terminationEvent?.eventId,
       );
 
+      if (translatedTerminationEvent) {
+        scenario.terminationEvent = {
+          ...translatedTerminationEvent,
+          eventId: translatedTerminationEvent.id,
+          autoTerminationStatus: true,
+        };
+      }
+    }
+
+    // Determine voiceId from scenario metadata languageVoices if languageId is provided or from metadata voiceId if languageId is not provided
+    let voiceId = languageId
+      ? scenario?.metadata?.languageVoices?.[languageId]
+      : scenario?.metadata?.voiceId;
+
+    // If voiceId is not found, get fallback voice for language and gender
+    if (!voiceId && languageId) {
+      const voiceDetails = await this.getFallbackVoiceForLanguageGender(
+        languageId,
+        scenario?.metadata?.gender,
+      );
+      voiceId = voiceDetails?.id;
+    }
+
+    if (!voiceId) {
+      throw new BadRequestException('Voice not found');
+    }
+
+    // Update metadata with resolved voiceId
+    if (scenario?.metadata) {
+      scenario.metadata.voiceId = voiceId;
+    }
+
+    // Create start scenario session data
+    const startScenarioSessionDtoData = {
+      ...startScenarioSessionDto,
+      scenarioPathSessionItemId:
+        startScenarioSessionDto.scenarioPathSessionItemId,
+      voiceId,
+    };
     // Create scenario session record
     const scenarioSession =
       await this.scenarioSessionRepository.createScenarioSession(counselorId, {
-        ...startScenarioSessionDto,
-        scenarioPathSessionItemId:
-          startScenarioSessionDto.scenarioPathSessionItemId,
+        ...startScenarioSessionDtoData,
       });
 
     try {
+      // To add language and languageId to scenario metadata
+      if (scenario?.metadata) {
+        scenario.metadata.language =
+          languageDetails?.value ?? DEFAULT_LANGUAGE_CODE;
+
+        scenario.metadata.languageId = languageId ?? enLanguageDetails?.id;
+
+        // Added defaultLanguageId to metadata to avoid database calls and use it for translation checks in createRoomMetadata.
+        scenario.metadata.defaultLanguageId = enLanguageDetails?.id;
+      }
+
       // Prepare room metadata with events and dependencies
       const roomMetadata = await this.createRoomMetadata(
         scenario,
@@ -210,19 +296,42 @@ export class ScenarioSessionService {
     }
   }
 
+  private async getFallbackVoiceForLanguageGender(
+    languageId: number,
+    gender: string,
+  ) {
+    const voiceDetails = await this.scenarioVoicesRepository.getFallbackVoice(
+      languageId,
+      gender,
+    );
+    return voiceDetails;
+  }
+
   private async createRoomMetadata(
     scenario: GetAdminScenarioDto,
     sessionEvents: SessionEvents[],
   ) {
     const { metadata, terminationEvent, ...scenarioDataWithoutMetadata } =
       scenario;
-    const { voiceId, ...promptData } = metadata as Record<string, any>;
+
+    const { voiceId, promptData } = await this.getScenarioTranslationData(
+      {
+        ...metadata,
+        title: scenario.title,
+        description: scenario.description,
+      },
+      scenario.id,
+    );
+
+    const languageCode = metadata?.language as LanguageCode;
 
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
-      promptData,
+      // Ensure we have values even if not translated
+      title: promptData?.title || scenario.title,
+      description: promptData?.description || scenario.description,
+      promptData: promptData,
     };
-
     const scenarioVoice = await this.scenarioService.getScenarioVoice(voiceId);
 
     const triggerEvents = new Set<string>();
@@ -237,6 +346,7 @@ export class ScenarioSessionService {
     // Add termination event ID to be fetched if needed
     const idsToProcess = new Set<string>();
     if (terminationEvent?.eventId && !eventMap.has(terminationEvent.eventId)) {
+      triggerEvents.add(terminationEvent.eventId);
       idsToProcess.add(terminationEvent.eventId);
     }
 
@@ -326,6 +436,13 @@ export class ScenarioSessionService {
       scenario: {
         ...scenarioData,
         voice: scenarioVoice,
+        ...(metadata?.language && {
+          languageCode: languageCode,
+        }),
+        ...(LANGUAGE_STT_PROVIDER_CONFIG[languageCode] ||
+          STT_LLM_PROVIDER_CONFIG),
+        ...(LANGUAGE_LLM_PROVIDER_CONFIG[languageCode] ||
+          STT_LLM_PROVIDER_CONFIG),
         events: allEvents,
         triggerEvents: Array.from(triggerEvents),
         autoTerminationEvent,
@@ -736,13 +853,71 @@ export class ScenarioSessionService {
     previewScenarioDto: PreviewScenarioDto,
     userId: number,
   ) {
-    const { scenarioId } = previewScenarioDto;
+    const { scenarioId, languageId } = previewScenarioDto;
+
     const scenario = await this.scenarioService.getAdminScenario(scenarioId);
 
     await this.validatePreviewScenario(scenario);
 
-    const sessionEvents =
-      await this.sessionEventService.getSessionEventsByScenarioId(scenarioId);
+    const { enLanguageDetails, languageDetails } =
+      await this.getLanguageDetailsForScenarioSession(languageId);
+
+    // Check if language is not English
+    const isOtherLanguage =
+      languageId && enLanguageDetails && languageId !== enLanguageDetails.id;
+
+    // If language is not English, get translated session events
+    const sessionEvents = isOtherLanguage
+      ? await this.sessionEventTranslationService.getSessionEventsTranslationsByScenarioId(
+          scenarioId,
+          languageId,
+        )
+      : await this.sessionEventService.getSessionEventsByScenarioId(scenarioId);
+
+    // Update termination (Translated Version) event if language is not English
+    if (isOtherLanguage && scenario?.terminationEvent?.eventId) {
+      const terminationEventId = scenario.terminationEvent.eventId;
+      const translatedTerminationEvent = sessionEvents.find(
+        (event) => event.id === terminationEventId,
+      );
+
+      if (translatedTerminationEvent) {
+        scenario.terminationEvent = {
+          ...translatedTerminationEvent,
+          eventId: translatedTerminationEvent.id,
+          autoTerminationStatus: true,
+        };
+      }
+    }
+
+    // Determine voiceId from scenario metadata languageVoices if languageId is provided or from metadata voiceId if languageId is not provided
+    let voiceId = languageId
+      ? scenario?.metadata?.languageVoices?.[languageId]
+      : scenario?.metadata?.voiceId;
+
+    // If languageId is provided and voiceId is not found, get fallback voice for language and gender
+    if (!voiceId && languageId) {
+      const voiceDetails = await this.getFallbackVoiceForLanguageGender(
+        languageId,
+        scenario?.metadata?.gender,
+      );
+      voiceId = voiceDetails?.id;
+    }
+
+    if (!voiceId) {
+      throw new BadRequestException('Voice ID not found for scenario');
+    }
+
+    // To add voice, language and languageId to scenario metadata
+    if (scenario?.metadata) {
+      scenario.metadata.voiceId = voiceId;
+      scenario.metadata.language =
+        languageDetails?.value ?? DEFAULT_LANGUAGE_CODE;
+      scenario.metadata.languageId = languageId ?? enLanguageDetails?.id;
+
+      // Added defaultLanguageId to metadata to avoid database calls and use it for translation checks in createRoomMetadata.
+      scenario.metadata.defaultLanguageId = enLanguageDetails?.id;
+    }
 
     const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
     const roomName = `preview-${scenarioId}-${v4()}`;
@@ -800,5 +975,95 @@ export class ScenarioSessionService {
       where: { scenarioPathSessionItemId },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  private async getScenarioTranslationData(metadata: any, scenarioId: number) {
+    const { voiceId, languageId, language, defaultLanguageId, ...promptData } =
+      metadata ?? {};
+
+    // If language is English (by languageId), return original data
+    const langIsEnglish = languageId === defaultLanguageId;
+
+    if (langIsEnglish) {
+      return {
+        voiceId,
+        promptData: {
+          ...promptData,
+          languageId,
+          language,
+        },
+      };
+    }
+
+    // Fetch translation for non-English language
+    const translations = await this.scenarioTranslationRepository.findOne({
+      select: ['id', 'metadata'],
+      where: { scenarioId, languageId },
+    });
+
+    if (!translations?.metadata) {
+      return { voiceId, promptData };
+    }
+
+    // Accept either object or JSON-string metadata
+    let translationMetadata: Record<string, any> = {};
+    if (typeof translations.metadata === 'string') {
+      try {
+        translationMetadata = JSON.parse(translations.metadata);
+      } catch (e) {
+        // malformed JSON — skip applying translation (or log if desired)
+        translationMetadata = {};
+      }
+    } else if (typeof translations.metadata === 'object') {
+      translationMetadata = translations.metadata;
+    }
+
+    // Apply only the translatable fields if present
+    for (const field of SCENARIO_SESSION_TRANSLATABLE_FIELDS) {
+      if (
+        Object.prototype.hasOwnProperty.call(translationMetadata, field) &&
+        translationMetadata[field] != null &&
+        translationMetadata[field] !== ''
+      ) {
+        promptData[field] = translationMetadata[field];
+      }
+    }
+
+    return {
+      voiceId,
+      promptData: {
+        ...promptData,
+        languageId,
+        language,
+      },
+    };
+  }
+
+  private async getLanguageDetailsForScenarioSession(
+    languageId: number | undefined,
+  ) {
+    const enLanguageDetails =
+      await this.sharedLanguageService.getLanguageByLanguageCode(
+        DEFAULT_LANGUAGE_CODE,
+      );
+
+    if (!languageId) {
+      return {
+        enLanguageDetails: enLanguageDetails,
+        languageDetails: null,
+      };
+    }
+
+    const languageDetails = await this.sharedLanguageService.getLanguagesByIds([
+      languageId,
+    ]);
+
+    return {
+      enLanguageDetails: enLanguageDetails,
+      languageDetails:
+        languageDetails && languageDetails.length > 0
+          ? languageDetails[0]
+          : null,
+    };
   }
 }

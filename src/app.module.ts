@@ -31,6 +31,7 @@ import { SessionEventModule } from './session-event/session-event.module';
 import { AuthorizationModule } from './authorization/authorization.module';
 import { PlaceModule } from './place/place.module';
 import { ScenarioPathModule } from './scenario-path/scenario-path.module';
+import { LanguageModule } from './language/language.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { ScenarioPathModule } from './scenario-path/scenario-path.module';
     AuthorizationModule,
     PlaceModule,
     ScenarioPathModule,
+    LanguageModule,
   ],
   controllers: [],
   providers: [

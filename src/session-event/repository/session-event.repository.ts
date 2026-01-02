@@ -100,7 +100,7 @@ export class SessionEventRepository extends Repository<SessionEvents> {
         'scenarioEvents.eventId = sessionEvents.id',
       )
       .where(
-        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') `,
+        `(scenarioEvents.scenarioId = :scenarioId AND sessionEvents.visibilityType = '${SessionEventVisibilityType.ACTIVE}') AND scenarioEvents.autoTerminationStatus = false`,
         {
           scenarioId,
         },

@@ -270,4 +270,23 @@ export class AppConfigService {
         'true',
     };
   }
+
+  get googleCloudTranslationConfig() {
+    return {
+      credentials: this.configService.get<string>(
+        'GOOGLE_APPLICATION_CREDENTIALS',
+      ),
+      projectId: this.configService.get<string>('PROJECT_ID'),
+    };
+  }
+
+  get googleAuth() {
+    return {
+      webClientId: this.configService.get<string>('GOOGLE_WEB_CLIENT_ID'),
+      iosClientId: this.configService.get<string>('GOOGLE_IOS_CLIENT_ID'),
+      androidClientId: this.configService.get<string>(
+        'GOOGLE_ANDROID_CLIENT_ID',
+      ),
+    };
+  }
 }

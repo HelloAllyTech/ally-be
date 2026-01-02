@@ -8,6 +8,7 @@ import { TenantModule } from 'src/tenant/tenant.module';
 import { LearnModule } from 'src/learn/learn.module';
 import { AuthorizationModule } from 'src/authorization/authorization.module';
 import { User } from './entity/user.entity';
+import { UserPreferencesRepository } from './repository/user-prefernces.repository';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { User } from './entity/user.entity';
     forwardRef(() => TenantModule),
     AuthorizationModule,
   ],
-  providers: [UserService, UserRepository],
+  providers: [UserService, UserRepository, UserPreferencesRepository],
   controllers: [UserController],
   exports: [UserService, UserRepository],
 })

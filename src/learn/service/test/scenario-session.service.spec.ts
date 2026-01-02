@@ -30,6 +30,11 @@ import { ScenarioService } from '../scenario.service';
 import { SimulationCreditsService } from '../simulation-credits.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
+import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
+import { SCENARIO_SESSION_TRANSLATABLE_FIELDS } from 'src/learn/constants/scenario-session.constants';
+import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
+import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -61,7 +66,10 @@ describe('ScenarioSessionService', () => {
   let scenarioTenantService: jest.Mocked<ScenarioTenantService>;
   let scenarioPathSessionService: jest.Mocked<ScenarioPathSessionService>;
   let scenarioPathSharedService: jest.Mocked<ScenarioPathSharedService>;
+  let scenarioTranslationRepository: jest.Mocked<ScenarioTranslationsRepository>;
+  let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let mockConfigService: any;
+  let scenarioVoicesRepository: jest.Mocked<ScenarioVoicesRepository>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -93,7 +101,7 @@ describe('ScenarioSessionService', () => {
     coverImageUrl: 'https://example.com/image.jpg',
     status: ScenarioStatus.ACTIVE,
     prompt: 'You are a counselor',
-    metadata: undefined,
+    metadata: {},
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -134,6 +142,7 @@ describe('ScenarioSessionService', () => {
       findOne: jest.fn(),
       update: jest.fn(),
       getScenarioSessionScore: jest.fn(),
+      delete: jest.fn(),
     };
 
     const mockScenarioSessionMessagesRepo = {
@@ -217,6 +226,27 @@ describe('ScenarioSessionService', () => {
       getScenarioPathTenant: jest.fn(),
     };
 
+    const mockScenarioTranslationsRepository = {
+      getScenarioTranslationsByScenarioId: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue({
+        id: 1,
+        metadata: { title: 'Prueba' },
+      }),
+    };
+
+    const mockSessionEventTranslationService = {
+      getSessionEventsTranslationsByScenarioId: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockSharedLanguageService = {
+      getLanguagesByIds: jest.fn(),
+      getLanguageByLanguageCode: jest.fn(),
+    };
+
+    const mockScenarioVoicesRepository = {
+      getFallbackVoice: jest.fn().mockResolvedValue([]),
+    };
+
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -281,6 +311,22 @@ describe('ScenarioSessionService', () => {
           provide: ScenarioPathSharedService,
           useValue: mockScenarioPathSharedService,
         },
+        {
+          provide: ScenarioTranslationsRepository,
+          useValue: mockScenarioTranslationsRepository,
+        },
+        {
+          provide: SessionEventTranslationService,
+          useValue: mockSessionEventTranslationService,
+        },
+        {
+          provide: SharedLanguageService,
+          useValue: mockSharedLanguageService,
+        },
+        {
+          provide: ScenarioVoicesRepository,
+          useValue: mockScenarioVoicesRepository,
+        },
       ],
     }).compile();
 
@@ -302,6 +348,9 @@ describe('ScenarioSessionService', () => {
     scenarioTenantService = module.get(ScenarioTenantService);
     scenarioPathSessionService = module.get(ScenarioPathSessionService);
     scenarioPathSharedService = module.get(ScenarioPathSharedService);
+    scenarioTranslationRepository = module.get(ScenarioTranslationsRepository);
+    sessionEventTranslationService = module.get(SessionEventTranslationService);
+    scenarioVoicesRepository = module.get(ScenarioVoicesRepository);
   });
 
   afterEach(() => {
@@ -327,6 +376,7 @@ describe('ScenarioSessionService', () => {
       expect(scenarioTenantService).toBeDefined();
       expect(scenarioPathSessionService).toBeDefined();
       expect(scenarioPathSharedService).toBeDefined();
+      expect(sessionEventTranslationService).toBeDefined();
     });
   });
 
@@ -654,6 +704,7 @@ describe('ScenarioSessionService', () => {
           openingStatements: ['Opening'],
           responseLength: 'short',
           agentDialogues: 'Sample dialogue',
+          languageVoices: { 1: 'voice-123' },
         },
         isGlobal: false,
       };
@@ -689,7 +740,71 @@ describe('ScenarioSessionService', () => {
       expect(result.roomName).toMatch(/^preview-\d+-/);
       expect(result.accessToken).toEqual(mockTokenResponse);
     });
+    it('should use default voice ID from languageVoices when not set in metadata', async () => {
+      const scenarioWithoutVoiceId = {
+        ...mockScenario,
+        metadata: {
+          agentGoal: 'Help the client',
+          lifeHistory: 'Life history',
+          voiceId: 'voice-123',
+          name: 'Test Client',
+          age: 25,
+          gender: 'female',
+          currentLocation: 'New York',
+          context: 'Context',
+          openingStatements: ['Opening', 'Opening 2'],
+          // language ID 1 will be returned as default language
+          languageVoices: { 1: 'voice-123' },
+          difficultyLevel: 'medium',
+          responseLength: 'medium',
+          genderIdentity: 'female',
+          sexualOrientation: 'heterosexual',
+          agentDialogues: ['Hello, how can I help you?'],
+        },
+      };
 
+      const mockTokenResponse = {
+        token: 'access-token-123',
+        roomName: 'preview-room',
+        serverUrl: 'https://livekit.example.com',
+      };
+
+      const mockFallbackVoice = {
+        id: 'voice-123',
+        name: 'Test Voice',
+        config: {
+          age: 'adult',
+          name: 'priyanka',
+          model: 'aura-2-luna-en',
+          gender: 'female',
+          voiceId: 'aura-2-luna-en',
+        },
+      };
+
+      const mockPreviewDto = { scenarioId: mockScenarioId, languageId: 1 };
+
+      scenarioService.getAdminScenario.mockResolvedValue(
+        scenarioWithoutVoiceId as any,
+      );
+
+      sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+
+      sessionEventTranslationService.getSessionEventsTranslationsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      scenarioVoicesRepository.getFallbackVoice.mockResolvedValue(
+        mockFallbackVoice as any,
+      );
+
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue(mockTokenResponse);
+
+      await service.previewScenario(mockPreviewDto, mockUserId);
+
+      expect(scenarioWithoutVoiceId.metadata.voiceId).toBe('voice-123');
+    });
     it('should throw BadRequestException for scenario with invalid status', async () => {
       const previewDto = { scenarioId: mockScenarioId };
       const mockInvalidScenario = {
@@ -774,6 +889,82 @@ describe('ScenarioSessionService', () => {
     });
   });
 
+  describe('getScenarioTranslationData', () => {
+    it('should return original data when no language is specified', async () => {
+      const metadata = { voiceId: 'test-voice', title: 'Test' };
+      const result = await (service as any).getScenarioTranslationData(
+        metadata,
+        1,
+      );
+      expect(result).toEqual({
+        voiceId: 'test-voice',
+        promptData: { title: 'Test' },
+      });
+    });
+
+    it('should return translated data when language is not English', async () => {
+      // Mock the repository to return our translation
+      const mockTranslation = {
+        id: 1,
+        metadata: {
+          title: 'Prueba',
+          description: 'Descripción de prueba',
+          instructions: 'Instrucciones de prueba',
+        },
+      };
+      scenarioTranslationRepository.findOne.mockResolvedValue(
+        mockTranslation as any,
+      );
+
+      // Create test data with language that's not English
+      const metadata = {
+        voiceId: 'test-voice',
+        title: 'Test',
+        language: 'es-ES',
+        description: 'Test description',
+        instructions: 'Test instructions',
+        languageId: 2,
+        defaultLanguageId: 1,
+      };
+
+      // Save the original fields and replace with our test fields
+      const originalFields = [...SCENARIO_SESSION_TRANSLATABLE_FIELDS];
+      SCENARIO_SESSION_TRANSLATABLE_FIELDS.length = 0;
+      SCENARIO_SESSION_TRANSLATABLE_FIELDS.push(
+        'title',
+        'description',
+        'instructions',
+      );
+
+      try {
+        const result = await (service as any).getScenarioTranslationData(
+          metadata,
+          1,
+        );
+
+        expect(result).toEqual({
+          voiceId: 'test-voice',
+          promptData: {
+            title: 'Prueba',
+            description: 'Descripción de prueba',
+            instructions: 'Instrucciones de prueba',
+            language: 'es-ES',
+            languageId: 2,
+          },
+        });
+
+        expect(scenarioTranslationRepository.findOne).toHaveBeenCalledWith({
+          select: ['id', 'metadata'],
+          where: { scenarioId: 1, languageId: 2 },
+        });
+      } finally {
+        // Restore the original fields
+        SCENARIO_SESSION_TRANSLATABLE_FIELDS.length = 0;
+        SCENARIO_SESSION_TRANSLATABLE_FIELDS.push(...originalFields);
+      }
+    });
+  });
+
   describe('startScenarioSession', () => {
     it('should throw BadRequestException when scenario not found', async () => {
       const startDto = {
@@ -791,6 +982,36 @@ describe('ScenarioSessionService', () => {
       );
     });
 
+    it('should throw BadRequestException when voiceId is not found', async () => {
+      const startDto = {
+        scenarioId: mockScenarioId,
+        ttl: 3600,
+        languageId: '2', // Non-existent language
+      };
+      const mockScenarioWithoutVoice = {
+        id: mockScenarioId,
+        title: 'Test Scenario',
+        scenario: 'Test scenario content',
+        description: 'Test scenario description',
+        coverImageUrl: 'https://example.com/image.jpg',
+        status: ScenarioStatus.ACTIVE,
+        prompt: 'You are a counselor',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isGlobal: false,
+        metadata: {
+          languageVoices: { '1': 'default-voice' }, // No voice for language 2
+        },
+      };
+
+      scenarioService.getScenario.mockResolvedValue(mockScenarioWithoutVoice);
+      permissionValidatorService.validatePermissions.mockResolvedValue(true);
+
+      await expect(
+        service.startScenarioSession(1, startDto as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should successfully start scenario session', async () => {
       const startDto = {
         scenarioId: mockScenarioId,
@@ -799,15 +1020,10 @@ describe('ScenarioSessionService', () => {
       const mockScenarioWithMetadata = {
         ...mockScenario,
         metadata: {
-          agentGoal: 'Help the client',
-          lifeHistory: 'Life history',
-          voiceId: 'voice-123',
-          name: 'Test Client',
-          age: 25,
-          gender: 'female',
-          currentLocation: 'New York',
-          context: 'Context',
-          openingStatements: 'Opening',
+          title: 'Test Scenario',
+          description: 'Test Description',
+          voiceId: 'test-voice',
+          lifeHistory: 'Test Life History',
         },
         isGlobal: false,
       };
@@ -827,6 +1043,17 @@ describe('ScenarioSessionService', () => {
         roomName: 'new-room-id',
         serverUrl: 'https://livekit.example.com',
       };
+      const mockFallbackVoice = {
+        id: 'voice-123',
+        name: 'Test Voice',
+        config: {
+          age: 'adult',
+          name: 'priyanka',
+          model: 'aura-2-luna-en',
+          gender: 'female',
+          voiceId: 'aura-2-luna-en',
+        },
+      };
 
       scenarioService.getAdminScenario.mockResolvedValue(
         mockScenarioWithMetadata as any,
@@ -839,6 +1066,12 @@ describe('ScenarioSessionService', () => {
       } as any);
       sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
+      );
+      sessionEventTranslationService.getSessionEventsTranslationsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      scenarioVoicesRepository.getFallbackVoice.mockResolvedValue(
+        mockFallbackVoice as any,
       );
       sessionEventService.findByIds.mockResolvedValue([]);
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
@@ -899,6 +1132,18 @@ describe('ScenarioSessionService', () => {
         id: 'new-session-id',
         roomId: 'new-room-id',
       };
+
+      const mockFallbackVoice = {
+        id: 'voice-123',
+        name: 'Test Voice',
+        config: {
+          age: 'adult',
+          name: 'priyanka',
+          model: 'aura-2-luna-en',
+          gender: 'female',
+          voiceId: 'aura-2-luna-en',
+        },
+      };
       const roomError = new Error('Room creation failed');
 
       scenarioService.getAdminScenario.mockResolvedValue(
@@ -912,6 +1157,9 @@ describe('ScenarioSessionService', () => {
       } as any);
       sessionEventService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
+      );
+      scenarioVoicesRepository.getFallbackVoice.mockResolvedValue(
+        mockFallbackVoice as any,
       );
       sessionEventService.findByIds.mockResolvedValue([]);
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
@@ -932,6 +1180,37 @@ describe('ScenarioSessionService', () => {
       expect(scenarioSessionRepository.delete).toHaveBeenCalledWith(
         mockCreatedSession.id,
       );
+    });
+  });
+
+  describe('getLanguageDetailsForScenarioSession', () => {
+    it('should return language details', async () => {
+      const languageDetails = await (
+        service as any
+      ).getLanguageDetailsForScenarioSession(
+        mockCounselorId,
+        mockScenarioSessionId,
+      );
+      expect(languageDetails).toBeDefined();
+    });
+    it('should return null languageDetails if languageDetails is not found', async () => {
+      const mockReturnData = {
+        enLanguageDetails: undefined,
+        languageDetails: null,
+      };
+      const languageDetails = await (
+        service as any
+      ).getLanguageDetailsForScenarioSession(1);
+      expect(languageDetails).toEqual(mockReturnData);
+    });
+  });
+
+  describe('getFallbackVoiceForLanguageGender', () => {
+    it('should return fallback voice for language and gender', async () => {
+      const fallbackVoice = await (
+        service as any
+      ).getFallbackVoiceForLanguageGender(1, 'female');
+      expect(fallbackVoice).toBeDefined();
     });
   });
 });

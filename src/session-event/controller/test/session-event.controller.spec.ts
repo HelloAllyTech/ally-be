@@ -98,6 +98,7 @@ describe('SessionEventController', () => {
       updateSessionEvent: jest.fn(),
       getAllSessionEvents: jest.fn(),
       deleteSessionEvents: jest.fn(),
+      translatePassiveSessionEvents: jest.fn(),
     };
 
     const mockPermissionsService = {
@@ -924,6 +925,35 @@ describe('SessionEventController', () => {
       expect(sessionEventService.deleteSessionEvents).toHaveBeenCalledWith(
         deleteDto.eventIds,
       );
+    });
+  });
+
+  describe('translatePassiveSessionEvents', () => {
+    it('should translate passive session events and return success', async () => {
+      sessionEventService.translatePassiveSessionEvents.mockResolvedValue({
+        success: true,
+      });
+
+      const result = await controller.translatePassiveSessionEvents();
+
+      expect(
+        sessionEventService.translatePassiveSessionEvents,
+      ).toHaveBeenCalled();
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should handle service error during translation', async () => {
+      const error = new Error('Translation failed');
+      sessionEventService.translatePassiveSessionEvents.mockRejectedValue(
+        error,
+      );
+
+      await expect(controller.translatePassiveSessionEvents()).rejects.toThrow(
+        'Translation failed',
+      );
+      expect(
+        sessionEventService.translatePassiveSessionEvents,
+      ).toHaveBeenCalled();
     });
   });
 });

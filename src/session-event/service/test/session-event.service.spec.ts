@@ -16,10 +16,12 @@ import {
   CombinationExpressionRequestType,
   CombinationExpressionType,
 } from 'src/session-event/enum/session-event-detection.enum';
+import { SessionEventTranslationService } from '../session-event-translation.service';
 
 describe('SessionEventService', () => {
   let service: SessionEventService;
   let repository: jest.Mocked<SessionEventRepository>;
+  let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
 
   const mockSessionEvent: SessionEvents = {
     id: 'event-1',
@@ -91,6 +93,13 @@ describe('SessionEventService', () => {
       transaction: jest.fn((callback) => callback(mockEntityManager)),
     };
 
+    const mockSessionEventTranslationService = {
+      getSessionEventsTranslationsByScenarioId: jest.fn(),
+      createUpdateSessionEventTranslations: jest
+        .fn()
+        .mockResolvedValue(undefined), // Add this line
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SessionEventService,
@@ -102,11 +111,16 @@ describe('SessionEventService', () => {
           provide: DataSource,
           useValue: mockDataSource,
         },
+        {
+          provide: SessionEventTranslationService,
+          useValue: mockSessionEventTranslationService,
+        },
       ],
     }).compile();
 
     service = module.get<SessionEventService>(SessionEventService);
     repository = module.get(SessionEventRepository);
+    sessionEventTranslationService = module.get(SessionEventTranslationService);
   });
 
   afterEach(() => {
@@ -1320,6 +1334,34 @@ describe('SessionEventService', () => {
       expect(repository.getSessionEventsByScenarioId).toHaveBeenCalledWith(
         mockScenarioId,
       );
+    });
+  });
+
+  describe('translatePassiveSessionEvents', () => {
+    it('should translate passive session events', async () => {
+      const passiveEvents = [
+        {
+          id: 'event-1',
+          name: 'Event 1',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.PASSIVE,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          eventCode: 'EVT_1',
+        },
+      ];
+
+      repository.getAllSessionEvents.mockResolvedValue(passiveEvents);
+
+      const result = await service.translatePassiveSessionEvents();
+
+      expect(result).toEqual({ success: true });
+      expect(repository.getAllSessionEvents).toHaveBeenCalledWith(
+        SessionEventVisibilityType.PASSIVE,
+      );
+      expect(
+        sessionEventTranslationService.createUpdateSessionEventTranslations,
+      ).toHaveBeenCalledWith(passiveEvents);
     });
   });
 

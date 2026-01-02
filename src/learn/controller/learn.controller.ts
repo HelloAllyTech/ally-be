@@ -60,6 +60,10 @@ import { CreateTriggerWarningDto } from '../dto/trigger-warning.dto';
 import { TriggerWarningsService } from '../service/trigger-warnings.service';
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { GetScenarioResponse } from '../interface/session.interface';
+import {
+  AvailableLanguage,
+  ScenarioVoiceLanguage,
+} from '../type/scenario-language-voice.type';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -737,5 +741,41 @@ export class LearnController {
       sortBy,
       order,
     });
+  }
+
+  @ApiQuery({
+    name: 'active',
+    required: false,
+    type: Boolean,
+    description: 'Filter by active ',
+  })
+  @Get('scenario-voice-languages')
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_VOICE_LANGUAGES])
+  async getScenarioVoiceLanguagesForAdmin(
+    @Query('active') active?: boolean,
+  ): Promise<ScenarioVoiceLanguage[]> {
+    return this.scenarioService.getScenarioVoiceLanguagesForAdmin(active);
+  }
+
+  @ApiOperation({ summary: 'Get languages' })
+  @ApiQuery({
+    name: 'active',
+    required: false,
+    type: Boolean,
+    description: 'Filter by active ',
+  })
+  @ApiQuery({
+    name: 'hasVoices',
+    required: false,
+    type: Boolean,
+    description: 'Filter by has voices',
+  })
+  @Get('scenario-languages')
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_LANGUAGES])
+  async getLanguagesForScenario(
+    @Query('active') active?: boolean,
+    @Query('hasVoices') hasVoices?: boolean,
+  ): Promise<AvailableLanguage[]> {
+    return this.scenarioService.getLanguagesForScenario(active, hasVoices);
   }
 }

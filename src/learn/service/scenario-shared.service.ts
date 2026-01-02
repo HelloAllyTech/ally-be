@@ -9,6 +9,7 @@ import { ScenarioSessionRepository } from '../repository/scenario-session.reposi
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioFilters } from '../type/scenario-filter.type';
 import { GetScenarioDto } from '../dto/get-scenario.dto';
+import { ScenarioTranslationsRepository } from '../repository/scenario-translations.repository';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -18,6 +19,7 @@ export class ScenarioSharedService {
   constructor(
     private readonly scenariosRepository: ScenariosRepository,
     private scenarioSessionRepository: ScenarioSessionRepository,
+    private scenarioTranslationsRepository: ScenarioTranslationsRepository,
   ) {}
 
   async getScenarioByIds(
@@ -50,5 +52,9 @@ export class ScenarioSharedService {
     return this.scenarioSessionRepository.findOne({
       where: { id: scenarioSessionId },
     });
+  }
+
+  async getUniqueLanguagesFromScenarioTranslations(): Promise<number[]> {
+    return this.scenarioTranslationsRepository.getUniqueLanguagesFromScenarioTranslations();
   }
 }

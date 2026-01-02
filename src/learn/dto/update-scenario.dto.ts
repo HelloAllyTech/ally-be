@@ -8,6 +8,8 @@ import {
   IsArray,
   IsBoolean,
   ValidateNested,
+  IsObject,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -18,6 +20,7 @@ import {
 } from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
+import { MAX_CUSTOM_FIELDS_COUNT } from '../constants/scenario.constants';
 
 export class UpdateScenarioDto {
   @ApiProperty({
@@ -35,6 +38,16 @@ export class UpdateScenarioDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @ApiProperty({
+    description: 'Mapping of language IDs to voice IDs',
+    example: { '1': '0000000-1111-2222-3333-444444444444' },
+    type: 'object',
+    additionalProperties: { type: 'string', format: 'uuid' },
+  })
+  @IsObject()
+  @IsOptional()
+  languageVoices?: Record<string, string>;
 
   @ApiProperty({
     description: 'Cover image URL of the scenario',
@@ -291,6 +304,7 @@ export class UpdateScenarioDto {
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(MAX_CUSTOM_FIELDS_COUNT)
   @ValidateNested({ each: true })
   @Type(() => CustomFieldsDto)
   customFields?: CustomFieldsDto[];
