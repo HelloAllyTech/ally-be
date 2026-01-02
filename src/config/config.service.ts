@@ -279,4 +279,10 @@ export class AppConfigService {
       projectId: this.configService.get<string>('PROJECT_ID'),
     };
   }
+
+  get googleAuth() {
+    return {
+      clientId: this.configService.get<string>('GOOGLE_CLIENT_ID'),
+    };
+  }
 }
