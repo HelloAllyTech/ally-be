@@ -92,4 +92,9 @@ export const validationSchema = Joi.object({
     .pattern(/\.json$/, 'JSON file path'),
 
   PROJECT_ID: Joi.string().required(),
+
+  //google oauth
+  GOOGLE_WEB_CLIENT_ID: Joi.string().required(),
+  GOOGLE_IOS_CLIENT_ID: Joi.string().required(),
+  GOOGLE_ANDROID_CLIENT_ID: Joi.string().required(),
 });
