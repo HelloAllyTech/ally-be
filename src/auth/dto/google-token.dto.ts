@@ -1,7 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsEnum,
+  IsNotEmpty,
+  IsString,
+} from 'class-validator';
+import { UserRole } from 'src/common/constants/user.constants';
 
-export class GoogleIdTokenDto {
+export class GoogleSignInDto {
   @ApiProperty({
     description: 'Google ID Token',
     example:
@@ -10,4 +17,13 @@ export class GoogleIdTokenDto {
   @IsString()
   @IsNotEmpty()
   idToken!: string;
+
+  @ApiProperty({
+    description: 'Allowed roles for OTP generation',
+    example: [UserRole.CLIENT, UserRole.COUNSELOR],
+  })
+  @IsArray()
+  @IsEnum(UserRole, { each: true })
+  @ArrayNotEmpty()
+  allowedRoles!: UserRole[];
 }
