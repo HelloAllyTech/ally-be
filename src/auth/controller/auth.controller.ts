@@ -19,7 +19,7 @@ import {
   GenerateOtpV2Dto,
   GenerateOtpV2ResponseDto,
   VerifyOtpV2Dto,
-  VerifyOtpV2ResponseDto,
+  AuthenticationResponseDto,
 } from '../dto';
 import { JwtRefreshAuthGuard } from '../guards/jwt-refresh-auth.guard';
 import { LoggerService } from '../../logger/logger.service';
@@ -27,6 +27,7 @@ import { ApiBody, ApiTags } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { GoogleSignInDto } from '../dto/google-token.dto';
 
 @Controller({
   path: 'auth',
@@ -97,7 +98,7 @@ export class AuthController {
   @Version('2')
   async verifyOtpV2(
     @Body() verifyOtpDto: VerifyOtpV2Dto,
-  ): Promise<VerifyOtpV2ResponseDto> {
+  ): Promise<AuthenticationResponseDto> {
     return this.authService.verifyOtpV2(verifyOtpDto);
   }
 
@@ -133,6 +134,19 @@ export class AuthController {
   async getPermissions(@Req() req: { user: { id: string } }) {
     return await this.permissionsService.getUserPermissions(
       parseInt(req.user.id),
+    );
+  }
+
+  @Post('google')
+  async googleAuth(
+    @Body() googleSignInDto: GoogleSignInDto,
+  ): Promise<AuthenticationResponseDto> {
+    const payload = await this.authService.verifyGoogleIdToken(
+      googleSignInDto.idToken,
+    );
+    return this.authService.verifyGoogleUser(
+      payload,
+      googleSignInDto.allowedRoles,
     );
   }
 }

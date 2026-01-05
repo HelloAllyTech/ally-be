@@ -6,8 +6,6 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { DataSource, Repository, MoreThan, In } from 'typeorm';
 import { User } from '../../user/entity/user.entity';
-import { UserGroup } from '../../authorization/entity/user-group.entity';
-import { Group } from '../../authorization/entity/group.entity';
 import * as bcrypt from 'bcrypt';
 import { RefreshToken } from '../entity/refresh-token.entity';
 import { AppConfigService } from '../../config/config.service';
@@ -19,24 +17,25 @@ import { AuthUtil } from '../util/auth.util';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { GroupService } from 'src/authorization/service/group.service';
+import { OAuth2Client, TokenPayload } from 'google-auth-library';
 import {
+  AuthenticationResponseDto,
   GenerateOtpV2Dto,
   GenerateOtpV2ResponseDto,
   VerifyOtpV2Dto,
-  VerifyOtpV2ResponseDto,
 } from '../dto/login.dto';
 import { UserSuspendedException } from '../exception/login.exception';
+import { UserRole } from 'src/common/constants/user.constants';
+import { AuthProvider } from '../type/auth.types';
 
 @Injectable()
 export class AuthService {
-  private readonly PASSWORD_MIN_LENGTH = 6; // Move to config service if needed
   private readonly logger = LoggerService.getInstance(AuthService.name);
   private readonly OTP_TTL;
   private userRepository: Repository<User>;
   private refreshTokenRepository: Repository<RefreshToken>;
-  private userGroupRepository: Repository<UserGroup>;
-  private groupRepository: Repository<Group>;
   private readonly auditLogger = AuditLoggerService.getInstance();
+  private readonly googleClient: OAuth2Client;
   constructor(
     private dataSource: DataSource,
     private jwtService: JwtService,
@@ -47,11 +46,10 @@ export class AuthService {
   ) {
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
-    this.userGroupRepository = this.dataSource.getRepository(UserGroup);
-    this.groupRepository = this.dataSource.getRepository(Group);
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
     this.OTP_TTL = +this.configService.otp.ttl;
+    this.googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID!);
   }
 
   // ... existing validateUser and validateUserById methods ...
@@ -76,7 +74,7 @@ export class AuthService {
     return result;
   }
 
-  private async generateTokens(
+  async generateTokens(
     user: User,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const payload = {
@@ -326,15 +324,17 @@ export class AuthService {
     };
   }
 
-  private logOtpVerificationError(
+  private logVerificationError(
     username: string | undefined,
     reason: string,
+    authProvider: AuthProvider,
   ) {
     this.auditLogger.log({
-      eventType: AUDIT_EVENTS.OTP_VERIFICATION_FAILED,
+      eventType: AUDIT_EVENTS.USER_lOGIN_VERIFICATION_FAILED,
       details: {
         username,
         reason,
+        authProvider,
       },
     });
   }
@@ -350,7 +350,11 @@ export class AuthService {
         where: { phone, status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]) },
       });
       if (!user || !user.email) {
-        this.logOtpVerificationError(phone, 'User not found');
+        this.logVerificationError(
+          phone,
+          'User not found',
+          AuthProvider.EMAIL_OTP,
+        );
         throw new BadRequestException('User not found');
       }
       email = user.email;
@@ -358,7 +362,7 @@ export class AuthService {
 
     const cachedOtp = await this.cache.get(this.getOtpKey(email));
     if (cachedOtp !== otp) {
-      this.logOtpVerificationError(email, 'Invalid OTP');
+      this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
       throw new BadRequestException('Invalid OTP');
     }
     await this.cache.del(this.getOtpKey(email));
@@ -371,13 +375,21 @@ export class AuthService {
         });
       }
       if (!user) {
-        this.logOtpVerificationError(email, 'User not found');
+        this.logVerificationError(
+          email,
+          'User not found',
+          AuthProvider.EMAIL_OTP,
+        );
         throw new BadRequestException('User not found');
       }
 
       if (user.status === UserStatus.SUSPENDED) {
         this.logger.error(`User ${email} is suspended`);
-        this.logOtpVerificationError(email, 'User suspended');
+        this.logVerificationError(
+          email,
+          'User suspended',
+          AuthProvider.EMAIL_OTP,
+        );
         throw new UserSuspendedException();
       }
 
@@ -406,53 +418,113 @@ export class AuthService {
 
   async verifyOtpV2(
     verifyOtpDto: VerifyOtpV2Dto,
-  ): Promise<VerifyOtpV2ResponseDto> {
+  ): Promise<AuthenticationResponseDto> {
     const { otp, email, allowedRoles } = verifyOtpDto;
     if (!email) {
       throw new BadRequestException('Email is required');
     }
+    const cachedOtp = await this.cache.get(this.getOtpKey(email));
+    if (cachedOtp !== otp) {
+      this.logger.error(`Invalid OTP for email ${email}`);
+      this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
+      throw new BadRequestException('Invalid OTP');
+    }
+    await this.cache.del(this.getOtpKey(email));
 
+    return await this.validateUserAndIssueTokens(
+      allowedRoles,
+      email,
+      AuthProvider.EMAIL_OTP,
+    );
+  }
+
+  private getOtpKey(email: string) {
+    return `otp:${email}`;
+  }
+
+  async verifyGoogleIdToken(idToken: string): Promise<TokenPayload> {
+    try {
+      const allowedAudiences = [
+        this.configService.googleAuth.androidClientId,
+        this.configService.googleAuth.iosClientId,
+        this.configService.googleAuth.webClientId,
+      ] as string[];
+
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken,
+        audience: allowedAudiences,
+      });
+
+      const payload = ticket.getPayload();
+
+      if (!payload) {
+        throw new UnauthorizedException('Invalid Google token');
+      }
+      return payload;
+    } catch {
+      throw new UnauthorizedException('Invalid Google token');
+    }
+  }
+
+  async verifyGoogleUser(
+    payload: TokenPayload,
+    allowedRoles: UserRole[],
+  ): Promise<AuthenticationResponseDto> {
+    const { email } = payload;
+    if (!email) {
+      throw new BadRequestException('Email is required');
+    }
+
+    return await this.validateUserAndIssueTokens(
+      allowedRoles,
+      email,
+      AuthProvider.GOOGLE,
+    );
+  }
+
+  private async validateUserAndIssueTokens(
+    allowedRoles: UserRole[],
+    email: string,
+    authProvider: AuthProvider,
+  ): Promise<AuthenticationResponseDto> {
     const user = await this.userRepository.findOne({
       where: { email, status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]) },
     });
+
+    const errorMessage =
+      await this.getUserVerificationErrorMessage(authProvider);
+
     if (!user) {
       this.logger.error(`User not found for email ${email}`);
-      this.logOtpVerificationError(email, 'User not found');
-      throw new BadRequestException('Invalid OTP');
+      this.logVerificationError(email, 'User not found', authProvider);
+      throw new BadRequestException(errorMessage);
     }
 
     const userGroups = await this.groupService.getUserGroupNames(user.id);
     const hasAllowedRoles = allowedRoles.some((role) =>
       userGroups.includes(role),
     );
-    if (!hasAllowedRoles) {
-      this.logger.error(`User not authorized for email ${email}`);
-      this.logOtpVerificationError(email, 'User not authorized');
-      throw new BadRequestException('Invalid otp');
-    }
 
-    const cachedOtp = await this.cache.get(this.getOtpKey(email));
-    if (cachedOtp !== otp) {
-      this.logger.error(`Invalid OTP for email ${email}`);
-      this.logOtpVerificationError(email, 'Invalid OTP');
-      throw new BadRequestException('Invalid OTP');
+    if (!hasAllowedRoles) {
+      this.logger.error(`User not authorized for email ${user.email}`);
+      this.logVerificationError(user.email, 'User not found', authProvider);
+      throw new BadRequestException(errorMessage);
     }
 
     if (user.status === UserStatus.SUSPENDED) {
-      this.logger.error(`User ${email} is suspended`);
-      this.logOtpVerificationError(email, 'User suspended');
+      this.logger.error(`User ${user.email} is suspended`);
       throw new UserSuspendedException();
     }
 
-    await this.cache.del(this.getOtpKey(email));
     const tokens = await this.generateTokens(user);
 
     this.auditLogger.log({
-      eventType: AUDIT_EVENTS.OTP_VERIFICATION_SUCCESS,
+      eventType: AUDIT_EVENTS.USER_lOGIN_VERIFICATION_SUCCESS,
       tenantId: user.tenantId,
       userId: user.id,
       details: {
         email,
+        authProvider,
       },
     });
 
@@ -466,7 +538,16 @@ export class AuthService {
     };
   }
 
-  private getOtpKey(email: string) {
-    return `otp:${email}`;
+  private getUserVerificationErrorMessage(provider: AuthProvider): string {
+    switch (provider) {
+      case AuthProvider.GOOGLE:
+        return 'Google sign in failed';
+
+      case AuthProvider.EMAIL_OTP:
+        return 'Invalid OTP';
+
+      default:
+        return 'Authentication failed';
+    }
   }
 }
