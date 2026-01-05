@@ -455,6 +455,7 @@ export class ScenarioService {
 
       if (scenarioTerminationEvents.length > 0) {
         await scenarioEventsRepo.save(scenarioTerminationEvents);
+        this.createUpdateScenarioEventsTranslations(scenarioTerminationEvents);
       }
       const triggerWarningList = formatScenarioTriggerWarningsList(
         createScenariosDto,
