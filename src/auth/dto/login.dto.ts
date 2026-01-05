@@ -137,7 +137,7 @@ export class GenerateOtpV2ResponseDto {
   expiresIn!: number;
 }
 
-export class VerifyOtpV2ResponseDto {
+export class AuthenticationResponseDto {
   @ApiProperty({
     description: 'Access token',
     example: '123456',

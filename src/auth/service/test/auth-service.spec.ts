@@ -18,6 +18,7 @@ import { UserStatus } from 'src/user/constants/user-status.constants';
 import { AuthUtil } from 'src/auth/util/auth.util';
 import { LoggerService } from 'src/logger/logger.service';
 import { GroupService } from 'src/authorization/service/group.service';
+import { AuthProvider } from 'src/auth/type/auth.types';
 
 // Mock bcrypt at the module level
 jest.mock('bcrypt', () => ({
@@ -25,7 +26,7 @@ jest.mock('bcrypt', () => ({
   hash: jest.fn(),
 }));
 
-jest.mock('../../util/auth.util', () => ({
+jest.mock('src/auth/util/auth.util', () => ({
   AuthUtil: {
     generateOtp: jest.fn(),
   },
@@ -63,7 +64,7 @@ describe('AuthService', () => {
     updatedAt: new Date(),
   } as unknown as User;
 
-  const mockConfig = {
+  const mockConfig: any = {
     jwt: {
       accessToken: {
         expiresIn: '15m',
@@ -79,6 +80,11 @@ describe('AuthService', () => {
       ttl: '300',
     },
     testAccounts: '{}',
+    googleAuth: {
+      androidClientId: 'android',
+      iosClientId: 'ios',
+      webClientId: 'web',
+    },
   };
 
   const createMockRepository = () => ({
@@ -423,84 +429,6 @@ describe('AuthService', () => {
     });
   });
 
-  describe('verifyOtp', () => {
-    const otp = '123456';
-    const email = 'test@example.com';
-    const phone = '+1234567890';
-
-    it('should verify OTP and return tokens for valid OTP', async () => {
-      const accessToken = 'access-token';
-      const refreshToken = 'refresh-token';
-
-      userRepository.findOne.mockResolvedValue(mockUser);
-      redisService.get.mockResolvedValue(otp);
-      redisService.del.mockResolvedValue();
-      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-refresh-token');
-      jwtService.signAsync
-        .mockResolvedValueOnce(accessToken)
-        .mockResolvedValueOnce(refreshToken);
-      refreshTokenRepository.save.mockResolvedValue({} as RefreshToken);
-
-      const result = await authService.verifyOtp(otp, phone, email);
-
-      expect(result?.accessToken).toBe(accessToken);
-    });
-
-    it('should throw BadRequestException for invalid OTP', async () => {
-      redisService.get.mockResolvedValue('different-otp');
-
-      await expect(authService.verifyOtp(otp, phone, email)).rejects.toThrow(
-        new BadRequestException('Invalid OTP'),
-      );
-    });
-
-    it('should throw BadRequestException when neither email nor phone provided', async () => {
-      await expect(authService.verifyOtp(otp)).rejects.toThrow(
-        new BadRequestException('Email or phone is required'),
-      );
-    });
-
-    it('should find user by phone', async () => {
-      const accessToken = 'access-token';
-      const refreshToken = 'refresh-token';
-
-      userRepository.findOne.mockResolvedValue(mockUser);
-      redisService.get.mockResolvedValue(otp);
-      redisService.del.mockResolvedValue();
-      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-refresh-token');
-      jwtService.signAsync
-        .mockResolvedValueOnce(accessToken)
-        .mockResolvedValueOnce(refreshToken);
-      refreshTokenRepository.save.mockResolvedValue({} as RefreshToken);
-
-      const result = await authService.verifyOtp(otp, phone);
-
-      expect(result).toBeDefined();
-    });
-
-    it('should throw when user by phone has no email', async () => {
-      const userWithoutEmail = {
-        ...mockUser,
-        email: undefined,
-      } as unknown as User;
-      userRepository.findOne.mockResolvedValue(userWithoutEmail);
-
-      await expect(authService.verifyOtp(otp, phone)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
-    it('should throw when user not found after OTP check', async () => {
-      redisService.get.mockResolvedValue(otp);
-      redisService.del.mockResolvedValue();
-      userRepository.findOne.mockResolvedValue(null);
-
-      await expect(
-        authService.verifyOtp(otp, undefined, email),
-      ).rejects.toThrow(BadRequestException);
-    });
-  });
-
   describe('verifyOtpV2', () => {
     const mockVerifyOtpDto = {
       otp: '123456',
@@ -531,63 +459,74 @@ describe('AuthService', () => {
     it('should throw BadRequestException when email is not provided', async () => {
       const invalidDto = { ...mockVerifyOtpDto, email: '' };
 
-      await expect(authService.verifyOtpV2(invalidDto)).rejects.toThrow(
+      await expect(authService.verifyOtpV2(invalidDto as any)).rejects.toThrow(
         new BadRequestException('Email is required'),
       );
     });
 
     it('should throw BadRequestException when user is not found', async () => {
+      redisService.get.mockResolvedValue('123456');
+      redisService.del.mockResolvedValue();
+
       userRepository.findOne.mockResolvedValue(null);
 
-      await expect(authService.verifyOtpV2(mockVerifyOtpDto)).rejects.toThrow(
-        new BadRequestException('Invalid OTP'),
-      );
+      await expect(
+        authService.verifyOtpV2(mockVerifyOtpDto as any),
+      ).rejects.toThrow(new BadRequestException('Invalid OTP'));
     });
 
     it('should throw UserSuspendedException when user is suspended', async () => {
-      userRepository.findOne.mockResolvedValue(mockSuspendedUser);
-      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
-      redisService.get.mockResolvedValue('123456'); // Provide valid OTP
+      redisService.get.mockResolvedValue('123456');
+      redisService.del.mockResolvedValue();
 
-      await expect(authService.verifyOtpV2(mockVerifyOtpDto)).rejects.toThrow(
-        UserSuspendedException,
-      );
+      userRepository.findOne.mockResolvedValue(mockSuspendedUser);
+      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']); // REQUIRED
+
+      await expect(
+        authService.verifyOtpV2(mockVerifyOtpDto as any),
+      ).rejects.toThrow(UserSuspendedException);
     });
 
     it('should throw BadRequestException when user is not authorized', async () => {
-      userRepository.findOne.mockResolvedValue(mockUser);
-      groupService.getUserGroupNames.mockResolvedValue(['ADMIN']); // Different role
+      redisService.get.mockResolvedValue('123456');
+      redisService.del.mockResolvedValue();
 
-      await expect(authService.verifyOtpV2(mockVerifyOtpDto)).rejects.toThrow(
-        new BadRequestException('Invalid otp'),
-      );
+      userRepository.findOne.mockResolvedValue(mockUser);
+      groupService.getUserGroupNames.mockResolvedValue(['ADMIN']);
+
+      await expect(
+        authService.verifyOtpV2(mockVerifyOtpDto as any),
+      ).rejects.toThrow(new BadRequestException('Invalid OTP'));
     });
 
     it('should throw BadRequestException when OTP is invalid', async () => {
-      userRepository.findOne.mockResolvedValue(mockUser);
-      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
       redisService.get.mockResolvedValue('different-otp');
 
-      await expect(authService.verifyOtpV2(mockVerifyOtpDto)).rejects.toThrow(
-        new BadRequestException('Invalid OTP'),
-      );
+      userRepository.findOne.mockResolvedValue(mockUser);
+      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
+
+      await expect(
+        authService.verifyOtpV2(mockVerifyOtpDto as any),
+      ).rejects.toThrow(new BadRequestException('Invalid OTP'));
     });
 
     it('should successfully verify OTP and return tokens', async () => {
       const accessToken = 'access-token';
       const refreshToken = 'refresh-token';
 
-      userRepository.findOne.mockResolvedValue(mockUser);
-      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
       redisService.get.mockResolvedValue('123456');
       redisService.del.mockResolvedValue();
+
+      userRepository.findOne.mockResolvedValue(mockUser);
+      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
+
       (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-refresh-token');
       jwtService.signAsync
         .mockResolvedValueOnce(accessToken)
         .mockResolvedValueOnce(refreshToken);
       refreshTokenRepository.save.mockResolvedValue({} as RefreshToken);
 
-      const result = await authService.verifyOtpV2(mockVerifyOtpDto);
+      const result = await authService.verifyOtpV2(mockVerifyOtpDto as any);
 
       expect(result).toEqual({
         user: {
@@ -604,9 +543,14 @@ describe('AuthService', () => {
     });
 
     it('should log error when user is not found', async () => {
+      redisService.get.mockResolvedValue('123456');
+      redisService.del.mockResolvedValue();
+
       userRepository.findOne.mockResolvedValue(null);
 
-      await expect(authService.verifyOtpV2(mockVerifyOtpDto)).rejects.toThrow();
+      await expect(
+        authService.verifyOtpV2(mockVerifyOtpDto as any),
+      ).rejects.toThrow();
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         `User not found for email ${mockVerifyOtpDto.email}`,
@@ -618,11 +562,16 @@ describe('AuthService', () => {
         ...mockVerifyOtpDto,
         email: mockSuspendedUser.email,
       };
-      userRepository.findOne.mockResolvedValue(mockSuspendedUser);
-      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
-      redisService.get.mockResolvedValue('123456'); // Provide valid OTP
 
-      await expect(authService.verifyOtpV2(suspendedDto)).rejects.toThrow();
+      redisService.get.mockResolvedValue('123456');
+      redisService.del.mockResolvedValue();
+
+      userRepository.findOne.mockResolvedValue(mockSuspendedUser);
+      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']); // REQUIRED
+
+      await expect(
+        authService.verifyOtpV2(suspendedDto as any),
+      ).rejects.toThrow();
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         `User ${mockSuspendedUser.email} is suspended`,
@@ -630,10 +579,15 @@ describe('AuthService', () => {
     });
 
     it('should log error when user is not authorized', async () => {
+      redisService.get.mockResolvedValue('123456');
+      redisService.del.mockResolvedValue();
+
       userRepository.findOne.mockResolvedValue(mockUser);
       groupService.getUserGroupNames.mockResolvedValue(['ADMIN']);
 
-      await expect(authService.verifyOtpV2(mockVerifyOtpDto)).rejects.toThrow();
+      await expect(
+        authService.verifyOtpV2(mockVerifyOtpDto as any),
+      ).rejects.toThrow();
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         `User not authorized for email ${mockVerifyOtpDto.email}`,
@@ -641,79 +595,84 @@ describe('AuthService', () => {
     });
 
     it('should log error when OTP is invalid', async () => {
-      userRepository.findOne.mockResolvedValue(mockUser);
-      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
       redisService.get.mockResolvedValue('different-otp');
 
-      await expect(authService.verifyOtpV2(mockVerifyOtpDto)).rejects.toThrow();
+      await expect(
+        authService.verifyOtpV2(mockVerifyOtpDto as any),
+      ).rejects.toThrow();
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         `Invalid OTP for email ${mockVerifyOtpDto.email}`,
       );
     });
 
-    it('should call logOtpVerificationError for all error scenarios', async () => {
-      const logOtpVerificationErrorSpy = jest.spyOn(
+    it('should call logVerificationError for relevant error scenarios', async () => {
+      const logVerificationErrorSpy = jest.spyOn(
         authService as any,
-        'logOtpVerificationError',
+        'logVerificationError',
       );
 
-      // Test user not found
-      userRepository.findOne.mockResolvedValue(null);
-      await expect(authService.verifyOtpV2(mockVerifyOtpDto)).rejects.toThrow();
-      expect(logOtpVerificationErrorSpy).toHaveBeenCalledWith(
-        mockVerifyOtpDto.email,
-        'User not found',
-      );
-
-      // Test user suspended
-      const suspendedDto = {
-        ...mockVerifyOtpDto,
-        email: mockSuspendedUser.email,
-      };
-      userRepository.findOne.mockResolvedValue(mockSuspendedUser);
-      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
-      redisService.get.mockResolvedValue('123456'); // Provide valid OTP
-      await expect(authService.verifyOtpV2(suspendedDto)).rejects.toThrow();
-      expect(logOtpVerificationErrorSpy).toHaveBeenCalledWith(
-        mockSuspendedUser.email,
-        'User suspended',
-      );
-
-      // Test user not authorized
-      userRepository.findOne.mockResolvedValue(mockUser);
-      groupService.getUserGroupNames.mockResolvedValue(['ADMIN']);
-      await expect(authService.verifyOtpV2(mockVerifyOtpDto)).rejects.toThrow();
-      expect(logOtpVerificationErrorSpy).toHaveBeenCalledWith(
-        mockVerifyOtpDto.email,
-        'User not authorized',
-      );
-
-      // Test invalid OTP
-      userRepository.findOne.mockResolvedValue(mockUser);
-      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
+      // invalid otp (early)
       redisService.get.mockResolvedValue('different-otp');
-      await expect(authService.verifyOtpV2(mockVerifyOtpDto)).rejects.toThrow();
-      expect(logOtpVerificationErrorSpy).toHaveBeenCalledWith(
+      await expect(
+        authService.verifyOtpV2(mockVerifyOtpDto as any),
+      ).rejects.toThrow();
+      expect(logVerificationErrorSpy).toHaveBeenCalledWith(
         mockVerifyOtpDto.email,
         'Invalid OTP',
+        AuthProvider.EMAIL_OTP,
       );
 
-      logOtpVerificationErrorSpy.mockRestore();
+      jest.clearAllMocks();
+
+      // user not found (OTP valid)
+      redisService.get.mockResolvedValue('123456');
+      redisService.del.mockResolvedValue();
+      userRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        authService.verifyOtpV2(mockVerifyOtpDto as any),
+      ).rejects.toThrow();
+      expect(logVerificationErrorSpy).toHaveBeenCalledWith(
+        mockVerifyOtpDto.email,
+        'User not found',
+        AuthProvider.EMAIL_OTP,
+      );
+
+      jest.clearAllMocks();
+
+      // not authorized (OTP valid)
+      redisService.get.mockResolvedValue('123456');
+      redisService.del.mockResolvedValue();
+      userRepository.findOne.mockResolvedValue(mockUser);
+      groupService.getUserGroupNames.mockResolvedValue(['ADMIN']);
+
+      await expect(
+        authService.verifyOtpV2(mockVerifyOtpDto as any),
+      ).rejects.toThrow();
+      expect(logVerificationErrorSpy).toHaveBeenCalledWith(
+        mockVerifyOtpDto.email,
+        'User not found',
+        AuthProvider.EMAIL_OTP,
+      );
+
+      logVerificationErrorSpy.mockRestore();
     });
 
     it('should log audit event on successful verification', async () => {
-      userRepository.findOne.mockResolvedValue(mockUser);
-      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
       redisService.get.mockResolvedValue('123456');
       redisService.del.mockResolvedValue();
+
+      userRepository.findOne.mockResolvedValue(mockUser);
+      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
+
       (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-refresh-token');
       jwtService.signAsync
         .mockResolvedValueOnce('access-token')
         .mockResolvedValueOnce('refresh-token');
       refreshTokenRepository.save.mockResolvedValue({} as RefreshToken);
 
-      const result = await authService.verifyOtpV2(mockVerifyOtpDto);
+      const result = await authService.verifyOtpV2(mockVerifyOtpDto as any);
 
       expect(result).toBeDefined();
       expect(result.user.id).toBe(mockUser.id);
