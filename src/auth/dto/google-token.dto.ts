@@ -3,7 +3,7 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsEnum,
-  IsNotEmpty,
+  IsOptional,
   IsString,
 } from 'class-validator';
 import { UserRole } from 'src/common/constants/user.constants';
@@ -11,12 +11,19 @@ import { UserRole } from 'src/common/constants/user.constants';
 export class GoogleSignInDto {
   @ApiProperty({
     description: 'Google ID Token',
-    example:
-      'eyJhhenAiOiIxMDI0MjM0NTY3ODkwLXNhbXBsZS1hcHAuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJhdWQiOiIxMDI0MjM0NTY3ODkwLXNhbXBsZS1hcHAuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJzdWIiOiIxMDI0MjM0NTY3ODkwMTIzNDU2Nzg5MCIs',
+    example: 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.sig',
   })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  idToken!: string;
+  idToken?: string;
+
+  @ApiProperty({
+    description: 'Google Access Token',
+    example: 'ya29.a0AfH6SMBxxxx',
+  })
+  @IsOptional()
+  @IsString()
+  accessToken?: string;
 
   @ApiProperty({
     description: 'Allowed roles for OTP generation',

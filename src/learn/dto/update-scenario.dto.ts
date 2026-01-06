@@ -21,6 +21,7 @@ import {
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
 import { MAX_CUSTOM_FIELDS_COUNT } from '../constants/scenario.constants';
+import { TerminationEventsDto } from './termination-events.dto';
 
 export class UpdateScenarioDto {
   @ApiProperty({
@@ -281,6 +282,8 @@ export class UpdateScenarioDto {
   @IsOptional()
   @IsString()
   terminationEventId?: string;
+
+  terminationEvents?: TerminationEventsDto[];
 
   @ApiProperty({ description: 'Global tenant visibility', example: false })
   isGlobal?: boolean;

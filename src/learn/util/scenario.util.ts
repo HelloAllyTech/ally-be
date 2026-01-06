@@ -85,7 +85,7 @@ export const mapCreateScenarioRequestToEntity = (
   };
 };
 
-export const formatAutoTerminationEventsList = (
+export const formatSingleAutoTerminationEventsList = (
   createScenariosDto: CreateScenariosDto,
   savedScenarios: Scenarios[],
 ) =>
@@ -100,6 +100,23 @@ export const formatAutoTerminationEventsList = (
       };
     })
     .filter((event) => event.eventId && event.autoTerminationStatus);
+
+export const formatAutoTerminationEventsList = (
+  createScenariosDto: CreateScenariosDto,
+  savedScenarios: Scenarios[],
+) => {
+  return savedScenarios.flatMap((savedScenario, index) => {
+    const correspondingDto = createScenariosDto.scenarios[index];
+    return (
+      correspondingDto.terminationEvents?.map((terminationEvent) => ({
+        scenarioId: savedScenario.id,
+        eventId: terminationEvent.id,
+        autoTerminationStatus: true,
+        message: terminationEvent.message,
+      })) ?? []
+    );
+  });
+};
 
 export const formatScenarioTriggerWarningsList = (
   createScenariosDto: CreateScenariosDto,

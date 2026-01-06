@@ -17,7 +17,7 @@ import { AuthUtil } from '../util/auth.util';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { GroupService } from 'src/authorization/service/group.service';
-import { OAuth2Client, TokenPayload } from 'google-auth-library';
+import { OAuth2Client } from 'google-auth-library';
 import {
   AuthenticationResponseDto,
   GenerateOtpV2Dto,
@@ -26,7 +26,8 @@ import {
 } from '../dto/login.dto';
 import { UserSuspendedException } from '../exception/login.exception';
 import { UserRole } from 'src/common/constants/user.constants';
-import { AuthProvider } from '../type/auth.types';
+import { AuthProvider, GoogleTokenPayload } from '../type/auth.types';
+import { GoogleSignInDto } from '../dto/google-token.dto';
 
 @Injectable()
 export class AuthService {
@@ -51,8 +52,6 @@ export class AuthService {
     this.OTP_TTL = +this.configService.otp.ttl;
     this.googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID!);
   }
-
-  // ... existing validateUser and validateUserById methods ...
 
   async validateRefreshToken(refreshToken: string, userId: number) {
     const token = await this.refreshTokenRepository.findOne({
@@ -442,7 +441,21 @@ export class AuthService {
     return `otp:${email}`;
   }
 
-  async verifyGoogleIdToken(idToken: string): Promise<TokenPayload> {
+  async verifyGoogleToken(
+    googleSignInDto: GoogleSignInDto,
+  ): Promise<GoogleTokenPayload> {
+    const { idToken, accessToken } = googleSignInDto;
+    if (idToken) {
+      return this.verifyGoogleIdToken(idToken);
+    }
+    if (accessToken) {
+      return this.verifyGoogleAccessToken(accessToken);
+    }
+
+    throw new BadRequestException('Google token is required');
+  }
+
+  async verifyGoogleIdToken(idToken: string): Promise<GoogleTokenPayload> {
     try {
       const allowedAudiences = [
         this.configService.googleAuth.androidClientId,
@@ -457,17 +470,33 @@ export class AuthService {
 
       const payload = ticket.getPayload();
 
-      if (!payload) {
+      if (!payload || !payload.email) {
         throw new UnauthorizedException('Invalid Google token');
       }
-      return payload;
+      return { email: payload.email };
+    } catch {
+      throw new UnauthorizedException('Invalid Google token');
+    }
+  }
+
+  async verifyGoogleAccessToken(
+    accessToken: string,
+  ): Promise<GoogleTokenPayload> {
+    try {
+      const tokenInfo = await this.googleClient.getTokenInfo(accessToken);
+
+      if (!tokenInfo.email) {
+        throw new UnauthorizedException('Invalid Google token');
+      }
+
+      return { email: tokenInfo.email };
     } catch {
       throw new UnauthorizedException('Invalid Google token');
     }
   }
 
   async verifyGoogleUser(
-    payload: TokenPayload,
+    payload: GoogleTokenPayload,
     allowedRoles: UserRole[],
   ): Promise<AuthenticationResponseDto> {
     const { email } = payload;
