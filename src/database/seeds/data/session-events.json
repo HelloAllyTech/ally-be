@@ -1,0 +1,14 @@
+[
+  {
+    "name": "New Event",
+    "description": "dfergr\n fgergfe\n rgferge\n rwgertgetr\n rgetrgtreg\n rsgertgtreh\n rgetrghtreg\n wrgertgrtegh\n esfgergregetr\n rwgetrgtrgtre\n ewrgerghtergtr\n rgertghtrgtreg\n rwdgergtregtr\n regergtrhg\n ergetrhgtrh\n wrgerthgtr\n regetrghr\n ergetrgh\n er",
+    "score": 0,
+    "emoji": "🫥",
+    "id": "d3830133-5892-4b79-8182-d69ae4f03b20",
+    "detectionType": "SENTENCE_SIMILARITY",
+    "visibilityType": "ACTIVE",
+    "detectionData": "{\"sentences\": [\"dfergr\", \"fgergfe\", \"rgferge\", \"rwgertgetr\", \"rgetrgtreg\", \"rsgertgtreh\", \"rgetrghtreg\", \"wrgertgrtegh\", \"esfgergregetr\", \"rwgetrgtrgtre\", \"ewrgerghtergtr\", \"rgertghtrgtreg\", \"rwdgergtregtr\", \"regergtrhg\", \"ergetrhgtrh\", \"wrgerthgtr\", \"regetrghr\", \"ergetrgh\", \"er\", \"Yes no\", \"\"]}",
+    "eventCode": "SS122",
+    "updatedBy": 231
+  }
+]

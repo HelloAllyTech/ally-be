@@ -4,7 +4,7 @@ import { UserRole } from '../../common/constants/user.constants';
 
 config();
 
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
+const API_BASE_URL = 'http://localhost:8001';
 
 // Admin credentials for authentication
 const adminCredentials = {

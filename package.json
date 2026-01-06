@@ -25,7 +25,8 @@
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
     "migration:show": "npm run typeorm -- migration:show -d src/database/data-source.ts",
-    "seed": "ts-node"
+    "seed": "ts-node -r tsconfig-paths/register",
+    "seed:all": "npm run seed -- src/database/seeds/admin_user.ts && npm run seed -- src/database/seeds/user-tenant.ts && npm run seed -- src/database/seeds/seed-voices-and-events.ts && npm run seed -- src/database/seeds/scenarios-pathway.ts && npm run seed:voices-events"
   },
   "pre-commit": [
     "lint",

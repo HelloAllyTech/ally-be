@@ -1,9 +1,28 @@
 import axios, { AxiosInstance } from 'axios';
 import { config } from 'dotenv';
+import {
+  ScenarioDifficultyLevel,
+  ScenarioStatus,
+} from 'src/learn/type/scenario.type';
+
+type SeedScenario = {
+  title: string;
+  description: string;
+  status: ScenarioStatus;
+  difficultyLevel: ScenarioDifficultyLevel;
+  responseLength: string;
+  isGlobal: boolean;
+  metadata: Record<string, any>;
+  terminationEvents: {
+    id: string;
+    message: string;
+  }[];
+  triggerWarningNames: string[];
+};
 
 config();
 
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
+const API_BASE_URL = 'http://localhost:8001';
 
 // Admin credentials for authentication
 const adminCredentials = {
@@ -11,87 +30,104 @@ const adminCredentials = {
   password: 'Password123!',
 };
 
-// Voice to create
-const voiceData = {
-  voices: [
-    {
-      name: 'Default Seed Voice',
-      provider: 'OpenAI',
-      config: {
-        voiceId: 'alloy',
-        model: 'tts-1',
-      },
-    },
-  ],
-};
-
 // Function to create scenarios data with voiceId
-const createScenariosData = (voiceId: string) => ({
-  scenarios: [
+const createScenariosData = async (
+  voiceId: string,
+  client: AxiosInstance,
+  accessToken: string,
+) => {
+  const langaugesVoices = await mapLanguagesVoices(client, accessToken);
+
+  const scenarios = [
     {
-      title: 'Introduction to Active Listening',
+      title: 'Active Listening Basics',
       description:
-        'Learn the fundamentals of active listening in a counseling session.',
-      status: 'ACTIVE',
-      name: 'Alex',
+        'Practice listening skills with Alex, a young professional feeling overwhelmed.',
+      status: ScenarioStatus.ACTIVE,
+      difficultyLevel: ScenarioDifficultyLevel.EASY,
+      responseLength: 'BRIEF',
+      isGlobal: true,
+      coverImageUrl: 'https://placehold.co/400x300/png?text=Active+Listening',
+      name: 'Active Listening Basics',
       age: 25,
       gender: 'male',
+      currentLocation: 'Kolkata, India',
+      prompt:
+        'You are Alex, a 25-year-old professional feeling overwhelmed with work. Share your feelings openly.',
       genderIdentity: 'Male/Man',
       sexualOrientation: 'Heterosexual (straight)',
-      currentLocation: 'New York, USA',
-      personality: 'Introverted, thoughtful, slightly anxious',
-      context:
-        'Alex is a young professional struggling with work-life balance and seeking guidance.',
-      prompt:
-        'You are Alex, a 25-year-old software developer feeling overwhelmed at work.',
-      difficultyLevel: 'EASY',
-      responseLength: 'BRIEF',
-      tone: 'Casual',
-      openingStatements: [
-        "Hi, I'm not really sure where to start...",
-        "I've been feeling really stressed lately.",
+      context: 'Struggling with work-life balance and stress',
+      metadata: {
+        name: 'Alex',
+        age: 25,
+        gender: 'male',
+        genderIdentity: 'Male/Man',
+        sexualOrientation: 'Heterosexual (straight)',
+        currentLocation: 'New York, USA',
+        profession: 'Software Developer',
+        context: 'Struggling with work-life balance and stress',
+        tone: 'Cautious but hopeful',
+        openingStatements: [
+          "I'm not sure where to start...",
+          "Everything feels like it's piling up.",
+        ],
+        agentDialogues: ['I hear you', 'Tell me more', 'That sounds tough'],
+        prompt:
+          'You are Alex, a 25-year-old professional feeling overwhelmed with work. Share your feelings openly.',
+        voiceId,
+        langaugesVoices,
+      },
+      terminationEvents: [
+        {
+          id: 'event-active-listening-success',
+          message: 'Great job practicing active listening!',
+        },
       ],
-      agentDialogues: [
-        'I understand',
-        'Tell me more',
-        'How does that make you feel?',
-      ],
-      coverImageUrl: 'https://placehold.co/400x300/png?text=Scenario+1',
-      voiceId,
+      triggerWarningNames: ['Stress & Anxiety'],
     },
     {
-      title: 'Handling Emotional Disclosure',
-      description:
-        'Practice responding to emotional disclosures with empathy and support.',
-      status: 'ACTIVE',
-      name: 'Maya',
-      age: 32,
-      gender: 'female',
-      genderIdentity: 'Female/Woman',
-      sexualOrientation: 'Heterosexual (straight)',
-      currentLocation: 'Los Angeles, USA',
-      personality: 'Expressive, emotional, seeking validation',
-      context:
-        'Maya recently experienced a significant loss and is processing grief.',
-      prompt:
-        'You are Maya, a 32-year-old teacher dealing with the loss of a close family member.',
-      difficultyLevel: 'MEDIUM',
+      title: 'Supporting Emotional Disclosure',
+      description: 'Respond empathetically as Maya processes her grief.',
+      status: ScenarioStatus.ACTIVE,
+      difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
       responseLength: 'MEDIUM',
-      tone: 'Emotional',
-      openingStatements: [
-        "I don't know if I can do this...",
-        "It's been really hard since my mother passed away.",
+      isGlobal: true,
+      metadata: {
+        name: 'Maya',
+        age: 32,
+        gender: 'female',
+        genderIdentity: 'Female/Woman',
+        sexualOrientation: 'Heterosexual (straight)',
+        currentLocation: 'Los Angeles, USA',
+        profession: 'Teacher',
+        context: 'Recently lost a close family member',
+        tone: 'Emotional',
+        openingStatements: [
+          "It's been really hard since my mother passed away.",
+          "I don't know how to hold everything together anymore.",
+        ],
+        agentDialogues: [
+          'I’m here for you.',
+          'Take your time.',
+          'That sounds incredibly difficult.',
+        ],
+        prompt:
+          'You are Maya, a 32-year-old grieving the loss of your mother. You’re seeking support and validation.',
+        voiceId,
+        langaugesVoices,
+      },
+      terminationEvents: [
+        {
+          id: 'event-emotional-support-success',
+          message: 'You navigated emotional disclosure with empathy!',
+        },
       ],
-      agentDialogues: [
-        "I'm here for you",
-        'Take your time',
-        'That sounds difficult',
-      ],
-      coverImageUrl: 'https://placehold.co/400x300/png?text=Scenario+2',
-      voiceId,
+      triggerWarningNames: ['Grief & Loss'],
     },
-  ],
-});
+  ];
+
+  return scenarios;
+};
 
 // Scenario path configuration (will be populated with created scenario IDs)
 const createScenarioPathData = (scenarioIds: number[]) => ({
@@ -143,30 +179,11 @@ async function getOrCreateVoice(
     const response = await client.get('/api/v1/learn/scenario-voices', {
       headers,
     });
-    if (response.data?.data?.length > 0) {
-      const voice = response.data.data[0];
-      console.log(`Using existing voice: ${voice.name} (${voice.id})`);
-      return voice.id;
-    }
-  } catch (error: any) {
-    console.log('No existing voices found, creating new one...');
-  }
-
-  // Create a new voice
-  try {
-    const response = await client.post(
-      '/api/v1/learn/scenarios/voices',
-      voiceData,
-      { headers },
-    );
     const voice = response.data[0];
-    console.log(`Created voice: ${voice.name} (${voice.id})`);
+    console.log(`Using existing voice: ${voice.name} (${voice.id})`);
     return voice.id;
   } catch (error: any) {
-    console.error(
-      'Failed to create voice:',
-      error.response?.data?.message || error.message,
-    );
+    console.log('No existing voices found, creating new one...');
     throw error;
   }
 }
@@ -177,16 +194,23 @@ async function createScenarios(
   voiceId: string,
 ): Promise<number[]> {
   try {
-    const scenariosData = createScenariosData(voiceId);
+    const scenariosData: SeedScenario[] = await createScenariosData(
+      voiceId,
+      client,
+      accessToken,
+    );
+
     const response = await client.post(
       '/api/v1/learn/scenarios',
-      scenariosData,
+      { scenarios: scenariosData },
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
       },
     );
+
+    console.log(response, 'response');
 
     const scenarioIds = response.data.map((scenario: any) => scenario.id);
     console.log(`Created ${scenarioIds.length} scenarios:`);
@@ -196,6 +220,7 @@ async function createScenarios(
 
     return scenarioIds;
   } catch (error: any) {
+    console.log(error, 'error');
     console.error(
       'Failed to create scenarios:',
       error.response?.data?.message || error.message,
@@ -262,6 +287,39 @@ async function seedScenariosAndPath() {
   } catch (error: any) {
     console.error('Error during seeding:', error.message);
     process.exit(1);
+  }
+}
+
+async function mapLanguagesVoices(
+  client: AxiosInstance,
+  accessToken: string,
+): Promise<Record<string, string>> {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  // Try to get existing voices first
+  try {
+    const response = await client.get('/api/v1/learn/scenario-voices', {
+      headers,
+    });
+    const uniqueLangauges = new Set(
+      response.data.map((voice: any) => voice.languageId),
+    );
+
+    const langaugesVoices: Record<string, string> = {};
+    uniqueLangauges.forEach((languageId: any) => {
+      const voiceForLanguage = response.data.find(
+        (voice: any) => voice.languageId === languageId,
+      );
+      if (voiceForLanguage) {
+        langaugesVoices[languageId] = voiceForLanguage.id;
+      }
+    });
+
+    console.log(`Got the available language voices: `, langaugesVoices);
+    return langaugesVoices;
+  } catch (error: any) {
+    console.log('No existing voices found, creating new one...');
+    throw error;
   }
 }
 
