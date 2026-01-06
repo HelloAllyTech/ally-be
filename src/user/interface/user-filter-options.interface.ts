@@ -10,3 +10,8 @@ export interface UserFilterOptions {
   statuses?: string;
   search?: string;
 }
+
+export interface MinimalTenantData {
+  name: string;
+  logoUrl?: string;
+}

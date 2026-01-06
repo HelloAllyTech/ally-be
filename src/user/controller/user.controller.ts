@@ -240,4 +240,11 @@ export class UserController {
   async getUserPreferences(@CurrentUser() tokenUser: TokenUser) {
     return this.userService.getUserPreferences(tokenUser.id);
   }
+
+  @Get('tenant')
+  @AuthPermissions([PERMISSIONS.VIEW_USER_TENANT])
+  @ApiOperation({ summary: 'Get tenant details of current user' })
+  async getUserTenant() {
+    return this.userService.getUserTenant();
+  }
 }
