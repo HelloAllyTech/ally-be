@@ -1,1 +1,2 @@
 export const MAX_CUSTOM_FIELDS_COUNT = 3;
+export const MAX_TERMINATION_EVENT_COUNT = 10;
