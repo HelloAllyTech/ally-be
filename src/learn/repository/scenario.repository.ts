@@ -190,8 +190,8 @@ export class ScenariosRepository extends Repository<Scenarios> {
       .leftJoinAndMapMany(
         'scenario.terminationEvents',
         ScenarioEvents,
-        'scenarioEvent',
-        'scenarioEvent.scenarioId = scenario.id AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
+        'scenarioEvents',
+        'scenarioEvents.scenarioId = scenario.id AND scenarioEvents.autoTerminationStatus = :autoTerminationStatus',
         { autoTerminationStatus: true },
       )
       .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
