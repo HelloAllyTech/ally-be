@@ -27,7 +27,4 @@ export class SessionEventsTranslation extends BaseWithoutTenantEntity {
 
   @Column({ nullable: true })
   branchInstruction?: string;
-
-  @Column({ type: 'jsonb', nullable: true })
-  detectionData?: Record<string, any>;
 }

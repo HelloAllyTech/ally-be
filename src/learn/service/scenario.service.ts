@@ -963,7 +963,7 @@ export class ScenarioService {
 
       await scenarioEventsRepo.save(scenarioEvents);
 
-      await this.createUpdateScenarioEventsTranslations(scenarioEvents);
+      this.createUpdateScenarioEventsTranslations(scenarioEvents);
 
       return {
         scenarioId,

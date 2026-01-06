@@ -38,7 +38,6 @@ export class SessionEventTranslationService {
         name: sessionEvent.name,
         message: sessionEvent.message,
         branchInstruction: sessionEvent.branchInstruction,
-        detectionData: sessionEvent.detectionData,
       }),
       languages,
     );
@@ -104,7 +103,6 @@ export class SessionEventTranslationService {
           name: rawMetadata?.name,
           message: rawMetadata?.message,
           branchInstruction: rawMetadata?.branchInstruction,
-          detectionData: rawMetadata?.detectionData,
         });
 
         if (!sanitized || Object.keys(sanitized).length === 0) {
@@ -149,7 +147,6 @@ export class SessionEventTranslationService {
             name: translatedData.name ?? '',
             message: translatedData.message ?? '',
             branchInstruction: translatedData.branchInstruction ?? '',
-            detectionData: translatedData.detectionData ?? {},
           });
         }
 
