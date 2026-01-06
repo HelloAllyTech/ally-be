@@ -18,8 +18,10 @@ import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
 import { UpdateUserPreferencesDto } from 'src/user/dto/update-user-prefernces.dto';
 import { UserPreferencesRepository } from 'src/user/repository/user-prefernces.repository';
+import { AppConfigService } from 'src/config/config.service';
+import { S3Service } from 'src/aws/service/s3.service';
+import { ProfileImageUploadContentType } from 'src/user/enum/user.enum';
 
-// Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
     getTenantId: jest.fn(),
@@ -27,7 +29,6 @@ jest.mock('src/common/execution/execution-manager', () => ({
   },
 }));
 
-// Mock AuditLoggerService
 jest.mock('src/audit/service/audit-logger.service', () => ({
   AuditLoggerService: {
     getInstance: jest.fn().mockReturnValue({
@@ -48,6 +49,8 @@ describe('UserService', () => {
   let mockGroupService: any;
   let mockUsersGroupService: any;
   let mockSimulationCreditsService: any;
+  let mockConfigService: any;
+  let mockS3Service: any;
 
   const mockUser: User = {
     id: 1,
@@ -66,6 +69,7 @@ describe('UserService', () => {
     suspendedAt: undefined,
     termsAndAgreementApproved: false,
     termsAndAgreementApprovedAt: undefined,
+    profileImageUrl: null as any,
   } as unknown as User;
 
   const mockChat = {
@@ -104,6 +108,8 @@ describe('UserService', () => {
     };
 
     mockUsersRepository = {
+      getAllUsers: jest.fn(),
+      getUserCountByTenantIds: jest.fn(),
       findOne: jest.fn(),
       find: jest.fn(),
       create: jest.fn(),
@@ -111,6 +117,7 @@ describe('UserService', () => {
       update: jest.fn(),
       exists: jest.fn(),
       createQueryBuilder: jest.fn(() => mockQueryBuilder),
+      getWaitingClients: jest.fn(),
       query: jest.fn(),
     };
 
@@ -140,25 +147,27 @@ describe('UserService', () => {
       findById: jest.fn(),
     };
 
-    mockUsersRepository = {
-      getAllUsers: jest.fn(),
-      getUserCountByTenantIds: jest.fn(),
-      findOne: jest.fn(),
-      find: jest.fn(),
-      create: jest.fn(),
-      save: jest.fn(),
-      update: jest.fn(),
-      exists: jest.fn(),
-      createQueryBuilder: jest.fn(() => mockQueryBuilder),
-      getWaitingClients: jest.fn(), // Added for incorrect injection in service
-    };
-
     mockUsersGroupService = {
       getUserGroupsByUserIds: jest.fn(),
     };
 
     mockSimulationCreditsService = {
       updateSimulationCredits: jest.fn(),
+    };
+
+    mockConfigService = {
+      s3: {
+        assetsBucket: 'test-assets-bucket',
+      },
+      aws: {
+        region: 'ap-south-1',
+      },
+    };
+
+    mockS3Service = {
+      sanitizeFileName: jest.fn((name: string) => name),
+      generatePresignedUrl: jest.fn(),
+      deleteObject: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -181,6 +190,8 @@ describe('UserService', () => {
           provide: UserPreferencesRepository,
           useValue: mockUserPreferencesRepository,
         },
+        { provide: AppConfigService, useValue: mockConfigService },
+        { provide: S3Service, useValue: mockS3Service },
       ],
     }).compile();
 
@@ -228,8 +239,6 @@ describe('UserService', () => {
 
   describe('getWaitingList', () => {
     it('should return empty result when no waiting clients', async () => {
-      // Note: Due to incorrect @InjectRepository(User) on queueService in service,
-      // the User repository is injected as queueService, so we mock it there
       mockUsersRepository.getWaitingClients.mockResolvedValue([]);
       const result = await service.getWaitingList();
       expect(result).toEqual({ total_waiting: 0, clients: [] });
@@ -238,8 +247,6 @@ describe('UserService', () => {
     it('should return formatted waiting list when clients exist', async () => {
       const waitingClients = [{ clientId: 1 }];
       const usersWithChats = [{ ...mockUser, chat: [mockChat] }];
-      // Note: Due to incorrect @InjectRepository(User) on queueService in service,
-      // the User repository is injected as queueService, so we mock it there
       mockUsersRepository.getWaitingClients.mockResolvedValue(waitingClients);
       mockQueryBuilder.getMany.mockResolvedValue(usersWithChats);
       const result = await service.getWaitingList();
@@ -908,27 +915,25 @@ describe('UserService', () => {
       default_language_id: 2,
     };
 
-    // Mock the repository methods
-    const mockUserPreferencesRepository = {
+    const mockUserPreferencesRepositoryLocal = {
       upsertUserPreferences: jest.fn(),
       getUserPreferencesByUserId: jest.fn(),
     };
 
     beforeEach(() => {
-      // Reset all mocks before each test
       jest.clearAllMocks();
-
-      // Mock the private repository
       (service as any).userPreferencesRepository =
-        mockUserPreferencesRepository;
+        mockUserPreferencesRepositoryLocal;
     });
 
     describe('updateUserPreferences', () => {
       it('should update user preferences successfully', async () => {
         const userId = 1;
-        mockUserPreferencesRepository.upsertUserPreferences.mockResolvedValue({
-          generatedMaps: [mockUserPreferences],
-        });
+        mockUserPreferencesRepositoryLocal.upsertUserPreferences.mockResolvedValue(
+          {
+            generatedMaps: [mockUserPreferences],
+          },
+        );
 
         const result = await service.updateUserPreferences(
           userId,
@@ -937,7 +942,7 @@ describe('UserService', () => {
         );
 
         expect(
-          mockUserPreferencesRepository.upsertUserPreferences,
+          mockUserPreferencesRepositoryLocal.upsertUserPreferences,
         ).toHaveBeenCalledWith(
           userId,
           'tenant123',
@@ -949,7 +954,7 @@ describe('UserService', () => {
       it('should throw an error when updating preferences fails', async () => {
         const userId = 1;
         const error = new Error('Database error');
-        mockUserPreferencesRepository.upsertUserPreferences.mockRejectedValue(
+        mockUserPreferencesRepositoryLocal.upsertUserPreferences.mockRejectedValue(
           error,
         );
 
@@ -966,28 +971,28 @@ describe('UserService', () => {
     describe('getUserPreferences', () => {
       it('should get user preferences successfully', async () => {
         const userId = 1;
-        mockUserPreferencesRepository.getUserPreferencesByUserId.mockResolvedValue(
+        mockUserPreferencesRepositoryLocal.getUserPreferencesByUserId.mockResolvedValue(
           mockUserPreferences.data,
         );
 
         const result = await service.getUserPreferences(userId);
 
         expect(
-          mockUserPreferencesRepository.getUserPreferencesByUserId,
+          mockUserPreferencesRepositoryLocal.getUserPreferencesByUserId,
         ).toHaveBeenCalledWith(userId);
         expect(result).toEqual(mockUserPreferences.data);
       });
 
       it('should return null when user preferences are not found', async () => {
         const userId = 999;
-        mockUserPreferencesRepository.getUserPreferencesByUserId.mockResolvedValue(
+        mockUserPreferencesRepositoryLocal.getUserPreferencesByUserId.mockResolvedValue(
           null,
         );
 
         const result = await service.getUserPreferences(userId);
 
         expect(
-          mockUserPreferencesRepository.getUserPreferencesByUserId,
+          mockUserPreferencesRepositoryLocal.getUserPreferencesByUserId,
         ).toHaveBeenCalledWith(userId);
         expect(result).toBeNull();
       });
@@ -995,12 +1000,137 @@ describe('UserService', () => {
       it('should throw an error when getting preferences fails', async () => {
         const userId = 1;
         const error = new Error('Database error');
-        mockUserPreferencesRepository.getUserPreferencesByUserId.mockRejectedValue(
+        mockUserPreferencesRepositoryLocal.getUserPreferencesByUserId.mockRejectedValue(
           error,
         );
 
         await expect(service.getUserPreferences(userId)).rejects.toThrow(error);
       });
+    });
+  });
+
+  describe('getPresignedUrlForProfileImage', () => {
+    it('should return presignedUrl and profileImageUrl', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockS3Service.generatePresignedUrl.mockResolvedValue(
+        'https://presigned.url',
+      );
+
+      const dto = {
+        fileName: 'pic.png',
+        fileSize: 1000,
+        contentType: ProfileImageUploadContentType.PNG,
+      };
+
+      const res = await service.getPresignedUrlForProfileImage(dto as any);
+
+      expect(res.presignedUrl).toBe('https://presigned.url');
+      expect(res.profileImageUrl).toContain(
+        'https://test-assets-bucket.s3.ap-south-1.amazonaws.com/',
+      );
+      expect(mockS3Service.generatePresignedUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bucket: 'test-assets-bucket',
+          operation: 'put',
+          expiresIn: 600,
+          contentType: dto.contentType,
+        }),
+      );
+    });
+
+    it('should throw BadRequestException when userId missing', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(undefined);
+
+      const dto = {
+        fileName: 'pic.png',
+        fileSize: 1000,
+        contentType: ProfileImageUploadContentType.PNG,
+      };
+
+      await expect(
+        service.getPresignedUrlForProfileImage(dto as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw for invalid file type', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+
+      const dto = {
+        fileName: 'pic.exe',
+        fileSize: 1000,
+        contentType: 'application/x-msdownload',
+      };
+
+      await expect(
+        service.getPresignedUrlForProfileImage(dto as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw when file size > 2MB', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+
+      const dto = {
+        fileName: 'pic.png',
+        fileSize: 2 * 1024 * 1024 + 1,
+        contentType: ProfileImageUploadContentType.PNG,
+      };
+
+      await expect(
+        service.getPresignedUrlForProfileImage(dto as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('uploadProfileImage', () => {
+    it('should update profileImageUrl and return success true', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('1');
+
+      mockUsersRepository.findOne.mockResolvedValue(mockUser);
+      mockUsersRepository.create.mockReturnValue({
+        ...mockUser,
+        profileImageUrl: 'https://cdn/new.png',
+      });
+      mockUsersRepository.save.mockResolvedValue(undefined);
+
+      const res = await service.uploadProfileImage({
+        profileImageUrl: 'https://cdn/new.png',
+      } as any);
+
+      expect(mockUsersRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1 },
+      });
+      expect(mockUsersRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          profileImageUrl: 'https://cdn/new.png',
+        }),
+      );
+      expect(res).toEqual({ success: true });
+    });
+
+    it('should throw when userId missing', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(undefined);
+
+      await expect(
+        service.uploadProfileImage({ profileImageUrl: 'x' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw when user not found', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('1');
+      mockUsersRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.uploadProfileImage({ profileImageUrl: 'x' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw when profileImageUrl missing', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('1');
+      mockUsersRepository.findOne.mockResolvedValue(mockUser);
+
+      await expect(service.uploadProfileImage({} as any)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 });
