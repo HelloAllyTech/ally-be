@@ -9,8 +9,10 @@ class TerminationEventDto {
 }
 
 export class GetAdminScenarioDto extends Scenarios {
+  // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): Remove terminationEvent
   terminationEvent?: TerminationEventDto;
   triggerWarnings?: TriggerWarnings[];
+  terminationEvents?: TerminationEventDto[];
 }
 
 export class GetScenarioDto extends Scenarios {

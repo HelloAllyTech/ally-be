@@ -191,6 +191,7 @@ export class ScenarioSessionService {
         );
 
     // Update termination (Translated Version) event if language is not English
+    // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): Remove this if check and persist the next
     if (isOtherLanguage && scenario?.terminationEvent?.eventId) {
       const translatedTerminationEvent = sessionEvents.find(
         (event) => event.id === scenario?.terminationEvent?.eventId,
@@ -203,6 +204,26 @@ export class ScenarioSessionService {
           autoTerminationStatus: true,
         };
       }
+    }
+
+    // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): remove feature flag
+    if (
+      isOtherLanguage &&
+      this.configService?.featureFlag?.multipleTerminationEvents &&
+      scenario?.terminationEvents &&
+      scenario?.terminationEvents?.length > 0
+    ) {
+      const terminationEvents = scenario?.terminationEvents.map((termEvent) => {
+        const translatedTerminationEvent = sessionEvents.find(
+          (event) => event.id === termEvent?.eventId,
+        );
+        return {
+          ...translatedTerminationEvent,
+          eventId: translatedTerminationEvent?.id,
+          autoTerminationStatus: true,
+        };
+      });
+      scenario.terminationEvents = terminationEvents;
     }
 
     // Determine voiceId from scenario metadata languageVoices if languageId is provided or from metadata voiceId if languageId is not provided
@@ -311,8 +332,12 @@ export class ScenarioSessionService {
     scenario: GetAdminScenarioDto,
     sessionEvents: SessionEvents[],
   ) {
-    const { metadata, terminationEvent, ...scenarioDataWithoutMetadata } =
-      scenario;
+    const {
+      metadata,
+      terminationEvent,
+      terminationEvents,
+      ...scenarioDataWithoutMetadata
+    } = scenario;
 
     const { voiceId, promptData } = await this.getScenarioTranslationData(
       {
@@ -345,9 +370,25 @@ export class ScenarioSessionService {
 
     // Add termination event ID to be fetched if needed
     const idsToProcess = new Set<string>();
-    if (terminationEvent?.eventId && !eventMap.has(terminationEvent.eventId)) {
+
+    // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): Remove this check
+    if (
+      !this.configService?.featureFlag?.multipleTerminationEvents &&
+      terminationEvent?.eventId &&
+      !eventMap.has(terminationEvent.eventId)
+    ) {
       triggerEvents.add(terminationEvent.eventId);
       idsToProcess.add(terminationEvent.eventId);
+    } else if (
+      this.configService?.featureFlag?.multipleTerminationEvents &&
+      terminationEvents &&
+      terminationEvents?.length > 0
+    ) {
+      terminationEvents.forEach((termEvent) => {
+        if (termEvent?.eventId && !eventMap.has(termEvent.eventId)) {
+          idsToProcess.add(termEvent.eventId);
+        }
+      });
     }
 
     // Extract all event IDs referenced in combination events (initial pass)
@@ -430,6 +471,13 @@ export class ScenarioSessionService {
         }
       : undefined;
 
+    const autoTerminationEvents = terminationEvents?.map((termEvent) => {
+      return {
+        id: termEvent?.eventId,
+        terminationMessage: termEvent?.message,
+      };
+    });
+
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
@@ -446,6 +494,7 @@ export class ScenarioSessionService {
         events: allEvents,
         triggerEvents: Array.from(triggerEvents),
         autoTerminationEvent,
+        autoTerminationEvents,
       },
     };
   }
