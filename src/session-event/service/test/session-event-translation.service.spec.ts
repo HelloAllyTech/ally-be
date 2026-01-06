@@ -19,7 +19,6 @@ describe('SessionEventTranslationService', () => {
     id: 'test-event-1',
     message: 'Test message',
     branchInstruction: 'Test branch instruction',
-    detectionData: { key: 'value' },
   } as any;
 
   beforeEach(async () => {
@@ -197,7 +196,6 @@ describe('SessionEventTranslationService', () => {
       const metadata = {
         message: '  Test message  ',
         branchInstruction: '  Test branch  ',
-        detectionData: { key: 'value' },
       };
 
       const result = (service as any).sanitizeSessionEventMetadata(metadata);
@@ -205,7 +203,6 @@ describe('SessionEventTranslationService', () => {
       expect(result).toEqual({
         message: 'Test message',
         branchInstruction: 'Test branch',
-        detectionData: { key: 'value' },
       });
     });
 
@@ -213,7 +210,6 @@ describe('SessionEventTranslationService', () => {
       const metadata = {
         message: '   ',
         branchInstruction: null,
-        detectionData: null,
       };
 
       const result = (service as any).sanitizeSessionEventMetadata(metadata);
@@ -225,7 +221,6 @@ describe('SessionEventTranslationService', () => {
       const metadata = {
         message: undefined,
         branchInstruction: undefined,
-        detectionData: undefined,
       };
 
       const result = (service as any).sanitizeSessionEventMetadata(metadata);
@@ -235,13 +230,13 @@ describe('SessionEventTranslationService', () => {
 
     it('should preserve non-string metadata fields', () => {
       const metadata = {
-        detectionData: { foo: 'bar' },
+        branchInstruction: 'test',
       };
 
       const result = (service as any).sanitizeSessionEventMetadata(metadata);
 
       expect(result).toEqual({
-        detectionData: { foo: 'bar' },
+        branchInstruction: 'test',
       });
     });
 

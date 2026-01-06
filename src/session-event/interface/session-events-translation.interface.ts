@@ -4,7 +4,6 @@ export interface CreateSessionEventTranslation {
   name: string;
   message: string;
   branchInstruction: string;
-  detectionData?: Record<string, any>;
 }
 
 export interface UpdateSessionEventTranslation
