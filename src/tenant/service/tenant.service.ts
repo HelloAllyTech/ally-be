@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Not, Repository } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
 import { Tenant, TenantStatus } from '../entity/tenant.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { TenantsRepository } from '../repository/tenant.repository';
@@ -18,6 +19,15 @@ import { UserRepository } from 'src/user/repository/user.repository';
 import { TenantScenarioSharedService } from './tenant-scenario-shared';
 import { TenantScenarioPathSharedService } from './tenant-scenario-path-shared';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { S3Service } from 'src/aws/service/s3.service';
+import { AppConfigService } from 'src/config/config.service';
+import {
+  LogoUploadRequestDto,
+  OrganizationLogoUploadResponseDto,
+} from '../dto/organization-logo-upload.dto';
+
+import { DeleteLogoDto } from '../dto/delete-organization-logo.dto';
+import { LogoUploadContentType } from '../enum/tenant.enum';
 
 @Injectable()
 export class TenantService {
@@ -32,6 +42,8 @@ export class TenantService {
     @Inject(forwardRef(() => UserRepository))
     private readonly userRepository: UserRepository,
     private readonly dataSource: DataSource,
+    private configService: AppConfigService,
+    private s3Service: S3Service,
   ) {}
 
   async findAll(): Promise<Tenant[]> {
@@ -206,5 +218,77 @@ export class TenantService {
       updatedTenantData as Partial<Tenant>,
     );
     return this.findById(id);
+  }
+
+  async getPresignedUrlForOrganizationLogo(
+    logoUploadRequestDto: LogoUploadRequestDto,
+  ): Promise<OrganizationLogoUploadResponseDto> {
+    const bucket = this.configService.s3.assetsBucket;
+    if (!bucket) {
+      throw new Error('S3 bucket name for assets bucket is not defined');
+    }
+
+    const { fileName, fileSize, contentType } = logoUploadRequestDto;
+
+    if (!Object.values(LogoUploadContentType).includes(contentType)) {
+      throw new BadRequestException('Invalid file type');
+    }
+
+    const maxFileSize = 2 * 1024 * 1024; // 2 MB
+    if (fileSize > maxFileSize) {
+      throw new BadRequestException(
+        `File size must be less than ${maxFileSize / 1024 / 1024} MB`,
+      );
+    }
+    const uuid = uuidv4();
+    const userId = ExecutionManager.getUserId();
+    const sanitizedFileName = this.s3Service.sanitizeFileName(fileName);
+
+    const storageKey = `org-logos/${userId}-${uuid}-${sanitizedFileName}`;
+    const presignedUrl = await this.s3Service.generatePresignedUrl({
+      bucket,
+      key: storageKey,
+      operation: 'put',
+      expiresIn: 600, // 10 minutes
+      contentType,
+    });
+
+    const region = this.configService.aws.region;
+    const logoUrl = `https://${bucket}.s3.${region}.amazonaws.com/${storageKey}`;
+
+    return { presignedUrl, logoUrl };
+  }
+
+  async deleteOrganizationLogo(deleteLogoDto: DeleteLogoDto) {
+    const bucket = this.configService.s3.assetsBucket;
+    if (!bucket) {
+      throw new Error('S3 bucket name for assets bucket is not defined');
+    }
+
+    const LogoUrl = deleteLogoDto.LogoUrl;
+    const s3LogoUrlPattern =
+      /^https:\/\/[^.]+\.s3\.[^.]+\.amazonaws\.com\/(.+)$/;
+    const LogoUrlMatch = LogoUrl.match(s3LogoUrlPattern);
+    const storageKey = LogoUrlMatch ? LogoUrlMatch[1] : null;
+    if (!storageKey) {
+      this.logger.warn(`Invalid or unrecognized S3 URL: ${LogoUrl}`);
+      return { success: false };
+    }
+    if (!storageKey) {
+      this.logger.warn(`Invalid or unrecognized S3 storage Key: ${storageKey}`);
+      return { success: false };
+    }
+    try {
+      await this.s3Service.deleteObject({
+        bucket,
+        key: storageKey,
+      });
+      return { success: true };
+    } catch (error) {
+      this.logger.error(
+        `Failed to delete uploaded logo with error ${JSON.stringify(error)}`,
+      );
+      return { success: false };
+    }
   }
 }

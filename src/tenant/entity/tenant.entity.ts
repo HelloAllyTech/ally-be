@@ -50,4 +50,7 @@ export class Tenant {
 
   @Column({ nullable: true })
   updatedBy?: number;
+
+  @Column({ nullable: true })
+  logoUrl?: string;
 }
