@@ -141,9 +141,7 @@ export class AuthController {
   async googleAuth(
     @Body() googleSignInDto: GoogleSignInDto,
   ): Promise<AuthenticationResponseDto> {
-    const payload = await this.authService.verifyGoogleIdToken(
-      googleSignInDto.idToken,
-    );
+    const payload = await this.authService.verifyGoogleToken(googleSignInDto!);
     return this.authService.verifyGoogleUser(
       payload,
       googleSignInDto.allowedRoles,

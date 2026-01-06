@@ -193,14 +193,10 @@ describe('Scenario Util', () => {
       const createScenariosDto: CreateScenariosDto = {
         scenarios: [
           {
-            terminationEventId: 'event-1',
-            autoTerminationStatus: true,
-            terminationMessage: 'Session ended',
+            terminationEvents: [{ id: 'event-1', message: 'Session ended' }],
           } as any,
           {
-            terminationEventId: 'event-2',
-            autoTerminationStatus: true,
-            terminationMessage: 'Time is up',
+            terminationEvents: [{ id: 'event-2', message: 'Time is up' }],
           } as any,
         ],
       };
@@ -231,18 +227,14 @@ describe('Scenario Util', () => {
       ]);
     });
 
-    it('should filter out events with autoTerminationStatus false', () => {
+    it('should filter out scenarios without terminationEvents', () => {
       const createScenariosDto: CreateScenariosDto = {
         scenarios: [
           {
-            terminationEventId: 'event-1',
-            autoTerminationStatus: true,
-            terminationMessage: 'Session ended',
+            terminationEvents: [{ id: 'event-1', message: 'Session ended' }],
           } as any,
           {
-            terminationEventId: 'event-2',
-            autoTerminationStatus: false,
-            terminationMessage: 'Not used',
+            terminationEvents: undefined,
           } as any,
         ],
       };
@@ -266,18 +258,14 @@ describe('Scenario Util', () => {
       });
     });
 
-    it('should filter out events without eventId', () => {
+    it('should filter out scenarios with empty terminationEvents array', () => {
       const createScenariosDto: CreateScenariosDto = {
         scenarios: [
           {
-            terminationEventId: undefined,
-            autoTerminationStatus: true,
-            terminationMessage: 'Session ended',
+            terminationEvents: [],
           } as any,
           {
-            terminationEventId: 'event-2',
-            autoTerminationStatus: true,
-            terminationMessage: 'Time is up',
+            terminationEvents: [{ id: 'event-2', message: 'Time is up' }],
           } as any,
         ],
       };
