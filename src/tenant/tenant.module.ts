@@ -7,9 +7,14 @@ import { TenantsRepository } from './repository/tenant.repository';
 import { UserModule } from 'src/user/user.module';
 import { TenantScenarioSharedService } from './service/tenant-scenario-shared';
 import { TenantScenarioPathSharedService } from './service/tenant-scenario-path-shared';
+import { AwsModule } from 'src/aws/aws.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Tenant]), forwardRef(() => UserModule)],
+  imports: [
+    TypeOrmModule.forFeature([Tenant]),
+    forwardRef(() => UserModule),
+    AwsModule,
+  ],
   providers: [
     TenantService,
     TenantsRepository,

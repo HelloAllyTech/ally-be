@@ -25,6 +25,15 @@ export class CreateTenantDto {
   })
   code!: string;
 
+  @ApiProperty({
+    description: 'Organization URL of the scenario',
+    example:
+      'https://my-bucket.s3.us-east-1.amazonaws.com/org-logos/1730000000000-image.jpg',
+  })
+  @IsString()
+  @IsOptional()
+  logoUrl?: string;
+
   @ApiProperty({ description: 'Description of the tenant', required: false })
   @IsString()
   @IsOptional()

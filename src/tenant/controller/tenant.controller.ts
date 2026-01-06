@@ -22,12 +22,20 @@ import {
   Put,
   Query,
   Patch,
+  Delete,
 } from '@nestjs/common';
 import { TenantService } from '../service/tenant.service';
 import { SortOrder } from 'src/user/enum/user.enum';
 import { TenantSortBy } from '../enum/tenant.enum';
 import { UpdateTenantDto } from '../dto/update-tenant.dto';
 import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
+import {
+  LogoUploadRequestDto,
+  OrganizationLogoUploadResponseDto,
+} from '../dto/organization-logo-upload.dto';
+
+import { SuccessResponse } from 'src/common/type/common.type';
+import { DeleteLogoDto } from '../dto/delete-organization-logo.dto';
 
 @ApiTags('Tenant')
 @Controller('v1/tenants')
@@ -154,5 +162,25 @@ export class TenantController {
     @Body() updateTenantDto: UpdateTenantDto,
   ): Promise<Tenant | null> {
     return this.tenantService.updateTenant(id, updateTenantDto);
+  }
+
+  @ApiOperation({ summary: 'Get presigned URL for organization logo upload' })
+  @AuthPermissions([PERMISSIONS.EDIT_TENANT])
+  @Post('logo-url')
+  async getPresignedUrlForOrganizationLogo(
+    @Body() logoUploadRequestDto: LogoUploadRequestDto,
+  ): Promise<OrganizationLogoUploadResponseDto> {
+    return this.tenantService.getPresignedUrlForOrganizationLogo(
+      logoUploadRequestDto,
+    );
+  }
+
+  @ApiOperation({ summary: 'Delete organization logo ' })
+  @AuthPermissions([PERMISSIONS.EDIT_TENANT])
+  @Delete('logo')
+  async deleteOrganizationLogo(
+    @Body() deleteLogoDto: DeleteLogoDto,
+  ): Promise<SuccessResponse> {
+    return this.tenantService.deleteOrganizationLogo(deleteLogoDto);
   }
 }

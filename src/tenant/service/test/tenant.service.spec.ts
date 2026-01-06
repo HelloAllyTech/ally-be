@@ -14,6 +14,9 @@ import { UserRepository } from 'src/user/repository/user.repository';
 import { TenantScenarioSharedService } from '../tenant-scenario-shared';
 import { TenantScenarioPathSharedService } from '../tenant-scenario-path-shared';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { AppConfigService } from 'src/config/config.service';
+import { S3Service } from 'src/aws/service/s3.service';
+import { LogoUploadContentType } from 'src/tenant/enum/tenant.enum';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -41,6 +44,8 @@ describe('TenantService', () => {
   let tenantScenarioSharedService: jest.Mocked<TenantScenarioSharedService>;
   let tenantScenarioPathSharedService: jest.Mocked<TenantScenarioPathSharedService>;
   let dataSource: jest.Mocked<DataSource>;
+  let configService: jest.Mocked<AppConfigService>;
+  let s3Service: jest.Mocked<S3Service>;
 
   const mockTenant: Tenant = {
     id: 'test-tenant-id',
@@ -50,12 +55,13 @@ describe('TenantService', () => {
     status: TenantStatus.ACTIVE,
     metadata: { key: 'value' },
     settings: { setting: 'value' },
+    logoUrl: undefined as any,
     createdAt: new Date('2023-01-01'),
     updatedAt: new Date('2023-01-01'),
     deletedAt: undefined,
     createdBy: undefined,
     updatedBy: undefined,
-  };
+  } as Tenant;
 
   const mockCreateTenantData = {
     name: 'New Tenant',
@@ -95,6 +101,22 @@ describe('TenantService', () => {
       transaction: jest.fn(),
     };
 
+    const mockConfigService = {
+      s3: {
+        assetsBucket: 'test-assets-bucket',
+        learnMediaPublicBucket: 'test-public-bucket',
+      },
+      aws: {
+        region: 'ap-south-1',
+      },
+    };
+
+    const mockS3Service = {
+      sanitizeFileName: jest.fn((name: string) => name),
+      generatePresignedUrl: jest.fn(),
+      deleteObject: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
@@ -122,6 +144,14 @@ describe('TenantService', () => {
           provide: DataSource,
           useValue: mockDataSource,
         },
+        {
+          provide: AppConfigService,
+          useValue: mockConfigService,
+        },
+        {
+          provide: S3Service,
+          useValue: mockS3Service,
+        },
       ],
     }).compile();
 
@@ -132,6 +162,8 @@ describe('TenantService', () => {
       TenantScenarioPathSharedService,
     );
     dataSource = module.get(DataSource);
+    configService = module.get(AppConfigService);
+    s3Service = module.get(S3Service);
   });
 
   afterEach(() => {
@@ -339,13 +371,17 @@ describe('TenantService', () => {
         .spyOn(service, 'findById')
         .mockResolvedValueOnce(mockTenant)
         .mockResolvedValueOnce(updatedTenant);
+
       tenantRepository.update.mockResolvedValue({
         affected: 1,
         raw: [],
         generatedMaps: [],
-      });
+      } as any);
 
-      const result = await service.updateTenant('test-tenant-id', updateDto);
+      const result = await service.updateTenant(
+        'test-tenant-id',
+        updateDto as any,
+      );
 
       expect(service.findById).toHaveBeenCalledWith('test-tenant-id');
       expect(tenantRepository.update).toHaveBeenCalledWith(
@@ -365,13 +401,14 @@ describe('TenantService', () => {
         .spyOn(service, 'findById')
         .mockResolvedValueOnce(mockTenant)
         .mockResolvedValueOnce(updatedTenant);
+
       tenantRepository.update.mockResolvedValue({
         affected: 1,
         raw: [],
         generatedMaps: [],
-      });
+      } as any);
 
-      await service.updateTenant('test-tenant-id', updateDto);
+      await service.updateTenant('test-tenant-id', updateDto as any);
 
       expect(tenantRepository.update).toHaveBeenCalledWith(
         'test-tenant-id',
@@ -385,7 +422,7 @@ describe('TenantService', () => {
       jest.spyOn(service, 'findById').mockResolvedValue(null);
 
       await expect(
-        service.updateTenant('non-existent-id', { name: 'Test' }),
+        service.updateTenant('non-existent-id', { name: 'Test' } as any),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -401,8 +438,115 @@ describe('TenantService', () => {
       tenantRepository.findOne.mockResolvedValue(existingTenant);
 
       await expect(
-        service.updateTenant('test-tenant-id', updateDto),
+        service.updateTenant('test-tenant-id', updateDto as any),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('getPresignedUrlForOrganizationLogo', () => {
+    it('should return presignedUrl and logoUrl', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('999');
+
+      s3Service.sanitizeFileName.mockReturnValue('logo.png');
+      s3Service.generatePresignedUrl.mockResolvedValue(
+        'https://presigned.url' as any,
+      );
+
+      const dto = {
+        fileName: 'logo.png',
+        fileSize: 1000,
+        contentType: LogoUploadContentType.PNG,
+      };
+
+      const res = await service.getPresignedUrlForOrganizationLogo(dto as any);
+
+      expect(res.presignedUrl).toBe('https://presigned.url');
+      expect(res.logoUrl).toContain(
+        'https://test-assets-bucket.s3.ap-south-1.amazonaws.com/',
+      );
+      expect(s3Service.generatePresignedUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bucket: 'test-assets-bucket',
+          operation: 'put',
+          contentType: dto.contentType,
+          expiresIn: 600,
+        }),
+      );
+    });
+
+    it('should throw if assets bucket not configured', async () => {
+      (configService.s3 as any).assetsBucket = undefined;
+
+      const dto = {
+        fileName: 'logo.png',
+        fileSize: 1000,
+        contentType: LogoUploadContentType.PNG,
+      };
+
+      await expect(
+        service.getPresignedUrlForOrganizationLogo(dto as any),
+      ).rejects.toThrow('S3 bucket name for assets bucket is not defined');
+    });
+
+    it('should throw BadRequestException for invalid contentType', async () => {
+      const dto = {
+        fileName: 'logo.exe',
+        fileSize: 1000,
+        contentType: 'application/x-msdownload',
+      };
+
+      await expect(
+        service.getPresignedUrlForOrganizationLogo(dto as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when fileSize exceeds 2MB', async () => {
+      const dto = {
+        fileName: 'logo.png',
+        fileSize: 2 * 1024 * 1024 + 1,
+        contentType: LogoUploadContentType.PNG,
+      };
+
+      await expect(
+        service.getPresignedUrlForOrganizationLogo(dto as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('deleteOrganizationLogo', () => {
+    it('should delete object and return success true for valid url', async () => {
+      s3Service.deleteObject.mockResolvedValue(undefined as any);
+
+      const res = await service.deleteOrganizationLogo({
+        LogoUrl:
+          'https://test-public-bucket.s3.ap-south-1.amazonaws.com/org-logos/x.png',
+      } as any);
+
+      expect(s3Service.deleteObject).toHaveBeenCalledWith({
+        bucket: 'test-assets-bucket',
+        key: 'org-logos/x.png',
+      });
+      expect(res).toEqual({ success: true });
+    });
+
+    it('should return success false for invalid url', async () => {
+      const res = await service.deleteOrganizationLogo({
+        LogoUrl: 'not-a-valid-s3-url',
+      } as any);
+
+      expect(s3Service.deleteObject).not.toHaveBeenCalled();
+      expect(res).toEqual({ success: false });
+    });
+
+    it('should return success false when s3 delete throws', async () => {
+      s3Service.deleteObject.mockRejectedValue(new Error('S3 error'));
+
+      const res = await service.deleteOrganizationLogo({
+        LogoUrl:
+          'https://test-public-bucket.s3.ap-south-1.amazonaws.com/org-logos/x.png',
+      } as any);
+
+      expect(res).toEqual({ success: false });
     });
   });
 });
