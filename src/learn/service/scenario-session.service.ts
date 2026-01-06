@@ -138,7 +138,8 @@ export class ScenarioSessionService {
     if ((scenarioSession as any).events) {
       (scenarioSession as any).events = (scenarioSession as any).events.filter(
         (event: any) =>
-          event.events?.visibilityType === SessionEventVisibilityType.ACTIVE,
+          event.events?.visibilityType === SessionEventVisibilityType.ACTIVE &&
+          !event.scenarioEvent?.autoTerminationStatus,
       );
     }
 
