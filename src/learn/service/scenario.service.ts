@@ -44,12 +44,13 @@ import {
   GetScenarioDtoWithPagination,
 } from '../dto/get-scenario.dto';
 import {
-  formatAutoTerminationEventsList,
+  formatSingleAutoTerminationEventsList,
   formatScenarioTriggerWarningsList,
   getActiveScenarioMandatoryFields,
   mapCreateScenarioRequestToEntity,
   mapCreateScenarioRequestToEntityWithoutCustomFields,
   mapUpdateScenarioRequestToEntity,
+  formatAutoTerminationEventsList,
 } from '../util/scenario.util';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
@@ -71,6 +72,7 @@ import {
   ScenarioEventsTranslationData,
 } from '../interface/scenario-events-translation.interface';
 import { DEFAULT_LANGUAGE_CODE } from '../constants/scenario-session.constants';
+import { TerminationEventsDto } from '../dto/termination-events.dto';
 
 @Injectable()
 export class ScenarioService {
@@ -242,11 +244,28 @@ export class ScenarioService {
       throw new NotFoundException('Scenario not found');
     }
 
+    // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): Remove this check and vale inside
     if (result?.terminationEvent?.eventId) {
       const eventDetails = await this.sessionEventService.findSessionEventById(
         result.terminationEvent.eventId,
       );
       result.terminationEvent.name = eventDetails?.name;
+    }
+
+    if (result?.terminationEvents && result?.terminationEvents?.length > 0) {
+      const terminationEvents = await Promise.all(
+        result.terminationEvents.map(async (event) => {
+          if (event.eventId) {
+            const eventDetails =
+              await this.sessionEventService.findSessionEventById(
+                event.eventId,
+              );
+            return { ...event, name: eventDetails?.name };
+          }
+          return event;
+        }),
+      );
+      result.terminationEvents = terminationEvents;
     }
 
     return result;
@@ -445,10 +464,14 @@ export class ScenarioService {
           await scenarioTenantRepository.save(scenarioTenant);
         }
       }
-      const autoTerminationEventList = formatAutoTerminationEventsList(
-        createScenariosDto,
-        savedScenarios,
-      );
+      const autoTerminationEventList = this.configService?.featureFlag
+        ?.multipleTerminationEvents
+        ? formatAutoTerminationEventsList(createScenariosDto, savedScenarios)
+        : formatSingleAutoTerminationEventsList(
+            createScenariosDto,
+            savedScenarios,
+          );
+
       const scenarioTerminationEvents = scenarioEventsRepo.create(
         autoTerminationEventList,
       );
@@ -511,6 +534,12 @@ export class ScenarioService {
     ) {
       await this.validateTriggerWarnings(createScenarioDto.triggerWarningIds);
     }
+    if (
+      createScenarioDto.terminationEvents &&
+      createScenarioDto.terminationEvents.length > 0
+    ) {
+      await this.validateTerminationEvents(createScenarioDto.terminationEvents);
+    }
   }
 
   private async validateTriggerWarnings(triggerWarningIds: string[]) {
@@ -521,6 +550,23 @@ export class ScenarioService {
       );
     if (triggerWarnings.length !== uniqueTriggerWarningIds.length) {
       throw new BadRequestException('Invalid trigger warning IDs');
+    }
+  }
+
+  private async validateTerminationEvents(
+    terminationEvents: TerminationEventsDto[],
+  ) {
+    const uniqueTerminationEventIds = Array.from(
+      new Set(terminationEvents.map((event) => event.id)),
+    );
+    if (uniqueTerminationEventIds.length !== terminationEvents.length) {
+      throw new BadRequestException('Termination events must be unique');
+    }
+    const validEvents = await this.sessionEventService.findByIds(
+      uniqueTerminationEventIds,
+    );
+    if (validEvents.length !== uniqueTerminationEventIds.length) {
+      throw new BadRequestException('Invalid termination event IDs');
     }
   }
 
@@ -544,6 +590,7 @@ export class ScenarioService {
 
     // Validate ACTIVE: all required fields must be present
     if (status === ScenarioStatus.ACTIVE) {
+      // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): Remove this check
       if (
         data.autoTerminationStatus &&
         (!data.terminationEventId || !data.terminationMessage)
@@ -569,6 +616,71 @@ export class ScenarioService {
     }
   }
 
+  private async updateScenarioTerminationEvents(
+    id: number,
+    terminationEvents: TerminationEventsDto[],
+    em: EntityManager,
+  ) {
+    const scenarioEventsRepo = em.getRepository(ScenarioEvents);
+    const existingScenarioTerminationEvents = await scenarioEventsRepo.find({
+      where: { scenarioId: id, autoTerminationStatus: true },
+    });
+    const terminationEventsToDelete = existingScenarioTerminationEvents.filter(
+      (event) => !terminationEvents.some((te) => te.id === event.eventId),
+    );
+    if (terminationEventsToDelete.length > 0) {
+      await scenarioEventsRepo.delete(
+        terminationEventsToDelete.map((event) => event.id),
+      );
+      this.scenarioEventTranslationsRepository.delete({
+        scenarioId: id,
+        eventId: In(terminationEventsToDelete?.map((event) => event.eventId)),
+      });
+    }
+    const terminationEventsToAdd = terminationEvents.filter(
+      (event) =>
+        !existingScenarioTerminationEvents.some(
+          (te) => te.eventId === event.id,
+        ),
+    );
+    if (terminationEventsToAdd.length > 0) {
+      const newTerminationEvents = terminationEventsToAdd.map((event) =>
+        scenarioEventsRepo.create({
+          scenarioId: id,
+          eventId: event.id,
+          autoTerminationStatus: true,
+          message: event.message,
+        }),
+      );
+      await scenarioEventsRepo.save(newTerminationEvents);
+      this.createUpdateScenarioEventsTranslations(
+        terminationEventsToAdd?.map((event) => ({
+          scenarioId: id,
+          eventId: event.id,
+          message: event.message,
+        })),
+      );
+    }
+
+    // Update the message of existing termination events
+    const existingScenarioTerminationEventsToUpdate =
+      existingScenarioTerminationEvents.filter((event) =>
+        terminationEvents.some((te) => te.id === event.eventId),
+      );
+    if (existingScenarioTerminationEventsToUpdate.length > 0) {
+      existingScenarioTerminationEventsToUpdate.forEach((event) =>
+        scenarioEventsRepo.update(event.id, { message: event.message }),
+      );
+      this.createUpdateScenarioEventsTranslations(
+        existingScenarioTerminationEventsToUpdate?.map((event) => ({
+          scenarioId: id,
+          eventId: event.id,
+          message: event.message,
+        })),
+      );
+    }
+  }
+
   async updateScenario(
     id: number,
     updateScenarioDto: UpdateScenarioDto,
@@ -585,7 +697,6 @@ export class ScenarioService {
 
       const scenarioRepository = entityManager.getRepository(Scenarios);
       const updated = await scenarioRepository.update(id, updateData);
-
       if (scenario.status == ScenarioStatus.ACTIVE) {
         await this.persistTranslationsForScenarios(
           [scenario], // single-item array so helper can reuse same logic
@@ -611,62 +722,72 @@ export class ScenarioService {
         );
       }
 
-      const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
-      const existingScenarioTerminationEvent = await scenarioEventsRepo.findOne(
-        {
-          where: { scenarioId: id, autoTerminationStatus: true },
-        },
-      );
-      // The already existing termination event is not the one in update query or the autoterminationstatus is set to false- delete the event
-      if (
-        existingScenarioTerminationEvent &&
-        (!updateScenarioDto.autoTerminationStatus ||
-          existingScenarioTerminationEvent.eventId !==
-            updateScenarioDto.terminationEventId)
-      ) {
-        await scenarioEventsRepo.delete({
-          scenarioId: id,
-          eventId: existingScenarioTerminationEvent.eventId,
-          autoTerminationStatus: true,
-        });
+      const isMultipleTerminationEventSupported =
+        this.configService?.featureFlag?.multipleTerminationEvents;
+      if (isMultipleTerminationEventSupported) {
+        await this.updateScenarioTerminationEvents(
+          id,
+          updateScenarioDto?.terminationEvents || [],
+          entityManager,
+        );
+      } else {
+        // Single termination event support
+        const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
+        const existingScenarioTerminationEvent =
+          await scenarioEventsRepo.findOne({
+            where: { scenarioId: id, autoTerminationStatus: true },
+          });
+        // The already existing termination event is not the one in update query or the autoterminationstatus is set to false- delete the event
+        if (
+          existingScenarioTerminationEvent &&
+          (!updateScenarioDto.autoTerminationStatus ||
+            existingScenarioTerminationEvent.eventId !==
+              updateScenarioDto.terminationEventId)
+        ) {
+          await scenarioEventsRepo.delete({
+            scenarioId: id,
+            eventId: existingScenarioTerminationEvent.eventId,
+            autoTerminationStatus: true,
+          });
 
-        this.scenarioEventTranslationsRepository.delete({
-          scenarioId: id,
-          eventId: existingScenarioTerminationEvent.eventId,
-        });
-      }
-      // If the input termination event id is the same as the existing one - update the message
-      if (
-        existingScenarioTerminationEvent?.eventId ===
-          updateScenarioDto.terminationEventId &&
-        updateScenarioDto.autoTerminationStatus
-      ) {
-        await scenarioEventsRepo.update(
-          {
+          this.scenarioEventTranslationsRepository.delete({
+            scenarioId: id,
+            eventId: existingScenarioTerminationEvent.eventId,
+          });
+        }
+        // If the input termination event id is the same as the existing one - update the message
+        if (
+          existingScenarioTerminationEvent?.eventId ===
+            updateScenarioDto.terminationEventId &&
+          updateScenarioDto.autoTerminationStatus
+        ) {
+          await scenarioEventsRepo.update(
+            {
+              scenarioId: id,
+              eventId: updateScenarioDto.terminationEventId,
+              autoTerminationStatus: true,
+            },
+            { message: updateScenarioDto.terminationMessage },
+          );
+          // Create/update the translation for the new termination event
+          this.createUpdateScenarioEventsTranslations([
+            {
+              scenarioId: id,
+              eventId: updateScenarioDto.terminationEventId,
+              message: updateScenarioDto.terminationMessage,
+            },
+          ]);
+        } else if (updateScenarioDto.autoTerminationStatus) {
+          const newTerminationEvent = scenarioEventsRepo.create({
             scenarioId: id,
             eventId: updateScenarioDto.terminationEventId,
             autoTerminationStatus: true,
-          },
-          { message: updateScenarioDto.terminationMessage },
-        );
-        // Create/update the translation for the new termination event
-        this.createUpdateScenarioEventsTranslations([
-          {
-            scenarioId: id,
-            eventId: updateScenarioDto.terminationEventId,
             message: updateScenarioDto.terminationMessage,
-          },
-        ]);
-      } else if (updateScenarioDto.autoTerminationStatus) {
-        const newTerminationEvent = scenarioEventsRepo.create({
-          scenarioId: id,
-          eventId: updateScenarioDto.terminationEventId,
-          autoTerminationStatus: true,
-          message: updateScenarioDto.terminationMessage,
-        });
-        scenarioEventsRepo.save(newTerminationEvent);
-        // Create/update the translation for the new termination event
-        this.createUpdateScenarioEventsTranslations([newTerminationEvent]);
+          });
+          scenarioEventsRepo.save(newTerminationEvent);
+          // Create/update the translation for the new termination event
+          this.createUpdateScenarioEventsTranslations([newTerminationEvent]);
+        }
       }
       if (updated.affected === 0) return false;
 
@@ -871,11 +992,20 @@ export class ScenarioService {
       await this.validateTriggerWarnings(updateScenarioDto.triggerWarningIds);
     }
 
+    if (
+      updateScenarioDto?.terminationEvents &&
+      updateScenarioDto?.terminationEvents?.length > 0
+    ) {
+      await this.validateTerminationEvents(updateScenarioDto.terminationEvents);
+    }
+
     return scenario;
   }
 
   async deleteAdminScenario(id: number): Promise<boolean> {
+    // To check if the scenario exists
     await this.getAdminScenario(id);
+
     const scenarioPathItem =
       await this.scenarioPathSharedService.getScenarioPathItemByScenarioId(id);
     if (scenarioPathItem) {
