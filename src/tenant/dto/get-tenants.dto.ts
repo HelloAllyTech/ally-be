@@ -14,6 +14,9 @@ export class TenantWithUserCountDto {
   @ApiProperty({ example: 'A global tech company', required: false })
   description?: string;
 
+  @ApiProperty({ example: 'https://acme.com/logo.png', required: false })
+  organizationLogoUrl?: string;
+
   @ApiProperty({ enum: TenantStatus, example: TenantStatus.ACTIVE })
   status!: TenantStatus;
 
@@ -60,4 +63,10 @@ export class GetAllTenantsResponseDto {
     example: 100,
   })
   count!: number;
+
+  @ApiProperty({
+    description: 'Tenant logo URL',
+    example: 100,
+  })
+  LogoUrl?: string;
 }

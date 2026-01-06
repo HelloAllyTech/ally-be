@@ -180,6 +180,7 @@ export class AppConfigService {
       learnMediaPublicBucket: this.configService.get<string>(
         'LEARN_MEDIA_PUBLIC_S3_BUCKET',
       ),
+      assetsBucket: this.configService.get<string>('ASSETS_S3_BUCKET'),
     };
   }
 

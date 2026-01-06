@@ -16,7 +16,10 @@ import { RedisService } from '../../redis/service/redis.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { NotFoundException } from 'src/exception/custom.exception';
-import { UserFilterOptions } from '../interface/user-filter-options.interface';
+import {
+  MinimalTenantData,
+  UserFilterOptions,
+} from '../interface/user-filter-options.interface';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { UserRepository } from '../repository/user.repository';
 import { TenantService } from 'src/tenant/service/tenant.service';
@@ -508,5 +511,25 @@ export class UserService {
 
   async getUserPreferences(userId: number): Promise<any> {
     return this.userPreferencesRepository.getUserPreferencesByUserId(userId);
+  }
+
+  async getUserTenant(): Promise<MinimalTenantData> {
+    const userId = ExecutionManager.getUserId();
+
+    if (!userId) {
+      throw new BadRequestException('Unauthorized access');
+    }
+    const user = await this.userRepository.findOne({
+      where: { id: Number(userId) },
+    });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+    const tenant = await this.tenantService.findById(user.tenantId);
+    if (!tenant) {
+      throw new NotFoundException(`Tenant with ID ${user.tenantId} not found`);
+    }
+
+    return { name: tenant.name, logoUrl: tenant.logoUrl };
   }
 }

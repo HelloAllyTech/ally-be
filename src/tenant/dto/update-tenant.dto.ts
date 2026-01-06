@@ -17,6 +17,15 @@ export class UpdateTenantDto {
   @IsOptional()
   description?: string;
 
+  @ApiProperty({
+    description: 'Organization URL of the scenario',
+    example:
+      'https://my-bucket.s3.us-east-1.amazonaws.com/organization-logos/1730000000000-image.jpg',
+  })
+  @IsString()
+  @IsOptional()
+  logoUrl?: string;
+
   @ApiProperty({ description: 'Unique code for the tenant' })
   @IsString()
   @Length(2, 20)
