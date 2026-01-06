@@ -21,7 +21,10 @@ import {
 } from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
-import { MAX_CUSTOM_FIELDS_COUNT } from '../constants/scenario.constants';
+import {
+  MAX_CUSTOM_FIELDS_COUNT,
+  MAX_TERMINATION_EVENT_COUNT,
+} from '../constants/scenario.constants';
 import { TerminationEventsDto } from './termination-events.dto';
 
 export class CreateScenarioDto {
@@ -260,6 +263,7 @@ export class CreateScenarioDto {
   @IsOptional()
   voiceId?: string;
 
+  // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): Remove single terminationEvent data
   @ApiProperty({
     description: 'AutoTermination status',
     example: true,
@@ -284,6 +288,19 @@ export class CreateScenarioDto {
   @IsString()
   terminationEventId?: string;
 
+  @ApiProperty({
+    description: 'Termination events',
+    example: [
+      {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        message: 'Termination message',
+      },
+    ],
+  })
+  @IsArray()
+  @ArrayMaxSize(MAX_TERMINATION_EVENT_COUNT)
+  @ValidateNested({ each: true })
+  @Type(() => TerminationEventsDto)
   terminationEvents?: TerminationEventsDto[];
 
   @ApiProperty({ description: 'Global tenant visibility', example: false })
