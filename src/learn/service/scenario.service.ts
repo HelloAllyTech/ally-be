@@ -1121,7 +1121,7 @@ export class ScenarioService {
       if (
         isDuplicateKeyException(
           error,
-          'uq_scenario_events_scenario_id_event_id_auto_termination_status_idx',
+          'uq_scenario_events_scenario_id_event_id_auto_term_status_idx',
         )
       ) {
         throw new BadRequestException('Event already exists in scenario');

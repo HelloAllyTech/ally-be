@@ -109,6 +109,7 @@ export const mapCreateEventDtoToDbEvent = (
     event.detectionType as SessionEventDetectionType,
     event.detectionData as DetectionDataDto<CombinationExpressionRequestDto>,
   ),
+  detectionConfig: event.detectionConfig,
 });
 
 export const mapUpdateEventDtoToDbEvent = (
@@ -125,6 +126,7 @@ export const mapUpdateEventDtoToDbEvent = (
     event.detectionType as SessionEventDetectionType,
     event.detectionData as DetectionDataDto<CombinationExpressionRequestDto>,
   ),
+  detectionConfig: event.detectionConfig,
 });
 
 /**
