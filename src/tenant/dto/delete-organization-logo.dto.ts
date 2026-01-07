@@ -9,5 +9,5 @@ export class DeleteLogoDto {
   })
   @IsString()
   @IsNotEmpty()
-  LogoUrl!: string;
+  logoUrl!: string;
 }

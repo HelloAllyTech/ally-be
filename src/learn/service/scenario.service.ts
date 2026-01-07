@@ -563,6 +563,13 @@ export class ScenarioService {
     if (uniqueTerminationEventIds.length !== terminationEvents.length) {
       throw new BadRequestException('Termination events must be unique');
     }
+    // check if each termination event contains message and it should have some value in it
+    const isTerminationEventMessageInvalid = terminationEvents.some(
+      (event) => !event.message || event.message.trim()?.length === 0,
+    );
+    if (isTerminationEventMessageInvalid) {
+      throw new BadRequestException('Termination event message is required');
+    }
     const validEvents = await this.sessionEventService.findByIds(
       uniqueTerminationEventIds,
     );

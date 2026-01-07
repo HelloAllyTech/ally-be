@@ -518,7 +518,7 @@ describe('TenantService', () => {
       s3Service.deleteObject.mockResolvedValue(undefined as any);
 
       const res = await service.deleteOrganizationLogo({
-        LogoUrl:
+        logoUrl:
           'https://test-public-bucket.s3.ap-south-1.amazonaws.com/org-logos/x.png',
       } as any);
 
@@ -531,7 +531,7 @@ describe('TenantService', () => {
 
     it('should return success false for invalid url', async () => {
       const res = await service.deleteOrganizationLogo({
-        LogoUrl: 'not-a-valid-s3-url',
+        logoUrl: 'not-a-valid-s3-url',
       } as any);
 
       expect(s3Service.deleteObject).not.toHaveBeenCalled();
@@ -542,7 +542,7 @@ describe('TenantService', () => {
       s3Service.deleteObject.mockRejectedValue(new Error('S3 error'));
 
       const res = await service.deleteOrganizationLogo({
-        LogoUrl:
+        logoUrl:
           'https://test-public-bucket.s3.ap-south-1.amazonaws.com/org-logos/x.png',
       } as any);
 
