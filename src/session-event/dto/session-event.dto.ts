@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   ValidateNested,
@@ -149,6 +150,57 @@ export class DetectionDataDto<T> {
 
 export class DetectionDataRequestDto extends DetectionDataDto<CombinationExpressionRequestDto> {}
 
+export class DetectionConfigDto {
+  @ApiProperty({
+    description: 'The start time of the event in seconds',
+    example: 120,
+  })
+  @IsOptional()
+  @IsNumber()
+  startTime?: number;
+
+  @ApiProperty({
+    description: 'The end time of the event in seconds',
+    example: 120,
+  })
+  @IsOptional()
+  @IsNumber()
+  endTime?: number;
+
+  @ApiProperty({
+    description: 'The maximum number of occurrences of the event',
+    example: 10,
+  })
+  @IsOptional()
+  @IsNumber()
+  maxOccurrences?: number;
+
+  @ApiProperty({
+    description:
+      'The minimum gap time between occurrences of the event in seconds',
+    example: 10,
+  })
+  @IsOptional()
+  @IsNumber()
+  minGapTime?: number;
+
+  @ApiProperty({
+    description: 'The minimum score of the event',
+    example: 50,
+  })
+  @IsOptional()
+  @IsNumber()
+  minScore?: number;
+
+  @ApiProperty({
+    description: 'The maximum score of the event',
+    example: 100,
+  })
+  @IsOptional()
+  @IsNumber()
+  maxScore?: number;
+}
+
 export class SessionEventDto<T> {
   @ApiProperty({
     description: 'The name of the event',
@@ -241,6 +293,21 @@ export class SessionEventDto<T> {
   @Type(() => DetectionDataDto)
   @IsOptional()
   detectionData?: DetectionDataDto<T>;
+
+  @ApiProperty({
+    description: 'The detection config of the event',
+    example: {
+      startTime: 120,
+      endTime: 120,
+      maxOccurrences: 10,
+      minGapTime: 10,
+      minScore: 0,
+      maxScore: 100,
+    },
+  })
+  @IsObject()
+  @IsOptional()
+  detectionConfig?: DetectionConfigDto;
 }
 
 export class CreateSessionEventDto extends SessionEventDto<CombinationExpressionRequestDto> {}

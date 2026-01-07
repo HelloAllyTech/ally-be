@@ -9,7 +9,7 @@ import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.e
 
 @Entity('scenario_events')
 @Index(
-  'uq_scenario_events_scenario_id_event_id_auto_termination_status_idx',
+  'uq_scenario_events_scenario_id_event_id_auto_term_status_idx',
   ['scenarioId', 'eventId', 'autoTerminationStatus'],
   {
     unique: true,
