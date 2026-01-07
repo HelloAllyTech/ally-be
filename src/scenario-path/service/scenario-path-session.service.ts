@@ -101,6 +101,14 @@ export class ScenarioPathSessionService {
     if (!tenantId) {
       throw new NotFoundException('Tenant not found');
     }
+
+    const scenarioPath =
+      await this.scenarioPathSharedService.getActiveScenarioPathById(
+        scenarioPathId,
+      );
+    if (!scenarioPath) {
+      throw new NotFoundException('Scenario path not found');
+    }
     const scenarioPathWithScenarios =
       await this.scenarioPathSharedService.getScenarioPathWithScenarios(
         scenarioPathId,
