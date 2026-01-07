@@ -5,6 +5,7 @@ import { SessionEventVisibilityType } from '../enum/session-event-visibility-typ
 import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
 import {
   CombinationExpressionDto,
+  DetectionConfigDto,
   DetectionDataDto,
 } from '../dto/session-event.dto';
 
@@ -57,4 +58,7 @@ export class SessionEvents extends BaseWithoutTenantEntity {
 
   @Column({ nullable: true })
   updatedBy?: number;
+
+  @Column({ type: 'jsonb', nullable: true })
+  detectionConfig?: DetectionConfigDto;
 }
