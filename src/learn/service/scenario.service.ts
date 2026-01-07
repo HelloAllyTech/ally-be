@@ -73,6 +73,7 @@ import {
 } from '../interface/scenario-events-translation.interface';
 import { DEFAULT_LANGUAGE_CODE } from '../constants/scenario-session.constants';
 import { TerminationEventsDto } from '../dto/termination-events.dto';
+import isDuplicateKeyException from 'src/exception/custom.exception';
 
 @Injectable()
 export class ScenarioService {
@@ -1043,71 +1044,84 @@ export class ScenarioService {
       throw new BadRequestException(`Invalid event IDs: ${invalidEventIds}`);
     }
 
-    return await this.dataSource.transaction(async (entityManager) => {
-      const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
+    try {
+      return await this.dataSource.transaction(async (entityManager) => {
+        const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
 
-      // Delete existing non-auto-termination events for this scenario
-      await scenarioEventsRepo.delete({
-        scenarioId,
-        autoTerminationStatus: false,
-      });
+        // Delete existing non-auto-termination events for this scenario
+        await scenarioEventsRepo.delete({
+          scenarioId,
+          autoTerminationStatus: false,
+        });
 
-      // Create an array of ScenarioEvents entities to be saved
-      const scenarioEvents = events.map((event) => {
-        const {
-          id,
-          feedbackStatus,
-          score,
-          emoji,
-          message,
-          branchingStatus,
-          branchInstruction,
-        } = event;
+        // Create an array of ScenarioEvents entities to be saved
+        const scenarioEvents = events.map((event) => {
+          const {
+            id,
+            feedbackStatus,
+            score,
+            emoji,
+            message,
+            branchingStatus,
+            branchInstruction,
+          } = event;
+          return {
+            scenarioId,
+            eventId: id,
+            autoTerminationStatus: false,
+            score,
+            ...(feedbackStatus
+              ? {
+                  feedbackStatus,
+                  emoji,
+                  message,
+                }
+              : {
+                  feedbackStatus: false,
+                  emoji: undefined,
+                  message: undefined,
+                }),
+            ...(branchingStatus
+              ? {
+                  branchingStatus,
+                  branchInstruction,
+                }
+              : {
+                  branchingStatus: false,
+                  branchInstruction: undefined,
+                }),
+          };
+        });
+
+        await scenarioEventsRepo.save(scenarioEvents);
+
+        this.createUpdateScenarioEventsTranslations(scenarioEvents);
+
         return {
           scenarioId,
-          eventId: id,
-          autoTerminationStatus: false,
-          score,
-          ...(feedbackStatus
-            ? {
-                feedbackStatus,
-                emoji,
-                message,
-              }
-            : {
-                feedbackStatus: false,
-                emoji: undefined,
-                message: undefined,
-              }),
-          ...(branchingStatus
-            ? {
-                branchingStatus,
-                branchInstruction,
-              }
-            : {
-                branchingStatus: false,
-                branchInstruction: undefined,
-              }),
+          events: scenarioEvents.map((event) => ({
+            id: event.eventId,
+            feedbackStatus: event.feedbackStatus,
+            score: event.score,
+            emoji: event.emoji,
+            message: event.message,
+            branchingStatus: event.branchingStatus,
+            branchInstruction: event.branchInstruction,
+          })),
         };
       });
-
-      await scenarioEventsRepo.save(scenarioEvents);
-
-      this.createUpdateScenarioEventsTranslations(scenarioEvents);
-
-      return {
-        scenarioId,
-        events: scenarioEvents.map((event) => ({
-          id: event.eventId,
-          feedbackStatus: event.feedbackStatus,
-          score: event.score,
-          emoji: event.emoji,
-          message: event.message,
-          branchingStatus: event.branchingStatus,
-          branchInstruction: event.branchInstruction,
-        })),
-      };
-    });
+    } catch (error) {
+      if (
+        isDuplicateKeyException(
+          error,
+          'uq_scenario_events_scenario_id_event_id_auto_termination_status_idx',
+        )
+      ) {
+        throw new BadRequestException('Event already exists in scenario');
+      }
+      this.logger.error(`Error mapping events to scenario: ${error}`);
+      throw error;
+    }
   }
 
   async deleteScenarioEvents(scenarioEvents: DeleteScenarioEventsDto) {

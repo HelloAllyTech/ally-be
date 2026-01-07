@@ -52,39 +52,6 @@ export const mapRequestToDbExpression = (
   throw new BadRequestException('Invalid combination expression');
 };
 
-export const mapDbExpressionToResponse = (
-  expr: CombinationExpressionDto,
-): CombinationExpressionRequestDto | undefined => {
-  if (!expr) return undefined;
-
-  switch (expr.type) {
-    case CombinationExpressionType.IDENTIFIER:
-      return { id: expr.id ?? '' };
-
-    case CombinationExpressionType.NOT:
-      // convert operand -> left
-      return {
-        type: CombinationExpressionRequestType.NOT,
-        left: mapDbExpressionToResponse(
-          expr.operand as CombinationExpressionDto,
-        ),
-      };
-
-    case CombinationExpressionType.AND:
-    case CombinationExpressionType.OR:
-      return {
-        type: expr.type as unknown as CombinationExpressionRequestType,
-        left: mapDbExpressionToResponse(expr.left as CombinationExpressionDto),
-        right: mapDbExpressionToResponse(
-          expr.right as CombinationExpressionDto,
-        ),
-      } as CombinationExpressionRequestDto;
-
-    default:
-      throw new BadRequestException('Invalid combination expression');
-  }
-};
-
 export const mapRequestToDbDetectionDataByType = (
   type: SessionEventDetectionType,
   eventDetectiondata: DetectionDataDto<CombinationExpressionRequestDto>,
