@@ -80,6 +80,10 @@ export class SessionEventService {
         const extractedIds = extractEventIds(event.detectionData?.expression);
         extractedIds.forEach((id) => combinationExpressionEventIds.add(id));
       }
+
+      if (event.detectionConfig?.startTime === null) {
+        throw new BadRequestException('Start time cannot be null');
+      }
     }
 
     // Validate all referenced event IDs exist (only once, after collecting all)
@@ -129,6 +133,7 @@ export class SessionEventService {
       createdAt: event.sessionEvents_createdAt,
       updatedAt: event.sessionEvents_updatedAt,
       eventCode: event.sessionEvents_eventCode,
+      detectionConfig: event.sessionEvents_detectionConfig,
     }));
   }
 
