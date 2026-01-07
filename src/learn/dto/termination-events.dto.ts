@@ -14,5 +14,5 @@ export class TerminationEventsDto {
     example: 'Termination message',
   })
   @IsString()
-  message?: string;
+  message!: string;
 }
