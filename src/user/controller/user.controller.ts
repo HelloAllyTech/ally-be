@@ -44,6 +44,12 @@ import { AddUserDto } from '../dto/add-user.dto';
 import { User } from '../entity/user.entity';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { UpdateUserPreferencesDto } from '../dto/update-user-prefernces.dto';
+import {
+  ProfileImageUploadRequestDto,
+  ProfileImageUploadResponseDto,
+} from '../dto/profile-image-upload-request.dto';
+import { DeleteProfileImageDto } from '../dto/delete-profile-image.dto';
+import { ProfileImageUploadDto } from '../dto/profile-image-upload.dto';
 
 @Controller('v1/users')
 @ApiTags('Users')
@@ -180,6 +186,15 @@ export class UserController {
     return this.userService.addUser(userData);
   }
 
+  @ApiOperation({ summary: 'upload profile image ' })
+  @Patch('profile-image')
+  @UseGuards(JwtAuthGuard)
+  async uploadProfileImage(
+    @Body() profileImageUploadDto: ProfileImageUploadDto,
+  ) {
+    return this.userService.uploadProfileImage(profileImageUploadDto);
+  }
+
   @Patch(':id')
   @AuthPermissions([PERMISSIONS.EDIT_USER])
   @ApiOperation({ summary: 'Update user details' })
@@ -246,5 +261,25 @@ export class UserController {
   @ApiOperation({ summary: 'Get tenant details of current user' })
   async getUserTenant() {
     return this.userService.getUserTenant();
+  }
+
+  @ApiOperation({ summary: 'Get presigned URL for profile image upload' })
+  @UseGuards(JwtAuthGuard)
+  @Post('profile-image-url')
+  async getPresignedUrlForProfileImage(
+    @Body() profileImageUploadRequestDto: ProfileImageUploadRequestDto,
+  ): Promise<ProfileImageUploadResponseDto> {
+    return this.userService.getPresignedUrlForProfileImage(
+      profileImageUploadRequestDto,
+    );
+  }
+
+  @ApiOperation({ summary: 'Delete profile image' })
+  @Delete('profile-image')
+  @UseGuards(JwtAuthGuard)
+  async deleteProfileImage(
+    @Body() deleteProfileImageDto: DeleteProfileImageDto,
+  ): Promise<SuccessResponse> {
+    return this.userService.deleteProfileImage(deleteProfileImageDto);
   }
 }

@@ -14,6 +14,9 @@ export class UserDto {
   @ApiProperty({ description: 'Username' })
   username!: string;
 
+  @ApiProperty({ description: 'Profile image URL', nullable: true })
+  profileImageUrl?: string;
+
   @ApiProperty({
     description: 'External system ID / Telephony ID',
     nullable: true,

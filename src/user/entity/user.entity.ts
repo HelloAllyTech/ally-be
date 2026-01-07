@@ -52,4 +52,7 @@ export class User extends BaseEntity {
 
   @Column({ type: 'timestamp', nullable: true })
   termsAndAgreementApprovedAt?: Date;
+
+  @Column({ nullable: true })
+  profileImageUrl?: string;
 }

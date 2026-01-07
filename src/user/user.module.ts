@@ -9,6 +9,7 @@ import { LearnModule } from 'src/learn/learn.module';
 import { AuthorizationModule } from 'src/authorization/authorization.module';
 import { User } from './entity/user.entity';
 import { UserPreferencesRepository } from './repository/user-prefernces.repository';
+import { AwsModule } from 'src/aws/aws.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { UserPreferencesRepository } from './repository/user-prefernces.reposito
     forwardRef(() => LearnModule),
     forwardRef(() => TenantModule),
     AuthorizationModule,
+    AwsModule,
   ],
   providers: [UserService, UserRepository, UserPreferencesRepository],
   controllers: [UserController],
