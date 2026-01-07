@@ -35,7 +35,7 @@ export class CustomExceptionFilter implements ExceptionFilter {
           : (errorResponse as any).message || exception.message;
       error = (errorResponse as any).error || 'Error';
     } else if (exception instanceof QueryFailedError) {
-      status = HttpStatus.BAD_REQUEST;
+      status = HttpStatus.INTERNAL_SERVER_ERROR;
       message = 'Database query failed';
       error = exception.message;
     } else if (exception instanceof Error) {
