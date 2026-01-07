@@ -637,12 +637,9 @@ export class UserService {
     if (!user) {
       throw new BadRequestException('User not found');
     }
-    if (!profileImageUploadDto.profileImageUrl) {
-      throw new BadRequestException('Profile image URL is required');
-    }
     const updatedUser = this.userRepository.create({
       ...user,
-      profileImageUrl: profileImageUploadDto.profileImageUrl,
+      profileImageUrl: profileImageUploadDto?.profileImageUrl,
     });
     await this.userRepository.save(updatedUser);
     return { success: true };
