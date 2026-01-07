@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class ProfileImageUploadDto {
   @ApiProperty({
@@ -8,6 +8,6 @@ export class ProfileImageUploadDto {
       'https://my-bucket.s3.us-east-1.amazonaws.com/profile-images/1730000000000-image.jpg',
   })
   @IsString()
-  @IsNotEmpty()
-  profileImageUrl!: string;
+  @IsOptional()
+  profileImageUrl?: string;
 }
