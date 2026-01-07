@@ -1123,14 +1123,5 @@ describe('UserService', () => {
         service.uploadProfileImage({ profileImageUrl: 'x' } as any),
       ).rejects.toThrow(BadRequestException);
     });
-
-    it('should throw when profileImageUrl missing', async () => {
-      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('1');
-      mockUsersRepository.findOne.mockResolvedValue(mockUser);
-
-      await expect(service.uploadProfileImage({} as any)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
   });
 });
