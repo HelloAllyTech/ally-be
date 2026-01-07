@@ -7,6 +7,7 @@ import {
 import { In } from 'typeorm';
 import { ScenarioPathRepository } from '../repository/scenario-path.repository';
 import {
+  ScenarioPathStatus,
   ScenarioPathsWithSession,
   ScenarioPathWithSessionFilterOptions,
 } from '../type/scenario-paths.type';
@@ -228,5 +229,11 @@ export class ScenarioPathSharedService {
       tenantId,
       scenarioPathId,
     );
+  }
+
+  async getActiveScenarioPathById(scenarioPathId: string) {
+    return this.scenarioPathRepository.findOne({
+      where: { id: scenarioPathId, status: ScenarioPathStatus.ACTIVE },
+    });
   }
 }
