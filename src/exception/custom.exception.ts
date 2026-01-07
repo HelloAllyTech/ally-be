@@ -75,3 +75,15 @@ export class EntityOperationException extends HttpException {
     );
   }
 }
+
+export default function isDuplicateKeyException(
+  error: any,
+  constraintName: string,
+): boolean {
+  return (
+    error &&
+    error.name === 'QueryFailedError' &&
+    error.code === '23505' &&
+    error.constraint === constraintName
+  );
+}
