@@ -1,5 +1,3 @@
-// src/session-event/service/test/session-event-translation.service.spec.ts
-
 import { Test, TestingModule } from '@nestjs/testing';
 import { SessionEventTranslationService } from '../session-event-translation.service';
 import { GoogleTranslationsService } from 'src/common/service/google-translation.service';
@@ -196,6 +194,7 @@ describe('SessionEventTranslationService', () => {
       const metadata = {
         message: '  Test message  ',
         branchInstruction: '  Test branch  ',
+        detectionData: { key: 'value' },
       };
 
       const result = (service as any).sanitizeSessionEventMetadata(metadata);
@@ -203,6 +202,7 @@ describe('SessionEventTranslationService', () => {
       expect(result).toEqual({
         message: 'Test message',
         branchInstruction: 'Test branch',
+        detectionData: { key: 'value' },
       });
     });
 
@@ -210,6 +210,7 @@ describe('SessionEventTranslationService', () => {
       const metadata = {
         message: '   ',
         branchInstruction: null,
+        detectionData: null,
       };
 
       const result = (service as any).sanitizeSessionEventMetadata(metadata);
@@ -221,6 +222,7 @@ describe('SessionEventTranslationService', () => {
       const metadata = {
         message: undefined,
         branchInstruction: undefined,
+        detectionData: undefined,
       };
 
       const result = (service as any).sanitizeSessionEventMetadata(metadata);
@@ -230,13 +232,13 @@ describe('SessionEventTranslationService', () => {
 
     it('should preserve non-string metadata fields', () => {
       const metadata = {
-        branchInstruction: 'test',
+        detectionData: { foo: 'bar' },
       };
 
       const result = (service as any).sanitizeSessionEventMetadata(metadata);
 
       expect(result).toEqual({
-        branchInstruction: 'test',
+        detectionData: { foo: 'bar' },
       });
     });
 
@@ -251,6 +253,132 @@ describe('SessionEventTranslationService', () => {
       expect(result).toEqual({
         message: 'hello',
         customField: 'world',
+      });
+    });
+  });
+
+  describe('extractTranslatableFields', () => {
+    it('should extract translatable fields from metadata', () => {
+      const metadata = {
+        detectionData: {
+          sentences: ['This is a test.', 'Another sentence.'],
+          className: 'TestClass',
+          type: 'TestType',
+        },
+      };
+
+      const allowedPaths = [
+        'detectionData.sentences',
+        'detectionData.className',
+      ];
+
+      const result = (service as any).extractTranslatableFields(
+        metadata,
+        allowedPaths,
+      );
+
+      expect(result.translatable).toEqual({
+        'detectionData.sentences': ['This is a test.', 'Another sentence.'],
+        'detectionData.className': 'TestClass',
+      });
+
+      expect(result.passthrough).toEqual({
+        detectionData: {
+          type: 'TestType',
+        },
+      });
+    });
+  });
+
+  describe('mergeTranslatedFields', () => {
+    it('should merge translated fields into passthrough using dot paths', () => {
+      const passthrough = {
+        detectionData: {
+          type: 'TestType',
+        },
+      };
+
+      const translated = {
+        'detectionData.sentences': [
+          'Translated sentence 1',
+          'Translated sentence 2',
+        ],
+        'detectionData.className': 'TranslatedClass',
+      };
+
+      const result = (service as any).mergeTranslatedFields(
+        passthrough,
+        translated,
+      );
+
+      expect(result).toEqual({
+        detectionData: {
+          type: 'TestType',
+          sentences: ['Translated sentence 1', 'Translated sentence 2'],
+          className: 'TranslatedClass',
+        },
+      });
+    });
+
+    it('should return passthrough unchanged when translated is undefined', () => {
+      const passthrough = {
+        detectionData: {
+          type: 'TestType',
+        },
+      };
+
+      const result = (service as any).mergeTranslatedFields(
+        passthrough,
+        undefined,
+      );
+
+      expect(result).toEqual(passthrough);
+    });
+
+    it('should not mutate the original passthrough object', () => {
+      const passthrough = {
+        detectionData: {
+          type: 'TestType',
+        },
+      };
+
+      const translated = {
+        'detectionData.className': 'NewClass',
+      };
+
+      const result = (service as any).mergeTranslatedFields(
+        passthrough,
+        translated,
+      );
+
+      expect(result).not.toBe(passthrough);
+      expect(passthrough).toEqual({
+        detectionData: {
+          type: 'TestType',
+        },
+      });
+    });
+
+    it('should overwrite existing values at the same path', () => {
+      const passthrough = {
+        detectionData: {
+          className: 'OldClass',
+        },
+      };
+
+      const translated = {
+        'detectionData.className': 'NewClass',
+      };
+
+      const result = (service as any).mergeTranslatedFields(
+        passthrough,
+        translated,
+      );
+
+      expect(result).toEqual({
+        detectionData: {
+          className: 'NewClass',
+        },
       });
     });
   });
