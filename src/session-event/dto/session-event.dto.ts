@@ -49,6 +49,36 @@ export class CombinationExpressionRequestDto {
   @IsOptional()
   id?: string;
 }
+
+export class CombinationExpressionResponseDto {
+  @ApiProperty({ required: false })
+  @IsEnum(CombinationExpressionRequestType)
+  @IsOptional()
+  type?: CombinationExpressionRequestType;
+
+  @ApiProperty({ required: false })
+  @ValidateNested()
+  @Type(() => CombinationExpressionResponseDto)
+  @IsOptional()
+  left?: CombinationExpressionRequestDto;
+
+  @ApiProperty({ required: false })
+  @ValidateNested()
+  @Type(() => CombinationExpressionResponseDto)
+  @IsOptional()
+  right?: CombinationExpressionRequestDto;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  id?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  name?: string;
+}
+
 export class BinaryClassificationExampleDto {
   @ApiProperty({
     description: 'Text for the binary classifier',
@@ -217,4 +247,4 @@ export class CreateSessionEventDto extends SessionEventDto<CombinationExpression
 
 export class UpdateSessionEventDto extends SessionEventDto<CombinationExpressionRequestDto> {}
 
-export class SessionEventResponseDto extends SessionEventDto<CombinationExpressionRequestDto> {}
+export class SessionEventResponseDto extends SessionEventDto<CombinationExpressionResponseDto> {}
