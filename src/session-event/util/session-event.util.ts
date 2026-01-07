@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import {
   CombinationExpressionRequestDto,
   CreateSessionEventDto,
+  DetectionConfigDto,
   DetectionDataDto,
   SessionEventDto,
   UpdateSessionEventDto,
@@ -94,6 +95,32 @@ export const mapRequestToDbDetectionDataByType = (
   }
 };
 
+export const mapRequestToDbDetectionConfigByType = (
+  type: SessionEventDetectionType,
+  detectionConfig: DetectionConfigDto,
+): DetectionConfigDto | undefined => {
+  if (!detectionConfig) return undefined;
+
+  switch (type) {
+    case SessionEventDetectionType.TIME:
+      return {
+        maxOccurrences: detectionConfig.maxOccurrences,
+        minGapTime: detectionConfig.minGapTime,
+        minScore: detectionConfig.minScore,
+        maxScore: detectionConfig.maxScore,
+      };
+    case SessionEventDetectionType.SCORE:
+      return {
+        startTime: detectionConfig.startTime,
+        endTime: detectionConfig.endTime,
+        maxOccurrences: detectionConfig.maxOccurrences,
+        minGapTime: detectionConfig.minGapTime,
+      };
+    default:
+      return detectionConfig;
+  }
+};
+
 export const mapCreateEventDtoToDbEvent = (
   event: CreateSessionEventDto,
 ): SessionEventDto<CombinationExpressionDto> => ({
@@ -109,7 +136,10 @@ export const mapCreateEventDtoToDbEvent = (
     event.detectionType as SessionEventDetectionType,
     event.detectionData as DetectionDataDto<CombinationExpressionRequestDto>,
   ),
-  detectionConfig: event.detectionConfig,
+  detectionConfig: mapRequestToDbDetectionConfigByType(
+    event.detectionType as SessionEventDetectionType,
+    event.detectionConfig as DetectionConfigDto,
+  ),
 });
 
 export const mapUpdateEventDtoToDbEvent = (
@@ -126,7 +156,10 @@ export const mapUpdateEventDtoToDbEvent = (
     event.detectionType as SessionEventDetectionType,
     event.detectionData as DetectionDataDto<CombinationExpressionRequestDto>,
   ),
-  detectionConfig: event.detectionConfig,
+  detectionConfig: mapRequestToDbDetectionConfigByType(
+    event.detectionType as SessionEventDetectionType,
+    event.detectionConfig as DetectionConfigDto,
+  ),
 });
 
 /**
