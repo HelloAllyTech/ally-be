@@ -297,6 +297,7 @@ export class CreateScenarioDto {
       },
     ],
   })
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(MAX_TERMINATION_EVENT_COUNT)
   @ValidateNested({ each: true })
