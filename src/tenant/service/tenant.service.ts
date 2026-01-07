@@ -265,13 +265,13 @@ export class TenantService {
       throw new Error('S3 bucket name for assets bucket is not defined');
     }
 
-    const LogoUrl = deleteLogoDto.LogoUrl;
+    const logoUrl = deleteLogoDto.logoUrl;
     const s3LogoUrlPattern =
       /^https:\/\/[^.]+\.s3\.[^.]+\.amazonaws\.com\/(.+)$/;
-    const LogoUrlMatch = LogoUrl.match(s3LogoUrlPattern);
-    const storageKey = LogoUrlMatch ? LogoUrlMatch[1] : null;
+    const logoUrlMatch = logoUrl.match(s3LogoUrlPattern);
+    const storageKey = logoUrlMatch ? logoUrlMatch[1] : null;
     if (!storageKey) {
-      this.logger.warn(`Invalid or unrecognized S3 URL: ${LogoUrl}`);
+      this.logger.warn(`Invalid or unrecognized S3 URL: ${logoUrl}`);
       return { success: false };
     }
     if (!storageKey) {
