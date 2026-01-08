@@ -18,6 +18,7 @@
  */
 
 import { spawn } from 'child_process';
+import { logStep } from './seed-utils';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -70,9 +71,7 @@ function logHeader(text: string): void {
   console.log('='.repeat(70));
 }
 
-function logStep(taskName: string, message: string): void {
-  console.log(`\n[${taskName}] ${message}`);
-}
+// logStep now imported from seed-utils and used for all info/progress logs
 
 function logSuccess(message: string): void {
   console.log(`✅ ${message}`);
@@ -96,7 +95,7 @@ async function executeSeedTask(task: SeedTask): Promise<boolean> {
       return;
     }
 
-    logStep(task.name, task.description);
+    logStep(`[${task.name}] ${task.description}`);
 
     const child = spawn(
       'ts-node',

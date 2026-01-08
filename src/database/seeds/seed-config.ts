@@ -1,4 +1,5 @@
 import { config } from 'dotenv';
+import { logStep } from './seed-utils';
 
 config();
 
@@ -103,16 +104,14 @@ export function validateConfig(): { valid: boolean; errors: string[] } {
 }
 
 export function printConfig(): void {
-  console.log('\n📋 Seed Configuration:');
-  console.log(`   API Base URL: ${SEED_CONFIG.api.baseUrl}`);
-  console.log(`   API Timeout: ${SEED_CONFIG.api.timeout}ms`);
-  console.log(
-    `   Tenant: ${SEED_CONFIG.tenant.code} (${SEED_CONFIG.tenant.name})`,
-  );
-  console.log(`   Test Users: ${SEED_CONFIG.users.length}`);
-  console.log(
+  logStep('\n📋 Seed Configuration:');
+  logStep(`   API Base URL: ${SEED_CONFIG.api.baseUrl}`);
+  logStep(`   API Timeout: ${SEED_CONFIG.api.timeout}ms`);
+  logStep(`   Tenant: ${SEED_CONFIG.tenant.code} (${SEED_CONFIG.tenant.name})`);
+  logStep(`   Test Users: ${SEED_CONFIG.users.length}`);
+  logStep(
     `   Database: ${SEED_CONFIG.database.host}:${SEED_CONFIG.database.port}/${SEED_CONFIG.database.database}`,
   );
-  console.log(`   Verbose Logging: ${SEED_CONFIG.logging.verbose}`);
-  console.log('');
+  logStep(`   Verbose Logging: ${SEED_CONFIG.logging.verbose}`);
+  logStep('');
 }

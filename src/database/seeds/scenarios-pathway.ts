@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { config } from 'dotenv';
+import { logStep } from './seed-utils';
 import {
   ScenarioDifficultyLevel,
   ScenarioResponseLength,
@@ -388,7 +389,7 @@ async function getTriggerWarnings(
     );
 
     if (response.data.length === 0) {
-      console.log('[scenarios-pathway] No trigger warnings found');
+      logStep('[scenarios-pathway] No trigger warnings found');
       return [];
     }
 
@@ -397,7 +398,7 @@ async function getTriggerWarnings(
     const triggerWarningIds = triggerWarnings.map(
       (tw: TriggerWarnings) => tw.id,
     );
-    console.log(
+    logStep(
       `[scenarios-pathway] Fetched ${triggerWarningIds.length} trigger warnings`,
     );
     return triggerWarningIds;
