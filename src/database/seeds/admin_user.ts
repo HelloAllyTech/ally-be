@@ -84,6 +84,7 @@ async function seedAdminUser() {
 
     await userGroupRepository.save(userGroup);
     console.log(`Assigned SUPER_ADMIN role to user: ${adminUser.email}`);
+    console.log('Admin user seeding completed successfully!');
   } catch (error) {
     console.error('Error seeding users:', error);
     process.exit(1);

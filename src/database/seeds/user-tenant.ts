@@ -166,7 +166,7 @@ async function seedUsers() {
       await createUser(client, accessToken, { ...user, tenantId });
     }
 
-    console.log('User seeding completed');
+    console.log('Users seeding completed successfully!');
   } catch (error: any) {
     console.error('Error seeding users:', error.message);
     process.exit(1);
