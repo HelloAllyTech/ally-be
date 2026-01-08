@@ -623,8 +623,6 @@ DB_PORT=5432
 DB_DATABASE=ally_db           # Change to test database for testing
 ```
 
-See `src/database/seeds/seed-config.ts` for all 20+ configurable options.
-
 ### 📊 Seed Output Example
 
 When you run seeds, you'll see output like this:
