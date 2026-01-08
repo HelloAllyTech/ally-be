@@ -21,6 +21,7 @@ const voiceData = {
         voiceId: 'alloy',
         model: 'tts-1',
       },
+      languageId: 1,
     },
   ],
 };
@@ -58,6 +59,7 @@ const createScenariosData = (voiceId: string) => ({
       ],
       coverImageUrl: 'https://placehold.co/400x300/png?text=Scenario+1',
       voiceId,
+      languageVoices: { 1: voiceId },
     },
     {
       title: 'Handling Emotional Disclosure',
@@ -89,6 +91,7 @@ const createScenariosData = (voiceId: string) => ({
       ],
       coverImageUrl: 'https://placehold.co/400x300/png?text=Scenario+2',
       voiceId,
+      languageVoices: { 1: voiceId },
     },
   ],
 });
