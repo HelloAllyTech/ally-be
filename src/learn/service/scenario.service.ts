@@ -1544,7 +1544,9 @@ export class ScenarioService {
     }
   }
 
-  async getDynamicBranchShortcuts(scenarioId?: number): Promise<string[]> {
+  async getBranchingInstructionDynamicShortcuts(
+    scenarioId?: number,
+  ): Promise<string[]> {
     const dynamicBranchShortcuts: string[] = [
       DynamicBranchShortcut.CHAT_SUMMARY,
       DynamicBranchShortcut.LAST_HELPER_UTTERANCE,

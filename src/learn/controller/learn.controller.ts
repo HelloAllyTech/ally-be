@@ -786,10 +786,12 @@ export class LearnController {
     type: Number,
     description: 'Scenario ID',
   })
-  @Get('dynamic-branch-shortcuts')
-  async getDynamicBranchShortcuts(
+  @Get('branching-instruction-dynamic-shortcuts')
+  async getBranchingInstructionDynamicShortcuts(
     @Query('scenarioId') scenarioId?: number,
   ): Promise<string[]> {
-    return this.scenarioService.getDynamicBranchShortcuts(scenarioId);
+    return this.scenarioService.getBranchingInstructionDynamicShortcuts(
+      scenarioId,
+    );
   }
 }

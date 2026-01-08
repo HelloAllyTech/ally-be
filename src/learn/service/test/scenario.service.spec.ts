@@ -3806,7 +3806,7 @@ describe('ScenarioService', () => {
     ];
 
     it('should return default dynamic branch shortcuts when no scenarioId is provided', async () => {
-      const result = await service.getDynamicBranchShortcuts();
+      const result = await service.getBranchingInstructionDynamicShortcuts();
 
       expect(result).toEqual(defaultShortcuts);
       expect(scenariosRepository.getScenarioById).not.toHaveBeenCalled();
@@ -3826,7 +3826,8 @@ describe('ScenarioService', () => {
         scenarioWithoutCustomFields,
       );
 
-      const result = await service.getDynamicBranchShortcuts(scenarioId);
+      const result =
+        await service.getBranchingInstructionDynamicShortcuts(scenarioId);
 
       expect(result).toEqual(defaultShortcuts);
       expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
@@ -3854,7 +3855,8 @@ describe('ScenarioService', () => {
         scenarioWithCustomFields,
       );
 
-      const result = await service.getDynamicBranchShortcuts(scenarioId);
+      const result =
+        await service.getBranchingInstructionDynamicShortcuts(scenarioId);
 
       expect(result).toEqual([
         ...defaultShortcuts,
@@ -3882,7 +3884,8 @@ describe('ScenarioService', () => {
         scenarioWithEmptyCustomFields,
       );
 
-      const result = await service.getDynamicBranchShortcuts(scenarioId);
+      const result =
+        await service.getBranchingInstructionDynamicShortcuts(scenarioId);
 
       expect(result).toEqual(defaultShortcuts);
     });
@@ -3893,7 +3896,7 @@ describe('ScenarioService', () => {
       scenariosRepository.getScenarioById.mockResolvedValue(null);
 
       await expect(
-        service.getDynamicBranchShortcuts(scenarioId),
+        service.getBranchingInstructionDynamicShortcuts(scenarioId),
       ).rejects.toThrow(NotFoundException);
     });
   });
