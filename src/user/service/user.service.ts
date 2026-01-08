@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { v4 as uuidv4 } from 'uuid';
 import { User } from '../entity/user.entity';
 import { QueueService } from '../../queue/service/queue.service';
 import { Chat, ChatStatus } from '../../chat/entity/chat.entity';
@@ -41,9 +42,21 @@ import { UserGroupRepository } from 'src/authorization/repository/user-group.rep
 import { SuccessResponse } from 'src/common/type/common.type';
 import { UserPreferencesRepository } from '../repository/user-prefernces.repository';
 import { UpdateUserPreferencesDto } from '../dto/update-user-prefernces.dto';
+import {
+  ProfileImageUploadRequestDto,
+  ProfileImageUploadResponseDto,
+} from '../dto/profile-image-upload-request.dto';
+import { ProfileImageUploadContentType } from '../enum/user.enum';
+import { AppConfigService } from 'src/config/config.service';
+import { S3Service } from 'src/aws/service/s3.service';
+import { DeleteProfileImageDto } from '../dto/delete-profile-image.dto';
+import { LoggerService } from 'src/logger/logger.service';
+import { ProfileImageUploadDto } from '../dto/profile-image-upload.dto';
+
 @Injectable()
 export class UserService {
   private readonly auditLogger = AuditLoggerService.getInstance();
+  private readonly logger = LoggerService.getInstance(UserService.name);
 
   constructor(
     @InjectRepository(User)
@@ -58,6 +71,8 @@ export class UserService {
     @Inject(forwardRef(() => SimulationCreditsService))
     private readonly simulationCreditsService: SimulationCreditsService,
     private readonly usersGroupService: UserGroupService,
+    private configService: AppConfigService,
+    private s3Service: S3Service,
   ) {}
 
   async get(id: number): Promise<User | null> {
@@ -179,6 +194,7 @@ export class UserService {
       tenantId: user.tenantId,
       phone: user.phone,
       status: user.status,
+      profileImageUrl: user.profileImageUrl,
     };
   }
 
@@ -241,6 +257,7 @@ export class UserService {
       id: user.user_id,
       name: user.user_name,
       email: user.user_email,
+      profileImageUrl: user.user_profileImageUrl,
       username: user.user_username,
       externalId: user.user_externalId,
       status: user.user_status,
@@ -531,5 +548,100 @@ export class UserService {
     }
 
     return { name: tenant.name, logoUrl: tenant.logoUrl };
+  }
+  async getPresignedUrlForProfileImage(
+    profileImageUploadRequestDto: ProfileImageUploadRequestDto,
+  ): Promise<ProfileImageUploadResponseDto> {
+    const bucket = this.configService.s3.assetsBucket;
+    if (!bucket) {
+      throw new Error('S3 bucket name for assetsBucket is not defined');
+    }
+
+    const { fileName, fileSize, contentType } = profileImageUploadRequestDto;
+
+    if (!Object.values(ProfileImageUploadContentType).includes(contentType)) {
+      throw new BadRequestException('Invalid file type');
+    }
+
+    const maxFileSize = 2 * 1024 * 1024; // 2 MB
+    if (fileSize > maxFileSize) {
+      throw new BadRequestException(
+        `File size must be less than ${maxFileSize / 1024 / 1024} MB`,
+      );
+    }
+
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('unauthorized access');
+    }
+    const uuid = uuidv4();
+    const sanitizedFileName = this.s3Service.sanitizeFileName(fileName);
+
+    const storageKey = `profiles/${userId}-${uuid}-${sanitizedFileName}`;
+    const presignedUrl = await this.s3Service.generatePresignedUrl({
+      bucket,
+      key: storageKey,
+      operation: 'put',
+      expiresIn: 600, // 10 minutes
+      contentType,
+    });
+
+    const region = this.configService.aws.region;
+    const profileImageUrl = `https://${bucket}.s3.${region}.amazonaws.com/${storageKey}`;
+
+    return { presignedUrl, profileImageUrl };
+  }
+
+  async deleteProfileImage(deleteProfileImageDto: DeleteProfileImageDto) {
+    const bucket = this.configService.s3.assetsBucket;
+    if (!bucket) {
+      throw new Error('S3 bucket name for assets is not defined');
+    }
+    const profileImageUrl = deleteProfileImageDto.profileImageUrl;
+    const s3ProfileImageUrlPattern =
+      /^https:\/\/[^.]+\.s3\.[^.]+\.amazonaws\.com\/(.+)$/;
+    const profileImageUrlMatch = profileImageUrl.match(
+      s3ProfileImageUrlPattern,
+    );
+    const storageKey = profileImageUrlMatch ? profileImageUrlMatch[1] : null;
+    if (!storageKey) {
+      this.logger.warn(`Invalid or unrecognized S3 URL: ${profileImageUrl}`);
+      return { success: false };
+    }
+    try {
+      await this.s3Service.deleteObject({
+        bucket,
+        key: storageKey,
+      });
+      return { success: true };
+    } catch (error) {
+      this.logger.error(
+        `Failed to delete uploaded profileImage with error ${JSON.stringify(
+          error,
+        )}`,
+      );
+      return { success: false };
+    }
+  }
+
+  async uploadProfileImage(
+    profileImageUploadDto: ProfileImageUploadDto,
+  ): Promise<SuccessResponse> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('unauthorized access');
+    }
+    const user = await this.userRepository.findOne({
+      where: { id: Number(userId) },
+    });
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+    const updatedUser = this.userRepository.create({
+      ...user,
+      profileImageUrl: profileImageUploadDto?.profileImageUrl,
+    });
+    await this.userRepository.save(updatedUser);
+    return { success: true };
   }
 }

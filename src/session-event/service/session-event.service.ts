@@ -11,16 +11,21 @@ import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { SessionEventRepository } from '../repository/session-event.repository';
 import { SessionEventVisibilityType } from '../enum/session-event-visibility-type.enum';
-import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
+import {
+  CombinationExpressionRequestType,
+  CombinationExpressionType,
+  SessionEventDetectionType,
+} from '../enum/session-event-detection.enum';
 import {
   mapCreateEventDtoToDbEvent,
   mapUpdateEventDtoToDbEvent,
-  mapDbExpressionToResponse,
   extractEventIds,
   validateNoCycles,
 } from '../util/session-event.util';
 import {
   CombinationExpressionDto,
+  CombinationExpressionRequestDto,
+  CombinationExpressionResponseDto,
   CreateSessionEventDto,
   SessionEventResponseDto,
   UpdateSessionEventDto,
@@ -75,6 +80,10 @@ export class SessionEventService {
         const extractedIds = extractEventIds(event.detectionData?.expression);
         extractedIds.forEach((id) => combinationExpressionEventIds.add(id));
       }
+
+      if (event.detectionConfig?.startTime === null) {
+        throw new BadRequestException('Start time cannot be null');
+      }
     }
 
     // Validate all referenced event IDs exist (only once, after collecting all)
@@ -124,6 +133,7 @@ export class SessionEventService {
       createdAt: event.sessionEvents_createdAt,
       updatedAt: event.sessionEvents_updatedAt,
       eventCode: event.sessionEvents_eventCode,
+      detectionConfig: event.sessionEvents_detectionConfig,
     }));
   }
 
@@ -189,19 +199,21 @@ export class SessionEventService {
       pagination,
     );
 
-    const formattedSessionEvents = sessionEvents.map((event) => {
-      return {
-        ...event,
-        detectionData: event?.detectionData
-          ? {
-              ...event.detectionData,
-              expression: mapDbExpressionToResponse(
-                event?.detectionData?.expression as CombinationExpressionDto,
-              ),
-            }
-          : undefined,
-      };
-    });
+    const formattedSessionEvents = await Promise.all(
+      sessionEvents.map(async (event) => {
+        return {
+          ...event,
+          detectionData: event?.detectionData
+            ? {
+                ...event.detectionData,
+                expression: await this.mapDbExpressionToResponse(
+                  event?.detectionData?.expression as CombinationExpressionDto,
+                ),
+              }
+            : undefined,
+        };
+      }),
+    );
     return { data: formattedSessionEvents };
   }
 
@@ -215,7 +227,7 @@ export class SessionEventService {
       detectionData: event?.detectionData
         ? {
             ...event.detectionData,
-            expression: mapDbExpressionToResponse(
+            expression: await this.mapDbExpressionToResponse(
               event?.detectionData?.expression as CombinationExpressionDto,
             ),
           }
@@ -344,5 +356,43 @@ export class SessionEventService {
     );
 
     return { success: true };
+  }
+
+  private async mapDbExpressionToResponse(
+    expr: CombinationExpressionDto,
+  ): Promise<CombinationExpressionResponseDto | undefined> {
+    if (!expr) return undefined;
+
+    switch (expr.type) {
+      case CombinationExpressionType.IDENTIFIER:
+        const event = await this.sessionEventRepository.findOne({
+          where: { id: expr.id },
+        });
+        return { id: expr.id ?? '', name: event?.name ?? '' };
+
+      case CombinationExpressionType.NOT:
+        // convert operand -> left
+        return {
+          type: CombinationExpressionRequestType.NOT,
+          left: await this.mapDbExpressionToResponse(
+            expr.operand as CombinationExpressionDto,
+          ),
+        };
+
+      case CombinationExpressionType.AND:
+      case CombinationExpressionType.OR:
+        return {
+          type: expr.type as unknown as CombinationExpressionRequestType,
+          left: await this.mapDbExpressionToResponse(
+            expr.left as CombinationExpressionDto,
+          ),
+          right: await this.mapDbExpressionToResponse(
+            expr.right as CombinationExpressionDto,
+          ),
+        } as CombinationExpressionRequestDto;
+
+      default:
+        throw new BadRequestException('Invalid combination expression');
+    }
   }
 }

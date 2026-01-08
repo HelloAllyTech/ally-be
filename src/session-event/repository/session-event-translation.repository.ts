@@ -36,12 +36,18 @@ export class SessionEventTranslationsRepository extends Repository<SessionEvents
     // Use a transaction to ensure all updates succeed or fail together
     await this.dataSource.transaction(async (transactionalEntityManager) => {
       for (const translation of scenarioEventTranslations) {
-        const { sessionEventId, name, languageId, message, branchInstruction } =
-          translation;
+        const {
+          sessionEventId,
+          name,
+          languageId,
+          message,
+          branchInstruction,
+          detectionData,
+        } = translation;
         await transactionalEntityManager.update(
           SessionEventsTranslation,
           { sessionEventId, languageId }, // Selection criteria
-          { message, branchInstruction, name }, // Fields to update
+          { message, branchInstruction, detectionData, name }, // Fields to update
         );
       }
     });
@@ -89,7 +95,7 @@ export class SessionEventTranslationsRepository extends Repository<SessionEvents
       `COALESCE("sessionTranslations"."message", "sessionEvents"."message") AS "sessionEvents_message"`,
       `COALESCE("sessionTranslations"."branchInstruction", "sessionEvents"."branchInstruction") AS "sessionEvents_branchInstruction"`,
       `"sessionEvents"."detectionType" AS "sessionEvents_detectionType"`,
-      `"sessionEvents"."detectionData" AS "sessionEvents_detectionData"`,
+      `COALESCE("sessionTranslations"."detectionData", "sessionEvents"."detectionData") AS "sessionEvents_detectionData"`,
       `"sessionEvents"."visibilityType" AS "sessionEvents_visibilityType"`,
       `"sessionEvents"."deletedAt" AS "sessionEvents_deletedAt"`,
       `"sessionEvents"."eventCode" AS "sessionEvents_eventCode"`,

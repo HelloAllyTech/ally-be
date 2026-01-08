@@ -8,10 +8,14 @@ import {
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 
 @Entity('scenario_events')
-@Index(['scenarioId', 'eventId', 'autoTerminationStatus'], {
-  unique: true,
-  where: '"deletedAt" IS NULL',
-})
+@Index(
+  'uq_scenario_events_scenario_id_event_id_auto_term_status_idx',
+  ['scenarioId', 'eventId', 'autoTerminationStatus'],
+  {
+    unique: true,
+    where: '"deletedAt" IS NULL',
+  },
+)
 export class ScenarioEvents extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

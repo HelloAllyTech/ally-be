@@ -19,3 +19,5 @@ export const EVENT_TYPE_PREFIX_MAP: Record<SessionEventDetectionType, string> =
  * Prevents infinite loops and stack overflow in case of circular dependencies.
  */
 export const MAX_COMBINATION_EVENT_DEPTH = 20;
+
+export const DETECTION_DATA_TRANSLATABLE_PATHS = ['sentences', 'className'];

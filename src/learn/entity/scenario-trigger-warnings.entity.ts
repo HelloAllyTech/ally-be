@@ -2,9 +2,13 @@ import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.e
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('scenario_trigger_warnings')
-@Index(['scenarioId', 'triggerWarningId'], {
-  unique: true,
-})
+@Index(
+  'uq_scenario_trigger_warnings_scenario_id_trigger_warning_id_idx',
+  ['scenarioId', 'triggerWarningId'],
+  {
+    unique: true,
+  },
+)
 export class ScenarioTriggerWarnings extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

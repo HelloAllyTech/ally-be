@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import {
   CombinationExpressionRequestDto,
   CreateSessionEventDto,
+  DetectionConfigDto,
   DetectionDataDto,
   SessionEventDto,
   UpdateSessionEventDto,
@@ -52,39 +53,6 @@ export const mapRequestToDbExpression = (
   throw new BadRequestException('Invalid combination expression');
 };
 
-export const mapDbExpressionToResponse = (
-  expr: CombinationExpressionDto,
-): CombinationExpressionRequestDto | undefined => {
-  if (!expr) return undefined;
-
-  switch (expr.type) {
-    case CombinationExpressionType.IDENTIFIER:
-      return { id: expr.id ?? '' };
-
-    case CombinationExpressionType.NOT:
-      // convert operand -> left
-      return {
-        type: CombinationExpressionRequestType.NOT,
-        left: mapDbExpressionToResponse(
-          expr.operand as CombinationExpressionDto,
-        ),
-      };
-
-    case CombinationExpressionType.AND:
-    case CombinationExpressionType.OR:
-      return {
-        type: expr.type as unknown as CombinationExpressionRequestType,
-        left: mapDbExpressionToResponse(expr.left as CombinationExpressionDto),
-        right: mapDbExpressionToResponse(
-          expr.right as CombinationExpressionDto,
-        ),
-      } as CombinationExpressionRequestDto;
-
-    default:
-      throw new BadRequestException('Invalid combination expression');
-  }
-};
-
 export const mapRequestToDbDetectionDataByType = (
   type: SessionEventDetectionType,
   eventDetectiondata: DetectionDataDto<CombinationExpressionRequestDto>,
@@ -127,6 +95,32 @@ export const mapRequestToDbDetectionDataByType = (
   }
 };
 
+export const mapRequestToDbDetectionConfigByType = (
+  type: SessionEventDetectionType,
+  detectionConfig: DetectionConfigDto,
+): DetectionConfigDto | undefined => {
+  if (!detectionConfig) return undefined;
+
+  switch (type) {
+    case SessionEventDetectionType.TIME:
+      return {
+        maxOccurrences: detectionConfig.maxOccurrences,
+        minGapTime: detectionConfig.minGapTime,
+        minScore: detectionConfig.minScore,
+        maxScore: detectionConfig.maxScore,
+      };
+    case SessionEventDetectionType.SCORE:
+      return {
+        startTime: detectionConfig.startTime,
+        endTime: detectionConfig.endTime,
+        maxOccurrences: detectionConfig.maxOccurrences,
+        minGapTime: detectionConfig.minGapTime,
+      };
+    default:
+      return detectionConfig;
+  }
+};
+
 export const mapCreateEventDtoToDbEvent = (
   event: CreateSessionEventDto,
 ): SessionEventDto<CombinationExpressionDto> => ({
@@ -141,6 +135,10 @@ export const mapCreateEventDtoToDbEvent = (
   detectionData: mapRequestToDbDetectionDataByType(
     event.detectionType as SessionEventDetectionType,
     event.detectionData as DetectionDataDto<CombinationExpressionRequestDto>,
+  ),
+  detectionConfig: mapRequestToDbDetectionConfigByType(
+    event.detectionType as SessionEventDetectionType,
+    event.detectionConfig as DetectionConfigDto,
   ),
 });
 
@@ -157,6 +155,10 @@ export const mapUpdateEventDtoToDbEvent = (
   detectionData: mapRequestToDbDetectionDataByType(
     event.detectionType as SessionEventDetectionType,
     event.detectionData as DetectionDataDto<CombinationExpressionRequestDto>,
+  ),
+  detectionConfig: mapRequestToDbDetectionConfigByType(
+    event.detectionType as SessionEventDetectionType,
+    event.detectionConfig as DetectionConfigDto,
   ),
 });
 

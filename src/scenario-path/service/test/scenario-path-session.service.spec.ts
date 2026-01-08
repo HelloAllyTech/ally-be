@@ -46,6 +46,7 @@ describe('ScenarioPathSessionService', () => {
     getNextScenarioDataByPathItemId: jest.fn(),
     getNextPathItemByCurrentItemId: jest.fn(),
     getScenarioDataById: jest.fn(),
+    getActiveScenarioPathById: jest.fn(),
   };
 
   const mockScenarioPathSessionItemRepository = {
@@ -311,7 +312,6 @@ describe('ScenarioPathSessionService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
   });
-
   describe('getUserScenarioPathItems', () => {
     const mockScenarioPathWithScenarios = {
       id: 'path-1',
@@ -326,6 +326,9 @@ describe('ScenarioPathSessionService', () => {
         { id: 'item-2', scenarioId: 2, order: 2, title: 'Scenario 2' },
       ],
     };
+
+    // ✅ Added: mock return for getActiveScenarioPathById (array is safest)
+    const mockActiveScenarioPath = [{ id: 'path-1' }] as any;
 
     const mockScenarioPathSession: ScenarioPathSession = {
       id: 'session-1',
@@ -348,6 +351,12 @@ describe('ScenarioPathSessionService', () => {
     it('should return scenario path items with session data when session exists', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+
+      // ✅ New: required by updated service
+      scenarioPathSharedService.getActiveScenarioPathById.mockResolvedValue(
+        mockActiveScenarioPath,
+      );
+
       scenarioPathSharedService.getScenarioPathWithScenarios.mockResolvedValue(
         mockScenarioPathWithScenarios,
       );
@@ -376,11 +385,21 @@ describe('ScenarioPathSessionService', () => {
           },
         ],
       });
+
+      expect(
+        scenarioPathSharedService.getActiveScenarioPathById,
+      ).toHaveBeenCalledWith('path-1');
     });
 
     it('should return scenario path items without session when session does not exist', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+
+      // ✅ New: required by updated service
+      scenarioPathSharedService.getActiveScenarioPathById.mockResolvedValue(
+        mockActiveScenarioPath,
+      );
+
       scenarioPathSharedService.getScenarioPathWithScenarios.mockResolvedValue(
         mockScenarioPathWithScenarios,
       );
@@ -406,6 +425,10 @@ describe('ScenarioPathSessionService', () => {
           },
         ],
       });
+
+      expect(
+        scenarioPathSharedService.getActiveScenarioPathById,
+      ).toHaveBeenCalledWith('path-1');
     });
 
     it('should throw UnauthorizedException when user is not authenticated', async () => {
@@ -426,6 +449,121 @@ describe('ScenarioPathSessionService', () => {
       );
     });
   });
+
+  // describe('getUserScenarioPathItems', () => {
+  //   const mockScenarioPathWithScenarios = {
+  //     id: 'path-1',
+  //     title: 'Path 1',
+  //     description: 'Description 1',
+  //     coverImageUrl: 'https://example.com/image.jpg',
+  //     status: 'ACTIVE' as any,
+  //     isGlobal: false,
+  //     totalScenarios: 2,
+  //     scenarios: [
+  //       { id: 'item-1', scenarioId: 1, order: 1, title: 'Scenario 1' },
+  //       { id: 'item-2', scenarioId: 2, order: 2, title: 'Scenario 2' },
+  //     ],
+  //   };
+
+  //   const mockScenarioPathSession: ScenarioPathSession = {
+  //     id: 'session-1',
+  //     scenarioPathId: 'path-1',
+  //     userId: 123,
+  //     completedScenarios: 1,
+  //     completedAt: new Date(),
+  //   } as ScenarioPathSession;
+
+  //   const mockSessionItems: ScenarioPathSessionItem[] = [
+  //     {
+  //       id: 'session-item-1',
+  //       scenarioPathSessionId: 'session-1',
+  //       scenarioPathItemId: 'item-1',
+  //       userId: 123,
+  //       status: SessionItemStatus.COMPLETED,
+  //     } as ScenarioPathSessionItem,
+  //   ];
+
+  //   it('should return scenario path items with session data when session exists', async () => {
+  //     (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+  //     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+  //     scenarioPathSharedService.getScenarioPathWithScenarios.mockResolvedValue(
+  //       mockScenarioPathWithScenarios,
+  //     );
+  //     repository.findOne.mockResolvedValue(mockScenarioPathSession);
+  //     scenarioPathSessionItemRepository.find.mockResolvedValue(
+  //       mockSessionItems,
+  //     );
+
+  //     const result = await service.getUserScenarioPathItems('path-1');
+
+  //     expect(result).toEqual({
+  //       ...mockScenarioPathWithScenarios,
+  //       completedScenarios: 1,
+  //       completedAt: mockScenarioPathSession.completedAt,
+  //       scenarioPathSessionId: 'session-1',
+  //       scenarios: [
+  //         {
+  //           ...mockScenarioPathWithScenarios.scenarios[0],
+  //           sessionId: 'session-item-1',
+  //           status: SessionItemStatus.COMPLETED,
+  //         },
+  //         {
+  //           ...mockScenarioPathWithScenarios.scenarios[1],
+  //           sessionId: undefined,
+  //           status: SessionItemStatus.LOCKED,
+  //         },
+  //       ],
+  //     });
+  //   });
+
+  //   it('should return scenario path items without session when session does not exist', async () => {
+  //     (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+  //     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+  //     scenarioPathSharedService.getScenarioPathWithScenarios.mockResolvedValue(
+  //       mockScenarioPathWithScenarios,
+  //     );
+  //     repository.findOne.mockResolvedValue(null);
+
+  //     const result = await service.getUserScenarioPathItems('path-1');
+
+  //     expect(result).toEqual({
+  //       ...mockScenarioPathWithScenarios,
+  //       completedScenarios: 0,
+  //       completedAt: null,
+  //       scenarioPathSessionId: null,
+  //       scenarios: [
+  //         {
+  //           ...mockScenarioPathWithScenarios.scenarios[0],
+  //           sessionId: null,
+  //           status: SessionItemStatus.UNLOCKED,
+  //         },
+  //         {
+  //           ...mockScenarioPathWithScenarios.scenarios[1],
+  //           sessionId: null,
+  //           status: SessionItemStatus.LOCKED,
+  //         },
+  //       ],
+  //     });
+  //   });
+
+  //   it('should throw UnauthorizedException when user is not authenticated', async () => {
+  //     (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
+  //     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+
+  //     await expect(service.getUserScenarioPathItems('path-1')).rejects.toThrow(
+  //       UnauthorizedException,
+  //     );
+  //   });
+
+  //   it('should throw NotFoundException when tenant is not available', async () => {
+  //     (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+  //     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(null);
+
+  //     await expect(service.getUserScenarioPathItems('path-1')).rejects.toThrow(
+  //       NotFoundException,
+  //     );
+  //   });
+  // });
 
   describe('createUserPathSession', () => {
     it('should create a new path session successfully', async () => {
