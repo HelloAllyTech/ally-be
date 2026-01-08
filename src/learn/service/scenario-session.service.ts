@@ -139,9 +139,7 @@ export class ScenarioSessionService {
       (scenarioSession as any).events = (scenarioSession as any).events
         .filter(
           (event: any) =>
-            event.events?.visibilityType ===
-              SessionEventVisibilityType.ACTIVE &&
-            !event.scenarioEvent?.autoTerminationStatus,
+            event.events?.visibilityType === SessionEventVisibilityType.ACTIVE,
         )
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         .map(({ scenarioEvent, ...rest }: any) => rest);
