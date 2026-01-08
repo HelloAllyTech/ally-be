@@ -74,6 +74,7 @@ import {
 import { DEFAULT_LANGUAGE_CODE } from '../constants/scenario-session.constants';
 import { TerminationEventsDto } from '../dto/termination-events.dto';
 import isDuplicateKeyException from 'src/exception/custom.exception';
+import { DynamicBranchShortcut } from '../enum/dynamic-branch-shortcut.enum';
 
 @Injectable()
 export class ScenarioService {
@@ -1541,5 +1542,23 @@ export class ScenarioService {
         );
       }
     }
+  }
+
+  async getDynamicBranchShortcuts(scenarioId?: number): Promise<string[]> {
+    const dynamicBranchShortcuts: string[] = [
+      DynamicBranchShortcut.CHAT_SUMMARY,
+      DynamicBranchShortcut.LAST_HELPER_UTTERANCE,
+      DynamicBranchShortcut.LLM_RESPONSE,
+    ];
+    if (scenarioId) {
+      const scenario = await this.getScenario(scenarioId);
+      const customFields = scenario.metadata?.customFields;
+      if (customFields) {
+        dynamicBranchShortcuts.push(
+          ...customFields.map((customField: any) => customField.name),
+        );
+      }
+    }
+    return dynamicBranchShortcuts;
   }
 }

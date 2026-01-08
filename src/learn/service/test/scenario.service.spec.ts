@@ -3797,4 +3797,104 @@ describe('ScenarioService', () => {
       expect(result).toEqual({});
     });
   });
+
+  describe('getDynamicBranchShortcuts', () => {
+    const defaultShortcuts = [
+      'chat_summary',
+      'last_helper_utterance',
+      'llm_response()',
+    ];
+
+    it('should return default dynamic branch shortcuts when no scenarioId is provided', async () => {
+      const result = await service.getDynamicBranchShortcuts();
+
+      expect(result).toEqual(defaultShortcuts);
+      expect(scenariosRepository.getScenarioById).not.toHaveBeenCalled();
+    });
+
+    it('should return default shortcuts when scenario has no custom fields', async () => {
+      const scenarioId = 1;
+      const scenarioWithoutCustomFields = {
+        ...mockScenario,
+        metadata: {
+          agentGoal: 'Help client',
+          name: 'Test Client',
+        },
+      };
+
+      scenariosRepository.getScenarioById.mockResolvedValue(
+        scenarioWithoutCustomFields,
+      );
+
+      const result = await service.getDynamicBranchShortcuts(scenarioId);
+
+      expect(result).toEqual(defaultShortcuts);
+      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
+        scenarioId,
+        undefined,
+        undefined,
+      );
+    });
+
+    it('should return default shortcuts plus custom field names when scenario has custom fields', async () => {
+      const scenarioId = 1;
+      const scenarioWithCustomFields = {
+        ...mockScenario,
+        metadata: {
+          agentGoal: 'Help client',
+          name: 'Test Client',
+          customFields: [
+            { name: 'custom_field_1', value: 'value1' },
+            { name: 'custom_field_2', value: 'value2' },
+          ],
+        },
+      };
+
+      scenariosRepository.getScenarioById.mockResolvedValue(
+        scenarioWithCustomFields,
+      );
+
+      const result = await service.getDynamicBranchShortcuts(scenarioId);
+
+      expect(result).toEqual([
+        ...defaultShortcuts,
+        'custom_field_1',
+        'custom_field_2',
+      ]);
+      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
+        scenarioId,
+        undefined,
+        undefined,
+      );
+    });
+
+    it('should return default shortcuts when custom fields is empty array', async () => {
+      const scenarioId = 1;
+      const scenarioWithEmptyCustomFields = {
+        ...mockScenario,
+        metadata: {
+          agentGoal: 'Help client',
+          customFields: [],
+        },
+      };
+
+      scenariosRepository.getScenarioById.mockResolvedValue(
+        scenarioWithEmptyCustomFields,
+      );
+
+      const result = await service.getDynamicBranchShortcuts(scenarioId);
+
+      expect(result).toEqual(defaultShortcuts);
+    });
+
+    it('should throw NotFoundException when scenario does not exist', async () => {
+      const scenarioId = 999;
+
+      scenariosRepository.getScenarioById.mockResolvedValue(null);
+
+      await expect(
+        service.getDynamicBranchShortcuts(scenarioId),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
 });
