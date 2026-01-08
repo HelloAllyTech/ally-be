@@ -134,13 +134,17 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario session not found');
     }
 
-    // Filter events to only include ACTIVE ones
+    // Filter events to only include ACTIVE ones and non-termination events and remove scenarioEvent from each
     if ((scenarioSession as any).events) {
-      (scenarioSession as any).events = (scenarioSession as any).events.filter(
-        (event: any) =>
-          event.events?.visibilityType === SessionEventVisibilityType.ACTIVE &&
-          !event.scenarioEvent?.autoTerminationStatus,
-      );
+      (scenarioSession as any).events = (scenarioSession as any).events
+        .filter(
+          (event: any) =>
+            event.events?.visibilityType ===
+              SessionEventVisibilityType.ACTIVE &&
+            !event.scenarioEvent?.autoTerminationStatus,
+        )
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        .map(({ scenarioEvent, ...rest }: any) => rest);
     }
 
     const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
