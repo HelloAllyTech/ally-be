@@ -1223,7 +1223,7 @@ describe('LearnController', () => {
     });
   });
 
-  describe('getDynamicBranchShortcuts', () => {
+  describe('getBranchingInstructionDynamicShortcuts', () => {
     const mockShortcuts = ['end_session', 'restart', 'escalate'];
 
     it('should return dynamic branch shortcuts without scenarioId', async () => {

@@ -3798,7 +3798,7 @@ describe('ScenarioService', () => {
     });
   });
 
-  describe('getDynamicBranchShortcuts', () => {
+  describe('getBranchingInstructionDynamicShortcuts', () => {
     const defaultShortcuts = [
       'chat_summary',
       'last_helper_utterance',
