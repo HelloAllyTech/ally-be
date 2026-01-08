@@ -778,4 +778,20 @@ export class LearnController {
   ): Promise<AvailableLanguage[]> {
     return this.scenarioService.getLanguagesForScenario(active, hasVoices);
   }
+
+  @ApiOperation({ summary: 'Get dynamic branch shortcuts' })
+  @ApiQuery({
+    name: 'scenarioId',
+    required: false,
+    type: Number,
+    description: 'Scenario ID',
+  })
+  @Get('branching-instruction-dynamic-shortcuts')
+  async getBranchingInstructionDynamicShortcuts(
+    @Query('scenarioId') scenarioId?: number,
+  ): Promise<string[]> {
+    return this.scenarioService.getBranchingInstructionDynamicShortcuts(
+      scenarioId,
+    );
+  }
 }
