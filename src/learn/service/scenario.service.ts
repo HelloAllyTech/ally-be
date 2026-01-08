@@ -74,7 +74,7 @@ import {
 import { DEFAULT_LANGUAGE_CODE } from '../constants/scenario-session.constants';
 import { TerminationEventsDto } from '../dto/termination-events.dto';
 import isDuplicateKeyException from 'src/exception/custom.exception';
-import { DynamicBranchShortcut } from '../enum/dynamic-branch-shortcut.enum';
+import { BRANCHING_INSTRUCTION_DYNAMIC_SHORTCUTS } from '../constants/scenario.constants';
 
 @Injectable()
 export class ScenarioService {
@@ -1548,9 +1548,7 @@ export class ScenarioService {
     scenarioId?: number,
   ): Promise<string[]> {
     const dynamicBranchShortcuts: string[] = [
-      DynamicBranchShortcut.CHAT_SUMMARY,
-      DynamicBranchShortcut.LAST_HELPER_UTTERANCE,
-      DynamicBranchShortcut.LLM_RESPONSE,
+      ...BRANCHING_INSTRUCTION_DYNAMIC_SHORTCUTS,
     ];
     if (scenarioId) {
       const scenario = await this.getScenario(scenarioId);
