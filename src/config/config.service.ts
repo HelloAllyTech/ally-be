@@ -266,9 +266,6 @@ export class AppConfigService {
       scenarioCustomFields:
         this.configService.get<string>('FEATURE_SCENARIO_CUSTOM_FIELDS') ===
         'true',
-      termsAndAgreement:
-        this.configService.get<string>('FEATURE_TERMS_AND_AGREEMENT') ===
-        'true',
       multipleTerminationEvents:
         this.configService.get<string>(
           'FEATURE_MULTIPLE_TERMINATION_EVENTS',
