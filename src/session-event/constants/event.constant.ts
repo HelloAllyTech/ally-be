@@ -12,6 +12,9 @@ export const EVENT_TYPE_PREFIX_MAP: Record<SessionEventDetectionType, string> =
     [SessionEventDetectionType.SCORE]: 'SC',
     [SessionEventDetectionType.COMBINATION]: 'CO',
     [SessionEventDetectionType.BINARY_CLASSIFIER]: 'BC',
+    [SessionEventDetectionType.HELPER_PARAPHRASED]: 'HP',
+    [SessionEventDetectionType.HELPER_INTERRUPTED]: 'HI',
+    [SessionEventDetectionType.HELPER_UTTERANCE_LENGTH]: 'HL',
   };
 
 /**
@@ -19,3 +22,9 @@ export const EVENT_TYPE_PREFIX_MAP: Record<SessionEventDetectionType, string> =
  * Prevents infinite loops and stack overflow in case of circular dependencies.
  */
 export const MAX_COMBINATION_EVENT_DEPTH = 20;
+
+export const SYSTEM_EVENT_DETECTION_TYPES = [
+  SessionEventDetectionType.HELPER_PARAPHRASED,
+  SessionEventDetectionType.HELPER_INTERRUPTED,
+  SessionEventDetectionType.HELPER_UTTERANCE_LENGTH,
+];

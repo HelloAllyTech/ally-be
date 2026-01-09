@@ -90,6 +90,10 @@ export const mapRequestToDbDetectionDataByType = (
         positiveExamples: eventDetectiondata.positiveExamples,
         negativeExamples: eventDetectiondata.negativeExamples,
       };
+    case SessionEventDetectionType.HELPER_UTTERANCE_LENGTH:
+      return {
+        helperUtteranceLength: eventDetectiondata.helperUtteranceLength,
+      };
     default:
       return undefined;
   }
