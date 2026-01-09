@@ -4,6 +4,7 @@ export enum UserRole {
   SUPER_ADMIN = 'SUPER_ADMIN',
   ADMIN = 'ADMIN',
   LEARNER = 'LEARNER',
+  REVIEWER = 'REVIEWER',
 }
 
 export enum PreferenceName {
