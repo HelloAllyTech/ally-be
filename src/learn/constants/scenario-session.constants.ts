@@ -163,6 +163,7 @@ export const LANGUAGE_STT_PROVIDER_CONFIG: Record<
       config: {
         model: string;
         location?: string;
+        languageCode?: string;
       };
     };
   }
@@ -261,6 +262,7 @@ export const LANGUAGE_STT_PROVIDER_CONFIG: Record<
       config: {
         model: 'chirp_2',
         location: 'asia-southeast1',
+        languageCode: 'pa-Guru-IN',
       },
     },
   },
