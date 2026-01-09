@@ -30,7 +30,10 @@ import {
   SessionEventResponseDto,
   UpdateSessionEventDto,
 } from '../dto/session-event.dto';
-import { MAX_COMBINATION_EVENT_DEPTH } from '../constants/event.constant';
+import {
+  MAX_COMBINATION_EVENT_DEPTH,
+  SYSTEM_EVENT_DETECTION_TYPES,
+} from '../constants/event.constant';
 
 import { SessionEventTranslationService } from './session-event-translation.service';
 @Injectable()
@@ -146,6 +149,9 @@ export class SessionEventService {
     if (!event) {
       throw new NotFoundException('Session Event not found');
     }
+    if (SYSTEM_EVENT_DETECTION_TYPES.includes(event.detectionType)) {
+      throw new BadRequestException('System events cannot be edited');
+    }
 
     const formattedEventDto =
       mapUpdateEventDtoToDbEvent({
@@ -211,6 +217,9 @@ export class SessionEventService {
                 ),
               }
             : undefined,
+          isEditable: !SYSTEM_EVENT_DETECTION_TYPES.includes(
+            event.detectionType,
+          ),
         };
       }),
     );
@@ -232,6 +241,7 @@ export class SessionEventService {
             ),
           }
         : undefined,
+      isEditable: !SYSTEM_EVENT_DETECTION_TYPES.includes(event.detectionType),
     };
   }
 
