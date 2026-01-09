@@ -39,7 +39,7 @@ import { ChatFeedbackService } from './service/chat-feedback.service';
   imports: [
     TypeOrmModule.forFeature([Message, Feedback, CallDetails, SummaryFeedback]),
     TypeOrmModule.forFeature([Chat, ChatRepository]),
-    forwardRef(() => UserModule),
+    UserModule,
     forwardRef(() => AiModule),
     SettingsModule,
     forwardRef(() => BrokerModule),

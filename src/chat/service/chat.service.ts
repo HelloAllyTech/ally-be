@@ -1,8 +1,6 @@
 import {
-  forwardRef,
   HttpException,
   Injectable,
-  Inject,
   HttpStatus,
   BadRequestException,
 } from '@nestjs/common';
@@ -66,7 +64,6 @@ export class ChatService {
 
     private callDetailsRepository: CallDetailsRepository,
     private summaryFeedbackRepository: SummaryFeedbackRepository,
-    @Inject(forwardRef(() => UserService))
     private userService: UserService,
     private eventEmitter: EventEmitter2,
     private readonly cache: RedisService,

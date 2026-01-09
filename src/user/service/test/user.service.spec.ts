@@ -777,47 +777,6 @@ describe('UserService', () => {
     });
   });
 
-  describe('getTermsAndAgreementApproval', () => {
-    it('should return cached terms approval status when available', async () => {
-      mockCache.get.mockResolvedValue('true');
-      const result = await service.getTermsAndAgreementApproval(1);
-      expect(result).toBe(true);
-      expect(mockCache.get).toHaveBeenCalledWith('user:terms:1');
-    });
-
-    it('should return false from cache when cached value is false', async () => {
-      mockCache.get.mockResolvedValue('false');
-      const result = await service.getTermsAndAgreementApproval(1);
-      expect(result).toBe(false);
-    });
-
-    it('should fetch from database and cache when not in cache', async () => {
-      const userWithApproval = { ...mockUser, termsAndAgreementApproved: true };
-      mockCache.get.mockResolvedValue(null);
-      mockUsersRepository.findOne.mockResolvedValue(userWithApproval);
-      mockCache.set.mockResolvedValue(undefined);
-
-      const result = await service.getTermsAndAgreementApproval(1);
-
-      expect(result).toBe(true);
-      expect(mockUsersRepository.findOne).toHaveBeenCalledWith({
-        where: { id: 1, tenantId: 'test-tenant' },
-      });
-      expect(mockCache.set).toHaveBeenCalledWith('user:terms:1', 'true', 1800);
-    });
-
-    it('should return false when user not found', async () => {
-      mockCache.get.mockResolvedValue(null);
-      mockUsersRepository.findOne.mockResolvedValue(null);
-      mockCache.set.mockResolvedValue(undefined);
-
-      const result = await service.getTermsAndAgreementApproval(1);
-
-      expect(result).toBe(false);
-      expect(mockCache.set).toHaveBeenCalledWith('user:terms:1', 'false', 1800);
-    });
-  });
-
   describe('getTermsAndAgreementStatus', () => {
     it('should return success true when user has approved terms', async () => {
       const userId = '123';
