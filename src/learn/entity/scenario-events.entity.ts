@@ -6,6 +6,7 @@ import {
   Index,
 } from 'typeorm';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import { DetectionConfigDto } from 'src/session-event/dto/session-event.dto';
 
 @Entity('scenario_events')
 @Index(
@@ -49,4 +50,7 @@ export class ScenarioEvents extends BaseWithoutTenantEntity {
 
   @Column({ default: false })
   autoTerminationStatus?: boolean;
+
+  @Column({ type: 'jsonb', nullable: true })
+  detectionConfig?: DetectionConfigDto;
 }
