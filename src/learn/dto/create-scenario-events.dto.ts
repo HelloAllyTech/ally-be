@@ -8,6 +8,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { DetectionConfigDto } from 'src/session-event/dto/session-event.dto';
 
 export class EventMappingDto {
   @ApiProperty({
@@ -64,6 +65,22 @@ export class EventMappingDto {
   @IsOptional()
   @IsString()
   branchInstruction?: string;
+
+  @ApiProperty({
+    description: 'The detection config of the event',
+    example: {
+      startTime: 10,
+      endTime: 20,
+      maxOccurrences: 10,
+      minGapTime: 10,
+      minScore: 0,
+      maxScore: 100,
+    },
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DetectionConfigDto)
+  detectionConfig?: DetectionConfigDto;
 }
 
 export class CreateScenarioEventsDto {
@@ -87,6 +104,14 @@ export class CreateScenarioEventsDto {
         message: 'Great job!',
         branchingStatus: true,
         branchInstruction: 'Continue with next step',
+        detectionConfig: {
+          startTime: 10,
+          endTime: 20,
+          maxOccurrences: 10,
+          minGapTime: 10,
+          minScore: 0,
+          maxScore: 100,
+        },
       },
       {
         id: 'event2',

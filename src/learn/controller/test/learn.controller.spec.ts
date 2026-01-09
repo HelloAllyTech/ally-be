@@ -609,6 +609,7 @@ describe('LearnController', () => {
             message: undefined,
             branchingStatus: false,
             branchInstruction: undefined,
+            detectionConfig: undefined,
           },
         ],
         count: 1,
