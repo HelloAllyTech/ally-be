@@ -6,6 +6,7 @@ import { SessionEventVisibilityType } from '../../enum/session-event-visibility-
 import { Pagination } from 'src/common/type/common.type';
 import { SessionEventDetectionType } from '../../enum/session-event-detection.enum';
 import { CreateSessionEventDto } from '../../dto/session-event.dto';
+import { SYSTEM_EVENT_DETECTION_TYPES } from '../../constants/event.constant';
 
 describe('SessionEventRepository', () => {
   let repository: SessionEventRepository;
@@ -31,6 +32,7 @@ describe('SessionEventRepository', () => {
       andWhere: jest.fn().mockReturnThis(),
       setParameters: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       offset: jest.fn().mockReturnThis(),
       getMany: jest.fn(),
@@ -82,6 +84,13 @@ describe('SessionEventRepository', () => {
         'sessionEvent',
       );
       expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
         'sessionEvent.createdAt',
         'DESC',
       );
@@ -104,6 +113,13 @@ describe('SessionEventRepository', () => {
         { visibilityType: visibilityType },
       );
       expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
         'sessionEvent.createdAt',
         'DESC',
       );
@@ -131,6 +147,13 @@ describe('SessionEventRepository', () => {
         'sessionEvent',
       );
       expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
         'sessionEvent.name',
         'ASC',
       );
@@ -165,6 +188,13 @@ describe('SessionEventRepository', () => {
         { visibilityType: visibilityType },
       );
       expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
         'sessionEvent.score',
         'DESC',
       );
@@ -181,6 +211,13 @@ describe('SessionEventRepository', () => {
       const result = await repository.getAllSessionEvents();
 
       expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
         'sessionEvent.createdAt',
         'DESC',
       );
@@ -289,6 +326,17 @@ describe('SessionEventRepository', () => {
       expect(queryBuilder.setParameters).toHaveBeenCalledWith({
         searchName: '%Test%',
       });
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'sessionEvent.createdAt',
+        'DESC',
+      );
       expect(queryBuilder.getMany).toHaveBeenCalled();
       expect(result).toEqual(expectedEvents);
     });
@@ -318,6 +366,17 @@ describe('SessionEventRepository', () => {
       expect(queryBuilder.setParameters).toHaveBeenCalledWith({
         searchName: '%Event%',
       });
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'sessionEvent.createdAt',
+        'DESC',
+      );
       expect(queryBuilder.getMany).toHaveBeenCalled();
       expect(result).toEqual(expectedEvents);
     });
@@ -346,6 +405,13 @@ describe('SessionEventRepository', () => {
         searchName: '%Test%',
       });
       expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
         'sessionEvent.name',
         'ASC',
       );
@@ -383,6 +449,13 @@ describe('SessionEventRepository', () => {
         searchName: '%Great%',
       });
       expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
         'sessionEvent.score',
         'DESC',
       );
@@ -403,7 +476,11 @@ describe('SessionEventRepository', () => {
 
       // Empty string is falsy, so andWhere for searchName should not be called
       expect(queryBuilder.andWhere).not.toHaveBeenCalled();
-      expect(queryBuilder.setParameters).not.toHaveBeenCalled();
+      // setParameters is still called for SYSTEM_EVENT_DETECTION_TYPES (sorting)
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+      expect(queryBuilder.setParameters).toHaveBeenCalledTimes(1);
       expect(result).toEqual(expectedEvents);
     });
 
@@ -424,7 +501,75 @@ describe('SessionEventRepository', () => {
       expect(queryBuilder.setParameters).toHaveBeenCalledWith({
         searchName: "%Test's Event%",
       });
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'sessionEvent.createdAt',
+        'DESC',
+      );
       expect(result).toEqual(expectedEvents);
+    });
+
+    it('should apply sorting with SYSTEM_EVENT_DETECTION_TYPES to push helper events last', async () => {
+      const regularEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: 'regular-1',
+        detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+      };
+
+      const helperEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: 'helper-1',
+        detectionType: SessionEventDetectionType.HELPER_PARAPHRASED,
+      };
+
+      const expectedEvents = [regularEvent, helperEvent];
+      queryBuilder.getMany.mockResolvedValue(expectedEvents);
+
+      await repository.getAllSessionEvents();
+
+      // Verify the CASE expression is used to push system events last
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      );
+      expect(queryBuilder.setParameters).toHaveBeenCalledWith({
+        SYSTEM_EVENT_DETECTION_TYPES,
+      });
+    });
+
+    it('should include all HELPER detection types in SYSTEM_EVENT_DETECTION_TYPES', () => {
+      // Verify SYSTEM_EVENT_DETECTION_TYPES contains all helper types
+      expect(SYSTEM_EVENT_DETECTION_TYPES).toContain(
+        SessionEventDetectionType.HELPER_PARAPHRASED,
+      );
+      expect(SYSTEM_EVENT_DETECTION_TYPES).toContain(
+        SessionEventDetectionType.HELPER_INTERRUPTED,
+      );
+      expect(SYSTEM_EVENT_DETECTION_TYPES).toContain(
+        SessionEventDetectionType.HELPER_UTTERANCE_LENGTH,
+      );
+      expect(SYSTEM_EVENT_DETECTION_TYPES).toHaveLength(3);
+    });
+
+    it('should not include regular detection types in SYSTEM_EVENT_DETECTION_TYPES', () => {
+      const regularDetectionTypes = [
+        SessionEventDetectionType.SENTENCE_SIMILARITY,
+        SessionEventDetectionType.SEMANTIC_SIMILARITY,
+        SessionEventDetectionType.TIME,
+        SessionEventDetectionType.SCORE,
+        SessionEventDetectionType.COMBINATION,
+        SessionEventDetectionType.BINARY_CLASSIFIER,
+      ];
+
+      for (const detectionType of regularDetectionTypes) {
+        expect(SYSTEM_EVENT_DETECTION_TYPES).not.toContain(detectionType);
+      }
     });
   });
 

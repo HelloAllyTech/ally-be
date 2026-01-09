@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
+  IsBoolean,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -89,6 +90,25 @@ export class BinaryClassificationExampleDto {
   @IsNotEmpty()
   text!: string;
 }
+
+export class HelperUtteranceLengthDetectionDataDto {
+  @ApiProperty({
+    description: 'The minimum helper utterance length',
+    example: 10,
+  })
+  @IsNumber()
+  @IsNotEmpty()
+  minUtteranceLength!: number;
+
+  @ApiProperty({
+    description: 'The maximum helper utterance length',
+    example: 50,
+  })
+  @IsNumber()
+  @IsOptional()
+  maxUtteranceLength?: number;
+}
+
 export class DetectionDataDto<T> {
   @ApiProperty({ required: false })
   @IsArray()
@@ -146,6 +166,15 @@ export class DetectionDataDto<T> {
   @Type(() => BinaryClassificationExampleDto)
   @IsOptional()
   negativeExamples?: BinaryClassificationExampleDto[];
+
+  @ApiProperty({
+    required: false,
+    type: HelperUtteranceLengthDetectionDataDto,
+    description: 'Helper utterance length detection data',
+  })
+  @IsOptional()
+  @Type(() => HelperUtteranceLengthDetectionDataDto)
+  helperUtteranceLength?: HelperUtteranceLengthDetectionDataDto;
 }
 
 export class DetectionDataRequestDto extends DetectionDataDto<CombinationExpressionRequestDto> {}
@@ -287,6 +316,10 @@ export class SessionEventDto<T> {
           left: { id: 'eventId-2' },
         },
       },
+      helperUtteranceLength: {
+        minUtteranceLength: 10,
+        maxUtteranceLength: 50,
+      },
     },
   })
   @ValidateNested()
@@ -308,6 +341,14 @@ export class SessionEventDto<T> {
   @IsObject()
   @IsOptional()
   detectionConfig?: DetectionConfigDto;
+
+  @ApiProperty({
+    description: 'Whether the event is editable',
+    example: true,
+  })
+  @IsBoolean()
+  @IsOptional()
+  isEditable?: boolean = true;
 }
 
 export class CreateSessionEventDto extends SessionEventDto<CombinationExpressionRequestDto> {}

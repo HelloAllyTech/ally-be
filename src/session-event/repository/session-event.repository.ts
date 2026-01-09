@@ -12,7 +12,10 @@ import { SessionEventVisibilityType } from '../enum/session-event-visibility-typ
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { CreateSessionEventDto } from '../dto/session-event.dto';
 import { SessionEventDetectionType } from '../enum/session-event-detection.enum';
-import { EVENT_TYPE_PREFIX_MAP } from '../constants/event.constant';
+import {
+  EVENT_TYPE_PREFIX_MAP,
+  SYSTEM_EVENT_DETECTION_TYPES,
+} from '../constants/event.constant';
 
 @Injectable()
 export class SessionEventRepository extends Repository<SessionEvents> {
@@ -74,10 +77,16 @@ export class SessionEventRepository extends Repository<SessionEvents> {
     query: SelectQueryBuilder<SessionEvents>,
     pagination?: Pagination,
   ) {
-    query.orderBy(
-      `sessionEvent.${pagination?.sortBy || 'createdAt'}`,
-      pagination?.order || 'DESC',
-    );
+    query
+      .orderBy(
+        `CASE WHEN sessionEvent.detectionType IN (:...SYSTEM_EVENT_DETECTION_TYPES) THEN 1 ELSE 0 END`,
+        'ASC',
+      )
+      .setParameters({ SYSTEM_EVENT_DETECTION_TYPES })
+      .addOrderBy(
+        `sessionEvent.${pagination?.sortBy || 'createdAt'}`,
+        pagination?.order || 'DESC',
+      );
   }
 
   private applyPagination(
