@@ -85,21 +85,6 @@ export class UserService {
     return user || null;
   }
 
-  async getTermsAndAgreementApproval(id: number): Promise<boolean> {
-    const cachedTermsAndAgreement = await this.cache.get(`user:terms:${id}`);
-    let termsAccepted: boolean;
-    if (cachedTermsAndAgreement) {
-      termsAccepted = cachedTermsAndAgreement === 'true';
-    } else {
-      const user = await this.userRepository.findOne({
-        where: { id, tenantId: ExecutionManager.getTenantId() },
-      });
-      termsAccepted = user?.termsAndAgreementApproved || false;
-      await this.cache.set(`user:terms:${id}`, termsAccepted.toString(), 1800);
-    }
-    return termsAccepted;
-  }
-
   async getTermsAndAgreementStatus(): Promise<SuccessResponse> {
     const userId = ExecutionManager.getUserId();
     if (!userId) {

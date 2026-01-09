@@ -4,7 +4,6 @@ import { SessionEventService } from './service/session-event.service';
 import { SessionEvents } from './entity/session-events.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SessionEventRepository } from './repository/session-event.repository';
-import { UserModule } from 'src/user/user.module';
 import { LearnModule } from 'src/learn/learn.module';
 import { CommonModule } from 'src/common/common.module';
 import { LanguageModule } from 'src/language/language.module';
@@ -14,7 +13,6 @@ import { SessionEventTranslationService } from './service/session-event-translat
 @Module({
   imports: [
     TypeOrmModule.forFeature([SessionEvents]),
-    forwardRef(() => UserModule),
     forwardRef(() => CommonModule),
     forwardRef(() => LanguageModule),
     forwardRef(() => LearnModule),

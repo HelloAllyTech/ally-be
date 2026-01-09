@@ -1,4 +1,4 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { SelectQueryBuilder } from 'typeorm';
 import { LoggerService } from '../../logger/logger.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
@@ -25,7 +25,6 @@ export class CallLogService {
     private chatRepository: ChatRepository,
     private callDetailsRepository: CallDetailsRepository,
     private callDetailsService: CallDetailsService,
-    @Inject(forwardRef(() => UserService))
     private userService: UserService,
   ) {}
 
