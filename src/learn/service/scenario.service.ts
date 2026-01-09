@@ -217,6 +217,7 @@ export class ScenarioService {
         : {
             branchInstruction: item.sessionEvent?.branchInstruction,
           }),
+      detectionConfig: item.detectionConfig,
     }));
 
     return { data, count: result.count };
@@ -1072,6 +1073,7 @@ export class ScenarioService {
             message,
             branchingStatus,
             branchInstruction,
+            detectionConfig,
           } = event;
           return {
             scenarioId,
@@ -1098,6 +1100,7 @@ export class ScenarioService {
                   branchingStatus: false,
                   branchInstruction: undefined,
                 }),
+            detectionConfig,
           };
         });
 
@@ -1115,6 +1118,7 @@ export class ScenarioService {
             message: event.message,
             branchingStatus: event.branchingStatus,
             branchInstruction: event.branchInstruction,
+            detectionConfig: event.detectionConfig,
           })),
         };
       });
