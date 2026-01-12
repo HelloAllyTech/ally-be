@@ -212,11 +212,21 @@ npm run seed -- src/database/seeds/<seed-file>.ts
 
 ### Available Seeds
 
-| Seed File              | Description                                                           | Dependencies                                      |
-| ---------------------- | --------------------------------------------------------------------- | ------------------------------------------------- |
-| `admin-user.ts`        | Creates an admin user with SUPER_ADMIN role                           | Requires `groups` table to have SUPER_ADMIN group |
-| `user-tenant.ts`       | Creates a tenant and sample users (Counselor, Learner, Admin) via API | Requires app to be running, admin user to exist   |
-| `scenarios-pathway.ts` | Creates sample scenarios and a learning pathway via API               | Requires app to be running, admin user to exist   |
+| Seed File                   | Description                                                           | Dependencies                                      |
+| --------------------------- | --------------------------------------------------------------------- | ------------------------------------------------- |
+| `admin-user.ts`             | Creates an admin user with SUPER_ADMIN role                           | Requires `groups` table to have SUPER_ADMIN group |
+| `user-tenant.ts`            | Creates a tenant and sample users (Counselor, Learner, Admin) via API | Requires app to be running, admin user to exist   |
+| `scenarios-pathway.ts`      | Creates sample scenarios and a learning pathway via API               | Requires app to be running, admin user to exist   |
+| `seed-voices-and-events.ts` | Seeds scenario voices and session events data                         | Requires app to be running                        |
+
+### Seed Utilities
+
+| Utility File     | Description                                                               |
+| ---------------- | ------------------------------------------------------------------------- |
+| `seed-utils.ts`  | Shared utilities for all seeds (database connection, logging helpers)     |
+| `seed-logger.ts` | Centralized logging utility for consistent logging across seed operations |
+| `index.ts`       | Seed orchestrator that manages execution of all seeds in correct order    |
+| `data/`          | Directory containing seed data files (JSON/static data for seeds)         |
 
 ### Seed Execution Order
 
@@ -226,11 +236,21 @@ For a fresh database, run seeds in this order:
 # 1. Create admin user (direct DB access)
 npm run seed -- src/database/seeds/admin-user.ts
 
-# 2. Create tenant and users (requires app running)
+# 2. Seed voices and session events (requires app running)
+npm run seed -- src/database/seeds/seed-voices-and-events.ts
+
+# 3. Create tenant and users (requires app running)
 npm run seed -- src/database/seeds/user-tenant.ts
 
-# 3. Create scenarios and pathway (requires app running)
+# 4. Create scenarios and pathway (requires app running)
 npm run seed -- src/database/seeds/scenarios-pathway.ts
+```
+
+**Or run all seeds at once:**
+
+```bash
+# Runs all seeds in the correct order automatically
+npm run seed:all
 ```
 
 ---

@@ -1,6 +1,5 @@
 [
   {
-    "id": "SE-001",
     "name": "Active Listening Acknowledged",
     "description": "Client acknowledges that they feel heard and understood by the counselor",
     "score": 85,
@@ -25,7 +24,6 @@
     "eventCode": "SE-001"
   },
   {
-    "id": "SE-002",
     "name": "Emotional Validation Detected",
     "description": "Counselor validates the client's emotions appropriately",
     "score": 90,
@@ -47,7 +45,6 @@
     "eventCode": "SE-002"
   },
   {
-    "id": "SE-003",
     "name": "Extended Session Duration",
     "description": "Session has exceeded the recommended time limit",
     "score": 70,
@@ -64,7 +61,6 @@
     "eventCode": "SE-003"
   },
   {
-    "id": "SE-004",
     "name": "High Counselor Performance",
     "description": "Counselor's performance metrics are above 80%",
     "score": 95,
@@ -86,7 +82,6 @@
     "eventCode": "SE-004"
   },
   {
-    "id": "SE-006",
     "name": "Progress Towards Goal Achieved",
     "description": "Client has made measurable progress on their identified goals",
     "score": 88,

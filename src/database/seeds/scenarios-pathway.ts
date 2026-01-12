@@ -5,7 +5,7 @@ import {
   ScenarioDifficultyLevel,
   ScenarioResponseLength,
   ScenarioStatus,
-} from 'src/learn/type/scenario.type';
+} from '../../learn/type/scenario.type';
 
 type TriggerWarnings = {
   createdAt: string;
