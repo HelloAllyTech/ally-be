@@ -27,4 +27,7 @@ export class ScenarioSessionEvents extends BaseEntity {
 
   @Column({ nullable: true })
   message?: string;
+
+  @Column({ default: false })
+  autoTerminationStatus?: boolean;
 }
