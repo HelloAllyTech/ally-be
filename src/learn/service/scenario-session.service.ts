@@ -150,6 +150,8 @@ export class ScenarioSessionService {
             delete sanitizedEvents.detectionData;
             delete sanitizedEvents.detectionConfig;
             delete sanitizedEvents.branchInstruction;
+            delete sanitizedEvents.description;
+            delete sanitizedEvents.detectionType;
             return { ...event, events: sanitizedEvents };
           }
           return event;
