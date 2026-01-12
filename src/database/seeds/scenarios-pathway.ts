@@ -157,7 +157,7 @@ async function login(
 ): Promise<{ accessToken: string; refreshToken: string }> {
   try {
     const response = await client.post('/api/v1/auth/login', adminCredentials);
-    console.log('[scenarios-pathway] Login successful');
+    logStep('[scenarios-pathway] Login successful');
     return {
       accessToken: response.data.accessToken,
       refreshToken: response.data.refreshToken,
@@ -183,12 +183,12 @@ async function getOrCreateVoice(
       headers,
     });
     const voice = response.data[0];
-    console.log(
+    logStep(
       `[scenarios-pathway] Using existing voice: ${voice.name} (${voice.id})`,
     );
     return voice.id;
   } catch (error: any) {
-    console.log('[scenarios-pathway] No existing voices found');
+    logStep('[scenarios-pathway] No existing voices found');
     throw error;
   }
 }
@@ -216,11 +216,9 @@ async function createScenarios(
     );
 
     const scenarioIds = response.data.map((scenario: any) => scenario.id);
-    console.log(`[scenarios-pathway] Created ${scenarioIds.length} scenarios:`);
+    logStep(`[scenarios-pathway] Created ${scenarioIds.length} scenarios:`);
     response.data.forEach((scenario: any) => {
-      console.log(
-        `[scenarios-pathway]   ✓ ${scenario.title} (ID: ${scenario.id})`,
-      );
+      logStep(`[scenarios-pathway]   ✓ ${scenario.title} (ID: ${scenario.id})`);
     });
 
     return scenarioIds;
@@ -250,7 +248,7 @@ async function createScenarioPath(
       },
     );
 
-    console.log(
+    logStep(
       `[scenarios-pathway] Created scenario path: ${pathData.title} (ID: ${response.data.id})`,
     );
   } catch (error: any) {
@@ -263,7 +261,7 @@ async function createScenarioPath(
 }
 
 async function seedScenariosAndPath() {
-  console.log(`[scenarios-pathway] Connecting to API at: ${API_BASE_URL}`);
+  logStep(`[scenarios-pathway] Connecting to API at: ${API_BASE_URL}`);
 
   const client = axios.create({
     baseURL: API_BASE_URL,
@@ -286,9 +284,7 @@ async function seedScenariosAndPath() {
     // Create scenario path
     await createScenarioPath(client, accessToken, scenarioIds);
 
-    console.log(
-      '[scenarios-pathway] ✅ Scenario seeding completed successfully!',
-    );
+    logStep('[scenarios-pathway] ✅ Scenario seeding completed successfully!');
   } catch (error: any) {
     console.error(
       '[scenarios-pathway] ❌ Error during seeding:',
@@ -323,13 +319,12 @@ async function mapLanguagesVoices(
       }
     });
 
-    console.log(
-      '[scenarios-pathway] Got available language voices:',
-      Object.keys(languageVoices).length,
+    logStep(
+      `[scenarios-pathway] Got available language voices: ${Object.keys(languageVoices).length}`,
     );
     return languageVoices;
   } catch (error: any) {
-    console.log('[scenarios-pathway] No existing voices found');
+    logStep('[scenarios-pathway] No existing voices found');
     throw error;
   }
 }
@@ -357,7 +352,7 @@ async function getTerminationEventData(
       throw new Error('Termination event not found');
     }
 
-    console.log(
+    logStep(
       `[scenarios-pathway] Found termination event: ${terminationEvent.name}`,
     );
 

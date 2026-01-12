@@ -1,14 +1,120 @@
 [
   {
-    "name": "New Event",
-    "description": "dfergr\n fgergfe\n rgferge\n rwgertgetr\n rgetrgtreg\n rsgertgtreh\n rgetrghtreg\n wrgertgrtegh\n esfgergregetr\n rwgetrgtrgtre\n ewrgerghtergtr\n rgertghtrgtreg\n rwdgergtregtr\n regergtrhg\n ergetrhgtrh\n wrgerthgtr\n regetrghr\n ergetrgh\n er",
-    "score": 0,
-    "emoji": "🫥",
-    "id": "d3830133-5892-4b79-8182-d69ae4f03b20",
+    "id": "SE-001",
+    "name": "Active Listening Acknowledged",
+    "description": "Client acknowledges that they feel heard and understood by the counselor",
+    "score": 85,
+    "emoji": "👂",
+    "message": "Great! You're demonstrating active listening skills.",
+    "branchInstruction": "Continue with this approach and ask follow-up questions.",
     "detectionType": "SENTENCE_SIMILARITY",
     "visibilityType": "ACTIVE",
-    "detectionData": "{\"sentences\": [\"dfergr\", \"fgergfe\", \"rgferge\", \"rwgertgetr\", \"rgetrgtreg\", \"rsgertgtreh\", \"rgetrghtreg\", \"wrgertgrtegh\", \"esfgergregetr\", \"rwgetrgtrgtre\", \"ewrgerghtergtr\", \"rgertghtrgtreg\", \"rwdgergtregtr\", \"regergtrhg\", \"ergetrhgtrh\", \"wrgerthgtr\", \"regetrghr\", \"ergetrgh\", \"er\", \"Yes no\", \"\"]}",
-    "eventCode": "SS122",
-    "updatedBy": 231
+    "detectionData": {
+      "sentences": [
+        "I feel like you really understand me",
+        "Thank you for listening",
+        "I appreciate you getting what I mean",
+        "You get it",
+        "That's exactly what I meant",
+        "I feel heard",
+        "You understand where I'm coming from",
+        "That's what I'm trying to say"
+      ],
+      "threshold": 0.75
+    },
+    "eventCode": "SE-001"
+  },
+  {
+    "id": "SE-002",
+    "name": "Emotional Validation Detected",
+    "description": "Counselor validates the client's emotions appropriately",
+    "score": 90,
+    "emoji": "❤️",
+    "message": "Excellent emotional validation! This builds rapport.",
+    "branchInstruction": "Continue validating emotions and explore deeper.",
+    "detectionType": "SEMANTIC_SIMILARITY",
+    "visibilityType": "ACTIVE",
+    "detectionData": {
+      "semanticConcepts": [
+        "validation of emotions",
+        "acknowledgment of feelings",
+        "emotional support",
+        "empathetic understanding",
+        "recognizing their pain"
+      ],
+      "semanticSimilarityThreshold": 0.7
+    },
+    "eventCode": "SE-002"
+  },
+  {
+    "id": "SE-003",
+    "name": "Extended Session Duration",
+    "description": "Session has exceeded the recommended time limit",
+    "score": 70,
+    "emoji": "⏱️",
+    "message": "The session is running longer than expected. Consider wrapping up soon.",
+    "branchInstruction": "Start conclusion and action planning.",
+    "detectionType": "TIME",
+    "visibilityType": "ACTIVE",
+    "detectionData": {
+      "durationInMinutes": 45,
+      "condition": "GTE",
+      "operator": ">="
+    },
+    "eventCode": "SE-003"
+  },
+  {
+    "id": "SE-004",
+    "name": "High Counselor Performance",
+    "description": "Counselor's performance metrics are above 80%",
+    "score": 95,
+    "emoji": "⭐",
+    "message": "Outstanding counseling skills demonstrated!",
+    "branchInstruction": "Maintain this level of excellence.",
+    "detectionType": "SCORE",
+    "visibilityType": "ACTIVE",
+    "detectionData": {
+      "scoreMetrics": [
+        "empathy",
+        "active_listening",
+        "response_quality",
+        "emotional_intelligence"
+      ],
+      "threshold": 80,
+      "condition": "GTE"
+    },
+    "eventCode": "SE-004"
+  },
+  {
+    "id": "SE-006",
+    "name": "Progress Towards Goal Achieved",
+    "description": "Client has made measurable progress on their identified goals",
+    "score": 88,
+    "emoji": "🎯",
+    "message": "Fantastic progress! You're moving toward your goals.",
+    "branchInstruction": "Celebrate the win and build on this momentum.",
+    "detectionType": "BINARY_CLASSIFIER",
+    "visibilityType": "ACTIVE",
+    "detectionData": {
+      "classifierModel": "goal_progress_detector",
+      "indicators": {
+        "positive": [
+          "I've been doing better",
+          "I made progress",
+          "Things are improving",
+          "I accomplished",
+          "I achieved",
+          "I can see the difference"
+        ],
+        "negative": [
+          "I haven't changed",
+          "Nothing's different",
+          "I'm still stuck",
+          "No progress"
+        ]
+      },
+      "confidenceThreshold": 0.8
+    },
+    "eventCode": "SE-006"
   }
 ]

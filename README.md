@@ -214,7 +214,7 @@ npm run seed -- src/database/seeds/<seed-file>.ts
 
 | Seed File              | Description                                                           | Dependencies                                      |
 | ---------------------- | --------------------------------------------------------------------- | ------------------------------------------------- |
-| `admin_user.ts`        | Creates an admin user with SUPER_ADMIN role                           | Requires `groups` table to have SUPER_ADMIN group |
+| `admin-user.ts`        | Creates an admin user with SUPER_ADMIN role                           | Requires `groups` table to have SUPER_ADMIN group |
 | `user-tenant.ts`       | Creates a tenant and sample users (Counselor, Learner, Admin) via API | Requires app to be running, admin user to exist   |
 | `scenarios-pathway.ts` | Creates sample scenarios and a learning pathway via API               | Requires app to be running, admin user to exist   |
 
@@ -224,7 +224,7 @@ For a fresh database, run seeds in this order:
 
 ```bash
 # 1. Create admin user (direct DB access)
-npm run seed -- src/database/seeds/admin_user.ts
+npm run seed -- src/database/seeds/admin-user.ts
 
 # 2. Create tenant and users (requires app running)
 npm run seed -- src/database/seeds/user-tenant.ts

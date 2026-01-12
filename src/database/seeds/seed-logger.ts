@@ -5,6 +5,8 @@
  * Supports different log levels and formats.
  */
 
+import { logStep } from './seed-utils';
+
 export enum LogLevel {
   DEBUG = 'DEBUG',
   INFO = 'INFO',
@@ -66,41 +68,41 @@ export class SeedLogger {
 
   debug(message: string, details?: any): void {
     if (this.verbose) {
-      console.log(this.formatMessage(LogLevel.DEBUG, message));
+      logStep(this.formatMessage(LogLevel.DEBUG, message));
     }
     this.addLog(LogLevel.DEBUG, message, details);
   }
 
   info(message: string, details?: any): void {
-    console.log(this.formatMessage(LogLevel.INFO, message));
+    logStep(this.formatMessage(LogLevel.INFO, message));
     this.addLog(LogLevel.INFO, message, details);
   }
 
   success(message: string, details?: any): void {
-    console.log(this.formatMessage(LogLevel.SUCCESS, message));
+    logStep(this.formatMessage(LogLevel.SUCCESS, message));
     this.addLog(LogLevel.SUCCESS, message, details);
   }
 
   warning(message: string, details?: any): void {
-    console.log(this.formatMessage(LogLevel.WARNING, message));
+    logStep(this.formatMessage(LogLevel.WARNING, message));
     this.addLog(LogLevel.WARNING, message, details);
   }
 
   error(message: string, details?: any): void {
-    console.log(this.formatMessage(LogLevel.ERROR, message));
+    logStep(this.formatMessage(LogLevel.ERROR, message));
     this.addLog(LogLevel.ERROR, message, details);
   }
 
   section(title: string): void {
     const line = '─'.repeat(60);
-    console.log(`\n${line}`);
-    console.log(`  ${title}`);
-    console.log(`${line}\n`);
+    logStep(`\n${line}`);
+    logStep(`  ${title}`);
+    logStep(`${line}\n`);
   }
 
   table(data: Record<string, any>[]): void {
     if (data.length === 0) {
-      console.log('  (no data)');
+      logStep('  (no data)');
       return;
     }
 
@@ -115,14 +117,14 @@ export class SeedLogger {
     columns.forEach((col) => {
       header += col.key.padEnd(col.width + 2);
     });
-    console.log(header);
+    logStep(header);
 
     // Print separator
     let separator = '  ';
     columns.forEach((col) => {
       separator += '─'.repeat(col.width + 2);
     });
-    console.log(separator);
+    logStep(separator);
 
     // Print rows
     data.forEach((row) => {
@@ -131,7 +133,7 @@ export class SeedLogger {
         const value = String(row[col.key] || '').padEnd(col.width);
         line += value + '  ';
       });
-      console.log(line);
+      logStep(line);
     });
   }
 
@@ -196,9 +198,9 @@ export function printSummaryReport(
 ): void {
   const logger = getGlobalLogger();
 
-  console.log('\n' + '─'.repeat(60));
-  console.log(`  ${seedName} Summary`);
-  console.log('─'.repeat(60));
+  logStep('\n' + '─'.repeat(60));
+  logStep(`  ${seedName} Summary`);
+  logStep('─'.repeat(60));
 
   const data = [];
   if (results.created > 0)
@@ -210,5 +212,5 @@ export function printSummaryReport(
   if (results.failed > 0) data.push({ Label: 'Failed', Count: results.failed });
 
   logger.table(data);
-  console.log('');
+  logStep('');
 }

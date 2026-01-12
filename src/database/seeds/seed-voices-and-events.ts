@@ -1,12 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { DeepPartial } from 'typeorm';
+import axios, { AxiosInstance } from 'axios';
+import { config } from 'dotenv';
 
-import { ScenarioVoices } from '../../learn/entity/scenario-voices.entity';
-import { SessionEvents } from '../../session-event/entity/session-events.entity';
-import { SessionEventDetectionType } from '../../session-event/enum/session-event-detection.enum';
-import { SessionEventVisibilityType } from '../../session-event/enum/session-event-visibility-type.enum';
-import { createSeedDataSource, logStep } from './seed-utils';
+import { logStep } from './seed-utils';
+
+config();
 
 type ScenarioVoiceSeed = {
   name: string;
@@ -23,8 +22,8 @@ type SessionEventSeed = {
   emoji?: string;
   message?: string;
   branchInstruction?: string;
-  detectionType?: SessionEventDetectionType | `${SessionEventDetectionType}`;
-  visibilityType?: SessionEventVisibilityType | `${SessionEventVisibilityType}`;
+  detectionType?: string;
+  visibilityType?: string;
   detectionData?: any;
   eventCode: string;
   createdBy?: number;
@@ -47,130 +46,173 @@ function readJsonFile<T>(filePath: string): T {
   return JSON.parse(raw) as T;
 }
 
-function parseDetectionData(value: any) {
-  if (typeof value !== 'string') {
-    return value;
-  }
+const API_BASE_URL = 'http://localhost:8001';
 
+// Admin credentials for authentication
+const adminCredentials = {
+  username: process.env.SEED_ADMIN_EMAIL || 'admin@example.com',
+  password: process.env.SEED_ADMIN_PASSWORD || 'Password123!',
+};
+
+async function login(
+  client: AxiosInstance,
+): Promise<{ accessToken: string; refreshToken: string }> {
   try {
-    return JSON.parse(value);
-  } catch (error) {
-    console.warn(`[seed] Failed to parse detection data: ${value}`);
-    return value;
+    const response = await client.post('/api/v1/auth/login', adminCredentials);
+    logStep('[seed-voices-and-events] Login successful');
+    return {
+      accessToken: response.data.accessToken,
+      refreshToken: response.data.refreshToken,
+    };
+  } catch (error: any) {
+    logStep(
+      `[seed-voices-and-events] Login failed: ${error.response?.data?.message || error.message}`,
+    );
+    throw error;
   }
 }
 
-function resolveEnumValue<T extends Record<string, string>>(
-  enumObj: T,
-  input: string | undefined,
-  fallback: T[keyof T],
-) {
-  if (!input) {
-    return fallback;
-  }
-
-  const matched =
-    enumObj[input as keyof typeof enumObj] ??
-    enumObj[input.toUpperCase() as keyof typeof enumObj];
-
-  return matched ?? fallback;
-}
-
-async function seedVoicesAndEvents() {
-  const scenarioVoices = readJsonFile<ScenarioVoiceSeed[]>(scenarioVoicesPath);
-  const sessionEvents = readJsonFile<SessionEventSeed[]>(sessionEventsPath);
-
-  const dataSource = createSeedDataSource(
-    [ScenarioVoices, SessionEvents],
-    false,
-  );
-  await dataSource.initialize();
+async function seedScenarioVoices(
+  client: AxiosInstance,
+  accessToken: string,
+  voicesData: ScenarioVoiceSeed[],
+): Promise<void> {
+  const headers = { Authorization: `Bearer ${accessToken}` };
 
   try {
-    const scenarioVoicesRepo = dataSource.getRepository(ScenarioVoices);
-    const sessionEventsRepo = dataSource.getRepository(SessionEvents);
-
     let insertedVoices = 0;
     let updatedVoices = 0;
 
-    for (const voiceSeed of scenarioVoices) {
-      const existingVoice = await scenarioVoicesRepo.findOne({
-        where: {
-          name: voiceSeed.name,
-          provider: voiceSeed.provider,
-          languageId: voiceSeed.languageId,
+    try {
+      // Try to create new voice
+      await client.post(
+        '/api/v1/learn/scenarios/voices',
+        { voices: voicesData },
+        {
+          headers,
         },
-      });
-
-      if (existingVoice) {
-        const updated = scenarioVoicesRepo.merge(existingVoice, {
-          config: voiceSeed.config,
-        });
-        await scenarioVoicesRepo.save(updated);
-        updatedVoices += 1;
+      );
+      insertedVoices++;
+      logStep(
+        `[seed-voices-and-events]   ✓ Created voice: ${JSON.stringify(voicesData)}`,
+      );
+    } catch (error: any) {
+      console.log(error);
+      if (error.response?.status === 409 || error.response?.status === 400) {
+        // Voice might already exist, try to update
+        logStep(
+          `[seed-voices-and-events]   ℹ️  Voice exists, skipping: ${voicesData}`,
+        );
+        updatedVoices++;
       } else {
-        const newVoice = scenarioVoicesRepo.create(voiceSeed);
-        await scenarioVoicesRepo.save(newVoice);
-        insertedVoices += 1;
+        throw error;
       }
     }
 
     logStep(
-      `Scenario voices upserted. Inserted: ${insertedVoices}, Updated: ${updatedVoices}`,
+      `[seed-voices-and-events] Scenario voices processed. Created: ${insertedVoices}, Skipped: ${updatedVoices}`,
     );
+  } catch (error: any) {
+    logStep(
+      `[seed-voices-and-events] Failed to seed voices: ${error.response?.data?.message || error.message}`,
+    );
+    throw error;
+  }
+}
 
+async function seedSessionEvents(
+  client: AxiosInstance,
+  accessToken: string,
+  eventsData: SessionEventSeed[],
+): Promise<void> {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  try {
     let insertedEvents = 0;
     let updatedEvents = 0;
 
-    for (const eventSeed of sessionEvents) {
-      const detectionType = resolveEnumValue(
-        SessionEventDetectionType,
-        eventSeed.detectionType,
-        SessionEventDetectionType.SENTENCE_SIMILARITY,
-      );
-      const visibilityType = resolveEnumValue(
-        SessionEventVisibilityType,
-        eventSeed.visibilityType,
-        SessionEventVisibilityType.ACTIVE,
-      );
-
-      const payload: DeepPartial<SessionEvents> = {
-        ...eventSeed,
-        detectionType,
-        visibilityType,
-        detectionData: parseDetectionData(eventSeed.detectionData),
-      };
-
-      const existingEvent = await sessionEventsRepo.findOne({
-        where: { id: eventSeed.id },
-        withDeleted: true,
-      });
-
-      if (existingEvent) {
-        const updated = sessionEventsRepo.merge(existingEvent, payload);
-        updated.deletedAt = undefined;
-        await sessionEventsRepo.save(updated);
-        updatedEvents += 1;
-      } else {
-        const newEvent = sessionEventsRepo.create(payload);
-        await sessionEventsRepo.save(newEvent);
-        insertedEvents += 1;
+    for (const eventSeed of eventsData) {
+      console.log(eventSeed, 'eventSeed');
+      try {
+        // Try to create new event
+        await client.post(
+          '/api/v1/session-events',
+          { events: [eventSeed] },
+          {
+            headers,
+          },
+        );
+        insertedEvents++;
+        logStep(
+          `[seed-voices-and-events]   ✓ Created event: ${eventSeed.name}`,
+        );
+      } catch (error: any) {
+        if (error.response?.status === 409 || error.response?.status === 400) {
+          // Event might already exist, try to update
+          await client.put(
+            `/api/v1/session-events/events/${eventSeed.id}`,
+            eventSeed,
+            {
+              headers,
+            },
+          );
+          updatedEvents++;
+          logStep(
+            `[seed-voices-and-events]   ✓ Updated event: ${eventSeed.name}`,
+          );
+        } else {
+          throw error;
+        }
       }
     }
 
     logStep(
-      `Session events upserted. Inserted: ${insertedEvents}, Updated: ${updatedEvents}`,
+      `[seed-voices-and-events] Session events processed. Created: ${insertedEvents}, Updated: ${updatedEvents}`,
     );
+  } catch (error: any) {
+    logStep(
+      `[seed-voices-and-events] Failed to seed events: ${error.response?.data?.message || error.message}`,
+    );
+    throw error;
+  }
+}
 
-    logStep('Scenario voices & session events seeding complete ✅');
-  } catch (error) {
-    console.error(
-      '[seed] Failed to seed scenario voices and session events',
-      error,
+async function seedVoicesAndEvents() {
+  logStep(`[seed-voices-and-events] Connecting to API at: ${API_BASE_URL}`);
+
+  const client = axios.create({
+    baseURL: API_BASE_URL,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    timeout: 30000,
+  });
+
+  try {
+    // Read data from JSON files
+    const scenarioVoices =
+      readJsonFile<ScenarioVoiceSeed[]>(scenarioVoicesPath);
+    const sessionEvents = readJsonFile<SessionEventSeed[]>(sessionEventsPath);
+
+    // Login to get access token
+    const { accessToken } = await login(client);
+
+    // Seed voices
+    logStep('[seed-voices-and-events] Seeding scenario voices...');
+    await seedScenarioVoices(client, accessToken, scenarioVoices);
+
+    // Seed events
+    logStep('[seed-voices-and-events] Seeding session events...');
+    await seedSessionEvents(client, accessToken, sessionEvents);
+
+    logStep(
+      '[seed-voices-and-events] ✅ Scenario voices & session events seeding complete',
+    );
+  } catch (error: any) {
+    logStep(
+      `[seed-voices-and-events] ❌ Error during seeding: ${error.message}`,
     );
     process.exit(1);
-  } finally {
-    await dataSource.destroy();
   }
 }
 
