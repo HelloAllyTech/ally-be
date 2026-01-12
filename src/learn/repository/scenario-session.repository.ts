@@ -11,7 +11,6 @@ import { ScenarioSessionDetails } from '../entity/scenario-session-details.entit
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
-import { ScenarioEvents } from '../entity/scenario-events.entity';
 
 @Injectable()
 export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
@@ -167,12 +166,6 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         SessionEvents,
         'events',
         'events.id = scenarioSessionEvent.eventId',
-      )
-      .leftJoinAndMapOne(
-        'scenarioSessionEvent.scenarioEvent',
-        ScenarioEvents,
-        'scenarioEvent',
-        'scenarioEvent.eventId = scenarioSessionEvent.eventId',
       )
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
       .andWhere('scenarioSession.tenantId = :tenantId', {

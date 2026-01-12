@@ -488,6 +488,7 @@ describe('ScenarioSessionService', () => {
         events: [
           {
             id: 'session-event-1',
+            autoTerminationStatus: false,
             events: {
               id: 'event-1',
               visibilityType: 'ACTIVE',
@@ -496,6 +497,7 @@ describe('ScenarioSessionService', () => {
           },
           {
             id: 'session-event-2',
+            autoTerminationStatus: false,
             events: {
               id: 'event-2',
               visibilityType: 'PASSIVE',
@@ -504,6 +506,7 @@ describe('ScenarioSessionService', () => {
           },
           {
             id: 'session-event-3',
+            autoTerminationStatus: false,
             events: {
               id: 'event-3',
               visibilityType: 'ACTIVE',
