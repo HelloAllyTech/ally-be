@@ -674,9 +674,19 @@ export class ScenarioService {
 
     // Update the message of existing termination events
     const existingScenarioTerminationEventsToUpdate =
-      existingScenarioTerminationEvents.filter((event) =>
-        terminationEvents.some((te) => te.id === event.eventId),
-      );
+      existingScenarioTerminationEvents
+        .filter((event) =>
+          terminationEvents.some((te) => te.id === event.eventId),
+        )
+        ?.map((event) => {
+          const updatedTerminationEvent = terminationEvents?.find(
+            (te) => te.id === event.eventId,
+          );
+          return {
+            ...event,
+            message: updatedTerminationEvent?.message,
+          };
+        });
     if (existingScenarioTerminationEventsToUpdate.length > 0) {
       existingScenarioTerminationEventsToUpdate.forEach((event) =>
         scenarioEventsRepo.update(event.id, { message: event.message }),
