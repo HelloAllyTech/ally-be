@@ -136,13 +136,11 @@ export class ScenarioSessionService {
 
     // Filter events to only include ACTIVE ones and non-termination events and remove scenarioEvent from each
     if ((scenarioSession as any).events) {
-      (scenarioSession as any).events = (scenarioSession as any).events
-        .filter(
-          (event: any) =>
-            event.events?.visibilityType === SessionEventVisibilityType.ACTIVE,
-        )
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        .map(({ scenarioEvent, ...rest }: any) => rest);
+      (scenarioSession as any).events = (scenarioSession as any).events.filter(
+        (event: any) =>
+          event.events?.visibilityType === SessionEventVisibilityType.ACTIVE &&
+          event.autoTerminationStatus === false,
+      );
     }
 
     const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
@@ -891,6 +889,7 @@ export class ScenarioSessionService {
         score: event.event_data.score,
         emoji: event.event_data.emoji,
         message: event.event_data.message,
+        autoTerminationStatus: event.event_data.autoTerminationStatus ?? false,
       });
       const savedScenarioSessionEvent =
         await scenarioSessionEventsRepo.save(scenarioSessionEvent);
