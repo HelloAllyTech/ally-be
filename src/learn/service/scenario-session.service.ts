@@ -134,13 +134,28 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario session not found');
     }
 
-    // Filter events to only include ACTIVE ones
+    // Filter events to only include ACTIVE ones and non-termination events
+    // and remove sensitive fields from nested events
     if ((scenarioSession as any).events) {
-      (scenarioSession as any).events = (scenarioSession as any).events.filter(
-        (event: any) =>
-          event.events?.visibilityType === SessionEventVisibilityType.ACTIVE &&
-          !event.scenarioEvent?.autoTerminationStatus,
-      );
+      (scenarioSession as any).events = (scenarioSession as any).events
+        .filter(
+          (event: any) =>
+            event.events?.visibilityType ===
+              SessionEventVisibilityType.ACTIVE &&
+            event.autoTerminationStatus === false,
+        )
+        .map((event: any) => {
+          if (event.events) {
+            const sanitizedEvents = { ...event.events };
+            delete sanitizedEvents.detectionData;
+            delete sanitizedEvents.detectionConfig;
+            delete sanitizedEvents.branchInstruction;
+            delete sanitizedEvents.description;
+            delete sanitizedEvents.detectionType;
+            return { ...event, events: sanitizedEvents };
+          }
+          return event;
+        });
     }
 
     const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
@@ -465,19 +480,24 @@ export class ScenarioSessionService {
       };
     });
 
-    const autoTerminationEvent = terminationEvent?.autoTerminationStatus
-      ? {
-          id: terminationEvent?.eventId,
-          terminationMessage: terminationEvent?.message,
-        }
-      : undefined;
+    const autoTerminationEvent =
+      terminationEvent?.autoTerminationStatus &&
+      !this.configService.featureFlag.multipleTerminationEvents
+        ? {
+            id: terminationEvent?.eventId,
+            terminationMessage: terminationEvent?.message,
+          }
+        : undefined;
 
-    const autoTerminationEvents = terminationEvents?.map((termEvent) => {
-      return {
-        id: termEvent?.eventId,
-        terminationMessage: termEvent?.message,
-      };
-    });
+    const autoTerminationEvents = this.configService.featureFlag
+      .multipleTerminationEvents
+      ? terminationEvents?.map((termEvent) => {
+          return {
+            id: termEvent?.eventId,
+            terminationMessage: termEvent?.message,
+          };
+        })
+      : undefined;
 
     return {
       version: '1.0',
@@ -884,6 +904,7 @@ export class ScenarioSessionService {
         score: event.event_data.score,
         emoji: event.event_data.emoji,
         message: event.event_data.message,
+        autoTerminationStatus: event.event_data.autoTerminationStatus ?? false,
       });
       const savedScenarioSessionEvent =
         await scenarioSessionEventsRepo.save(scenarioSessionEvent);

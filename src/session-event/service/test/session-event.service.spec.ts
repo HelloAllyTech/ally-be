@@ -387,6 +387,162 @@ describe('SessionEventService', () => {
 
       expect(result).toBe(true); // -1 !== 0 is true
     });
+
+    it('should throw BadRequestException when trying to update HELPER_PARAPHRASED event', async () => {
+      const helperParaphrasedEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: eventId,
+        detectionType: SessionEventDetectionType.HELPER_PARAPHRASED,
+        eventCode: 'HP1',
+      };
+
+      repository.findOne.mockResolvedValue(helperParaphrasedEvent);
+
+      await expect(
+        service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        ),
+      ).rejects.toThrow('System events cannot be edited');
+
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { id: eventId },
+      });
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when trying to update HELPER_INTERRUPTED event', async () => {
+      const helperInterruptedEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: eventId,
+        detectionType: SessionEventDetectionType.HELPER_INTERRUPTED,
+        eventCode: 'HI1',
+      };
+
+      repository.findOne.mockResolvedValue(helperInterruptedEvent);
+
+      await expect(
+        service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        ),
+      ).rejects.toThrow('System events cannot be edited');
+
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { id: eventId },
+      });
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when trying to update HELPER_UTTERANCE_LENGTH event', async () => {
+      const helperUtteranceLengthEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: eventId,
+        detectionType: SessionEventDetectionType.HELPER_UTTERANCE_LENGTH,
+        eventCode: 'HL1',
+      };
+
+      repository.findOne.mockResolvedValue(helperUtteranceLengthEvent);
+
+      await expect(
+        service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        ),
+      ).rejects.toThrow('System events cannot be edited');
+
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { id: eventId },
+      });
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('should allow updating non-system detection type events', async () => {
+      const nonSystemDetectionTypes = [
+        { type: SessionEventDetectionType.SENTENCE_SIMILARITY, code: 'SS' },
+        { type: SessionEventDetectionType.SEMANTIC_SIMILARITY, code: 'SM' },
+        { type: SessionEventDetectionType.TIME, code: 'TI' },
+        { type: SessionEventDetectionType.SCORE, code: 'SC' },
+        { type: SessionEventDetectionType.BINARY_CLASSIFIER, code: 'BC' },
+      ];
+
+      for (const { type, code } of nonSystemDetectionTypes) {
+        jest.clearAllMocks();
+
+        const event: SessionEvents = {
+          ...mockSessionEvent,
+          id: eventId,
+          detectionType: type,
+          eventCode: `${code}1`,
+        };
+
+        repository.findOne.mockResolvedValue(event);
+        repository.update.mockResolvedValue({ affected: 1 } as any);
+
+        const result = await service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        );
+
+        expect(result).toBe(true);
+        expect(repository.update).toHaveBeenCalled();
+      }
+    });
+
+    it('should not allow updating any system event detection type', async () => {
+      const systemDetectionTypes = [
+        SessionEventDetectionType.HELPER_PARAPHRASED,
+        SessionEventDetectionType.HELPER_INTERRUPTED,
+        SessionEventDetectionType.HELPER_UTTERANCE_LENGTH,
+      ];
+
+      for (const detectionType of systemDetectionTypes) {
+        jest.clearAllMocks();
+
+        const event: SessionEvents = {
+          ...mockSessionEvent,
+          id: eventId,
+          detectionType,
+        };
+
+        repository.findOne.mockResolvedValue(event);
+
+        await expect(
+          service.updateSessionEvent(
+            eventId,
+            mockUpdateSessionEventDto,
+            mockUserId,
+          ),
+        ).rejects.toThrow('System events cannot be edited');
+
+        expect(repository.update).not.toHaveBeenCalled();
+      }
+    });
   });
 
   describe('findSessionEventById', () => {
@@ -549,9 +705,15 @@ describe('SessionEventService', () => {
   });
 
   describe('getAllSessionEvents', () => {
+    // Helper to create expected formatted event (service adds isEditable and detectionData)
+    const createExpectedFormattedEvent = (event: SessionEvents) => ({
+      ...event,
+      detectionData: undefined,
+      isEditable: true, // SENTENCE_SIMILARITY is not in SYSTEM_EVENT_DETECTION_TYPES
+    });
+
     it('should get all session events without filters', async () => {
       const expectedEvents = [mockSessionEvent];
-      const expectedResult = { data: expectedEvents };
 
       repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
 
@@ -562,12 +724,13 @@ describe('SessionEventService', () => {
         undefined,
         undefined,
       );
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        data: [createExpectedFormattedEvent(mockSessionEvent)],
+      });
     });
 
     it('should get session events with visibility type filter', async () => {
       const expectedEvents = [mockSessionEvent];
-      const expectedResult = { data: expectedEvents };
       const visibilityType = SessionEventVisibilityType.ACTIVE;
 
       repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
@@ -579,12 +742,13 @@ describe('SessionEventService', () => {
         undefined,
         undefined,
       );
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        data: [createExpectedFormattedEvent(mockSessionEvent)],
+      });
     });
 
     it('should get session events with searchName filter', async () => {
       const expectedEvents = [mockSessionEvent];
-      const expectedResult = { data: expectedEvents };
       const searchName = 'Test';
 
       repository.getAllSessionEvents.mockResolvedValue(expectedEvents);
@@ -600,12 +764,13 @@ describe('SessionEventService', () => {
         searchName,
         undefined,
       );
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        data: [createExpectedFormattedEvent(mockSessionEvent)],
+      });
     });
 
     it('should get session events with pagination', async () => {
       const expectedEvents = [mockSessionEvent];
-      const expectedResult = { data: expectedEvents };
       const pagination = {
         limit: 10,
         offset: 0,
@@ -626,12 +791,13 @@ describe('SessionEventService', () => {
         undefined,
         pagination,
       );
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        data: [createExpectedFormattedEvent(mockSessionEvent)],
+      });
     });
 
     it('should get session events with visibility type and searchName', async () => {
       const expectedEvents = [mockSessionEvent];
-      const expectedResult = { data: expectedEvents };
       const visibilityType = SessionEventVisibilityType.ACTIVE;
       const searchName = 'Event';
 
@@ -648,12 +814,13 @@ describe('SessionEventService', () => {
         searchName,
         undefined,
       );
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        data: [createExpectedFormattedEvent(mockSessionEvent)],
+      });
     });
 
     it('should get session events with all parameters', async () => {
       const expectedEvents = [mockSessionEvent];
-      const expectedResult = { data: expectedEvents };
       const visibilityType = SessionEventVisibilityType.PASSIVE;
       const searchName = 'Test Event';
       const pagination = {
@@ -676,7 +843,9 @@ describe('SessionEventService', () => {
         searchName,
         pagination,
       );
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        data: [createExpectedFormattedEvent(mockSessionEvent)],
+      });
     });
 
     it('should return empty array when no events found', async () => {
@@ -711,7 +880,6 @@ describe('SessionEventService', () => {
 
     it('should handle pagination with zero limit', async () => {
       const expectedEvents = [mockSessionEvent];
-      const expectedResult = { data: expectedEvents };
       const pagination = {
         limit: 0,
         offset: 0,
@@ -732,12 +900,13 @@ describe('SessionEventService', () => {
         undefined,
         pagination,
       );
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        data: [createExpectedFormattedEvent(mockSessionEvent)],
+      });
     });
 
     it('should handle pagination with negative offset', async () => {
       const expectedEvents = [mockSessionEvent];
-      const expectedResult = { data: expectedEvents };
       const pagination = {
         limit: 10,
         offset: -5,
@@ -758,12 +927,13 @@ describe('SessionEventService', () => {
         undefined,
         pagination,
       );
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        data: [createExpectedFormattedEvent(mockSessionEvent)],
+      });
     });
 
     it('should handle pagination with very large limit', async () => {
       const expectedEvents = [mockSessionEvent];
-      const expectedResult = { data: expectedEvents };
       const pagination = {
         limit: Number.MAX_SAFE_INTEGER,
         offset: 0,
@@ -784,12 +954,13 @@ describe('SessionEventService', () => {
         undefined,
         pagination,
       );
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        data: [createExpectedFormattedEvent(mockSessionEvent)],
+      });
     });
 
     it('should handle pagination with invalid sortBy', async () => {
       const expectedEvents = [mockSessionEvent];
-      const expectedResult = { data: expectedEvents };
       const pagination = {
         limit: 10,
         offset: 0,
@@ -810,7 +981,151 @@ describe('SessionEventService', () => {
         undefined,
         pagination,
       );
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        data: [createExpectedFormattedEvent(mockSessionEvent)],
+      });
+    });
+
+    it('should return isEditable as false for HELPER_PARAPHRASED detection type', async () => {
+      const helperParaphrasedEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: 'helper-paraphrased-event',
+        name: 'Helper Paraphrased Event',
+        detectionType: SessionEventDetectionType.HELPER_PARAPHRASED,
+        eventCode: 'HP1',
+      };
+
+      repository.getAllSessionEvents.mockResolvedValue([
+        helperParaphrasedEvent,
+      ]);
+
+      const result = await service.getAllSessionEvents();
+
+      expect(result.data[0].isEditable).toBe(false);
+      expect(result.data[0].detectionType).toBe(
+        SessionEventDetectionType.HELPER_PARAPHRASED,
+      );
+    });
+
+    it('should return isEditable as false for HELPER_INTERRUPTED detection type', async () => {
+      const helperInterruptedEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: 'helper-interrupted-event',
+        name: 'Helper Interrupted Event',
+        detectionType: SessionEventDetectionType.HELPER_INTERRUPTED,
+        eventCode: 'HI1',
+      };
+
+      repository.getAllSessionEvents.mockResolvedValue([
+        helperInterruptedEvent,
+      ]);
+
+      const result = await service.getAllSessionEvents();
+
+      expect(result.data[0].isEditable).toBe(false);
+      expect(result.data[0].detectionType).toBe(
+        SessionEventDetectionType.HELPER_INTERRUPTED,
+      );
+    });
+
+    it('should return isEditable as false for HELPER_UTTERANCE_LENGTH detection type', async () => {
+      const helperUtteranceLengthEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: 'helper-utterance-length-event',
+        name: 'Helper Utterance Length Event',
+        detectionType: SessionEventDetectionType.HELPER_UTTERANCE_LENGTH,
+        eventCode: 'HL1',
+      };
+
+      repository.getAllSessionEvents.mockResolvedValue([
+        helperUtteranceLengthEvent,
+      ]);
+
+      const result = await service.getAllSessionEvents();
+
+      expect(result.data[0].isEditable).toBe(false);
+      expect(result.data[0].detectionType).toBe(
+        SessionEventDetectionType.HELPER_UTTERANCE_LENGTH,
+      );
+    });
+
+    it('should correctly set isEditable for mixed detection types', async () => {
+      const regularEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: 'regular-event',
+        name: 'Regular Event',
+        detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+        eventCode: 'SS1',
+      };
+
+      const helperEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: 'helper-event',
+        name: 'Helper Event',
+        detectionType: SessionEventDetectionType.HELPER_PARAPHRASED,
+        eventCode: 'HP1',
+      };
+
+      const scoreEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: 'score-event',
+        name: 'Score Event',
+        detectionType: SessionEventDetectionType.SCORE,
+        eventCode: 'SC1',
+      };
+
+      repository.getAllSessionEvents.mockResolvedValue([
+        regularEvent,
+        helperEvent,
+        scoreEvent,
+      ]);
+
+      const result = await service.getAllSessionEvents();
+
+      expect(result.data).toHaveLength(3);
+      // Regular event should be editable
+      expect(result.data[0].isEditable).toBe(true);
+      expect(result.data[0].detectionType).toBe(
+        SessionEventDetectionType.SENTENCE_SIMILARITY,
+      );
+      // Helper event should NOT be editable
+      expect(result.data[1].isEditable).toBe(false);
+      expect(result.data[1].detectionType).toBe(
+        SessionEventDetectionType.HELPER_PARAPHRASED,
+      );
+      // Score event should be editable
+      expect(result.data[2].isEditable).toBe(true);
+      expect(result.data[2].detectionType).toBe(
+        SessionEventDetectionType.SCORE,
+      );
+    });
+
+    it('should return isEditable as true for all non-system detection types', async () => {
+      const nonSystemDetectionTypes = [
+        SessionEventDetectionType.SENTENCE_SIMILARITY,
+        SessionEventDetectionType.SEMANTIC_SIMILARITY,
+        SessionEventDetectionType.TIME,
+        SessionEventDetectionType.SCORE,
+        SessionEventDetectionType.COMBINATION,
+        SessionEventDetectionType.BINARY_CLASSIFIER,
+      ];
+
+      for (const detectionType of nonSystemDetectionTypes) {
+        jest.clearAllMocks();
+
+        const event: SessionEvents = {
+          ...mockSessionEvent,
+          id: `event-${detectionType}`,
+          detectionType,
+        };
+
+        repository.getAllSessionEvents.mockResolvedValue([event]);
+
+        const result = await service.getAllSessionEvents();
+
+        expect(result.data[0].isEditable).toBe(true);
+        expect(result.data[0].detectionType).toBe(detectionType);
+      }
     });
   });
 
@@ -824,7 +1139,11 @@ describe('SessionEventService', () => {
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: eventId },
       });
-      expect(result).toEqual(mockSessionEvent);
+      expect(result).toEqual({
+        ...mockSessionEvent,
+        detectionData: undefined,
+        isEditable: true, // SENTENCE_SIMILARITY is not in SYSTEM_EVENT_DETECTION_TYPES
+      });
     });
 
     it('should throw NotFoundException when event not found', async () => {
@@ -897,6 +1216,96 @@ describe('SessionEventService', () => {
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: eventId },
       });
+    });
+
+    it('should return isEditable as false for HELPER_PARAPHRASED event', async () => {
+      const eventId = 'helper-paraphrased-123';
+      const helperParaphrasedEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: eventId,
+        name: 'Helper Paraphrased Event',
+        detectionType: SessionEventDetectionType.HELPER_PARAPHRASED,
+        eventCode: 'HP1',
+      };
+
+      repository.findOne.mockResolvedValue(helperParaphrasedEvent);
+
+      const result = await service.getSessionEventById(eventId);
+
+      expect(result.isEditable).toBe(false);
+      expect(result.detectionType).toBe(
+        SessionEventDetectionType.HELPER_PARAPHRASED,
+      );
+    });
+
+    it('should return isEditable as false for HELPER_INTERRUPTED event', async () => {
+      const eventId = 'helper-interrupted-123';
+      const helperInterruptedEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: eventId,
+        name: 'Helper Interrupted Event',
+        detectionType: SessionEventDetectionType.HELPER_INTERRUPTED,
+        eventCode: 'HI1',
+      };
+
+      repository.findOne.mockResolvedValue(helperInterruptedEvent);
+
+      const result = await service.getSessionEventById(eventId);
+
+      expect(result.isEditable).toBe(false);
+      expect(result.detectionType).toBe(
+        SessionEventDetectionType.HELPER_INTERRUPTED,
+      );
+    });
+
+    it('should return isEditable as false for HELPER_UTTERANCE_LENGTH event', async () => {
+      const eventId = 'helper-utterance-length-123';
+      const helperUtteranceLengthEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: eventId,
+        name: 'Helper Utterance Length Event',
+        detectionType: SessionEventDetectionType.HELPER_UTTERANCE_LENGTH,
+        eventCode: 'HL1',
+      };
+
+      repository.findOne.mockResolvedValue(helperUtteranceLengthEvent);
+
+      const result = await service.getSessionEventById(eventId);
+
+      expect(result.isEditable).toBe(false);
+      expect(result.detectionType).toBe(
+        SessionEventDetectionType.HELPER_UTTERANCE_LENGTH,
+      );
+    });
+
+    it('should return isEditable as true for non-system detection types', async () => {
+      const nonSystemDetectionTypes = [
+        { type: SessionEventDetectionType.SENTENCE_SIMILARITY, code: 'SS' },
+        { type: SessionEventDetectionType.SEMANTIC_SIMILARITY, code: 'SM' },
+        { type: SessionEventDetectionType.TIME, code: 'TI' },
+        { type: SessionEventDetectionType.SCORE, code: 'SC' },
+        { type: SessionEventDetectionType.COMBINATION, code: 'CO' },
+        { type: SessionEventDetectionType.BINARY_CLASSIFIER, code: 'BC' },
+      ];
+
+      for (const { type, code } of nonSystemDetectionTypes) {
+        jest.clearAllMocks();
+
+        const eventId = `event-${code}-123`;
+        const event: SessionEvents = {
+          ...mockSessionEvent,
+          id: eventId,
+          detectionType: type,
+          eventCode: `${code}1`,
+        };
+
+        repository.findOne.mockResolvedValue(event);
+
+        const result = await service.getSessionEventById(eventId);
+
+        expect(result.isEditable).toBe(true);
+        expect(result.detectionType).toBe(type);
+      }
     });
   });
 

@@ -204,6 +204,7 @@ describe('LearnController', () => {
       getScenarioVoiceLanguagesForAdmin: jest.fn(),
       getLanguagesForScenario: jest.fn(),
       duplicateScenario: jest.fn(),
+      getBranchingInstructionDynamicShortcuts: jest.fn(),
     };
 
     const mockScenarioSessionService = {
@@ -608,6 +609,7 @@ describe('LearnController', () => {
             message: undefined,
             branchingStatus: false,
             branchInstruction: undefined,
+            detectionConfig: undefined,
           },
         ],
         count: 1,
@@ -1189,6 +1191,7 @@ describe('LearnController', () => {
         controller.getLanguagesForScenario(true, true),
       ).rejects.toThrow('Service error');
     });
+
     describe('duplicateScenario', () => {
       it('should duplicate a scenario by id', async () => {
         const scenarioId = 1;
@@ -1218,6 +1221,58 @@ describe('LearnController', () => {
           'Scenario not found',
         );
       });
+    });
+  });
+
+  describe('getBranchingInstructionDynamicShortcuts', () => {
+    const mockShortcuts = ['end_session', 'restart', 'escalate'];
+
+    it('should return dynamic branch shortcuts without scenarioId', async () => {
+      scenarioService.getBranchingInstructionDynamicShortcuts.mockResolvedValue(
+        mockShortcuts,
+      );
+
+      const result = await controller.getBranchingInstructionDynamicShortcuts();
+
+      expect(result).toEqual(mockShortcuts);
+      expect(
+        scenarioService.getBranchingInstructionDynamicShortcuts,
+      ).toHaveBeenCalledWith(undefined);
+    });
+
+    it('should return dynamic branch shortcuts for a specific scenario', async () => {
+      const scenarioId = 1;
+      scenarioService.getBranchingInstructionDynamicShortcuts.mockResolvedValue(
+        mockShortcuts,
+      );
+
+      const result =
+        await controller.getBranchingInstructionDynamicShortcuts(scenarioId);
+
+      expect(result).toEqual(mockShortcuts);
+      expect(
+        scenarioService.getBranchingInstructionDynamicShortcuts,
+      ).toHaveBeenCalledWith(scenarioId);
+    });
+
+    it('should return empty array when no shortcuts exist', async () => {
+      scenarioService.getBranchingInstructionDynamicShortcuts.mockResolvedValue(
+        [],
+      );
+
+      const result = await controller.getBranchingInstructionDynamicShortcuts();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should handle errors from service', async () => {
+      scenarioService.getBranchingInstructionDynamicShortcuts.mockRejectedValue(
+        new Error('Service error'),
+      );
+
+      await expect(
+        controller.getBranchingInstructionDynamicShortcuts(),
+      ).rejects.toThrow('Service error');
     });
   });
 });

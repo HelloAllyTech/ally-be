@@ -13,14 +13,9 @@ import { TenantModule } from 'src/tenant/tenant.module';
 import { ScenarioPathTenantService } from './service/scenario-path-tenant.service';
 import { ScenarioPathTenantRepository } from './repository/scenario-path-tenant.repository';
 import { ScenarioPathTenantValidationShared } from './service/scenario-tenant-validation-shared';
-import { UserModule } from 'src/user/user.module';
 
 @Module({
-  imports: [
-    forwardRef(() => LearnModule),
-    TenantModule,
-    forwardRef(() => UserModule),
-  ],
+  imports: [forwardRef(() => LearnModule), TenantModule],
   controllers: [ScenarioPathController, ScenarioPathSessionController],
   providers: [
     ScenarioPathService,

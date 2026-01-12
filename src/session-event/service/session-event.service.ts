@@ -30,7 +30,10 @@ import {
   SessionEventResponseDto,
   UpdateSessionEventDto,
 } from '../dto/session-event.dto';
-import { MAX_COMBINATION_EVENT_DEPTH } from '../constants/event.constant';
+import {
+  MAX_COMBINATION_EVENT_DEPTH,
+  SYSTEM_EVENT_DETECTION_TYPES,
+} from '../constants/event.constant';
 
 import { SessionEventTranslationService } from './session-event-translation.service';
 @Injectable()
@@ -133,7 +136,30 @@ export class SessionEventService {
       createdAt: event.sessionEvents_createdAt,
       updatedAt: event.sessionEvents_updatedAt,
       eventCode: event.sessionEvents_eventCode,
-      detectionConfig: event.sessionEvents_detectionConfig,
+      detectionConfig:
+        event.scenarioEvents_detectionConfig ||
+        event.sessionEvents_detectionConfig
+          ? {
+              startTime:
+                event.scenarioEvents_detectionConfig?.startTime ??
+                event.sessionEvents_detectionConfig?.startTime,
+              endTime:
+                event.scenarioEvents_detectionConfig?.endTime ??
+                event.sessionEvents_detectionConfig?.endTime,
+              maxOccurrences:
+                event.scenarioEvents_detectionConfig?.maxOccurrences ??
+                event.sessionEvents_detectionConfig?.maxOccurrences,
+              minGapTime:
+                event.scenarioEvents_detectionConfig?.minGapTime ??
+                event.sessionEvents_detectionConfig?.minGapTime,
+              minScore:
+                event.scenarioEvents_detectionConfig?.minScore ??
+                event.sessionEvents_detectionConfig?.minScore,
+              maxScore:
+                event.scenarioEvents_detectionConfig?.maxScore ??
+                event.sessionEvents_detectionConfig?.maxScore,
+            }
+          : undefined,
     }));
   }
 
@@ -145,6 +171,9 @@ export class SessionEventService {
     const event = await this.sessionEventRepository.findOne({ where: { id } });
     if (!event) {
       throw new NotFoundException('Session Event not found');
+    }
+    if (SYSTEM_EVENT_DETECTION_TYPES.includes(event.detectionType)) {
+      throw new BadRequestException('System events cannot be edited');
     }
 
     const formattedEventDto =
@@ -211,6 +240,9 @@ export class SessionEventService {
                 ),
               }
             : undefined,
+          isEditable: !SYSTEM_EVENT_DETECTION_TYPES.includes(
+            event.detectionType,
+          ),
         };
       }),
     );
@@ -232,6 +264,7 @@ export class SessionEventService {
             ),
           }
         : undefined,
+      isEditable: !SYSTEM_EVENT_DETECTION_TYPES.includes(event.detectionType),
     };
   }
 

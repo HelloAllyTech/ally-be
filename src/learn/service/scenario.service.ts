@@ -74,6 +74,7 @@ import {
 import { DEFAULT_LANGUAGE_CODE } from '../constants/scenario-session.constants';
 import { TerminationEventsDto } from '../dto/termination-events.dto';
 import isDuplicateKeyException from 'src/exception/custom.exception';
+import { BRANCHING_INSTRUCTION_DYNAMIC_SHORTCUTS } from '../constants/scenario.constants';
 
 @Injectable()
 export class ScenarioService {
@@ -216,6 +217,7 @@ export class ScenarioService {
         : {
             branchInstruction: item.sessionEvent?.branchInstruction,
           }),
+      detectionConfig: item.detectionConfig,
     }));
 
     return { data, count: result.count };
@@ -673,9 +675,19 @@ export class ScenarioService {
 
     // Update the message of existing termination events
     const existingScenarioTerminationEventsToUpdate =
-      existingScenarioTerminationEvents.filter((event) =>
-        terminationEvents.some((te) => te.id === event.eventId),
-      );
+      existingScenarioTerminationEvents
+        .filter((event) =>
+          terminationEvents.some((te) => te.id === event.eventId),
+        )
+        ?.map((event) => {
+          const updatedTerminationEvent = terminationEvents?.find(
+            (te) => te.id === event.eventId,
+          );
+          return {
+            ...event,
+            message: updatedTerminationEvent?.message,
+          };
+        });
     if (existingScenarioTerminationEventsToUpdate.length > 0) {
       existingScenarioTerminationEventsToUpdate.forEach((event) =>
         scenarioEventsRepo.update(event.id, { message: event.message }),
@@ -1071,6 +1083,7 @@ export class ScenarioService {
             message,
             branchingStatus,
             branchInstruction,
+            detectionConfig,
           } = event;
           return {
             scenarioId,
@@ -1097,6 +1110,7 @@ export class ScenarioService {
                   branchingStatus: false,
                   branchInstruction: undefined,
                 }),
+            detectionConfig,
           };
         });
 
@@ -1114,6 +1128,7 @@ export class ScenarioService {
             message: event.message,
             branchingStatus: event.branchingStatus,
             branchInstruction: event.branchInstruction,
+            detectionConfig: event.detectionConfig,
           })),
         };
       });
@@ -1542,5 +1557,23 @@ export class ScenarioService {
         );
       }
     }
+  }
+
+  async getBranchingInstructionDynamicShortcuts(
+    scenarioId?: number,
+  ): Promise<string[]> {
+    const dynamicBranchShortcuts: string[] = [
+      ...BRANCHING_INSTRUCTION_DYNAMIC_SHORTCUTS,
+    ];
+    if (scenarioId) {
+      const scenario = await this.getScenario(scenarioId);
+      const customFields = scenario.metadata?.customFields;
+      if (customFields) {
+        dynamicBranchShortcuts.push(
+          ...customFields.map((customField: any) => customField.name),
+        );
+      }
+    }
+    return dynamicBranchShortcuts;
   }
 }
