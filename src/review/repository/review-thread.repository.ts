@@ -18,9 +18,6 @@ export class ReviewThreadRepository extends Repository<ReviewThread> {
       { reviewId },
     );
 
-    // Get total count before applying pagination
-    const count = await query.getCount();
-
     // Apply pagination
     if (options?.limit) {
       query.limit(options.limit);
@@ -29,7 +26,8 @@ export class ReviewThreadRepository extends Repository<ReviewThread> {
       query.offset(options.offset);
     }
 
-    const threads = await query.getMany();
+    // Get entities and total count in a single query
+    const [threads, count] = await query.getManyAndCount();
 
     return { threads, count };
   }
