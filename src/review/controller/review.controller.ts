@@ -53,13 +53,13 @@ export class ReviewController {
     name: 'limit',
     required: false,
     type: Number,
-    description: 'Number of users to return',
+    description: 'Number of threads to return',
   })
   @ApiQuery({
     name: 'offset',
     required: false,
     type: Number,
-    description: 'Number of users to skip',
+    description: 'Number of threads to skip',
   })
   @ApiResponse({
     status: 200,

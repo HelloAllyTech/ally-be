@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -20,6 +21,8 @@ import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity'
 import { User } from 'src/user/entity/user.entity';
 import { UserService } from 'src/user/service/user.service';
 import { Pagination } from 'src/common/type/common.type';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 
 @Injectable()
 export class ReviewService {
@@ -30,6 +33,7 @@ export class ReviewService {
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
     private readonly userService: UserService,
+    private readonly permissionValidator: PermissionValidator,
   ) {}
 
   async createReview(
@@ -80,6 +84,22 @@ export class ReviewService {
       throw new NotFoundException('Review not found');
     }
 
+    const userId = Number(ExecutionManager.getUserId());
+    const isReviewer = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.REVIEWER_ACCESS],
+    );
+    const isLearner = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.LEARNER_ACCESS],
+    );
+    if (
+      (isReviewer && review.tenantId !== ExecutionManager.getTenantId()) ||
+      (isLearner && review.createdBy !== userId)
+    ) {
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
     const { threads: reviewThreads, count: totalCount } =
       await this.reviewThreadRepository.getReviewThreadsByReviewId(
         reviewId,
@@ -90,15 +110,24 @@ export class ReviewService {
       where: { reviewThreadId: In(reviewThreads.map((thread) => thread.id)) },
     });
 
+    // Filter to get only top-level comment IDs for reactions query
+    // (we only display top-level comments, so we don't need reactions for replies)
+    const topLevelCommentIds = reviewComments
+      .filter((comment) => !comment.parentCommentId)
+      .map((comment) => comment.id);
+
     const usersPromise = this.userService.getUsersByIds(
       reviewComments.map((comment) => comment.createdBy),
     );
+    // Only fetch reactions for top-level comments (optimization)
     const reviewCommentReactionsPromise =
-      this.reviewCommentReactionRepository.find({
-        where: {
-          reviewCommentId: In(reviewComments.map((comment) => comment.id)),
-        },
-      });
+      topLevelCommentIds.length > 0
+        ? this.reviewCommentReactionRepository.find({
+            where: {
+              reviewCommentId: In(topLevelCommentIds),
+            },
+          })
+        : Promise.resolve([]);
 
     const [users, reviewCommentReactions] = await Promise.all([
       usersPromise,
