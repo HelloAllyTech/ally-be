@@ -1,25 +1,10 @@
-import { DataSource } from 'typeorm';
-import { config } from 'dotenv';
+import { createSeedDataSource, logStep } from './seed-utils';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../user/entity/user.entity';
 import { UserStatus } from '../../user/constants/user-status.constants';
 import { Group } from '../../authorization/entity/group.entity';
 import { UserGroup } from '../../authorization/entity/user-group.entity';
 import { UserRole } from '../../common/constants/user.constants';
-
-config();
-
-const dataSourceOptions = {
-  type: 'postgres' as const,
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT!, 10) || 5432,
-  username: process.env.DB_USERNAME,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  entities: [User, Group, UserGroup],
-  synchronize: false,
-  ssl: false,
-};
 
 const adminUser = {
   email: 'admin@example.com',
@@ -36,11 +21,11 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 async function seedAdminUser() {
-  const dataSource = new DataSource(dataSourceOptions);
+  const dataSource = createSeedDataSource([User, Group, UserGroup], false);
 
   try {
     await dataSource.initialize();
-    console.log('Database connection established');
+    logStep('Database connection established');
 
     const userRepository = dataSource.getRepository(User);
     const existingUser = await userRepository.findOne({
@@ -48,7 +33,7 @@ async function seedAdminUser() {
     });
 
     if (existingUser) {
-      console.log(`User ${adminUser.email} already exists, skipping...`);
+      logStep(`User ${adminUser.email} already exists, skipping...`);
       return;
     }
 
@@ -61,7 +46,7 @@ async function seedAdminUser() {
     });
 
     const userResponse = await userRepository.save(user);
-    console.log(`Created user: ${adminUser.email}`);
+    logStep(`Created user: ${adminUser.email}`);
 
     // Assign SUPER_ADMIN role to the user
     const groupRepository = dataSource.getRepository(Group);
@@ -71,7 +56,7 @@ async function seedAdminUser() {
 
     if (!superAdminGroup) {
       console.error(
-        'SUPER_ADMIN group not found. Please ensure groups are seeded first.',
+        '[seed] SUPER_ADMIN group not found. Please ensure groups are seeded first.',
       );
       return;
     }
@@ -83,9 +68,10 @@ async function seedAdminUser() {
     });
 
     await userGroupRepository.save(userGroup);
-    console.log(`Assigned SUPER_ADMIN role to user: ${adminUser.email}`);
+    logStep(`Assigned SUPER_ADMIN role to user: ${adminUser.email}`);
+    logStep('Admin user seeding completed successfully!');
   } catch (error) {
-    console.error('Error seeding users:', error);
+    console.error('[seed] Error seeding users:', error);
     process.exit(1);
   } finally {
     await dataSource.destroy();

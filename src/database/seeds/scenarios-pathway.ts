@@ -1,100 +1,136 @@
 import axios, { AxiosInstance } from 'axios';
 import { config } from 'dotenv';
+import { logStep } from './seed-utils';
+import {
+  ScenarioDifficultyLevel,
+  ScenarioResponseLength,
+  ScenarioStatus,
+} from '../../learn/type/scenario.type';
+
+type TriggerWarnings = {
+  createdAt: string;
+  updatedAt: string;
+  id: string;
+  name: string;
+};
 
 config();
 
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
+const API_BASE_URL = 'http://localhost:8001';
 
 // Admin credentials for authentication
 const adminCredentials = {
-  username: 'admin@example.com',
-  password: 'Password123!',
+  username: process.env.SEED_ADMIN_EMAIL || 'admin@example.com',
+  password: process.env.SEED_ADMIN_PASSWORD || 'Password123!',
 };
 
-// Voice to create
-const voiceData = {
-  voices: [
-    {
-      name: 'Default Seed Voice',
-      provider: 'OpenAI',
-      config: {
-        voiceId: 'alloy',
-        model: 'tts-1',
-      },
-      languageId: 1,
-    },
-  ],
-};
+// Shared prompt template for scenarios
+const SHARED_PROMPT = `You are an AI roleplay assistant for counselor training. In this simulation, you must act ONLY as the client in a therapy session. Stay fully in character, provide realistic dialogue, and do not switch roles unless explicitly instructed.
+
+Important Instructions:
+- Prefer first-person phrasing (e.g., "I feel...", "I have been struggling with...").
+- Allow the counselor to guide the conversation.
+- If the counselor is silent or open-ended, share one thought, feeling, or small story, then stop.
+- Maintain consistency with your life history but allow natural variation in tone and detail.
+- Respond naturally, as a real client would.
+- Keep answers concise (2-6 sentences), unless a longer response is natural.
+- Reveal information gradually, not all at once.
+- Start with few details and open up more as the counselor asks questions.
+- Show authentic emotions and natural hesitations.
+- Do not give therapy advice or act as the counselor.
+- If sensitive topics arise, respond realistically but without graphic detail.
+- Keep each reply under ~120 words.`;
 
 // Function to create scenarios data with voiceId
-const createScenariosData = (voiceId: string) => ({
-  scenarios: [
+const createScenariosData = async (
+  voiceId: string,
+  client: AxiosInstance,
+  accessToken: string,
+) => {
+  const languageVoices = await mapLanguagesVoices(client, accessToken);
+  const { terminationEventId, terminationMessage } =
+    await getTerminationEventData(client, accessToken);
+
+  const triggerWarningIds = await getTriggerWarnings(client, accessToken);
+
+  const scenarios = [
     {
-      title: 'Introduction to Active Listening',
+      isGlobal: true,
+      title: 'Active Listening Basics',
+      coverImageUrl: 'https://placehold.co/400x300/png?text=Active+Listening',
+      coverVideoUrl: null,
       description:
-        'Learn the fundamentals of active listening in a counseling session.',
-      status: 'ACTIVE',
-      name: 'Alex',
+        'Practice listening skills with Alex, a young professional feeling overwhelmed.',
+      difficultyLevel: ScenarioDifficultyLevel.EASY,
+      status: ScenarioStatus.ACTIVE,
+      responseLength: ScenarioResponseLength.VERY_BRIEF,
+      // Client profile (shown to counselor)
+      name: 'Alex Johnson',
       age: 25,
       gender: 'male',
       genderIdentity: 'Male/Man',
       sexualOrientation: 'Heterosexual (straight)',
-      currentLocation: 'New York, USA',
-      personality: 'Introverted, thoughtful, slightly anxious',
-      context:
-        'Alex is a young professional struggling with work-life balance and seeking guidance.',
-      prompt:
-        'You are Alex, a 25-year-old software developer feeling overwhelmed at work.',
-      difficultyLevel: 'EASY',
-      responseLength: 'BRIEF',
+      profession: 'Software Engineer',
+      currentLocation: 'Kochi, India',
+      context: 'Struggling with work-life balance and stress',
       tone: 'Casual',
-      openingStatements: [
-        "Hi, I'm not really sure where to start...",
-        "I've been feeling really stressed lately.",
-      ],
-      agentDialogues: [
-        'I understand',
-        'Tell me more',
-        'How does that make you feel?',
-      ],
-      coverImageUrl: 'https://placehold.co/400x300/png?text=Scenario+1',
+      // Voice and dialogue
       voiceId,
-      languageVoices: { 1: voiceId },
+      languageVoices,
+      prompt: SHARED_PROMPT,
+      openingStatements: [
+        'I am not sure where to start...',
+        'Everything feels like it is piling up.',
+      ],
+      agentDialogues: ['I hear you', 'Tell me more', 'That sounds tough'],
+      // Termination settings
+      autoTerminationStatus: true,
+      terminationEventId,
+      terminationMessage,
+      triggerWarningIds,
     },
     {
-      title: 'Handling Emotional Disclosure',
+      isGlobal: true,
+      title: 'Managing Workplace Anxiety',
+      coverImageUrl: 'https://placehold.co/400x300/png?text=Workplace+Anxiety',
+      coverVideoUrl: null,
       description:
-        'Practice responding to emotional disclosures with empathy and support.',
-      status: 'ACTIVE',
-      name: 'Maya',
-      age: 32,
+        'Practice empathetic responses with Priya, a mid-level professional experiencing anxiety at work.',
+      difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+      status: ScenarioStatus.ACTIVE,
+      responseLength: ScenarioResponseLength.VERY_BRIEF,
+      // Client profile (shown to counselor)
+      name: 'Priya Nair',
+      age: 29,
       gender: 'female',
       genderIdentity: 'Female/Woman',
       sexualOrientation: 'Heterosexual (straight)',
-      currentLocation: 'Los Angeles, USA',
-      personality: 'Expressive, emotional, seeking validation',
+      profession: 'Product Manager',
+      currentLocation: 'Bengaluru, India',
       context:
-        'Maya recently experienced a significant loss and is processing grief.',
-      prompt:
-        'You are Maya, a 32-year-old teacher dealing with the loss of a close family member.',
-      difficultyLevel: 'MEDIUM',
-      responseLength: 'MEDIUM',
-      tone: 'Emotional',
+        'Experiencing anxiety due to high expectations and fear of underperforming at work',
+      tone: 'Thoughtful',
+      // Voice and dialogue
+      voiceId,
+      languageVoices,
+      prompt: SHARED_PROMPT,
       openingStatements: [
-        "I don't know if I can do this...",
-        "It's been really hard since my mother passed away.",
+        'I have been feeling on edge at work lately.',
+        'Even small tasks are starting to feel stressful.',
       ],
       agentDialogues: [
-        "I'm here for you",
-        'Take your time',
-        'That sounds difficult',
+        'That sounds overwhelming.',
+        'Can you tell me more about that?',
+        'I am listening.',
       ],
-      coverImageUrl: 'https://placehold.co/400x300/png?text=Scenario+2',
-      voiceId,
-      languageVoices: { 1: voiceId },
+      // Termination settings
+      autoTerminationStatus: false,
+      triggerWarningIds,
     },
-  ],
-});
+  ];
+
+  return scenarios;
+};
 
 // Scenario path configuration (will be populated with created scenario IDs)
 const createScenarioPathData = (scenarioIds: number[]) => ({
@@ -102,7 +138,7 @@ const createScenarioPathData = (scenarioIds: number[]) => ({
   description:
     'A learning path covering basic counseling skills from active listening to handling emotional situations.',
   status: 'ACTIVE',
-  isGlobal: false,
+  isGlobal: true,
   coverImageUrl: 'https://placehold.co/400x300/png?text=Learning+Path',
   scenarios: scenarioIds.map((scenarioId, index) => ({
     scenarioId,
@@ -121,14 +157,14 @@ async function login(
 ): Promise<{ accessToken: string; refreshToken: string }> {
   try {
     const response = await client.post('/api/v1/auth/login', adminCredentials);
-    console.log('Login successful');
+    logStep('[scenarios-pathway] Login successful');
     return {
       accessToken: response.data.accessToken,
       refreshToken: response.data.refreshToken,
     };
   } catch (error: any) {
     console.error(
-      'Login failed:',
+      '[scenarios-pathway] Login failed:',
       error.response?.data?.message || error.message,
     );
     throw error;
@@ -146,30 +182,13 @@ async function getOrCreateVoice(
     const response = await client.get('/api/v1/learn/scenario-voices', {
       headers,
     });
-    if (response.data?.data?.length > 0) {
-      const voice = response.data.data[0];
-      console.log(`Using existing voice: ${voice.name} (${voice.id})`);
-      return voice.id;
-    }
-  } catch (error: any) {
-    console.log('No existing voices found, creating new one...');
-  }
-
-  // Create a new voice
-  try {
-    const response = await client.post(
-      '/api/v1/learn/scenarios/voices',
-      voiceData,
-      { headers },
-    );
     const voice = response.data[0];
-    console.log(`Created voice: ${voice.name} (${voice.id})`);
+    logStep(
+      `[scenarios-pathway] Using existing voice: ${voice.name} (${voice.id})`,
+    );
     return voice.id;
   } catch (error: any) {
-    console.error(
-      'Failed to create voice:',
-      error.response?.data?.message || error.message,
-    );
+    logStep('[scenarios-pathway] No existing voices found');
     throw error;
   }
 }
@@ -180,10 +199,15 @@ async function createScenarios(
   voiceId: string,
 ): Promise<number[]> {
   try {
-    const scenariosData = createScenariosData(voiceId);
+    const scenariosData: any[] = await createScenariosData(
+      voiceId,
+      client,
+      accessToken,
+    );
+
     const response = await client.post(
       '/api/v1/learn/scenarios',
-      scenariosData,
+      { scenarios: scenariosData },
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -192,15 +216,15 @@ async function createScenarios(
     );
 
     const scenarioIds = response.data.map((scenario: any) => scenario.id);
-    console.log(`Created ${scenarioIds.length} scenarios:`);
+    logStep(`[scenarios-pathway] Created ${scenarioIds.length} scenarios:`);
     response.data.forEach((scenario: any) => {
-      console.log(`  - ${scenario.title} (ID: ${scenario.id})`);
+      logStep(`[scenarios-pathway]   ✓ ${scenario.title} (ID: ${scenario.id})`);
     });
 
     return scenarioIds;
   } catch (error: any) {
     console.error(
-      'Failed to create scenarios:',
+      '[scenarios-pathway] Failed to create scenarios:',
       error.response?.data?.message || error.message,
     );
     throw error;
@@ -224,12 +248,12 @@ async function createScenarioPath(
       },
     );
 
-    console.log(
-      `Created scenario path: ${pathData.title} (ID: ${response.data.id})`,
+    logStep(
+      `[scenarios-pathway] Created scenario path: ${pathData.title} (ID: ${response.data.id})`,
     );
   } catch (error: any) {
     console.error(
-      'Failed to create scenario path:',
+      '[scenarios-pathway] Failed to create scenario path:',
       error.response?.data?.message || error.message,
     );
     throw error;
@@ -237,7 +261,7 @@ async function createScenarioPath(
 }
 
 async function seedScenariosAndPath() {
-  console.log(`Connecting to API at: ${API_BASE_URL}`);
+  logStep(`[scenarios-pathway] Connecting to API at: ${API_BASE_URL}`);
 
   const client = axios.create({
     baseURL: API_BASE_URL,
@@ -257,14 +281,128 @@ async function seedScenariosAndPath() {
     // Create scenarios with the voice ID
     const scenarioIds = await createScenarios(client, accessToken, voiceId);
 
-    // Create scenario path with the created scenarios
+    // Create scenario path
     await createScenarioPath(client, accessToken, scenarioIds);
 
-    console.log('---');
-    console.log('Seeding completed successfully!');
+    logStep('[scenarios-pathway] ✅ Scenario seeding completed successfully!');
   } catch (error: any) {
-    console.error('Error during seeding:', error.message);
+    console.error(
+      '[scenarios-pathway] ❌ Error during seeding:',
+      error.message,
+    );
     process.exit(1);
+  }
+}
+
+async function mapLanguagesVoices(
+  client: AxiosInstance,
+  accessToken: string,
+): Promise<Record<string, string>> {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  // Try to get existing voices first
+  try {
+    const response = await client.get('/api/v1/learn/scenario-voices', {
+      headers,
+    });
+    const uniqueLanguages = new Set(
+      response.data.map((voice: any) => voice.languageId),
+    );
+
+    const languageVoices: Record<string, string> = {};
+    uniqueLanguages.forEach((languageId: any) => {
+      const voiceForLanguage = response.data.find(
+        (voice: any) => voice.languageId === languageId,
+      );
+      if (voiceForLanguage) {
+        languageVoices[languageId] = voiceForLanguage.id;
+      }
+    });
+
+    logStep(
+      `[scenarios-pathway] Got available language voices: ${Object.keys(languageVoices).length}`,
+    );
+    return languageVoices;
+  } catch (error: any) {
+    logStep('[scenarios-pathway] No existing voices found');
+    throw error;
+  }
+}
+
+async function getTerminationEventData(
+  client: AxiosInstance,
+  accessToken: string,
+): Promise<{ terminationEventId: string; terminationMessage: string }> {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  try {
+    const response = await client.get(
+      '/api/v1/session-events?offset=0&limit=1&searchName=',
+      {
+        headers,
+      },
+    );
+
+    if (response.data.data.length === 0) {
+      throw new Error('No session events found');
+    }
+    const terminationEvent = response.data.data[0];
+
+    if (!terminationEvent) {
+      throw new Error('Termination event not found');
+    }
+
+    logStep(
+      `[scenarios-pathway] Found termination event: ${terminationEvent.name}`,
+    );
+
+    return {
+      terminationEventId: terminationEvent.id,
+      terminationMessage: 'Your problem is important to me.',
+    };
+  } catch (error: any) {
+    console.error(
+      '[scenarios-pathway] Failed to fetch termination events:',
+      error.response?.data?.message || error.message,
+    );
+    throw error;
+  }
+}
+
+async function getTriggerWarnings(
+  client: AxiosInstance,
+  accessToken: string,
+): Promise<string[]> {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  try {
+    const response = await client.get(
+      '/api/v1/learn/trigger-warnings?name=&offset=0&limit=20',
+      {
+        headers,
+      },
+    );
+
+    if (response.data.length === 0) {
+      logStep('[scenarios-pathway] No trigger warnings found');
+      return [];
+    }
+
+    const triggerWarnings = response.data;
+
+    const triggerWarningIds = triggerWarnings.map(
+      (tw: TriggerWarnings) => tw.id,
+    );
+    logStep(
+      `[scenarios-pathway] Fetched ${triggerWarningIds.length} trigger warnings`,
+    );
+    return triggerWarningIds;
+  } catch (error: any) {
+    console.error(
+      '[scenarios-pathway] Failed to fetch trigger warnings:',
+      error.response?.data?.message || error.message,
+    );
+    throw error;
   }
 }
 

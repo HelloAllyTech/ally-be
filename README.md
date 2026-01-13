@@ -30,16 +30,16 @@ Before you begin, ensure you have the following installed:
 
 ## 🛠️ Technology Stack
 
-| Component      | Tech Used                                |
-| -------------- | ---------------------------------------- |
-| Backend        | NestJS                                   |
-| Database       | PostgreSQL                               |
-| Caching        | Redis                                    |
-| Real-time Comm | WebSocket (Socket.io)                    |
-| Authentication | JWT, OTP                                 |
-| Analytics      | PostgreSQL + Metabase                    |
-| Observability  | Winston Logger + Slack alerts            |
-| Documentation  | Swagger/OpenAPI                          |
+| Component      | Tech Used                     |
+| -------------- | ----------------------------- |
+| Backend        | NestJS                        |
+| Database       | PostgreSQL                    |
+| Caching        | Redis                         |
+| Real-time Comm | WebSocket (Socket.io)         |
+| Authentication | JWT, OTP                      |
+| Analytics      | PostgreSQL + Metabase         |
+| Observability  | Winston Logger + Slack alerts |
+| Documentation  | Swagger/OpenAPI               |
 
 ---
 
@@ -84,6 +84,7 @@ Create a `.env` file in the root directory. This file is used by all Docker serv
 ### Log Levels
 
 Configure log level via `LOG_LEVEL` environment variable:
+
 - `error` - Only errors
 - `warn` - Warnings and errors (default)
 - `info` - Info, warnings, and errors
@@ -105,6 +106,7 @@ cd ally-be
 ### Step 2: Configure Environment
 
 1. Copy the sample environment file:
+
    ```bash
    cp docker.env.example docker.env
    cp .env.example .env
@@ -119,9 +121,9 @@ Start PostgreSQL, Redis, LocalStack and SQS using Docker Compose:
 ```bash
 docker-compose up
 ```
+
 make sure the SQS URLs in your .env file match the ones shown in the Docker output.
 Note: The app in Docker will not start automatically at the moment — it requires manual execution. The steps for running it manually are detailed in the following sections.
-
 
 ### Step 4: Run Database Migrations
 
@@ -130,6 +132,7 @@ npm run migration:run
 ```
 
 The application will be available at:
+
 - **Swagger Docs**: http://localhost:8001/api-docs
 - **Health Check**: http://localhost:8001/api/health
 
@@ -154,6 +157,7 @@ npm run start:dev
 ```
 
 The application will be available at:
+
 - **Swagger Docs**: http://localhost:8001/api-docs
 - **Health Check**: http://localhost:8001/api/health
 
@@ -208,11 +212,21 @@ npm run seed -- src/database/seeds/<seed-file>.ts
 
 ### Available Seeds
 
-| Seed File | Description | Dependencies |
-|-----------|-------------|--------------|
-| `admin_user.ts` | Creates an admin user with SUPER_ADMIN role | Requires `groups` table to have SUPER_ADMIN group |
-| `user-tenant.ts` | Creates a tenant and sample users (Counselor, Learner, Admin) via API | Requires app to be running, admin user to exist |
-| `scenarios-pathway.ts` | Creates sample scenarios and a learning pathway via API | Requires app to be running, admin user to exist |
+| Seed File                   | Description                                                           | Dependencies                                      |
+| --------------------------- | --------------------------------------------------------------------- | ------------------------------------------------- |
+| `admin-user.ts`             | Creates an admin user with SUPER_ADMIN role                           | Requires `groups` table to have SUPER_ADMIN group |
+| `user-tenant.ts`            | Creates a tenant and sample users (Counselor, Learner, Admin) via API | Requires app to be running, admin user to exist   |
+| `scenarios-pathway.ts`      | Creates sample scenarios and a learning pathway via API               | Requires app to be running, admin user to exist   |
+| `seed-voices-and-events.ts` | Seeds scenario voices and session events data                         | Requires app to be running                        |
+
+### Seed Utilities
+
+| Utility File     | Description                                                               |
+| ---------------- | ------------------------------------------------------------------------- |
+| `seed-utils.ts`  | Shared utilities for all seeds (database connection, logging helpers)     |
+| `seed-logger.ts` | Centralized logging utility for consistent logging across seed operations |
+| `index.ts`       | Seed orchestrator that manages execution of all seeds in correct order    |
+| `data/`          | Directory containing seed data files (JSON/static data for seeds)         |
 
 ### Seed Execution Order
 
@@ -220,13 +234,23 @@ For a fresh database, run seeds in this order:
 
 ```bash
 # 1. Create admin user (direct DB access)
-npm run seed -- src/database/seeds/admin_user.ts
+npm run seed -- src/database/seeds/admin-user.ts
 
-# 2. Create tenant and users (requires app running)
+# 2. Seed voices and session events (requires app running)
+npm run seed -- src/database/seeds/seed-voices-and-events.ts
+
+# 3. Create tenant and users (requires app running)
 npm run seed -- src/database/seeds/user-tenant.ts
 
-# 3. Create scenarios and pathway (requires app running)
+# 4. Create scenarios and pathway (requires app running)
 npm run seed -- src/database/seeds/scenarios-pathway.ts
+```
+
+**Or run all seeds at once:**
+
+```bash
+# Runs all seeds in the correct order automatically
+npm run seed:all
 ```
 
 ---
@@ -341,6 +365,7 @@ Once the application is running, access the interactive API documentation:
 - **Swagger UI**: http://localhost:8001/api-docs
 
 The API is versioned and accessible at:
+
 - **v1**: `http://localhost:8001/api/v1/...`
 
 ### Authentication
@@ -369,6 +394,7 @@ For contributing guidelines, refer to `CONTRIBUTING.md` file
 ## 📞 Support
 
 For issues, questions, or contributions:
+
 - Open an issue on GitHub
 - Contact the development team
 - Check the API documentation at `/api-docs`

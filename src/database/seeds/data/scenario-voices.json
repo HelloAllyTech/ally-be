@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Achernar (female)",
+    "provider": "GOOGLE",
+    "config": {
+      "gender": "female",
+      "voice_name": "en-IN-Chirp3-HD-Achernar",
+      "languageCode": "en-IN"
+    },
+    "languageId": 1
+  },
+  {
+    "name": "Achird (male)",
+    "provider": "GOOGLE",
+    "config": {
+      "gender": "male",
+      "voice_name": "en-IN-Chirp3-HD-Achird",
+      "languageCode": "en-IN"
+    },
+    "languageId": 1
+  }
+]

@@ -1,10 +1,11 @@
 import axios, { AxiosInstance } from 'axios';
 import { config } from 'dotenv';
+import { logStep } from './seed-utils';
 import { UserRole } from '../../common/constants/user.constants';
 
 config();
 
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
+const API_BASE_URL = 'http://localhost:8001';
 
 // Admin credentials for authentication
 const adminCredentials = {
@@ -52,7 +53,7 @@ async function login(
 ): Promise<{ accessToken: string; refreshToken: string }> {
   try {
     const response = await client.post('/api/v1/auth/login', adminCredentials);
-    console.log('Login successful');
+    logStep('Login successful');
     return {
       accessToken: response.data.accessToken,
       refreshToken: response.data.refreshToken,
@@ -79,14 +80,14 @@ async function getOrCreateTenant(
       { headers },
     );
     if (response.data?.id) {
-      console.log(
+      logStep(
         `Found existing tenant: ${tenantData.code} (${response.data.id})`,
       );
       return response.data.id;
     }
   } catch (error: any) {
     if (error.response?.status !== 404) {
-      console.log(`Tenant lookup returned: ${error.response?.status}`);
+      logStep(`Tenant lookup returned: ${error.response?.status}`);
     }
   }
 
@@ -95,7 +96,7 @@ async function getOrCreateTenant(
     const response = await client.post('/api/v1/tenants', tenantData, {
       headers,
     });
-    console.log(`Created tenant: ${tenantData.code} (${response.data.id})`);
+    logStep(`Created tenant: ${tenantData.code} (${response.data.id})`);
     return response.data.id;
   } catch (error: any) {
     if (error.response?.data?.message?.includes('already exists')) {
@@ -105,7 +106,7 @@ async function getOrCreateTenant(
         (t: any) => t.code === tenantData.code,
       );
       if (tenant) {
-        console.log(`Found tenant in list: ${tenantData.code} (${tenant.id})`);
+        logStep(`Found tenant in list: ${tenantData.code} (${tenant.id})`);
         return tenant.id;
       }
     }
@@ -128,10 +129,10 @@ async function createUser(
         Authorization: `Bearer ${accessToken}`,
       },
     });
-    console.log(`Created user: ${userData.email} (ID: ${response.data.id})`);
+    logStep(`Created user: ${userData.email} (ID: ${response.data.id})`);
   } catch (error: any) {
     if (error.response?.status === 400) {
-      console.log(
+      logStep(
         `User ${userData.email} already exists or validation failed: ${error.response?.data?.message}`,
       );
     } else {
@@ -144,7 +145,7 @@ async function createUser(
 }
 
 async function seedUsers() {
-  console.log(`Connecting to API at: ${API_BASE_URL}`);
+  logStep(`Connecting to API at: ${API_BASE_URL}`);
 
   const client = axios.create({
     baseURL: API_BASE_URL,
@@ -166,7 +167,7 @@ async function seedUsers() {
       await createUser(client, accessToken, { ...user, tenantId });
     }
 
-    console.log('User seeding completed');
+    logStep('Users seeding completed successfully!');
   } catch (error: any) {
     console.error('Error seeding users:', error.message);
     process.exit(1);

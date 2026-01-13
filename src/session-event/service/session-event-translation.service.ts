@@ -4,9 +4,13 @@ import { LoggerService } from 'src/logger/logger.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { SessionEventTranslationsRepository } from '../repository/session-event-translation.repository';
-import { SessionEventMetadata } from '../type/session-event-translation-data.type';
+import {
+  SessionEventMetadata,
+  TranslatableMap,
+} from '../type/session-event-translation-data.type';
 import { SessionEvents } from '../entity/session-events.entity';
 import { CreateSessionEventTranslation } from '../interface/session-events-translation.interface';
+import { DETECTION_DATA_TRANSLATABLE_PATHS } from '../constants/event.constant';
 
 @Injectable()
 export class SessionEventTranslationService {
@@ -100,11 +104,17 @@ export class SessionEventTranslationService {
     for (const sessionEvent of sessionEvents) {
       try {
         const rawMetadata = metadataExtractor(sessionEvent);
+
+        const { translatable, passthrough } = this.extractTranslatableFields(
+          rawMetadata?.detectionData ?? {},
+          DETECTION_DATA_TRANSLATABLE_PATHS,
+        );
+
         const sanitized = this.sanitizeSessionEventMetadata({
           name: rawMetadata?.name,
           message: rawMetadata?.message,
           branchInstruction: rawMetadata?.branchInstruction,
-          detectionData: rawMetadata?.detectionData,
+          detectionData: translatable,
         });
 
         if (!sanitized || Object.keys(sanitized).length === 0) {
@@ -149,7 +159,10 @@ export class SessionEventTranslationService {
             name: translatedData.name ?? '',
             message: translatedData.message ?? '',
             branchInstruction: translatedData.branchInstruction ?? '',
-            detectionData: translatedData.detectionData ?? {},
+            detectionData: this.mergeTranslatedFields(
+              passthrough,
+              translatedData.detectionData as TranslatableMap,
+            ),
           });
         }
 
@@ -217,6 +230,89 @@ export class SessionEventTranslationService {
     }
 
     return cleaned;
+  }
+
+  private extractTranslatableFields(
+    source: Record<string, any> | undefined,
+    allowedPaths: string[],
+  ): {
+    translatable: TranslatableMap;
+    passthrough: Record<string, any>;
+  } {
+    if (!source || typeof source !== 'object') {
+      return { translatable: {}, passthrough: {} };
+    }
+
+    const translatable: TranslatableMap = {};
+    const passthrough = structuredClone(source);
+
+    for (const path of allowedPaths) {
+      const value = this.getValueByPath(source, path);
+
+      if (typeof value === 'string' && value.trim()) {
+        translatable[path] = value.trim();
+        this.deleteValueByPath(passthrough, path);
+      } else if (
+        Array.isArray(value) &&
+        value.every((v) => typeof v === 'string' && v.trim())
+      ) {
+        translatable[path] = value.map((v) => v.trim());
+        this.deleteValueByPath(passthrough, path);
+      }
+    }
+
+    return {
+      translatable,
+      passthrough,
+    };
+  }
+
+  private mergeTranslatedFields(
+    passthrough: Record<string, any>,
+    translated: TranslatableMap | undefined,
+  ): Record<string, any> {
+    if (!translated) return passthrough;
+
+    const merged = structuredClone(passthrough);
+
+    for (const [path, value] of Object.entries(translated)) {
+      this.setValueByPath(merged, path, value);
+    }
+
+    return merged;
+  }
+
+  private getValueByPath(obj: any, path: string): any {
+    return path.split('.').reduce((acc, key) => acc?.[key], obj);
+  }
+
+  private setValueByPath(obj: any, path: string, value: any): void {
+    const keys = path.split('.');
+    let current = obj;
+
+    keys.forEach((key, index) => {
+      if (index === keys.length - 1) {
+        current[key] = value;
+      } else {
+        current[key] ??= {};
+        current = current[key];
+      }
+    });
+  }
+
+  private deleteValueByPath(obj: any, path: string): void {
+    const keys = path.split('.');
+    let current = obj;
+
+    keys.forEach((key, index) => {
+      if (!current) return;
+
+      if (index === keys.length - 1) {
+        delete current[key];
+      } else {
+        current = current[key];
+      }
+    });
   }
 
   async getSessionEventsTranslationsByScenarioId(
