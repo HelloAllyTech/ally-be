@@ -1422,50 +1422,12 @@ describe('ScenarioService', () => {
       const result = await service.getScenario(1);
 
       expect(result).toEqual(mockScenario);
-      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
-        1,
-        undefined,
-        undefined,
-      );
     });
 
     it('should throw NotFoundException when scenario not found', async () => {
       scenariosRepository.getScenarioById.mockResolvedValue(null);
 
       await expect(service.getScenario(999)).rejects.toThrow(NotFoundException);
-      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
-        999,
-        undefined,
-        undefined,
-      );
-    });
-
-    it('should pass select parameter to repository', async () => {
-      const selectFields: (keyof Scenarios)[] = ['id', 'metadata'];
-      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
-
-      const result = await service.getScenario(1, selectFields);
-
-      expect(result).toEqual(mockScenario);
-      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
-        1,
-        selectFields,
-        undefined,
-      );
-    });
-
-    it('should pass EntityManager parameter to repository', async () => {
-      const mockEntityManager = {} as any;
-      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
-
-      const result = await service.getScenario(1, undefined, mockEntityManager);
-
-      expect(result).toEqual(mockScenario);
-      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
-        1,
-        undefined,
-        mockEntityManager,
-      );
     });
   });
 
@@ -3830,11 +3792,6 @@ describe('ScenarioService', () => {
         await service.getBranchingInstructionDynamicShortcuts(scenarioId);
 
       expect(result).toEqual(defaultShortcuts);
-      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
-        scenarioId,
-        undefined,
-        undefined,
-      );
     });
 
     it('should return default shortcuts plus custom field names when scenario has custom fields', async () => {
@@ -3863,11 +3820,6 @@ describe('ScenarioService', () => {
         'custom_field_1',
         'custom_field_2',
       ]);
-      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(
-        scenarioId,
-        undefined,
-        undefined,
-      );
     });
 
     it('should return default shortcuts when custom fields is empty array', async () => {

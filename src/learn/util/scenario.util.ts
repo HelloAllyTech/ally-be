@@ -22,6 +22,7 @@ export const mapCreateScenarioRequestToEntityWithoutCustomFields = (
     coverImageUrl: scenario.coverImageUrl,
     coverVideoUrl: scenario.coverVideoUrl,
     status: scenario.status,
+    isPubic: scenario.isPublic,
     isGlobal: scenario.isGlobal,
     metadata: {
       agentGoal: scenario.agentGoal,
@@ -59,6 +60,7 @@ export const mapCreateScenarioRequestToEntity = (
     coverImageUrl: scenario.coverImageUrl,
     coverVideoUrl: scenario.coverVideoUrl,
     status: scenario.status,
+    isPublic: scenario.isPublic,
     prompt: scenario.prompt,
     isGlobal: scenario.isGlobal,
     difficultyLevel: scenario.difficultyLevel,
@@ -158,6 +160,7 @@ export const mapUpdateScenarioRequestToEntity = (
         'coverImageUrl',
         'coverVideoUrl',
         'status',
+        'isPublic',
         'prompt',
         'isGlobal',
         'difficultyLevel',
@@ -168,6 +171,7 @@ export const mapUpdateScenarioRequestToEntity = (
         'coverImageUrl',
         'coverVideoUrl',
         'status',
+        'isPublic',
         'prompt',
         'isGlobal',
       ];

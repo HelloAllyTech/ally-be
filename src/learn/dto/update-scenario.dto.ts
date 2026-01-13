@@ -76,6 +76,14 @@ export class UpdateScenarioDto {
   status?: ScenarioStatus;
 
   @ApiProperty({
+    description: 'Is the scenario public',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
+
+  @ApiProperty({
     description: 'Prompt of the scenario',
     example: 'Prompt 1',
   })

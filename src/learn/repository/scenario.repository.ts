@@ -1,18 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import {
-  DataSource,
-  EntityManager,
-  Repository,
-  SelectQueryBuilder,
-} from 'typeorm';
-
+import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Scenarios } from '../entity/scenarios.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
-import { ScenarioFilters } from '../type/scenario-filter.type';
+import {
+  GetScenarioByIdOptions,
+  ScenarioFilters,
+} from '../type/scenario-filter.type';
 import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.entity';
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { GetScenarioDto } from '../dto/get-scenario.dto';
@@ -55,6 +52,16 @@ export class ScenariosRepository extends Repository<Scenarios> {
       );
     }
 
+    query.where('scenario.status IN (:...statuses)', {
+      statuses: [ScenarioStatus.ACTIVE],
+    });
+
+    if (filters?.isPublic) {
+      query.andWhere('scenario.isPublic = :isPublic', {
+        isPublic: filters.isPublic,
+      });
+    }
+
     const [data, count] = await query
       .select([
         'scenario.id',
@@ -64,6 +71,7 @@ export class ScenariosRepository extends Repository<Scenarios> {
         'scenario.coverImageUrl',
         'scenario.coverVideoUrl',
         'scenario.status',
+        'scenario.isPublic',
       ])
       .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
       .leftJoinAndMapMany(
@@ -72,9 +80,6 @@ export class ScenariosRepository extends Repository<Scenarios> {
         'tw',
         'tw.id = stw.triggerWarningId',
       )
-      .where('scenario.status IN (:...statuses)', {
-        statuses: [ScenarioStatus.ACTIVE],
-      })
       .orderBy('scenario.createdAt', 'DESC')
       .addOrderBy('scenario.id', 'DESC')
       .getManyAndCount();
@@ -84,17 +89,16 @@ export class ScenariosRepository extends Repository<Scenarios> {
 
   async getScenarioById(
     id: number,
-    select?: (keyof Scenarios)[],
-    em?: EntityManager,
+    options?: GetScenarioByIdOptions,
   ): Promise<GetScenarioResponse | null> {
-    const scenarioRepo = em
-      ? em?.getRepository(Scenarios)
+    const scenarioRepo = options?.em
+      ? options.em?.getRepository(Scenarios)
       : this.dataSource.getRepository(Scenarios);
     const query = scenarioRepo.createQueryBuilder('scenario');
-    if (select) {
-      query?.select(select.map((field) => `scenario.${String(field)}`));
+    if (options?.select) {
+      query?.select(options.select.map((field) => `scenario.${String(field)}`));
     }
-    return await query
+    query
       .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
       .leftJoinAndMapMany(
         'scenario.triggerWarnings',
@@ -102,8 +106,14 @@ export class ScenariosRepository extends Repository<Scenarios> {
         'tw',
         'tw.id = stw.triggerWarningId',
       )
-      .where('scenario.id = :id', { id })
-      .getOne();
+      .where('scenario.id = :id', { id });
+
+    if (options?.isPublic) {
+      query.andWhere('scenario.isPublic = :isPublic', {
+        isPublic: options?.isPublic,
+      });
+    }
+    return query.getOne();
   }
   async getAdminScenarios(
     scenarioFilters?: ScenarioFilters,

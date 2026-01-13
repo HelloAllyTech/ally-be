@@ -56,7 +56,10 @@ import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.entity';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
-import { ScenarioFilters } from '../type/scenario-filter.type';
+import {
+  GetScenarioByIdOptions,
+  ScenarioFilters,
+} from '../type/scenario-filter.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { GetScenarioResponse } from '../interface/session.interface';
 import { TriggerWarningsService } from './trigger-warnings.service';
@@ -104,7 +107,9 @@ export class ScenarioService {
   }
 
   async getPublicScenarios(): Promise<GetScenarioDtoWithPagination> {
-    const { data, count } = await this.scenariosRepository.getScenarios();
+    const { data, count } = await this.scenariosRepository.getScenarios({
+      isPublic: true,
+    });
 
     return { data, count };
   }
@@ -225,14 +230,13 @@ export class ScenarioService {
 
   async getScenario(
     id: number,
-    select?: (keyof Scenarios)[],
-    em?: EntityManager,
+    options?: GetScenarioByIdOptions,
   ): Promise<GetScenarioResponse> {
-    const scenario = await this.scenariosRepository.getScenarioById(
-      id,
-      select,
-      em,
-    );
+    const scenario = await this.scenariosRepository.getScenarioById(id, {
+      select: options?.select,
+      em: options?.em,
+      isPublic: options?.isPublic,
+    });
 
     if (!scenario) {
       throw new NotFoundException('Scenario not found');
@@ -903,6 +907,7 @@ export class ScenarioService {
       coverImageUrl: scenario.coverImageUrl,
       coverVideoUrl: scenario.coverVideoUrl,
       status: ScenarioStatus.DRAFT,
+      isPublic: scenario.isPublic,
       prompt: scenario.prompt,
       metadata: scenario.metadata,
       isGlobal: scenario.isGlobal,
