@@ -54,4 +54,7 @@ export class Scenarios extends BaseWithoutTenantEntity {
     default: ScenarioDifficultyLevel.MEDIUM,
   })
   difficultyLevel?: ScenarioDifficultyLevel;
+
+  @Column({ default: false })
+  isPublic!: boolean;
 }

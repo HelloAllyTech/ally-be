@@ -374,15 +374,17 @@ describe('LearnController', () => {
       const result = await controller.getScenario(scenarioId);
 
       expect(result).toEqual(mockScenarioResponse);
-      expect(scenarioService.getScenario).toHaveBeenCalledWith(scenarioId, [
-        'id',
-        'title',
-        'scenario',
-        'description',
-        'coverImageUrl',
-        'coverVideoUrl',
-        'status',
-      ]);
+      expect(scenarioService.getScenario).toHaveBeenCalledWith(scenarioId, {
+        select: [
+          'id',
+          'title',
+          'scenario',
+          'description',
+          'coverImageUrl',
+          'coverVideoUrl',
+          'status',
+        ],
+      });
     });
   });
 

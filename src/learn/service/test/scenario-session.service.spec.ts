@@ -710,6 +710,7 @@ describe('ScenarioSessionService', () => {
           languageVoices: { 1: 'voice-123' },
         },
         isGlobal: false,
+        isPublic: false,
       };
 
       const mockVoice = {
@@ -814,6 +815,7 @@ describe('ScenarioSessionService', () => {
         ...mockScenario,
         status: ScenarioStatus.ARCHIVED,
         isGlobal: false,
+        isPublic: false,
       };
 
       scenarioService.getAdminScenario.mockResolvedValue(mockInvalidScenario);
@@ -1005,6 +1007,7 @@ describe('ScenarioSessionService', () => {
         metadata: {
           languageVoices: { '1': 'default-voice' }, // No voice for language 2
         },
+        isPublic: false,
       };
 
       scenarioService.getScenario.mockResolvedValue(mockScenarioWithoutVoice);
