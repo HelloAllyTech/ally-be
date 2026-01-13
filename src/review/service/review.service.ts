@@ -84,20 +84,25 @@ export class ReviewService {
       where: { reviewThreadId: In(reviewThreads.map((thread) => thread.id)) },
     });
 
-    const users = await this.userService.getUsersByIds(
+    const usersPromise = this.userService.getUsersByIds(
       reviewComments.map((comment) => comment.createdBy),
     );
-    const usersMap = new Map<number, User>();
-    users.forEach((user) => {
-      usersMap.set(user.id, user);
-    });
-
-    const reviewCommentReactions =
-      await this.reviewCommentReactionRepository.find({
+    const reviewCommentReactionsPromise =
+      this.reviewCommentReactionRepository.find({
         where: {
           reviewCommentId: In(reviewComments.map((comment) => comment.id)),
         },
       });
+
+    const [users, reviewCommentReactions] = await Promise.all([
+      usersPromise,
+      reviewCommentReactionsPromise,
+    ]);
+
+    const usersMap = new Map<number, User>();
+    users.forEach((user) => {
+      usersMap.set(user.id, user);
+    });
     const reviewCommentReactionsMap = new Map<
       string,
       ReviewCommentReaction[]
