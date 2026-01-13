@@ -19,6 +19,7 @@ import { ReviewCommentReactionRepository } from '../repository/review-comment-re
 import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
 import { User } from 'src/user/entity/user.entity';
 import { UserService } from 'src/user/service/user.service';
+import { Pagination } from 'src/common/type/common.type';
 
 @Injectable()
 export class ReviewService {
@@ -68,7 +69,10 @@ export class ReviewService {
     return { id: savedReview.id };
   }
 
-  async getReviewThreads(reviewId: string): Promise<ReviewThreadsResponseDto> {
+  async getReviewThreads(
+    reviewId: string,
+    options?: Pagination,
+  ): Promise<ReviewThreadsResponseDto> {
     const review = await this.reviewRepository.findOne({
       where: { id: reviewId },
     });
@@ -76,9 +80,11 @@ export class ReviewService {
       throw new NotFoundException('Review not found');
     }
 
-    const reviewThreads = await this.reviewThreadRepository.find({
-      where: { reviewId },
-    });
+    const { threads: reviewThreads, count: totalCount } =
+      await this.reviewThreadRepository.getReviewThreadsByReviewId(
+        reviewId,
+        options,
+      );
 
     const reviewComments = await this.reviewCommentRepository.find({
       where: { reviewThreadId: In(reviewThreads.map((thread) => thread.id)) },
@@ -149,7 +155,7 @@ export class ReviewService {
     });
     return {
       data: reviewThreadsData,
-      count: reviewThreadsData.length,
+      count: totalCount,
     };
   }
 }

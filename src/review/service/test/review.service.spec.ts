@@ -71,7 +71,7 @@ describe('ReviewService', () => {
     };
 
     const mockReviewThreadRepository = {
-      find: jest.fn(),
+      getReviewThreadsByReviewId: jest.fn(),
     };
 
     const mockReviewCommentRepository = {
@@ -273,7 +273,10 @@ describe('ReviewService', () => {
 
     it('should return review threads with comments and reactions', async () => {
       reviewRepository.findOne.mockResolvedValue(mockReview);
-      reviewThreadRepository.find.mockResolvedValue([mockReviewThread]);
+      reviewThreadRepository.getReviewThreadsByReviewId.mockResolvedValue({
+        threads: [mockReviewThread],
+        count: 1,
+      });
       reviewCommentRepository.find.mockResolvedValue([mockReviewComment]);
       reviewCommentReactionRepository.find.mockResolvedValue([
         mockReviewCommentReaction,
@@ -285,9 +288,9 @@ describe('ReviewService', () => {
       expect(reviewRepository.findOne).toHaveBeenCalledWith({
         where: { id: mockReviewId },
       });
-      expect(reviewThreadRepository.find).toHaveBeenCalledWith({
-        where: { reviewId: mockReviewId },
-      });
+      expect(
+        reviewThreadRepository.getReviewThreadsByReviewId,
+      ).toHaveBeenCalledWith(mockReviewId, undefined);
       expect(reviewCommentRepository.find).toHaveBeenCalled();
       expect(userService.getUsersByIds).toHaveBeenCalledWith([1]);
       expect(reviewCommentReactionRepository.find).toHaveBeenCalled();
@@ -319,12 +322,17 @@ describe('ReviewService', () => {
       expect(reviewRepository.findOne).toHaveBeenCalledWith({
         where: { id: mockReviewId },
       });
-      expect(reviewThreadRepository.find).not.toHaveBeenCalled();
+      expect(
+        reviewThreadRepository.getReviewThreadsByReviewId,
+      ).not.toHaveBeenCalled();
     });
 
     it('should return empty threads when no threads exist', async () => {
       reviewRepository.findOne.mockResolvedValue(mockReview);
-      reviewThreadRepository.find.mockResolvedValue([]);
+      reviewThreadRepository.getReviewThreadsByReviewId.mockResolvedValue({
+        threads: [],
+        count: 0,
+      });
       reviewCommentRepository.find.mockResolvedValue([]);
       reviewCommentReactionRepository.find.mockResolvedValue([]);
       userService.getUsersByIds.mockResolvedValue([]);
@@ -333,14 +341,17 @@ describe('ReviewService', () => {
 
       expect(result.count).toBe(0);
       expect(result.data).toHaveLength(0);
-      expect(reviewThreadRepository.find).toHaveBeenCalledWith({
-        where: { reviewId: mockReviewId },
-      });
+      expect(
+        reviewThreadRepository.getReviewThreadsByReviewId,
+      ).toHaveBeenCalledWith(mockReviewId, undefined);
     });
 
     it('should handle threads with no comments', async () => {
       reviewRepository.findOne.mockResolvedValue(mockReview);
-      reviewThreadRepository.find.mockResolvedValue([mockReviewThread]);
+      reviewThreadRepository.getReviewThreadsByReviewId.mockResolvedValue({
+        threads: [mockReviewThread],
+        count: 1,
+      });
       reviewCommentRepository.find.mockResolvedValue([]);
       reviewCommentReactionRepository.find.mockResolvedValue([]);
       userService.getUsersByIds.mockResolvedValue([]);
@@ -368,7 +379,10 @@ describe('ReviewService', () => {
       ];
 
       reviewRepository.findOne.mockResolvedValue(mockReview);
-      reviewThreadRepository.find.mockResolvedValue([mockReviewThread]);
+      reviewThreadRepository.getReviewThreadsByReviewId.mockResolvedValue({
+        threads: [mockReviewThread],
+        count: 1,
+      });
       reviewCommentRepository.find.mockResolvedValue([mockReviewComment]);
       reviewCommentReactionRepository.find.mockResolvedValue(reactions);
       userService.getUsersByIds.mockResolvedValue([mockUser]);
@@ -389,7 +403,10 @@ describe('ReviewService', () => {
       } as ReviewComment;
 
       reviewRepository.findOne.mockResolvedValue(mockReview);
-      reviewThreadRepository.find.mockResolvedValue([mockReviewThread]);
+      reviewThreadRepository.getReviewThreadsByReviewId.mockResolvedValue({
+        threads: [mockReviewThread],
+        count: 1,
+      });
       reviewCommentRepository.find.mockResolvedValue([
         mockReviewComment,
         replyComment,
@@ -428,7 +445,10 @@ describe('ReviewService', () => {
       } as ReviewComment;
 
       reviewRepository.findOne.mockResolvedValue(mockReview);
-      reviewThreadRepository.find.mockResolvedValue([mockReviewThread]);
+      reviewThreadRepository.getReviewThreadsByReviewId.mockResolvedValue({
+        threads: [mockReviewThread],
+        count: 1,
+      });
       reviewCommentRepository.find.mockResolvedValue([
         mockReviewComment,
         replyComment1,
@@ -457,7 +477,10 @@ describe('ReviewService', () => {
 
     it('should handle comments with missing user data', async () => {
       reviewRepository.findOne.mockResolvedValue(mockReview);
-      reviewThreadRepository.find.mockResolvedValue([mockReviewThread]);
+      reviewThreadRepository.getReviewThreadsByReviewId.mockResolvedValue({
+        threads: [mockReviewThread],
+        count: 1,
+      });
       reviewCommentRepository.find.mockResolvedValue([mockReviewComment]);
       reviewCommentReactionRepository.find.mockResolvedValue([]);
       userService.getUsersByIds.mockResolvedValue([]);
@@ -473,7 +496,10 @@ describe('ReviewService', () => {
 
     it('should handle comments with no reactions', async () => {
       reviewRepository.findOne.mockResolvedValue(mockReview);
-      reviewThreadRepository.find.mockResolvedValue([mockReviewThread]);
+      reviewThreadRepository.getReviewThreadsByReviewId.mockResolvedValue({
+        threads: [mockReviewThread],
+        count: 1,
+      });
       reviewCommentRepository.find.mockResolvedValue([mockReviewComment]);
       reviewCommentReactionRepository.find.mockResolvedValue([]);
       userService.getUsersByIds.mockResolvedValue([mockUser]);
@@ -496,10 +522,10 @@ describe('ReviewService', () => {
       } as ReviewComment;
 
       reviewRepository.findOne.mockResolvedValue(mockReview);
-      reviewThreadRepository.find.mockResolvedValue([
-        mockReviewThread,
-        thread2,
-      ]);
+      reviewThreadRepository.getReviewThreadsByReviewId.mockResolvedValue({
+        threads: [mockReviewThread, thread2],
+        count: 2,
+      });
       reviewCommentRepository.find.mockResolvedValue([
         mockReviewComment,
         comment2,
@@ -514,6 +540,29 @@ describe('ReviewService', () => {
       expect(result.data[1].commentCount).toBe(1);
       expect(result.data[0].id).toBe('thread-id-1');
       expect(result.data[1].id).toBe('thread-id-2');
+    });
+
+    it('should pass pagination options to repository', async () => {
+      const paginationOptions = { limit: 10, offset: 5 };
+      reviewRepository.findOne.mockResolvedValue(mockReview);
+      reviewThreadRepository.getReviewThreadsByReviewId.mockResolvedValue({
+        threads: [mockReviewThread],
+        count: 20,
+      });
+      reviewCommentRepository.find.mockResolvedValue([mockReviewComment]);
+      reviewCommentReactionRepository.find.mockResolvedValue([]);
+      userService.getUsersByIds.mockResolvedValue([mockUser]);
+
+      const result = await service.getReviewThreads(
+        mockReviewId,
+        paginationOptions,
+      );
+
+      expect(
+        reviewThreadRepository.getReviewThreadsByReviewId,
+      ).toHaveBeenCalledWith(mockReviewId, paginationOptions);
+      expect(result.count).toBe(20); // Total count, not paginated count
+      expect(result.data).toHaveLength(1);
     });
   });
 });

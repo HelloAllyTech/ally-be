@@ -138,12 +138,35 @@ describe('ReviewController', () => {
 
       const result = await controller.getReviewThreads(mockReviewId);
 
-      expect(reviewService.getReviewThreads).toHaveBeenCalledWith(mockReviewId);
+      expect(reviewService.getReviewThreads).toHaveBeenCalledWith(
+        mockReviewId,
+        { limit: undefined, offset: undefined },
+      );
       expect(reviewService.getReviewThreads).toHaveBeenCalledTimes(1);
       expect(result).toEqual(mockReviewThreadsResponse);
       expect(result.count).toBe(1);
       expect(result.data).toHaveLength(1);
       expect(result.data[0].id).toBe('thread-id-1');
+    });
+
+    it('should pass pagination options when provided', async () => {
+      const limit = 10;
+      const offset = 5;
+      reviewService.getReviewThreads.mockResolvedValue(
+        mockReviewThreadsResponse,
+      );
+
+      const result = await controller.getReviewThreads(
+        mockReviewId,
+        limit,
+        offset,
+      );
+
+      expect(reviewService.getReviewThreads).toHaveBeenCalledWith(
+        mockReviewId,
+        { limit, offset },
+      );
+      expect(result).toEqual(mockReviewThreadsResponse);
     });
 
     it('should return empty threads when no threads exist', async () => {
@@ -155,7 +178,10 @@ describe('ReviewController', () => {
 
       const result = await controller.getReviewThreads(mockReviewId);
 
-      expect(reviewService.getReviewThreads).toHaveBeenCalledWith(mockReviewId);
+      expect(reviewService.getReviewThreads).toHaveBeenCalledWith(
+        mockReviewId,
+        { limit: undefined, offset: undefined },
+      );
       expect(result).toEqual(emptyResponse);
       expect(result.count).toBe(0);
       expect(result.data).toHaveLength(0);
@@ -171,7 +197,10 @@ describe('ReviewController', () => {
       await expect(controller.getReviewThreads(mockReviewId)).rejects.toThrow(
         'Review not found',
       );
-      expect(reviewService.getReviewThreads).toHaveBeenCalledWith(mockReviewId);
+      expect(reviewService.getReviewThreads).toHaveBeenCalledWith(
+        mockReviewId,
+        { limit: undefined, offset: undefined },
+      );
     });
   });
 });

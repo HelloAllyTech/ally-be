@@ -5,10 +5,12 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiSecurity,
   ApiTags,
@@ -47,6 +49,18 @@ export class ReviewController {
   }
 
   @ApiOperation({ summary: 'Get review threads' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of users to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of users to skip',
+  })
   @ApiResponse({
     status: 200,
     description: 'Review threads list',
@@ -56,7 +70,9 @@ export class ReviewController {
   @Get(':reviewId/threads')
   async getReviewThreads(
     @Param('reviewId', ParseUUIDPipe) reviewId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
   ): Promise<ReviewThreadsResponseDto> {
-    return this.reviewService.getReviewThreads(reviewId);
+    return this.reviewService.getReviewThreads(reviewId, { limit, offset });
   }
 }
