@@ -87,6 +87,32 @@ export class SessionEventService {
       if (event.detectionConfig?.startTime === null) {
         throw new BadRequestException('Start time cannot be null');
       }
+
+      if (
+        event.detectionConfig?.startTime &&
+        event.detectionConfig?.endTime &&
+        event.detectionConfig?.startTime > event.detectionConfig?.endTime
+      ) {
+        throw new BadRequestException(
+          'Start time cannot be greater than end time',
+        );
+      }
+
+      if (
+        event.detectionConfig?.minGapTime &&
+        event.detectionConfig?.minGapTime < 0
+      ) {
+        throw new BadRequestException('Minimum gap time cannot be less than 0');
+      }
+
+      if (
+        event.detectionConfig?.maxOccurrences &&
+        event.detectionConfig?.maxOccurrences < 0
+      ) {
+        throw new BadRequestException(
+          'Maximum occurrences cannot be less than 0',
+        );
+      }
     }
 
     // Validate all referenced event IDs exist (only once, after collecting all)
