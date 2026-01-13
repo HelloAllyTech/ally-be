@@ -446,87 +446,98 @@ export class ScenarioService {
       }),
     );
 
-    return await this.dataSource.transaction(async (entityManager) => {
-      const scenariosRepo = entityManager.getRepository(Scenarios);
-      const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
-      const scenarios = scenariosRepo.create(createScenarioDtos);
-      const savedScenarios = await scenariosRepo.save(scenarios);
-      const globalScenarios = savedScenarios.filter(
-        (scenario) => scenario.isGlobal,
-      );
-
-      if (globalScenarios.length > 0) {
-        const tenants = await this.tenantService.findAll();
-        const tenantIds = tenants.map((tenant) => tenant.id);
-
-        for (const globalScenario of globalScenarios) {
-          const scenarioTenantRepository =
-            entityManager.getRepository(ScenarioTenants);
-          const scenarioTenant = tenantIds.map((tenantId) =>
-            scenarioTenantRepository.create({
-              scenarioId: globalScenario.id,
-              tenantId,
-            }),
-          );
-          await scenarioTenantRepository.save(scenarioTenant);
-        }
-      }
-      const autoTerminationEventList = this.configService?.featureFlag
-        ?.multipleTerminationEvents
-        ? formatAutoTerminationEventsList(createScenariosDto, savedScenarios)
-        : formatSingleAutoTerminationEventsList(
-            createScenariosDto,
-            savedScenarios,
-          );
-
-      const scenarioTerminationEvents = scenarioEventsRepo.create(
-        autoTerminationEventList,
-      );
-
-      if (scenarioTerminationEvents.length > 0) {
-        await scenarioEventsRepo.save(scenarioTerminationEvents);
-        this.createUpdateScenarioEventsTranslations(scenarioTerminationEvents);
-      }
-      const triggerWarningList = formatScenarioTriggerWarningsList(
-        createScenariosDto,
-        savedScenarios,
-      );
-      if (triggerWarningList.length > 0) {
-        const scenarioTriggerWarningsRepo = entityManager.getRepository(
-          ScenarioTriggerWarnings,
+    try {
+      return await this.dataSource.transaction(async (entityManager) => {
+        const scenariosRepo = entityManager.getRepository(Scenarios);
+        const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
+        const scenarios = scenariosRepo.create(createScenarioDtos);
+        const savedScenarios = await scenariosRepo.save(scenarios);
+        const globalScenarios = savedScenarios.filter(
+          (scenario) => scenario.isGlobal,
         );
-        const scenarioTriggerWarnings =
-          scenarioTriggerWarningsRepo.create(triggerWarningList);
-        await scenarioTriggerWarningsRepo.save(scenarioTriggerWarnings);
-      }
 
-      await this.persistTranslationsForScenarios(
-        savedScenarios.filter(
-          (scenario) => scenario.status == ScenarioStatus.ACTIVE,
-        ),
-        (scenario) =>
-          this.sanitizeMetadata({
-            title: scenario.title,
-            description: scenario.description,
-            tone: scenario.metadata?.tone,
-            emotionalNeeds: scenario.metadata?.emotionalNeeds,
-            personality: scenario.metadata?.personality,
-            lifeHistory: scenario.metadata?.lifeHistory,
-            coreMemories: scenario.metadata?.coreMemories,
-            startingState: scenario.metadata?.startingState,
-            agentGoal: scenario.metadata?.agentGoal,
-            context: scenario.metadata?.context,
-            sessionBehaviorGuidelines:
-              scenario.metadata?.sessionBehaviorGuidelines,
-            openingStatements: scenario.metadata?.openingStatements,
-            sexualOrientation: scenario.metadata?.sexualOrientation,
-            genderIdentity: scenario.metadata?.genderIdentity,
-            customFields: scenario.metadata?.customFields,
-          }),
+        if (globalScenarios.length > 0) {
+          const tenants = await this.tenantService.findAll();
+          const tenantIds = tenants.map((tenant) => tenant.id);
+
+          for (const globalScenario of globalScenarios) {
+            const scenarioTenantRepository =
+              entityManager.getRepository(ScenarioTenants);
+            const scenarioTenant = tenantIds.map((tenantId) =>
+              scenarioTenantRepository.create({
+                scenarioId: globalScenario.id,
+                tenantId,
+              }),
+            );
+            await scenarioTenantRepository.save(scenarioTenant);
+          }
+        }
+        const autoTerminationEventList = this.configService?.featureFlag
+          ?.multipleTerminationEvents
+          ? formatAutoTerminationEventsList(createScenariosDto, savedScenarios)
+          : formatSingleAutoTerminationEventsList(
+              createScenariosDto,
+              savedScenarios,
+            );
+
+        const scenarioTerminationEvents = scenarioEventsRepo.create(
+          autoTerminationEventList,
+        );
+
+        if (scenarioTerminationEvents.length > 0) {
+          await scenarioEventsRepo.save(scenarioTerminationEvents);
+          this.createUpdateScenarioEventsTranslations(
+            scenarioTerminationEvents,
+          );
+        }
+        const triggerWarningList = formatScenarioTriggerWarningsList(
+          createScenariosDto,
+          savedScenarios,
+        );
+        if (triggerWarningList.length > 0) {
+          const scenarioTriggerWarningsRepo = entityManager.getRepository(
+            ScenarioTriggerWarnings,
+          );
+          const scenarioTriggerWarnings =
+            scenarioTriggerWarningsRepo.create(triggerWarningList);
+          await scenarioTriggerWarningsRepo.save(scenarioTriggerWarnings);
+        }
+
+        await this.persistTranslationsForScenarios(
+          savedScenarios.filter(
+            (scenario) => scenario.status == ScenarioStatus.ACTIVE,
+          ),
+          (scenario) =>
+            this.sanitizeMetadata({
+              title: scenario.title,
+              description: scenario.description,
+              tone: scenario.metadata?.tone,
+              emotionalNeeds: scenario.metadata?.emotionalNeeds,
+              personality: scenario.metadata?.personality,
+              lifeHistory: scenario.metadata?.lifeHistory,
+              coreMemories: scenario.metadata?.coreMemories,
+              startingState: scenario.metadata?.startingState,
+              agentGoal: scenario.metadata?.agentGoal,
+              context: scenario.metadata?.context,
+              sessionBehaviorGuidelines:
+                scenario.metadata?.sessionBehaviorGuidelines,
+              openingStatements: scenario.metadata?.openingStatements,
+              sexualOrientation: scenario.metadata?.sexualOrientation,
+              genderIdentity: scenario.metadata?.genderIdentity,
+              customFields: scenario.metadata?.customFields,
+            }),
+        );
+
+        return savedScenarios;
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to create scenarios with error ${JSON.stringify(error)}`,
       );
-
-      return savedScenarios;
-    });
+      throw new BadRequestException(
+        `Failed to create scenarios: ${error.message}`,
+      );
+    }
   }
 
   async validateCreateScenario(
@@ -712,180 +723,192 @@ export class ScenarioService {
     userId: number,
   ): Promise<boolean> {
     const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
-    return await this.dataSource.transaction(async (entityManager) => {
-      const updateData = mapUpdateScenarioRequestToEntity(
-        updateScenarioDto,
-        scenario,
-        userId,
-        this.configService.featureFlag.scenarioCustomFields,
-      );
 
-      const scenarioRepository = entityManager.getRepository(Scenarios);
-      const updated = await scenarioRepository.update(id, updateData);
-      if (scenario.status == ScenarioStatus.ACTIVE) {
-        await this.persistTranslationsForScenarios(
-          [scenario], // single-item array so helper can reuse same logic
-          () =>
-            this.sanitizeMetadata({
-              title: updateScenarioDto.title,
-              description: updateScenarioDto.description,
-              tone: updateScenarioDto.tone,
-              emotionalNeeds: updateScenarioDto.emotionalNeeds,
-              personality: updateScenarioDto.personality,
-              lifeHistory: updateScenarioDto.lifeHistory,
-              coreMemories: updateScenarioDto.coreMemories,
-              startingState: updateScenarioDto.startingState,
-              agentGoal: updateScenarioDto.agentGoal,
-              context: updateScenarioDto.context,
-              sessionBehaviorGuidelines:
-                updateScenarioDto.sessionBehaviorGuidelines,
-              openingStatements: updateScenarioDto.openingStatements,
-              sexualOrientation: updateScenarioDto.sexualOrientation,
-              genderIdentity: updateScenarioDto.genderIdentity,
-              customFields: updateScenarioDto?.customFields,
-            }),
+    try {
+      return await this.dataSource.transaction(async (entityManager) => {
+        const updateData = mapUpdateScenarioRequestToEntity(
+          updateScenarioDto,
+          scenario,
+          userId,
+          this.configService.featureFlag.scenarioCustomFields,
         );
-      }
 
-      const isMultipleTerminationEventSupported =
-        this.configService?.featureFlag?.multipleTerminationEvents;
-      if (isMultipleTerminationEventSupported) {
-        await this.updateScenarioTerminationEvents(
-          id,
-          updateScenarioDto?.terminationEvents || [],
-          entityManager,
-        );
-      } else {
-        // Single termination event support
-        const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
-        const existingScenarioTerminationEvent =
-          await scenarioEventsRepo.findOne({
-            where: { scenarioId: id, autoTerminationStatus: true },
-          });
-        // The already existing termination event is not the one in update query or the autoterminationstatus is set to false- delete the event
-        if (
-          existingScenarioTerminationEvent &&
-          (!updateScenarioDto.autoTerminationStatus ||
-            existingScenarioTerminationEvent.eventId !==
-              updateScenarioDto.terminationEventId)
-        ) {
-          await scenarioEventsRepo.delete({
-            scenarioId: id,
-            eventId: existingScenarioTerminationEvent.eventId,
-            autoTerminationStatus: true,
-          });
-
-          this.scenarioEventTranslationsRepository.delete({
-            scenarioId: id,
-            eventId: existingScenarioTerminationEvent.eventId,
-          });
+        const scenarioRepository = entityManager.getRepository(Scenarios);
+        const updated = await scenarioRepository.update(id, updateData);
+        if (scenario.status == ScenarioStatus.ACTIVE) {
+          await this.persistTranslationsForScenarios(
+            [scenario], // single-item array so helper can reuse same logic
+            () =>
+              this.sanitizeMetadata({
+                title: updateScenarioDto.title,
+                description: updateScenarioDto.description,
+                tone: updateScenarioDto.tone,
+                emotionalNeeds: updateScenarioDto.emotionalNeeds,
+                personality: updateScenarioDto.personality,
+                lifeHistory: updateScenarioDto.lifeHistory,
+                coreMemories: updateScenarioDto.coreMemories,
+                startingState: updateScenarioDto.startingState,
+                agentGoal: updateScenarioDto.agentGoal,
+                context: updateScenarioDto.context,
+                sessionBehaviorGuidelines:
+                  updateScenarioDto.sessionBehaviorGuidelines,
+                openingStatements: updateScenarioDto.openingStatements,
+                sexualOrientation: updateScenarioDto.sexualOrientation,
+                genderIdentity: updateScenarioDto.genderIdentity,
+                customFields: updateScenarioDto?.customFields,
+              }),
+          );
         }
-        // If the input termination event id is the same as the existing one - update the message
-        if (
-          existingScenarioTerminationEvent?.eventId ===
-            updateScenarioDto.terminationEventId &&
-          updateScenarioDto.autoTerminationStatus
-        ) {
-          await scenarioEventsRepo.update(
-            {
+
+        const isMultipleTerminationEventSupported =
+          this.configService?.featureFlag?.multipleTerminationEvents;
+        if (isMultipleTerminationEventSupported) {
+          await this.updateScenarioTerminationEvents(
+            id,
+            updateScenarioDto?.terminationEvents || [],
+            entityManager,
+          );
+        } else {
+          // Single termination event support
+          const scenarioEventsRepo =
+            entityManager.getRepository(ScenarioEvents);
+          const existingScenarioTerminationEvent =
+            await scenarioEventsRepo.findOne({
+              where: { scenarioId: id, autoTerminationStatus: true },
+            });
+          // The already existing termination event is not the one in update query or the autoterminationstatus is set to false- delete the event
+          if (
+            existingScenarioTerminationEvent &&
+            (!updateScenarioDto.autoTerminationStatus ||
+              existingScenarioTerminationEvent.eventId !==
+                updateScenarioDto.terminationEventId)
+          ) {
+            await scenarioEventsRepo.delete({
+              scenarioId: id,
+              eventId: existingScenarioTerminationEvent.eventId,
+              autoTerminationStatus: true,
+            });
+
+            this.scenarioEventTranslationsRepository.delete({
+              scenarioId: id,
+              eventId: existingScenarioTerminationEvent.eventId,
+            });
+          }
+          // If the input termination event id is the same as the existing one - update the message
+          if (
+            existingScenarioTerminationEvent?.eventId ===
+              updateScenarioDto.terminationEventId &&
+            updateScenarioDto.autoTerminationStatus
+          ) {
+            await scenarioEventsRepo.update(
+              {
+                scenarioId: id,
+                eventId: updateScenarioDto.terminationEventId,
+                autoTerminationStatus: true,
+              },
+              { message: updateScenarioDto.terminationMessage },
+            );
+            // Create/update the translation for the new termination event
+            this.createUpdateScenarioEventsTranslations([
+              {
+                scenarioId: id,
+                eventId: updateScenarioDto.terminationEventId,
+                message: updateScenarioDto.terminationMessage,
+              },
+            ]);
+          } else if (updateScenarioDto.autoTerminationStatus) {
+            const newTerminationEvent = scenarioEventsRepo.create({
               scenarioId: id,
               eventId: updateScenarioDto.terminationEventId,
               autoTerminationStatus: true,
-            },
-            { message: updateScenarioDto.terminationMessage },
-          );
-          // Create/update the translation for the new termination event
-          this.createUpdateScenarioEventsTranslations([
-            {
-              scenarioId: id,
-              eventId: updateScenarioDto.terminationEventId,
               message: updateScenarioDto.terminationMessage,
-            },
-          ]);
-        } else if (updateScenarioDto.autoTerminationStatus) {
-          const newTerminationEvent = scenarioEventsRepo.create({
-            scenarioId: id,
-            eventId: updateScenarioDto.terminationEventId,
-            autoTerminationStatus: true,
-            message: updateScenarioDto.terminationMessage,
-          });
-          scenarioEventsRepo.save(newTerminationEvent);
-          // Create/update the translation for the new termination event
-          this.createUpdateScenarioEventsTranslations([newTerminationEvent]);
+            });
+            scenarioEventsRepo.save(newTerminationEvent);
+            // Create/update the translation for the new termination event
+            this.createUpdateScenarioEventsTranslations([newTerminationEvent]);
+          }
         }
-      }
-      if (updated.affected === 0) return false;
+        if (updated.affected === 0) return false;
 
-      const updatedScenario = await scenarioRepository.findOne({
-        where: { id },
-      });
-      if (
-        updateScenarioDto.isGlobal !== undefined &&
-        updatedScenario?.isGlobal !== scenario.isGlobal
-      ) {
-        const tenants = await this.tenantService.findAll();
-        const tenantIds = tenants.map((tenant) => tenant.id);
-        const scenarioTenantRepo = entityManager.getRepository(ScenarioTenants);
+        const updatedScenario = await scenarioRepository.findOne({
+          where: { id },
+        });
+        if (
+          updateScenarioDto.isGlobal !== undefined &&
+          updatedScenario?.isGlobal !== scenario.isGlobal
+        ) {
+          const tenants = await this.tenantService.findAll();
+          const tenantIds = tenants.map((tenant) => tenant.id);
+          const scenarioTenantRepo =
+            entityManager.getRepository(ScenarioTenants);
 
-        if (updateScenarioDto.isGlobal) {
-          await scenarioTenantRepo.delete({ scenarioId: id });
-          const scenarioTenantMappings = tenantIds.map((tenantId) => ({
-            scenarioId: id,
-            tenantId: tenantId,
-          }));
-          await scenarioTenantRepo.save(
-            scenarioTenantRepo.create(scenarioTenantMappings),
-          );
-        } else {
-          await scenarioTenantRepo.delete({
-            scenarioId: id,
-            tenantId: In(tenantIds),
-          });
-        }
-      }
-      const scenarioTriggerWarningsRepo = entityManager.getRepository(
-        ScenarioTriggerWarnings,
-      );
-      const existingTriggerWarnings = await scenarioTriggerWarningsRepo.find({
-        where: { scenarioId: id },
-      });
-      const existingTriggerWarningIds = existingTriggerWarnings?.map(
-        (warning) => warning.triggerWarningId,
-      );
-      // Getting triggerWarnings that need to be added
-      const newTriggerWarningIds = [
-        ...new Set(
-          !existingTriggerWarningIds
-            ? updateScenarioDto?.triggerWarningIds
-            : updateScenarioDto?.triggerWarningIds?.filter(
-                (id) => !existingTriggerWarningIds?.includes(id),
-              ),
-        ),
-      ];
-      if (newTriggerWarningIds && newTriggerWarningIds.length > 0) {
-        const scenarioTriggerWarningList = newTriggerWarningIds.map(
-          (triggerWarningId) =>
-            scenarioTriggerWarningsRepo.create({
+          if (updateScenarioDto.isGlobal) {
+            await scenarioTenantRepo.delete({ scenarioId: id });
+            const scenarioTenantMappings = tenantIds.map((tenantId) => ({
               scenarioId: id,
-              triggerWarningId,
-            }),
+              tenantId: tenantId,
+            }));
+            await scenarioTenantRepo.save(
+              scenarioTenantRepo.create(scenarioTenantMappings),
+            );
+          } else {
+            await scenarioTenantRepo.delete({
+              scenarioId: id,
+              tenantId: In(tenantIds),
+            });
+          }
+        }
+        const scenarioTriggerWarningsRepo = entityManager.getRepository(
+          ScenarioTriggerWarnings,
         );
-        await scenarioTriggerWarningsRepo.save(scenarioTriggerWarningList);
-      }
+        const existingTriggerWarnings = await scenarioTriggerWarningsRepo.find({
+          where: { scenarioId: id },
+        });
+        const existingTriggerWarningIds = existingTriggerWarnings?.map(
+          (warning) => warning.triggerWarningId,
+        );
+        // Getting triggerWarnings that need to be added
+        const newTriggerWarningIds = [
+          ...new Set(
+            !existingTriggerWarningIds
+              ? updateScenarioDto?.triggerWarningIds
+              : updateScenarioDto?.triggerWarningIds?.filter(
+                  (id) => !existingTriggerWarningIds?.includes(id),
+                ),
+          ),
+        ];
+        if (newTriggerWarningIds && newTriggerWarningIds.length > 0) {
+          const scenarioTriggerWarningList = newTriggerWarningIds.map(
+            (triggerWarningId) =>
+              scenarioTriggerWarningsRepo.create({
+                scenarioId: id,
+                triggerWarningId,
+              }),
+          );
+          await scenarioTriggerWarningsRepo.save(scenarioTriggerWarningList);
+        }
 
-      // Getting triggerWranings that need to be deleted
-      const triggerWarningListToDelete = existingTriggerWarnings
-        ?.filter(
-          ({ triggerWarningId }) =>
-            !updateScenarioDto.triggerWarningIds?.includes(triggerWarningId),
-        )
-        ?.map(({ id }) => id);
-      if (triggerWarningListToDelete.length > 0) {
-        await scenarioTriggerWarningsRepo.delete(triggerWarningListToDelete);
-      }
+        // Getting triggerWranings that need to be deleted
+        const triggerWarningListToDelete = existingTriggerWarnings
+          ?.filter(
+            ({ triggerWarningId }) =>
+              !updateScenarioDto.triggerWarningIds?.includes(triggerWarningId),
+          )
+          ?.map(({ id }) => id);
+        if (triggerWarningListToDelete.length > 0) {
+          await scenarioTriggerWarningsRepo.delete(triggerWarningListToDelete);
+        }
 
-      return true;
-    });
+        return true;
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to update scenario with error ${JSON.stringify(error)}`,
+      );
+      throw new BadRequestException(
+        `Failed to update scenario: ${error.message}`,
+      );
+    }
   }
 
   async duplicateScenario(id: number): Promise<Scenarios> {
