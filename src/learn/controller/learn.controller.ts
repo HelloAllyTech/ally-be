@@ -168,20 +168,41 @@ export class LearnController {
     );
   }
 
-  // TODO: Remove swagger lock
-  @Public()
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO])
   @ApiOperation({ summary: 'Get a scenario by id' })
   @Get('scenarios/:id')
   async getScenario(@Param('id') id: number): Promise<GetScenarioResponse> {
-    return this.scenarioService.getScenario(id, [
-      'id',
-      'title',
-      'scenario',
-      'description',
-      'coverImageUrl',
-      'coverVideoUrl',
-      'status',
-    ]);
+    return this.scenarioService.getScenario(id, {
+      select: [
+        'id',
+        'title',
+        'scenario',
+        'description',
+        'coverImageUrl',
+        'coverVideoUrl',
+        'status',
+      ],
+    });
+  }
+
+  @Public()
+  @ApiOperation({ summary: 'Get a scenario by id' })
+  @Get('scenarios/:id/public')
+  async getPublicScenario(
+    @Param('id') id: number,
+  ): Promise<GetScenarioResponse> {
+    return this.scenarioService.getScenario(id, {
+      select: [
+        'id',
+        'title',
+        'scenario',
+        'description',
+        'coverImageUrl',
+        'coverVideoUrl',
+        'status',
+      ],
+      isPublic: true,
+    });
   }
 
   @ApiOperation({ summary: 'Get a scenario by id' })
