@@ -44,7 +44,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       .addSelect('la.value', 'value')
       .addSelect('la.label', 'label')
       .addSelect(
-        `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name))`,
+        `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider', sv.provider))`,
         'voices',
       )
       .from('languages', 'la')

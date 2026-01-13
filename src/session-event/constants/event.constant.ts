@@ -23,6 +23,8 @@ export const EVENT_TYPE_PREFIX_MAP: Record<SessionEventDetectionType, string> =
  */
 export const MAX_COMBINATION_EVENT_DEPTH = 20;
 
+export const DETECTION_DATA_TRANSLATABLE_PATHS = ['sentences', 'className'];
+
 export const SYSTEM_EVENT_DETECTION_TYPES = [
   SessionEventDetectionType.HELPER_PARAPHRASED,
   SessionEventDetectionType.HELPER_INTERRUPTED,

@@ -1,0 +1,248 @@
+# Docker Compose configuration for running tests
+# Usage: docker-compose -f compose.test.yaml up --abort-on-container-exit
+# Or use the test scripts in package.json
+
+services:
+  # PostgreSQL database for tests
+  postgres-test:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: ally_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for tests
+  redis-test:
+    image: redis:alpine
+    tmpfs:
+      - /data
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # LocalStack for AWS services (SQS, S3, etc.)
+  localstack-test:
+    image: localstack/localstack:latest
+    environment:
+      - SERVICES=sqs,s3,ses,logs
+      - DEBUG=0
+      - LOCALSTACK_HOSTNAME=localstack-test
+    tmpfs:
+      - /var/lib/localstack
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -sf http://localhost:4566/_localstack/health || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 15s
+
+  # SQS setup for tests
+  sqs-setup-test:
+    image: amazon/aws-cli:latest
+    depends_on:
+      localstack-test:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    networks:
+      - test-network
+    entrypoint: >
+      sh -c "
+        echo '📦 Creating test SQS queues...' &&
+        aws --endpoint-url=http://localstack-test:4566 sqs create-queue --queue-name sqs-ai-transcription-request-queue 2>/dev/null || true &&
+        aws --endpoint-url=http://localstack-test:4566 sqs create-queue --queue-name sqs-ai-transcription-response-queue 2>/dev/null || true &&
+        aws --endpoint-url=http://localstack-test:4566 sqs create-queue --queue-name sqs-audio-file-retry-queue 2>/dev/null || true &&
+        aws --endpoint-url=http://localstack-test:4566 sqs create-queue --queue-name sqs-audio-upload-queue 2>/dev/null || true &&
+        aws --endpoint-url=http://localstack-test:4566 sqs create-queue --queue-name sqs-ai-transcription-request-dlq 2>/dev/null || true &&
+        aws --endpoint-url=http://localstack-test:4566 sqs create-queue --queue-name sqs-ai-transcription-response-dlq 2>/dev/null || true &&
+        aws --endpoint-url=http://localstack-test:4566 sqs create-queue --queue-name sqs-audio-file-retry-queue-dlq 2>/dev/null || true &&
+        aws --endpoint-url=http://localstack-test:4566 sqs create-queue --queue-name sqs-audio-upload-queue-dlq 2>/dev/null || true &&
+        aws --endpoint-url=http://localstack-test:4566 sqs create-queue --queue-name sqs-learn-message-and-event-queue 2>/dev/null || true &&
+        echo '✅ Test SQS queues ready!'
+      "
+
+  # Test runner - runs Jest tests
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /app
+    environment:
+      - NODE_ENV=test
+      - CI=true
+      # Database configuration for tests
+      - DB_HOST=postgres-test
+      - DB_PORT=5432
+      - DB_USERNAME=test
+      - DB_PASSWORD=test
+      - DB_DATABASE=ally_test
+      # Redis configuration for tests
+      - REDIS_HOST=redis-test
+      - REDIS_PORT=6379
+      # AWS/LocalStack configuration for tests
+      - AWS_ENDPOINT_URL=http://localstack-test:4566
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      # SQS URLs for tests
+      - SQS_TRANSCRIPTION_REQUEST_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-queue
+      - SQS_TRANSCRIPTION_REQUEST_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-dlq
+      - SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-queue
+      - SQS_TRANSCRIPTION_RESPONSE_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-dlq
+      - SQS_AUDIO_FILE_RETRY_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue
+      - SQS_AUDIO_FILE_RETRY_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue-dlq
+      - SQS_AUDIO_UPLOAD_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue
+      - SQS_AUDIO_UPLOAD_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue-dlq
+      - SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-learn-message-and-event-queue
+      # JWT and other secrets for tests
+      - JWT_SECRET=test-secret-key-for-testing-only
+      - JWT_EXPIRATION=3600
+      # Other test configurations
+      - PORT=8001
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      sqs-setup-test:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/dist
+    networks:
+      - test-network
+    command: npm run test
+    profiles:
+      - test
+
+  # Test runner with coverage
+  test-coverage:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /app
+    environment:
+      - NODE_ENV=test
+      - CI=true
+      - DB_HOST=postgres-test
+      - DB_PORT=5432
+      - DB_USERNAME=test
+      - DB_PASSWORD=test
+      - DB_DATABASE=ally_test
+      - REDIS_HOST=redis-test
+      - REDIS_PORT=6379
+      - AWS_ENDPOINT_URL=http://localstack-test:4566
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - SQS_TRANSCRIPTION_REQUEST_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-queue
+      - SQS_TRANSCRIPTION_REQUEST_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-dlq
+      - SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-queue
+      - SQS_TRANSCRIPTION_RESPONSE_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-dlq
+      - SQS_AUDIO_FILE_RETRY_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue
+      - SQS_AUDIO_FILE_RETRY_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue-dlq
+      - SQS_AUDIO_UPLOAD_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue
+      - SQS_AUDIO_UPLOAD_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue-dlq
+      - SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-learn-message-and-event-queue
+      - JWT_SECRET=test-secret-key-for-testing-only
+      - JWT_EXPIRATION=3600
+      - PORT=8001
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      sqs-setup-test:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/dist
+      - test-coverage:/app/coverage
+    networks:
+      - test-network
+    command: npm run test:cov
+    profiles:
+      - test
+
+  # E2E test runner
+  test-e2e:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /app
+    environment:
+      - NODE_ENV=test
+      - CI=true
+      - DB_HOST=postgres-test
+      - DB_PORT=5432
+      - DB_USERNAME=test
+      - DB_PASSWORD=test
+      - DB_DATABASE=ally_test
+      - REDIS_HOST=redis-test
+      - REDIS_PORT=6379
+      - AWS_ENDPOINT_URL=http://localstack-test:4566
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - SQS_TRANSCRIPTION_REQUEST_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-queue
+      - SQS_TRANSCRIPTION_REQUEST_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-dlq
+      - SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-queue
+      - SQS_TRANSCRIPTION_RESPONSE_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-dlq
+      - SQS_AUDIO_FILE_RETRY_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue
+      - SQS_AUDIO_FILE_RETRY_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue-dlq
+      - SQS_AUDIO_UPLOAD_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue
+      - SQS_AUDIO_UPLOAD_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue-dlq
+      - SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-learn-message-and-event-queue
+      - JWT_SECRET=test-secret-key-for-testing-only
+      - JWT_EXPIRATION=3600
+      - PORT=8001
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      sqs-setup-test:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/dist
+    networks:
+      - test-network
+    command: npm run test:e2e
+    profiles:
+      - test
+
+networks:
+  test-network:
+    driver: bridge
+
+volumes:
+  test-coverage:
+    driver: local
+
+# Notes:
+# - Tests run in isolated containers with clean state
+# - Use --abort-on-container-exit to stop after tests complete
+# - tmpfs volumes ensure data doesn't persist between runs
+# - Coverage reports are saved to a volume for analysis
+# - Profiles keep test services separate from dev services

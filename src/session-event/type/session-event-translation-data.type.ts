@@ -4,3 +4,6 @@ export type SessionEventMetadata = {
   branchInstruction?: string | null;
   detectionData?: Record<string, any> | null;
 };
+
+export type TranslatableValue = string | string[];
+export type TranslatableMap = Record<string, TranslatableValue>;
