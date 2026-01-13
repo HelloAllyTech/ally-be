@@ -745,11 +745,10 @@ export class ScenarioSessionService {
           end_time: message.endSeconds,
         }));
 
-        const scenario = await this.scenarioService.getScenario(
-          scenarioId,
-          ['id', 'metadata'],
-          entityManager,
-        );
+        const scenario = await this.scenarioService.getScenario(scenarioId, {
+          select: ['id', 'metadata'],
+          em: entityManager,
+        });
 
         const summary = await this.aiService.getScenarioSessionSummary(
           messages,
