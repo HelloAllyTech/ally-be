@@ -11,6 +11,7 @@ import { LanguageService } from '../service/language.service';
 import { UpdateLanguageDto } from '../dto/update-language.dto';
 import { CreateLanguagesDto } from '../dto/create-languages.dto';
 import { SortOrder } from 'src/user/enum/user.enum';
+import { Languages } from '../entity/languages.entity';
 
 @ApiTags('Language')
 @ApiBearerAuth()
@@ -31,7 +32,7 @@ export class LanguageController {
     @Query('sortBy') sortBy?: string,
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('searchName') searchName?: string,
-  ) {
+  ): Promise<Languages[]> {
     return this.languageService.getLanguages(searchName, {
       limit,
       offset,

@@ -33,4 +33,28 @@ export class UpdateLanguageDto {
   @IsString()
   @IsNotEmpty()
   translationCode!: string;
+
+  @ApiProperty({
+    description: 'LLM Provider Configuration for the language',
+    example: {
+      provider: 'openai',
+      config: {
+        model: 'gpt-4',
+      },
+    },
+  })
+  @IsNotEmpty()
+  llmProviderConfig?: Record<string, any>;
+
+  @ApiProperty({
+    description: 'STT Provider Configuration for the language',
+    example: {
+      provider: 'google',
+      config: {
+        model: 'google-cloud-stt-basic',
+      },
+    },
+  })
+  @IsNotEmpty()
+  sttProviderConfig?: Record<string, any>;
 }
