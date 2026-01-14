@@ -9,6 +9,7 @@ class MockRepository {
   save = jest.fn();
   update = jest.fn();
   findOne = jest.fn();
+  createQueryBuilder = jest.fn();
 }
 
 describe('LanguagesRepository', () => {
@@ -49,6 +50,7 @@ describe('LanguagesRepository', () => {
       save: mockRepository.save,
       update: mockRepository.update,
       findOne: mockRepository.findOne,
+      createQueryBuilder: mockRepository.createQueryBuilder,
     });
   });
 
@@ -83,6 +85,153 @@ describe('LanguagesRepository', () => {
       const result = await repository.getLanguagesById(ids);
 
       expect(mockRepository.find).toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getLanguages', () => {
+    const mockLanguages: Languages[] = [
+      {
+        id: 1,
+        value: 'en-IN',
+        label: 'English (India)',
+        translationCode: 'en',
+        active: true,
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-01'),
+      } as Languages,
+      {
+        id: 2,
+        value: 'hi-IN',
+        label: 'Hindi (India)',
+        translationCode: 'hi',
+        active: true,
+        createdAt: new Date('2024-01-02'),
+        updatedAt: new Date('2024-01-02'),
+      } as Languages,
+      {
+        id: 3,
+        value: 'es-ES',
+        label: 'Spanish (Spain)',
+        translationCode: 'es',
+        active: true,
+        createdAt: new Date('2024-01-03'),
+        updatedAt: new Date('2024-01-03'),
+      } as Languages,
+    ];
+
+    it('should return all languages without filters', async () => {
+      const mockQueryBuilder = {
+        createQueryBuilder: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameters: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        offset: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(mockLanguages),
+      };
+
+      mockRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+
+      const result = await repository.getLanguages(undefined, {
+        limit: 10,
+        offset: 0,
+      });
+
+      expect(result).toEqual(mockLanguages);
+      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
+    });
+
+    it('should apply search filter when searchName is provided', async () => {
+      const filteredLanguages = [mockLanguages[0]];
+      const mockQueryBuilder = {
+        createQueryBuilder: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameters: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        offset: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(filteredLanguages),
+      };
+
+      mockRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+
+      const result = await repository.getLanguages('english', {
+        limit: 10,
+        offset: 0,
+      });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalled();
+      expect(mockQueryBuilder.setParameters).toHaveBeenCalled();
+      expect(result).toEqual(filteredLanguages);
+    });
+
+    it('should apply sorting with custom sortBy and order', async () => {
+      const mockQueryBuilder = {
+        createQueryBuilder: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameters: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        offset: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(mockLanguages),
+      };
+
+      mockRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+
+      await repository.getLanguages(undefined, {
+        limit: 10,
+        offset: 0,
+        sortBy: 'value',
+        order: 'DESC',
+      });
+
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'language.value',
+        'DESC',
+      );
+    });
+
+    it('should apply pagination with limit and offset', async () => {
+      const mockQueryBuilder = {
+        createQueryBuilder: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameters: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        offset: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([mockLanguages[0]]),
+      };
+
+      mockRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+
+      await repository.getLanguages(undefined, {
+        limit: 20,
+        offset: 40,
+      });
+
+      expect(mockQueryBuilder.offset).toHaveBeenCalledWith(40);
+      expect(mockQueryBuilder.limit).toHaveBeenCalledWith(20);
+    });
+
+    it('should return empty array when no results found', async () => {
+      const mockQueryBuilder = {
+        createQueryBuilder: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameters: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        offset: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+
+      mockRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+
+      const result = await repository.getLanguages('nonexistent', {
+        limit: 10,
+        offset: 0,
+      });
+
       expect(result).toEqual([]);
     });
   });

@@ -74,7 +74,7 @@ import {
   CreateScenarioEventsTranslation,
   ScenarioEventsTranslationData,
 } from '../interface/scenario-events-translation.interface';
-import { DEFAULT_LANGUAGE_CODE } from '../constants/scenario-session.constants';
+import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from '../constants/scenario-session.constants';
 import { TerminationEventsDto } from '../dto/termination-events.dto';
 import isDuplicateKeyException from 'src/exception/custom.exception';
 import { BRANCHING_INSTRUCTION_DYNAMIC_SHORTCUTS } from '../constants/scenario.constants';
@@ -1194,8 +1194,11 @@ export class ScenarioService {
     return result.affected;
   }
 
-  async getScenarioVoices(options: Pagination): Promise<ScenarioVoices[]> {
-    return this.scenarioVoiceRepository.getScenarioVoices(options);
+  async getScenarioVoices(
+    searchName: string | undefined,
+    options: Pagination,
+  ): Promise<ScenarioVoices[]> {
+    return this.scenarioVoiceRepository.getScenarioVoices(searchName, options);
   }
 
   async getScenarioVoice(id: string): Promise<ScenarioVoices> {
@@ -1239,8 +1242,14 @@ export class ScenarioService {
     return updated.affected !== 0;
   }
 
-  async getScenarioVoiceLanguagesForAdmin(active?: boolean) {
-    return this.scenarioVoiceRepository.getLanguagesWithVoices(active);
+  async getScenarioVoiceLanguagesForAdmin(
+    active?: boolean,
+    voicesNeeded?: boolean,
+  ) {
+    return this.scenarioVoiceRepository.getLanguagesWithVoices(
+      active,
+      voicesNeeded,
+    );
   }
 
   async getLanguagesForScenario(active?: boolean, hasVoices?: boolean) {
@@ -1314,6 +1323,7 @@ export class ScenarioService {
           metadataObj,
           codes,
         );
+
       // Expect translated to be a map { langCode: { tone: '...', ... } }
       return translated ?? {};
     } catch (err) {
@@ -1360,7 +1370,7 @@ export class ScenarioService {
             l &&
             l.translationCode &&
             l.translationCode.trim() !== '' &&
-            !l.value.includes(DEFAULT_LANGUAGE_CODE),
+            !l.value.includes(DEFAULT_LANGUAGE_TRANSLATION_CODE),
         );
         if (!languagesFiltered.length) {
           this.logger?.warn?.(

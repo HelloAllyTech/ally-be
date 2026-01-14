@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -10,6 +10,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { LanguageService } from '../service/language.service';
 import { UpdateLanguageDto } from '../dto/update-language.dto';
 import { CreateLanguagesDto } from '../dto/create-languages.dto';
+import { SortOrder } from 'src/user/enum/user.enum';
 
 @ApiTags('Language')
 @ApiBearerAuth()
@@ -20,6 +21,24 @@ import { CreateLanguagesDto } from '../dto/create-languages.dto';
 })
 export class LanguageController {
   constructor(private readonly languageService: LanguageService) {}
+
+  @ApiOperation({ summary: 'Get Languages' })
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_LANGUAGES])
+  @Get('')
+  async getLanguages(
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order: SortOrder = SortOrder.ASC,
+    @Query('searchName') searchName?: string,
+  ) {
+    return this.languageService.getLanguages(searchName, {
+      limit,
+      offset,
+      sortBy,
+      order,
+    });
+  }
 
   @ApiOperation({ summary: 'Create language' })
   @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])

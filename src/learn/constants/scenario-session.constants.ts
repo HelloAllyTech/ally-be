@@ -17,6 +17,8 @@ export const SCENARIO_SESSION_EXAMPLE = {
 // Default language id for "en-IN"
 export const DEFAULT_LANGUAGE_CODE = LanguageCode.EN_IN;
 
+export const DEFAULT_LANGUAGE_TRANSLATION_CODE = 'en';
+
 export const STT_LLM_PROVIDER_CONFIG = {
   // Speech-to-Text service configuration
   stt: {
