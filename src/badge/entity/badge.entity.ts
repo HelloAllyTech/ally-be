@@ -7,7 +7,8 @@ import {
 import {
   BadgeStatus,
   BadgeVisibilityType,
-  BadgeAchievementCriteria,
+  BadgeCategory,
+  BadgeAchievementParams,
 } from '../constants/badge.constants';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 
@@ -31,11 +32,14 @@ export class Badge extends BaseWithoutTenantEntity {
   @Column({ default: BadgeStatus.ACTIVE })
   status!: BadgeStatus;
 
-  @Column({ default: BadgeVisibilityType.PUBLIC })
+  @Column({ enum: BadgeVisibilityType, default: BadgeVisibilityType.PUBLIC })
   visibilityType!: BadgeVisibilityType;
 
+  @Column({ enum: BadgeCategory })
+  category!: BadgeCategory;
+
   @Column({ type: 'jsonb', nullable: true })
-  achievementCriteria?: BadgeAchievementCriteria;
+  achievementParams?: BadgeAchievementParams;
 
   @DeleteDateColumn()
   deletedAt?: Date;
