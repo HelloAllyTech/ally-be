@@ -1347,6 +1347,7 @@ describe('SessionEventService', () => {
         where: {
           id: expect.any(Object),
           visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionType: expect.any(Object),
         },
       });
       expect(mockTransaction).toHaveBeenCalled();
@@ -1395,7 +1396,7 @@ describe('SessionEventService', () => {
       repository.find.mockResolvedValue([]);
 
       await expect(service.deleteSessionEvents(eventIds)).rejects.toThrow(
-        'No active events found to delete',
+        'Cannot delete: the specified events are either inactive or system-generated',
       );
       expect(mockTransaction).not.toHaveBeenCalled();
     });
@@ -1414,11 +1415,11 @@ describe('SessionEventService', () => {
       expect(mockTransaction).toHaveBeenCalled();
     });
 
-    it('should only delete ACTIVE events, not PASSIVE events', async () => {
+    it('should only delete ACTIVE non-system events', async () => {
       const eventIds = ['event-1', 'event-2', 'event-3'];
-      const activeEvents = [{ id: 'event-1' }, { id: 'event-2' }]; // Only 2 active
+      const deletableEvents = [{ id: 'event-1' }, { id: 'event-2' }]; // Only 2 deletable
 
-      repository.find.mockResolvedValue(activeEvents as any);
+      repository.find.mockResolvedValue(deletableEvents as any);
 
       const result = await service.deleteSessionEvents(eventIds);
 
@@ -1427,19 +1428,20 @@ describe('SessionEventService', () => {
         where: {
           id: expect.any(Object),
           visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionType: expect.any(Object),
         },
       });
       expect(mockTransaction).toHaveBeenCalled();
       expect(result).toBe(true);
     });
 
-    it('should throw BadRequestException when no ACTIVE events found', async () => {
+    it('should throw BadRequestException when no deletable events found', async () => {
       const eventIds = ['event-1', 'event-2'];
 
       repository.find.mockResolvedValue([]);
 
       await expect(service.deleteSessionEvents(eventIds)).rejects.toThrow(
-        'No active events found to delete',
+        'Cannot delete: the specified events are either inactive or system-generated',
       );
       expect(repository.find).toHaveBeenCalled();
       expect(mockTransaction).not.toHaveBeenCalled();
