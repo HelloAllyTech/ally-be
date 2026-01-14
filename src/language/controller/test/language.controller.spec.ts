@@ -203,12 +203,16 @@ describe('LanguageController', () => {
           label: 'English (India)',
           active: true,
           translationCode: 'en',
+          llmProviderConfig: {},
+          sttProviderConfig: {},
         },
         {
           value: 'es-ES',
           label: 'Spanish (Spain)',
           active: true,
           translationCode: 'es',
+          llmProviderConfig: {},
+          sttProviderConfig: {},
         },
       ],
     };
@@ -246,6 +250,8 @@ describe('LanguageController', () => {
       label: 'English (United States)',
       active: true,
       translationCode: 'en',
+      llmProviderConfig: {},
+      sttProviderConfig: {},
     };
 
     it('should successfully update a language', async () => {
