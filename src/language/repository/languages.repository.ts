@@ -11,7 +11,6 @@ export class LanguagesRepository extends Repository<Languages> {
 
   getLanguagesById(ids: number[]): Promise<Languages[]> {
     return this.find({
-      select: ['id', 'value', 'label', 'translationCode'],
       where: { id: In(ids), active: true },
     });
   }
