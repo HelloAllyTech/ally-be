@@ -13,6 +13,11 @@ export class CreateLanguagesDto {
         label: 'English (India)',
         active: true,
         translationCode: 'en',
+        llmProviderConfig: { provider: 'openai', config: { model: 'gpt-4' } },
+        sttProviderConfig: {
+          provider: 'google',
+          config: { model: 'google-cloud-stt-basic' },
+        },
       },
     ],
   })
