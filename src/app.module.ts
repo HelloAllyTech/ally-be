@@ -33,6 +33,7 @@ import { PlaceModule } from './place/place.module';
 import { ScenarioPathModule } from './scenario-path/scenario-path.module';
 import { LanguageModule } from './language/language.module';
 import { ReviewModule } from './review/review.module';
+import { BadgeModule } from './badge/badge.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { ReviewModule } from './review/review.module';
     ScenarioPathModule,
     LanguageModule,
     ReviewModule,
+    BadgeModule,
   ],
   controllers: [],
   providers: [
