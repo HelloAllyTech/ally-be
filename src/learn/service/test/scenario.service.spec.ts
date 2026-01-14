@@ -3514,6 +3514,8 @@ describe('ScenarioService', () => {
           translationCode: 'en',
           createdAt: new Date(),
           updatedAt: new Date(),
+          llmProviderConfig: {},
+          sttProviderConfig: {},
         },
         {
           id: 2,
@@ -3523,6 +3525,8 @@ describe('ScenarioService', () => {
           translationCode: 'es',
           createdAt: new Date(),
           updatedAt: new Date(),
+          llmProviderConfig: {},
+          sttProviderConfig: {},
         },
       ];
 

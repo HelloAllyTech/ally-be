@@ -59,6 +59,8 @@ describe('LanguageController', () => {
         translationCode: 'en',
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date('2024-01-01'),
+        llmProviderConfig: {},
+        sttProviderConfig: {},
       },
       {
         id: 2,
@@ -68,6 +70,8 @@ describe('LanguageController', () => {
         translationCode: 'hi',
         createdAt: new Date('2024-01-02'),
         updatedAt: new Date('2024-01-02'),
+        llmProviderConfig: {},
+        sttProviderConfig: {},
       },
       {
         id: 3,
@@ -77,6 +81,8 @@ describe('LanguageController', () => {
         translationCode: 'es',
         createdAt: new Date('2024-01-03'),
         updatedAt: new Date('2024-01-03'),
+        llmProviderConfig: {},
+        sttProviderConfig: {},
       },
     ];
 

@@ -80,6 +80,8 @@ describe('SessionEventTranslationService', () => {
             active: true,
             createdAt: new Date(),
             updatedAt: new Date(),
+            llmProviderConfig: {},
+            sttProviderConfig: {},
           },
           {
             id: 2,
@@ -89,6 +91,8 @@ describe('SessionEventTranslationService', () => {
             active: true,
             createdAt: new Date(),
             updatedAt: new Date(),
+            llmProviderConfig: {},
+            sttProviderConfig: {},
           },
         ],
         languagesMap: {
@@ -100,6 +104,8 @@ describe('SessionEventTranslationService', () => {
             active: true,
             createdAt: new Date(),
             updatedAt: new Date(),
+            llmProviderConfig: {},
+            sttProviderConfig: {},
           },
           es: {
             id: 2,
@@ -109,6 +115,8 @@ describe('SessionEventTranslationService', () => {
             active: true,
             createdAt: new Date(),
             updatedAt: new Date(),
+            llmProviderConfig: {},
+            sttProviderConfig: {},
           },
         },
       });

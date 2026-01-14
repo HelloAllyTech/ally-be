@@ -21,6 +21,8 @@ describe('LanguagesRepository', () => {
     value: 'en-IN',
     label: 'English (India)',
     translationCode: 'en',
+    llmProviderConfig: {},
+    sttProviderConfig: {},
     createdAt: new Date(),
     updatedAt: new Date(),
   } as unknown as Languages;
@@ -72,7 +74,6 @@ describe('LanguagesRepository', () => {
       const result = await repository.getLanguagesById(ids);
 
       expect(mockRepository.find).toHaveBeenCalledWith({
-        select: ['id', 'value', 'label', 'translationCode'],
         where: { id: expect.any(Object), active: true }, // In(ids) is an object produced by TypeORM
       });
       expect(result).toEqual(expectedResult);
@@ -106,6 +107,8 @@ describe('LanguagesRepository', () => {
         label: 'Hindi (India)',
         translationCode: 'hi',
         active: true,
+        llmProviderConfig: {},
+        sttProviderConfig: {},
         createdAt: new Date('2024-01-02'),
         updatedAt: new Date('2024-01-02'),
       } as Languages,
@@ -115,6 +118,8 @@ describe('LanguagesRepository', () => {
         label: 'Spanish (Spain)',
         translationCode: 'es',
         active: true,
+        llmProviderConfig: {},
+        sttProviderConfig: {},
         createdAt: new Date('2024-01-03'),
         updatedAt: new Date('2024-01-03'),
       } as Languages,
