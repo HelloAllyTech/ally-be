@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { v4 } from 'uuid';
-import { DataSource, In } from 'typeorm';
+import { DataSource, In, Not } from 'typeorm';
 
 import { SessionEvents } from '../entity/session-events.entity';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
@@ -295,26 +295,31 @@ export class SessionEventService {
   }
 
   async deleteSessionEvents(eventIds: string[]): Promise<boolean> {
-    // Do not allow PASSIVE events to be deleted
-    const activeEvents = await this.sessionEventRepository.find({
+    // Do not allow PASSIVE events and system events to be deleted
+    const deletableEvents = await this.sessionEventRepository.find({
       select: ['id'],
       where: {
         id: In(eventIds),
         visibilityType: SessionEventVisibilityType.ACTIVE,
+        detectionType: Not(In(SYSTEM_EVENT_DETECTION_TYPES)),
       },
     });
 
-    const activeEventsIds: string[] = activeEvents.map((event) => event.id);
-    if (activeEventsIds.length === 0) {
-      throw new BadRequestException('No active events found to delete');
+    const deletableEventsIds: string[] = deletableEvents.map(
+      (event) => event.id,
+    );
+    if (deletableEventsIds.length === 0) {
+      throw new BadRequestException(
+        'Cannot delete: the specified events are either inactive or system-generated',
+      );
     }
 
     await this.dataSource.transaction(async (em) => {
       await em.getRepository(SessionEvents).softDelete({
-        id: In(activeEventsIds),
+        id: In(deletableEventsIds),
       });
       await em.getRepository(ScenarioEvents).softDelete({
-        eventId: In(activeEventsIds),
+        eventId: In(deletableEventsIds),
       });
     });
     return true;
