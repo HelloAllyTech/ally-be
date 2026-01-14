@@ -598,6 +598,12 @@ export class LearnController {
     enum: SortOrder,
     description: 'Sort order',
   })
+  @ApiQuery({
+    name: 'searchName',
+    required: false,
+    type: String,
+    description: 'Search by voice name',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_VOICES])
   @Get('scenario-voices')
   async getScenarioVoices(
@@ -605,8 +611,9 @@ export class LearnController {
     @Query('offset') offset?: number,
     @Query('sortBy') sortBy?: string,
     @Query('order') order: SortOrder = SortOrder.ASC,
+    @Query('searchName') searchName?: string,
   ) {
-    return this.scenarioService.getScenarioVoices({
+    return this.scenarioService.getScenarioVoices(searchName, {
       limit,
       offset,
       sortBy,
@@ -770,15 +777,25 @@ export class LearnController {
     type: Boolean,
     description: 'Filter by active ',
   })
+  @ApiQuery({
+    name: 'voiceNeeded',
+    required: false,
+    type: Boolean,
+    description: 'Filter by voice needed',
+  })
   @Get('scenario-voice-languages')
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_VOICE_LANGUAGES])
   async getScenarioVoiceLanguagesForAdmin(
     @Query('active') active?: boolean,
+    @Query('voicesNeeded') voicesNeeded?: boolean,
   ): Promise<ScenarioVoiceLanguage[]> {
-    return this.scenarioService.getScenarioVoiceLanguagesForAdmin(active);
+    return this.scenarioService.getScenarioVoiceLanguagesForAdmin(
+      active,
+      voicesNeeded,
+    );
   }
 
-  @ApiOperation({ summary: 'Get languages' })
+  @ApiOperation({ summary: 'Get languages for scenario' })
   @ApiQuery({
     name: 'active',
     required: false,

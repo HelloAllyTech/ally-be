@@ -6,6 +6,7 @@ import { UpdateLanguageDto } from '../../dto/update-language.dto';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { UserService } from 'src/user/service/user.service';
 import { AppConfigService } from 'src/config/config.service';
+import { SortOrder } from 'src/user/enum/user.enum';
 
 describe('LanguageController', () => {
   let controller: LanguageController;
@@ -20,6 +21,7 @@ describe('LanguageController', () => {
           useValue: {
             createLanguages: jest.fn(),
             updateLanguage: jest.fn(),
+            getLanguages: jest.fn(),
           },
         },
         {
@@ -45,6 +47,146 @@ describe('LanguageController', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('getLanguages', () => {
+    const mockLanguages = [
+      {
+        id: 1,
+        value: 'en-IN',
+        label: 'English (India)',
+        active: true,
+        translationCode: 'en',
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-01'),
+      },
+      {
+        id: 2,
+        value: 'hi-IN',
+        label: 'Hindi (India)',
+        active: true,
+        translationCode: 'hi',
+        createdAt: new Date('2024-01-02'),
+        updatedAt: new Date('2024-01-02'),
+      },
+      {
+        id: 3,
+        value: 'es-ES',
+        label: 'Spanish (Spain)',
+        active: true,
+        translationCode: 'es',
+        createdAt: new Date('2024-01-03'),
+        updatedAt: new Date('2024-01-03'),
+      },
+    ];
+
+    it('should return all languages with default pagination', async () => {
+      languageService.getLanguages.mockResolvedValue(mockLanguages);
+
+      const result = await controller.getLanguages();
+
+      expect(languageService.getLanguages).toHaveBeenCalledWith(undefined, {
+        limit: undefined,
+        offset: undefined,
+        sortBy: undefined,
+        order: 'ASC',
+      });
+      expect(result).toEqual(mockLanguages);
+    });
+
+    it('should return languages with search filter', async () => {
+      const filteredLanguages = [mockLanguages[0]];
+      languageService.getLanguages.mockResolvedValue(filteredLanguages);
+
+      const result = await controller.getLanguages(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'english',
+      );
+
+      expect(languageService.getLanguages).toHaveBeenCalledWith('english', {
+        limit: undefined,
+        offset: undefined,
+        sortBy: undefined,
+        order: 'ASC',
+      });
+      expect(result).toEqual(filteredLanguages);
+    });
+
+    it('should return languages with pagination', async () => {
+      const paginatedLanguages = [mockLanguages[0]];
+      languageService.getLanguages.mockResolvedValue(paginatedLanguages);
+
+      const result = await controller.getLanguages(10, 0);
+
+      expect(languageService.getLanguages).toHaveBeenCalledWith(undefined, {
+        limit: 10,
+        offset: 0,
+        sortBy: undefined,
+        order: 'ASC',
+      });
+      expect(result).toEqual(paginatedLanguages);
+    });
+
+    it('should return languages sorted by custom field in DESC order', async () => {
+      const sortedLanguages = [
+        mockLanguages[2],
+        mockLanguages[1],
+        mockLanguages[0],
+      ];
+      languageService.getLanguages.mockResolvedValue(sortedLanguages);
+
+      const result = await controller.getLanguages(
+        undefined,
+        undefined,
+        'value',
+        SortOrder.DESC,
+      );
+
+      expect(languageService.getLanguages).toHaveBeenCalledWith(undefined, {
+        limit: undefined,
+        offset: undefined,
+        sortBy: 'value',
+        order: SortOrder.DESC,
+      });
+      expect(result).toEqual(sortedLanguages);
+    });
+
+    it('should return languages with all query parameters', async () => {
+      languageService.getLanguages.mockResolvedValue(mockLanguages);
+
+      await controller.getLanguages(20, 10, 'label', SortOrder.ASC, 'hindi');
+
+      expect(languageService.getLanguages).toHaveBeenCalledWith('hindi', {
+        limit: 20,
+        offset: 10,
+        sortBy: 'label',
+        order: SortOrder.ASC,
+      });
+    });
+
+    it('should return empty array when no languages match search', async () => {
+      languageService.getLanguages.mockResolvedValue([]);
+
+      const result = await controller.getLanguages(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'nonexistent',
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it('should handle service errors gracefully', async () => {
+      const error = new Error('Database error');
+      languageService.getLanguages.mockRejectedValue(error);
+
+      await expect(controller.getLanguages()).rejects.toThrow('Database error');
+    });
   });
 
   describe('createLanguage', () => {
