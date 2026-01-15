@@ -10,7 +10,6 @@ import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { Badge } from '../entity/badge.entity';
 import { BadgeStatus } from '../constants/badge.constants';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { BadgeEvents } from '../constants/badge-event.constants';
 
 @Injectable()
 export class BadgeTenantService {
@@ -62,14 +61,8 @@ export class BadgeTenantService {
     }
 
     if (badgeTenants.length > 0) {
-      const savedBadgeTenants =
-        await this.badgeTenantRepository.save(badgeTenants);
-      for (const savedBadgeTenant of savedBadgeTenants) {
-        this.eventEmitter.emit(BadgeEvents.BADGE_ASSIGNED_TO_TENANT, {
-          badgeId: savedBadgeTenant.badgeId,
-          tenantId: savedBadgeTenant.tenantId,
-        });
-      }
+      await this.badgeTenantRepository.save(badgeTenants);
+      // TODO: Call function to evaluate and award badge for each tenant
     }
 
     return true;

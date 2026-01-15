@@ -10,7 +10,6 @@ import { BadgeUser } from './entity/badge-user.entity';
 import { BadgeGroup } from './entity/badge-group.entity';
 import { BadgeTenant } from './entity/badge-tenant.entity';
 import { TenantModule } from '../tenant/tenant.module';
-import { BadgeEventConsumer } from './consumer/badge.event.consumer';
 
 @Module({
   imports: [
@@ -23,7 +22,6 @@ import { BadgeEventConsumer } from './consumer/badge.event.consumer';
     BadgeTenantService,
     BadgeRepository,
     BadgeGroupRepository,
-    BadgeEventConsumer,
   ],
   exports: [
     BadgeService,
