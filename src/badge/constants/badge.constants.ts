@@ -8,10 +8,11 @@ export enum BadgeVisibilityType {
   PRIVATE = 'PRIVATE',
 }
 
-export enum BadgeAchievementType {
-  SIMULATION_MINUTES_REACHED = 'SIMULATION_MINUTES_REACHED',
-  CONSECUTIVE_ACTIVE_DAYS_REACHED = 'CONSECUTIVE_ACTIVE_DAYS_REACHED',
-  COMMENT_OR_REACTION_COUNT_REACHED = 'COMMENT_OR_REACTION_COUNT_REACHED',
+export enum BadgeCategory {
+  SIMULATION_MINUTES = 'SIMULATION_MINUTES',
+  ACTIVE_DAY_STREAK = 'ACTIVE_DAY_STREAK',
+  COMMENTS_REACTIONS_GIVEN = 'COMMENTS_REACTION_GIVEN',
+  COMMENTS_REACTIONS_RECEIVED = 'COMMENTS_REACTIONS_RECEIVED',
 }
 
 export enum BadgeViewedStatus {
@@ -20,12 +21,5 @@ export enum BadgeViewedStatus {
 }
 
 export interface BadgeAchievementParams {
-  days?: number;
-  minutes?: number;
   count?: number;
-}
-
-export interface BadgeAchievementCriteria {
-  type: BadgeAchievementType;
-  params: BadgeAchievementParams;
 }

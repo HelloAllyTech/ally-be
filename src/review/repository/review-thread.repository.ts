@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ReviewThread } from '../entity/review-thread.entity';
 import { Pagination } from 'src/common/type/common.type';
+import { ReviewComment } from '../entity/review-comment.entity';
 
 @Injectable()
 export class ReviewThreadRepository extends Repository<ReviewThread> {
@@ -30,5 +31,14 @@ export class ReviewThreadRepository extends Repository<ReviewThread> {
     const [threads, count] = await query.getManyAndCount();
 
     return { threads, count };
+  }
+
+  async getCommentsCountByReviewIds(reviewIds: string[]) {
+    return this.createQueryBuilder('rt')
+      .select(['rt.reviewId AS "reviewId"', 'COUNT(rc.id) AS "count"'])
+      .innerJoin(ReviewComment, 'rc', 'rc.reviewThreadId = rt.id')
+      .where('rt.reviewId IN (:...reviewIds)', { reviewIds })
+      .groupBy('rt.reviewId')
+      .getRawMany();
   }
 }

@@ -7,6 +7,7 @@ import { ReviewCommentRepository } from './repository/review-comment.repository'
 import { ReviewThreadRepository } from './repository/review-thread.repository';
 import { ReviewCommentReactionRepository } from './repository/review-comment-reaction.repository';
 import { UserModule } from 'src/user/user.module';
+import { ReviewReactionRepository } from './repository/review-reaction.repository';
 
 @Module({
   imports: [LearnModule, UserModule],
@@ -16,6 +17,7 @@ import { UserModule } from 'src/user/user.module';
     ReviewThreadRepository,
     ReviewCommentRepository,
     ReviewCommentReactionRepository,
+    ReviewReactionRepository,
     ReviewService,
   ],
 })
