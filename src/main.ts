@@ -19,7 +19,7 @@ async function bootstrap() {
     });
     const appConfigService = app.get(AppConfigService);
     app.enableCors({
-      origin: (origin, callback) => {
+      origin: (origin: any, callback: any) => {
         const allowedOrigins = appConfigService.cors.allowedOrigins;
         if (!origin || allowedOrigins.includes(origin)) {
           callback(null, true);

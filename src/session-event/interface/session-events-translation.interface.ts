@@ -7,5 +7,4 @@ export interface CreateSessionEventTranslation {
   detectionData?: Record<string, any>;
 }
 
-export interface UpdateSessionEventTranslation
-  extends CreateSessionEventTranslation {}
+export interface UpdateSessionEventTranslation extends CreateSessionEventTranslation {}

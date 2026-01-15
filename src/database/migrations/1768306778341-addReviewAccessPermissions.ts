@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddReviewAccessPermissions1768306778341
-  implements MigrationInterface
-{
+export class AddReviewAccessPermissions1768306778341 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Add review permissions
     await queryRunner.query(`

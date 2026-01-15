@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AlterScenarioTableAndAddSpeakerColumnInEvents1761198193274
-  implements MigrationInterface
-{
+export class AlterScenarioTableAndAddSpeakerColumnInEvents1761198193274 implements MigrationInterface {
   name = 'AlterScenarioTableAndAddSpeakerColumnInEvents1761198193274';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

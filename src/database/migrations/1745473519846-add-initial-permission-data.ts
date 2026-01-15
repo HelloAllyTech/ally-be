@@ -14,9 +14,7 @@ const PERMISSIONS = {
   ButtonStartCall: 'view:button:start-call',
   ViewNavBarLearn: 'view:navbar:learn',
 };
-export class AddInitialPermissionData1745473519846
-  implements MigrationInterface
-{
+export class AddInitialPermissionData1745473519846 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     for (const permission of Object.values(PERMISSIONS)) {
       await queryRunner.query(

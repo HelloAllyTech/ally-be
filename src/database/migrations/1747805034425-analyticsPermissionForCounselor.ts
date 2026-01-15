@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AnalyticsPermissionForCounselor1747805034425
-  implements MigrationInterface
-{
+export class AnalyticsPermissionForCounselor1747805034425 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
           WITH group_details AS (

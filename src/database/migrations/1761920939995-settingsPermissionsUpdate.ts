@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class SettingsPermissionsUpdate1761920939995
-  implements MigrationInterface
-{
+export class SettingsPermissionsUpdate1761920939995 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     const permissions = [
       'edit:settings:summary-fields',

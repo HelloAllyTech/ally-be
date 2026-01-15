@@ -1,37 +1,31 @@
-import { RedisService as NestRedisService } from '@liaoliaots/nestjs-redis';
-import Redis from 'ioredis';
 import { RedisService } from '../redis.service';
 
-jest.mock('@liaoliaots/nestjs-redis');
-jest.mock('ioredis');
+const mockRedis = {
+  set: jest.fn(),
+  get: jest.fn(),
+  del: jest.fn(),
+  duplicate: jest.fn(),
+  scanStream: jest.fn(),
+  hincrby: jest.fn(),
+  hgetall: jest.fn(),
+};
+
+jest.mock('ioredis', () => {
+  const MockRedis = jest.fn().mockImplementation(() => mockRedis);
+  return { default: MockRedis, __esModule: true };
+});
 
 describe('RedisService', () => {
   let service: RedisService;
-  let mockNestRedisService: jest.Mocked<NestRedisService>;
-  let mockRedis: jest.Mocked<Redis>;
 
   beforeEach(() => {
-    mockRedis = {
-      set: jest.fn(),
-      get: jest.fn(),
-      del: jest.fn(),
-      duplicate: jest.fn(),
-      scanStream: jest.fn(),
-      hincrby: jest.fn(),
-      hgetall: jest.fn(),
-    } as any;
-
-    mockNestRedisService = {
-      getOrThrow: jest.fn().mockReturnValue(mockRedis),
-    } as any;
+    jest.clearAllMocks();
 
     process.env.REDIS_PREFIX = 'testprefix';
+    process.env.REDIS_HOST = 'localhost';
+    process.env.REDIS_PORT = '6379';
 
-    service = new RedisService(mockNestRedisService);
-  });
-
-  afterEach(() => {
-    jest.clearAllMocks();
+    service = new RedisService();
   });
 
   describe('constructor', () => {
@@ -41,7 +35,7 @@ describe('RedisService', () => {
 
     it('should fallback to default prefix when env not set', () => {
       delete process.env.REDIS_PREFIX;
-      const s = new RedisService(mockNestRedisService);
+      const s = new RedisService();
       expect((s as any).prefix).toBe('ally');
     });
   });
@@ -51,7 +45,6 @@ describe('RedisService', () => {
       const dup = { name: 'client1' } as any;
       mockRedis.duplicate.mockReturnValue(dup);
       const client = service.createClient('client1');
-      expect(mockNestRedisService.getOrThrow).toHaveBeenCalled();
       expect(mockRedis.duplicate).toHaveBeenCalledWith({ name: 'client1' });
       expect(client).toBe(dup);
     });
@@ -100,15 +93,17 @@ describe('RedisService', () => {
   describe('getByPattern', () => {
     it('should resolve keys on stream end', async () => {
       const onHandlers: Record<string, (...args: any[]) => void> = {};
-      mockRedis.scanStream.mockReturnValue({
+      const mockStream = {
         on: (event: string, cb: (...args: any[]) => void) => {
           onHandlers[event] = cb;
-          return this;
+          return mockStream;
         },
-      } as any);
+      } as any;
+      mockRedis.scanStream.mockReturnValue(mockStream);
 
       const promise = service.getByPattern('pattern');
 
+      expect(mockRedis.scanStream).toHaveBeenCalledWith({ match: 'pattern' });
       onHandlers['data'](['key1', 'key2']);
       onHandlers['end']();
 
@@ -118,14 +113,16 @@ describe('RedisService', () => {
 
     it('should reject on stream error', async () => {
       const onHandlers: Record<string, (...args: any[]) => void> = {};
-      mockRedis.scanStream.mockReturnValue({
+      const mockStream = {
         on: (event: string, cb: (...args: any[]) => void) => {
           onHandlers[event] = cb;
-          return this;
+          return mockStream;
         },
-      } as any);
+      } as any;
+      mockRedis.scanStream.mockReturnValue(mockStream);
 
       const promise = service.getByPattern('pattern');
+      expect(mockRedis.scanStream).toHaveBeenCalledWith({ match: 'pattern' });
       onHandlers['error'](new Error('scan failed'));
 
       await expect(promise).rejects.toThrow('scan failed');
@@ -133,16 +130,18 @@ describe('RedisService', () => {
   });
 
   describe('deleteByPattern', () => {
-    it('should delete keys if found', async () => {
+    it('should delete keys if found and return keys', async () => {
       jest.spyOn(service, 'getByPattern').mockResolvedValue(['key1', 'key2']);
-      await service.deleteByPattern('patt');
+      const result = await service.deleteByPattern('patt');
       expect(mockRedis.del).toHaveBeenCalledWith(['key1', 'key2']);
+      expect(result).toEqual(['key1', 'key2']);
     });
 
-    it('should not delete if no keys', async () => {
+    it('should not delete if no keys and return empty array', async () => {
       jest.spyOn(service, 'getByPattern').mockResolvedValue([]);
-      await service.deleteByPattern('patt');
+      const result = await service.deleteByPattern('patt');
       expect(mockRedis.del).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
     });
   });
 

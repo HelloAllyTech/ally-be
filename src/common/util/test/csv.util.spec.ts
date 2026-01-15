@@ -6,7 +6,6 @@ jest.mock('csv-parse/sync', () => ({
 }));
 
 describe('CsvUtil', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { parse: mockParse } = require('csv-parse/sync');
 
   beforeEach(() => {

@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddSecondsInScenarioSessionMessages1757534758756
-  implements MigrationInterface
-{
+export class AddSecondsInScenarioSessionMessages1757534758756 implements MigrationInterface {
   name = 'AddSecondsInScenarioSessionMessages1757534758756';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

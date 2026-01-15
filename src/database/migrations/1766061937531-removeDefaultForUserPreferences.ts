@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class RemoveDefaultForUserPreferences1766061937531
-  implements MigrationInterface
-{
+export class RemoveDefaultForUserPreferences1766061937531 implements MigrationInterface {
   name = 'RemoveDefaultForUserPreferences1766061937531';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

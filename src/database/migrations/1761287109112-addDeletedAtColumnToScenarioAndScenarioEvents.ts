@@ -1,9 +1,7 @@
 import { UserRole } from 'src/common/constants/user.constants';
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddDeletedAtColumnToScenarioAndScenarioEvents1761287109112
-  implements MigrationInterface
-{
+export class AddDeletedAtColumnToScenarioAndScenarioEvents1761287109112 implements MigrationInterface {
   name = 'AddDeletedAtColumnToScenarioAndScenarioEvents1761287109112';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

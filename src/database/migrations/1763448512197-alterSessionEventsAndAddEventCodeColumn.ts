@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AlterSessionEventsAndAddEventCodeColumn1763448512197
-  implements MigrationInterface
-{
+export class AlterSessionEventsAndAddEventCodeColumn1763448512197 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
             ALTER TABLE "session_events"

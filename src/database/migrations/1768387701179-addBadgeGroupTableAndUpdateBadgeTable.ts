@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddBadgeGroupTableAndUpdateBadgeTable1768387701179
-  implements MigrationInterface
-{
+export class AddBadgeGroupTableAndUpdateBadgeTable1768387701179 implements MigrationInterface {
   name = 'AddBadgeGroupTableAndUpdateBadgeTable1768387701179';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

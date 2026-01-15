@@ -16,9 +16,7 @@ const PERMISSIONS = {
   EDIT_SCENARIO_PATH: 'edit:scenario-path',
 };
 
-export class AddScenarioPathPermissions1763099510911
-  implements MigrationInterface
-{
+export class AddScenarioPathPermissions1763099510911 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Add all scenario path permissions to the permissions table
     const scenarioPathPermissions = [

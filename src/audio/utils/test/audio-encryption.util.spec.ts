@@ -31,13 +31,13 @@ describe('AudioEncryptionUtil', () => {
       files.forEach((file) => {
         try {
           fs.unlinkSync(path.join(testDir, file));
-        } catch (error) {
+        } catch {
           // Ignore
         }
       });
       try {
         fs.rmdirSync(testDir);
-      } catch (error) {
+      } catch {
         // Ignore
       }
     }
@@ -52,7 +52,7 @@ describe('AudioEncryptionUtil', () => {
       if (fs.existsSync(file)) {
         try {
           fs.unlinkSync(file);
-        } catch (error) {
+        } catch {
           // Ignore
         }
       }

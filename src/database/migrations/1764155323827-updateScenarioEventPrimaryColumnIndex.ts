@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class UpdateScenarioEventPrimaryColumnIndex1764155323827
-  implements MigrationInterface
-{
+export class UpdateScenarioEventPrimaryColumnIndex1764155323827 implements MigrationInterface {
   name = 'UpdateScenarioEventPrimaryColumnIndex1764155323827';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

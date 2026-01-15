@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddOrganizationIdToReferenceDocuments1749807810359
-  implements MigrationInterface
-{
+export class AddOrganizationIdToReferenceDocuments1749807810359 implements MigrationInterface {
   name = 'AddOrganizationIdToReferenceDocuments1749807810359';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

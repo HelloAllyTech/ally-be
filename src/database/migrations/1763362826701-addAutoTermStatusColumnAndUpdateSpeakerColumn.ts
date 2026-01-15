@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddAutoTermStatusColumnAndUpdateSpeakerColumn1763362826701
-  implements MigrationInterface
-{
+export class AddAutoTermStatusColumnAndUpdateSpeakerColumn1763362826701 implements MigrationInterface {
   name = 'AddAutoTermStatusColumnAndUpdateSpeakerColumn1763362826701';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

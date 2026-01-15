@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class GetScenarioEventsPermission1761302445065
-  implements MigrationInterface
-{
+export class GetScenarioEventsPermission1761302445065 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
       `INSERT INTO "permissions" ("name")

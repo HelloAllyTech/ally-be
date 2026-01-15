@@ -1,9 +1,7 @@
 import { UserRole } from 'src/common/constants/user.constants';
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddScenarioVoiceAndPermissions1760699083238
-  implements MigrationInterface
-{
+export class AddScenarioVoiceAndPermissions1760699083238 implements MigrationInterface {
   name = 'AddScenarioVoiceAndPermissions1760699083238';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

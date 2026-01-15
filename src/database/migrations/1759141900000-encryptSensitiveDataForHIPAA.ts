@@ -2,9 +2,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 import { CryptoService } from '../../common/service/crypto.service';
 import { AppConfigService } from '../../config/config.service';
 
-export class EncryptSensitiveDataForHIPAA1759141900000
-  implements MigrationInterface
-{
+export class EncryptSensitiveDataForHIPAA1759141900000 implements MigrationInterface {
   name = 'encryptSensitiveDataForHIPAA1759141900000';
 
   private cryptoService: CryptoService;
@@ -71,7 +69,7 @@ export class EncryptSensitiveDataForHIPAA1759141900000
       if (decoded.length < 28) return false;
 
       return btoa(decoded) === str;
-    } catch (err) {
+    } catch {
       return false;
     }
   }

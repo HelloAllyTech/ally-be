@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class RemovePermissionTermsAndAgreement1767947260558
-  implements MigrationInterface
-{
+export class RemovePermissionTermsAndAgreement1767947260558 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       DELETE FROM "group_permissions" 

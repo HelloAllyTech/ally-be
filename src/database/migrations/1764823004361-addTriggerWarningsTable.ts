@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddTriggerWarningsTable1764823004361
-  implements MigrationInterface
-{
+export class AddTriggerWarningsTable1764823004361 implements MigrationInterface {
   name = 'AddTriggerWarningsTable1764823004361';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

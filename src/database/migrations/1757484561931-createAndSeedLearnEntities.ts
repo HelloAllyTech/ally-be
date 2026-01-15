@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreateAndSeedLearnEntities1757484561931
-  implements MigrationInterface
-{
+export class CreateAndSeedLearnEntities1757484561931 implements MigrationInterface {
   name = 'CreateAndSeedLearnEntities1757484561931';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

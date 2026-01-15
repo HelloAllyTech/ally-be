@@ -277,7 +277,7 @@ export class ReferenceDocumentService {
           uploadStatus,
         });
       }
-    } catch (error) {
+    } catch {
       uploadStatus = DocumentUploadStatus.FAILED;
       await this.referenceDocumentRepository.update(id, {
         uploadStatus,

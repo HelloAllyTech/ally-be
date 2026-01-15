@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddCreatedByAndLatestUpdatedByToScenarios1759922841662
-  implements MigrationInterface
-{
+export class AddCreatedByAndLatestUpdatedByToScenarios1759922841662 implements MigrationInterface {
   name = 'AddCreatedByAndLatestUpdatedByToScenarios1759922841662';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

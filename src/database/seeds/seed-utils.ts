@@ -24,7 +24,6 @@ const shouldUseSSL = NODE_ENV === 'production';
 export const DEFAULT_TENANT_CODE_ENV =
   process.env.DEFAULT_TENANT_CODE || 'ally';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createSeedDataSource(
   entities: (any | string | EntitySchema)[],
   logging: LoggerOptions | boolean = false,

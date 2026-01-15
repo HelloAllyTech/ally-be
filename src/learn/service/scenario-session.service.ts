@@ -1090,7 +1090,7 @@ export class ScenarioSessionService {
     if (typeof translations.metadata === 'string') {
       try {
         translationMetadata = JSON.parse(translations.metadata);
-      } catch (e) {
+      } catch {
         // malformed JSON — skip applying translation (or log if desired)
         translationMetadata = {};
       }

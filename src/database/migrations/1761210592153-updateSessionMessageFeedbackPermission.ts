@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class UpdateSessionMessageFeedbackPermission1761210592153
-  implements MigrationInterface
-{
+export class UpdateSessionMessageFeedbackPermission1761210592153 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Assign edit:scenario-session:feedback permission to LEARNER
     await queryRunner.query(`

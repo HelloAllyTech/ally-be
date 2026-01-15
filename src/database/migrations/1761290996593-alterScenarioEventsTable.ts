@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AlterScenarioEventsTable1761290996593
-  implements MigrationInterface
-{
+export class AlterScenarioEventsTable1761290996593 implements MigrationInterface {
   name = 'AlterScenarioEventsTable1761290996593';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

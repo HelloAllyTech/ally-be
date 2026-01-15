@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class RemoveDetectionDataFromSessionEventsTranslations1767679183507
-  implements MigrationInterface
-{
+export class RemoveDetectionDataFromSessionEventsTranslations1767679183507 implements MigrationInterface {
   name = 'RemoveDetectionDataFromSessionEventsTranslations1767679183507';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

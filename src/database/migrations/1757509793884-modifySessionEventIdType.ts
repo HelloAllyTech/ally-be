@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class ModifySessionEventIdType1757509793884
-  implements MigrationInterface
-{
+export class ModifySessionEventIdType1757509793884 implements MigrationInterface {
   name = 'ModifySessionEventIdType1757509793884';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
