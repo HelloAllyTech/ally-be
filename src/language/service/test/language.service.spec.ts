@@ -54,6 +54,7 @@ describe('LanguageService', () => {
           provide: LanguagesRepository,
           useValue: {
             getLanguagesById: jest.fn(),
+            getLanguages: jest.fn(),
             create: jest.fn(),
             save: jest.fn(),
             findOne: jest.fn(),
@@ -155,6 +156,104 @@ describe('LanguageService', () => {
       await expect(
         service.updateLanguage(languageId, updateLanguageDto),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('getLanguages', () => {
+    const mockLanguages = [
+      {
+        id: 1,
+        value: 'en-IN',
+        label: 'English (India)',
+        active: true,
+        translationCode: 'en',
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-01'),
+      },
+      {
+        id: 2,
+        value: 'hi-IN',
+        label: 'Hindi (India)',
+        active: true,
+        translationCode: 'hi',
+        createdAt: new Date('2024-01-02'),
+        updatedAt: new Date('2024-01-02'),
+      },
+    ];
+
+    it('should return all languages with pagination', async () => {
+      (languagesRepository as any).getLanguages = jest
+        .fn()
+        .mockResolvedValue(mockLanguages);
+
+      const result = await service.getLanguages(undefined, {
+        limit: 10,
+        offset: 0,
+      });
+
+      expect(result).toEqual(mockLanguages);
+    });
+
+    it('should return languages with search filter', async () => {
+      const filteredLanguages = [mockLanguages[0]];
+      (languagesRepository as any).getLanguages = jest
+        .fn()
+        .mockResolvedValue(filteredLanguages);
+
+      const result = await service.getLanguages('english', {
+        limit: 10,
+        offset: 0,
+      });
+
+      expect(result).toEqual(filteredLanguages);
+    });
+
+    it('should return languages with sorting options', async () => {
+      const sortedLanguages = [mockLanguages[1], mockLanguages[0]];
+      (languagesRepository as any).getLanguages = jest
+        .fn()
+        .mockResolvedValue(sortedLanguages);
+
+      const result = await service.getLanguages(undefined, {
+        limit: 10,
+        offset: 0,
+        sortBy: 'value',
+        order: 'DESC',
+      });
+
+      expect(result).toEqual(sortedLanguages);
+    });
+
+    it('should return empty array when no languages found', async () => {
+      (languagesRepository as any).getLanguages = jest
+        .fn()
+        .mockResolvedValue([]);
+
+      const result = await service.getLanguages('nonexistent', {
+        limit: 10,
+        offset: 0,
+      });
+
+      expect(result).toEqual([]);
+    });
+
+    it('should call repository getLanguages with correct parameters', async () => {
+      const getLanguagesMock = jest.fn().mockResolvedValue(mockLanguages);
+      (languagesRepository as any).getLanguages = getLanguagesMock;
+
+      await service.getLanguages('hindi', {
+        limit: 20,
+        offset: 10,
+        sortBy: 'label',
+        order: 'ASC',
+      });
+
+      expect(getLanguagesMock).toHaveBeenCalledWith('hindi', {
+        limit: 20,
+        offset: 10,
+        sortBy: 'label',
+        order: 'ASC',
+      });
     });
   });
 });

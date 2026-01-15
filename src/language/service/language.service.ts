@@ -4,6 +4,7 @@ import { LanguagesRepository } from '../repository/languages.repository';
 import { UpdateLanguageDto } from '../dto/update-language.dto';
 import { CreateLanguagesDto } from '../dto/create-languages.dto';
 import { DeepPartial } from 'typeorm';
+import { Pagination } from 'src/common/type/common.type';
 
 @Injectable()
 export class LanguageService {
@@ -39,5 +40,12 @@ export class LanguageService {
     );
 
     return updated.affected !== 0;
+  }
+
+  async getLanguages(
+    searchName?: string,
+    options?: Pagination,
+  ): Promise<Languages[]> {
+    return this.languagesRepository.getLanguages(searchName, options);
   }
 }

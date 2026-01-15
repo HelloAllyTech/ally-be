@@ -9,8 +9,21 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     super(ScenarioVoices, dataSource.createEntityManager());
   }
 
-  async getScenarioVoices(options: Pagination): Promise<ScenarioVoices[]> {
+  async getScenarioVoices(
+    searchName: string | undefined,
+    options: Pagination,
+  ): Promise<ScenarioVoices[]> {
     const query = this.createQueryBuilder('scenarioVoice');
+
+    if (searchName) {
+      query
+        .andWhere(
+          '(scenarioVoice.name ILIKE :searchName OR scenarioVoice.provider ILIKE :searchName)',
+        )
+        .setParameters({
+          searchName: `%${searchName}%`,
+        });
+    }
     this.applySorting(query, options);
     this.applyPagination(query, options);
     return query.getMany();
@@ -38,13 +51,15 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     }
   }
 
-  async getLanguagesWithVoices(active?: boolean) {
+  async getLanguagesWithVoices(active?: boolean, voicesNeeded?: boolean) {
     const query = this.createQueryBuilder()
       .select('la.id', 'language_id')
       .addSelect('la.value', 'value')
       .addSelect('la.label', 'label')
       .addSelect(
-        `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider', sv.provider))`,
+        voicesNeeded
+          ? `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider))`
+          : `'[]'::jsonb`,
         'voices',
       )
       .from('languages', 'la')
@@ -77,6 +92,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       .select('CAST(la.id AS INTEGER)', 'language_id')
       .addSelect('la.value', 'value')
       .addSelect('la.label', 'label')
+      .addSelect('la.active', 'active')
       .addSelect('la.translationCode', 'translationCode')
       // IMPORTANT: start from the languages table so `la` refers to languages
       .from('languages', 'la')

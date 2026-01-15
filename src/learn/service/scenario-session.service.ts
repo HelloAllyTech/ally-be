@@ -39,8 +39,6 @@ import { v4 } from 'uuid';
 import {
   DEFAULT_LANGUAGE_CODE,
   DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
-  LANGUAGE_LLM_PROVIDER_CONFIG,
-  LANGUAGE_STT_PROVIDER_CONFIG,
   SCENARIO_SESSION_TRANSLATABLE_FIELDS,
   STT_LLM_PROVIDER_CONFIG,
 } from '../constants/scenario-session.constants';
@@ -65,6 +63,7 @@ import { LanguageCode } from '../type/scenario-language-voice.type';
 import { getActiveScenarioMandatoryFields } from '../util/scenario.util';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
+import { Languages } from 'src/language/entity/languages.entity';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -294,6 +293,7 @@ export class ScenarioSessionService {
       const roomMetadata = await this.createRoomMetadata(
         scenario,
         sessionEvents,
+        languageDetails,
       );
 
       // Create LiveKit room
@@ -347,6 +347,7 @@ export class ScenarioSessionService {
   private async createRoomMetadata(
     scenario: GetAdminScenarioDto,
     sessionEvents: SessionEvents[],
+    languageDetails?: Languages | null,
   ) {
     const {
       metadata,
@@ -508,10 +509,15 @@ export class ScenarioSessionService {
         ...(metadata?.language && {
           languageCode: languageCode,
         }),
-        ...(LANGUAGE_STT_PROVIDER_CONFIG[languageCode] ||
-          STT_LLM_PROVIDER_CONFIG),
-        ...(LANGUAGE_LLM_PROVIDER_CONFIG[languageCode] ||
-          STT_LLM_PROVIDER_CONFIG),
+        // Use database provider configs if available and not empty
+        ...(languageDetails?.sttProviderConfig &&
+        Object.keys(languageDetails.sttProviderConfig).length > 0
+          ? { stt: languageDetails.sttProviderConfig }
+          : STT_LLM_PROVIDER_CONFIG),
+        ...(languageDetails?.llmProviderConfig &&
+        Object.keys(languageDetails.llmProviderConfig).length > 0
+          ? { llm: languageDetails.llmProviderConfig }
+          : STT_LLM_PROVIDER_CONFIG),
         events: allEvents,
         triggerEvents: Array.from(triggerEvents),
         autoTerminationEvent,
@@ -989,7 +995,11 @@ export class ScenarioSessionService {
       scenario.metadata.defaultLanguageId = enLanguageDetails?.id;
     }
 
-    const roomMetadata = await this.createRoomMetadata(scenario, sessionEvents);
+    const roomMetadata = await this.createRoomMetadata(
+      scenario,
+      sessionEvents,
+      languageDetails,
+    );
     const roomName = `preview-${scenarioId}-${v4()}`;
 
     await this.livekitService.createRoom({

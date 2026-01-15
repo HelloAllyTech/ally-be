@@ -794,6 +794,15 @@ describe('LearnController', () => {
       const result = await controller.getScenarioVoices();
 
       expect(result).toEqual(mockVoices);
+      expect(scenarioService.getScenarioVoices).toHaveBeenCalledWith(
+        undefined,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: undefined,
+          order: SortOrder.ASC,
+        },
+      );
     });
 
     it('should return scenario voices with pagination and sorting', async () => {
@@ -808,6 +817,36 @@ describe('LearnController', () => {
       );
 
       expect(result).toEqual(mockVoices);
+      expect(scenarioService.getScenarioVoices).toHaveBeenCalledWith(
+        undefined,
+        {
+          limit: 10,
+          offset: 0,
+          sortBy: ScenarioVoiceSortBy.NAME,
+          order: SortOrder.DESC,
+        },
+      );
+    });
+
+    it('should return scenario voices with search filter', async () => {
+      const mockVoices: any[] = [];
+      scenarioService.getScenarioVoices.mockResolvedValue(mockVoices);
+
+      const result = await controller.getScenarioVoices(
+        10,
+        0,
+        undefined,
+        SortOrder.ASC,
+        'priya',
+      );
+
+      expect(result).toEqual(mockVoices);
+      expect(scenarioService.getScenarioVoices).toHaveBeenCalledWith('priya', {
+        limit: 10,
+        offset: 0,
+        sortBy: undefined,
+        order: SortOrder.ASC,
+      });
     });
   });
 
@@ -1103,7 +1142,7 @@ describe('LearnController', () => {
       expect(result).toEqual(mockLanguages);
       expect(
         scenarioService.getScenarioVoiceLanguagesForAdmin,
-      ).toHaveBeenCalledWith(true);
+      ).toHaveBeenCalledWith(true, undefined);
     });
 
     it('should return all languages when no filter is provided', async () => {
@@ -1115,7 +1154,7 @@ describe('LearnController', () => {
       expect(result).toEqual(mockLanguages);
       expect(
         scenarioService.getScenarioVoiceLanguagesForAdmin,
-      ).toHaveBeenCalledWith(undefined);
+      ).toHaveBeenCalledWith(undefined, undefined);
     });
 
     it('should handle errors from service', async () => {
@@ -1125,6 +1164,34 @@ describe('LearnController', () => {
       await expect(
         controller.getScenarioVoiceLanguagesForAdmin(true),
       ).rejects.toThrow('Service error');
+    });
+
+    it('should return languages with voicesNeeded filter', async () => {
+      scenarioService.getScenarioVoiceLanguagesForAdmin.mockResolvedValue(
+        mockLanguages,
+      );
+      const result = await controller.getScenarioVoiceLanguagesForAdmin(
+        undefined,
+        true,
+      );
+      expect(result).toEqual(mockLanguages);
+      expect(
+        scenarioService.getScenarioVoiceLanguagesForAdmin,
+      ).toHaveBeenCalledWith(undefined, true);
+    });
+
+    it('should return languages with both active and voicesNeeded filters', async () => {
+      scenarioService.getScenarioVoiceLanguagesForAdmin.mockResolvedValue(
+        mockLanguages,
+      );
+      const result = await controller.getScenarioVoiceLanguagesForAdmin(
+        true,
+        true,
+      );
+      expect(result).toEqual(mockLanguages);
+      expect(
+        scenarioService.getScenarioVoiceLanguagesForAdmin,
+      ).toHaveBeenCalledWith(true, true);
     });
   });
 

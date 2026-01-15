@@ -83,7 +83,7 @@ describe('ScenarioVoicesRepository', () => {
 
       queryBuilder.getMany.mockResolvedValue(mockVoices as any);
 
-      const result = await repository.getScenarioVoices({
+      const result = await repository.getScenarioVoices('', {
         limit: 10,
         offset: 0,
       });
@@ -116,7 +116,7 @@ describe('ScenarioVoicesRepository', () => {
 
       queryBuilder.getMany.mockResolvedValue(mockVoices as any);
 
-      const result = await repository.getScenarioVoices({
+      const result = await repository.getScenarioVoices('', {
         limit: 5,
         offset: 0,
         sortBy: ScenarioVoiceSortBy.NAME,
@@ -135,7 +135,7 @@ describe('ScenarioVoicesRepository', () => {
 
       queryBuilder.getMany.mockResolvedValue(mockVoices);
 
-      await repository.getScenarioVoices({
+      await repository.getScenarioVoices('', {
         limit: 20,
         offset: 40,
       });
@@ -149,7 +149,7 @@ describe('ScenarioVoicesRepository', () => {
 
       queryBuilder.getMany.mockResolvedValue(mockVoices);
 
-      const result = await repository.getScenarioVoices({
+      const result = await repository.getScenarioVoices('', {
         limit: 10,
         offset: 0,
       });
@@ -174,7 +174,7 @@ describe('ScenarioVoicesRepository', () => {
 
       queryBuilder.getMany.mockResolvedValue(mockVoices as any);
 
-      await repository.getScenarioVoices({
+      await repository.getScenarioVoices('', {
         limit: 10,
         offset: 0,
         sortBy: ScenarioVoiceSortBy.PROVIDER,
@@ -192,7 +192,7 @@ describe('ScenarioVoicesRepository', () => {
 
       queryBuilder.getMany.mockResolvedValue(mockVoices);
 
-      await repository.getScenarioVoices({
+      await repository.getScenarioVoices('', {
         limit: 10,
         offset: 0,
         sortBy: ScenarioVoiceSortBy.CREATED_AT,
@@ -208,7 +208,7 @@ describe('ScenarioVoicesRepository', () => {
     it('should not apply limit when not provided', async () => {
       queryBuilder.getMany.mockResolvedValue([]);
 
-      await repository.getScenarioVoices({
+      await repository.getScenarioVoices('', {
         offset: 0,
       } as any);
 
@@ -220,7 +220,7 @@ describe('ScenarioVoicesRepository', () => {
     it('should apply offset even when value is 0', async () => {
       queryBuilder.getMany.mockResolvedValue([]);
 
-      await repository.getScenarioVoices({
+      await repository.getScenarioVoices('', {
         limit: 10,
         offset: 0,
       } as any);
@@ -232,7 +232,7 @@ describe('ScenarioVoicesRepository', () => {
     it('should not apply offset when not provided', async () => {
       queryBuilder.getMany.mockResolvedValue([]);
 
-      await repository.getScenarioVoices({
+      await repository.getScenarioVoices('', {
         limit: 10,
       } as any);
 
