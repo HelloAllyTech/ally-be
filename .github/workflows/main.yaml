@@ -29,7 +29,7 @@ on:
           - prd
   push:
     branches:
-      - dev
+      - master
 
 jobs:
   prepare-env:
@@ -62,14 +62,11 @@ jobs:
           if [ -z "$ENV" ]
           then
             case $BRANCH in
-              "dev")
+              "master")
                 ENV="dev"
                 ;;
               "stg")
                 ENV="stg"
-                ;;
-              "master")
-                ENV="prd"
                 ;;
               *)
                 echo "ENV not configured" && exit 1
