@@ -18,3 +18,7 @@ health-check:
 		echo "❌ Service did not become healthy after $$(( $(MAX_RETRIES) * $(SLEEP_SECONDS) )) seconds"; \
 		exit 1; \
 	fi
+
+fix:
+	npm run format
+	npm run lint:fix

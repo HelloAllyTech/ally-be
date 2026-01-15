@@ -34,6 +34,7 @@ import { CallDetailsService } from './service/call-details.service';
 import { CallLogService } from './service/call-log.service';
 import { AiChatIntegrationService } from './service/ai-chat-integration.service';
 import { ChatFeedbackService } from './service/chat-feedback.service';
+import { ChatTranscriptService } from './service/chat-transcript.service';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { ChatFeedbackService } from './service/chat-feedback.service';
     ChatFeedbackService,
     AudioUploadConsumer,
     AudioUploadDlqConsumer,
+    ChatTranscriptService,
   ],
   exports: [
     ChatService,
@@ -79,6 +81,7 @@ import { ChatFeedbackService } from './service/chat-feedback.service';
     FeedbackService,
     ChatAiService,
     AudioUploadService,
+    ChatTranscriptService,
   ],
 })
 export class ChatModule implements OnModuleInit {
