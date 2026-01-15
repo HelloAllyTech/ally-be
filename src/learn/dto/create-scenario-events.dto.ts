@@ -81,6 +81,14 @@ export class EventMappingDto {
   @ValidateNested()
   @Type(() => DetectionConfigDto)
   detectionConfig?: DetectionConfigDto;
+
+  @ApiProperty({
+    description: 'The checklist visibility status of the event on studio',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  checklistVisibilityStatus?: boolean;
 }
 
 export class CreateScenarioEventsDto {
@@ -112,11 +120,13 @@ export class CreateScenarioEventsDto {
           minScore: 0,
           maxScore: 100,
         },
+        checklistVisibilityStatus: false,
       },
       {
         id: 'event2',
         feedbackStatus: false,
         branchingStatus: false,
+        checklistVisibilityStatus: false,
       },
     ],
   })

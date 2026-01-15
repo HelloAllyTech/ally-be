@@ -53,4 +53,7 @@ export class ScenarioEvents extends BaseWithoutTenantEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   detectionConfig?: DetectionConfigDto;
+
+  @Column({ default: false })
+  checklistVisibilityStatus?: boolean;
 }
