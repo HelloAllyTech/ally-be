@@ -152,6 +152,7 @@ describe('LearnController', () => {
         message: undefined,
         branchingStatus: false,
         branchInstruction: undefined,
+        checklistVisibilityStatus: false,
       },
       {
         id: 'event2',
@@ -161,6 +162,7 @@ describe('LearnController', () => {
         message: undefined,
         branchingStatus: false,
         branchInstruction: undefined,
+        checklistVisibilityStatus: false,
       },
       {
         id: 'event3',
@@ -170,6 +172,7 @@ describe('LearnController', () => {
         message: undefined,
         branchingStatus: false,
         branchInstruction: undefined,
+        checklistVisibilityStatus: false,
       },
     ],
   };
@@ -612,6 +615,7 @@ describe('LearnController', () => {
             branchingStatus: false,
             branchInstruction: undefined,
             detectionConfig: undefined,
+            checklistVisibilityStatus: false,
           },
         ],
         count: 1,

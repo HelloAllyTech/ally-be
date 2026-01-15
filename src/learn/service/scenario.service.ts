@@ -223,6 +223,7 @@ export class ScenarioService {
             branchInstruction: item.sessionEvent?.branchInstruction,
           }),
       detectionConfig: item.detectionConfig,
+      checklistVisibilityStatus: item.checklistVisibilityStatus,
     }));
 
     return { data, count: result.count };
@@ -1112,6 +1113,7 @@ export class ScenarioService {
             branchingStatus,
             branchInstruction,
             detectionConfig,
+            checklistVisibilityStatus,
           } = event;
           return {
             scenarioId,
@@ -1139,6 +1141,7 @@ export class ScenarioService {
                   branchInstruction: undefined,
                 }),
             detectionConfig,
+            checklistVisibilityStatus,
           };
         });
 
@@ -1157,6 +1160,7 @@ export class ScenarioService {
             branchingStatus: event.branchingStatus,
             branchInstruction: event.branchInstruction,
             detectionConfig: event.detectionConfig,
+            checklistVisibilityStatus: event.checklistVisibilityStatus,
           })),
         };
       });
