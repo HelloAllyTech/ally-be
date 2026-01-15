@@ -1517,7 +1517,10 @@ describe('ScenarioService', () => {
         mockVoices as any,
       );
 
-      const result = await service.getScenarioVoices({ offset: 0, limit: 10 });
+      const result = await service.getScenarioVoices('', {
+        offset: 0,
+        limit: 10,
+      });
 
       expect(result).toEqual(mockVoices);
     });
@@ -3511,6 +3514,8 @@ describe('ScenarioService', () => {
           translationCode: 'en',
           createdAt: new Date(),
           updatedAt: new Date(),
+          llmProviderConfig: {},
+          sttProviderConfig: {},
         },
         {
           id: 2,
@@ -3520,6 +3525,8 @@ describe('ScenarioService', () => {
           translationCode: 'es',
           createdAt: new Date(),
           updatedAt: new Date(),
+          llmProviderConfig: {},
+          sttProviderConfig: {},
         },
       ];
 

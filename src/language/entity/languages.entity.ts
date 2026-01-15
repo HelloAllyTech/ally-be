@@ -18,4 +18,10 @@ export class Languages extends BaseWithoutTenantEntity {
 
   @Column({ default: '' })
   translationCode!: string;
+
+  @Column({ type: 'jsonb', default: {} })
+  llmProviderConfig!: Record<string, any>;
+
+  @Column({ type: 'jsonb', default: {} })
+  sttProviderConfig!: Record<string, any>;
 }
