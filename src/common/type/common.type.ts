@@ -37,3 +37,8 @@ export type RequestWithUser = Request & {
 export type SuccessResponse = {
   success: boolean;
 };
+
+export enum SortOrder {
+  ASC = 'ASC',
+  DESC = 'DESC',
+}
