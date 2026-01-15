@@ -40,3 +40,12 @@ export class UserBadgeResponseDto {
   })
   data!: UserBadgeWithDetailsDto[];
 }
+
+export class UserBadgeCountResponseDto {
+  @ApiProperty({
+    type: Number,
+    description: 'Total count of badges awarded to the user',
+    example: 5,
+  })
+  count!: number;
+}
