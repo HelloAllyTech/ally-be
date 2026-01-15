@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPermissionTermsAndAgreement1764580521176
-  implements MigrationInterface
-{
+export class AddPermissionTermsAndAgreement1764580521176 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       INSERT INTO "permissions" ("name") VALUES 

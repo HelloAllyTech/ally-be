@@ -7,18 +7,16 @@ export interface ParsedCsvRow {
 export function parseCsvBuffer(
   buffer: Buffer,
   options: {
-    columns?: boolean;
     skipEmptyLines?: boolean;
     trim?: boolean;
   } = {
-    columns: true,
     skipEmptyLines: true,
     trim: true,
   },
 ): ParsedCsvRow[] {
   try {
     const csvText = buffer.toString('utf-8');
-    return parse(csvText, options);
+    return parse(csvText, { columns: true, ...options });
   } catch (err: any) {
     throw new Error('Failed to parse CSV: ' + err.message);
   }

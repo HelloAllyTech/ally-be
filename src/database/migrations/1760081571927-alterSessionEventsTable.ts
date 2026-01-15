@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AlterSessionEventsTable1760081571927
-  implements MigrationInterface
-{
+export class AlterSessionEventsTable1760081571927 implements MigrationInterface {
   name = 'AlterSessionEventsTable1760081571927';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

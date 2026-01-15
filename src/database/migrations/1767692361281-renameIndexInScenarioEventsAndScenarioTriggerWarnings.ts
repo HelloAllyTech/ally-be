@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class RenameIndexInScenarioEventsAndScenarioTriggerWarnings1767692361281
-  implements MigrationInterface
-{
+export class RenameIndexInScenarioEventsAndScenarioTriggerWarnings1767692361281 implements MigrationInterface {
   name = 'RenameIndexInScenarioEventsAndScenarioTriggerWarnings1767692361281';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

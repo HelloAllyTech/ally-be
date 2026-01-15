@@ -14,9 +14,7 @@ const PERMISSIONS = {
   VIEW_USER_ROLES: 'view:user:roles',
 };
 
-export class AddUserManagementPermissions1760687530156
-  implements MigrationInterface
-{
+export class AddUserManagementPermissions1760687530156 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Ensure all user management permissions exist in the permissions table
     const userManagementPermissions = [

@@ -53,9 +53,7 @@ const newPermissions = [
   PERMISSIONS.DELETE_CACHE,
 ];
 
-export class UpdateSystemAndOrganizationPermissions1760606439959
-  implements MigrationInterface
-{
+export class UpdateSystemAndOrganizationPermissions1760606439959 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Rename existing permissions
     for (const { old: oldName, new: newName } of PERMISSIONS_TO_RENAME) {

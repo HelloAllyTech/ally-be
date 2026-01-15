@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddTenantScopedExternalIdUniqueConstraint1756287205870
-  implements MigrationInterface
-{
+export class AddTenantScopedExternalIdUniqueConstraint1756287205870 implements MigrationInterface {
   name = 'AddTenantScopedExternalIdUniqueConstraint1756287205870';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

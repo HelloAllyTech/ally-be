@@ -31,7 +31,7 @@ export class DashboardParamsDto {
   @Transform(({ value }) => {
     try {
       return JSON.parse(value);
-    } catch (e) {
+    } catch {
       return value;
     }
   })

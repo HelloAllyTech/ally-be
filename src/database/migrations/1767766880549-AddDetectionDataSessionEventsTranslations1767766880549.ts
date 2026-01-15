@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddDetectionDataSessionEventsTranslations1767766880549
-  implements MigrationInterface
-{
+export class AddDetectionDataSessionEventsTranslations1767766880549 implements MigrationInterface {
   name = 'AddDetectionDataSessionEventsTranslations1767766880549';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

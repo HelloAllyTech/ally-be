@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddCloudTelephonyIntegrationsTable1756122971416
-  implements MigrationInterface
-{
+export class AddCloudTelephonyIntegrationsTable1756122971416 implements MigrationInterface {
   name = 'AddCloudTelephonyIntegrationsTable1756122971416';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddViewTenantsPermission1760772282773
-  implements MigrationInterface
-{
+export class AddViewTenantsPermission1760772282773 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Insert permissions
     await queryRunner.query(`

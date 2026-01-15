@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class SetGlobalScenariosAndCreateScenarioTenant1763990791393
-  implements MigrationInterface
-{
+export class SetGlobalScenariosAndCreateScenarioTenant1763990791393 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       UPDATE scenarios 

@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class RemoveCallDurationAndAddpathSessionItemId1763978841398
-  implements MigrationInterface
-{
+export class RemoveCallDurationAndAddpathSessionItemId1763978841398 implements MigrationInterface {
   name = 'RemoveCallDurationAndAddpathSessionItemId1763978841398';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

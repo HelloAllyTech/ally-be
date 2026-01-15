@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddViewScenarioPermissionToReviewer1768373028557
-  implements MigrationInterface
-{
+export class AddViewScenarioPermissionToReviewer1768373028557 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       INSERT INTO "group_permissions" ("groupId", "permissionId")

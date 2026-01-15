@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddViewScenarioLanguagesPermission1766473440114
-  implements MigrationInterface
-{
+export class AddViewScenarioLanguagesPermission1766473440114 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       INSERT INTO "permissions" ("name") VALUES ('view:scenario-languages')

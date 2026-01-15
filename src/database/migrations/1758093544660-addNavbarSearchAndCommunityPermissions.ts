@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddNavbarSearchAndCommunityPermissions1758093544660
-  implements MigrationInterface
-{
+export class AddNavbarSearchAndCommunityPermissions1758093544660 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Assign view:admin:scenario-session permission to admin and remove it from learner
     await queryRunner.query(`

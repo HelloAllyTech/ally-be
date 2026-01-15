@@ -13,9 +13,7 @@ const PERMISSIONS = {
   VIEW_ANALYTICS_DASHBOARD_URL: 'view:analytics:dashboard-url',
 };
 
-export class UpdateAnalyticsPermissions1760000583448
-  implements MigrationInterface
-{
+export class UpdateAnalyticsPermissions1760000583448 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Ensure all analytics permissions exist in the permissions table
     const analyticsPermissions = [

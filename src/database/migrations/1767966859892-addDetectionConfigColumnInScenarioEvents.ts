@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddDetectionConfigColumnInScenarioEvents1767966859892
-  implements MigrationInterface
-{
+export class AddDetectionConfigColumnInScenarioEvents1767966859892 implements MigrationInterface {
   name = 'AddDetectionConfigColumnInScenarioEvents1767966859892';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

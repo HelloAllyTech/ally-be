@@ -1,20 +1,22 @@
 import { Injectable } from '@nestjs/common';
-import { RedisService as NestRedisService } from '@liaoliaots/nestjs-redis';
 import Redis from 'ioredis';
 
 @Injectable()
 export class RedisService {
   private prefix: string;
   private redis: Redis;
-  constructor(private readonly redisService: NestRedisService) {
+
+  constructor() {
     this.prefix = process.env.REDIS_PREFIX || 'ally';
-    this.redis = this.redisService.getOrThrow();
+    this.redis = new Redis({
+      host: process.env.REDIS_HOST,
+      port: parseInt(process.env.REDIS_PORT || '6379'),
+    });
   }
 
   // Create a new client dynamically (for pub/sub)
   createClient(name: string): Redis {
-    const baseClient = this.redisService.getOrThrow();
-    return baseClient.duplicate({
+    return this.redis.duplicate({
       name,
     });
   }

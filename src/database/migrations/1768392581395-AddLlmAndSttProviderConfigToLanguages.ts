@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddLlmAndSttProviderConfigToLanguages1768392581395
-  implements MigrationInterface
-{
+export class AddLlmAndSttProviderConfigToLanguages1768392581395 implements MigrationInterface {
   name = 'AddLlmAndSttProviderConfigToLanguages1768392581395';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

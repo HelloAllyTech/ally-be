@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddDifficultyLevelScenarios1765871736291
-  implements MigrationInterface
-{
+export class AddDifficultyLevelScenarios1765871736291 implements MigrationInterface {
   name = 'AddDifficultyLevelScenarios1765871736291';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddProfileImageUrlColumn1767691878075
-  implements MigrationInterface
-{
+export class AddProfileImageUrlColumn1767691878075 implements MigrationInterface {
   name = 'AddProfileImageUrlColumn1767691878075';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

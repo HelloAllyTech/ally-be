@@ -17,9 +17,7 @@ const PERMISSIONS = {
   ButtonStartCall: 'view:button:start-call',
 };
 
-export class AddInitialGroupPermissionData1745474081224
-  implements MigrationInterface
-{
+export class AddInitialGroupPermissionData1745474081224 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Get the COUNSELOR group ID
     const groups: Group[] = await queryRunner.query(

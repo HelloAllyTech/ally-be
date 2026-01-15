@@ -6,8 +6,7 @@ export interface CreateScenarioEventsTranslation {
   branchInstruction?: string;
 }
 
-export interface UpdateScenarioEventsTranslation
-  extends CreateScenarioEventsTranslation {}
+export interface UpdateScenarioEventsTranslation extends CreateScenarioEventsTranslation {}
 
 export interface ScenarioEventsTranslationData {
   message?: string;

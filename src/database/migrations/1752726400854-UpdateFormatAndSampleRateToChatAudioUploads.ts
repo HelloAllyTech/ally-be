@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class UpdateFormatAndSampleRateToChatAudioUploads1752726400854
-  implements MigrationInterface
-{
+export class UpdateFormatAndSampleRateToChatAudioUploads1752726400854 implements MigrationInterface {
   name = 'UpdateFormatAndSampleRateToChatAudioUploads1752726400854';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

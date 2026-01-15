@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddAutoTerminationStatusColumnInScenarioSessionEvents1768197673824
-  implements MigrationInterface
-{
+export class AddAutoTerminationStatusColumnInScenarioSessionEvents1768197673824 implements MigrationInterface {
   name = 'AddAutoTerminationStatusColumnInScenarioSessionEvents1768197673824';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

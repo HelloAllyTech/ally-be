@@ -84,11 +84,11 @@ export class AuthService {
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        expiresIn: this.configService.jwt.accessToken.expiresIn,
+        expiresIn: this.configService.jwt.accessToken.expiresIn as any,
         secret: this.configService.jwt.accessToken.secret,
       }),
       this.jwtService.signAsync(payload, {
-        expiresIn: this.configService.jwt.refreshToken.expiresIn,
+        expiresIn: this.configService.jwt.refreshToken.expiresIn as any,
         secret: this.configService.jwt.refreshToken.secret,
       }),
     ]);
@@ -208,7 +208,7 @@ export class AuthService {
     let testAccounts: Record<string, string> = {};
     try {
       testAccounts = JSON.parse(this.configService.testAccounts || '{}');
-    } catch (error) {
+    } catch {
       this.logger.error('Invalid TEST_ACCOUNTS JSON format');
     }
     if (testAccounts[email]) {

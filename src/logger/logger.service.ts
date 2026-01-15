@@ -26,7 +26,6 @@ export class LoggerService {
         ? 'warn'
         : 'debug';
     const logFormat = format.printf(
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       (info) => `${info.level}: [${info.timestamp}]${info.message}`,
     );
     const transportList = [
@@ -63,7 +62,6 @@ export class LoggerService {
 
     if (error) {
       const errorObject =
-        // eslint-disable-next-line @typescript-eslint/no-base-to-string
         error instanceof Error ? error : new Error(String(error));
       logMessage += `\nError: ${errorObject.message}`;
       if (errorObject.stack) {

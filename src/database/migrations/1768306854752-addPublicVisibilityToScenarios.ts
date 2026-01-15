@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPublicVisibilityToScenarios1768306854752
-  implements MigrationInterface
-{
+export class AddPublicVisibilityToScenarios1768306854752 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       UPDATE scenarios 

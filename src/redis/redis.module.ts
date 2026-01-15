@@ -1,21 +1,10 @@
 import { Global, Module } from '@nestjs/common';
 import { RedisService } from './service/redis.service';
-import { RedisModule as NestRedisModule } from '@liaoliaots/nestjs-redis';
 import { CacheController } from './controller/cache.controller';
 
 @Global()
 @Module({
-  imports: [
-    NestRedisModule.forRoot({
-      config: [
-        {
-          name: 'default',
-          host: process.env.REDIS_HOST,
-          port: parseInt(process.env.REDIS_PORT || '6379'),
-        },
-      ],
-    }),
-  ],
+  imports: [],
   providers: [RedisService],
   exports: [RedisService],
   controllers: [CacheController],

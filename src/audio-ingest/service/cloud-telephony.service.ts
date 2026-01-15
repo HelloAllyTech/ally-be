@@ -81,7 +81,7 @@ export class CloudTelephonyService {
         id: response.id,
         provider: response.provider,
       };
-    } catch (error) {
+    } catch {
       throw new BadRequestException(
         'Failed to create cloud telephony integration',
       );

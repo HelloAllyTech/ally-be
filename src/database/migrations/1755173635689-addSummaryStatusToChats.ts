@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddSummaryStatusToChats1755173635689
-  implements MigrationInterface
-{
+export class AddSummaryStatusToChats1755173635689 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
       `ALTER TABLE "chats" ADD COLUMN "summaryStatus" character varying`,

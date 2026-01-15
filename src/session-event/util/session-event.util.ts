@@ -221,9 +221,9 @@ export const getUniqueCombinationExpressionEventIdList = (
         event.detectionType === SessionEventDetectionType.COMBINATION &&
         event.detectionData?.expression,
     )
-    ?.forEach((event) => {
+    .forEach((event) => {
       allIds.push(...extractEventIds(event.detectionData?.expression));
-    }) ?? [];
+    });
   return Array.from(new Set(allIds));
 };
 

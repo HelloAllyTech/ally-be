@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class UpdateMessageStartAndEndSeconds1751013008623
-  implements MigrationInterface
-{
+export class UpdateMessageStartAndEndSeconds1751013008623 implements MigrationInterface {
   name = 'UpdateMessageStartAndEndSeconds1751013008623';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
