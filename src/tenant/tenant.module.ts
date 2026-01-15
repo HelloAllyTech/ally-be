@@ -22,6 +22,6 @@ import { AwsModule } from 'src/aws/aws.module';
     TenantScenarioPathSharedService,
   ],
   controllers: [TenantController],
-  exports: [TenantService],
+  exports: [TenantService, TenantsRepository],
 })
 export class TenantModule {}

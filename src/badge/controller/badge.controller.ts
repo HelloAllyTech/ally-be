@@ -1,6 +1,7 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOperation,
   ApiQuery,
   ApiResponse,
@@ -17,6 +18,8 @@ import {
   UserBadgeResponseDto,
   UserBadgeCountResponseDto,
 } from '../dto/user-badge-response.dto';
+import { BadgeTenantService } from '../service/badge-tenant.service';
+import { AddBadgeToTenantsRequestDto } from '../dto/badge-tenant.dto';
 
 @ApiTags('Badge')
 @ApiBearerAuth()
@@ -26,7 +29,10 @@ import {
   version: '1',
 })
 export class BadgeController {
-  constructor(private readonly badgeService: BadgeService) {}
+  constructor(
+    private readonly badgeService: BadgeService,
+    private readonly badgeTenantService: BadgeTenantService,
+  ) {}
 
   @ApiOperation({ summary: 'Get all badges for the current user' })
   @ApiQuery({
@@ -37,7 +43,8 @@ export class BadgeController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Returns the list of badges awarded to the user',
+    description:
+      'Returns the list of badges awarded to the user in the recent first order',
     type: UserBadgeResponseDto,
   })
   @AuthPermissions([PERMISSIONS.VIEW_USER_BADGES])
@@ -72,5 +79,25 @@ export class BadgeController {
       viewedStatus,
     );
     return { count };
+  }
+
+  @ApiOperation({ summary: 'Add badge to tenants' })
+  @ApiBody({ type: AddBadgeToTenantsRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Badge added to tenants successfully',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @Post('/tenants')
+  async addBadgeToTenants(
+    @Body() addBadgeToTenantsDto: AddBadgeToTenantsRequestDto,
+  ) {
+    await this.badgeTenantService.addBadgeToTenants(
+      addBadgeToTenantsDto.badgeId,
+      addBadgeToTenantsDto.tenantIds,
+    );
+    return {
+      message: 'Badge added to tenants successfully',
+    };
   }
 }
