@@ -24,7 +24,7 @@ export class LanguageController {
   constructor(private readonly languageService: LanguageService) {}
 
   @ApiOperation({ summary: 'Get Languages' })
-  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_LANGUAGES])
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_LANGUAGES])
   @Get('')
   async getLanguages(
     @Query('limit') limit?: number,
