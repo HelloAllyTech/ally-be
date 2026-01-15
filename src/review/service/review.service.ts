@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { In } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { ReviewRepository } from '../repository/review.repository';
 import {
   CreateReviewDto,
@@ -28,10 +28,19 @@ import { GetReviews, GetReviewsOptions, Reviews } from '../type/review.type';
 import { UserService } from 'src/user/service/user.service';
 import { ReviewReactionRepository } from '../repository/review-reaction.repository';
 import { GetReviewResponseDto } from '../dto/get-review-response.dto';
+import {
+  CreateCommentResponseDto,
+  CreateReviewCommentDto,
+} from '../dto/create-comment.dto';
+import { ReviewThread } from '../entity/review-thread.entity';
+import { ReviewComment } from '../entity/review-comment.entity';
+import { LoggerService } from 'src/logger/logger.service';
 
 @Injectable()
 export class ReviewService {
+  private readonly logger = LoggerService.getInstance(ReviewService.name);
   constructor(
+    private readonly dataSource: DataSource,
     private readonly reviewRepository: ReviewRepository,
     private readonly reviewThreadRepository: ReviewThreadRepository,
     private readonly reviewCommentRepository: ReviewCommentRepository,
@@ -354,5 +363,131 @@ export class ReviewService {
           ),
         )
       : 0;
+  }
+
+  async addCommentToReview(
+    reviewId: string,
+    createReviewCommentDto: CreateReviewCommentDto,
+  ): Promise<CreateCommentResponseDto> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
+    const review = await this.findReviewById(reviewId);
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+
+    const isReviewer = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.REVIEWER_ACCESS],
+    );
+    const isLearner = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.LEARNER_ACCESS],
+    );
+
+    if (
+      (isReviewer && review.tenantId !== ExecutionManager.getTenantId()) ||
+      (!isReviewer && isLearner && review.createdBy !== userId)
+    ) {
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
+    if (!createReviewCommentDto.content.trim()) {
+      throw new BadRequestException('Content cannot be empty');
+    }
+
+    if (createReviewCommentDto.threadId) {
+      const thread = await this.reviewThreadRepository.findOne({
+        where: {
+          id: createReviewCommentDto.threadId,
+        },
+      });
+      if (!thread) {
+        throw new NotFoundException('Review thread not found');
+      }
+
+      const comment = this.reviewCommentRepository.create({
+        reviewThreadId: thread.id,
+        content: createReviewCommentDto.content,
+        createdBy: Number(userId),
+      });
+      await this.reviewCommentRepository.save(comment);
+
+      return {
+        commentId: comment.id,
+      };
+    }
+
+    if (createReviewCommentDto.parentCommentId) {
+      const parentComment = await this.reviewCommentRepository.findOne({
+        where: {
+          id: createReviewCommentDto.parentCommentId,
+        },
+      });
+
+      if (!parentComment) {
+        throw new BadRequestException('Invalid parent comment');
+      }
+
+      const reply = this.reviewCommentRepository.create({
+        reviewThreadId: parentComment.reviewThreadId,
+        content: createReviewCommentDto.content,
+        createdBy: Number(userId),
+        parentCommentId: createReviewCommentDto.parentCommentId,
+      });
+      await this.reviewCommentRepository.save(reply);
+      return {
+        replyId: reply.id,
+      };
+    }
+
+    if (
+      !createReviewCommentDto.threadId &&
+      !createReviewCommentDto.parentCommentId
+    ) {
+      if (!createReviewCommentDto.messageId) {
+        throw new BadRequestException('messageId required for new threads');
+      }
+      if (!createReviewCommentDto.selection) {
+        throw new BadRequestException('selection required for new threads');
+      }
+      try {
+        const result = await this.dataSource.transaction(
+          async (entityManager) => {
+            const thread = entityManager.create(ReviewThread, {
+              reviewId,
+              messageId: createReviewCommentDto.messageId,
+              createdBy: Number(userId),
+              selection: createReviewCommentDto.selection,
+            });
+            await entityManager.save(ReviewThread, thread);
+            const comment = entityManager.create(ReviewComment, {
+              reviewThreadId: thread.id,
+              content: createReviewCommentDto.content,
+              createdBy: Number(userId),
+            });
+            await entityManager.save(ReviewComment, comment);
+            return {
+              threadId: thread.id,
+              commentId: comment.id,
+            };
+          },
+        );
+
+        return result;
+      } catch (error) {
+        this.logger.error(
+          `Failed to add comment: ${error.message}`,
+          error.stack,
+        );
+        throw new BadRequestException(
+          `Failed to add comment: ${error.message}`,
+        );
+      }
+    }
+    throw new BadRequestException('Invalid request');
   }
 }
