@@ -208,6 +208,7 @@ describe('ScenarioService', () => {
       getScenarioEventsTranslationsByScenarioIdEventId: jest.fn(),
       createTranslations: jest.fn(),
       updateTranslations: jest.fn(),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
     };
 
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
@@ -1755,7 +1756,7 @@ describe('ScenarioService', () => {
   });
 
   describe('createScenarios', () => {
-    it('should create scenarios successfully', async () => {
+    it('should create scenarios and add termination events successfully', async () => {
       const createDto = {
         scenarios: [
           {
@@ -1773,17 +1774,47 @@ describe('ScenarioService', () => {
             currentLocation: 'NY',
             context: 'Context',
             openingStatements: ['Hi'],
+            terminationEvents: [
+              { id: 'event-1', message: 'Termination message 1' },
+              { id: 'event-2', message: 'Termination message 2' },
+              { id: 'event-3', message: 'Termination message 3' },
+            ],
           },
         ],
       };
       scenarioVoiceRepository.findOne.mockResolvedValue({
         id: 'voice-1',
       } as any);
+
+      // Mock sessionEventService.findByIds to validate termination events
+      sessionEventService.findByIds.mockResolvedValue([
+        { id: 'event-1' },
+        { id: 'event-2' },
+        { id: 'event-3' },
+      ] as any);
+
+      const mockScenarioEventsRepo = {
+        create: jest.fn().mockImplementation((data) => data),
+        save: jest.fn().mockResolvedValue([]),
+      };
+
       const mockEntityManager = {
-        getRepository: jest.fn().mockReturnValue({
-          create: jest.fn().mockReturnValue([{ id: 1 }]),
-          save: jest.fn().mockResolvedValue([{ id: 1, isGlobal: false }]),
+        getRepository: jest.fn((entity: any) => {
+          if (entity === Scenarios)
+            return {
+              create: jest.fn().mockReturnValue([{ id: 1 }]),
+              save: jest.fn().mockResolvedValue([{ id: 1, isGlobal: false }]),
+            };
+          if (entity === ScenarioEvents) return mockScenarioEventsRepo;
+          return {
+            create: jest.fn().mockReturnValue([]),
+            save: jest.fn().mockResolvedValue([]),
+          };
         }),
+      };
+      mockConfigService.featureFlag = {
+        ...mockConfigService.featureFlag,
+        multipleTerminationEvents: true,
       };
       dataSource.transaction.mockImplementation((cb: any) =>
         cb(mockEntityManager as any),
@@ -1792,6 +1823,31 @@ describe('ScenarioService', () => {
       const result = await service.createScenarios(createDto as any, 1);
 
       expect(result).toHaveLength(1);
+
+      // Verify create was called with termination events list
+      expect(mockScenarioEventsRepo.create).toHaveBeenCalledWith([
+        {
+          scenarioId: 1,
+          eventId: 'event-1',
+          autoTerminationStatus: true,
+          message: 'Termination message 1',
+        },
+        {
+          scenarioId: 1,
+          eventId: 'event-2',
+          autoTerminationStatus: true,
+          message: 'Termination message 2',
+        },
+        {
+          scenarioId: 1,
+          eventId: 'event-3',
+          autoTerminationStatus: true,
+          message: 'Termination message 3',
+        },
+      ]);
+
+      // Verify save was called
+      expect(mockScenarioEventsRepo.save).toHaveBeenCalled();
     });
 
     it('should create global scenarios and assign to tenants', async () => {
@@ -2722,6 +2778,145 @@ describe('ScenarioService', () => {
         ]);
       });
     });
+
+    describe('updateScenarioTerminationEvents', () => {
+      it('should add new events, update existing events message, and delete removed events', async () => {
+        // Input: termination events a, b, c, d
+        // Already saved in DB: b, e, f
+        // Expected:
+        //   - a, c, d should be ADDED (new)
+        //   - b's message should be UPDATED (existing)
+        //   - e, f should be DELETED (removed)
+
+        const updateDto: UpdateScenarioDto = {
+          title: 'Updated Title',
+          terminationEvents: [
+            { id: 'event-a', message: 'Message A' },
+            { id: 'event-b', message: 'Updated Message B' },
+            { id: 'event-c', message: 'Message C' },
+            { id: 'event-d', message: 'Message D' },
+          ],
+        };
+
+        // Existing termination events in DB: b, e, f
+        const existingTerminationEvents = [
+          {
+            id: 'scenario-event-b',
+            scenarioId: 1,
+            eventId: 'event-b',
+            autoTerminationStatus: true,
+            message: 'Old Message B',
+          },
+          {
+            id: 'scenario-event-e',
+            scenarioId: 1,
+            eventId: 'event-e',
+            autoTerminationStatus: true,
+            message: 'Message E',
+          },
+          {
+            id: 'scenario-event-f',
+            scenarioId: 1,
+            eventId: 'event-f',
+            autoTerminationStatus: true,
+            message: 'Message F',
+          },
+        ];
+
+        const mockScenarioEventsRepo = {
+          find: jest.fn().mockResolvedValue(existingTerminationEvents),
+          delete: jest.fn().mockResolvedValue({ affected: 2 }),
+          update: jest.fn().mockResolvedValue({ affected: 1 }),
+          save: jest
+            .fn()
+            .mockImplementation((events) => Promise.resolve(events)),
+          create: jest.fn().mockImplementation((data) => data),
+        };
+
+        const mockScenariosRepo = {
+          findOne: jest.fn().mockResolvedValue(mockScenario),
+          save: jest.fn().mockResolvedValue({
+            ...mockScenario,
+            ...updateDto,
+          }),
+          update: jest.fn().mockResolvedValue({ affected: 1 }),
+        };
+
+        const mockEntityManager = {
+          getRepository: jest.fn((entity: any) => {
+            if (entity === Scenarios) return mockScenariosRepo;
+            if (entity === ScenarioEvents) return mockScenarioEventsRepo;
+            return {
+              find: jest.fn().mockResolvedValue([]),
+              delete: jest.fn().mockResolvedValue({ affected: 0 }),
+              update: jest.fn().mockResolvedValue({ affected: 1 }),
+              save: jest.fn().mockResolvedValue({}),
+              create: jest.fn().mockReturnValue([]),
+            };
+          }),
+        };
+
+        // Enable the feature flag for multiple termination events
+        mockConfigService.featureFlag = {
+          ...mockConfigService.featureFlag,
+          multipleTerminationEvents: true,
+        };
+
+        // Mock scenariosRepository.findOne for validateUpdateScenario
+        scenariosRepository.findOne.mockResolvedValue(mockScenario as any);
+
+        // Mock sessionEventService.findByIds to validate termination events
+        sessionEventService.findByIds.mockResolvedValue([
+          { id: 'event-a' },
+          { id: 'event-b' },
+          { id: 'event-c' },
+          { id: 'event-d' },
+        ] as any);
+
+        dataSource.transaction.mockImplementation((cb: any) =>
+          cb(mockEntityManager as any),
+        );
+
+        await service.updateScenario(1, updateDto, 1);
+
+        // Verify: e and f should be deleted (events not in input but in DB)
+        expect(mockScenarioEventsRepo.delete).toHaveBeenCalledWith([
+          'scenario-event-e',
+          'scenario-event-f',
+        ]);
+
+        // Verify: a, c, d should be added (new events)
+        expect(mockScenarioEventsRepo.create).toHaveBeenCalledTimes(3);
+        expect(mockScenarioEventsRepo.create).toHaveBeenCalledWith({
+          scenarioId: 1,
+          eventId: 'event-a',
+          autoTerminationStatus: true,
+          message: 'Message A',
+        });
+        expect(mockScenarioEventsRepo.create).toHaveBeenCalledWith({
+          scenarioId: 1,
+          eventId: 'event-c',
+          autoTerminationStatus: true,
+          message: 'Message C',
+        });
+        expect(mockScenarioEventsRepo.create).toHaveBeenCalledWith({
+          scenarioId: 1,
+          eventId: 'event-d',
+          autoTerminationStatus: true,
+          message: 'Message D',
+        });
+
+        // Verify: save was called for new events
+        expect(mockScenarioEventsRepo.save).toHaveBeenCalled();
+
+        // Verify: b's message should be updated
+        expect(mockScenarioEventsRepo.update).toHaveBeenCalledWith(
+          'scenario-event-b',
+          { message: 'Updated Message B' },
+        );
+      });
+    });
+
     describe('duplicateScenario', () => {
       const scenarioId = 1;
       const mockUserId = 123;
