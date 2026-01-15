@@ -1000,7 +1000,6 @@ export class ScenarioSessionService {
       sessionEvents,
       languageDetails,
     );
-    console.log(roomMetadata.scenario, 'roomMetadata');
     const roomName = `preview-${scenarioId}-${v4()}`;
 
     await this.livekitService.createRoom({
