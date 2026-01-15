@@ -46,6 +46,8 @@ import { ChatSummaryService } from '../service/chat-summary.service';
 import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { ChatTranscriptService } from '../service/chat-transcript.service';
+import { TranscriptRequestDto } from '../dto/transcript.dto';
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -56,6 +58,7 @@ export class ChatController {
     private service: ChatService,
     private readonly feedbackService: FeedbackService,
     private readonly chatSummaryService: ChatSummaryService,
+    private readonly chatTranscriptService: ChatTranscriptService,
   ) {}
 
   @AuthPermissions([PERMISSIONS.VIEW_CHAT])
@@ -618,5 +621,19 @@ export class ChatController {
   @ApiResponse({ status: 200, description: 'Chat deleted successfully' })
   async deleteChat(@Param('id') id: string): Promise<DeleteChatResponseDto> {
     return this.service.deleteChat(parseInt(id));
+  }
+
+  @Post('process-transcript')
+  @ApiOperation({ summary: 'Process chat transcript and summary' })
+  @ApiResponse({
+    status: 200,
+    description: 'Chat transcript processed successfully',
+  })
+  async processTranscrip(
+    @Body() chatTranscriptDto: TranscriptRequestDto,
+  ): Promise<void> {
+    return this.chatTranscriptService.processTranscribeResult(
+      chatTranscriptDto,
+    );
   }
 }

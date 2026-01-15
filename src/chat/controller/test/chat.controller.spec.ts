@@ -14,12 +14,15 @@ import { CallInfoDto } from '../../dto/chat.response.dto';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { UserService } from '../../../user/service/user.service';
 import { AppConfigService } from '../../../config/config.service';
+import { TranscriptRequestDto } from 'src/chat/dto/transcript.dto';
+import { ChatTranscriptService } from 'src/chat/service/chat-transcript.service';
 
 describe('ChatController', () => {
   let controller: ChatController;
   let mockChatService: any;
   let mockFeedbackService: any;
   let mockChatSummaryService: any;
+  let mockChatTranscriptService: any;
 
   const mockTokenUser: TokenUser = {
     id: 1,
@@ -109,6 +112,10 @@ describe('ChatController', () => {
       exportSummary: jest.fn(),
     };
 
+    mockChatTranscriptService = {
+      processTranscribeResult: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ChatController],
       providers: [
@@ -123,6 +130,10 @@ describe('ChatController', () => {
         {
           provide: ChatSummaryService,
           useValue: mockChatSummaryService,
+        },
+        {
+          provide: ChatTranscriptService,
+          useValue: mockChatTranscriptService,
         },
         {
           provide: PermissionsService,
@@ -691,6 +702,47 @@ describe('ChatController', () => {
       expect(mockChatService.addFeedbackToChat).toHaveBeenCalledWith(
         1,
         summaryFeedbackDto,
+      );
+    });
+  });
+
+  describe('processTranscrip', () => {
+    it('should process transcript successfully', async () => {
+      const dto: TranscriptRequestDto = {
+        chatId: 1,
+        downloadPresignedUrl:
+          'https://dummy-bucket.s3.amazonaws.com/result.json?X-Amz-Agnature=dummy',
+        deletePresignedUrl:
+          'https://dummy-bucket.s3.amazonaws.com/result.json?X-Amz-Agnature=dummy',
+      };
+
+      mockChatTranscriptService.processTranscribeResult.mockResolvedValue(
+        undefined,
+      );
+
+      await controller.processTranscrip(dto);
+
+      expect(
+        mockChatTranscriptService.processTranscribeResult,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        mockChatTranscriptService.processTranscribeResult,
+      ).toHaveBeenCalledWith(dto);
+    });
+
+    it('should propagate errors from service', async () => {
+      const dto: TranscriptRequestDto = {
+        chatId: 1,
+      };
+
+      const error = new Error('Processing failed');
+      mockChatTranscriptService.processTranscribeResult.mockRejectedValue(
+        error,
+      );
+
+      await expect(controller.processTranscrip(dto)).rejects.toThrow(
+        'Processing failed',
       );
     });
   });
