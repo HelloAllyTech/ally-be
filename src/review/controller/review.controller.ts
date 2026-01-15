@@ -31,7 +31,7 @@ import { ReviewsListResponseDto } from '../dto/get-all-review-response.dto';
 import { GetReviewResponseDto } from '../dto/get-review-response.dto';
 
 @Controller({
-  path: 'review',
+  path: 'reviews',
   version: '1',
 })
 @ApiBearerAuth()
