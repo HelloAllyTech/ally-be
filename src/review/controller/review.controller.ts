@@ -29,6 +29,10 @@ import { UpdateReviewStatusDto } from '../dto/update-review-status.dto';
 import { ReviewSortBy } from '../type/review.type';
 import { ReviewsListResponseDto } from '../dto/get-all-review-response.dto';
 import { GetReviewResponseDto } from '../dto/get-review-response.dto';
+import {
+  CreateCommentResponseDto,
+  CreateReviewCommentDto,
+} from '../dto/create-comment.dto';
 
 @Controller({
   path: 'reviews',
@@ -149,5 +153,22 @@ export class ReviewController {
     @Query('offset') offset?: number,
   ): Promise<ReviewThreadsResponseDto> {
     return this.reviewService.getReviewThreads(reviewId, { limit, offset });
+  }
+
+  @ApiOperation({ summary: 'Add a comment' })
+  @ApiResponse({
+    status: 201,
+    description: 'Comment added successfully',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
+  @Post(':reviewId/comments')
+  async addComment(
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+    @Body() createReviewCommentDto: CreateReviewCommentDto,
+  ): Promise<CreateCommentResponseDto> {
+    return this.reviewService.addCommentToReview(
+      reviewId,
+      createReviewCommentDto,
+    );
   }
 }
