@@ -19,4 +19,11 @@ export class BadgeService {
       data: badges,
     };
   }
+
+  async getUserBadgeCount(
+    userId: number,
+    viewedStatus?: BadgeViewedStatus,
+  ): Promise<number> {
+    return this.badgeRepository.getUserBadgeCount(userId, viewedStatus);
+  }
 }

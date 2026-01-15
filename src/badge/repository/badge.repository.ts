@@ -43,4 +43,25 @@ export class BadgeRepository extends Repository<Badge> {
 
     return query.orderBy('badgeUser.createdAt', 'DESC').getRawMany();
   }
+
+  async getUserBadgeCount(
+    userId: number,
+    viewedStatus?: BadgeViewedStatus,
+  ): Promise<number> {
+    const query = this.dataSource
+      .createQueryBuilder(BadgeUser, 'badgeUser')
+      .innerJoin(Badge, 'badge', 'badge.id = badgeUser.badgeId')
+      .where('badgeUser.userId = :userId', { userId })
+      .andWhere('badgeUser.deletedAt IS NULL')
+      .andWhere('badge.deletedAt IS NULL')
+      .andWhere('badge.status = :status', { status: BadgeStatus.ACTIVE });
+
+    if (viewedStatus) {
+      query.andWhere('badgeUser.viewedStatus = :viewedStatus', {
+        viewedStatus,
+      });
+    }
+
+    return query.getCount();
+  }
 }
