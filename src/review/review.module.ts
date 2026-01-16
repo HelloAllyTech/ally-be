@@ -8,10 +8,18 @@ import { ReviewThreadRepository } from './repository/review-thread.repository';
 import { ReviewCommentReactionRepository } from './repository/review-comment-reaction.repository';
 import { UserModule } from 'src/user/user.module';
 import { ReviewReactionRepository } from './repository/review-reaction.repository';
+import { ReviewCommentController } from './controller/review-comment.controller';
+import { ReviewThreadController } from './controller/review-thread.controller';
+import { ReviewCommentService } from './service/review-comment.service';
+import { ReviewThreadService } from './service/review-thread.service';
 
 @Module({
   imports: [LearnModule, UserModule],
-  controllers: [ReviewController],
+  controllers: [
+    ReviewController,
+    ReviewThreadController,
+    ReviewCommentController,
+  ],
   providers: [
     ReviewRepository,
     ReviewThreadRepository,
@@ -19,6 +27,8 @@ import { ReviewReactionRepository } from './repository/review-reaction.repositor
     ReviewCommentReactionRepository,
     ReviewReactionRepository,
     ReviewService,
+    ReviewThreadService,
+    ReviewCommentService,
   ],
 })
 export class ReviewModule {}

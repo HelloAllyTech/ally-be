@@ -23,16 +23,11 @@ import {
 import { ReviewService } from '../service/review.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
-import { ReviewThreadsResponseDto } from '../dto/review-threads.dto';
 import { SortOrder, SuccessResponse } from 'src/common/type/common.type';
 import { UpdateReviewStatusDto } from '../dto/update-review-status.dto';
 import { ReviewSortBy } from '../type/review.type';
 import { ReviewsListResponseDto } from '../dto/get-all-review-response.dto';
 import { GetReviewResponseDto } from '../dto/get-review-response.dto';
-import {
-  CreateCommentResponseDto,
-  CreateReviewCommentDto,
-} from '../dto/create-comment.dto';
 
 @Controller({
   path: 'reviews',
@@ -125,50 +120,5 @@ export class ReviewController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<GetReviewResponseDto> {
     return this.reviewService.getReviewById(id);
-  }
-
-  @ApiOperation({ summary: 'Get review threads' })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    description: 'Number of threads to return',
-  })
-  @ApiQuery({
-    name: 'offset',
-    required: false,
-    type: Number,
-    description: 'Number of threads to skip',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Review threads list',
-    type: ReviewThreadsResponseDto,
-  })
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
-  @Get(':reviewId/threads')
-  async getReviewThreads(
-    @Param('reviewId', ParseUUIDPipe) reviewId: string,
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
-  ): Promise<ReviewThreadsResponseDto> {
-    return this.reviewService.getReviewThreads(reviewId, { limit, offset });
-  }
-
-  @ApiOperation({ summary: 'Add a comment' })
-  @ApiResponse({
-    status: 201,
-    description: 'Comment added successfully',
-  })
-  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
-  @Post(':reviewId/comments')
-  async addComment(
-    @Param('reviewId', ParseUUIDPipe) reviewId: string,
-    @Body() createReviewCommentDto: CreateReviewCommentDto,
-  ): Promise<CreateCommentResponseDto> {
-    return this.reviewService.addCommentToReview(
-      reviewId,
-      createReviewCommentDto,
-    );
   }
 }

@@ -54,6 +54,15 @@ export class ScenarioSharedService {
     });
   }
 
+  async getScenarioSessionForUser(
+    scenarioSessionId: string,
+    userId: number,
+  ): Promise<ScenarioSessions | null> {
+    return this.scenarioSessionRepository.findOne({
+      where: { id: scenarioSessionId, counselorId: userId },
+    });
+  }
+
   async getUniqueLanguagesFromScenarioTranslations(): Promise<number[]> {
     return this.scenarioTranslationsRepository.getUniqueLanguagesFromScenarioTranslations();
   }
