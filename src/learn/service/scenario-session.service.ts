@@ -297,7 +297,7 @@ export class ScenarioSessionService {
       );
 
       // Preparing events for simulation room
-      const checklistEvents = sessionEvents
+      const checklistEvents = (sessionEvents ?? [])
         .filter(
           (event: SessionEvents & { checklistVisibilityStatus?: boolean }) =>
             event?.checklistVisibilityStatus,
