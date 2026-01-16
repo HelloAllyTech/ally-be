@@ -61,10 +61,10 @@ async function bootstrap() {
     const port = appConfigService.port;
 
     const config = new DocumentBuilder()
-      .setTitle('Lifeline API')
-      .setDescription('The Lifeline API description')
+      .setTitle('Ally API')
+      .setDescription('The Ally API description')
       .setVersion('1.0')
-      .addTag('lifeline')
+      .addTag('ally')
       .addBearerAuth(
         {
           type: 'http',

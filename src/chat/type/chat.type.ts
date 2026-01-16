@@ -77,21 +77,6 @@ export type SubscriptionData = {
   message: ClientMessage;
 };
 
-export type DeepgramTranscriptMetadata = {
-  isFinal: boolean;
-  isSentenceComplete: boolean;
-  currentTranscriptBuffer: string;
-  currentTranscriptCreatedAt: Date;
-  currentTranscriptStart?: number;
-  currentTranscriptEnd?: number;
-  isUtteranceEnd?: boolean;
-  wordCountByLanguage?: Record<string, number>;
-  speakerSegments?: {
-    speaker: number;
-    word: string;
-  }[];
-};
-
 export type ActiveCallStream = {
   parts: Array<{
     ETag: string;
