@@ -113,6 +113,16 @@ export class SessionEventService {
           'Maximum occurrences cannot be less than 0',
         );
       }
+
+      if (
+        event.detectionConfig?.minScore &&
+        event.detectionConfig?.maxScore &&
+        event.detectionConfig?.minScore > event.detectionConfig?.maxScore
+      ) {
+        throw new BadRequestException(
+          'Minimum score cannot be greater than maximum score',
+        );
+      }
     }
 
     // Validate all referenced event IDs exist (only once, after collecting all)

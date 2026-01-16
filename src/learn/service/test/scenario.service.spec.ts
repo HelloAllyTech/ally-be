@@ -1665,6 +1665,7 @@ describe('ScenarioService', () => {
         getRepository: jest.fn().mockReturnValue({
           delete: jest.fn().mockResolvedValue({ affected: 1 }),
           save: jest.fn().mockResolvedValue([]),
+          findOne: jest.fn().mockResolvedValue(null), // Event not already mapped
         }),
       };
       dataSource.transaction.mockImplementation((cb: any) =>
@@ -1700,6 +1701,187 @@ describe('ScenarioService', () => {
       await expect(
         service.mapEventsToScenario(createDto as any),
       ).rejects.toThrow('Invalid event IDs: invalid-event');
+    });
+
+    it('should throw BadRequestException when detectionConfig startTime is null', async () => {
+      const createDto = {
+        scenarioId: 1,
+        events: [
+          {
+            id: 'event-1',
+            detectionConfig: {
+              startTime: null,
+            },
+          },
+        ],
+      };
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
+      sessionEventService.findByIds.mockResolvedValue([
+        { id: 'event-1' },
+      ] as any);
+
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow('Start time cannot be null');
+    });
+
+    it('should throw BadRequestException when startTime is greater than endTime', async () => {
+      const createDto = {
+        scenarioId: 1,
+        events: [
+          {
+            id: 'event-1',
+            detectionConfig: {
+              startTime: 100,
+              endTime: 50,
+            },
+          },
+        ],
+      };
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
+      sessionEventService.findByIds.mockResolvedValue([
+        { id: 'event-1' },
+      ] as any);
+
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow('Start time cannot be greater than end time');
+    });
+
+    it('should throw BadRequestException when minGapTime is less than 0', async () => {
+      const createDto = {
+        scenarioId: 1,
+        events: [
+          {
+            id: 'event-1',
+            detectionConfig: {
+              minGapTime: -5,
+            },
+          },
+        ],
+      };
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
+      sessionEventService.findByIds.mockResolvedValue([
+        { id: 'event-1' },
+      ] as any);
+
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow('Minimum gap time cannot be less than 0');
+    });
+
+    it('should throw BadRequestException when maxOccurrences is less than 0', async () => {
+      const createDto = {
+        scenarioId: 1,
+        events: [
+          {
+            id: 'event-1',
+            detectionConfig: {
+              maxOccurrences: -1,
+            },
+          },
+        ],
+      };
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
+      sessionEventService.findByIds.mockResolvedValue([
+        { id: 'event-1' },
+      ] as any);
+
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow('Maximum occurrences cannot be less than 0');
+    });
+
+    it('should throw BadRequestException when minScore is greater than maxScore', async () => {
+      const createDto = {
+        scenarioId: 1,
+        events: [
+          {
+            id: 'event-1',
+            detectionConfig: {
+              minScore: 90,
+              maxScore: 50,
+            },
+          },
+        ],
+      };
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
+      sessionEventService.findByIds.mockResolvedValue([
+        { id: 'event-1' },
+      ] as any);
+
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow('Minimum score cannot be greater than maximum score');
+    });
+
+    it('should throw NotFoundException when scenario not found', async () => {
+      const createDto = {
+        scenarioId: 999,
+        events: [{ id: 'event-1' }],
+      };
+      scenariosRepository.getScenarioById.mockResolvedValue(null);
+
+      await expect(
+        service.mapEventsToScenario(createDto as any),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should use existing scenarioEvent values when event already mapped', async () => {
+      const createDto = {
+        scenarioId: 1,
+        events: [
+          {
+            id: 'event-1',
+            feedbackStatus: true,
+            score: 10,
+            emoji: '😊',
+            message: 'Great!',
+            branchingStatus: false,
+          },
+        ],
+      };
+      scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
+      sessionEventService.findByIds.mockResolvedValue([
+        { id: 'event-1' },
+      ] as any);
+      const existingScenarioEvent = {
+        id: 1,
+        scenarioId: 1,
+        eventId: 'event-1',
+        score: 5, // existing score
+        detectionConfig: { startTime: 10 }, // existing config
+      };
+      const mockEntityManager = {
+        getRepository: jest.fn().mockReturnValue({
+          delete: jest.fn().mockResolvedValue({ affected: 1 }),
+          save: jest.fn().mockResolvedValue([]),
+          findOne: jest.fn().mockResolvedValue(existingScenarioEvent),
+        }),
+      };
+      dataSource.transaction.mockImplementation((cb: any) =>
+        cb(mockEntityManager as any),
+      );
+
+      const result = await service.mapEventsToScenario(createDto as any);
+
+      expect(result).toHaveProperty('scenarioId', 1);
+      expect(result).toHaveProperty('events');
     });
   });
 

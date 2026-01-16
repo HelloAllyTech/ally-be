@@ -13,7 +13,10 @@ import { ScenariosRepository } from '../repository/scenario.repository';
 import { ScenarioVoices } from '../entity/scenario-voices.entity';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
 import { UpdateScenarioVoiceDto } from '../dto/update-scenario-voice.dto';
-import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
+import {
+  CreateScenarioEventsDto,
+  EventMappingDto,
+} from '../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
@@ -1077,73 +1080,55 @@ export class ScenarioService {
   async mapEventsToScenario(createScenarioEventsDto: CreateScenarioEventsDto) {
     const { scenarioId, events } = createScenarioEventsDto;
 
-    if (events.length === 0) {
-      throw new BadRequestException('Events array cannot be empty');
-    }
-
-    const eventIds = events.map((event) => event.id);
-
-    await this.getScenario(scenarioId);
-    // Validate events exist
-    const validEvents = await this.sessionEventService.findByIds(eventIds);
-    const validIdsSet = new Set(validEvents.map((e) => e.id));
-    const invalidEventIds = eventIds.filter((id) => !validIdsSet.has(id));
-    if (invalidEventIds.length > 0) {
-      throw new BadRequestException(`Invalid event IDs: ${invalidEventIds}`);
-    }
+    await this.validateMapEventsToScenario(scenarioId, events);
 
     try {
       return await this.dataSource.transaction(async (entityManager) => {
         const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
 
-        // Delete existing non-auto-termination events for this scenario
-        await scenarioEventsRepo.delete({
-          scenarioId,
-          autoTerminationStatus: false,
-        });
-
         // Create an array of ScenarioEvents entities to be saved
-        const scenarioEvents = events.map((event) => {
-          const {
-            id,
-            feedbackStatus,
-            score,
-            emoji,
-            message,
-            branchingStatus,
-            branchInstruction,
-            detectionConfig,
-            checklistVisibilityStatus,
-          } = event;
-          return {
-            scenarioId,
-            eventId: id,
-            autoTerminationStatus: false,
-            score,
-            ...(feedbackStatus
-              ? {
-                  feedbackStatus,
-                  emoji,
-                  message,
-                }
-              : {
-                  feedbackStatus: false,
-                  emoji: undefined,
-                  message: undefined,
-                }),
-            ...(branchingStatus
-              ? {
-                  branchingStatus,
-                  branchInstruction,
-                }
-              : {
-                  branchingStatus: false,
-                  branchInstruction: undefined,
-                }),
-            detectionConfig,
-            checklistVisibilityStatus,
-          };
-        });
+        const scenarioEvents = await Promise.all(
+          events.map(async (event) => {
+            const scenarioEvent = await scenarioEventsRepo.findOne({
+              where: {
+                scenarioId,
+                eventId: event.id,
+                autoTerminationStatus: false,
+              },
+            });
+
+            return {
+              ...scenarioEvent,
+              scenarioId,
+              eventId: event.id,
+              autoTerminationStatus: false,
+              score: event.score ?? scenarioEvent?.score,
+              ...(event.feedbackStatus
+                ? {
+                    feedbackStatus: event.feedbackStatus,
+                    emoji: event.emoji,
+                    message: event.message,
+                  }
+                : {
+                    feedbackStatus: false,
+                    emoji: undefined,
+                    message: undefined,
+                  }),
+              ...(event.branchingStatus
+                ? {
+                    branchingStatus: event.branchingStatus,
+                    branchInstruction: event.branchInstruction,
+                  }
+                : {
+                    branchingStatus: false,
+                    branchInstruction: undefined,
+                  }),
+              detectionConfig:
+                event.detectionConfig ?? scenarioEvent?.detectionConfig,
+              checklistVisibilityStatus: event.checklistVisibilityStatus,
+            };
+          }),
+        );
 
         await scenarioEventsRepo.save(scenarioEvents);
 
@@ -1175,6 +1160,68 @@ export class ScenarioService {
       }
       this.logger.error(`Error mapping events to scenario: ${error}`);
       throw error;
+    }
+  }
+
+  private async validateMapEventsToScenario(
+    scenarioId: number,
+    events: EventMappingDto[],
+  ) {
+    if (events.length === 0) {
+      throw new BadRequestException('Events array cannot be empty');
+    }
+
+    const eventIds = events.map((event) => event.id);
+
+    await this.getScenario(scenarioId);
+    // Validate events exist
+    const validEvents = await this.sessionEventService.findByIds(eventIds);
+    const validIdsSet = new Set(validEvents.map((e) => e.id));
+    const invalidEventIds = eventIds.filter((id) => !validIdsSet.has(id));
+    if (invalidEventIds.length > 0) {
+      throw new BadRequestException(`Invalid event IDs: ${invalidEventIds}`);
+    }
+
+    for (const event of events) {
+      if (event.detectionConfig?.startTime === null) {
+        throw new BadRequestException('Start time cannot be null');
+      }
+
+      if (
+        event.detectionConfig?.startTime &&
+        event.detectionConfig?.endTime &&
+        event.detectionConfig?.startTime > event.detectionConfig?.endTime
+      ) {
+        throw new BadRequestException(
+          'Start time cannot be greater than end time',
+        );
+      }
+
+      if (
+        event.detectionConfig?.minGapTime &&
+        event.detectionConfig?.minGapTime < 0
+      ) {
+        throw new BadRequestException('Minimum gap time cannot be less than 0');
+      }
+
+      if (
+        event.detectionConfig?.maxOccurrences &&
+        event.detectionConfig?.maxOccurrences < 0
+      ) {
+        throw new BadRequestException(
+          'Maximum occurrences cannot be less than 0',
+        );
+      }
+
+      if (
+        event.detectionConfig?.minScore &&
+        event.detectionConfig?.maxScore &&
+        event.detectionConfig?.minScore > event.detectionConfig?.maxScore
+      ) {
+        throw new BadRequestException(
+          'Minimum score cannot be greater than maximum score',
+        );
+      }
     }
   }
 
