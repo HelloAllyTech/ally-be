@@ -7,6 +7,7 @@ import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { Scenarios } from '../entity/scenarios.entity';
+import { ExperienceMode, ChecklistType } from '../type/scenario.type';
 
 // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove  util and its usage
 export const mapCreateScenarioRequestToEntityWithoutCustomFields = (
@@ -43,6 +44,10 @@ export const mapCreateScenarioRequestToEntityWithoutCustomFields = (
       emotionalNeeds: scenario.emotionalNeeds,
       tone: scenario.tone,
       openingStatements: scenario.openingStatements,
+      experienceMode: scenario.experienceMode,
+      ...(scenario.experienceMode === ExperienceMode.CHECKLIST && {
+        checklistType: scenario.checklistType || ChecklistType.GUIDED,
+      }),
     },
   };
 };
@@ -83,6 +88,10 @@ export const mapCreateScenarioRequestToEntity = (
         value: customField.value,
       })),
       languageVoices: scenario.languageVoices,
+      experienceMode: scenario.experienceMode,
+      ...(scenario.experienceMode === ExperienceMode.CHECKLIST && {
+        checklistType: scenario.checklistType || ChecklistType.GUIDED,
+      }),
     },
   };
 };
@@ -202,6 +211,8 @@ export const mapUpdateScenarioRequestToEntity = (
           'voiceId',
           'customFields',
           'languageVoices',
+          'experienceMode',
+          'checklistType',
         ]
       : [
           'agentGoal',
@@ -223,6 +234,8 @@ export const mapUpdateScenarioRequestToEntity = (
           'openingStatements',
           'voiceId',
           'languageVoices',
+          'experienceMode',
+          'checklistType',
         ];
 
   // Handle metadata fields - merge with existing metadata

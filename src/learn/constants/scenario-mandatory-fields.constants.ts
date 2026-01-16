@@ -35,4 +35,5 @@ export const SCENARIO_MANDATORY_FIELDS: (keyof CreateScenarioDto)[] = [
   'voiceId',
   'languageVoices',
   'agentDialogues',
+  'experienceMode',
 ];

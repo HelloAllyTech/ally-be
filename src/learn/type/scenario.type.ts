@@ -25,3 +25,18 @@ export enum ScenarioResponseLength {
   MEDIUM = 'MEDIUM',
   ELABORATE = 'ELABORATE',
 }
+
+export enum ExperienceMode {
+  FEEDBACK = 'FEEDBACK',
+  CHECKLIST = 'CHECKLIST',
+}
+
+export enum ChecklistType {
+  GUIDED = 'GUIDED',
+  UNGUIDED = 'UNGUIDED',
+}
+
+export interface ScenarioExperienceMetadata {
+  experienceMode: ExperienceMode;
+  checklistType: ChecklistType;
+}
