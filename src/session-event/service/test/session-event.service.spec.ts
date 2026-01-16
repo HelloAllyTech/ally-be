@@ -1661,6 +1661,15 @@ describe('SessionEventService', () => {
           scenarioEvents_message: 'Custom message',
           scenarioEvents_branchingStatus: true,
           scenarioEvents_branchInstruction: 'Custom branch',
+          scenarioEvents_checklistVisibilityStatus: true,
+          scenarioEvents_detectionConfig: {
+            startTime: 10,
+            endTime: 100,
+            minGapTime: 5,
+            maxOccurrences: 3,
+            minScore: 50,
+            maxScore: 100,
+          },
         },
       ];
 
@@ -1689,6 +1698,15 @@ describe('SessionEventService', () => {
           speaker: SessionEventSpeaker.CARE_GIVER,
           createdAt: new Date('2024-01-01T10:00:00Z'),
           updatedAt: new Date('2024-01-01T10:00:00Z'),
+          checklistVisibilityStatus: true,
+          detectionConfig: {
+            startTime: 10,
+            endTime: 100,
+            minGapTime: 5,
+            maxOccurrences: 3,
+            minScore: 50,
+            maxScore: 100,
+          },
         },
       ]);
       expect(repository.getSessionEventsByScenarioId).toHaveBeenCalledWith(
@@ -1722,6 +1740,15 @@ describe('SessionEventService', () => {
           scenarioEvents_message: 'Custom message 2',
           scenarioEvents_branchingStatus: false,
           scenarioEvents_branchInstruction: 'Custom branch 2',
+          scenarioEvents_checklistVisibilityStatus: true,
+          scenarioEvents_detectionConfig: {
+            startTime: 10,
+            endTime: 100,
+            minGapTime: 5,
+            maxOccurrences: 3,
+            minScore: 50,
+            maxScore: 100,
+          },
         },
       ];
 
@@ -1750,6 +1777,15 @@ describe('SessionEventService', () => {
           speaker: SessionEventSpeaker.CARE_GIVER,
           createdAt: new Date('2024-01-02T10:00:00Z'),
           updatedAt: new Date('2024-01-02T10:00:00Z'),
+          checklistVisibilityStatus: true,
+          detectionConfig: {
+            startTime: 10,
+            endTime: 100,
+            minGapTime: 5,
+            maxOccurrences: 3,
+            minScore: 50,
+            maxScore: 100,
+          },
         },
       ]);
     });
@@ -1781,6 +1817,15 @@ describe('SessionEventService', () => {
           scenarioEvents_message: 'Custom 1',
           scenarioEvents_branchingStatus: true,
           scenarioEvents_branchInstruction: 'Custom branch 1',
+          scenarioEvents_checklistVisibilityStatus: true,
+          scenarioEvents_detectionConfig: {
+            startTime: 10,
+            endTime: 100,
+            minGapTime: 5,
+            maxOccurrences: 3,
+            minScore: 50,
+            maxScore: 100,
+          },
         },
         {
           sessionEvents_id: 'event-2',
@@ -1796,6 +1841,15 @@ describe('SessionEventService', () => {
           scenarioEvents_message: null,
           scenarioEvents_branchingStatus: false,
           scenarioEvents_branchInstruction: null,
+          scenarioEvents_checklistVisibilityStatus: true,
+          scenarioEvents_detectionConfig: {
+            startTime: 10,
+            endTime: 100,
+            minGapTime: 5,
+            maxOccurrences: 3,
+            minScore: 50,
+            maxScore: 100,
+          },
         },
       ];
 
@@ -1896,6 +1950,15 @@ describe('SessionEventService', () => {
           scenarioEvents_message: 'Custom message 4',
           scenarioEvents_branchingStatus: true,
           scenarioEvents_branchInstruction: null, // null, so should use fallback
+          scenarioEvents_checklistVisibilityStatus: true,
+          scenarioEvents_detectionConfig: {
+            startTime: 10,
+            endTime: 100,
+            minGapTime: 5,
+            maxOccurrences: 3,
+            minScore: 50,
+            maxScore: 100,
+          },
         },
       ];
 
@@ -1924,6 +1987,15 @@ describe('SessionEventService', () => {
           speaker: SessionEventSpeaker.CARE_GIVER,
           createdAt: new Date('2024-01-03T10:00:00Z'),
           updatedAt: new Date('2024-01-03T10:00:00Z'),
+          checklistVisibilityStatus: true,
+          detectionConfig: {
+            startTime: 10,
+            endTime: 100,
+            minGapTime: 5,
+            maxOccurrences: 3,
+            minScore: 50,
+            maxScore: 100,
+          },
         },
       ]);
       expect(repository.getSessionEventsByScenarioId).toHaveBeenCalledWith(
