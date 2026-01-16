@@ -10,7 +10,7 @@ Before you begin, ensure you have the following installed:
 
 ### Required Software
 
-- **Node.js** (v18) - [Download](https://nodejs.org/)
+- **Node.js** (v24) - [Download](https://nodejs.org/)
 - **npm** - Comes with Node.js
 - **Docker** (v20.10 or higher) - [Download](https://www.docker.com/get-started)
 - **Docker Compose** (v2.0 or higher) - Usually included with Docker Desktop
@@ -19,7 +19,6 @@ Before you begin, ensure you have the following installed:
 
 ### Required Accounts & API Keys
 
-- **Deepgram Account** - For speech-to-text transcription ([Sign up](https://deepgram.com/))
 - **LiveKit Account** - For WebRTC audio/video calls ([Sign up](https://livekit.io/))
 - **AI Service** - External AI service for summaries and analysis
 - **AWS Account** (optional) - For S3, SQS, SES, CloudWatch (LocalStack can be used for local dev)
