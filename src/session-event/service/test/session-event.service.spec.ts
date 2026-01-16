@@ -192,6 +192,126 @@ describe('SessionEventService', () => {
         service.createSessionEvents([createEventDto], mockUserId),
       ).rejects.toThrow('Invalid combination expression event IDs');
     });
+
+    describe('detectionConfig validation', () => {
+      it('should throw BadRequestException when detectionConfig startTime is null', async () => {
+        const createEventDto: CreateSessionEventDto = {
+          name: 'Test Event',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionConfig: {
+            startTime: null as any,
+          },
+        };
+
+        await expect(
+          service.createSessionEvents([createEventDto], mockUserId),
+        ).rejects.toThrow(BadRequestException);
+        await expect(
+          service.createSessionEvents([createEventDto], mockUserId),
+        ).rejects.toThrow('Start time cannot be null');
+      });
+
+      it('should throw BadRequestException when startTime is greater than endTime', async () => {
+        const createEventDto: CreateSessionEventDto = {
+          name: 'Test Event',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionConfig: {
+            startTime: 100,
+            endTime: 50,
+          },
+        };
+
+        await expect(
+          service.createSessionEvents([createEventDto], mockUserId),
+        ).rejects.toThrow(BadRequestException);
+        await expect(
+          service.createSessionEvents([createEventDto], mockUserId),
+        ).rejects.toThrow('Start time cannot be greater than end time');
+      });
+
+      it('should throw BadRequestException when minGapTime is less than 0', async () => {
+        const createEventDto: CreateSessionEventDto = {
+          name: 'Test Event',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionConfig: {
+            minGapTime: -5,
+          },
+        };
+
+        await expect(
+          service.createSessionEvents([createEventDto], mockUserId),
+        ).rejects.toThrow(BadRequestException);
+        await expect(
+          service.createSessionEvents([createEventDto], mockUserId),
+        ).rejects.toThrow('Minimum gap time cannot be less than 0');
+      });
+
+      it('should throw BadRequestException when maxOccurrences is less than 0', async () => {
+        const createEventDto: CreateSessionEventDto = {
+          name: 'Test Event',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionConfig: {
+            maxOccurrences: -1,
+          },
+        };
+
+        await expect(
+          service.createSessionEvents([createEventDto], mockUserId),
+        ).rejects.toThrow(BadRequestException);
+        await expect(
+          service.createSessionEvents([createEventDto], mockUserId),
+        ).rejects.toThrow('Maximum occurrences cannot be less than 0');
+      });
+
+      it('should throw BadRequestException when minScore is greater than maxScore', async () => {
+        const createEventDto: CreateSessionEventDto = {
+          name: 'Test Event',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionConfig: {
+            minScore: 90,
+            maxScore: 50,
+          },
+        };
+
+        await expect(
+          service.createSessionEvents([createEventDto], mockUserId),
+        ).rejects.toThrow(BadRequestException);
+        await expect(
+          service.createSessionEvents([createEventDto], mockUserId),
+        ).rejects.toThrow('Minimum score cannot be greater than maximum score');
+      });
+
+      it('should accept valid detectionConfig with proper values', async () => {
+        const createEventDto: CreateSessionEventDto = {
+          name: 'Test Event',
+          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          visibilityType: SessionEventVisibilityType.ACTIVE,
+          detectionConfig: {
+            startTime: 10,
+            endTime: 100,
+            minGapTime: 5,
+            maxOccurrences: 3,
+            minScore: 50,
+            maxScore: 100,
+          },
+        };
+
+        repository.createSessionEvents.mockResolvedValue([mockSessionEvent]);
+
+        const result = await service.createSessionEvents(
+          [createEventDto],
+          mockUserId,
+        );
+
+        expect(result).toBeDefined();
+        expect(repository.createSessionEvents).toHaveBeenCalled();
+      });
+    });
   });
 
   describe('updateSessionEvent', () => {
@@ -1306,6 +1426,70 @@ describe('SessionEventService', () => {
         expect(result.isEditable).toBe(true);
         expect(result.detectionType).toBe(type);
       }
+    });
+
+    it('should handle event with NOT expression in detectionData', async () => {
+      const eventId = 'event-not-expr';
+      const childEventId = 'child-event-1';
+      const eventWithNotExpression: SessionEvents = {
+        ...mockSessionEvent,
+        id: eventId,
+        detectionType: SessionEventDetectionType.COMBINATION,
+        detectionData: {
+          expression: {
+            type: CombinationExpressionType.NOT,
+            operand: {
+              type: CombinationExpressionType.IDENTIFIER,
+              id: childEventId,
+            },
+          },
+        },
+      };
+
+      const childEvent: SessionEvents = {
+        ...mockSessionEvent,
+        id: childEventId,
+        name: 'Child Event',
+      };
+
+      repository.findOne.mockImplementation(async (options: any) => {
+        if (options?.where?.id === eventId) return eventWithNotExpression;
+        if (options?.where?.id === childEventId) return childEvent;
+        return null;
+      });
+
+      const result = await service.getSessionEventById(eventId);
+
+      expect(result).toBeDefined();
+      expect(result.detectionData).toBeDefined();
+      expect(result.detectionData?.expression).toBeDefined();
+      expect((result.detectionData?.expression as any).type).toBe(
+        CombinationExpressionRequestType.NOT,
+      );
+      expect((result.detectionData?.expression as any).left).toBeDefined();
+    });
+
+    it('should throw BadRequestException for invalid expression type in detectionData', async () => {
+      const eventId = 'event-invalid-expr';
+      const eventWithInvalidExpression: SessionEvents = {
+        ...mockSessionEvent,
+        id: eventId,
+        detectionType: SessionEventDetectionType.COMBINATION,
+        detectionData: {
+          expression: {
+            type: 'INVALID_TYPE' as any, // Invalid type not in the enum
+          },
+        },
+      };
+
+      repository.findOne.mockResolvedValue(eventWithInvalidExpression);
+
+      await expect(service.getSessionEventById(eventId)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getSessionEventById(eventId)).rejects.toThrow(
+        'Invalid combination expression',
+      );
     });
   });
 
