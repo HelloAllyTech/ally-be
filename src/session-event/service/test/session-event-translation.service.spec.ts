@@ -177,6 +177,8 @@ describe('SessionEventTranslationService', () => {
           sessionEvents_createdAt: new Date(),
           sessionEvents_updatedAt: new Date(),
           sessionEvents_eventCode: 'TEST_EVENT',
+          scenarioEvents_detectionConfig: {},
+          scenarioEvents_checklistVisibilityStatus: true,
         },
       ];
 

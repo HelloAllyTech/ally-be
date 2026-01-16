@@ -172,6 +172,7 @@ export class SessionEventService {
       createdAt: event.sessionEvents_createdAt,
       updatedAt: event.sessionEvents_updatedAt,
       eventCode: event.sessionEvents_eventCode,
+      checklistVisibilityStatus: event.scenarioEvents_checklistVisibilityStatus,
       detectionConfig:
         event.scenarioEvents_detectionConfig ||
         event.sessionEvents_detectionConfig

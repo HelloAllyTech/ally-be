@@ -114,6 +114,8 @@ export class SessionEventTranslationsRepository extends Repository<SessionEvents
       `COALESCE("scenarioTranslations"."branchInstruction", "scenarioEvents"."branchInstruction") AS "scenarioEvents_branchInstruction"`,
       `"scenarioEvents"."deletedAt" AS "scenarioEvents_deletedAt"`,
       `"scenarioEvents"."autoTerminationStatus" AS "scenarioEvents_autoTerminationStatus"`,
+      `"scenarioEvents"."detectionConfig" AS "scenarioEvents_detectionConfig"`,
+      `"scenarioEvents"."checklistVisibilityStatus" AS "scenarioEvents_checklistVisibilityStatus"`,
     ]);
 
     // WHERE (grouped) and deletedAt filter

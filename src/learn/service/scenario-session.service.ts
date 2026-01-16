@@ -296,6 +296,18 @@ export class ScenarioSessionService {
         languageDetails,
       );
 
+      // Preparing events for simulation room
+      const checklistEvents = sessionEvents
+        .filter(
+          (event: SessionEvents & { checklistVisibilityStatus?: boolean }) =>
+            event?.checklistVisibilityStatus,
+        )
+        .map(({ name, id, score }) => ({
+          name,
+          id,
+          score,
+        }));
+
       // Create LiveKit room
       await this.livekitService.createRoom({
         name: `${scenarioSession.roomId}`,
@@ -319,6 +331,9 @@ export class ScenarioSessionService {
         status: scenario?.status,
         difficultyLevel: scenario?.difficultyLevel,
         triggerWarnings: scenario?.triggerWarnings,
+        experienceMode: scenario?.metadata?.experienceMode,
+        checklistType: scenario?.metadata?.checklistType,
+        checklistEvents,
         metadata: {
           name: scenario?.metadata?.name,
           title: scenario?.metadata?.title,
