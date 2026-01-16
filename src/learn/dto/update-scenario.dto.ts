@@ -10,6 +10,8 @@ import {
   ValidateNested,
   IsObject,
   ArrayMaxSize,
+  ValidateIf,
+  IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -17,6 +19,8 @@ import {
   ScenarioDifficultyLevel,
   ScenarioResponseLength,
   ScenarioStatus,
+  ExperienceMode,
+  ChecklistType,
 } from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
@@ -319,4 +323,24 @@ export class UpdateScenarioDto {
   @ValidateNested({ each: true })
   @Type(() => CustomFieldsDto)
   customFields?: CustomFieldsDto[];
+
+  @ApiProperty({
+    description: 'Experience mode for the scenario',
+    enum: ExperienceMode,
+    example: ExperienceMode.FEEDBACK,
+    required: false,
+  })
+  @IsEnum(ExperienceMode)
+  experienceMode?: ExperienceMode;
+
+  @ApiProperty({
+    description: 'Checklist type (required when experienceMode is CHECKLIST)',
+    enum: ChecklistType,
+    example: ChecklistType.GUIDED,
+    required: false,
+  })
+  @IsEnum(ChecklistType)
+  @ValidateIf((o) => o.experienceMode === ExperienceMode.CHECKLIST)
+  @IsNotEmpty()
+  checklistType?: ChecklistType;
 }

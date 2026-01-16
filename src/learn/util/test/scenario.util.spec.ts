@@ -6,7 +6,11 @@ import {
 import { CreateScenarioDto } from '../../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../../dto/create-scenarios.dto';
 import { Scenarios } from '../../entity/scenarios.entity';
-import { ScenarioStatus } from '../../type/scenario.type';
+import {
+  ScenarioStatus,
+  ExperienceMode,
+  ChecklistType,
+} from '../../type/scenario.type';
 import {
   Gender,
   GenderIdentity,
@@ -43,6 +47,8 @@ describe('Scenario Util', () => {
         emotionalNeeds: 'Support',
         tone: 'Warm',
         openingStatements: ['Hello', 'Welcome'],
+        experienceMode: ExperienceMode.CHECKLIST,
+        checklistType: ChecklistType.GUIDED,
       };
 
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
@@ -74,6 +80,8 @@ describe('Scenario Util', () => {
           agentDialogues: scenario.agentDialogues,
           responseLength: scenario.responseLength,
           customFields: scenario.customFields,
+          experienceMode: ExperienceMode.CHECKLIST,
+          checklistType: ChecklistType.GUIDED,
         },
       });
     });
@@ -185,6 +193,90 @@ describe('Scenario Util', () => {
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
 
       expect(result.metadata.customFields).toEqual([]);
+    });
+
+    it('should include checklistType only when experienceMode is CHECKLIST', () => {
+      const userId = 201;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with CHECKLIST experience mode',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        experienceMode: ExperienceMode.CHECKLIST,
+        checklistType: ChecklistType.GUIDED,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.experienceMode).toBe(ExperienceMode.CHECKLIST);
+      expect(result.metadata.checklistType).toBe(ChecklistType.GUIDED);
+    });
+
+    it('should not include checklistType when experienceMode is FEEDBACK', () => {
+      const userId = 203;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with FEEDBACK experience mode',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        experienceMode: ExperienceMode.FEEDBACK,
+        checklistType: ChecklistType.GUIDED,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.experienceMode).toBe(ExperienceMode.FEEDBACK);
+      expect(result.metadata.checklistType).toBeUndefined();
+    });
+
+    it('should handle explicit FEEDBACK mode with all fields', () => {
+      const userId = 204;
+      const scenario: CreateScenarioDto = {
+        title: 'Complete Scenario with FEEDBACK mode',
+        description: 'Description',
+        status: ScenarioStatus.ACTIVE,
+        prompt: 'You are a counselor',
+        isGlobal: true,
+        difficultyLevel: 'INTERMEDIATE',
+        name: 'Test User',
+        age: 30,
+        voiceId: 'voice-123',
+        experienceMode: ExperienceMode.FEEDBACK,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata).toEqual(
+        expect.objectContaining({
+          experienceMode: ExperienceMode.FEEDBACK,
+          name: 'Test User',
+          age: 30,
+          voiceId: 'voice-123',
+        }),
+      );
+      expect(result.metadata.checklistType).toBeUndefined();
+    });
+
+    it('should handle explicit CHECKLIST mode with UNGUIDED type', () => {
+      const userId = 205;
+      const scenario: CreateScenarioDto = {
+        title: 'CHECKLIST Scenario with UNGUIDED type',
+        description: 'Description',
+        status: ScenarioStatus.ACTIVE,
+        prompt: 'Prompt',
+        isGlobal: false,
+        name: 'Test Client',
+        age: 25,
+        experienceMode: ExperienceMode.CHECKLIST,
+        checklistType: ChecklistType.UNGUIDED,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.experienceMode).toBe(ExperienceMode.CHECKLIST);
+      expect(result.metadata.checklistType).toBe(ChecklistType.UNGUIDED);
     });
   });
 
