@@ -18,6 +18,8 @@ import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.en
 import {
   ScenarioStatus,
   ScenarioDifficultyLevel,
+  ExperienceMode,
+  ChecklistType,
 } from 'src/learn/type/scenario.type';
 import { ScenarioSessionMessagesRepository } from 'src/learn/repository/scenario-session-messages.repository';
 import { ScenarioSessionRepository } from 'src/learn/repository/scenario-session.repository';
@@ -708,6 +710,8 @@ describe('ScenarioSessionService', () => {
           responseLength: 'short',
           agentDialogues: 'Sample dialogue',
           languageVoices: { 1: 'voice-123' },
+          experienceMode: ExperienceMode.FEEDBACK,
+          checklistType: ChecklistType.GUIDED,
         },
         isGlobal: false,
         isPublic: false,
@@ -764,6 +768,8 @@ describe('ScenarioSessionService', () => {
           genderIdentity: 'female',
           sexualOrientation: 'heterosexual',
           agentDialogues: ['Hello, how can I help you?'],
+          experienceMode: ExperienceMode.FEEDBACK,
+          checklistType: ChecklistType.GUIDED,
         },
       };
 
