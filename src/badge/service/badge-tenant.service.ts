@@ -8,7 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { BadgeTenant } from '../entity/badge-tenant.entity';
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { Badge } from '../entity/badge.entity';
-import { BadgeStatus } from '../constants/badge.constants';
+import { BadgeStatus, BadgeVisibilityType } from '../constants/badge.constants';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
@@ -62,7 +62,7 @@ export class BadgeTenantService {
 
     if (badgeTenants.length > 0) {
       await this.badgeTenantRepository.save(badgeTenants);
-      // TODO: Call function to evaluate and award badge for each tenant
+      // TODO: Call function to evaluate and award badge for each tenant users
     }
 
     return true;
@@ -77,5 +77,31 @@ export class BadgeTenantService {
 
   async removeBadgeFromAllTenants(badgeId: string): Promise<void> {
     await this.badgeTenantRepository.softDelete({ badgeId });
+  }
+
+  async addPublicBadgesToTenant(tenantId: string): Promise<boolean> {
+    const tenant = await this.tenantsRepository.findOne({
+      where: { id: tenantId },
+    });
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+    const publicBadges = await this.badgeRepository.find({
+      where: {
+        visibilityType: BadgeVisibilityType.PUBLIC,
+        status: BadgeStatus.ACTIVE,
+      },
+    });
+    if (publicBadges.length === 0) {
+      throw new NotFoundException('No public badges found');
+    }
+    await this.badgeTenantRepository.save(
+      publicBadges.map((badge) => ({
+        badgeId: badge.id,
+        tenantId: tenant.id,
+      })),
+    );
+
+    return true;
   }
 }

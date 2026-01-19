@@ -21,6 +21,7 @@ import { TenantScenarioPathSharedService } from './tenant-scenario-path-shared';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { S3Service } from 'src/aws/service/s3.service';
 import { AppConfigService } from 'src/config/config.service';
+import { BadgeTenantSharedService } from 'src/badge/service/badge-tenant-shared.service';
 import {
   LogoUploadRequestDto,
   OrganizationLogoUploadResponseDto,
@@ -39,6 +40,7 @@ export class TenantService {
     private readonly tenantsRepository: TenantsRepository,
     private readonly tenantScenarioSharedService: TenantScenarioSharedService,
     private readonly tenantScenarioPathSharedService: TenantScenarioPathSharedService,
+    private readonly badgeTenantSharedService: BadgeTenantSharedService,
     @Inject(forwardRef(() => UserRepository))
     private readonly userRepository: UserRepository,
     private readonly dataSource: DataSource,
@@ -87,6 +89,11 @@ export class TenantService {
           );
 
           await this.tenantScenarioPathSharedService.assignGlobalScenarioPathsToTenant(
+            savedTenant.id,
+            entityManager,
+          );
+
+          await this.badgeTenantSharedService.addPublicBadgesToTenant(
             savedTenant.id,
             entityManager,
           );

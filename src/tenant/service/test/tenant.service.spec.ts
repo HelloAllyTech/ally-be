@@ -17,6 +17,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { LogoUploadContentType } from 'src/tenant/enum/tenant.enum';
+import { BadgeTenantSharedService } from 'src/badge/service/badge-tenant-shared.service';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -97,6 +98,10 @@ describe('TenantService', () => {
       assignGlobalScenarioPathsToTenant: jest.fn(),
     };
 
+    const mockBadgeTenantSharedService = {
+      addPublicBadgesToTenant: jest.fn(),
+    };
+
     const mockDataSource = {
       transaction: jest.fn(),
     };
@@ -139,6 +144,10 @@ describe('TenantService', () => {
         {
           provide: TenantScenarioPathSharedService,
           useValue: mockTenantScenarioPathSharedService,
+        },
+        {
+          provide: BadgeTenantSharedService,
+          useValue: mockBadgeTenantSharedService,
         },
         {
           provide: DataSource,
