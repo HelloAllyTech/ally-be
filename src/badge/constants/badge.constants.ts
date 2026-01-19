@@ -20,6 +20,7 @@ export enum BadgeViewedStatus {
   UNVIEWED = 'UNVIEWED',
 }
 
-export interface BadgeAchievementParams {
-  count?: number;
+export enum BadgeLockStatus {
+  LOCKED = 'LOCKED',
+  UNLOCKED = 'UNLOCKED',
 }

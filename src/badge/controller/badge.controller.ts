@@ -17,6 +17,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import {
   UserBadgeResponseDto,
   UserBadgeCountResponseDto,
+  GroupedUserAvailableBadgesDto,
 } from '../dto/user-badge-response.dto';
 import { BadgeTenantService } from '../service/badge-tenant.service';
 import { AddBadgeToTenantsRequestDto } from '../dto/badge-tenant.dto';
@@ -79,6 +80,24 @@ export class BadgeController {
       viewedStatus,
     );
     return { count };
+  }
+
+  @ApiOperation({
+    summary:
+      'Get all available badges for the current user grouped by category',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns all badges available for the tenant, grouped by category and sorted by achievement count',
+    type: [GroupedUserAvailableBadgesDto],
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_USER_BADGES])
+  @Get('available')
+  async getAvailableBadges(
+    @CurrentUser() tokenUser: TokenUser,
+  ): Promise<GroupedUserAvailableBadgesDto[]> {
+    return this.badgeService.getFormattedUserAvailableBadges(tokenUser.id);
   }
 
   @ApiOperation({ summary: 'Add badge to tenants' })
