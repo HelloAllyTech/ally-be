@@ -8,9 +8,9 @@ import {
   BadgeStatus,
   BadgeVisibilityType,
   BadgeCategory,
-  BadgeAchievementParams,
 } from '../constants/badge.constants';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import { BadgeAchievementParams } from '../type/badge.type';
 
 @Entity('badges')
 export class Badge extends BaseWithoutTenantEntity {

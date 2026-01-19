@@ -1,5 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { BadgeViewedStatus } from '../constants/badge.constants';
+import {
+  BadgeCategory,
+  BadgeLockStatus,
+  BadgeViewedStatus,
+} from '../constants/badge.constants';
 
 export class UserBadgeWithDetailsDto {
   @ApiProperty({ description: 'User badge assignment ID' })
@@ -48,4 +52,64 @@ export class UserBadgeCountResponseDto {
     example: 5,
   })
   count!: number;
+}
+
+export class BadgeAchievementParamsDto {
+  @ApiProperty({
+    description: 'Achievement count threshold',
+    example: 5,
+    required: false,
+  })
+  count?: number;
+}
+
+export class UserAvailableBadgeDto {
+  @ApiProperty({ description: 'Badge ID' })
+  id!: string;
+
+  @ApiProperty({ description: 'Unique badge code' })
+  code!: string;
+
+  @ApiProperty({ description: 'Badge name' })
+  name!: string;
+
+  @ApiProperty({ description: 'Badge description', required: false })
+  description?: string;
+
+  @ApiProperty({ description: 'Badge image URL', required: false })
+  imageUrl?: string;
+
+  @ApiProperty({ enum: BadgeCategory, description: 'Badge category' })
+  category!: BadgeCategory;
+
+  @ApiProperty({
+    type: BadgeAchievementParamsDto,
+    description: 'Achievement parameters',
+    required: false,
+  })
+  achievementParams?: BadgeAchievementParamsDto;
+
+  @ApiProperty({
+    enum: BadgeViewedStatus,
+    description: 'Whether the user has viewed this badge',
+    nullable: true,
+  })
+  viewedStatus!: BadgeViewedStatus | null;
+
+  @ApiProperty({
+    enum: BadgeLockStatus,
+    description: 'Whether the badge is locked or unlocked for the user',
+  })
+  lockStatus!: BadgeLockStatus;
+}
+
+export class GroupedUserAvailableBadgesDto {
+  @ApiProperty({ enum: BadgeCategory, description: 'Badge category name' })
+  category!: BadgeCategory;
+
+  @ApiProperty({
+    type: [UserAvailableBadgeDto],
+    description: 'List of badges in this category',
+  })
+  badges!: UserAvailableBadgeDto[];
 }
