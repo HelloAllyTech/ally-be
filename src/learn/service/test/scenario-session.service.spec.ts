@@ -712,6 +712,8 @@ describe('ScenarioSessionService', () => {
           languageVoices: { 1: 'voice-123' },
           experienceMode: ExperienceMode.FEEDBACK,
           checklistType: ChecklistType.GUIDED,
+          timerMode: true,
+          maxTimeValue: '1:20:00',
         },
         isGlobal: false,
         isPublic: false,
@@ -770,6 +772,8 @@ describe('ScenarioSessionService', () => {
           agentDialogues: ['Hello, how can I help you?'],
           experienceMode: ExperienceMode.FEEDBACK,
           checklistType: ChecklistType.GUIDED,
+          timerMode: true,
+          maxTimeValue: '1:20:00',
         },
       };
 

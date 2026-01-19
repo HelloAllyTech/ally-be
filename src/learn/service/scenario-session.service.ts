@@ -333,6 +333,8 @@ export class ScenarioSessionService {
         triggerWarnings: scenario?.triggerWarnings,
         experienceMode: scenario?.metadata?.experienceMode,
         checklistType: scenario?.metadata?.checklistType,
+        timerMode: scenario?.metadata?.timerMode,
+        maxTimeValue: scenario?.metadata?.maxTimeValue,
         checklistEvents,
         metadata: {
           name: scenario?.metadata?.name,

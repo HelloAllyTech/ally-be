@@ -343,4 +343,25 @@ export class UpdateScenarioDto {
   @ValidateIf((o) => o.experienceMode === ExperienceMode.CHECKLIST)
   @IsNotEmpty()
   checklistType?: ChecklistType;
+
+  @ApiProperty({
+    description:
+      'Timer mode for the scenario, to show timer during the session.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  timerMode?: boolean;
+
+  @ApiProperty({
+    description:
+      'Maximum time value for the scenario timer (required when timerMode is true)',
+    example: '1:30:00',
+    required: false,
+  })
+  @ValidateIf((o) => o.timerMode === true)
+  @IsNotEmpty()
+  @IsString()
+  maxTimeValue?: string;
 }
