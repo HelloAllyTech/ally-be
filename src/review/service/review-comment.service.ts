@@ -42,10 +42,16 @@ export class ReviewCommentService {
       throw new BadRequestException('User not found');
     }
 
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+
     const review = await this.reviewRepository.findOne({
       where: {
         id: reviewId,
         status: ReviewStatus.IN_REVIEW,
+        tenantId,
       },
     });
     if (!review) {
@@ -86,6 +92,7 @@ export class ReviewCommentService {
         reviewThreadId: thread.id,
         content: createReviewCommentDto.content,
         createdBy: Number(userId),
+        tenantId,
       });
       await this.reviewCommentRepository.save(comment);
 
@@ -110,6 +117,7 @@ export class ReviewCommentService {
         content: createReviewCommentDto.content,
         createdBy: Number(userId),
         parentCommentId: createReviewCommentDto.parentCommentId,
+        tenantId,
       });
       await this.reviewCommentRepository.save(reply);
       return {
@@ -135,12 +143,14 @@ export class ReviewCommentService {
               messageId: createReviewCommentDto.messageId,
               createdBy: Number(userId),
               selection: createReviewCommentDto.selection,
+              tenantId,
             });
             await entityManager.save(ReviewThread, thread);
             const comment = entityManager.create(ReviewComment, {
               reviewThreadId: thread.id,
               content: createReviewCommentDto.content,
               createdBy: Number(userId),
+              tenantId,
             });
             await entityManager.save(ReviewComment, comment);
             return {

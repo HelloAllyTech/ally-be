@@ -2,6 +2,7 @@ import {
   NotFoundException,
   ForbiddenException,
   Injectable,
+  BadRequestException,
 } from '@nestjs/common';
 import { In } from 'typeorm';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -32,8 +33,13 @@ export class ReviewThreadService {
     reviewId: string,
     options?: Pagination,
   ): Promise<ReviewThreadsResponseDto> {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+
     const review = await this.reviewRepository.findOne({
-      where: { id: reviewId },
+      where: { id: reviewId, tenantId },
     });
     if (!review) {
       throw new NotFoundException('Review not found');
@@ -49,7 +55,7 @@ export class ReviewThreadService {
       [PERMISSIONS.LEARNER_ACCESS],
     );
     if (
-      (isReviewer && review.tenantId !== ExecutionManager.getTenantId()) ||
+      (isReviewer && review.tenantId !== tenantId) ||
       (!isReviewer && isLearner && review.createdBy !== userId)
     ) {
       throw new ForbiddenException('You are not allowed to access this review');
