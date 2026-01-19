@@ -48,6 +48,10 @@ export const mapCreateScenarioRequestToEntityWithoutCustomFields = (
       ...(scenario.experienceMode === ExperienceMode.CHECKLIST && {
         checklistType: scenario.checklistType || ChecklistType.GUIDED,
       }),
+      timerMode: scenario.timerMode,
+      ...(scenario.timerMode === true && {
+        maxTimeValue: scenario.maxTimeValue,
+      }),
     },
   };
 };
@@ -91,6 +95,10 @@ export const mapCreateScenarioRequestToEntity = (
       experienceMode: scenario.experienceMode,
       ...(scenario.experienceMode === ExperienceMode.CHECKLIST && {
         checklistType: scenario.checklistType || ChecklistType.GUIDED,
+      }),
+      timerMode: scenario.timerMode,
+      ...(scenario.timerMode === true && {
+        maxTimeValue: scenario.maxTimeValue,
       }),
     },
   };
@@ -213,6 +221,8 @@ export const mapUpdateScenarioRequestToEntity = (
           'languageVoices',
           'experienceMode',
           'checklistType',
+          'timerMode',
+          'maxTimeValue',
         ]
       : [
           'agentGoal',
@@ -236,6 +246,8 @@ export const mapUpdateScenarioRequestToEntity = (
           'languageVoices',
           'experienceMode',
           'checklistType',
+          'timerMode',
+          'maxTimeValue',
         ];
 
   // Handle metadata fields - merge with existing metadata

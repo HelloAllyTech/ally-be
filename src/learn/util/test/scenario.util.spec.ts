@@ -49,6 +49,8 @@ describe('Scenario Util', () => {
         openingStatements: ['Hello', 'Welcome'],
         experienceMode: ExperienceMode.CHECKLIST,
         checklistType: ChecklistType.GUIDED,
+        timerMode: true,
+        maxTimeValue: '1:30:00',
       };
 
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
@@ -82,6 +84,8 @@ describe('Scenario Util', () => {
           customFields: scenario.customFields,
           experienceMode: ExperienceMode.CHECKLIST,
           checklistType: ChecklistType.GUIDED,
+          timerMode: true,
+          maxTimeValue: '1:30:00',
         },
       });
     });
@@ -277,6 +281,57 @@ describe('Scenario Util', () => {
 
       expect(result.metadata.experienceMode).toBe(ExperienceMode.CHECKLIST);
       expect(result.metadata.checklistType).toBe(ChecklistType.UNGUIDED);
+    });
+
+    it('should include maxTimeValue only when timerMode is true', () => {
+      const userId = 301;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with Timer',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        timerMode: true,
+        maxTimeValue: '1:20:00',
+      } as any;
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.timerMode).toBe(true);
+      expect(result.metadata.maxTimeValue).toBe('1:20:00');
+    });
+
+    it('should not include maxTimeValue when timerMode is false', () => {
+      const userId = 302;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario without Timer',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        timerMode: false,
+        maxTimeValue: '1:20:00',
+      } as any;
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.timerMode).toBe(false);
+      expect(result.metadata.maxTimeValue).toBeUndefined();
+    });
+
+    it('should handle undefined timerMode and maxTimeValue', () => {
+      const userId = 303;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with Undefined Timer',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        timerMode: undefined,
+        maxTimeValue: undefined,
+      } as any;
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.timerMode).toBeUndefined();
+      expect(result.metadata.maxTimeValue).toBeUndefined();
     });
   });
 
