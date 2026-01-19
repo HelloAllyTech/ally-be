@@ -79,6 +79,11 @@ export class CombinationExpressionResponseDto {
   @IsString()
   @IsOptional()
   name?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  eventCode?: string;
 }
 
 export class BinaryClassificationExampleDto {

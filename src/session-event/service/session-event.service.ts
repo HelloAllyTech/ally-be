@@ -443,7 +443,11 @@ export class SessionEventService {
         const event = await this.sessionEventRepository.findOne({
           where: { id: expr.id },
         });
-        return { id: expr.id ?? '', name: event?.name ?? '' };
+        return {
+          id: expr.id ?? '',
+          name: event?.name ?? '',
+          eventCode: event?.eventCode ?? '',
+        };
 
       case CombinationExpressionType.NOT:
         // convert operand -> left

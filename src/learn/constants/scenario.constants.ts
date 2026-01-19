@@ -7,4 +7,5 @@ export const BRANCHING_INSTRUCTION_DYNAMIC_SHORTCUTS: string[] = [
   DynamicBranchShortcut.CHAT_SUMMARY,
   DynamicBranchShortcut.LAST_HELPER_UTTERANCE,
   DynamicBranchShortcut.LLM_RESPONSE,
+  DynamicBranchShortcut.YOUR_CONTEXT,
 ];

@@ -4149,6 +4149,7 @@ describe('ScenarioService', () => {
       'chat_summary',
       'last_helper_utterance',
       'llm_response()',
+      'Your context',
     ];
 
     it('should return default dynamic branch shortcuts when no scenarioId is provided', async () => {
