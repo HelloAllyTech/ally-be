@@ -1,8 +1,8 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
-import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import { BaseEntity } from 'src/common/entity/base.entity';
 
 @Entity('review_comment_reactions')
-export class ReviewCommentReaction extends BaseWithoutTenantEntity {
+export class ReviewCommentReaction extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
