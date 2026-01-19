@@ -1,8 +1,18 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
   ApiOperation,
+  ApiParam,
   ApiQuery,
   ApiResponse,
   ApiSecurity,
@@ -18,6 +28,7 @@ import {
   UserBadgeResponseDto,
   UserBadgeCountResponseDto,
   GroupedUserAvailableBadgesDto,
+  MarkBadgeViewedResponseDto,
 } from '../dto/user-badge-response.dto';
 import { BadgeTenantService } from '../service/badge-tenant.service';
 import { AddBadgeToTenantsRequestDto } from '../dto/badge-tenant.dto';
@@ -70,7 +81,7 @@ export class BadgeController {
     type: UserBadgeCountResponseDto,
   })
   @AuthPermissions([PERMISSIONS.VIEW_USER_BADGES])
-  @Get('count')
+  @Get('me/count')
   async getMyBadgeCount(
     @CurrentUser() tokenUser: TokenUser,
     @Query('viewedStatus') viewedStatus?: BadgeViewedStatus,
@@ -98,6 +109,30 @@ export class BadgeController {
     @CurrentUser() tokenUser: TokenUser,
   ): Promise<GroupedUserAvailableBadgesDto[]> {
     return this.badgeService.getFormattedUserAvailableBadges(tokenUser.id);
+  }
+
+  @ApiOperation({ summary: 'Mark a badge as viewed for the current user' })
+  @ApiParam({
+    name: 'badgeId',
+    type: String,
+    description: 'The ID of the badge to mark as viewed',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Badge marked as viewed successfully',
+    type: MarkBadgeViewedResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Badge not found for user',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_USER_BADGES])
+  @Patch('me/:badgeId/viewed')
+  async markBadgeAsViewed(
+    @CurrentUser() tokenUser: TokenUser,
+    @Param('badgeId', ParseUUIDPipe) badgeId: string,
+  ): Promise<MarkBadgeViewedResponseDto> {
+    return this.badgeService.markBadgeAsViewed(tokenUser.id, badgeId);
   }
 
   @ApiOperation({ summary: 'Add badge to tenants' })

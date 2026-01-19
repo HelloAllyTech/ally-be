@@ -11,9 +11,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { groupAndSortBadgesByCategory } from '../util/badge.util';
 import {
   GroupedUserAvailableBadges,
+  MarkBadgeViewedResponse,
   UserAvailableBadge,
   UserBadgeResponse,
 } from '../type/badge-response.type';
+import { NotFoundException } from 'src/exception/custom.exception';
 
 @Injectable()
 export class BadgeService {
@@ -87,5 +89,29 @@ export class BadgeService {
 
     // Group badges by category and sort by achievementParams.count
     return groupAndSortBadgesByCategory(availableBadges);
+  }
+
+  async markBadgeAsViewed(
+    userId: number,
+    badgeId: string,
+  ): Promise<MarkBadgeViewedResponse> {
+    const badgeUser = await this.badgeUserRepository.findOne({
+      where: {
+        userId,
+        badgeId,
+      },
+    });
+
+    if (!badgeUser) {
+      throw new NotFoundException('Badge not found for user');
+    }
+
+    badgeUser.viewedStatus = BadgeViewedStatus.VIEWED;
+    await this.badgeUserRepository.save(badgeUser);
+
+    return {
+      badgeId,
+      viewedStatus: BadgeViewedStatus.VIEWED,
+    };
   }
 }
