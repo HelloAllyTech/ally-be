@@ -113,3 +113,14 @@ export class GroupedUserAvailableBadgesDto {
   })
   badges!: UserAvailableBadgeDto[];
 }
+
+export class MarkBadgeViewedResponseDto {
+  @ApiProperty({ description: 'Badge ID that was marked as viewed' })
+  badgeId!: string;
+
+  @ApiProperty({
+    enum: BadgeViewedStatus,
+    description: 'The updated viewed status',
+  })
+  viewedStatus!: BadgeViewedStatus;
+}

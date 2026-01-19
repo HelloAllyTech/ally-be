@@ -40,3 +40,8 @@ export interface GroupedUserAvailableBadges {
   category: BadgeCategory;
   badges: UserAvailableBadge[];
 }
+
+export interface MarkBadgeViewedResponse {
+  badgeId: string;
+  viewedStatus: BadgeViewedStatus;
+}
