@@ -8,6 +8,7 @@ import { UserModule } from 'src/user/user.module';
 import { TenantScenarioSharedService } from './service/tenant-scenario-shared';
 import { TenantScenarioPathSharedService } from './service/tenant-scenario-path-shared';
 import { AwsModule } from 'src/aws/aws.module';
+import { BadgeTenantSharedService } from 'src/badge/service/badge-tenant-shared.service';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AwsModule } from 'src/aws/aws.module';
     TenantsRepository,
     TenantScenarioSharedService,
     TenantScenarioPathSharedService,
+    BadgeTenantSharedService,
   ],
   controllers: [TenantController],
   exports: [TenantService, TenantsRepository],
