@@ -107,6 +107,7 @@ describe('ScenarioSessionRepository', () => {
     mockQueryBuilder = {
       leftJoinAndMapOne: jest.fn().mockReturnThis(),
       leftJoinAndMapMany: jest.fn().mockReturnThis(),
+      innerJoinAndMapOne: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
@@ -592,7 +593,7 @@ describe('ScenarioSessionRepository', () => {
         'scenarioSessionEvent',
         '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id AND "scenarioSessionEvent"."autoTerminationStatus" = false',
       );
-      expect(mockQueryBuilder.leftJoinAndMapOne).toHaveBeenCalledWith(
+      expect(mockQueryBuilder.innerJoinAndMapOne).toHaveBeenCalledWith(
         'scenarioSessionEvent.events',
         SessionEvents,
         'events',

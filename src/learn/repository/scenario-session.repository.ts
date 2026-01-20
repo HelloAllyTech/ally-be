@@ -161,7 +161,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'scenarioSessionEvent',
         '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id AND "scenarioSessionEvent"."autoTerminationStatus" = false',
       )
-      .leftJoinAndMapOne(
+      .innerJoinAndMapOne(
         'scenarioSessionEvent.events',
         SessionEvents,
         'events',
