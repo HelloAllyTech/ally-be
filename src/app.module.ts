@@ -34,6 +34,7 @@ import { ScenarioPathModule } from './scenario-path/scenario-path.module';
 import { LanguageModule } from './language/language.module';
 import { ReviewModule } from './review/review.module';
 import { BadgeModule } from './badge/badge.module';
+import { CommunityModule } from './community/community.module';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { BadgeModule } from './badge/badge.module';
     LanguageModule,
     ReviewModule,
     BadgeModule,
+    CommunityModule,
   ],
   controllers: [],
   providers: [
