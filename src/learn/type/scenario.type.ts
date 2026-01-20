@@ -40,3 +40,9 @@ export interface ScenarioExperienceMetadata {
   experienceMode: ExperienceMode;
   checklistType: ChecklistType;
 }
+
+export interface ChecklistItem {
+  id: string;
+  score?: number;
+  name: string;
+}

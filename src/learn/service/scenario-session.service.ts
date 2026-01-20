@@ -43,7 +43,11 @@ import {
 } from '../constants/scenario-session.constants';
 import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
-import { ScenarioStatus } from '../type/scenario.type';
+import {
+  ChecklistItem,
+  ExperienceMode,
+  ScenarioStatus,
+} from '../type/scenario.type';
 import { ScenarioTenantService } from './scenario-tenant.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
@@ -289,17 +293,21 @@ export class ScenarioSessionService {
         languageDetails,
       );
 
-      // Preparing events for simulation room
-      const checklistEvents = (sessionEvents ?? [])
-        .filter(
-          (event: SessionEvents & { checklistVisibilityStatus?: boolean }) =>
-            event?.checklistVisibilityStatus,
-        )
-        .map(({ name, id, score }) => ({
-          name,
-          id,
-          score,
-        }));
+      // Preparing checklist events for simulation room, only if CHECKLIST mode is enabled for scenario
+      let checklistEvents: ChecklistItem[] = [];
+
+      if (scenario?.metadata?.experienceMode === ExperienceMode.CHECKLIST) {
+        checklistEvents = (sessionEvents ?? [])
+          .filter(
+            (event: SessionEvents & { checklistVisibilityStatus?: boolean }) =>
+              event?.checklistVisibilityStatus,
+          )
+          .map(({ name, id, score }) => ({
+            name,
+            id,
+            score,
+          }));
+      }
 
       // Create LiveKit room
       await this.livekitService.createRoom({
