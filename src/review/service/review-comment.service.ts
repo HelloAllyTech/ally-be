@@ -19,6 +19,10 @@ import { ReviewCommentRepository } from '../repository/review-comment.repository
 import { ReviewStatus } from '../type/review.type';
 import { ReviewRepository } from '../repository/review.repository';
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
+import { Pagination } from 'src/common/type/common.type';
+import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
+import { UserService } from 'src/user/service/user.service';
+import { GetReviewRepliesResponseDto } from '../dto/review-replies-response.dto';
 
 @Injectable()
 export class ReviewCommentService {
@@ -31,6 +35,8 @@ export class ReviewCommentService {
     private readonly reviewRepository: ReviewRepository,
     private readonly reviewThreadRepository: ReviewThreadRepository,
     private readonly permissionValidator: PermissionValidator,
+    private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
+    private readonly userService: UserService,
   ) {}
 
   async addCommentToReview(
@@ -172,5 +178,233 @@ export class ReviewCommentService {
       }
     }
     throw new BadRequestException('Invalid request');
+  }
+
+  async getReviewComments(threadId: string, options?: Pagination) {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+
+    const thread = await this.reviewThreadRepository.findOne({
+      where: { id: threadId, tenantId },
+    });
+    if (!thread) {
+      throw new NotFoundException('Review thread not found');
+    }
+
+    const review = await this.reviewRepository.findOne({
+      where: { id: thread.reviewId, tenantId },
+    });
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+
+    if (review.status === ReviewStatus.HIDDEN && review.createdBy !== userId) {
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
+    const isReviewer = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.REVIEWER_ACCESS],
+    );
+    const isLearner = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.LEARNER_ACCESS],
+    );
+
+    if (
+      (isReviewer && review.tenantId !== tenantId) ||
+      (!isReviewer && isLearner && review.createdBy !== userId)
+    ) {
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
+    const isHidden = review.createdBy === userId;
+
+    const result = await this.reviewCommentRepository.getCommentsByThreadId(
+      threadId,
+      isHidden,
+      options,
+    );
+
+    if (result.comments.length === 0) {
+      return { data: [], count: result.count };
+    }
+
+    const commentIds = result.comments.map((comment) => comment.c_id);
+    const creatorIds = [
+      ...new Set(result.comments.map((comment) => comment.c_createdBy)),
+    ];
+
+    const [reactions, users] = await Promise.all([
+      this.reviewCommentReactionRepository.getReactionAndCountByCommentIds(
+        commentIds,
+      ),
+      this.userService.getUsersByIds(creatorIds),
+    ]);
+
+    const userMap = new Map(
+      users.map((user) => [
+        user.id,
+        { id: user.id, name: user.name, profileImage: user.profileImageUrl },
+      ]),
+    );
+
+    const reactionsByComment = reactions.reduce(
+      (acc, { commentId, reaction, count }) => {
+        if (!acc[commentId]) {
+          acc[commentId] = {};
+        }
+        acc[commentId][reaction] = parseInt(count);
+        return acc;
+      },
+      {} as Record<string, Record<string, number>>,
+    );
+
+    // Map comments with reactions and user data
+    const data = result.comments.map((comment) => {
+      const user = userMap.get(comment.c_createdBy);
+      return {
+        id: comment.c_id,
+        content: comment.c_content,
+        createdAt: comment.c_createdAt,
+        createdBy: user || {
+          id: comment.c_createdBy,
+          name: null,
+          profileImage: null,
+        },
+        reactions: reactionsByComment[comment.c_id] || {},
+        replyCount: parseInt(comment.reply_count) || 0,
+        hidden: comment.c_hidden || false,
+      };
+    });
+
+    return {
+      data,
+      count: result.count,
+    };
+  }
+
+  async getReviewCommentReplies(
+    commentId: string,
+    options?: Pagination,
+  ): Promise<GetReviewRepliesResponseDto> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+
+    const parentComment = await this.reviewCommentRepository.findOne({
+      where: { id: commentId, tenantId },
+    });
+    if (!parentComment) {
+      throw new NotFoundException('Review comment not found');
+    }
+
+    const thread = await this.reviewThreadRepository.findOne({
+      where: { id: parentComment.reviewThreadId, tenantId },
+    });
+    if (!thread) {
+      throw new NotFoundException('Review thread not found');
+    }
+    const review = await this.reviewRepository.findOne({
+      where: { id: thread.reviewId, tenantId },
+    });
+
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+    if (review.status === ReviewStatus.HIDDEN && review.createdBy !== userId) {
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
+    const isReviewer = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.REVIEWER_ACCESS],
+    );
+    const isLearner = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.LEARNER_ACCESS],
+    );
+
+    if (
+      (isReviewer && review.tenantId !== tenantId) ||
+      (!isReviewer && isLearner && review.createdBy !== userId)
+    ) {
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
+    const isHidden = review.createdBy === userId;
+
+    const [replies, count] =
+      await this.reviewCommentRepository.getRepliesByCommentId(
+        commentId,
+        isHidden,
+        options,
+      );
+
+    if (replies.length === 0) {
+      return { data: [], count: 0 };
+    }
+
+    const replyIds = replies.map((reply) => reply.id);
+    const creatorIds = [...new Set(replies.map((reply) => reply.createdBy))];
+
+    const [reactions, users] = await Promise.all([
+      this.reviewCommentReactionRepository.getReactionAndCountByCommentIds(
+        replyIds,
+      ),
+      this.userService.getUsersByIds(creatorIds),
+    ]);
+
+    const userMap = new Map(
+      users.map((user) => [
+        user.id,
+        {
+          id: user.id,
+          name: user.name,
+          profileImage: user.profileImageUrl ?? null,
+        },
+      ]),
+    );
+
+    const reactionsByReply = reactions.reduce(
+      (acc, { commentId, reaction, count }) => {
+        if (!acc[commentId]) {
+          acc[commentId] = {};
+        }
+        acc[commentId][reaction] = parseInt(count);
+        return acc;
+      },
+      {} as Record<string, Record<string, number>>,
+    );
+
+    const data = replies.map((reply) => {
+      const user = userMap.get(reply.createdBy);
+      return {
+        id: reply.id,
+        content: reply.content,
+        createdAt: reply.createdAt,
+        createdBy: user || {
+          id: reply.createdBy,
+          name: null,
+          profileImage: null,
+        },
+        reactions: reactionsByReply[reply.id] || {},
+        hidden: reply.hidden || false,
+      };
+    });
+    return { data, count };
   }
 }

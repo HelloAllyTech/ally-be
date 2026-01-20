@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { ReviewRepository } from '../repository/review.repository';
 import {
@@ -14,7 +15,7 @@ import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
-import { SuccessResponse } from 'src/common/type/common.type';
+import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { UpdateReviewStatusDto } from '../dto/update-review-status.dto';
 import {
   GetReviews,
@@ -27,6 +28,10 @@ import { ReviewReactionRepository } from '../repository/review-reaction.reposito
 import { GetReviewResponseDto } from '../dto/get-review-response.dto';
 import { LoggerService } from 'src/logger/logger.service';
 import { getSessionDurationInSeconds } from '../util/review.util';
+import { In } from 'typeorm';
+import { ReviewCommentRepository } from '../repository/review-comment.repository';
+import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
+import { GetReviewMessagesResponseDto } from '../dto/review-messages-response.dto';
 
 @Injectable()
 export class ReviewService {
@@ -35,6 +40,8 @@ export class ReviewService {
     private readonly reviewRepository: ReviewRepository,
     private readonly reviewThreadRepository: ReviewThreadRepository,
     private readonly reviewReactionRepository: ReviewReactionRepository,
+    private readonly reviewCommentRepository: ReviewCommentRepository,
+    private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly userService: UserService,
     private readonly permissionValidator: PermissionValidator,
@@ -229,5 +236,177 @@ export class ReviewService {
     }));
 
     return data;
+  }
+
+  async getReviewMessages(
+    reviewId: string,
+    options?: Pagination,
+  ): Promise<GetReviewMessagesResponseDto> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+
+    const review = await this.reviewRepository.findOne({
+      where: { id: reviewId, tenantId },
+    });
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+
+    if (review.status === ReviewStatus.HIDDEN && review.createdBy !== userId) {
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
+    const isReviewer = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.REVIEWER_ACCESS],
+    );
+    const isLearner = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.LEARNER_ACCESS],
+    );
+
+    if (
+      (isReviewer && review.tenantId !== tenantId) ||
+      (!isReviewer && isLearner && review.createdBy !== userId)
+    ) {
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
+    const transcript =
+      await this.scenarioSharedService.getMessagesByScenarioSessionId(
+        review.scenarioSessionId,
+        { ...options },
+      );
+
+    if (transcript.messages.length === 0) {
+      return { data: [], count: transcript.count };
+    }
+
+    const messageIds = transcript.messages.map((message) => message.id);
+
+    const threads = await this.reviewThreadRepository.find({
+      where: {
+        reviewId,
+        messageId: In(messageIds),
+      },
+    });
+
+    const isHidden = review.createdBy === userId;
+    const limit = 5;
+    const threadIds = threads.map((thread) => thread.id);
+
+    const comments = await this.reviewCommentRepository
+      .getCommentsForThreadIds(threadIds, isHidden)
+      .then((results) => results.filter((result) => result.row_num <= limit));
+
+    if (comments.length === 0) {
+      return {
+        data: transcript.messages.map((message) => ({
+          ...message,
+          threads: [],
+        })),
+        count: transcript.count,
+      };
+    }
+
+    const commentIds = comments.map((comment) => comment.c_id);
+
+    const userIds = [
+      ...new Set([
+        ...threads.map((thread) => thread.createdBy),
+        ...comments.map((comment) => comment.createdBy),
+      ]),
+    ];
+
+    const [reactions, users] = await Promise.all([
+      this.reviewCommentReactionRepository.getReactionAndCountByCommentIds(
+        commentIds,
+      ),
+      this.userService.getUsersByIds(userIds),
+    ]);
+
+    const reactionsByComment = reactions.reduce(
+      (acc, { commentId, reaction, count }) => {
+        if (!acc[commentId]) {
+          acc[commentId] = {};
+        }
+        acc[commentId][reaction] = parseInt(count);
+        return acc;
+      },
+      {} as Record<string, Record<string, number>>,
+    );
+
+    const userMap = new Map(
+      users.map((user) => [
+        user.id,
+        { id: user.id, name: user.name, profileImage: user.profileImageUrl },
+      ]),
+    );
+
+    const commentsByThread = comments.reduce(
+      (acc, comment) => {
+        if (!acc[comment.c_reviewThreadId]) {
+          acc[comment.c_reviewThreadId] = [];
+        }
+
+        const user = userMap.get(comment.c_createdBy);
+        acc[comment.c_reviewThreadId].push({
+          id: comment.c_id,
+          content: comment.c_content,
+          createdAt: comment.c_createdAt,
+          createdBy: user || {},
+          reactions: reactionsByComment[comment.c_id] || {},
+          hidden: comment.c_hidden,
+          replyCount: parseInt(comment.reply_count, 10) || 0,
+        });
+        return acc;
+      },
+      {} as Record<string, any[]>,
+    );
+
+    // Group threads by message
+    const threadsByMessage = threads.reduce(
+      (acc, thread) => {
+        if (!acc[thread.messageId]) {
+          acc[thread.messageId] = [];
+        }
+
+        const user = userMap.get(thread.createdBy);
+        acc[thread.messageId].push({
+          id: thread.id,
+          comments: commentsByThread[thread.id] || [],
+          selection: thread.selection,
+          createdBy: user || {
+            id: thread.createdBy,
+            name: null,
+            profileImage: null,
+          },
+        });
+        return acc;
+      },
+      {} as Record<number, any[]>,
+    );
+
+    const data = transcript.messages.map((message) => ({
+      id: message.id,
+      content: message.content,
+      createdAt: message.createdAt,
+      startSeconds: message.startSeconds,
+      endSeconds: message.endSeconds,
+      senderId: message.senderId,
+      threads: threadsByMessage[message.id] || [],
+    }));
+
+    return {
+      data,
+      count: transcript.count,
+    };
   }
 }

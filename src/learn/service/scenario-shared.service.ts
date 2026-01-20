@@ -10,6 +10,8 @@ import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioFilters } from '../type/scenario-filter.type';
 import { GetScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioTranslationsRepository } from '../repository/scenario-translations.repository';
+import { Pagination } from 'src/common/type/common.type';
+import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -20,6 +22,7 @@ export class ScenarioSharedService {
     private readonly scenariosRepository: ScenariosRepository,
     private scenarioSessionRepository: ScenarioSessionRepository,
     private scenarioTranslationsRepository: ScenarioTranslationsRepository,
+    private scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
   ) {}
 
   async getScenarioByIds(
@@ -65,5 +68,18 @@ export class ScenarioSharedService {
 
   async getUniqueLanguagesFromScenarioTranslations(): Promise<number[]> {
     return this.scenarioTranslationsRepository.getUniqueLanguagesFromScenarioTranslations();
+  }
+
+  async getMessagesByScenarioSessionId(
+    scenarioSessionId: string,
+    pagination: Pagination,
+  ) {
+    const [messages, count] =
+      await this.scenarioSessionMessagesRepository.getMessagesByScenarioSessionId(
+        scenarioSessionId,
+        pagination,
+      );
+
+    return { messages, count };
   }
 }

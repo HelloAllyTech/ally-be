@@ -9,6 +9,7 @@ import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
 import { ScenarioStatus } from '../../type/scenario.type';
 import { ScenarioFilters } from 'src/learn/type/scenario-filter.type';
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
+import { ScenarioSessionMessagesRepository } from '../../repository/scenario-session-messages.repository';
 
 describe('ScenarioSharedService', () => {
   let service: ScenarioSharedService;
@@ -46,6 +47,14 @@ describe('ScenarioSharedService', () => {
       getUniqueLanguagesFromScenarioTranslations: jest.fn(),
     };
 
+    const mockScenarioSessionMessagesRepository = {
+      find: jest.fn(),
+      findOne: jest.fn(),
+      save: jest.fn(),
+      create: jest.fn(),
+      getMessagesByScenarioSessionId: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSharedService,
@@ -64,6 +73,10 @@ describe('ScenarioSharedService', () => {
         {
           provide: ScenarioTranslationsRepository,
           useValue: mockScenarioTranslationsRepository,
+        },
+        {
+          provide: ScenarioSessionMessagesRepository,
+          useValue: mockScenarioSessionMessagesRepository,
         },
       ],
     }).compile();

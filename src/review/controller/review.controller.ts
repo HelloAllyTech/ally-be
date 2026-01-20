@@ -28,6 +28,7 @@ import { UpdateReviewStatusDto } from '../dto/update-review-status.dto';
 import { ReviewSortBy } from '../type/review.type';
 import { ReviewsListResponseDto } from '../dto/get-all-review-response.dto';
 import { GetReviewResponseDto } from '../dto/get-review-response.dto';
+import { GetReviewMessagesResponseDto } from '../dto/review-messages-response.dto';
 
 @Controller({
   path: 'reviews',
@@ -120,5 +121,51 @@ export class ReviewController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<GetReviewResponseDto> {
     return this.reviewService.getReviewById(id);
+  }
+
+  @ApiOperation({ summary: 'Get review messages' })
+  @ApiResponse({
+    status: 200,
+    description: 'Review messages retrieved successfully',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of messages to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of messages to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by (default: createdAt)',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order (default: DESC)',
+  })
+  @Get(':reviewId/messages')
+  async getReviewMessages(
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order: SortOrder = SortOrder.ASC,
+  ): Promise<GetReviewMessagesResponseDto> {
+    return this.reviewService.getReviewMessages(reviewId, {
+      limit,
+      offset,
+      sortBy,
+      order,
+    });
   }
 }

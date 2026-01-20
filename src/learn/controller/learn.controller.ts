@@ -64,6 +64,7 @@ import {
   AvailableLanguage,
   ScenarioVoiceLanguage,
 } from '../type/scenario-language-voice.type';
+import { ScenarioSharedService } from '../service/scenario-shared.service';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -78,6 +79,7 @@ export class LearnController {
     private readonly scenarioSessionService: ScenarioSessionService,
     private readonly scenarioTenantService: ScenarioTenantService,
     private readonly triggerWarningService: TriggerWarningsService,
+    private readonly scenarioSharedService: ScenarioSharedService,
   ) {}
 
   @Public()
@@ -562,7 +564,7 @@ export class LearnController {
     @Query('sortBy') sortBy?: string,
     @Query('order') order: SortOrder = SortOrder.ASC,
   ) {
-    return this.scenarioSessionService.getMessagesByScenarioSessionId(
+    return this.scenarioSharedService.getMessagesByScenarioSessionId(
       scenarioSessionId,
       {
         limit,

@@ -4,6 +4,7 @@ import { ScenarioService } from '../../service/scenario.service';
 import { ScenarioSessionService } from '../../service/scenario-session.service';
 import { ScenarioTenantService } from '../../service/scenario-tenant.service';
 import { TriggerWarningsService } from '../../service/trigger-warnings.service';
+import { ScenarioSharedService } from '../../service/scenario-shared.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { ScenarioStatus } from '../../type/scenario.type';
@@ -11,7 +12,6 @@ import {
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from '../../enum/scenario-session-status.enum';
-import { ScenarioSessionMessageType } from '../../enum/scenario-session-message.type.enum';
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { UserService } from 'src/user/service/user.service';
@@ -239,6 +239,13 @@ describe('LearnController', () => {
       assignTriggerWarningsToScenario: jest.fn(),
     };
 
+    const mockScenarioSharedService = {
+      getScenarioByIds: jest.fn(),
+      getScenarioById: jest.fn(),
+      getScenarioSessionById: jest.fn(),
+      getUniqueLanguagesFromScenarioTranslations: jest.fn(),
+    };
+
     const mockUserService = {
       getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
     };
@@ -271,6 +278,10 @@ describe('LearnController', () => {
         {
           provide: TriggerWarningsService,
           useValue: mockTriggerWarningsService,
+        },
+        {
+          provide: ScenarioSharedService,
+          useValue: mockScenarioSharedService,
         },
         {
           provide: UserService,
@@ -752,34 +763,6 @@ describe('LearnController', () => {
       );
 
       expect(result).toEqual(mockResult);
-    });
-  });
-
-  describe('getMessagesByScenarioSessionId', () => {
-    it('should return messages for a scenario session', async () => {
-      const scenarioSessionId = 'session-123';
-      const mockMessages = {
-        messages: [
-          {
-            id: 'msg-1',
-            content: 'Hello',
-            senderId: 123,
-            messageType: ScenarioSessionMessageType.TEXT,
-            scenarioSessionId: 'session-123',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            tenantId: 'tenant-123',
-          },
-        ],
-      };
-      scenarioSessionService.getMessagesByScenarioSessionId.mockResolvedValue(
-        mockMessages as any,
-      );
-
-      const result =
-        await controller.getMessagesByScenarioSessionId(scenarioSessionId);
-
-      expect(result).toEqual(mockMessages);
     });
   });
 

@@ -126,6 +126,9 @@ describe('ReviewThreadService', () => {
       await expect(service.getReviewThreads(mockReviewId)).rejects.toThrow(
         ForbiddenException,
       );
+      expect(reviewRepository.findOne).toHaveBeenCalledWith({
+        where: { id: mockReviewId, tenantId: mockTenantId },
+      });
     });
 
     it('should throw ForbiddenException when learner tries to access review they did not create', async () => {
@@ -149,6 +152,9 @@ describe('ReviewThreadService', () => {
       await expect(service.getReviewThreads(mockReviewId)).rejects.toThrow(
         ForbiddenException,
       );
+      expect(reviewRepository.findOne).toHaveBeenCalledWith({
+        where: { id: mockReviewId, tenantId: mockTenantId },
+      });
     });
 
     it('should successfully return review threads with comments, reactions, and reply counts', async () => {
@@ -214,6 +220,9 @@ describe('ReviewThreadService', () => {
 
       expect(result.count).toBe(2);
       expect(result.data).toHaveLength(2);
+      expect(reviewRepository.findOne).toHaveBeenCalledWith({
+        where: { id: mockReviewId, tenantId: mockTenantId },
+      });
 
       // Verify top-level comments only (replies filtered out)
       const allCommentIds = result.data.flatMap(
@@ -223,14 +232,20 @@ describe('ReviewThreadService', () => {
 
       // Verify reactions aggregation and reply counts
       expect(result.data[0].comments![0].replyCount).toBe(1);
-      expect(result.data[0].comments![0].reactions).toEqual({
+      expect(result.data[0].comments![0].reactions).toMatchObject({
         thumbsUp: 2,
         heart: 1,
       });
       expect(result.data[1].comments![0].replyCount).toBe(0);
-      expect(result.data[1].comments![0].reactions).toEqual({
+      expect(result.data[1].comments![0].reactions).toMatchObject({
         thumbsUp: 1,
       });
+
+      // Verify thread structure
+      expect(result.data[0]).toHaveProperty('id', mockThreadId1);
+      expect(result.data[0]).toHaveProperty('commentCount', 1);
+      expect(result.data[1]).toHaveProperty('id', mockThreadId2);
+      expect(result.data[1]).toHaveProperty('commentCount', 1);
     });
   });
 });

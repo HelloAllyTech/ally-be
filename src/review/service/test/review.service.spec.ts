@@ -4,6 +4,8 @@ import { ReviewService } from '../review.service';
 import { ReviewRepository } from '../../repository/review.repository';
 import { ReviewThreadRepository } from '../../repository/review-thread.repository';
 import { ReviewReactionRepository } from '../../repository/review-reaction.repository';
+import { ReviewCommentRepository } from '../../repository/review-comment.repository';
+import { ReviewCommentReactionRepository } from '../../repository/review-comment-reaction.repository';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { UserService } from 'src/user/service/user.service';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
@@ -85,6 +87,14 @@ describe('ReviewService', () => {
           useValue: {
             getReactionsByReviewIds: jest.fn(),
           },
+        },
+        {
+          provide: ReviewCommentRepository,
+          useValue: {},
+        },
+        {
+          provide: ReviewCommentReactionRepository,
+          useValue: {},
         },
         {
           provide: ScenarioSharedService,
@@ -187,6 +197,9 @@ describe('ReviewService', () => {
       );
 
       expect(result).toEqual({ success: true });
+      expect(reviewRepository.findOne).toHaveBeenCalledWith({
+        where: { id: mockReviewId, createdBy: mockUserId },
+      });
       expect(reviewRepository.create).toHaveBeenCalledWith({
         ...mockReview,
         status: ReviewStatus.HIDDEN,

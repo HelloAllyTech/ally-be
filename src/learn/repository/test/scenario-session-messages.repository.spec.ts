@@ -56,6 +56,7 @@ describe('ScenarioSessionMessagesRepository', () => {
       limit: jest.fn().mockReturnThis(),
       offset: jest.fn().mockReturnThis(),
       getMany: jest.fn(),
+      getManyAndCount: jest.fn(),
     } as any;
 
     mockEntityManager = {
@@ -98,14 +99,14 @@ describe('ScenarioSessionMessagesRepository', () => {
   describe('getMessagesByScenarioSessionId', () => {
     it('should return messages with default sorting and pagination', async () => {
       const mockMessages = [mockMessage];
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
 
       const result = await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         mockPagination,
       );
 
-      expect(result).toEqual(mockMessages);
+      expect(result).toEqual([mockMessages, 1]);
       expect(repository.createQueryBuilder).toHaveBeenCalledWith('message');
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
         'message.scenarioSessionId = :scenarioSessionId',
@@ -124,14 +125,14 @@ describe('ScenarioSessionMessagesRepository', () => {
         sortBy: 'startSeconds',
         order: 'ASC',
       };
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
 
       const result = await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         customPagination,
       );
 
-      expect(result).toEqual(mockMessages);
+      expect(result).toEqual([mockMessages, 1]);
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
         'message.startSeconds',
         'ASC',
@@ -144,14 +145,14 @@ describe('ScenarioSessionMessagesRepository', () => {
         ...mockPagination,
         sortBy: undefined,
       };
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
 
       const result = await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         paginationWithoutSortBy,
       );
 
-      expect(result).toEqual(mockMessages);
+      expect(result).toEqual([mockMessages, 1]);
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
         'message.createdAt',
         'DESC',
@@ -164,14 +165,14 @@ describe('ScenarioSessionMessagesRepository', () => {
         ...mockPagination,
         order: undefined,
       };
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
 
       const result = await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         paginationWithoutOrder,
       );
 
-      expect(result).toEqual(mockMessages);
+      expect(result).toEqual([mockMessages, 1]);
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
         'message.createdAt',
         'ASC',
@@ -185,14 +186,14 @@ describe('ScenarioSessionMessagesRepository', () => {
         sortBy: undefined,
         order: undefined,
       };
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
 
       const result = await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         paginationWithDefaults,
       );
 
-      expect(result).toEqual(mockMessages);
+      expect(result).toEqual([mockMessages, 1]);
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
         'message.createdAt',
         'ASC',
@@ -201,7 +202,7 @@ describe('ScenarioSessionMessagesRepository', () => {
 
     it('should apply pagination when limit is provided', async () => {
       const mockMessages = [mockMessage];
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
 
       await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
@@ -214,7 +215,7 @@ describe('ScenarioSessionMessagesRepository', () => {
     it('should apply pagination when offset is provided', async () => {
       const mockMessages = [mockMessage];
       const paginationWithOffset = { ...mockPagination, offset: 20 };
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
 
       await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
@@ -232,7 +233,7 @@ describe('ScenarioSessionMessagesRepository', () => {
         ...mockPagination,
         limit: undefined,
       };
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
 
       await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
@@ -248,7 +249,7 @@ describe('ScenarioSessionMessagesRepository', () => {
         ...mockPagination,
         offset: undefined,
       };
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
 
       await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
@@ -259,15 +260,15 @@ describe('ScenarioSessionMessagesRepository', () => {
     });
 
     it('should handle empty result', async () => {
-      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
 
       const result = await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         mockPagination,
       );
 
-      expect(result).toEqual([]);
-      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
+      expect(result).toEqual([[], 0]);
+      expect(mockQueryBuilder.getManyAndCount).toHaveBeenCalled();
     });
 
     it('should handle multiple messages', async () => {
@@ -287,15 +288,15 @@ describe('ScenarioSessionMessagesRepository', () => {
           endSeconds: 25.5,
         } as ScenarioSessionMessages,
       ];
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 3]);
 
       const result = await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         mockPagination,
       );
 
-      expect(result).toEqual(mockMessages);
-      expect(result).toHaveLength(3);
+      expect(result).toEqual([mockMessages, 3]);
+      expect(result[0]).toHaveLength(3);
     });
 
     it('should work with zero limit', async () => {
@@ -304,7 +305,7 @@ describe('ScenarioSessionMessagesRepository', () => {
         ...mockPagination,
         limit: 0,
       };
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 0]);
 
       await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
@@ -321,7 +322,7 @@ describe('ScenarioSessionMessagesRepository', () => {
         ...mockPagination,
         offset: 0,
       };
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
 
       await repository.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
@@ -335,7 +336,7 @@ describe('ScenarioSessionMessagesRepository', () => {
     it('should handle different scenario session IDs', async () => {
       const mockMessages = [mockMessage];
       const differentSessionId = 'different-session-123';
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
 
       await repository.getMessagesByScenarioSessionId(
         differentSessionId,
