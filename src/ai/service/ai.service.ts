@@ -272,19 +272,15 @@ export class AiService {
     return response;
   }
 
-  async getScenarioSessionSummary(
-    messages: MessageRequest[],
-    description: string,
-  ) {
+  async getScenarioSessionSummary(messages: MessageRequest[]) {
     try {
       const response = await this.makeRequest<
         any,
-        { chat_history: MessageRequest[]; goal: string }
+        { chat_history: MessageRequest[] }
       >(
         'api/v1/summary/scenario/feedback',
         {
           chat_history: messages,
-          goal: description,
         },
         true,
         'post',

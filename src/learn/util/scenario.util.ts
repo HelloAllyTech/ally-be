@@ -1,60 +1,10 @@
 import { DeepPartial } from 'typeorm';
-import {
-  SCENARIO_MANDATORY_FIELDS,
-  SCENARIO_MANDATORY_FIELDS_WITHOUT_CUSTOM_FIELDS,
-} from '../constants/scenario-mandatory-fields.constants';
+import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { Scenarios } from '../entity/scenarios.entity';
 import { ExperienceMode, ChecklistType } from '../type/scenario.type';
-
-// FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove  util and its usage
-export const mapCreateScenarioRequestToEntityWithoutCustomFields = (
-  scenario: CreateScenarioDto,
-  userId: number,
-) => {
-  return {
-    createdBy: userId,
-    updatedBy: userId,
-    title: scenario.title,
-    scenario: '',
-    description: scenario.description,
-    coverImageUrl: scenario.coverImageUrl,
-    coverVideoUrl: scenario.coverVideoUrl,
-    status: scenario.status,
-    isPubic: scenario.isPublic,
-    isGlobal: scenario.isGlobal,
-    metadata: {
-      agentGoal: scenario.agentGoal,
-      lifeHistory: scenario.lifeHistory,
-      voiceId: scenario.voiceId,
-      name: scenario.name,
-      age: scenario.age,
-      gender: scenario.gender,
-      genderIdentity: scenario.genderIdentity,
-      sexualOrientation: scenario.sexualOrientation,
-      currentLocation: scenario.currentLocation,
-      profession: scenario.profession,
-      context: scenario.context,
-      sessionBehaviorGuidelines: scenario.sessionBehaviorGuidelines,
-      coreMemories: scenario.coreMemories,
-      personality: scenario.personality,
-      startingState: scenario.startingState,
-      emotionalNeeds: scenario.emotionalNeeds,
-      tone: scenario.tone,
-      openingStatements: scenario.openingStatements,
-      experienceMode: scenario.experienceMode,
-      ...(scenario.experienceMode === ExperienceMode.CHECKLIST && {
-        checklistType: scenario.checklistType || ChecklistType.GUIDED,
-      }),
-      timerMode: scenario.timerMode,
-      ...(scenario.timerMode === true && {
-        maxTimeValue: scenario.maxTimeValue,
-      }),
-    },
-  };
-};
 
 export const mapCreateScenarioRequestToEntity = (
   scenario: CreateScenarioDto,
@@ -152,46 +102,29 @@ export const formatScenarioTriggerWarningsList = (
     }));
   });
 
-// FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove util and its usage
-export const getActiveScenarioMandatoryFields = (customFields: boolean) => {
-  return customFields
-    ? SCENARIO_MANDATORY_FIELDS
-    : SCENARIO_MANDATORY_FIELDS_WITHOUT_CUSTOM_FIELDS;
-};
+export const getActiveScenarioMandatoryFields = () => SCENARIO_MANDATORY_FIELDS;
 
 export const mapUpdateScenarioRequestToEntity = (
   updateScenarioDto: UpdateScenarioDto,
   existingScenario: Scenarios,
   userId: number,
-  scenarioCustomFieldFeatureFlag: boolean,
 ) => {
   // Build update object
   const updateData: DeepPartial<Scenarios> = {
     updatedBy: userId,
   };
 
-  const updateScenarioObjectFields = scenarioCustomFieldFeatureFlag
-    ? [
-        'title',
-        'description',
-        'coverImageUrl',
-        'coverVideoUrl',
-        'status',
-        'isPublic',
-        'prompt',
-        'isGlobal',
-        'difficultyLevel',
-      ]
-    : [
-        'title',
-        'description',
-        'coverImageUrl',
-        'coverVideoUrl',
-        'status',
-        'isPublic',
-        'prompt',
-        'isGlobal',
-      ];
+  const updateScenarioObjectFields = [
+    'title',
+    'description',
+    'coverImageUrl',
+    'coverVideoUrl',
+    'status',
+    'isPublic',
+    'prompt',
+    'isGlobal',
+    'difficultyLevel',
+  ];
 
   for (const field of updateScenarioObjectFields) {
     if (updateScenarioDto[field as keyof UpdateScenarioDto] !== undefined) {
@@ -201,54 +134,27 @@ export const mapUpdateScenarioRequestToEntity = (
     }
   }
 
-  const metadataFields: (keyof UpdateScenarioDto)[] =
-    scenarioCustomFieldFeatureFlag
-      ? [
-          'name',
-          'age',
-          'gender',
-          'genderIdentity',
-          'sexualOrientation',
-          'currentLocation',
-          'profession',
-          'context',
-          'tone',
-          'openingStatements',
-          'agentDialogues',
-          'responseLength',
-          'voiceId',
-          'customFields',
-          'languageVoices',
-          'experienceMode',
-          'checklistType',
-          'timerMode',
-          'maxTimeValue',
-        ]
-      : [
-          'agentGoal',
-          'name',
-          'age',
-          'gender',
-          'genderIdentity',
-          'sexualOrientation',
-          'currentLocation',
-          'profession',
-          'context',
-          'sessionBehaviorGuidelines',
-          'lifeHistory',
-          'coreMemories',
-          'personality',
-          'startingState',
-          'emotionalNeeds',
-          'tone',
-          'openingStatements',
-          'voiceId',
-          'languageVoices',
-          'experienceMode',
-          'checklistType',
-          'timerMode',
-          'maxTimeValue',
-        ];
+  const metadataFields: (keyof UpdateScenarioDto)[] = [
+    'name',
+    'age',
+    'gender',
+    'genderIdentity',
+    'sexualOrientation',
+    'currentLocation',
+    'profession',
+    'context',
+    'tone',
+    'openingStatements',
+    'agentDialogues',
+    'responseLength',
+    'voiceId',
+    'customFields',
+    'languageVoices',
+    'experienceMode',
+    'checklistType',
+    'timerMode',
+    'maxTimeValue',
+  ];
 
   // Handle metadata fields - merge with existing metadata
   const metadataUpdates: Record<string, any> = {};
