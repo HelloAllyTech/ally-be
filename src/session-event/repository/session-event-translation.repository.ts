@@ -80,7 +80,7 @@ export class SessionEventTranslationsRepository extends Repository<SessionEvents
     qb.leftJoin(
       'scenario_events_translations',
       'scenarioTranslations',
-      `"scenarioTranslations"."eventId" = "scenarioEvents"."eventId" AND "scenarioTranslations"."languageId" = :languageId`,
+      `"scenarioTranslations"."eventId" = "scenarioEvents"."eventId" AND "scenarioTranslations"."languageId" = :languageId and "scenarioTranslations"."scenarioId" = :scenarioId`,
     );
 
     // SELECT list (raw aliases match your SQL)
