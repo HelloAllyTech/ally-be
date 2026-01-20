@@ -9,6 +9,7 @@ import {
   Res,
   Put,
   Delete,
+  UseGuards,
 } from '@nestjs/common';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
 import { TokenUser } from '../../auth/type/auth.types';
@@ -48,6 +49,7 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ChatTranscriptService } from '../service/chat-transcript.service';
 import { TranscriptRequestDto } from '../dto/transcript.dto';
+import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -624,6 +626,8 @@ export class ChatController {
   }
 
   @Post('process-transcript')
+  @UseGuards(ApiAuthGuard)
+  @ApiSecurity('api-key')
   @ApiOperation({ summary: 'Process chat transcript and summary' })
   @ApiResponse({
     status: 200,

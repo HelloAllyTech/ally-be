@@ -17,6 +17,10 @@ export class AppConfigService {
     return this.configService.get<string>('LOG_LEVEL', 'warn');
   }
 
+  get apiKey(): string {
+    return this.configService.get<string>('API_KEY', '');
+  }
+
   get isDevelopment(): boolean {
     return this.nodeEnv === 'development';
   }

@@ -73,6 +73,15 @@ async function bootstrap() {
         },
         'access-token',
       )
+      .addApiKey(
+        {
+          type: 'apiKey',
+          name: 'x-api-key',
+          in: 'header',
+          description: 'API key required to access this endpoint',
+        },
+        'api-key',
+      )
       .build();
     const documentFactory = () => SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('api-docs', app, documentFactory);
