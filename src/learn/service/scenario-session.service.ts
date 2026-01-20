@@ -31,7 +31,6 @@ import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
 import { Scenarios } from '../entity/scenarios.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
-import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
@@ -133,17 +132,10 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario session not found');
     }
 
-    // Filter events to only include ACTIVE ones and non-termination events
-    // and remove sensitive fields from nested events
+    // remove sensitive fields from nested events
     if ((scenarioSession as any).events) {
-      (scenarioSession as any).events = (scenarioSession as any).events
-        .filter(
-          (event: any) =>
-            event.events?.visibilityType ===
-              SessionEventVisibilityType.ACTIVE &&
-            event.autoTerminationStatus === false,
-        )
-        .map((event: any) => {
+      (scenarioSession as any).events = (scenarioSession as any).events.map(
+        (event: any) => {
           if (event.events) {
             const sanitizedEvents = { ...event.events };
             delete sanitizedEvents.detectionData;
@@ -154,7 +146,8 @@ export class ScenarioSessionService {
             return { ...event, events: sanitizedEvents };
           }
           return event;
-        });
+        },
+      );
     }
 
     const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
