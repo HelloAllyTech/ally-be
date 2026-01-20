@@ -5,6 +5,8 @@ import { ReviewCommentService } from '../review-comment.service';
 import { ReviewCommentRepository } from '../../repository/review-comment.repository';
 import { ReviewRepository } from '../../repository/review.repository';
 import { ReviewThreadRepository } from '../../repository/review-thread.repository';
+import { ReviewCommentReactionRepository } from '../../repository/review-comment-reaction.repository';
+import { UserService } from 'src/user/service/user.service';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ReviewStatus } from '../../type/review.type';
@@ -116,6 +118,14 @@ describe('ReviewCommentService', () => {
             validatePermissions: jest.fn(),
           },
         },
+        {
+          provide: ReviewCommentReactionRepository,
+          useValue: {},
+        },
+        {
+          provide: UserService,
+          useValue: {},
+        },
       ],
     }).compile();
 
@@ -157,6 +167,13 @@ describe('ReviewCommentService', () => {
       await expect(
         service.addCommentToReview(mockReviewId, dto),
       ).rejects.toThrow(ForbiddenException);
+      expect(reviewRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          id: mockReviewId,
+          status: ReviewStatus.IN_REVIEW,
+          tenantId: mockTenantId,
+        },
+      });
     });
 
     it('should throw ForbiddenException when learner tries to access review they did not create', async () => {
@@ -184,6 +201,13 @@ describe('ReviewCommentService', () => {
       await expect(
         service.addCommentToReview(mockReviewId, dto),
       ).rejects.toThrow(ForbiddenException);
+      expect(reviewRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          id: mockReviewId,
+          status: ReviewStatus.IN_REVIEW,
+          tenantId: mockTenantId,
+        },
+      });
     });
 
     it('should successfully add comment to existing thread', async () => {
@@ -202,6 +226,13 @@ describe('ReviewCommentService', () => {
 
       expect(result).toEqual({
         commentId: mockCommentId,
+      });
+      expect(reviewRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          id: mockReviewId,
+          status: ReviewStatus.IN_REVIEW,
+          tenantId: mockTenantId,
+        },
       });
       expect(reviewCommentRepository.create).toHaveBeenCalledWith({
         reviewThreadId: mockThreadId,
@@ -235,6 +266,13 @@ describe('ReviewCommentService', () => {
       expect(result).toEqual({
         replyId: 'reply-123',
       });
+      expect(reviewRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          id: mockReviewId,
+          status: ReviewStatus.IN_REVIEW,
+          tenantId: mockTenantId,
+        },
+      });
       expect(reviewCommentRepository.create).toHaveBeenCalledWith({
         reviewThreadId: mockThreadId,
         content: dto.content,
@@ -245,13 +283,17 @@ describe('ReviewCommentService', () => {
     });
 
     it('should successfully create new thread with comment', async () => {
+      let createdThread: any;
+
       const mockEntityManager = {
         create: jest.fn(),
         save: jest.fn(),
       };
+
       mockEntityManager.create.mockImplementation((entity, data) => {
         if (entity === ReviewThread) {
-          return { ...mockThread, ...data };
+          createdThread = { ...mockThread, ...data };
+          return createdThread;
         }
         if (entity === ReviewComment) {
           return { ...mockComment, ...data };
@@ -259,10 +301,15 @@ describe('ReviewCommentService', () => {
         return data;
       });
       mockEntityManager.save.mockImplementation(async (entity, data) => {
-        return {
-          ...data,
-          id: entity === ReviewThread ? mockThreadId : mockCommentId,
-        };
+        // Mutate the data object to add id (as TypeORM does)
+        // This ensures thread.id is available when creating the comment
+        if (entity === ReviewThread) {
+          data.id = mockThreadId;
+          createdThread.id = mockThreadId;
+        } else if (entity === ReviewComment) {
+          data.id = mockCommentId;
+        }
+        return data;
       });
 
       (dataSource.transaction as jest.Mock).mockImplementation(
@@ -286,6 +333,13 @@ describe('ReviewCommentService', () => {
         threadId: mockThreadId,
         commentId: mockCommentId,
       });
+      expect(reviewRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          id: mockReviewId,
+          status: ReviewStatus.IN_REVIEW,
+          tenantId: mockTenantId,
+        },
+      });
       expect(mockEntityManager.create).toHaveBeenCalledWith(ReviewThread, {
         reviewId: mockReviewId,
         messageId: mockMessageId,
@@ -293,12 +347,31 @@ describe('ReviewCommentService', () => {
         selection: dto.selection,
         tenantId: mockTenantId,
       });
+      expect(mockEntityManager.save).toHaveBeenCalledWith(
+        ReviewThread,
+        expect.objectContaining({
+          reviewId: mockReviewId,
+          messageId: mockMessageId,
+          createdBy: mockUserId,
+          selection: dto.selection,
+          tenantId: mockTenantId,
+        }),
+      );
       expect(mockEntityManager.create).toHaveBeenCalledWith(ReviewComment, {
         reviewThreadId: mockThreadId,
         content: dto.content,
         createdBy: mockUserId,
         tenantId: mockTenantId,
       });
+      expect(mockEntityManager.save).toHaveBeenCalledWith(
+        ReviewComment,
+        expect.objectContaining({
+          reviewThreadId: mockThreadId,
+          content: dto.content,
+          createdBy: mockUserId,
+          tenantId: mockTenantId,
+        }),
+      );
     });
   });
 });

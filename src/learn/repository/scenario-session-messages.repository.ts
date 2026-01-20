@@ -13,7 +13,7 @@ export class ScenarioSessionMessagesRepository extends Repository<ScenarioSessio
   async getMessagesByScenarioSessionId(
     scenarioSessionId: string,
     pagination: Pagination,
-  ): Promise<ScenarioSessionMessages[]> {
+  ): Promise<[ScenarioSessionMessages[], number]> {
     const query = this.createQueryBuilder('message')
       .where('message.scenarioSessionId = :scenarioSessionId', {
         scenarioSessionId,
@@ -25,7 +25,7 @@ export class ScenarioSessionMessagesRepository extends Repository<ScenarioSessio
     this.applySorting(query, pagination);
     this.applyPagination(query, pagination);
 
-    return query.getMany();
+    return query.getManyAndCount();
   }
 
   private applySorting(

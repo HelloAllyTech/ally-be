@@ -876,19 +876,6 @@ export class ScenarioSessionService {
     return this.scenarioSessionMessagesRepository.save(scenarioSessionMessage);
   }
 
-  async getMessagesByScenarioSessionId(
-    scenarioSessionId: string,
-    pagination: Pagination,
-  ) {
-    const messages =
-      await this.scenarioSessionMessagesRepository.getMessagesByScenarioSessionId(
-        scenarioSessionId,
-        pagination,
-      );
-
-    return { messages };
-  }
-
   async handleScenarioSessionEvent(
     scenarioSession: ScenarioSessions,
     event: LearnEventData,

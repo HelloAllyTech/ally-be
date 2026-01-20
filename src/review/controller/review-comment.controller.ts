@@ -1,7 +1,16 @@
-import { Body, Controller, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiSecurity,
   ApiTags,
@@ -13,6 +22,7 @@ import {
   CreateReviewCommentDto,
   CreateCommentResponseDto,
 } from '../dto/create-comment.dto';
+import { GetReviewRepliesResponseDto } from '../dto/review-replies-response.dto';
 
 @Controller({
   path: 'reviews',
@@ -40,5 +50,61 @@ export class ReviewCommentController {
       reviewId,
       createReviewCommentDto,
     );
+  }
+
+  @ApiOperation({ summary: 'Get review comments by thread' })
+  @ApiResponse({
+    status: 200,
+    description: 'Review comments retrieved successfully',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of comments to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of comments to skip',
+  })
+  @Get('threads/:threadId/comments')
+  async getReviewComments(
+    @Param('threadId', ParseUUIDPipe) threadId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.reviewCommentService.getReviewComments(threadId, {
+      limit,
+      offset,
+    });
+  }
+
+  @ApiOperation({ summary: 'Get review comment replies' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of replies to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of replies to skip',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @Get('comments/:commentId/replies')
+  async getReviewCommentReplies(
+    @Param('commentId', ParseUUIDPipe) commentId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ): Promise<GetReviewRepliesResponseDto> {
+    return this.reviewCommentService.getReviewCommentReplies(commentId, {
+      limit,
+      offset,
+    });
   }
 }
