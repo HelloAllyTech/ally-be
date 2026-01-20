@@ -2,6 +2,7 @@ import axios, { AxiosInstance } from 'axios';
 import { config } from 'dotenv';
 import { logStep } from './seed-utils';
 import {
+  ExperienceMode,
   ScenarioDifficultyLevel,
   ScenarioResponseLength,
   ScenarioStatus,
@@ -88,6 +89,8 @@ const createScenariosData = async (
       terminationEventId,
       terminationMessage,
       triggerWarningIds,
+      experienceMode: ExperienceMode.FEEDBACK,
+      timerMode: false,
     },
     {
       isGlobal: true,
@@ -126,6 +129,8 @@ const createScenariosData = async (
       // Termination settings
       autoTerminationStatus: false,
       triggerWarningIds,
+      experienceMode: ExperienceMode.FEEDBACK,
+      timerMode: false,
     },
   ];
 
