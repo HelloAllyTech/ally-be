@@ -51,7 +51,6 @@ import {
   formatScenarioTriggerWarningsList,
   getActiveScenarioMandatoryFields,
   mapCreateScenarioRequestToEntity,
-  mapCreateScenarioRequestToEntityWithoutCustomFields,
   mapUpdateScenarioRequestToEntity,
   formatAutoTerminationEventsList,
 } from '../util/scenario.util';
@@ -171,10 +170,7 @@ export class ScenarioService {
   private checkPreviewEnabled(item: any): boolean {
     const metadata = item.scenario_metadata || {};
 
-    // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS):  Update logic
-    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
-      this.configService.featureFlag.scenarioCustomFields,
-    );
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields();
     const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter((field) => {
       let value = undefined;
 
@@ -440,13 +436,7 @@ export class ScenarioService {
     const createScenarioDtos = await Promise.all(
       createScenariosDto.scenarios.map(async (scenario) => {
         await this.validateCreateScenario(scenario);
-        // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS):  Update logic
-        return this.configService.featureFlag.scenarioCustomFields
-          ? mapCreateScenarioRequestToEntity(scenario, userId)
-          : mapCreateScenarioRequestToEntityWithoutCustomFields(
-              scenario,
-              userId,
-            );
+        return mapCreateScenarioRequestToEntity(scenario, userId);
       }),
     );
 
@@ -516,15 +506,8 @@ export class ScenarioService {
               title: scenario.title,
               description: scenario.description,
               tone: scenario.metadata?.tone,
-              emotionalNeeds: scenario.metadata?.emotionalNeeds,
               personality: scenario.metadata?.personality,
-              lifeHistory: scenario.metadata?.lifeHistory,
-              coreMemories: scenario.metadata?.coreMemories,
-              startingState: scenario.metadata?.startingState,
-              agentGoal: scenario.metadata?.agentGoal,
               context: scenario.metadata?.context,
-              sessionBehaviorGuidelines:
-                scenario.metadata?.sessionBehaviorGuidelines,
               openingStatements: scenario.metadata?.openingStatements,
               sexualOrientation: scenario.metadata?.sexualOrientation,
               genderIdentity: scenario.metadata?.genderIdentity,
@@ -630,10 +613,8 @@ export class ScenarioService {
         );
       }
 
-      // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Update logic
-      const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
-        this.configService.featureFlag.scenarioCustomFields,
-      );
+      const ACTIVE_SCENARIO_MANDATORY_FIELDS =
+        getActiveScenarioMandatoryFields();
       const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
         (field) => !data[field as keyof typeof data],
       );
@@ -734,7 +715,6 @@ export class ScenarioService {
           updateScenarioDto,
           scenario,
           userId,
-          this.configService.featureFlag.scenarioCustomFields,
         );
 
         const scenarioRepository = entityManager.getRepository(Scenarios);
@@ -747,15 +727,8 @@ export class ScenarioService {
                 title: updateScenarioDto.title,
                 description: updateScenarioDto.description,
                 tone: updateScenarioDto.tone,
-                emotionalNeeds: updateScenarioDto.emotionalNeeds,
                 personality: updateScenarioDto.personality,
-                lifeHistory: updateScenarioDto.lifeHistory,
-                coreMemories: updateScenarioDto.coreMemories,
-                startingState: updateScenarioDto.startingState,
-                agentGoal: updateScenarioDto.agentGoal,
                 context: updateScenarioDto.context,
-                sessionBehaviorGuidelines:
-                  updateScenarioDto.sessionBehaviorGuidelines,
                 openingStatements: updateScenarioDto.openingStatements,
                 sexualOrientation: updateScenarioDto.sexualOrientation,
                 genderIdentity: updateScenarioDto.genderIdentity,

@@ -761,15 +761,8 @@ export class ScenarioSessionService {
           end_time: message.endSeconds,
         }));
 
-        const scenario = await this.scenarioService.getScenario(scenarioId, {
-          select: ['id', 'metadata'],
-          em: entityManager,
-        });
-
-        const summary = await this.aiService.getScenarioSessionSummary(
-          messages,
-          scenario.metadata?.agentGoal ?? '',
-        );
+        const summary =
+          await this.aiService.getScenarioSessionSummary(messages);
 
         const scenarioSessionDetailsRepo = entityManager.getRepository(
           ScenarioSessionDetails,
@@ -1027,9 +1020,7 @@ export class ScenarioSessionService {
       ...(metadata ?? {}),
     };
 
-    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
-      this.configService.featureFlag.scenarioCustomFields,
-    );
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields();
     const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
       (field) => !flatScenario[field as keyof typeof flatScenario],
     );

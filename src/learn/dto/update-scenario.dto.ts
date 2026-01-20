@@ -96,14 +96,6 @@ export class UpdateScenarioDto {
   prompt?: string;
 
   @ApiProperty({
-    description: 'Agent goal for the scenario',
-    example: 'Goal to generate the summary',
-  })
-  @IsString()
-  @IsOptional()
-  agentGoal?: string;
-
-  @ApiProperty({
     description: 'Name of the AI client persona',
     example: 'Ahana',
   })
@@ -171,30 +163,6 @@ export class UpdateScenarioDto {
   context?: string;
 
   @ApiProperty({
-    description: 'Session behavior guidelines of the AI client persona',
-    example: 'Session behavior guidelines of the AI client persona',
-  })
-  @IsString()
-  @IsOptional()
-  sessionBehaviorGuidelines?: string;
-
-  @ApiProperty({
-    description: 'Life history of the AI client persona',
-    example: 'Life history of the AI client persona',
-  })
-  @IsString()
-  @IsOptional()
-  lifeHistory?: string;
-
-  @ApiProperty({
-    description: 'Core memories of the AI client persona',
-    example: 'Core memories of the AI client persona',
-  })
-  @IsString()
-  @IsOptional()
-  coreMemories?: string;
-
-  @ApiProperty({
     description: 'Personality of the AI client persona',
     example: 'Extraverted, anxious, open to new experiences, honest',
   })
@@ -202,15 +170,6 @@ export class UpdateScenarioDto {
   @IsOptional()
   personality?: string;
 
-  @ApiProperty({
-    description: 'Starting state of the AI client persona',
-    example: 'Scared, hopeless',
-  })
-  @IsString()
-  @IsOptional()
-  startingState?: string;
-
-  // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove coreMemories, lifeHistory, startingState, emotionalNeeds, sessionBehaviorGuidelines, agentGoal
   @ApiProperty({
     description: 'Difficulty level of the scenario',
     example: ScenarioDifficultyLevel.EASY,
@@ -237,14 +196,6 @@ export class UpdateScenarioDto {
   @IsString({ each: true })
   @IsOptional()
   agentDialogues?: string[];
-
-  @ApiProperty({
-    description: 'Emotional needs of the AI client persona',
-    example: 'Emotional needs of the AI client persona',
-  })
-  @IsString()
-  @IsOptional()
-  emotionalNeeds?: string;
 
   @ApiProperty({
     description: 'Tone of the AI client persona',

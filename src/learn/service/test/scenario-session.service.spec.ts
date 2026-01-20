@@ -746,8 +746,6 @@ describe('ScenarioSessionService', () => {
       const scenarioWithoutVoiceId = {
         ...mockScenario,
         metadata: {
-          agentGoal: 'Help the client',
-          lifeHistory: 'Life history',
           voiceId: 'voice-123',
           name: 'Test Client',
           age: 25,
@@ -1031,7 +1029,6 @@ describe('ScenarioSessionService', () => {
           title: 'Test Scenario',
           description: 'Test Description',
           voiceId: 'test-voice',
-          lifeHistory: 'Test Life History',
         },
         isGlobal: false,
       };
@@ -1117,8 +1114,6 @@ describe('ScenarioSessionService', () => {
       const mockScenarioWithMetadata = {
         ...mockScenario,
         metadata: {
-          agentGoal: 'Help the client',
-          lifeHistory: 'Life history',
           voiceId: 'voice-123',
           name: 'Test Client',
           age: 25,
