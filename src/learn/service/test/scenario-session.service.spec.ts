@@ -484,8 +484,9 @@ describe('ScenarioSessionService', () => {
       );
     });
 
-    it('should filter out PASSIVE events and return only ACTIVE events', async () => {
-      const mockSessionWithMixedEvents = {
+    it('should return only ACTIVE events (filtering done at repository level)', async () => {
+      // Repository now returns only ACTIVE events with autoTerminationStatus=false
+      const mockSessionWithActiveEvents = {
         ...mockScenarioSession,
         events: [
           {
@@ -495,15 +496,6 @@ describe('ScenarioSessionService', () => {
               id: 'event-1',
               visibilityType: 'ACTIVE',
               name: 'Active Event 1',
-            },
-          },
-          {
-            id: 'session-event-2',
-            autoTerminationStatus: false,
-            events: {
-              id: 'event-2',
-              visibilityType: 'PASSIVE',
-              name: 'Passive Event',
             },
           },
           {
@@ -520,7 +512,7 @@ describe('ScenarioSessionService', () => {
 
       permissionValidatorService.validatePermissions.mockResolvedValue(false);
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(
-        mockSessionWithMixedEvents as any,
+        mockSessionWithActiveEvents as any,
       );
       scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
 
