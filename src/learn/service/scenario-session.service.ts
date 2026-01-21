@@ -67,6 +67,7 @@ import { getActiveScenarioMandatoryFields } from '../util/scenario.util';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { Languages } from 'src/language/entity/languages.entity';
+import { ReviewSharedService } from 'src/review/service/review-shared.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -91,6 +92,7 @@ export class ScenarioSessionService {
     private sessionEventTranslationService: SessionEventTranslationService,
     private sharedLanguageService: SharedLanguageService,
     private scenarioVoicesRepository: ScenarioVoicesRepository,
+    private reviewSharedService: ReviewSharedService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -159,8 +161,17 @@ export class ScenarioSessionService {
     });
 
     const hasFeedback = !!feedback;
+    const review =
+      await this.reviewSharedService.getReviewByScenarioSessionId(
+        scenarioSessionId,
+      );
 
-    return { ...scenarioSession, hasFeedback };
+    return {
+      ...scenarioSession,
+      hasFeedback,
+      reviewId: review?.id,
+      ReviewStatus: review?.status,
+    };
   }
 
   async startScenarioSession(
