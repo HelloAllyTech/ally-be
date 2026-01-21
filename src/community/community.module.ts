@@ -5,9 +5,10 @@ import { UserDailyScoreRepository } from './repository/user-daily-score.reposito
 import { CommunityController } from './controller/community.controller';
 import { LeaderboardService } from './service/leaderboard.service';
 import { CommunitySharedService } from './service/community-shared.service';
+import { TenantModule } from 'src/tenant/tenant.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserDailyScores])],
+  imports: [TypeOrmModule.forFeature([UserDailyScores]), TenantModule],
   controllers: [CommunityController],
   providers: [
     LeaderboardService,

@@ -6,11 +6,13 @@ import {
 } from '../dto/leaderboard.dto';
 import { LeaderboardView } from '../type/leaderboard.type';
 import { Pagination } from 'src/common/type/common.type';
+import { TenantService } from 'src/tenant/service/tenant.service';
 
 @Injectable()
 export class LeaderboardService {
   constructor(
     private readonly userDailyScoreRepository: UserDailyScoreRepository,
+    private readonly tenantService: TenantService,
   ) {}
 
   private getDateRange(window: LeaderboardView): {
@@ -49,6 +51,8 @@ export class LeaderboardService {
     window: LeaderboardView,
     pagination?: Pagination,
   ): Promise<LeaderboardResponseDto> {
+    const tenantSettings = await this.tenantService.findById(tenantId);
+    const hideRankInCommunity = tenantSettings?.settings?.hideRankInCommunity;
     const { startDate, endDate } = this.getDateRange(window);
 
     const { data, totalCount } =
@@ -57,6 +61,7 @@ export class LeaderboardService {
         startDate,
         endDate,
         pagination,
+        hideRankInCommunity,
       );
 
     return {
@@ -71,6 +76,8 @@ export class LeaderboardService {
     tenantId: string,
     window: LeaderboardView,
   ): Promise<MyRankResponseDto> {
+    const tenantSettings = await this.tenantService.findById(tenantId);
+    const hideRankInCommunity = tenantSettings?.settings?.hideRankInCommunity;
     const { startDate, endDate } = this.getDateRange(window);
 
     const rankResult =
@@ -79,6 +86,7 @@ export class LeaderboardService {
         tenantId,
         startDate,
         endDate,
+        hideRankInCommunity,
       );
 
     if (rankResult) {
@@ -96,7 +104,7 @@ export class LeaderboardService {
       userId,
       name: userDetails.name,
       profileImageUrl: userDetails.profileImageUrl,
-      rank: 0, // 0 indicates no rank (no activity)
+      rank: hideRankInCommunity ? undefined : 0, // 0 indicates no rank (no activity)
       minutesPlayed: 0,
       badgeCount: userDetails.badgeCount,
       window,

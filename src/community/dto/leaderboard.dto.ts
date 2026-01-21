@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, Min } from 'class-validator';
+import { IsEnum, IsOptional } from 'class-validator';
 import { LeaderboardSortBy, LeaderboardView } from '../type/leaderboard.type';
 import { SortOrder } from 'src/common/type/common.type';
 
@@ -22,7 +22,6 @@ export class GetLeaderboardQueryDto {
     description: 'Number of results to skip for pagination',
   })
   @IsOptional()
-  @Min(0)
   offset?: number;
 
   @ApiPropertyOptional({
@@ -65,7 +64,7 @@ export class LeaderboardEntryDto {
   profileImageUrl?: string;
 
   @ApiProperty({ description: 'Rank in the leaderboard' })
-  rank!: number;
+  rank?: number;
 
   @ApiProperty({ description: 'Total minutes played in the time window' })
   minutesPlayed!: number;
