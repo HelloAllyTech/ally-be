@@ -2,6 +2,7 @@ import { In, Repository } from 'typeorm';
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,6 +14,8 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class BadgeTenantService {
+  private readonly logger = new Logger(BadgeTenantService.name);
+
   constructor(
     @InjectRepository(BadgeTenant)
     private readonly badgeTenantRepository: Repository<BadgeTenant>,
@@ -103,5 +106,40 @@ export class BadgeTenantService {
     );
 
     return true;
+  }
+
+  async assignBadgeToTenants(
+    badge: Badge,
+    tenantIds?: string[],
+  ): Promise<string[]> {
+    try {
+      let finalTenantIds: string[] = [];
+
+      if (badge.visibilityType === BadgeVisibilityType.PUBLIC) {
+        const tenants = await this.tenantsRepository.find();
+        finalTenantIds = tenants.map((tenant) => tenant.id);
+      } else if (tenantIds && tenantIds.length > 0) {
+        finalTenantIds = tenantIds;
+      }
+
+      if (finalTenantIds.length > 0) {
+        const badgeTenants = finalTenantIds.map((tenantId) =>
+          this.badgeTenantRepository.create({
+            badgeId: badge.id,
+            tenantId,
+          }),
+        );
+        await this.badgeTenantRepository.save(badgeTenants);
+      }
+
+      this.logger.log(`Badge ${badge.id} assigned to tenants`);
+      return finalTenantIds;
+    } catch (error) {
+      this.logger.error(
+        `Failed to assign badge ${badge.id} to tenants`,
+        error.stack,
+      );
+      return [];
+    }
   }
 }

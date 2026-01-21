@@ -1,0 +1,195 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { BadgeUserRepository } from '../repository/badge-user.repository';
+import { Badge } from '../entity/badge.entity';
+import { BadgeCategory } from '../constants/badge.constants';
+import { ReviewSharedService } from 'src/review/service/review-shared.service';
+import { CommunitySharedService } from 'src/community/service/community-shared.service';
+import { UserValueCount } from '../type/badge.type';
+
+@Injectable()
+export class BadgeUserService {
+  private readonly logger = new Logger(BadgeUserService.name);
+
+  constructor(
+    private readonly badgeUserRepository: BadgeUserRepository,
+    private readonly communitySharedService: CommunitySharedService,
+    private readonly reviewSharedService: ReviewSharedService,
+  ) {}
+
+  async awardBadgeToUsersByTenant(badge: Badge, tenantIds: string[]) {
+    this.logger.log(
+      `Awarding badge ${badge.id} to users in tenants: ${tenantIds.join(', ')}`,
+    );
+    if (!badge.achievementParams?.count) {
+      return null;
+    }
+
+    try {
+      let userCounts: UserValueCount[] = [];
+
+      switch (badge.category) {
+        case BadgeCategory.SIMULATION_MINUTES:
+          this.logger.log(
+            `Getting total simulation minutes per user for badge ${badge.id}`,
+          );
+          const totalSimulationMinutesPerUser =
+            await this.communitySharedService.getTotalSimulationMinutesPerUser(
+              tenantIds,
+            );
+
+          userCounts = totalSimulationMinutesPerUser.map((row) => ({
+            userId: row.userId,
+            value: row.totalMinutes,
+          }));
+          break;
+
+        case BadgeCategory.COMMENTS_REACTIONS_GIVEN:
+          this.logger.log(
+            `Getting given comments/reactions count for badge ${badge.id}`,
+          );
+          const givenCounts =
+            await this.getGivenCommentsOrReactionsCount(tenantIds);
+
+          userCounts = givenCounts.map((row) => ({
+            userId: row.userId,
+            value: row.count,
+          }));
+          break;
+
+        case BadgeCategory.COMMENTS_REACTIONS_RECEIVED:
+          this.logger.log(
+            `Getting received comments/reactions count for badge ${badge.id}`,
+          );
+          const receivedCounts =
+            await this.getReceivedCommentsOrReactionsCount(tenantIds);
+
+          userCounts = receivedCounts.map((row) => ({
+            userId: row.userId,
+            value: row.count,
+          }));
+          break;
+
+        case BadgeCategory.ACTIVE_DAY_STREAK:
+          this.logger.log(
+            `Getting max active days per user for badge ${badge.id}`,
+          );
+          const maxActiveDaysPerUser =
+            await this.communitySharedService.getMaxActiveDaysPerUser(
+              tenantIds,
+            );
+
+          userCounts = maxActiveDaysPerUser.map((row) => ({
+            userId: row.userId,
+            value: row.maxStreak,
+          }));
+          break;
+        default:
+          throw new Error('Invalid badge category');
+      }
+
+      await this.saveBadgeUsersAboveThreshold(badge, userCounts);
+    } catch (error) {
+      this.logger.error(
+        `Failed to award badge ${badge.id} to users in tenants: ${tenantIds.join(', ')}`,
+        error.stack,
+      );
+    }
+  }
+
+  private async saveBadgeUsersAboveThreshold(
+    badge: Badge,
+    userCounts: UserValueCount[],
+  ): Promise<void> {
+    if (userCounts.length === 0) {
+      return;
+    }
+
+    const threshold = badge.achievementParams?.count || 0;
+    const userBadges = userCounts
+      .filter((row) => row.value >= threshold)
+      .map((row) =>
+        this.badgeUserRepository.create({
+          userId: row.userId,
+          badgeId: badge.id,
+        }),
+      );
+
+    if (userBadges.length > 0) {
+      await this.badgeUserRepository.save(userBadges);
+      this.logger.log(
+        `Badge ${badge.id} awarded to ${userBadges.length} users`,
+      );
+    }
+  }
+
+  private async getGivenCommentsOrReactionsCount(
+    tenantIds?: string[],
+    userIds?: number[],
+  ): Promise<{ userId: number; count: number }[]> {
+    const [givenComments, givenReviewReactions, givenCommentReactions] =
+      await Promise.all([
+        this.reviewSharedService.getGivenCommentsCountPerUser(
+          tenantIds,
+          userIds,
+        ),
+        this.reviewSharedService.getGivenReviewReactionsCountPerUser(
+          tenantIds,
+          userIds,
+        ),
+        this.reviewSharedService.getGivenCommentsReactionsCountPerUser(
+          tenantIds,
+          userIds,
+        ),
+      ]);
+    return this.mergeCountsByUserId([
+      ...givenComments,
+      ...givenReviewReactions,
+      ...givenCommentReactions,
+    ]);
+  }
+
+  private async getReceivedCommentsOrReactionsCount(
+    tenantIds?: string[],
+    userIds?: number[],
+  ): Promise<{ userId: number; count: number }[]> {
+    const [
+      receivedComments,
+      receivedReviewReactions,
+      receivedCommentReactions,
+    ] = await Promise.all([
+      this.reviewSharedService.getReceivedCommentsCountPerUser(
+        tenantIds,
+        userIds,
+      ),
+      this.reviewSharedService.getReceivedReviewReactionsCountPerUser(
+        tenantIds,
+        userIds,
+      ),
+      this.reviewSharedService.getReceivedCommentsReactionsCountPerUser(
+        tenantIds,
+        userIds,
+      ),
+    ]);
+    return this.mergeCountsByUserId([
+      ...receivedComments,
+      ...receivedReviewReactions,
+      ...receivedCommentReactions,
+    ]);
+  }
+
+  private mergeCountsByUserId(
+    items: { userId: number; count: number }[],
+  ): { userId: number; count: number }[] {
+    const userCountMap = new Map<number, number>();
+    for (const item of items) {
+      userCountMap.set(
+        item.userId,
+        (userCountMap.get(item.userId) || 0) + Number(item.count),
+      );
+    }
+    return Array.from(userCountMap.entries()).map(([userId, count]) => ({
+      userId,
+      count,
+    }));
+  }
+}

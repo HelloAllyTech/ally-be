@@ -200,4 +200,113 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       badgeCount: parseInt(row.badgeCount) || 0,
     };
   }
+
+  async getTotalSimulationMinutesPerUser(
+    tenantIds?: string[],
+    userIds?: number[],
+  ): Promise<{ userId: number; totalMinutes: number }[]> {
+    if (!tenantIds?.length && !userIds?.length) {
+      return [];
+    }
+
+    const totalSimulationMinutesQuery = this.createQueryBuilder(
+      'user_daily_score',
+    )
+      .andWhere('user_daily_score.minutesPlayed IS NOT NULL')
+      .andWhere('user_daily_score.minutesPlayed > 0')
+      .select('user_daily_score.userId', 'userId')
+      .addSelect('SUM(user_daily_score.minutesPlayed)', 'totalMinutes')
+      .groupBy('user_daily_score.userId');
+
+    if (userIds) {
+      totalSimulationMinutesQuery.andWhere(
+        'user_daily_score.userId IN (:...userIds)',
+        {
+          userIds,
+        },
+      );
+    }
+    if (tenantIds) {
+      totalSimulationMinutesQuery.andWhere(
+        'user_daily_score.tenantId IN (:...tenantIds)',
+        {
+          tenantIds,
+        },
+      );
+    }
+
+    const totalSimulationMinutesResult =
+      await totalSimulationMinutesQuery.getRawMany();
+
+    return totalSimulationMinutesResult.map((res) => ({
+      userId: res.userId,
+      totalMinutes: parseFloat(res.totalMinutes) || 0,
+    }));
+  }
+
+  async getMaxActiveDaysPerUser(
+    tenantIds?: string[],
+    userIds?: number[],
+  ): Promise<{ userId: number; maxStreak: number }[]> {
+    if (!tenantIds?.length && !userIds?.length) {
+      return [];
+    }
+
+    const conditions: string[] = ['"minutesPlayed" > 0'];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (userIds?.length) {
+      conditions.push(
+        `"userId" IN (${userIds.map(() => `$${paramIndex++}`).join(', ')})`,
+      );
+      params.push(...userIds);
+    }
+    if (tenantIds?.length) {
+      conditions.push(
+        `tenant_id IN (${tenantIds.map(() => `$${paramIndex++}`).join(', ')})`,
+      );
+      params.push(...tenantIds);
+    }
+
+    const whereClause = conditions.join(' AND ');
+    const maxStreakResult = await this.query(
+      `
+      WITH active_days AS (
+        SELECT 
+          "userId", 
+          "date" as active_day
+        FROM user_daily_scores
+        WHERE ${whereClause}
+      ),
+      islands AS (
+        SELECT 
+          "userId",
+          active_day,
+          active_day - (ROW_NUMBER() OVER (PARTITION BY "userId" ORDER BY active_day))::int as island
+        FROM active_days
+      ),
+      streak_length AS (
+        SELECT
+          "userId",
+          COUNT(*) as streak_length
+        FROM islands
+        GROUP BY 
+        "userId", 
+        island
+      )
+      SELECT 
+        "userId",
+        MAX(streak_length) as "maxStreak"
+      FROM streak_length
+      GROUP BY "userId"
+      `,
+      params,
+    );
+
+    return maxStreakResult.map((res: any) => ({
+      userId: res.userId,
+      maxStreak: parseInt(res.maxStreak) || 0,
+    }));
+  }
 }

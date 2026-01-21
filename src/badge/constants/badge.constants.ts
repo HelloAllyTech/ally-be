@@ -1,3 +1,5 @@
+import { CreateBadgeDto } from '../dto/create-badge.dto';
+
 export enum BadgeStatus {
   DRAFT = 'DRAFT',
   ACTIVE = 'ACTIVE',
@@ -24,3 +26,13 @@ export enum BadgeLockStatus {
   LOCKED = 'LOCKED',
   UNLOCKED = 'UNLOCKED',
 }
+
+export const BADGE_MANDATORY_FIELDS: (keyof CreateBadgeDto)[] = [
+  'code',
+  'name',
+  'description',
+  'imageUrl',
+  'category',
+  'achievementParams',
+  'groupIds',
+];
