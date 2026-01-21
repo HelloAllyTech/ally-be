@@ -24,7 +24,7 @@ export interface UserRankResult {
   userId: number;
   name: string;
   profileImageUrl?: string;
-  rank: number;
+  rank?: number;
   minutesPlayed: number;
   badgeCount: number;
 }

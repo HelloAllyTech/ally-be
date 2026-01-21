@@ -38,6 +38,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     startDate: Date,
     endDate: Date,
     pagination?: Pagination,
+    hideRankInCommunity?: boolean,
   ): Promise<LeaderboardResult> {
     const limit = pagination?.limit ?? 50;
     const offset = pagination?.offset ?? 0;
@@ -100,7 +101,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       userId: row.userId,
       name: row.name,
       profileImageUrl: row.profileImageUrl || undefined,
-      rank: parseInt(row.rank) || 0,
+      rank: hideRankInCommunity ? undefined : parseInt(row.rank) || 0,
       minutesPlayed: parseInt(row.minutesPlayed) || 0,
       badgeCount: parseInt(row.badgeCount) || 0,
     }));
@@ -113,6 +114,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     tenantId: string,
     startDate: Date,
     endDate: Date,
+    hideRankInCommunity?: boolean,
   ): Promise<UserRankResult | null> {
     const result = await this.query(
       `
@@ -163,7 +165,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       userId: row.userId,
       name: row.name,
       profileImageUrl: row.profileImageUrl || undefined,
-      rank: parseInt(row.rank) || 0,
+      rank: hideRankInCommunity ? undefined : parseInt(row.rank) || 0,
       minutesPlayed: parseInt(row.minutesPlayed) || 0,
       badgeCount: parseInt(row.badgeCount) || 0,
     };
