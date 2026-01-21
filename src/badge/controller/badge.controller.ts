@@ -29,6 +29,7 @@ import {
   UserBadgeCountResponseDto,
   GroupedUserAvailableBadgesDto,
   MarkBadgeViewedResponseDto,
+  AdminBadgeListResponseDto,
 } from '../dto/user-badge-response.dto';
 import { BadgeTenantService } from '../service/badge-tenant.service';
 import { AddBadgeToTenantsRequestDto } from '../dto/badge-tenant.dto';
@@ -104,7 +105,7 @@ export class BadgeController {
     type: [GroupedUserAvailableBadgesDto],
   })
   @AuthPermissions([PERMISSIONS.VIEW_USER_BADGES])
-  @Get('available')
+  @Get('me/available')
   async getAvailableBadges(
     @CurrentUser() tokenUser: TokenUser,
   ): Promise<GroupedUserAvailableBadgesDto[]> {
@@ -133,6 +134,18 @@ export class BadgeController {
     @Param('badgeId', ParseUUIDPipe) badgeId: string,
   ): Promise<MarkBadgeViewedResponseDto> {
     return this.badgeService.markBadgeAsViewed(tokenUser.id, badgeId);
+  }
+
+  @ApiOperation({ summary: 'Get all badges (Admin)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns all badges in the system',
+    type: AdminBadgeListResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_BADGES])
+  @Get()
+  async getAllBadges(): Promise<AdminBadgeListResponseDto> {
+    return this.badgeService.getAllBadges();
   }
 
   @ApiOperation({ summary: 'Add badge to tenants' })
