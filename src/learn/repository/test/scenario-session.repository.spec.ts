@@ -591,14 +591,13 @@ describe('ScenarioSessionRepository', () => {
         'scenarioSession.events',
         ScenarioSessionEvents,
         'scenarioSessionEvent',
-        '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id AND "scenarioSessionEvent"."autoTerminationStatus" = false',
+        '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id',
       );
-      expect(mockQueryBuilder.innerJoinAndMapOne).toHaveBeenCalledWith(
+      expect(mockQueryBuilder.leftJoinAndMapOne).toHaveBeenCalledWith(
         'scenarioSessionEvent.events',
         SessionEvents,
         'events',
-        'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
-        { visibilityType: SessionEventVisibilityType.ACTIVE },
+        'events.id = scenarioSessionEvent.eventId',
       );
     });
 

@@ -68,6 +68,7 @@ import { SharedLanguageService } from 'src/language/service/shared-language.serv
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { Languages } from 'src/language/entity/languages.entity';
 import { ReviewSharedService } from 'src/review/service/review-shared.service';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -138,22 +139,25 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario session not found');
     }
 
-    // remove sensitive fields from nested events
+    // Filter events to only include ACTIVE ones and non-termination events,
+    // then remove sensitive fields from nested events
     if ((scenarioSession as any).events) {
-      (scenarioSession as any).events = (scenarioSession as any).events.map(
-        (event: any) => {
-          if (event.events) {
-            const sanitizedEvents = { ...event.events };
-            delete sanitizedEvents.detectionData;
-            delete sanitizedEvents.detectionConfig;
-            delete sanitizedEvents.branchInstruction;
-            delete sanitizedEvents.description;
-            delete sanitizedEvents.detectionType;
-            return { ...event, events: sanitizedEvents };
-          }
-          return event;
-        },
-      );
+      (scenarioSession as any).events = (scenarioSession as any).events
+        .filter(
+          (event: any) =>
+            event.events?.visibilityType ===
+              SessionEventVisibilityType.ACTIVE &&
+            event.autoTerminationStatus === false,
+        )
+        .map((event: any) => {
+          const sanitizedEvents = { ...event.events };
+          delete sanitizedEvents.detectionData;
+          delete sanitizedEvents.detectionConfig;
+          delete sanitizedEvents.branchInstruction;
+          delete sanitizedEvents.description;
+          delete sanitizedEvents.detectionType;
+          return { ...event, events: sanitizedEvents };
+        });
     }
 
     const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
@@ -161,17 +165,8 @@ export class ScenarioSessionService {
     });
 
     const hasFeedback = !!feedback;
-    const review =
-      await this.reviewSharedService.getReviewByScenarioSessionId(
-        scenarioSessionId,
-      );
 
-    return {
-      ...scenarioSession,
-      hasFeedback,
-      reviewId: review?.id,
-      ReviewStatus: review?.status,
-    };
+    return { ...scenarioSession, hasFeedback };
   }
 
   async startScenarioSession(
