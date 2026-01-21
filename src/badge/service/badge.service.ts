@@ -6,6 +6,7 @@ import {
 } from '../constants/badge.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { BadgeUser } from '../entity/badge-user.entity';
+import { Badge } from '../entity/badge.entity';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { groupAndSortBadgesByCategory } from '../util/badge.util';
@@ -113,5 +114,14 @@ export class BadgeService {
       badgeId,
       viewedStatus: BadgeViewedStatus.VIEWED,
     };
+  }
+
+  async getAllBadges(): Promise<{ data: Badge[]; count: number }> {
+    const [data, count] = await this.badgeRepository.findAndCount({
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+    return { data, count };
   }
 }
