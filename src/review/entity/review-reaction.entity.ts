@@ -6,7 +6,7 @@ export class ReviewReaction extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   reviewId!: string;
 
   @Column()

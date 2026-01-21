@@ -25,6 +25,10 @@ import { TokenUser } from 'src/auth/type/auth.types';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import {
+  CreateBadgeDto,
+  CreateBadgeResponseDto,
+} from '../dto/create-badge.dto';
+import {
   UserBadgeResponseDto,
   UserBadgeCountResponseDto,
   GroupedUserAvailableBadgesDto,
@@ -46,6 +50,20 @@ export class BadgeController {
     private readonly badgeService: BadgeService,
     private readonly badgeTenantService: BadgeTenantService,
   ) {}
+
+  @ApiOperation({ summary: 'Create a badge' })
+  @ApiResponse({
+    status: 201,
+    description: 'Badge created successfully',
+    type: CreateBadgeResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @Post()
+  async createBadge(
+    @Body() createBadgeDto: CreateBadgeDto,
+  ): Promise<CreateBadgeResponseDto> {
+    return this.badgeService.createBadge(createBadgeDto);
+  }
 
   @ApiOperation({ summary: 'Get all badges for the current user' })
   @ApiQuery({
