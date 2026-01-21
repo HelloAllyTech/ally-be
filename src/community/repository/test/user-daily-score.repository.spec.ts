@@ -284,6 +284,89 @@ describe('UserDailyScoreRepository', () => {
       expect(result.data[0].minutesPlayed).toBe(0);
       expect(result.data[0].badgeCount).toBe(0);
     });
+
+    it('should return undefined rank when hideRankInCommunity is true', async () => {
+      const leaderboardData = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '1',
+          minutesPlayed: '120',
+          badgeCount: '5',
+        },
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce(leaderboardData)
+        .mockResolvedValueOnce([{ count: '1' }]);
+
+      const result = await repository.getLeaderboardWithUserDetails(
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        undefined,
+        true,
+      );
+
+      expect(result.data[0].rank).toBeUndefined();
+      expect(result.data[0].minutesPlayed).toBe(120);
+      expect(result.data[0].badgeCount).toBe(5);
+    });
+
+    it('should return rank when hideRankInCommunity is false', async () => {
+      const leaderboardData = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '1',
+          minutesPlayed: '120',
+          badgeCount: '5',
+        },
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce(leaderboardData)
+        .mockResolvedValueOnce([{ count: '1' }]);
+
+      const result = await repository.getLeaderboardWithUserDetails(
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        undefined,
+        false,
+      );
+
+      expect(result.data[0].rank).toBe(1);
+    });
+
+    it('should return rank when hideRankInCommunity is undefined', async () => {
+      const leaderboardData = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '1',
+          minutesPlayed: '120',
+          badgeCount: '5',
+        },
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce(leaderboardData)
+        .mockResolvedValueOnce([{ count: '1' }]);
+
+      const result = await repository.getLeaderboardWithUserDetails(
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        undefined,
+        undefined,
+      );
+
+      expect(result.data[0].rank).toBe(1);
+    });
   });
 
   describe('getUserRankWithDetails', () => {
@@ -395,6 +478,83 @@ describe('UserDailyScoreRepository', () => {
       expect(result?.rank).toBe(100);
       expect(result?.minutesPlayed).toBe(500);
       expect(result?.badgeCount).toBe(25);
+    });
+
+    it('should return undefined rank when hideRankInCommunity is true', async () => {
+      const rankResult = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '5',
+          minutesPlayed: '60',
+          badgeCount: '3',
+        },
+      ];
+
+      mockQuery.mockResolvedValue(rankResult);
+
+      const result = await repository.getUserRankWithDetails(
+        mockUserId,
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        true,
+      );
+
+      expect(result?.rank).toBeUndefined();
+      expect(result?.minutesPlayed).toBe(60);
+      expect(result?.badgeCount).toBe(3);
+    });
+
+    it('should return rank when hideRankInCommunity is false', async () => {
+      const rankResult = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '5',
+          minutesPlayed: '60',
+          badgeCount: '3',
+        },
+      ];
+
+      mockQuery.mockResolvedValue(rankResult);
+
+      const result = await repository.getUserRankWithDetails(
+        mockUserId,
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        false,
+      );
+
+      expect(result?.rank).toBe(5);
+    });
+
+    it('should return rank when hideRankInCommunity is undefined', async () => {
+      const rankResult = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '5',
+          minutesPlayed: '60',
+          badgeCount: '3',
+        },
+      ];
+
+      mockQuery.mockResolvedValue(rankResult);
+
+      const result = await repository.getUserRankWithDetails(
+        mockUserId,
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        undefined,
+      );
+
+      expect(result?.rank).toBe(5);
     });
   });
 

@@ -3,10 +3,12 @@ import { LeaderboardService } from '../leaderboard.service';
 import { UserDailyScoreRepository } from '../../repository/user-daily-score.repository';
 import { LeaderboardView } from '../../type/leaderboard.type';
 import { LeaderboardEntryDto } from '../../dto/leaderboard.dto';
+import { TenantService } from 'src/tenant/service/tenant.service';
 
 describe('LeaderboardService', () => {
   let service: LeaderboardService;
   let userDailyScoreRepository: jest.Mocked<UserDailyScoreRepository>;
+  let tenantService: jest.Mocked<TenantService>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 1;
@@ -40,11 +42,23 @@ describe('LeaderboardService', () => {
     },
   ];
 
+  const mockTenantSettings = {
+    id: mockTenantId,
+    name: 'Test Tenant',
+    settings: {
+      hideRankInCommunity: false,
+    },
+  };
+
   beforeEach(async () => {
     const mockUserDailyScoreRepository = {
       getLeaderboardWithUserDetails: jest.fn(),
       getUserRankWithDetails: jest.fn(),
       getUserDetailsForNoActivity: jest.fn(),
+    };
+
+    const mockTenantService = {
+      findById: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -54,11 +68,19 @@ describe('LeaderboardService', () => {
           provide: UserDailyScoreRepository,
           useValue: mockUserDailyScoreRepository,
         },
+        {
+          provide: TenantService,
+          useValue: mockTenantService,
+        },
       ],
     }).compile();
 
     service = module.get<LeaderboardService>(LeaderboardService);
     userDailyScoreRepository = module.get(UserDailyScoreRepository);
+    tenantService = module.get(TenantService);
+
+    // Default mock: tenant with hideRankInCommunity = false
+    tenantService.findById.mockResolvedValue(mockTenantSettings as any);
   });
 
   afterEach(() => {
@@ -82,6 +104,7 @@ describe('LeaderboardService', () => {
         window: LeaderboardView.LAST_WEEK,
         totalCount: 3,
       });
+      expect(tenantService.findById).toHaveBeenCalledWith(mockTenantId);
       expect(
         userDailyScoreRepository.getLeaderboardWithUserDetails,
       ).toHaveBeenCalledWith(
@@ -89,6 +112,7 @@ describe('LeaderboardService', () => {
         expect.any(Date),
         expect.any(Date),
         undefined,
+        false,
       );
     });
 
@@ -115,6 +139,7 @@ describe('LeaderboardService', () => {
         expect.any(Date),
         expect.any(Date),
         undefined,
+        false,
       );
     });
 
@@ -141,6 +166,7 @@ describe('LeaderboardService', () => {
         expect.any(Date),
         expect.any(Date),
         undefined,
+        false,
       );
     });
 
@@ -167,6 +193,7 @@ describe('LeaderboardService', () => {
         expect.any(Date),
         expect.any(Date),
         undefined,
+        false,
       );
     });
 
@@ -190,6 +217,7 @@ describe('LeaderboardService', () => {
         expect.any(Date),
         expect.any(Date),
         pagination,
+        false,
       );
     });
 
@@ -221,6 +249,79 @@ describe('LeaderboardService', () => {
         service.getLeaderboard(mockTenantId, LeaderboardView.LAST_WEEK),
       ).rejects.toThrow('Database error');
     });
+
+    it('should pass hideRankInCommunity=true to repository when tenant setting is enabled', async () => {
+      tenantService.findById.mockResolvedValue({
+        id: mockTenantId,
+        name: 'Test Tenant',
+        settings: {
+          hideRankInCommunity: true,
+        },
+      } as any);
+
+      userDailyScoreRepository.getLeaderboardWithUserDetails.mockResolvedValue({
+        data: [],
+        totalCount: 0,
+      });
+
+      await service.getLeaderboard(mockTenantId, LeaderboardView.LAST_WEEK);
+
+      expect(
+        userDailyScoreRepository.getLeaderboardWithUserDetails,
+      ).toHaveBeenCalledWith(
+        mockTenantId,
+        expect.any(Date),
+        expect.any(Date),
+        undefined,
+        true,
+      );
+    });
+
+    it('should handle tenant with no settings', async () => {
+      tenantService.findById.mockResolvedValue({
+        id: mockTenantId,
+        name: 'Test Tenant',
+        settings: undefined,
+      } as any);
+
+      userDailyScoreRepository.getLeaderboardWithUserDetails.mockResolvedValue({
+        data: [],
+        totalCount: 0,
+      });
+
+      await service.getLeaderboard(mockTenantId, LeaderboardView.LAST_WEEK);
+
+      expect(
+        userDailyScoreRepository.getLeaderboardWithUserDetails,
+      ).toHaveBeenCalledWith(
+        mockTenantId,
+        expect.any(Date),
+        expect.any(Date),
+        undefined,
+        undefined,
+      );
+    });
+
+    it('should handle tenant not found', async () => {
+      tenantService.findById.mockResolvedValue(null);
+
+      userDailyScoreRepository.getLeaderboardWithUserDetails.mockResolvedValue({
+        data: [],
+        totalCount: 0,
+      });
+
+      await service.getLeaderboard(mockTenantId, LeaderboardView.LAST_WEEK);
+
+      expect(
+        userDailyScoreRepository.getLeaderboardWithUserDetails,
+      ).toHaveBeenCalledWith(
+        mockTenantId,
+        expect.any(Date),
+        expect.any(Date),
+        undefined,
+        undefined,
+      );
+    });
   });
 
   describe('getMyRank', () => {
@@ -248,6 +349,7 @@ describe('LeaderboardService', () => {
         ...rankResult,
         window: LeaderboardView.LAST_WEEK,
       });
+      expect(tenantService.findById).toHaveBeenCalledWith(mockTenantId);
       expect(
         userDailyScoreRepository.getUserRankWithDetails,
       ).toHaveBeenCalledWith(
@@ -255,6 +357,7 @@ describe('LeaderboardService', () => {
         mockTenantId,
         expect.any(Date),
         expect.any(Date),
+        false,
       );
     });
 
@@ -290,6 +393,75 @@ describe('LeaderboardService', () => {
       ).toHaveBeenCalledWith(mockUserId);
     });
 
+    it('should pass hideRankInCommunity=true when tenant setting is enabled', async () => {
+      tenantService.findById.mockResolvedValue({
+        id: mockTenantId,
+        name: 'Test Tenant',
+        settings: {
+          hideRankInCommunity: true,
+        },
+      } as any);
+
+      userDailyScoreRepository.getUserRankWithDetails.mockResolvedValue({
+        userId: mockUserId,
+        name: 'John Doe',
+        profileImageUrl: 'https://example.com/avatar.jpg',
+        rank: undefined, // rank is hidden
+        minutesPlayed: 120,
+        badgeCount: 3,
+      });
+
+      const result = await service.getMyRank(
+        mockUserId,
+        mockTenantId,
+        LeaderboardView.LAST_WEEK,
+      );
+
+      expect(result.rank).toBeUndefined();
+      expect(
+        userDailyScoreRepository.getUserRankWithDetails,
+      ).toHaveBeenCalledWith(
+        mockUserId,
+        mockTenantId,
+        expect.any(Date),
+        expect.any(Date),
+        true,
+      );
+    });
+
+    it('should return undefined rank when user has no activity and hideRankInCommunity is true', async () => {
+      tenantService.findById.mockResolvedValue({
+        id: mockTenantId,
+        name: 'Test Tenant',
+        settings: {
+          hideRankInCommunity: true,
+        },
+      } as any);
+
+      userDailyScoreRepository.getUserRankWithDetails.mockResolvedValue(null);
+      userDailyScoreRepository.getUserDetailsForNoActivity.mockResolvedValue({
+        name: 'John Doe',
+        profileImageUrl: 'https://example.com/avatar.jpg',
+        badgeCount: 3,
+      });
+
+      const result = await service.getMyRank(
+        mockUserId,
+        mockTenantId,
+        LeaderboardView.LAST_WEEK,
+      );
+
+      expect(result).toEqual({
+        userId: mockUserId,
+        name: 'John Doe',
+        profileImageUrl: 'https://example.com/avatar.jpg',
+        rank: undefined,
+        minutesPlayed: 0,
+        badgeCount: 3,
+        window: LeaderboardView.LAST_WEEK,
+      });
+    });
+
     it('should return rank for LAST_MONTH window', async () => {
       const rankResult = {
         userId: mockUserId,
@@ -314,6 +486,15 @@ describe('LeaderboardService', () => {
         ...rankResult,
         window: LeaderboardView.LAST_MONTH,
       });
+      expect(
+        userDailyScoreRepository.getUserRankWithDetails,
+      ).toHaveBeenCalledWith(
+        mockUserId,
+        mockTenantId,
+        expect.any(Date),
+        expect.any(Date),
+        false,
+      );
     });
 
     it('should return rank for LAST_YEAR window', async () => {
@@ -340,6 +521,15 @@ describe('LeaderboardService', () => {
         ...rankResult,
         window: LeaderboardView.LAST_YEAR,
       });
+      expect(
+        userDailyScoreRepository.getUserRankWithDetails,
+      ).toHaveBeenCalledWith(
+        mockUserId,
+        mockTenantId,
+        expect.any(Date),
+        expect.any(Date),
+        false,
+      );
     });
 
     it('should return rank for ALL_TIME window', async () => {
@@ -366,6 +556,15 @@ describe('LeaderboardService', () => {
         ...rankResult,
         window: LeaderboardView.ALL_TIME,
       });
+      expect(
+        userDailyScoreRepository.getUserRankWithDetails,
+      ).toHaveBeenCalledWith(
+        mockUserId,
+        mockTenantId,
+        expect.any(Date),
+        expect.any(Date),
+        false,
+      );
     });
 
     it('should handle user with no profile image', async () => {
