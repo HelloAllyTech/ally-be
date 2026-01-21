@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ReviewRepository } from './repository/review.repository';
 import { ReviewService } from './service/review.service';
 import { ReviewController } from './controller/review.controller';
@@ -12,9 +12,10 @@ import { ReviewCommentController } from './controller/review-comment.controller'
 import { ReviewThreadController } from './controller/review-thread.controller';
 import { ReviewCommentService } from './service/review-comment.service';
 import { ReviewThreadService } from './service/review-thread.service';
+import { ReviewSharedService } from './service/review-shared.service';
 
 @Module({
-  imports: [LearnModule, UserModule],
+  imports: [forwardRef(() => LearnModule), forwardRef(() => UserModule)],
   controllers: [
     ReviewController,
     ReviewThreadController,
@@ -29,6 +30,8 @@ import { ReviewThreadService } from './service/review-thread.service';
     ReviewService,
     ReviewThreadService,
     ReviewCommentService,
+    ReviewSharedService,
   ],
+  exports: [ReviewSharedService],
 })
 export class ReviewModule {}

@@ -28,6 +28,7 @@ import {
   GenderIdentity,
   SexualOrientation,
 } from '../../enum/gender.enum';
+import { ReviewStatus } from 'src/review/type/review.type';
 
 describe('LearnController', () => {
   let controller: LearnController;
@@ -592,7 +593,12 @@ describe('LearnController', () => {
   describe('getScenarioSession', () => {
     it('should return a scenario session by id', async () => {
       const sessionId = 'session-123';
-      const mockSession = { ...mockScenarioSessionResponse, hasFeedback: true };
+      const mockSession = {
+        ...mockScenarioSessionResponse,
+        hasFeedback: true,
+        reviewId: 'review-id',
+        ReviewStatus: ReviewStatus.HIDDEN,
+      };
       scenarioSessionService.getScenarioSession.mockResolvedValue(mockSession);
 
       const result = await controller.getScenarioSession(
