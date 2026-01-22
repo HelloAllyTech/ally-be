@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ReviewReaction } from '../entity/review-reaction.entity';
 import { Review } from '../entity/review.entity';
+import { ReviewReactionOptions } from '../type/review.type';
 
 @Injectable()
 export class ReviewReactionRepository extends Repository<ReviewReaction> {
@@ -69,5 +70,22 @@ export class ReviewReactionRepository extends Repository<ReviewReaction> {
     }
 
     return query.getRawMany();
+  }
+  async getReviewReactions(reviewId: string, options: ReviewReactionOptions) {
+    const { reaction, limit = 20, offset = 0 } = options;
+    const query = this.createQueryBuilder('rr').where(
+      'rr.reviewId = :reviewId',
+      { reviewId },
+    );
+
+    if (reaction) {
+      query.andWhere('rr.reaction = :reaction', { reaction });
+    }
+
+    return query
+      .orderBy('rr.createdAt', 'DESC')
+      .limit(limit)
+      .offset(offset)
+      .getManyAndCount();
   }
 }
