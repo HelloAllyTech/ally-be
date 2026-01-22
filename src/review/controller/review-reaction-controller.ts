@@ -20,6 +20,7 @@ import { SuccessResponse } from 'src/common/type/common.type';
 import { GetReviewReactionsResponseDto } from '../dto/review-reaction-response.dto';
 import { ToggleReviewReactionDto } from '../dto/toggle-review-reaction.dto';
 import { ReviewReactionService } from '../service/review-reaction.service';
+import { GetReviewReactionCountResponseDto } from '../dto/get-review-reaction-and-count-response.dto';
 
 @Controller({
   path: 'reviews',
@@ -76,5 +77,14 @@ export class ReviewReactionController {
       limit,
       offset,
     });
+  }
+
+  @ApiOperation({ description: 'Get review reactions and its count' })
+  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @Get(':reviewId/reactions/count')
+  async getReviewReactionsAndCount(
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+  ): Promise<GetReviewReactionCountResponseDto> {
+    return this.reviewReactionService.getReviewReactionsAndCount(reviewId);
   }
 }
