@@ -30,6 +30,7 @@ import {
 } from '../constant/review.constant';
 import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
 import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
+import { formatCreatedUserDetails } from '../util/review.util';
 
 @Injectable()
 export class ReviewCommentService {
@@ -280,10 +281,7 @@ export class ReviewCommentService {
     ]);
 
     const userMap = new Map(
-      users.map((user) => [
-        user.id,
-        { id: user.id, name: user.name, profileImage: user.profileImageUrl },
-      ]),
+      users.map((user) => [user.id, formatCreatedUserDetails(user)]),
     );
 
     const reactionsByComment = reactions.reduce(
@@ -304,11 +302,7 @@ export class ReviewCommentService {
         id: comment.c_id,
         content: comment.c_content,
         createdAt: comment.c_createdAt,
-        createdBy: user || {
-          id: comment.c_createdBy,
-          name: null,
-          profileImage: null,
-        },
+        createdBy: user,
         reactions: reactionsByComment[comment.c_id] || {},
         replyCount: parseInt(comment.reply_count) || 0,
         hidden: comment.c_hidden || false,
@@ -399,14 +393,7 @@ export class ReviewCommentService {
     ]);
 
     const userMap = new Map(
-      users.map((user) => [
-        user.id,
-        {
-          id: user.id,
-          name: user.name,
-          profileImage: user.profileImageUrl ?? null,
-        },
-      ]),
+      users.map((user) => [user.id, formatCreatedUserDetails(user)]),
     );
 
     const reactionsByReply = reactions.reduce(
@@ -426,11 +413,7 @@ export class ReviewCommentService {
         id: reply.id,
         content: reply.content,
         createdAt: reply.createdAt,
-        createdBy: user || {
-          id: reply.createdBy,
-          name: null,
-          profileImage: null,
-        },
+        createdBy: user!,
         reactions: reactionsByReply[reply.id] || {},
         hidden: reply.hidden || false,
       };

@@ -19,6 +19,7 @@ import { PermissionValidator } from 'src/authorization/service/permission-valida
 import { ReviewRepository } from '../repository/review.repository';
 import { UserService } from 'src/user/service/user.service';
 import { GetReviewReactionCountResponseDto } from '../dto/get-review-reaction-and-count-response.dto';
+import { formatCreatedUserDetails } from '../util/review.util';
 
 @Injectable()
 export class ReviewReactionService {
@@ -159,14 +160,7 @@ export class ReviewReactionService {
 
     const users = await this.userService.getUsersByIds(userIds);
     const userMap = new Map(
-      users.map((user) => [
-        user.id,
-        {
-          id: user.id,
-          name: user.name,
-          profileImage: user.profileImageUrl ?? null,
-        },
-      ]),
+      users.map((user) => [user.id, formatCreatedUserDetails(user)]),
     );
     const data = reviewReactions.map((reviewReaction) => {
       const user = userMap.get(reviewReaction.createdBy)!;
