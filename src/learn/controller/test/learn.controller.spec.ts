@@ -597,7 +597,7 @@ describe('LearnController', () => {
         ...mockScenarioSessionResponse,
         hasFeedback: true,
         reviewId: 'review-id',
-        ReviewStatus: ReviewStatus.HIDDEN,
+        reviewStatus: ReviewStatus.HIDDEN,
       };
       scenarioSessionService.getScenarioSession.mockResolvedValue(mockSession);
 

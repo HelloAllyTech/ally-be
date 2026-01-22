@@ -166,7 +166,17 @@ export class ScenarioSessionService {
 
     const hasFeedback = !!feedback;
 
-    return { ...scenarioSession, hasFeedback };
+    const review =
+      await this.reviewSharedService.getReviewByScenarioSessionId(
+        scenarioSessionId,
+      );
+
+    return {
+      ...scenarioSession,
+      hasFeedback,
+      reviewId: review?.id,
+      reviewStatus: review?.status,
+    };
   }
 
   async startScenarioSession(
