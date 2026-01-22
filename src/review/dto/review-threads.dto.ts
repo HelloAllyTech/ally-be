@@ -11,23 +11,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-
-export class CreatedByDto {
-  @ApiProperty({ description: 'User ID' })
-  @IsNumber()
-  @IsNotEmpty()
-  id!: number;
-
-  @ApiProperty({ description: 'User name' })
-  @IsString()
-  @IsOptional()
-  name?: string;
-
-  @ApiProperty({ description: 'User profile image URL', nullable: true })
-  @IsString()
-  @IsOptional()
-  profileImage?: string;
-}
+import { CreatedByDto } from './created-user.dto';
 
 export class CommentDto {
   @ApiProperty({ description: 'Comment ID' })

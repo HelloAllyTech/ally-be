@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { CreatedByDto } from './created-user.dto';
 
 export class ScenarioDto {
   @ApiProperty()
@@ -24,17 +25,6 @@ export class ScenarioSessionDto {
 
   @ApiProperty()
   duration!: number;
-}
-
-export class CreatedByDto {
-  @ApiProperty()
-  id!: number;
-
-  @ApiProperty()
-  name!: string;
-
-  @ApiProperty({ required: false, nullable: true })
-  profileImage?: string | null;
 }
 
 export class ReviewItemDto {
