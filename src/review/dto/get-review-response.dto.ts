@@ -8,9 +8,6 @@ export class ScenarioDto {
   createdAt?: Date;
 
   @ApiProperty()
-  duration!: number;
-
-  @ApiProperty()
   description?: string;
 
   @ApiProperty({ nullable: true })
@@ -30,6 +27,16 @@ export class CreatedByDto {
   @ApiProperty({ nullable: true })
   profileImage!: string | null;
 }
+export class ScenarioSessionDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  duration!: number;
+
+  @ApiProperty()
+  createdAt?: Date;
+}
 
 export class GetReviewResponseDto {
   @ApiProperty()
@@ -37,6 +44,9 @@ export class GetReviewResponseDto {
 
   @ApiProperty()
   scenario!: ScenarioDto;
+
+  @ApiProperty()
+  scenarioSession!: ScenarioSessionDto;
 
   @ApiProperty()
   commentsCount!: number;

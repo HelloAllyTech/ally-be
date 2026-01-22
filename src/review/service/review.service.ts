@@ -181,13 +181,17 @@ export class ReviewService {
       scenario: {
         title: scenario?.title,
         createdAt: scenario?.createdAt,
+        description: scenario?.description,
+        coverImageUrl: scenario?.coverImageUrl,
+        coverVideoUrl: scenario?.coverVideoUrl,
+      },
+      scenarioSession: {
+        id: scenarioSession.id,
         duration: getSessionDurationInSeconds(
           scenarioSession.startedAt!,
           scenarioSession.endedAt!,
         ),
-        description: scenario?.description,
-        coverImageUrl: scenario?.coverImageUrl,
-        coverVideoUrl: scenario?.coverVideoUrl,
+        createdAt: scenarioSession.createdAt,
       },
       commentsCount: comments.length > 0 ? Number(comments[0].count) : 0,
       createdBy: {
@@ -218,13 +222,16 @@ export class ReviewService {
       scenario: {
         title: review.scenario.title,
         createdAt: review.scenario.createdAt,
+        description: review.scenario.description,
+        coverImageUrl: review.scenario.coverImageUrl,
+        coverVideoUrl: review.scenario.coverVideoUrl,
+      },
+      scenarioSession: {
+        createdAt: review.scenarioSession.createdAt,
         duration: getSessionDurationInSeconds(
           review.scenarioSession.startedAt!,
           review.scenarioSession.endedAt!,
         ),
-        description: review.scenario.description,
-        coverImageUrl: review.scenario.coverImageUrl,
-        coverVideoUrl: review.scenario.coverVideoUrl,
       },
       commentsCount: commentsByReviewId[review.id] ?? 0,
       reactions: reactionsByReviewId[review.id] ?? {},

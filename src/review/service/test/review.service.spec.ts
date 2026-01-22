@@ -356,7 +356,6 @@ describe('ReviewService', () => {
         scenario: {
           title: mockScenario.title,
           createdAt: mockScenario.createdAt,
-          duration: 1800, // 30 minutes in seconds
           description: mockScenario.description,
           coverImageUrl: mockScenario.coverImageUrl,
           coverVideoUrl: mockScenario.coverVideoUrl,
