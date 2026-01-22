@@ -9,9 +9,6 @@ export class ScenarioDto {
   createdAt!: Date;
 
   @ApiProperty()
-  duration!: number;
-
-  @ApiProperty()
   description!: string;
 
   @ApiProperty({ required: false, nullable: true })
@@ -19,6 +16,14 @@ export class ScenarioDto {
 
   @ApiProperty({ required: false, nullable: true })
   coverVideoUrl?: string | null;
+}
+
+export class ScenarioSessionDto {
+  @ApiProperty()
+  createdAt!: Date;
+
+  @ApiProperty()
+  duration!: number;
 }
 
 export class CreatedByDto {
@@ -43,6 +48,10 @@ export class ReviewItemDto {
   @Type(() => ScenarioDto)
   scenario!: ScenarioDto;
 
+  @ApiProperty({ type: () => ScenarioSessionDto })
+  @Type(() => ScenarioSessionDto)
+  scenarioSession!: ScenarioSessionDto;
+
   @ApiProperty()
   commentsCount!: number;
 
@@ -50,7 +59,7 @@ export class ReviewItemDto {
     description: 'Map of reactionCode -> count',
     type: 'object',
     additionalProperties: { type: 'number' },
-    example: { like: 10, love: 2 },
+    example: { '1f44d': 10, '1f389': 2 },
   })
   reactions!: Record<string, number>;
 
