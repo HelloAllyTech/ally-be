@@ -88,4 +88,12 @@ export class ReviewReactionRepository extends Repository<ReviewReaction> {
       .offset(offset)
       .getManyAndCount();
   }
+
+  async getReviewReactionsAndCount(reviewId: string) {
+    return this.createQueryBuilder('rr')
+      .select(['rr.reaction AS reaction', 'COUNT(*) AS count'])
+      .where('rr.reviewId = :reviewId', { reviewId })
+      .groupBy('rr.reaction')
+      .getRawMany();
+  }
 }
