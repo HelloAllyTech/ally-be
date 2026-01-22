@@ -771,22 +771,27 @@ export class ScenarioSessionService {
           },
         });
 
+        let summary;
         if (scenarioSessionMessages.length === 0) {
           this.logger.warn(
             `No scenario session messages found for scenario session ${scenarioSessionId}`,
           );
-          return;
+          summary = {
+            errorMessage: 'Session was too short. No summary generated.',
+          };
+        } else {
+          const messages = scenarioSessionMessages.map((message) => ({
+            role: message.senderId > 0 ? 'COUNSELLOR' : 'CLIENT',
+            content: message.content,
+            start_time: message.startSeconds,
+            end_time: message.endSeconds,
+          }));
+
+          const aiSummary =
+            await this.aiService.getScenarioSessionSummary(messages);
+
+          summary = { feedback: aiSummary };
         }
-
-        const messages = scenarioSessionMessages.map((message) => ({
-          role: message.senderId > 0 ? 'COUNSELLOR' : 'CLIENT',
-          content: message.content,
-          start_time: message.startSeconds,
-          end_time: message.endSeconds,
-        }));
-
-        const summary =
-          await this.aiService.getScenarioSessionSummary(messages);
 
         const scenarioSessionDetailsRepo = entityManager.getRepository(
           ScenarioSessionDetails,
@@ -794,7 +799,7 @@ export class ScenarioSessionService {
         const scenarioSessionDetails = scenarioSessionDetailsRepo.create({
           scenarioSessionId,
           callDuration,
-          summary: { feedback: summary },
+          summary,
           tenantId: ExecutionManager.getTenantId(),
         });
         await scenarioSessionDetailsRepo.save(scenarioSessionDetails);
