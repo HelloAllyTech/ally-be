@@ -13,6 +13,10 @@ import { ReviewThreadController } from './controller/review-thread.controller';
 import { ReviewCommentService } from './service/review-comment.service';
 import { ReviewThreadService } from './service/review-thread.service';
 import { ReviewSharedService } from './service/review-shared.service';
+import { ReviewReactionController } from './controller/review-reaction-controller';
+import { ReviewCommentReactionController } from './controller/review-comment-reaction.controller';
+import { ReviewReactionService } from './service/review-reaction.service';
+import { ReviewCommentReactionService } from './service/review-comment-reaction.service';
 
 @Module({
   imports: [forwardRef(() => LearnModule), forwardRef(() => UserModule)],
@@ -20,6 +24,8 @@ import { ReviewSharedService } from './service/review-shared.service';
     ReviewController,
     ReviewThreadController,
     ReviewCommentController,
+    ReviewReactionController,
+    ReviewCommentReactionController,
   ],
   providers: [
     ReviewRepository,
@@ -31,6 +37,8 @@ import { ReviewSharedService } from './service/review-shared.service';
     ReviewThreadService,
     ReviewCommentService,
     ReviewSharedService,
+    ReviewReactionService,
+    ReviewCommentReactionService,
   ],
   exports: [ReviewSharedService],
 })

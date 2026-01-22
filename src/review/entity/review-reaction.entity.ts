@@ -1,4 +1,9 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  DeleteDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { BaseEntity } from 'src/common/entity/base.entity';
 
 @Entity('review_reactions')
@@ -14,4 +19,7 @@ export class ReviewReaction extends BaseEntity {
 
   @Column()
   createdBy!: number;
+
+  @DeleteDateColumn()
+  deletedAt?: Date;
 }
