@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -126,5 +127,18 @@ export class ReviewCommentController {
       commentId,
       updateReviewCommentDto,
     );
+  }
+
+  @ApiOperation({ summary: 'Delete a review comment' })
+  @ApiResponse({
+    status: 200,
+    description: 'Review comment deleted successfully',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
+  @Delete('comments/:commentId')
+  async deleteReviewComment(
+    @Param('commentId', ParseUUIDPipe) commentId: string,
+  ): Promise<SuccessResponse> {
+    return this.reviewCommentService.deleteReviewComment(commentId);
   }
 }
