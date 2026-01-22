@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -23,6 +24,8 @@ import {
   CreateCommentResponseDto,
 } from '../dto/create-comment.dto';
 import { GetReviewRepliesResponseDto } from '../dto/review-replies-response.dto';
+import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
+import { SuccessResponse } from 'src/common/type/common.type';
 
 @Controller({
   path: 'reviews',
@@ -106,5 +109,22 @@ export class ReviewCommentController {
       limit,
       offset,
     });
+  }
+
+  @ApiOperation({ summary: 'Edit a review comment' })
+  @ApiResponse({
+    status: 200,
+    description: 'Review comment edited successfully',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
+  @Patch('comments/:commentId')
+  async editReviewComment(
+    @Param('commentId', ParseUUIDPipe) commentId: string,
+    @Body() updateReviewCommentDto: UpdateReviewCommentDto,
+  ): Promise<SuccessResponse> {
+    return this.reviewCommentService.editReviewComment(
+      commentId,
+      updateReviewCommentDto,
+    );
   }
 }
