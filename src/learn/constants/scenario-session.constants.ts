@@ -299,4 +299,5 @@ export const SCENARIO_SESSION_TRANSLATABLE_FIELDS: string[] = [
   'openingStatements',
   'sexualOrientation',
   'genderIdentity',
+  'customFields',
 ];

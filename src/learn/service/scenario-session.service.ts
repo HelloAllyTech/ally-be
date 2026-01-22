@@ -1021,6 +1021,22 @@ export class ScenarioSessionService {
     );
     const roomName = `preview-${scenarioId}-${v4()}`;
 
+    // Preparing checklist events for simulation room, only if CHECKLIST mode is enabled for scenario
+    let checklistEvents: ChecklistItem[] = [];
+
+    if (scenario?.metadata?.experienceMode === ExperienceMode.CHECKLIST) {
+      checklistEvents = (sessionEvents ?? [])
+        .filter(
+          (event: SessionEvents & { checklistVisibilityStatus?: boolean }) =>
+            event?.checklistVisibilityStatus,
+        )
+        .map(({ name, id, score }) => ({
+          name,
+          id,
+          score,
+        }));
+    }
+
     await this.livekitService.createRoom({
       name: roomName,
       metadata: roomMetadata,
@@ -1031,7 +1047,7 @@ export class ScenarioSessionService {
       participantName: userId.toString(),
     });
 
-    return { roomName, accessToken, scenario };
+    return { roomName, accessToken, scenario, checklistEvents };
   }
 
   private async validatePreviewScenario(scenario: Scenarios) {

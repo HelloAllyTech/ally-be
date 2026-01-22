@@ -18,6 +18,7 @@ import {
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { ReviewRepository } from '../repository/review.repository';
 import { UserService } from 'src/user/service/user.service';
+import { GetReviewReactionCountResponseDto } from '../dto/get-review-reaction-and-count-response.dto';
 
 @Injectable()
 export class ReviewReactionService {
@@ -178,5 +179,59 @@ export class ReviewReactionService {
     });
 
     return { data, count };
+  }
+
+  async getReviewReactionsAndCount(
+    reviewId: string,
+  ): Promise<GetReviewReactionCountResponseDto> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+
+    const review = await this.reviewRepository.findOne({
+      where: { id: reviewId, tenantId },
+    });
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+
+    if (review.status === ReviewStatus.HIDDEN && review.createdBy !== userId) {
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
+    const isReviewer = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.REVIEWER_ACCESS],
+    );
+    const isLearner = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.LEARNER_ACCESS],
+    );
+
+    if (
+      (isReviewer && review.tenantId !== tenantId) ||
+      (!isReviewer && isLearner && review.createdBy !== userId)
+    ) {
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
+    const result =
+      await this.reviewReactionRepository.getReviewReactionsAndCount(reviewId);
+
+    const reactions = result.reduce(
+      (acc, { reaction, count }) => {
+        acc[reaction] = parseInt(count);
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    return { reactions };
   }
 }
