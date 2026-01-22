@@ -19,10 +19,12 @@ import { ReviewCommentRepository } from '../repository/review-comment.repository
 import { ReviewStatus } from '../type/review.type';
 import { ReviewRepository } from '../repository/review.repository';
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
-import { Pagination } from 'src/common/type/common.type';
+import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { UserService } from 'src/user/service/user.service';
 import { GetReviewRepliesResponseDto } from '../dto/review-replies-response.dto';
+import { EDIT_COMMENT_TIME_LIMIT_MS } from '../constant/review.constant';
+import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
 
 @Injectable()
 export class ReviewCommentService {
@@ -406,5 +408,35 @@ export class ReviewCommentService {
       };
     });
     return { data, count };
+  }
+
+  async editReviewComment(
+    commentId: string,
+    updateReviewCommentDto: UpdateReviewCommentDto,
+  ): Promise<SuccessResponse> {
+    const { content } = updateReviewCommentDto;
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
+    const comment = await this.reviewCommentRepository.findOne({
+      where: { id: commentId, createdBy: userId },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Review comment not found');
+    }
+    const now = new Date();
+    if (
+      now.getTime() - comment.createdAt.getTime() >
+      EDIT_COMMENT_TIME_LIMIT_MS
+    ) {
+      throw new BadRequestException('Cannot edit this comment');
+    }
+
+    comment.content = content;
+    await this.reviewCommentRepository.save(comment);
+    return { success: true };
   }
 }
