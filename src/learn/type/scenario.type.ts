@@ -45,4 +45,5 @@ export interface ChecklistItem {
   id: string;
   score?: number;
   name: string;
+  message?: string;
 }
