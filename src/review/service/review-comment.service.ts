@@ -3,8 +3,9 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  InternalServerErrorException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
@@ -23,8 +24,13 @@ import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { UserService } from 'src/user/service/user.service';
 import { GetReviewRepliesResponseDto } from '../dto/review-replies-response.dto';
-import { EDIT_COMMENT_TIME_LIMIT_MS } from '../constant/review.constant';
+import {
+  DELETE_COMMENT_TIME_LIMIT_MS,
+  EDIT_COMMENT_TIME_LIMIT_MS,
+} from '../constant/review.constant';
 import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
+import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
+import { formatCreatedUserDetails } from '../util/review.util';
 
 @Injectable()
 export class ReviewCommentService {
@@ -62,7 +68,10 @@ export class ReviewCommentService {
         tenantId,
       },
     });
+    this.logger.info(`Adding comment to review: ${reviewId}`);
+
     if (!review) {
+      this.logger.info(`Review not found: ${reviewId}`);
       throw new NotFoundException('Review not found');
     }
 
@@ -83,33 +92,15 @@ export class ReviewCommentService {
     }
 
     if (!createReviewCommentDto.content.trim()) {
+      this.logger.info(`Content cannot be empty: ${reviewId}`);
       throw new BadRequestException('Content cannot be empty');
     }
 
-    if (createReviewCommentDto.threadId) {
-      const thread = await this.reviewThreadRepository.findOne({
-        where: {
-          id: createReviewCommentDto.threadId,
-        },
-      });
-      if (!thread) {
-        throw new NotFoundException('Review thread not found');
-      }
-
-      const comment = this.reviewCommentRepository.create({
-        reviewThreadId: thread.id,
-        content: createReviewCommentDto.content,
-        createdBy: Number(userId),
-        tenantId,
-      });
-      await this.reviewCommentRepository.save(comment);
-
-      return {
-        commentId: comment.id,
-      };
-    }
-
+    // If parent comment is present, it is a reply, so we need to add the reply
     if (createReviewCommentDto.parentCommentId) {
+      this.logger.info(
+        `Adding reply to parent comment: ${createReviewCommentDto.parentCommentId}`,
+      );
       const parentComment = await this.reviewCommentRepository.findOne({
         where: {
           id: createReviewCommentDto.parentCommentId,
@@ -128,11 +119,45 @@ export class ReviewCommentService {
         tenantId,
       });
       await this.reviewCommentRepository.save(reply);
+      this.logger.info(
+        `Reply: ${reply.id} added successfully for comment: ${parentComment.id}`,
+      );
       return {
         replyId: reply.id,
       };
     }
 
+    // If threadId is present, it is a new thread, so we need to add the comment to the thread
+    if (createReviewCommentDto.threadId) {
+      this.logger.info(
+        `Adding comment to thread: ${createReviewCommentDto.threadId}`,
+      );
+      const thread = await this.reviewThreadRepository.findOne({
+        where: {
+          id: createReviewCommentDto.threadId,
+        },
+      });
+      if (!thread) {
+        throw new NotFoundException('Review thread not found');
+      }
+
+      const comment = this.reviewCommentRepository.create({
+        reviewThreadId: thread.id,
+        content: createReviewCommentDto.content,
+        createdBy: Number(userId),
+        tenantId,
+      });
+      await this.reviewCommentRepository.save(comment);
+      this.logger.info(
+        `Comment: ${comment.id} added successfully to thread: ${thread.id}`,
+      );
+
+      return {
+        commentId: comment.id,
+      };
+    }
+
+    // If threadId and parentCommentId are not present, it is a new thread, so we need to create a new thread and comment
     if (
       !createReviewCommentDto.threadId &&
       !createReviewCommentDto.parentCommentId
@@ -143,6 +168,9 @@ export class ReviewCommentService {
       if (!createReviewCommentDto.selection) {
         throw new BadRequestException('selection required for new threads');
       }
+      this.logger.info(
+        `Creating new thread for messageId: ${createReviewCommentDto.messageId}`,
+      );
       try {
         const result = await this.dataSource.transaction(
           async (entityManager) => {
@@ -168,15 +196,16 @@ export class ReviewCommentService {
           },
         );
 
+        this.logger.info(
+          `Thread: ${result.threadId} and comment: ${result.commentId} created successfully for messageId: ${createReviewCommentDto.messageId}`,
+        );
         return result;
       } catch (error) {
         this.logger.error(
           `Failed to add comment: ${error.message}`,
           error.stack,
         );
-        throw new BadRequestException(
-          `Failed to add comment: ${error.message}`,
-        );
+        throw new InternalServerErrorException(`Failed to add comment`);
       }
     }
     throw new BadRequestException('Invalid request');
@@ -252,10 +281,7 @@ export class ReviewCommentService {
     ]);
 
     const userMap = new Map(
-      users.map((user) => [
-        user.id,
-        { id: user.id, name: user.name, profileImage: user.profileImageUrl },
-      ]),
+      users.map((user) => [user.id, formatCreatedUserDetails(user)]),
     );
 
     const reactionsByComment = reactions.reduce(
@@ -276,11 +302,7 @@ export class ReviewCommentService {
         id: comment.c_id,
         content: comment.c_content,
         createdAt: comment.c_createdAt,
-        createdBy: user || {
-          id: comment.c_createdBy,
-          name: null,
-          profileImage: null,
-        },
+        createdBy: user,
         reactions: reactionsByComment[comment.c_id] || {},
         replyCount: parseInt(comment.reply_count) || 0,
         hidden: comment.c_hidden || false,
@@ -371,14 +393,7 @@ export class ReviewCommentService {
     ]);
 
     const userMap = new Map(
-      users.map((user) => [
-        user.id,
-        {
-          id: user.id,
-          name: user.name,
-          profileImage: user.profileImageUrl ?? null,
-        },
-      ]),
+      users.map((user) => [user.id, formatCreatedUserDetails(user)]),
     );
 
     const reactionsByReply = reactions.reduce(
@@ -398,11 +413,7 @@ export class ReviewCommentService {
         id: reply.id,
         content: reply.content,
         createdAt: reply.createdAt,
-        createdBy: user || {
-          id: reply.createdBy,
-          name: null,
-          profileImage: null,
-        },
+        createdBy: user!,
         reactions: reactionsByReply[reply.id] || {},
         hidden: reply.hidden || false,
       };
@@ -437,6 +448,100 @@ export class ReviewCommentService {
 
     comment.content = content;
     await this.reviewCommentRepository.save(comment);
+    return { success: true };
+  }
+
+  async deleteReviewComment(commentId: string): Promise<SuccessResponse> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
+    const comment = await this.reviewCommentRepository.findOne({
+      where: { id: commentId, createdBy: userId },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Review comment not found');
+    }
+
+    const now = new Date();
+    if (
+      now.getTime() - comment.createdAt.getTime() >
+      DELETE_COMMENT_TIME_LIMIT_MS
+    ) {
+      throw new BadRequestException('Cannot delete this comment');
+    }
+
+    const parentCommentId = comment?.parentCommentId;
+
+    if (parentCommentId) {
+      try {
+        // if parent comment is present, it is a reply, so we need to delete the reply and its reactions
+        await this.dataSource.transaction(async (entityManager) => {
+          // Delete all reactions of this comment
+          await entityManager.getRepository(ReviewCommentReaction).softDelete({
+            reviewCommentId: commentId,
+          });
+          // Delete this comment
+          await entityManager
+            .getRepository(ReviewComment)
+            .softDelete(commentId);
+        });
+        return { success: true };
+      } catch (error) {
+        this.logger.error(`Failed to delete reply: ${error.message}`);
+        throw new InternalServerErrorException(`Failed to delete reply`);
+      }
+    }
+
+    const thread = await this.reviewThreadRepository.findOne({
+      where: { id: comment.reviewThreadId },
+    });
+    if (!thread) {
+      this.logger.error(`Review thread not found for comment: ${commentId}`);
+      throw new NotFoundException('Review thread not found for this comment');
+    }
+
+    // Count all comments in this thread
+    const commentCount = await this.reviewCommentRepository.count({
+      where: { reviewThreadId: thread.id },
+    });
+
+    const replies = await this.reviewCommentRepository.find({
+      where: { parentCommentId: commentId },
+    });
+
+    try {
+      await this.dataSource.transaction(async (entityManager) => {
+        if (replies.length > 0) {
+          // Delete all replies of this comment
+          await entityManager.getRepository(ReviewComment).softDelete({
+            parentCommentId: commentId,
+          });
+
+          // Delete all reactions of the replies
+          await entityManager.getRepository(ReviewCommentReaction).softDelete({
+            reviewCommentId: In(replies.map((reply) => reply.id)),
+          });
+        }
+        // Delete all reactions of this comment
+        await entityManager.getRepository(ReviewCommentReaction).softDelete({
+          reviewCommentId: commentId,
+        });
+        if (commentCount <= 1) {
+          // Delete thread if it has no other comments
+          await entityManager.getRepository(ReviewThread).softDelete(thread.id);
+        }
+        await entityManager.getRepository(ReviewComment).softDelete(commentId);
+      });
+    } catch (error) {
+      this.logger.error(`Failed to delete comment: ${error.message}`);
+      throw new InternalServerErrorException(`Failed to delete comment`);
+    }
+
+    this.logger.info(`Comment deleted successfully: ${commentId}`);
+
     return { success: true };
   }
 }

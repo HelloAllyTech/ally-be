@@ -1,15 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-
-export class UserInfoDto {
-  @ApiProperty({ example: 123 })
-  id!: number;
-
-  @ApiProperty({ example: 'John Doe', nullable: true })
-  name!: string | null;
-
-  @ApiProperty({ example: 'https://example.com/profile.jpg', nullable: true })
-  profileImage!: string | null;
-}
+import { CreatedByDto } from './created-user.dto';
 
 export class CommentReactionsDto {
   [reaction: string]: number;
@@ -25,8 +15,8 @@ export class ReviewCommentDto {
   @ApiProperty({ example: '2026-01-15T10:30:00Z' })
   createdAt!: Date;
 
-  @ApiProperty({ type: UserInfoDto })
-  createdBy!: UserInfoDto;
+  @ApiProperty({ type: CreatedByDto })
+  createdBy!: CreatedByDto;
 
   @ApiProperty({ type: CommentReactionsDto })
   reactions?: Record<string, number>;
@@ -51,8 +41,8 @@ export class ReviewThreadDto {
   })
   selection!: Record<string, any>;
 
-  @ApiProperty({ type: UserInfoDto })
-  createdBy!: UserInfoDto;
+  @ApiProperty({ type: CreatedByDto })
+  createdBy!: CreatedByDto;
 }
 
 export class ReviewMessageDto {

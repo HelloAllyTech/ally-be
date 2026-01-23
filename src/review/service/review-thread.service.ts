@@ -17,6 +17,7 @@ import { ReviewThreadRepository } from '../repository/review-thread.repository';
 import { ReviewRepository } from '../repository/review.repository';
 import { ReviewCommentRepository } from '../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
+import { formatCreatedUserDetails } from '../util/review.util';
 
 @Injectable()
 export class ReviewThreadService {
@@ -124,11 +125,7 @@ export class ReviewThreadService {
           id: comment.id,
           content: comment.content,
           createdAt: comment.createdAt,
-          createdBy: {
-            id: comment.createdBy,
-            name: usersMap.get(comment.createdBy)?.name,
-            profileImage: usersMap.get(comment.createdBy)?.profileImageUrl,
-          },
+          createdBy: formatCreatedUserDetails(usersMap.get(comment.createdBy)!),
           reactions: reviewCommentReactionsMap.get(comment.id)?.reduce(
             (rec, reaction) => {
               rec[reaction.reaction] = (rec[reaction.reaction] || 0) + 1;
