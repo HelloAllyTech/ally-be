@@ -49,6 +49,7 @@ export interface Reviews {
 export enum ReactionAction {
   ADD = 'ADD',
   REMOVE = 'REMOVE',
+  UPDATE = 'UPDATE',
 }
 
 export interface ReviewReactionOptions {

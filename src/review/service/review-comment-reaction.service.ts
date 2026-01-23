@@ -7,8 +7,9 @@ import {
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SuccessResponse } from 'src/common/type/common.type';
-import { ReviewStatus, ReactionAction } from '../type/review.type';
+import { LoggerService } from 'src/logger/logger.service';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { ReviewStatus, ReactionAction } from '../type/review.type';
 import { ReviewRepository } from '../repository/review.repository';
 import { ToggleReviewCommentReactionDto } from '../dto/toggle-review-comment-reaction.dto';
 import { ReviewCommentRepository } from '../repository/review-comment.repository';
@@ -17,6 +18,9 @@ import { ReviewThreadRepository } from '../repository/review-thread.repository';
 
 @Injectable()
 export class ReviewCommentReactionService {
+  private readonly logger = LoggerService.getInstance(
+    ReviewCommentReactionService.name,
+  );
   constructor(
     private readonly reviewRepository: ReviewRepository,
     private readonly reviewThreadRepository: ReviewThreadRepository,
@@ -80,13 +84,28 @@ export class ReviewCommentReactionService {
     }
 
     if (toggleReviewCommentReactionDto.action === ReactionAction.ADD) {
-      const reviewReaction = this.reviewCommentReactionRepository.create({
-        reviewCommentId,
-        createdBy: userId,
-        tenantId,
-        reaction: toggleReviewCommentReactionDto.reaction,
-      });
-      await this.reviewCommentReactionRepository.save(reviewReaction);
+      const existingReaction =
+        await this.reviewCommentReactionRepository.findOne({
+          where: { createdBy: userId, reviewCommentId },
+        });
+      if (existingReaction) {
+        this.logger.error(
+          `User ${userId} has already reacted to comment ${reviewCommentId}`,
+        );
+        throw new BadRequestException(
+          'You have already reacted to this comment',
+        );
+      }
+
+      const reviewCommentReaction = this.reviewCommentReactionRepository.create(
+        {
+          reviewCommentId,
+          createdBy: userId,
+          tenantId,
+          reaction: toggleReviewCommentReactionDto.reaction,
+        },
+      );
+      await this.reviewCommentReactionRepository.save(reviewCommentReaction);
       return {
         success: true,
       };
@@ -104,6 +123,9 @@ export class ReviewCommentReactionService {
         },
       );
       if (!reviewReaction) {
+        this.logger.error(
+          `User ${userId} has not reacted to comment ${reviewCommentId}`,
+        );
         throw new NotFoundException('Review reaction not found');
       }
 
@@ -112,6 +134,30 @@ export class ReviewCommentReactionService {
       });
 
       return { success: true };
+    }
+
+    if (toggleReviewCommentReactionDto.action === ReactionAction.UPDATE) {
+      const existingReaction =
+        await this.reviewCommentReactionRepository.findOne({
+          where: { createdBy: userId, reviewCommentId },
+        });
+      if (!existingReaction) {
+        this.logger.error(
+          `User ${userId} has not reacted to comment ${reviewCommentId}`,
+        );
+        throw new BadRequestException('You have not reacted to this comment');
+      }
+
+      if (
+        existingReaction.reaction === toggleReviewCommentReactionDto.reaction
+      ) {
+        this.logger.error(
+          `User ${userId} has already reacted to comment ${reviewCommentId} with reaction ${existingReaction.reaction}`,
+        );
+        throw new BadRequestException(
+          'You have already reacted to this comment with this reaction',
+        );
+      }
     }
 
     throw new BadRequestException('Invalid request');
