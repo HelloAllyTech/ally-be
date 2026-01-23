@@ -225,7 +225,10 @@ describe('ReviewCommentService', () => {
       const result = await service.addCommentToReview(mockReviewId, dto);
 
       expect(result).toEqual({
-        commentId: mockCommentId,
+        comment: {
+          id: mockCommentId,
+          createdAt: mockComment.createdAt,
+        },
       });
       expect(reviewRepository.findOne).toHaveBeenCalledWith({
         where: {
@@ -264,7 +267,10 @@ describe('ReviewCommentService', () => {
       const result = await service.addCommentToReview(mockReviewId, dto);
 
       expect(result).toEqual({
-        replyId: 'reply-123',
+        reply: {
+          id: 'reply-123',
+          createdAt: mockReply.createdAt,
+        },
       });
       expect(reviewRepository.findOne).toHaveBeenCalledWith({
         where: {
@@ -330,8 +336,14 @@ describe('ReviewCommentService', () => {
       const result = await service.addCommentToReview(mockReviewId, dto);
 
       expect(result).toEqual({
-        threadId: mockThreadId,
-        commentId: mockCommentId,
+        thread: {
+          id: mockThreadId,
+          createdAt: createdThread.createdAt,
+        },
+        comment: {
+          id: mockCommentId,
+          createdAt: mockComment.createdAt,
+        },
       });
       expect(reviewRepository.findOne).toHaveBeenCalledWith({
         where: {

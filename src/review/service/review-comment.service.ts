@@ -123,7 +123,10 @@ export class ReviewCommentService {
         `Reply: ${reply.id} added successfully for comment: ${parentComment.id}`,
       );
       return {
-        replyId: reply.id,
+        reply: {
+          id: reply.id,
+          createdAt: reply.createdAt,
+        },
       };
     }
 
@@ -153,7 +156,10 @@ export class ReviewCommentService {
       );
 
       return {
-        commentId: comment.id,
+        comment: {
+          id: comment.id,
+          createdAt: comment.createdAt,
+        },
       };
     }
 
@@ -190,14 +196,20 @@ export class ReviewCommentService {
             });
             await entityManager.save(ReviewComment, comment);
             return {
-              threadId: thread.id,
-              commentId: comment.id,
+              thread: {
+                id: thread.id,
+                createdAt: thread.createdAt,
+              },
+              comment: {
+                id: comment.id,
+                createdAt: comment.createdAt,
+              },
             };
           },
         );
 
         this.logger.info(
-          `Thread: ${result.threadId} and comment: ${result.commentId} created successfully for messageId: ${createReviewCommentDto.messageId}`,
+          `Thread: ${result.thread?.id} and comment: ${result.comment?.id} created successfully for messageId: ${createReviewCommentDto.messageId}`,
         );
         return result;
       } catch (error) {

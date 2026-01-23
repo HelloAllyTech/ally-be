@@ -7,10 +7,10 @@ import {
 import { In } from 'typeorm';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
-import { Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
 import { UserService } from 'src/user/service/user.service';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ReviewThreadsResponseDto } from '../dto/review-threads.dto';
 import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
@@ -18,6 +18,8 @@ import { ReviewRepository } from '../repository/review.repository';
 import { ReviewCommentRepository } from '../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { formatCreatedUserDetails } from '../util/review.util';
+import { GetReviewThreadsOptions } from '../type/review.type';
+import { ScenarioSessionMessages } from 'src/learn/entity/scenario-session-messages.entity';
 
 @Injectable()
 export class ReviewThreadService {
@@ -28,11 +30,12 @@ export class ReviewThreadService {
     private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
     private readonly permissionValidator: PermissionValidator,
     private readonly userService: UserService,
+    private readonly scenarioSharedService: ScenarioSharedService,
   ) {}
 
   async getReviewThreads(
     reviewId: string,
-    options?: Pagination,
+    options?: GetReviewThreadsOptions,
   ): Promise<ReviewThreadsResponseDto> {
     const tenantId = ExecutionManager.getTenantId();
     if (!tenantId) {
@@ -68,9 +71,26 @@ export class ReviewThreadService {
         options,
       );
 
-    const reviewComments = await this.reviewCommentRepository.find({
+    let messagesPromise;
+    if (options?.includeMessage) {
+      const messageIds = reviewThreads.map((thread) => thread.messageId);
+      messagesPromise = this.scenarioSharedService.getMessagesByIds(messageIds);
+    }
+
+    const reviewCommentsPromise = this.reviewCommentRepository.find({
       where: { reviewThreadId: In(reviewThreads.map((thread) => thread.id)) },
     });
+
+    let reviewComments;
+    let messages: ScenarioSessionMessages[];
+    if (messagesPromise) {
+      [messages, reviewComments] = await Promise.all([
+        messagesPromise,
+        reviewCommentsPromise,
+      ]);
+    } else {
+      reviewComments = await reviewCommentsPromise;
+    }
 
     // Filter to get only top-level comment IDs for reactions query
     // (we only display top-level comments, so we don't need reactions for replies)
@@ -119,8 +139,13 @@ export class ReviewThreadService {
       const topLevelComments = allComments.filter(
         (comment) => !comment.parentCommentId,
       );
+
+      const message = messages?.find(
+        (message) => message.id === thread.messageId,
+      );
       return {
         id: thread.id,
+        selection: thread.selection,
         comments: topLevelComments.map((comment) => ({
           id: comment.id,
           content: comment.content,
@@ -138,6 +163,14 @@ export class ReviewThreadService {
           ).length,
         })),
         commentCount: topLevelComments.length,
+        ...(options?.includeMessage && message
+          ? {
+              message: {
+                id: message?.id,
+                content: message?.content,
+              },
+            }
+          : {}),
       };
     });
     return {

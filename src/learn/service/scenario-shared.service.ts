@@ -12,6 +12,7 @@ import { GetScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioTranslationsRepository } from '../repository/scenario-translations.repository';
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
+import { ScenarioSessionMessages } from '../entity/scenario-session-messages.entity';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -81,5 +82,13 @@ export class ScenarioSharedService {
       );
 
     return { messages, count };
+  }
+
+  async getMessagesByIds(
+    messageIds: number[],
+  ): Promise<ScenarioSessionMessages[]> {
+    return this.scenarioSessionMessagesRepository.find({
+      where: { id: In(messageIds) },
+    });
   }
 }

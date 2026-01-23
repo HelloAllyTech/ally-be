@@ -67,13 +67,21 @@ export class CreateReviewCommentDto {
   content!: string;
 }
 
+export class CreatedCommentEntityDto {
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
+  id!: string;
+
+  @ApiProperty({ example: '2026-01-23T12:34:56.000Z' })
+  createdAt!: Date;
+}
+
 export class CreateCommentResponseDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
-  commentId?: string;
+  @ApiProperty({ type: CreatedCommentEntityDto })
+  comment?: CreatedCommentEntityDto;
 
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
-  replyId?: string;
+  @ApiProperty({ type: CreatedCommentEntityDto })
+  reply?: CreatedCommentEntityDto;
 
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
-  threadId?: string;
+  @ApiProperty({ type: CreatedCommentEntityDto })
+  thread?: CreatedCommentEntityDto;
 }
