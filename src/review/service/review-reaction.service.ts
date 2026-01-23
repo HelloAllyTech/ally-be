@@ -16,6 +16,7 @@ import {
   ReviewReactionOptions,
 } from '../type/review.type';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { LoggerService } from 'src/logger/logger.service';
 import { ReviewRepository } from '../repository/review.repository';
 import { UserService } from 'src/user/service/user.service';
 import { GetReviewReactionCountResponseDto } from '../dto/get-review-reaction-and-count-response.dto';
@@ -23,6 +24,9 @@ import { formatCreatedUserDetails } from '../util/review.util';
 
 @Injectable()
 export class ReviewReactionService {
+  private readonly logger = LoggerService.getInstance(
+    ReviewReactionService.name,
+  );
   constructor(
     private readonly reviewRepository: ReviewRepository,
     private readonly reviewReactionRepository: ReviewReactionRepository,
@@ -71,6 +75,19 @@ export class ReviewReactionService {
     }
 
     if (toggleReviewReactionDto.action === ReactionAction.ADD) {
+      const existingReaction = await this.reviewReactionRepository.findOne({
+        where: { createdBy: userId, reviewId },
+      });
+
+      if (existingReaction) {
+        this.logger.error(
+          `User ${userId} has already reacted to review ${reviewId}`,
+        );
+        throw new BadRequestException(
+          'You have already reacted to this review',
+        );
+      }
+
       const reviewReaction = this.reviewReactionRepository.create({
         reviewId,
         createdBy: userId,
@@ -93,12 +110,45 @@ export class ReviewReactionService {
         },
       });
       if (!reviewReaction) {
+        this.logger.error(
+          `User ${userId} has not reacted to review ${reviewId}`,
+        );
         throw new NotFoundException('Review reaction not found');
       }
 
       await this.reviewReactionRepository.softDelete({ id: reviewReaction.id });
       return { success: true };
     }
+
+    if (toggleReviewReactionDto.action === ReactionAction.UPDATE) {
+      const existingReaction = await this.reviewReactionRepository.findOne({
+        where: {
+          reviewId,
+          createdBy: userId,
+        },
+      });
+      if (!existingReaction) {
+        this.logger.error(
+          `User ${userId} has not reacted to review ${reviewId}`,
+        );
+        throw new NotFoundException('Review reaction not found');
+      }
+
+      if (existingReaction.reaction === toggleReviewReactionDto.reaction) {
+        this.logger.error(
+          `User ${userId} has already reacted to review ${reviewId} with reaction ${existingReaction.reaction}`,
+        );
+        throw new BadRequestException(
+          'You have already reacted to this review with this reaction',
+        );
+      }
+
+      await this.reviewReactionRepository.update(existingReaction.id, {
+        reaction: toggleReviewReactionDto.reaction,
+      });
+      return { success: true };
+    }
+
     throw new BadRequestException('Invalid request');
   }
 
