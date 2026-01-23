@@ -27,7 +27,10 @@ import { UserService } from 'src/user/service/user.service';
 import { ReviewReactionRepository } from '../repository/review-reaction.repository';
 import { GetReviewResponseDto } from '../dto/get-review-response.dto';
 import { LoggerService } from 'src/logger/logger.service';
-import { getSessionDurationInSeconds } from '../util/review.util';
+import {
+  formatCreatedUserDetails,
+  getSessionDurationInSeconds,
+} from '../util/review.util';
 import { In } from 'typeorm';
 import { ReviewCommentRepository } from '../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
@@ -117,7 +120,7 @@ export class ReviewService {
 
     if (result.reviews.length === 0) return { data: [], count: result.count };
 
-    const reviewIds = result.reviews.map((r: Reviews) => r.id);
+    const reviewIds = result.reviews.map((review: Reviews) => review.id);
 
     const [reactions, comments] = await Promise.all([
       this.reviewReactionRepository.getReactionsByReviewIds(reviewIds),
@@ -194,11 +197,7 @@ export class ReviewService {
         createdAt: scenarioSession.createdAt,
       },
       commentsCount: comments.length > 0 ? Number(comments[0].count) : 0,
-      createdBy: {
-        id: user?.id,
-        name: user?.name,
-        profileImage: user?.profileImageUrl ?? null,
-      },
+      createdBy: formatCreatedUserDetails(user!),
     };
   }
 
@@ -219,27 +218,27 @@ export class ReviewService {
     const data = result.reviews.map((review: Reviews) => ({
       id: review.id,
       createdAt: review.createdAt,
-      scenario: {
-        title: review.scenario.title,
-        createdAt: review.scenario.createdAt,
-        description: review.scenario.description,
-        coverImageUrl: review.scenario.coverImageUrl,
-        coverVideoUrl: review.scenario.coverVideoUrl,
-      },
-      scenarioSession: {
-        createdAt: review.scenarioSession.createdAt,
-        duration: getSessionDurationInSeconds(
-          review.scenarioSession.startedAt!,
-          review.scenarioSession.endedAt!,
-        ),
-      },
+      scenario: review.scenario
+        ? {
+            title: review.scenario.title,
+            createdAt: review.scenario.createdAt,
+            description: review.scenario.description,
+            coverImageUrl: review.scenario.coverImageUrl,
+            coverVideoUrl: review.scenario.coverVideoUrl,
+          }
+        : {},
+      scenarioSession: review.scenarioSession
+        ? {
+            createdAt: review.scenarioSession.createdAt,
+            duration: getSessionDurationInSeconds(
+              review.scenarioSession.startedAt!,
+              review.scenarioSession.endedAt!,
+            ),
+          }
+        : {},
       commentsCount: commentsByReviewId[review.id] ?? 0,
       reactions: reactionsByReviewId[review.id] ?? {},
-      createdBy: {
-        id: review.createdBy.id,
-        name: review.createdBy.name,
-        profileImage: review.createdBy.profileImageUrl ?? null,
-      },
+      createdBy: formatCreatedUserDetails(review.createdBy),
     }));
 
     return data;
@@ -351,10 +350,7 @@ export class ReviewService {
     );
 
     const userMap = new Map(
-      users.map((user) => [
-        user.id,
-        { id: user.id, name: user.name, profileImage: user.profileImageUrl },
-      ]),
+      users.map((user) => [user.id, formatCreatedUserDetails(user)]),
     );
 
     const commentsByThread = comments.reduce(
@@ -390,11 +386,7 @@ export class ReviewService {
           id: thread.id,
           comments: commentsByThread[thread.id] || [],
           selection: thread.selection,
-          createdBy: user || {
-            id: thread.createdBy,
-            name: null,
-            profileImage: null,
-          },
+          createdBy: user,
         });
         return acc;
       },

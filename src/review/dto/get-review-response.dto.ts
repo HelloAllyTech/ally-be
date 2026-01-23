@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { CreatedByDto } from './created-user.dto';
 
 export class ScenarioDto {
   @ApiProperty()
@@ -17,16 +18,6 @@ export class ScenarioDto {
   coverVideoUrl?: string | null;
 }
 
-export class CreatedByDto {
-  @ApiProperty()
-  id?: number;
-
-  @ApiProperty()
-  name?: string;
-
-  @ApiProperty({ nullable: true })
-  profileImage!: string | null;
-}
 export class ScenarioSessionDto {
   @ApiProperty()
   id!: string;

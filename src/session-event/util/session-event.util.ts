@@ -144,6 +144,7 @@ export const mapCreateEventDtoToDbEvent = (
     event.detectionType as SessionEventDetectionType,
     event.detectionConfig as DetectionConfigDto,
   ),
+  tags: event.tags,
 });
 
 export const mapUpdateEventDtoToDbEvent = (
@@ -164,6 +165,7 @@ export const mapUpdateEventDtoToDbEvent = (
     event.detectionType as SessionEventDetectionType,
     event.detectionConfig as DetectionConfigDto,
   ),
+  tags: event.tags,
 });
 
 /**
