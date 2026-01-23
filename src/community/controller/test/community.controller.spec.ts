@@ -14,6 +14,7 @@ import {
 } from '../../dto/leaderboard.dto';
 import { PermissionsGuard } from 'src/auth/guards/permissions.guard';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { UserStatus } from 'src/user/constants/user-status.constants';
 
 describe('CommunityController', () => {
   let controller: CommunityController;
@@ -29,6 +30,7 @@ describe('CommunityController', () => {
     userId: 1,
     name: 'John Doe',
     profileImageUrl: 'https://example.com/avatar.jpg',
+    status: UserStatus.ACTIVE,
     rank: 1,
     minutesPlayed: 120,
     badgeCount: 5,
@@ -40,6 +42,7 @@ describe('CommunityController', () => {
       userId: 2,
       name: 'Jane Smith',
       profileImageUrl: 'https://example.com/avatar2.jpg',
+      status: UserStatus.ACTIVE,
       rank: 2,
       minutesPlayed: 100,
       badgeCount: 3,
@@ -87,6 +90,7 @@ describe('CommunityController', () => {
         data: mockLeaderboardData,
         window: LeaderboardView.LAST_WEEK,
         totalCount: 2,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getLeaderboard.mockResolvedValue(expectedResponse);
@@ -115,6 +119,7 @@ describe('CommunityController', () => {
         data: mockLeaderboardData,
         window: LeaderboardView.LAST_MONTH,
         totalCount: 2,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getLeaderboard.mockResolvedValue(expectedResponse);
@@ -138,6 +143,7 @@ describe('CommunityController', () => {
         data: mockLeaderboardData,
         window: LeaderboardView.LAST_YEAR,
         totalCount: 2,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getLeaderboard.mockResolvedValue(expectedResponse);
@@ -156,6 +162,7 @@ describe('CommunityController', () => {
         data: mockLeaderboardData,
         window: LeaderboardView.ALL_TIME,
         totalCount: 2,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getLeaderboard.mockResolvedValue(expectedResponse);
@@ -178,6 +185,7 @@ describe('CommunityController', () => {
         data: mockLeaderboardData,
         window: LeaderboardView.LAST_WEEK,
         totalCount: 100,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getLeaderboard.mockResolvedValue(expectedResponse);
@@ -205,6 +213,7 @@ describe('CommunityController', () => {
         data: [],
         window: LeaderboardView.LAST_WEEK,
         totalCount: 0,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getLeaderboard.mockResolvedValue(expectedResponse);
@@ -243,6 +252,7 @@ describe('CommunityController', () => {
         data: [],
         window: LeaderboardView.LAST_WEEK,
         totalCount: 0,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getLeaderboard.mockResolvedValue(expectedResponse);
@@ -267,10 +277,12 @@ describe('CommunityController', () => {
         userId: mockUser.id,
         name: 'John Doe',
         profileImageUrl: 'https://example.com/avatar.jpg',
+        status: UserStatus.ACTIVE,
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 3,
         window: LeaderboardView.LAST_WEEK,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getMyRank.mockResolvedValue(expectedResponse);
@@ -294,10 +306,12 @@ describe('CommunityController', () => {
         userId: mockUser.id,
         name: 'John Doe',
         profileImageUrl: undefined,
+        status: UserStatus.ACTIVE,
         rank: 10,
         minutesPlayed: 200,
         badgeCount: 5,
         window: LeaderboardView.LAST_MONTH,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getMyRank.mockResolvedValue(expectedResponse);
@@ -321,10 +335,12 @@ describe('CommunityController', () => {
         userId: mockUser.id,
         name: 'John Doe',
         profileImageUrl: 'https://example.com/avatar.jpg',
+        status: UserStatus.ACTIVE,
         rank: 25,
         minutesPlayed: 500,
         badgeCount: 10,
         window: LeaderboardView.LAST_YEAR,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getMyRank.mockResolvedValue(expectedResponse);
@@ -343,10 +359,12 @@ describe('CommunityController', () => {
         userId: mockUser.id,
         name: 'John Doe',
         profileImageUrl: 'https://example.com/avatar.jpg',
+        status: UserStatus.ACTIVE,
         rank: 1,
         minutesPlayed: 1000,
         badgeCount: 20,
         window: LeaderboardView.ALL_TIME,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getMyRank.mockResolvedValue(expectedResponse);
@@ -365,10 +383,12 @@ describe('CommunityController', () => {
         userId: mockUser.id,
         name: 'John Doe',
         profileImageUrl: undefined,
+        status: UserStatus.ACTIVE,
         rank: 0,
         minutesPlayed: 0,
         badgeCount: 0,
         window: LeaderboardView.LAST_WEEK,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getMyRank.mockResolvedValue(expectedResponse);
@@ -407,10 +427,12 @@ describe('CommunityController', () => {
         userId: customUser.id,
         name: 'Custom User',
         profileImageUrl: undefined,
+        status: UserStatus.ACTIVE,
         rank: 50,
         minutesPlayed: 30,
         badgeCount: 1,
         window: LeaderboardView.LAST_WEEK,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getMyRank.mockResolvedValue(expectedResponse);
@@ -433,10 +455,12 @@ describe('CommunityController', () => {
         userId: mockUser.id,
         name: 'John Doe',
         profileImageUrl: undefined,
+        status: UserStatus.ACTIVE,
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 0,
         window: LeaderboardView.LAST_WEEK,
+        hideRankInCommunity: false,
       };
 
       leaderboardService.getMyRank.mockResolvedValue(expectedResponse);

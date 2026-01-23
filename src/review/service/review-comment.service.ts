@@ -31,6 +31,7 @@ import {
 import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
 import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
 import { formatCreatedUserDetails } from '../util/review.util';
+import { CommunitySharedService } from 'src/community/service/community-shared.service';
 
 @Injectable()
 export class ReviewCommentService {
@@ -45,6 +46,7 @@ export class ReviewCommentService {
     private readonly permissionValidator: PermissionValidator,
     private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
     private readonly userService: UserService,
+    private readonly communitySharedService: CommunitySharedService,
   ) {}
 
   async addCommentToReview(
@@ -122,6 +124,11 @@ export class ReviewCommentService {
       this.logger.info(
         `Reply: ${reply.id} added successfully for comment: ${parentComment.id}`,
       );
+
+      if (review.createdBy !== userId) {
+        this.communitySharedService.incrementCommentScore(userId, tenantId);
+      }
+
       return {
         reply: {
           id: reply.id,
@@ -154,6 +161,10 @@ export class ReviewCommentService {
       this.logger.info(
         `Comment: ${comment.id} added successfully to thread: ${thread.id}`,
       );
+
+      if (review.createdBy !== userId) {
+        this.communitySharedService.incrementCommentScore(userId, tenantId);
+      }
 
       return {
         comment: {
@@ -211,6 +222,11 @@ export class ReviewCommentService {
         this.logger.info(
           `Thread: ${result.thread?.id} and comment: ${result.comment?.id} created successfully for messageId: ${createReviewCommentDto.messageId}`,
         );
+
+        if (review.createdBy !== userId) {
+          this.communitySharedService.incrementCommentScore(userId, tenantId);
+        }
+
         return result;
       } catch (error) {
         this.logger.error(
@@ -463,7 +479,10 @@ export class ReviewCommentService {
     return { success: true };
   }
 
-  async deleteReviewComment(commentId: string): Promise<SuccessResponse> {
+  async deleteReviewComment(
+    commentId: string,
+    tenantId: string,
+  ): Promise<SuccessResponse> {
     const userId = Number(ExecutionManager.getUserId());
     if (!userId) {
       throw new BadRequestException('User not found');
@@ -485,6 +504,20 @@ export class ReviewCommentService {
       throw new BadRequestException('Cannot delete this comment');
     }
 
+    // Get the thread and review to check ownership for score decrement
+    const commentThread = await this.reviewThreadRepository.findOne({
+      where: { id: comment.reviewThreadId },
+    });
+    let reviewCreatedBy: number | null = null;
+    if (commentThread) {
+      const review = await this.reviewRepository.findOne({
+        where: { id: commentThread.reviewId },
+      });
+      if (review) {
+        reviewCreatedBy = review.createdBy;
+      }
+    }
+
     const parentCommentId = comment?.parentCommentId;
 
     if (parentCommentId) {
@@ -500,6 +533,11 @@ export class ReviewCommentService {
             .getRepository(ReviewComment)
             .softDelete(commentId);
         });
+
+        if (reviewCreatedBy !== null && reviewCreatedBy !== userId) {
+          this.communitySharedService.decrementCommentScore(userId, tenantId);
+        }
+
         return { success: true };
       } catch (error) {
         this.logger.error(`Failed to delete reply: ${error.message}`);
@@ -553,6 +591,10 @@ export class ReviewCommentService {
     }
 
     this.logger.info(`Comment deleted successfully: ${commentId}`);
+
+    if (reviewCreatedBy !== null && reviewCreatedBy !== userId) {
+      this.communitySharedService.decrementCommentScore(userId, tenantId);
+    }
 
     return { success: true };
   }

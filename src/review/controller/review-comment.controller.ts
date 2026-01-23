@@ -27,6 +27,8 @@ import {
 import { GetReviewRepliesResponseDto } from '../dto/review-replies-response.dto';
 import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
 import { SuccessResponse } from 'src/common/type/common.type';
+import { CurrentUser } from 'src/auth/decorators/user.decorator';
+import { TokenUser } from 'src/auth/type/auth.types';
 
 @Controller({
   path: 'reviews',
@@ -138,7 +140,11 @@ export class ReviewCommentController {
   @Delete('comments/:commentId')
   async deleteReviewComment(
     @Param('commentId', ParseUUIDPipe) commentId: string,
+    @CurrentUser() user: TokenUser,
   ): Promise<SuccessResponse> {
-    return this.reviewCommentService.deleteReviewComment(commentId);
+    return this.reviewCommentService.deleteReviewComment(
+      commentId,
+      user.tenantId,
+    );
   }
 }

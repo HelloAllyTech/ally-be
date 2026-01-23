@@ -4,6 +4,7 @@ import { UserDailyScoreRepository } from '../../repository/user-daily-score.repo
 import { LeaderboardView } from '../../type/leaderboard.type';
 import { LeaderboardEntryDto } from '../../dto/leaderboard.dto';
 import { TenantService } from 'src/tenant/service/tenant.service';
+import { UserStatus } from 'src/user/constants/user-status.constants';
 
 describe('LeaderboardService', () => {
   let service: LeaderboardService;
@@ -17,6 +18,7 @@ describe('LeaderboardService', () => {
     userId: 1,
     name: 'John Doe',
     profileImageUrl: 'https://example.com/avatar.jpg',
+    status: UserStatus.ACTIVE,
     rank: 1,
     minutesPlayed: 120,
     badgeCount: 5,
@@ -28,6 +30,7 @@ describe('LeaderboardService', () => {
       userId: 2,
       name: 'Jane Smith',
       profileImageUrl: 'https://example.com/avatar2.jpg',
+      status: UserStatus.ACTIVE,
       rank: 2,
       minutesPlayed: 100,
       badgeCount: 3,
@@ -36,6 +39,7 @@ describe('LeaderboardService', () => {
       userId: 3,
       name: 'Bob Wilson',
       profileImageUrl: undefined,
+      status: UserStatus.ACTIVE,
       rank: 3,
       minutesPlayed: 80,
       badgeCount: 1,
@@ -103,6 +107,7 @@ describe('LeaderboardService', () => {
         data: mockLeaderboardData,
         window: LeaderboardView.LAST_WEEK,
         totalCount: 3,
+        hideRankInCommunity: false,
       });
       expect(tenantService.findById).toHaveBeenCalledWith(mockTenantId);
       expect(
@@ -131,6 +136,7 @@ describe('LeaderboardService', () => {
         data: mockLeaderboardData,
         window: LeaderboardView.LAST_MONTH,
         totalCount: 3,
+        hideRankInCommunity: false,
       });
       expect(
         userDailyScoreRepository.getLeaderboardWithUserDetails,
@@ -158,6 +164,7 @@ describe('LeaderboardService', () => {
         data: mockLeaderboardData,
         window: LeaderboardView.LAST_YEAR,
         totalCount: 3,
+        hideRankInCommunity: false,
       });
       expect(
         userDailyScoreRepository.getLeaderboardWithUserDetails,
@@ -185,6 +192,7 @@ describe('LeaderboardService', () => {
         data: mockLeaderboardData,
         window: LeaderboardView.ALL_TIME,
         totalCount: 3,
+        hideRankInCommunity: false,
       });
       expect(
         userDailyScoreRepository.getLeaderboardWithUserDetails,
@@ -236,6 +244,7 @@ describe('LeaderboardService', () => {
         data: [],
         window: LeaderboardView.LAST_WEEK,
         totalCount: 0,
+        hideRankInCommunity: false,
       });
     });
 
@@ -330,6 +339,7 @@ describe('LeaderboardService', () => {
         userId: mockUserId,
         name: 'John Doe',
         profileImageUrl: 'https://example.com/avatar.jpg',
+        status: UserStatus.ACTIVE,
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 3,
@@ -348,6 +358,7 @@ describe('LeaderboardService', () => {
       expect(result).toEqual({
         ...rankResult,
         window: LeaderboardView.LAST_WEEK,
+        hideRankInCommunity: false,
       });
       expect(tenantService.findById).toHaveBeenCalledWith(mockTenantId);
       expect(
@@ -383,10 +394,12 @@ describe('LeaderboardService', () => {
         userId: mockUserId,
         name: 'John Doe',
         profileImageUrl: 'https://example.com/avatar.jpg',
+        status: UserStatus.ACTIVE,
         rank: 0,
         minutesPlayed: 0,
         badgeCount: 3,
         window: LeaderboardView.LAST_WEEK,
+        hideRankInCommunity: false,
       });
       expect(
         userDailyScoreRepository.getUserDetailsForNoActivity,
@@ -406,6 +419,7 @@ describe('LeaderboardService', () => {
         userId: mockUserId,
         name: 'John Doe',
         profileImageUrl: 'https://example.com/avatar.jpg',
+        status: UserStatus.ACTIVE,
         rank: undefined, // rank is hidden
         minutesPlayed: 120,
         badgeCount: 3,
@@ -455,10 +469,12 @@ describe('LeaderboardService', () => {
         userId: mockUserId,
         name: 'John Doe',
         profileImageUrl: 'https://example.com/avatar.jpg',
+        status: UserStatus.ACTIVE,
         rank: undefined,
         minutesPlayed: 0,
         badgeCount: 3,
         window: LeaderboardView.LAST_WEEK,
+        hideRankInCommunity: true,
       });
     });
 
@@ -467,9 +483,11 @@ describe('LeaderboardService', () => {
         userId: mockUserId,
         name: 'John Doe',
         profileImageUrl: undefined,
+        status: UserStatus.ACTIVE,
         rank: 10,
         minutesPlayed: 200,
         badgeCount: 5,
+        hideRankInCommunity: false,
       };
 
       userDailyScoreRepository.getUserRankWithDetails.mockResolvedValue(
@@ -502,9 +520,11 @@ describe('LeaderboardService', () => {
         userId: mockUserId,
         name: 'John Doe',
         profileImageUrl: undefined,
+        status: UserStatus.ACTIVE,
         rank: 25,
         minutesPlayed: 500,
         badgeCount: 10,
+        hideRankInCommunity: false,
       };
 
       userDailyScoreRepository.getUserRankWithDetails.mockResolvedValue(
@@ -537,9 +557,11 @@ describe('LeaderboardService', () => {
         userId: mockUserId,
         name: 'John Doe',
         profileImageUrl: 'https://example.com/avatar.jpg',
+        status: UserStatus.ACTIVE,
         rank: 1,
         minutesPlayed: 1000,
         badgeCount: 20,
+        hideRankInCommunity: false,
       };
 
       userDailyScoreRepository.getUserRankWithDetails.mockResolvedValue(
@@ -572,6 +594,7 @@ describe('LeaderboardService', () => {
         userId: mockUserId,
         name: 'John Doe',
         profileImageUrl: undefined,
+        status: UserStatus.ACTIVE,
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 0,
