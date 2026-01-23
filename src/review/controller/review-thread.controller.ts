@@ -35,6 +35,12 @@ export class ReviewThreadController {
     type: Number,
     description: 'Number of threads to skip',
   })
+  @ApiQuery({
+    name: 'includeMessage',
+    required: false,
+    type: String,
+    description: 'Include message',
+  })
   @ApiResponse({
     status: 200,
     description: 'Review threads list',
@@ -46,10 +52,12 @@ export class ReviewThreadController {
     @Param('reviewId', ParseUUIDPipe) reviewId: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
+    @Query('includeMessage') includeMessage?: 'true' | 'false',
   ): Promise<ReviewThreadsResponseDto> {
     return this.reviewThreadService.getReviewThreads(reviewId, {
       limit,
       offset,
+      includeMessage: includeMessage === 'true',
     });
   }
 }

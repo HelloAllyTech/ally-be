@@ -9,6 +9,7 @@ import { PermissionValidator } from 'src/authorization/service/permission-valida
 import { UserService } from 'src/user/service/user.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 
 jest.mock('src/common/execution/execution-manager');
 
@@ -84,6 +85,12 @@ describe('ReviewThreadService', () => {
           provide: UserService,
           useValue: {
             getUsersByIds: jest.fn(),
+          },
+        },
+        {
+          provide: ScenarioSharedService,
+          useValue: {
+            getMessagesByIds: jest.fn(),
           },
         },
       ],

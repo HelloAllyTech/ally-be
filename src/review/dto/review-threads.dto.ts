@@ -51,12 +51,25 @@ export class CommentDto {
   replyCount!: number;
 }
 
+export class ReviewMessageDto {
+  @ApiProperty({ example: 1 })
+  id!: number;
+
+  @ApiProperty({ example: 'This is a message content' })
+  content!: string;
+}
+
 export class ReviewThreadDto {
   @ApiProperty({ description: 'Thread ID' })
   @IsString()
   @IsNotEmpty()
   @IsUUID()
   id!: string;
+
+  @ApiProperty({ description: 'Selection of the thread' })
+  @IsObject()
+  @IsNotEmpty()
+  selection!: Record<string, any>;
 
   @ApiProperty({ type: [CommentDto], description: 'Comments in the thread' })
   @IsArray()
@@ -68,6 +81,12 @@ export class ReviewThreadDto {
   @ApiProperty({ description: 'Total number of comments in the thread' })
   @IsNumber()
   commentCount!: number;
+
+  @ApiProperty({ description: 'Message associated with the thread' })
+  @ValidateNested()
+  @Type(() => ReviewMessageDto)
+  @IsOptional()
+  message?: ReviewMessageDto;
 }
 
 export class ReviewThreadsResponseDto {

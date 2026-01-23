@@ -1,4 +1,4 @@
-import { SortOrder } from 'src/common/type/common.type';
+import { Pagination, SortOrder } from 'src/common/type/common.type';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { User } from 'src/user/entity/user.entity';
@@ -55,4 +55,8 @@ export interface ReviewReactionOptions {
   limit?: number;
   offset?: number;
   reaction?: string;
+}
+
+export interface GetReviewThreadsOptions extends Pagination {
+  includeMessage?: boolean;
 }
