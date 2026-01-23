@@ -74,6 +74,8 @@ export class BadgeRepository extends Repository<Badge> {
         'badge.name AS "name"',
         'badge.description AS "description"',
         'badge.imageUrl AS "imageUrl"',
+        'badge.category AS "category"',
+        'badge.achievementParams AS "achievementParams"',
       ])
       .where('badgeUser.userId = :userId', { userId })
       .andWhere('badgeUser.deletedAt IS NULL')

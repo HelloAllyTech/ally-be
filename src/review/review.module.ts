@@ -18,11 +18,13 @@ import { ReviewCommentReactionController } from './controller/review-comment-rea
 import { ReviewReactionService } from './service/review-reaction.service';
 import { ReviewCommentReactionService } from './service/review-comment-reaction.service';
 import { CommunityModule } from 'src/community/community.module';
+import { BadgeModule } from 'src/badge/badge.module';
 
 @Module({
   imports: [
     forwardRef(() => LearnModule),
     forwardRef(() => UserModule),
+    forwardRef(() => BadgeModule),
     CommunityModule,
   ],
   controllers: [

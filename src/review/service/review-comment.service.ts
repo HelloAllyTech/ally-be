@@ -6,6 +6,8 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { DataSource, In } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
@@ -32,6 +34,7 @@ import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
 import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
 import { formatCreatedUserDetails } from '../util/review.util';
 import { CommunitySharedService } from 'src/community/service/community-shared.service';
+import { ReviewEvents } from '../type/review-event.type';
 
 @Injectable()
 export class ReviewCommentService {
@@ -47,6 +50,7 @@ export class ReviewCommentService {
     private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
     private readonly userService: UserService,
     private readonly communitySharedService: CommunitySharedService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async addCommentToReview(
@@ -129,6 +133,10 @@ export class ReviewCommentService {
         this.communitySharedService.incrementCommentScore(userId, tenantId);
       }
 
+      this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_ADDED, {
+        review,
+        comment: reply,
+      });
       return {
         reply: {
           id: reply.id,
@@ -165,6 +173,10 @@ export class ReviewCommentService {
       if (review.createdBy !== userId) {
         this.communitySharedService.incrementCommentScore(userId, tenantId);
       }
+      this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_ADDED, {
+        review,
+        comment,
+      });
 
       return {
         comment: {
@@ -206,6 +218,10 @@ export class ReviewCommentService {
               tenantId,
             });
             await entityManager.save(ReviewComment, comment);
+            this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_ADDED, {
+              review,
+              comment,
+            });
             return {
               thread: {
                 id: thread.id,

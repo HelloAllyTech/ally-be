@@ -15,6 +15,8 @@ export interface UserBadgeWithDetails {
   name: string;
   description?: string;
   imageUrl?: string;
+  category?: BadgeCategory;
+  achievementParams?: BadgeAchievementParams;
 }
 
 export interface UserBadgeResponse {
@@ -45,3 +47,8 @@ export interface MarkBadgeViewedResponse {
   badgeId: string;
   viewedStatus: BadgeViewedStatus;
 }
+
+export type SaveBadgeUsersRequest = {
+  userId: number;
+  badgeId: string;
+}[];
