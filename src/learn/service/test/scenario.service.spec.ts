@@ -1515,7 +1515,7 @@ describe('ScenarioService', () => {
         mockVoices as any,
       );
 
-      const result = await service.getScenarioVoices('', {
+      const result = await service.getScenarioVoices('', '', '', {
         offset: 0,
         limit: 10,
       });
