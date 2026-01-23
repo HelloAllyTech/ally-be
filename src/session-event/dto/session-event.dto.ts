@@ -354,6 +354,17 @@ export class SessionEventDto<T> {
   @IsBoolean()
   @IsOptional()
   isEditable?: boolean = true;
+
+  @ApiProperty({
+    description: 'Tags associated with the event',
+    example: ['important', 'feedback', 'greeting'],
+    type: [String],
+    required: false,
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  tags?: string[];
 }
 
 export class CreateSessionEventDto extends SessionEventDto<CombinationExpressionRequestDto> {}
