@@ -45,3 +45,14 @@ export interface Reviews {
   scenarioSession: ScenarioSessions;
   scenario: Scenarios;
 }
+
+export enum ReactionAction {
+  ADD = 'ADD',
+  REMOVE = 'REMOVE',
+}
+
+export interface ReviewReactionOptions {
+  limit?: number;
+  offset?: number;
+  reaction?: string;
+}

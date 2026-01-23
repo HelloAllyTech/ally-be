@@ -43,7 +43,11 @@ import {
 } from '../constants/scenario-session.constants';
 import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
-import { ScenarioStatus } from '../type/scenario.type';
+import {
+  ChecklistItem,
+  ExperienceMode,
+  ScenarioStatus,
+} from '../type/scenario.type';
 import { ScenarioTenantService } from './scenario-tenant.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
@@ -63,6 +67,8 @@ import { getActiveScenarioMandatoryFields } from '../util/scenario.util';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { Languages } from 'src/language/entity/languages.entity';
+import { ReviewSharedService } from 'src/review/service/review-shared.service';
+import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -87,6 +93,7 @@ export class ScenarioSessionService {
     private sessionEventTranslationService: SessionEventTranslationService,
     private sharedLanguageService: SharedLanguageService,
     private scenarioVoicesRepository: ScenarioVoicesRepository,
+    private reviewSharedService: ReviewSharedService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -132,22 +139,25 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario session not found');
     }
 
-    // remove sensitive fields from nested events
+    // Filter events to only include ACTIVE ones and non-termination events,
+    // then remove sensitive fields from nested events
     if ((scenarioSession as any).events) {
-      (scenarioSession as any).events = (scenarioSession as any).events.map(
-        (event: any) => {
-          if (event.events) {
-            const sanitizedEvents = { ...event.events };
-            delete sanitizedEvents.detectionData;
-            delete sanitizedEvents.detectionConfig;
-            delete sanitizedEvents.branchInstruction;
-            delete sanitizedEvents.description;
-            delete sanitizedEvents.detectionType;
-            return { ...event, events: sanitizedEvents };
-          }
-          return event;
-        },
-      );
+      (scenarioSession as any).events = (scenarioSession as any).events
+        .filter(
+          (event: any) =>
+            event.events?.visibilityType ===
+              SessionEventVisibilityType.ACTIVE &&
+            event.autoTerminationStatus === false,
+        )
+        .map((event: any) => {
+          const sanitizedEvents = { ...event.events };
+          delete sanitizedEvents.detectionData;
+          delete sanitizedEvents.detectionConfig;
+          delete sanitizedEvents.branchInstruction;
+          delete sanitizedEvents.description;
+          delete sanitizedEvents.detectionType;
+          return { ...event, events: sanitizedEvents };
+        });
     }
 
     const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
@@ -156,7 +166,17 @@ export class ScenarioSessionService {
 
     const hasFeedback = !!feedback;
 
-    return { ...scenarioSession, hasFeedback };
+    const review =
+      await this.reviewSharedService.getReviewByScenarioSessionId(
+        scenarioSessionId,
+      );
+
+    return {
+      ...scenarioSession,
+      hasFeedback,
+      reviewId: review?.id,
+      reviewStatus: review?.status,
+    };
   }
 
   async startScenarioSession(
@@ -289,17 +309,21 @@ export class ScenarioSessionService {
         languageDetails,
       );
 
-      // Preparing events for simulation room
-      const checklistEvents = (sessionEvents ?? [])
-        .filter(
-          (event: SessionEvents & { checklistVisibilityStatus?: boolean }) =>
-            event?.checklistVisibilityStatus,
-        )
-        .map(({ name, id, score }) => ({
-          name,
-          id,
-          score,
-        }));
+      // Preparing checklist events for simulation room, only if CHECKLIST mode is enabled for scenario
+      let checklistEvents: ChecklistItem[] = [];
+
+      if (scenario?.metadata?.experienceMode === ExperienceMode.CHECKLIST) {
+        checklistEvents = (sessionEvents ?? [])
+          .filter(
+            (event: SessionEvents & { checklistVisibilityStatus?: boolean }) =>
+              event?.checklistVisibilityStatus,
+          )
+          .map(({ name, id, score }) => ({
+            name,
+            id,
+            score,
+          }));
+      }
 
       // Create LiveKit room
       await this.livekitService.createRoom({
@@ -747,29 +771,27 @@ export class ScenarioSessionService {
           },
         });
 
+        let summary;
         if (scenarioSessionMessages.length === 0) {
           this.logger.warn(
             `No scenario session messages found for scenario session ${scenarioSessionId}`,
           );
-          return;
+          summary = {
+            errorMessage: 'Session was too short. No summary generated.',
+          };
+        } else {
+          const messages = scenarioSessionMessages.map((message) => ({
+            role: message.senderId > 0 ? 'COUNSELLOR' : 'CLIENT',
+            content: message.content,
+            start_time: message.startSeconds,
+            end_time: message.endSeconds,
+          }));
+
+          const aiSummary =
+            await this.aiService.getScenarioSessionSummary(messages);
+
+          summary = { feedback: aiSummary };
         }
-
-        const messages = scenarioSessionMessages.map((message) => ({
-          role: message.senderId > 0 ? 'COUNSELLOR' : 'CLIENT',
-          content: message.content,
-          start_time: message.startSeconds,
-          end_time: message.endSeconds,
-        }));
-
-        const scenario = await this.scenarioService.getScenario(scenarioId, {
-          select: ['id', 'metadata'],
-          em: entityManager,
-        });
-
-        const summary = await this.aiService.getScenarioSessionSummary(
-          messages,
-          scenario.metadata?.agentGoal ?? '',
-        );
 
         const scenarioSessionDetailsRepo = entityManager.getRepository(
           ScenarioSessionDetails,
@@ -777,7 +799,7 @@ export class ScenarioSessionService {
         const scenarioSessionDetails = scenarioSessionDetailsRepo.create({
           scenarioSessionId,
           callDuration,
-          summary: { feedback: summary },
+          summary,
           tenantId: ExecutionManager.getTenantId(),
         });
         await scenarioSessionDetailsRepo.save(scenarioSessionDetails);
@@ -999,6 +1021,22 @@ export class ScenarioSessionService {
     );
     const roomName = `preview-${scenarioId}-${v4()}`;
 
+    // Preparing checklist events for simulation room, only if CHECKLIST mode is enabled for scenario
+    let checklistEvents: ChecklistItem[] = [];
+
+    if (scenario?.metadata?.experienceMode === ExperienceMode.CHECKLIST) {
+      checklistEvents = (sessionEvents ?? [])
+        .filter(
+          (event: SessionEvents & { checklistVisibilityStatus?: boolean }) =>
+            event?.checklistVisibilityStatus,
+        )
+        .map(({ name, id, score }) => ({
+          name,
+          id,
+          score,
+        }));
+    }
+
     await this.livekitService.createRoom({
       name: roomName,
       metadata: roomMetadata,
@@ -1009,7 +1047,7 @@ export class ScenarioSessionService {
       participantName: userId.toString(),
     });
 
-    return { roomName, accessToken, scenario };
+    return { roomName, accessToken, scenario, checklistEvents };
   }
 
   private async validatePreviewScenario(scenario: Scenarios) {
@@ -1027,9 +1065,7 @@ export class ScenarioSessionService {
       ...(metadata ?? {}),
     };
 
-    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
-      this.configService.featureFlag.scenarioCustomFields,
-    );
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields();
     const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
       (field) => !flatScenario[field as keyof typeof flatScenario],
     );

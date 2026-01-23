@@ -25,10 +25,15 @@ import { TokenUser } from 'src/auth/type/auth.types';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import {
+  CreateBadgeDto,
+  CreateBadgeResponseDto,
+} from '../dto/create-badge.dto';
+import {
   UserBadgeResponseDto,
   UserBadgeCountResponseDto,
   GroupedUserAvailableBadgesDto,
   MarkBadgeViewedResponseDto,
+  AdminBadgeListResponseDto,
 } from '../dto/user-badge-response.dto';
 import { BadgeTenantService } from '../service/badge-tenant.service';
 import { AddBadgeToTenantsRequestDto } from '../dto/badge-tenant.dto';
@@ -45,6 +50,20 @@ export class BadgeController {
     private readonly badgeService: BadgeService,
     private readonly badgeTenantService: BadgeTenantService,
   ) {}
+
+  @ApiOperation({ summary: 'Create a badge' })
+  @ApiResponse({
+    status: 201,
+    description: 'Badge created successfully',
+    type: CreateBadgeResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @Post()
+  async createBadge(
+    @Body() createBadgeDto: CreateBadgeDto,
+  ): Promise<CreateBadgeResponseDto> {
+    return this.badgeService.createBadge(createBadgeDto);
+  }
 
   @ApiOperation({ summary: 'Get all badges for the current user' })
   @ApiQuery({
@@ -104,7 +123,7 @@ export class BadgeController {
     type: [GroupedUserAvailableBadgesDto],
   })
   @AuthPermissions([PERMISSIONS.VIEW_USER_BADGES])
-  @Get('available')
+  @Get('me/available')
   async getAvailableBadges(
     @CurrentUser() tokenUser: TokenUser,
   ): Promise<GroupedUserAvailableBadgesDto[]> {
@@ -133,6 +152,18 @@ export class BadgeController {
     @Param('badgeId', ParseUUIDPipe) badgeId: string,
   ): Promise<MarkBadgeViewedResponseDto> {
     return this.badgeService.markBadgeAsViewed(tokenUser.id, badgeId);
+  }
+
+  @ApiOperation({ summary: 'Get all badges (Admin)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns all badges in the system',
+    type: AdminBadgeListResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_BADGES])
+  @Get()
+  async getAllBadges(): Promise<AdminBadgeListResponseDto> {
+    return this.badgeService.getAllBadges();
   }
 
   @ApiOperation({ summary: 'Add badge to tenants' })

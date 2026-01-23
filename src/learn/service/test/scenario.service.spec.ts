@@ -70,11 +70,9 @@ describe('ScenarioService', () => {
     prompt: 'You are a counselor helping a client with anxiety',
     isGlobal: false,
     metadata: {
-      agentGoal: 'Help client',
       name: 'Test Client',
       age: 30,
       voiceId: 'voice-123',
-      lifeHistory: 'Test life history',
     },
     createdAt: new Date('2025-01-01'),
     updatedAt: new Date('2025-01-01'),
@@ -1380,7 +1378,6 @@ describe('ScenarioService', () => {
           usage: 5,
           isAssignedToTenant: true,
           scenario_metadata: {
-            agentGoal: 'goal',
             name: 'Test',
             age: 30,
             gender: 'male',
@@ -1893,8 +1890,6 @@ describe('ScenarioService', () => {
         status: ScenarioStatus.DRAFT,
         prompt: 'Prompt',
         isGlobal: false,
-        agentGoal: 'Goal',
-        lifeHistory: 'History',
         voiceId: 'voice-1',
         name: 'Test',
         age: 30,
@@ -1919,8 +1914,6 @@ describe('ScenarioService', () => {
         status: ScenarioStatus.DRAFT,
         prompt: 'Prompt',
         isGlobal: false,
-        agentGoal: 'Goal',
-        lifeHistory: 'History',
         voiceId: 'invalid-voice',
         name: 'Test',
         age: 30,
@@ -1947,8 +1940,6 @@ describe('ScenarioService', () => {
             status: ScenarioStatus.DRAFT,
             prompt: 'Prompt',
             isGlobal: false,
-            agentGoal: 'Goal',
-            lifeHistory: 'History',
             languageVoices: { 1: 'voice-1' },
             name: 'Test',
             age: 30,
@@ -2041,8 +2032,6 @@ describe('ScenarioService', () => {
             status: ScenarioStatus.DRAFT,
             prompt: 'Prompt',
             isGlobal: true,
-            agentGoal: 'Goal',
-            lifeHistory: 'History',
             languageVoices: { 1: 'voice-1' },
             name: 'Test',
             age: 30,
@@ -2099,8 +2088,6 @@ describe('ScenarioService', () => {
             status: ScenarioStatus.DRAFT,
             prompt: 'Prompt',
             isGlobal: false,
-            agentGoal: 'Goal',
-            lifeHistory: 'History',
             languageVoices: { 1: 'voice-1' },
             name: 'Test',
             age: 30,
@@ -2173,9 +2160,6 @@ describe('ScenarioService', () => {
             status: ScenarioStatus.DRAFT,
             prompt: 'Prompt',
             isGlobal: false,
-            agentGoal: 'Goal',
-            lifeHistory: 'History',
-            // voiceId: 'voice-1',
             languageVoices: { 1: 'voice-1' },
             name: 'Test',
             age: 30,
@@ -4164,7 +4148,6 @@ describe('ScenarioService', () => {
       const scenarioWithoutCustomFields = {
         ...mockScenario,
         metadata: {
-          agentGoal: 'Help client',
           name: 'Test Client',
         },
       };
@@ -4184,7 +4167,6 @@ describe('ScenarioService', () => {
       const scenarioWithCustomFields = {
         ...mockScenario,
         metadata: {
-          agentGoal: 'Help client',
           name: 'Test Client',
           customFields: [
             { name: 'custom_field_1', value: 'value1' },
@@ -4212,7 +4194,6 @@ describe('ScenarioService', () => {
       const scenarioWithEmptyCustomFields = {
         ...mockScenario,
         metadata: {
-          agentGoal: 'Help client',
           customFields: [],
         },
       };

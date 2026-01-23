@@ -284,6 +284,89 @@ describe('UserDailyScoreRepository', () => {
       expect(result.data[0].minutesPlayed).toBe(0);
       expect(result.data[0].badgeCount).toBe(0);
     });
+
+    it('should return undefined rank when hideRankInCommunity is true', async () => {
+      const leaderboardData = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '1',
+          minutesPlayed: '120',
+          badgeCount: '5',
+        },
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce(leaderboardData)
+        .mockResolvedValueOnce([{ count: '1' }]);
+
+      const result = await repository.getLeaderboardWithUserDetails(
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        undefined,
+        true,
+      );
+
+      expect(result.data[0].rank).toBeUndefined();
+      expect(result.data[0].minutesPlayed).toBe(120);
+      expect(result.data[0].badgeCount).toBe(5);
+    });
+
+    it('should return rank when hideRankInCommunity is false', async () => {
+      const leaderboardData = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '1',
+          minutesPlayed: '120',
+          badgeCount: '5',
+        },
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce(leaderboardData)
+        .mockResolvedValueOnce([{ count: '1' }]);
+
+      const result = await repository.getLeaderboardWithUserDetails(
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        undefined,
+        false,
+      );
+
+      expect(result.data[0].rank).toBe(1);
+    });
+
+    it('should return rank when hideRankInCommunity is undefined', async () => {
+      const leaderboardData = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '1',
+          minutesPlayed: '120',
+          badgeCount: '5',
+        },
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce(leaderboardData)
+        .mockResolvedValueOnce([{ count: '1' }]);
+
+      const result = await repository.getLeaderboardWithUserDetails(
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        undefined,
+        undefined,
+      );
+
+      expect(result.data[0].rank).toBe(1);
+    });
   });
 
   describe('getUserRankWithDetails', () => {
@@ -396,6 +479,83 @@ describe('UserDailyScoreRepository', () => {
       expect(result?.minutesPlayed).toBe(500);
       expect(result?.badgeCount).toBe(25);
     });
+
+    it('should return undefined rank when hideRankInCommunity is true', async () => {
+      const rankResult = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '5',
+          minutesPlayed: '60',
+          badgeCount: '3',
+        },
+      ];
+
+      mockQuery.mockResolvedValue(rankResult);
+
+      const result = await repository.getUserRankWithDetails(
+        mockUserId,
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        true,
+      );
+
+      expect(result?.rank).toBeUndefined();
+      expect(result?.minutesPlayed).toBe(60);
+      expect(result?.badgeCount).toBe(3);
+    });
+
+    it('should return rank when hideRankInCommunity is false', async () => {
+      const rankResult = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '5',
+          minutesPlayed: '60',
+          badgeCount: '3',
+        },
+      ];
+
+      mockQuery.mockResolvedValue(rankResult);
+
+      const result = await repository.getUserRankWithDetails(
+        mockUserId,
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        false,
+      );
+
+      expect(result?.rank).toBe(5);
+    });
+
+    it('should return rank when hideRankInCommunity is undefined', async () => {
+      const rankResult = [
+        {
+          userId: 1,
+          name: 'John Doe',
+          profileImageUrl: 'https://example.com/avatar.jpg',
+          rank: '5',
+          minutesPlayed: '60',
+          badgeCount: '3',
+        },
+      ];
+
+      mockQuery.mockResolvedValue(rankResult);
+
+      const result = await repository.getUserRankWithDetails(
+        mockUserId,
+        mockTenantId,
+        mockStartDate,
+        mockEndDate,
+        undefined,
+      );
+
+      expect(result?.rank).toBe(5);
+    });
   });
 
   describe('getUserDetailsForNoActivity', () => {
@@ -487,6 +647,218 @@ describe('UserDailyScoreRepository', () => {
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('WHERE u.id = $1'),
         [mockUserId],
+      );
+    });
+  });
+
+  describe('getTotalSimulationMinutesPerUser', () => {
+    let mockCreateQueryBuilder: any;
+    let mockQueryBuilder: any;
+
+    beforeEach(() => {
+      mockQueryBuilder = {
+        andWhere: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn(),
+      };
+      mockCreateQueryBuilder = jest
+        .spyOn(repository, 'createQueryBuilder')
+        .mockReturnValue(mockQueryBuilder as any);
+    });
+
+    afterEach(() => {
+      mockCreateQueryBuilder.mockRestore();
+    });
+
+    it('should return empty array when no tenantIds and no userIds provided', async () => {
+      const result = await repository.getTotalSimulationMinutesPerUser();
+
+      expect(result).toEqual([]);
+      expect(mockCreateQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('should query with tenantIds filter', async () => {
+      const tenantIds = ['tenant-1', 'tenant-2'];
+      mockQueryBuilder.getRawMany.mockResolvedValue([
+        { userId: 1, totalMinutes: '120' },
+        { userId: 2, totalMinutes: '60' },
+      ]);
+
+      const result =
+        await repository.getTotalSimulationMinutesPerUser(tenantIds);
+
+      expect(mockCreateQueryBuilder).toHaveBeenCalledWith('user_daily_score');
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'user_daily_score.minutesPlayed IS NOT NULL',
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'user_daily_score.minutesPlayed > 0',
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'user_daily_score.tenantId IN (:...tenantIds)',
+        { tenantIds },
+      );
+      expect(mockQueryBuilder.select).toHaveBeenCalledWith(
+        'user_daily_score.userId',
+        'userId',
+      );
+      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
+        'SUM(user_daily_score.minutesPlayed)',
+        'totalMinutes',
+      );
+      expect(mockQueryBuilder.groupBy).toHaveBeenCalledWith(
+        'user_daily_score.userId',
+      );
+      expect(result).toEqual([
+        { userId: 1, totalMinutes: 120 },
+        { userId: 2, totalMinutes: 60 },
+      ]);
+    });
+
+    it('should query with userIds filter', async () => {
+      const userIds = [1, 2, 3];
+      mockQueryBuilder.getRawMany.mockResolvedValue([
+        { userId: 1, totalMinutes: '100' },
+      ]);
+
+      const result = await repository.getTotalSimulationMinutesPerUser(
+        undefined,
+        userIds,
+      );
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'user_daily_score.userId IN (:...userIds)',
+        { userIds },
+      );
+      expect(result).toEqual([{ userId: 1, totalMinutes: 100 }]);
+    });
+
+    it('should handle invalid totalMinutes with fallback to 0', async () => {
+      mockQueryBuilder.getRawMany.mockResolvedValue([
+        { userId: 1, totalMinutes: 'invalid' },
+        { userId: 2, totalMinutes: null },
+        { userId: 3, totalMinutes: undefined },
+      ]);
+
+      const result = await repository.getTotalSimulationMinutesPerUser([
+        'tenant-1',
+      ]);
+
+      expect(result[0].totalMinutes).toBe(0);
+      expect(result[1].totalMinutes).toBe(0);
+      expect(result[2].totalMinutes).toBe(0);
+    });
+
+    it('should return empty array when no matching records', async () => {
+      mockQueryBuilder.getRawMany.mockResolvedValue([]);
+
+      const result = await repository.getTotalSimulationMinutesPerUser([
+        'tenant-1',
+      ]);
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getMaxActiveDaysPerUser', () => {
+    it('should return empty array when no tenantIds and no userIds provided', async () => {
+      const result = await repository.getMaxActiveDaysPerUser();
+
+      expect(result).toEqual([]);
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it('should query with userIds filter', async () => {
+      const userIds = [1, 2, 3];
+      mockQuery.mockResolvedValue([
+        { userId: 1, maxStreak: '7' },
+        { userId: 2, maxStreak: '5' },
+      ]);
+
+      const result = await repository.getMaxActiveDaysPerUser(
+        undefined,
+        userIds,
+      );
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('"minutesPlayed" > 0'),
+        userIds,
+      );
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('"userId" IN'),
+        expect.any(Array),
+      );
+      expect(result).toEqual([
+        { userId: 1, maxStreak: 7 },
+        { userId: 2, maxStreak: 5 },
+      ]);
+    });
+
+    it('should query with tenantIds filter', async () => {
+      const tenantIds = ['tenant-1', 'tenant-2'];
+      mockQuery.mockResolvedValue([{ userId: 1, maxStreak: '10' }]);
+
+      const result = await repository.getMaxActiveDaysPerUser(tenantIds);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('tenant_id IN'),
+        tenantIds,
+      );
+      expect(result).toEqual([{ userId: 1, maxStreak: 10 }]);
+    });
+
+    it('should parse maxStreak as integer', async () => {
+      mockQuery.mockResolvedValue([{ userId: 1, maxStreak: '15' }]);
+
+      const result = await repository.getMaxActiveDaysPerUser(['tenant-1']);
+
+      expect(result[0].maxStreak).toBe(15);
+    });
+
+    it('should handle invalid maxStreak with fallback to 0', async () => {
+      mockQuery.mockResolvedValue([
+        { userId: 1, maxStreak: 'invalid' },
+        { userId: 2, maxStreak: null },
+        { userId: 3, maxStreak: undefined },
+      ]);
+
+      const result = await repository.getMaxActiveDaysPerUser(['tenant-1']);
+
+      expect(result[0].maxStreak).toBe(0);
+      expect(result[1].maxStreak).toBe(0);
+      expect(result[2].maxStreak).toBe(0);
+    });
+
+    it('should return empty array when no matching records', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      const result = await repository.getMaxActiveDaysPerUser(['tenant-1']);
+
+      expect(result).toEqual([]);
+    });
+
+    it('should build correct SQL with island-gap detection for streaks', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repository.getMaxActiveDaysPerUser(['tenant-1']);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('WITH active_days AS'),
+        expect.any(Array),
+      );
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('islands AS'),
+        expect.any(Array),
+      );
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('streak_length AS'),
+        expect.any(Array),
+      );
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('MAX(streak_length) as "maxStreak"'),
+        expect.any(Array),
       );
     });
   });

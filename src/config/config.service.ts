@@ -266,10 +266,6 @@ export class AppConfigService {
 
   get featureFlag() {
     return {
-      // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove this feature flag
-      scenarioCustomFields:
-        this.configService.get<string>('FEATURE_SCENARIO_CUSTOM_FIELDS') ===
-        'true',
       multipleTerminationEvents:
         this.configService.get<string>(
           'FEATURE_MULTIPLE_TERMINATION_EVENTS',

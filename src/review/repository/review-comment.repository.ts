@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ReviewComment } from '../entity/review-comment.entity';
 import { Pagination } from 'src/common/type/common.type';
+import { ReviewThread } from '../entity/review-thread.entity';
+import { Review } from '../entity/review.entity';
 
 @Injectable()
 export class ReviewCommentRepository extends Repository<ReviewComment> {
@@ -84,5 +86,57 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
 
     query.orderBy('c.createdAt', 'ASC').limit(limit).offset(offset);
     return query.getManyAndCount();
+  }
+
+  async getGivenCommentsCountPerUser(
+    tenantIds?: string[],
+    userIds?: number[],
+  ): Promise<{ userId: number; count: number }[]> {
+    if (!tenantIds?.length && !userIds?.length) {
+      return [];
+    }
+
+    const query = this.createQueryBuilder('rc')
+      .innerJoin(ReviewThread, 'rt', 'rt.id = rc.reviewThreadId')
+      .innerJoin(Review, 'r', 'r.id = rt.reviewId')
+      .where('r.createdBy != rc.createdBy')
+      .select('rc.createdBy', 'userId')
+      .addSelect('COUNT(rc.id)', 'count')
+      .groupBy('rc.createdBy');
+
+    if (userIds) {
+      query.andWhere('rc.createdBy IN (:...userIds)', { userIds });
+    }
+    if (tenantIds) {
+      query.andWhere('rc.tenantId IN (:...tenantIds)', { tenantIds });
+    }
+
+    return query.getRawMany();
+  }
+
+  async getReceivedCommentsCountPerUser(
+    tenantIds?: string[],
+    userIds?: number[],
+  ): Promise<{ userId: number; count: number }[]> {
+    if (!tenantIds?.length && !userIds?.length) {
+      return [];
+    }
+
+    const query = this.createQueryBuilder('rc')
+      .innerJoin(ReviewThread, 'rt', 'rt.id = rc.reviewThreadId')
+      .innerJoin(Review, 'r', 'r.id = rt.reviewId')
+      .where('r.createdBy != rc.createdBy')
+      .select('r.createdBy', 'userId')
+      .addSelect('COUNT(rc.id)', 'count')
+      .groupBy('r.createdBy');
+
+    if (userIds) {
+      query.andWhere('r.createdBy IN (:...userIds)', { userIds });
+    }
+    if (tenantIds) {
+      query.andWhere('r.tenantId IN (:...tenantIds)', { tenantIds });
+    }
+
+    return query.getRawMany();
   }
 }

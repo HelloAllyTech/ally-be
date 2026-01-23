@@ -37,6 +37,7 @@ import { SCENARIO_SESSION_TRANSLATABLE_FIELDS } from 'src/learn/constants/scenar
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { ReviewSharedService } from 'src/review/service/review-shared.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -68,6 +69,7 @@ describe('ScenarioSessionService', () => {
   let scenarioTenantService: jest.Mocked<ScenarioTenantService>;
   let scenarioPathSessionService: jest.Mocked<ScenarioPathSessionService>;
   let scenarioPathSharedService: jest.Mocked<ScenarioPathSharedService>;
+  let reviewSharedService: jest.Mocked<ReviewSharedService>;
   let scenarioTranslationRepository: jest.Mocked<ScenarioTranslationsRepository>;
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let mockConfigService: any;
@@ -248,7 +250,9 @@ describe('ScenarioSessionService', () => {
     const mockScenarioVoicesRepository = {
       getFallbackVoice: jest.fn().mockResolvedValue([]),
     };
-
+    const mockReviewSharedService = {
+      getReviewByScenarioSessionId: jest.fn().mockResolvedValue(null),
+    };
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -329,6 +333,10 @@ describe('ScenarioSessionService', () => {
           provide: ScenarioVoicesRepository,
           useValue: mockScenarioVoicesRepository,
         },
+        {
+          provide: ReviewSharedService,
+          useValue: mockReviewSharedService,
+        },
       ],
     }).compile();
 
@@ -353,6 +361,7 @@ describe('ScenarioSessionService', () => {
     scenarioTranslationRepository = module.get(ScenarioTranslationsRepository);
     sessionEventTranslationService = module.get(SessionEventTranslationService);
     scenarioVoicesRepository = module.get(ScenarioVoicesRepository);
+    reviewSharedService = module.get(ReviewSharedService);
   });
 
   afterEach(() => {
@@ -379,6 +388,7 @@ describe('ScenarioSessionService', () => {
       expect(scenarioPathSessionService).toBeDefined();
       expect(scenarioPathSharedService).toBeDefined();
       expect(sessionEventTranslationService).toBeDefined();
+      expect(reviewSharedService).toBeDefined();
     });
   });
 
@@ -746,8 +756,6 @@ describe('ScenarioSessionService', () => {
       const scenarioWithoutVoiceId = {
         ...mockScenario,
         metadata: {
-          agentGoal: 'Help the client',
-          lifeHistory: 'Life history',
           voiceId: 'voice-123',
           name: 'Test Client',
           age: 25,
@@ -1031,7 +1039,6 @@ describe('ScenarioSessionService', () => {
           title: 'Test Scenario',
           description: 'Test Description',
           voiceId: 'test-voice',
-          lifeHistory: 'Test Life History',
         },
         isGlobal: false,
       };
@@ -1117,8 +1124,6 @@ describe('ScenarioSessionService', () => {
       const mockScenarioWithMetadata = {
         ...mockScenario,
         metadata: {
-          agentGoal: 'Help the client',
-          lifeHistory: 'Life history',
           voiceId: 'voice-123',
           name: 'Test Client',
           age: 25,

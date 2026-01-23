@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { CreatedByDto } from './created-user.dto';
 
 export class ScenarioDto {
   @ApiProperty()
@@ -7,9 +8,6 @@ export class ScenarioDto {
 
   @ApiProperty()
   createdAt!: Date;
-
-  @ApiProperty()
-  duration!: number;
 
   @ApiProperty()
   description!: string;
@@ -21,15 +19,12 @@ export class ScenarioDto {
   coverVideoUrl?: string | null;
 }
 
-export class CreatedByDto {
+export class ScenarioSessionDto {
   @ApiProperty()
-  id!: number;
+  createdAt!: Date;
 
   @ApiProperty()
-  name!: string;
-
-  @ApiProperty({ required: false, nullable: true })
-  profileImage?: string | null;
+  duration!: number;
 }
 
 export class ReviewItemDto {
@@ -43,6 +38,10 @@ export class ReviewItemDto {
   @Type(() => ScenarioDto)
   scenario!: ScenarioDto;
 
+  @ApiProperty({ type: () => ScenarioSessionDto })
+  @Type(() => ScenarioSessionDto)
+  scenarioSession!: ScenarioSessionDto;
+
   @ApiProperty()
   commentsCount!: number;
 
@@ -50,7 +49,7 @@ export class ReviewItemDto {
     description: 'Map of reactionCode -> count',
     type: 'object',
     additionalProperties: { type: 'number' },
-    example: { like: 10, love: 2 },
+    example: { '1f44d': 10, '1f389': 2 },
   })
   reactions!: Record<string, number>;
 

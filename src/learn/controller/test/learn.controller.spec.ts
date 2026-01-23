@@ -28,6 +28,7 @@ import {
   GenderIdentity,
   SexualOrientation,
 } from '../../enum/gender.enum';
+import { ReviewStatus } from 'src/review/type/review.type';
 
 describe('LearnController', () => {
   let controller: LearnController;
@@ -52,7 +53,6 @@ describe('LearnController', () => {
     prompt: 'You are a counselor',
     isGlobal: false,
     metadata: {
-      agentGoal: 'Help the client',
       name: 'Test Client',
       age: 30,
       voiceId: 'voice-123',
@@ -98,8 +98,6 @@ describe('LearnController', () => {
         coverImageUrl: 'https://example.com/new-cover.jpg',
         status: ScenarioStatus.ACTIVE,
         prompt: 'Test prompt',
-        agentGoal: 'Help client',
-        lifeHistory: 'Test life history',
         name: 'Test Name',
         voiceId: 'voice-123',
         age: 25,
@@ -109,11 +107,7 @@ describe('LearnController', () => {
         currentLocation: 'New York',
         profession: 'Engineer',
         context: 'Test context',
-        sessionBehaviorGuidelines: 'Guidelines',
-        coreMemories: 'Memories',
         personality: 'Friendly',
-        startingState: 'Anxious',
-        emotionalNeeds: 'Support',
         tone: 'Professional',
         openingStatements: ['Hello', 'Welcome'],
         isGlobal: false,
@@ -599,7 +593,12 @@ describe('LearnController', () => {
   describe('getScenarioSession', () => {
     it('should return a scenario session by id', async () => {
       const sessionId = 'session-123';
-      const mockSession = { ...mockScenarioSessionResponse, hasFeedback: true };
+      const mockSession = {
+        ...mockScenarioSessionResponse,
+        hasFeedback: true,
+        reviewId: 'review-id',
+        reviewStatus: ReviewStatus.HIDDEN,
+      };
       scenarioSessionService.getScenarioSession.mockResolvedValue(mockSession);
 
       const result = await controller.getScenarioSession(

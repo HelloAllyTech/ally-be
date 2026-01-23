@@ -124,3 +124,61 @@ export class MarkBadgeViewedResponseDto {
   })
   viewedStatus!: BadgeViewedStatus;
 }
+
+import { BadgeStatus, BadgeVisibilityType } from '../constants/badge.constants';
+
+export class AdminBadgeDto {
+  @ApiProperty({ description: 'Badge ID' })
+  id!: string;
+
+  @ApiProperty({ description: 'Unique badge code' })
+  code!: string;
+
+  @ApiProperty({ description: 'Badge name' })
+  name!: string;
+
+  @ApiProperty({ description: 'Badge description', required: false })
+  description?: string;
+
+  @ApiProperty({ description: 'Badge image URL', required: false })
+  imageUrl?: string;
+
+  @ApiProperty({ enum: BadgeStatus, description: 'Badge status' })
+  status!: BadgeStatus;
+
+  @ApiProperty({
+    enum: BadgeVisibilityType,
+    description: 'Badge visibility type',
+  })
+  visibilityType!: BadgeVisibilityType;
+
+  @ApiProperty({ enum: BadgeCategory, description: 'Badge category' })
+  category!: BadgeCategory;
+
+  @ApiProperty({
+    type: BadgeAchievementParamsDto,
+    description: 'Achievement parameters',
+    required: false,
+  })
+  achievementParams?: BadgeAchievementParamsDto;
+
+  @ApiProperty({ description: 'Date when the badge was created' })
+  createdAt!: Date;
+
+  @ApiProperty({ description: 'Date when the badge was last updated' })
+  updatedAt!: Date;
+}
+
+export class AdminBadgeListResponseDto {
+  @ApiProperty({
+    type: [AdminBadgeDto],
+    description: 'List of all badges',
+  })
+  data!: AdminBadgeDto[];
+
+  @ApiProperty({
+    type: Number,
+    description: 'Total count of badges',
+  })
+  count!: number;
+}
