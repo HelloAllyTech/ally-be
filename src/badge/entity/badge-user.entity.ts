@@ -9,8 +9,9 @@ import { BadgeViewedStatus } from '../constants/badge.constants';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 
 @Entity('badge_users')
-@Index('uq_badge_users_user_id_badge_id_idx', ['userId', 'badgeId'], {
+@Index('uq_badge_user_user_id_badge_id_idx', ['userId', 'badgeId'], {
   unique: true,
+  where: '"deletedAt" IS NULL',
 })
 export class BadgeUser extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
