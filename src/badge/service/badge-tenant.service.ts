@@ -10,7 +10,6 @@ import { BadgeTenant } from '../entity/badge-tenant.entity';
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { Badge } from '../entity/badge.entity';
 import { BadgeStatus, BadgeVisibilityType } from '../constants/badge.constants';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class BadgeTenantService {
@@ -22,7 +21,6 @@ export class BadgeTenantService {
     private readonly tenantsRepository: TenantsRepository,
     @InjectRepository(Badge)
     private readonly badgeRepository: Repository<Badge>,
-    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async addBadgeToTenants(
@@ -69,17 +67,6 @@ export class BadgeTenantService {
     }
 
     return true;
-  }
-
-  async removeBadgeFromTenant(
-    badgeId: string,
-    tenantId: string,
-  ): Promise<void> {
-    await this.badgeTenantRepository.softDelete({ badgeId, tenantId });
-  }
-
-  async removeBadgeFromAllTenants(badgeId: string): Promise<void> {
-    await this.badgeTenantRepository.softDelete({ badgeId });
   }
 
   async addPublicBadgesToTenant(tenantId: string): Promise<boolean> {
@@ -141,5 +128,60 @@ export class BadgeTenantService {
       );
       return [];
     }
+  }
+
+  async getTenantIdsForBadge(badgeId: string): Promise<string[]> {
+    const badgeTenants = await this.badgeTenantRepository.find({
+      where: { badgeId },
+    });
+    return badgeTenants.map((badgeTenant) => badgeTenant.tenantId);
+  }
+
+  async removeBadgeFromTenants(
+    badgeId: string,
+    tenantIds: string[],
+  ): Promise<void> {
+    if (tenantIds.length === 0) {
+      return;
+    }
+    await this.badgeTenantRepository.softDelete({
+      badgeId,
+      tenantId: In(tenantIds),
+    });
+    this.logger.log(
+      `Badge ${badgeId} removed from tenants: ${tenantIds.join(', ')}`,
+    );
+  }
+
+  async updateBadgeTenants(
+    badgeId: string,
+    tenantIds: string[],
+  ): Promise<string[]> {
+    if (tenantIds.length === 0) {
+      return [];
+    }
+
+    // Check which tenants already have this badge
+    const existingMappings = await this.badgeTenantRepository.find({
+      where: { badgeId, tenantId: In(tenantIds) },
+    });
+
+    const existingTenantIds = new Set(existingMappings.map((m) => m.tenantId));
+    const newTenantIds = tenantIds.filter((id) => !existingTenantIds.has(id));
+
+    if (newTenantIds.length > 0) {
+      const badgeTenants = newTenantIds.map((tenantId) =>
+        this.badgeTenantRepository.create({
+          badgeId,
+          tenantId,
+        }),
+      );
+      await this.badgeTenantRepository.save(badgeTenants);
+      this.logger.log(
+        `Badge ${badgeId} added to new tenants: ${newTenantIds.join(', ')}`,
+      );
+    }
+
+    return newTenantIds;
   }
 }
