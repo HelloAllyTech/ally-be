@@ -4,6 +4,7 @@ import { UserDailyScores } from '../entity/user-daily-scores.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { LeaderboardEntryDto } from '../dto/leaderboard.dto';
 import { LeaderboardResult, UserRankResult } from '../type/leaderboard.type';
+import { scorePoints } from '../constant/community.constant';
 
 @Injectable()
 export class UserDailyScoreRepository extends Repository<UserDailyScores> {
@@ -11,6 +12,11 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     super(UserDailyScores, dataSource.createEntityManager());
   }
 
+  /**
+   * Upserts daily score for play time.
+   * Awards: minutesToAdd points + 1 active day bonus (when minutesPlayed reaches >= 1)
+   * Active day bonus is awarded only when cumulative minutesPlayed crosses the 1 minute threshold
+   */
   async upsertDailyScore(
     userId: number,
     tenantId: string,
@@ -22,14 +28,73 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     await this.query(
       `
       INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
-      VALUES (uuid_generate_v4(), $1, $2, $3, $4, $4 + 1, NOW(), NOW())
+      VALUES (
+        uuid_generate_v4(), $1, $2, $3, $4, 
+        $4 + CASE WHEN $4 >= 1 THEN 1 ELSE 0 END, 
+        NOW(), NOW()
+      )
       ON CONFLICT ("userId", "tenant_id", "date")
       DO UPDATE SET
         "minutesPlayed" = user_daily_scores."minutesPlayed" + $4,
-        "totalScore" = user_daily_scores."minutesPlayed" + $4 + 1,
+        "totalScore" = user_daily_scores."totalScore" + $4 + 
+          CASE 
+            WHEN user_daily_scores."minutesPlayed" < 1 
+             AND user_daily_scores."minutesPlayed" + $4 >= 1 
+            THEN ${scorePoints.ACTIVE_DAY_BONUS} 
+            ELSE 0 
+          END,
         "updatedAt" = NOW()
       `,
       [userId, tenantId, normalizedDate, minutesToAdd],
+    );
+  }
+
+  /**
+   * Increments totalScore by a specified amount (for reactions/comments).
+   * Creates a new row if one doesn't exist for today (without active day bonus).
+   */
+  async incrementTotalScore(
+    userId: number,
+    tenantId: string,
+    amount: number,
+  ): Promise<void> {
+    const normalizedDate = new Date(new Date().toISOString().split('T')[0]);
+
+    await this.query(
+      `
+      INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
+      VALUES (uuid_generate_v4(), $1, $2, $3, 0, $4, NOW(), NOW())
+      ON CONFLICT ("userId", "tenant_id", "date")
+      DO UPDATE SET
+        "totalScore" = user_daily_scores."totalScore" + $4,
+        "updatedAt" = NOW()
+      `,
+      [userId, tenantId, normalizedDate, amount],
+    );
+  }
+
+  /**
+   * Decrements totalScore by a specified amount.
+   * Used when removing reactions/comments - decrements from today's score.
+   * Creates a new row if one doesn't exist for today.
+   */
+  async decrementTotalScore(
+    userId: number,
+    tenantId: string,
+    amount: number,
+  ): Promise<void> {
+    const normalizedDate = new Date().toISOString().split('T')[0];
+
+    await this.query(
+      `
+      INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
+      VALUES (uuid_generate_v4(), $1, $2, $3, 0, -$4, NOW(), NOW())
+      ON CONFLICT ("userId", "tenant_id", "date")
+      DO UPDATE SET
+        "totalScore" = user_daily_scores."totalScore" - $4,
+        "updatedAt" = NOW()
+      `,
+      [userId, tenantId, normalizedDate, amount],
     );
   }
 
@@ -70,6 +135,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
         rs.rank,
         u.name,
         u."profileImageUrl",
+        u.status,
         COALESCE(bu.badge_count, 0) as "badgeCount"
       FROM ranked_scores rs
       JOIN users u ON u.id = rs."userId"
@@ -100,6 +166,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     const data: LeaderboardEntryDto[] = leaderboardData.map((row: any) => ({
       userId: row.userId,
       name: row.name,
+      status: row.status,
       profileImageUrl: row.profileImageUrl || undefined,
       rank: hideRankInCommunity ? undefined : parseInt(row.rank) || 0,
       minutesPlayed: parseInt(row.minutesPlayed) || 0,
@@ -143,6 +210,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
         rs.rank,
         u.name,
         u."profileImageUrl",
+        u.status,
         COALESCE(bu.badge_count, 0) as "badgeCount"
       FROM ranked_scores rs
       JOIN users u ON u.id = rs."userId"
@@ -165,6 +233,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       userId: row.userId,
       name: row.name,
       profileImageUrl: row.profileImageUrl || undefined,
+      status: row.status,
       rank: hideRankInCommunity ? undefined : parseInt(row.rank) || 0,
       minutesPlayed: parseInt(row.minutesPlayed) || 0,
       badgeCount: parseInt(row.badgeCount) || 0,

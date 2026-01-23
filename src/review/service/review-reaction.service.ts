@@ -21,6 +21,7 @@ import { ReviewRepository } from '../repository/review.repository';
 import { UserService } from 'src/user/service/user.service';
 import { GetReviewReactionCountResponseDto } from '../dto/get-review-reaction-and-count-response.dto';
 import { formatCreatedUserDetails } from '../util/review.util';
+import { CommunitySharedService } from 'src/community/service/community-shared.service';
 
 @Injectable()
 export class ReviewReactionService {
@@ -32,6 +33,7 @@ export class ReviewReactionService {
     private readonly reviewReactionRepository: ReviewReactionRepository,
     private readonly permissionValidator: PermissionValidator,
     private readonly userService: UserService,
+    private readonly communitySharedService: CommunitySharedService,
   ) {}
 
   async toggleReviewReactions(
@@ -95,6 +97,11 @@ export class ReviewReactionService {
         reaction: toggleReviewReactionDto.reaction,
       });
       await this.reviewReactionRepository.save(reviewReaction);
+
+      if (review.createdBy !== userId) {
+        this.communitySharedService.incrementReactionScore(userId, tenantId);
+      }
+
       return {
         success: true,
       };
@@ -117,6 +124,11 @@ export class ReviewReactionService {
       }
 
       await this.reviewReactionRepository.softDelete({ id: reviewReaction.id });
+
+      if (review.createdBy !== userId) {
+        this.communitySharedService.decrementReactionScore(userId, tenantId);
+      }
+
       return { success: true };
     }
 

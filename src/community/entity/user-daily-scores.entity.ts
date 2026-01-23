@@ -18,9 +18,9 @@ export class UserDailyScores extends BaseEntity {
   @Column({ type: 'date' })
   date!: Date;
 
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0.0 })
   minutesPlayed!: number;
 
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0.0 })
   totalScore!: number;
 }

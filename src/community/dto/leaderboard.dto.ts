@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsOptional } from 'class-validator';
 import { LeaderboardSortBy, LeaderboardView } from '../type/leaderboard.type';
 import { SortOrder } from 'src/common/type/common.type';
+import { UserStatus } from 'src/user/constants/user-status.constants';
 
 export class GetLeaderboardQueryDto {
   @ApiProperty({
@@ -63,6 +64,10 @@ export class LeaderboardEntryDto {
   @ApiProperty({ description: 'Profile image URL', nullable: true })
   profileImageUrl?: string;
 
+  @ApiProperty({ description: 'User status' })
+  @IsEnum(UserStatus)
+  status!: UserStatus;
+
   @ApiProperty({ description: 'Rank in the leaderboard' })
   rank?: number;
 
@@ -85,9 +90,15 @@ export class LeaderboardResponseDto {
 
   @ApiProperty({ description: 'Total number of users in the leaderboard' })
   totalCount!: number;
+
+  @ApiProperty({ description: 'Hide rank in community' })
+  hideRankInCommunity!: boolean;
 }
 
 export class MyRankResponseDto extends LeaderboardEntryDto {
   @ApiProperty({ description: 'Time window for the rank' })
   window!: LeaderboardView;
+
+  @ApiProperty({ description: 'Hide rank in community' })
+  hideRankInCommunity!: boolean;
 }

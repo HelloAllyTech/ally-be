@@ -15,6 +15,7 @@ import { ToggleReviewCommentReactionDto } from '../dto/toggle-review-comment-rea
 import { ReviewCommentRepository } from '../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
+import { CommunitySharedService } from 'src/community/service/community-shared.service';
 
 @Injectable()
 export class ReviewCommentReactionService {
@@ -27,6 +28,7 @@ export class ReviewCommentReactionService {
     private readonly reviewCommentRepository: ReviewCommentRepository,
     private readonly permissionValidator: PermissionValidator,
     private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
+    private readonly communitySharedService: CommunitySharedService,
   ) {}
 
   async toggleReviewCommentReaction(
@@ -106,6 +108,11 @@ export class ReviewCommentReactionService {
         },
       );
       await this.reviewCommentReactionRepository.save(reviewCommentReaction);
+
+      if (review.createdBy !== userId) {
+        this.communitySharedService.incrementReactionScore(userId, tenantId);
+      }
+
       return {
         success: true,
       };
@@ -132,6 +139,10 @@ export class ReviewCommentReactionService {
       await this.reviewCommentReactionRepository.softDelete({
         id: reviewReaction.id,
       });
+
+      if (review.createdBy !== userId) {
+        this.communitySharedService.decrementReactionScore(userId, tenantId);
+      }
 
       return { success: true };
     }

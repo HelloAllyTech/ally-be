@@ -13,6 +13,7 @@ import { ReviewStatus } from '../../type/review.type';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ReviewComment } from '../../entity/review-comment.entity';
 import { ReviewThread } from '../../entity/review-thread.entity';
+import { CommunitySharedService } from 'src/community/service/community-shared.service';
 
 jest.mock('src/common/execution/execution-manager');
 
@@ -124,6 +125,10 @@ describe('ReviewCommentService', () => {
         },
         {
           provide: UserService,
+          useValue: {},
+        },
+        {
+          provide: CommunitySharedService,
           useValue: {},
         },
       ],
