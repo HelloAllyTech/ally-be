@@ -11,6 +11,8 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
 
   async getScenarioVoices(
     searchName: string | undefined,
+    providers: string | undefined,
+    languageIds: string | undefined,
     options: Pagination,
   ): Promise<ScenarioVoices[]> {
     const query = this.createQueryBuilder('scenarioVoice');
@@ -23,6 +25,20 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
         .setParameters({
           searchName: `%${searchName}%`,
         });
+    }
+
+    if (providers) {
+      const providerList = providers.split(',');
+      query.andWhere('scenarioVoice.provider IN (:...providers)', {
+        providers: providerList,
+      });
+    }
+
+    if (languageIds) {
+      const languageIdList = languageIds.split(',').map((id) => Number(id));
+      query.andWhere('scenarioVoice.languageId IN (:...languageIds)', {
+        languageIds: languageIdList,
+      });
     }
     this.applySorting(query, options);
     this.applyPagination(query, options);

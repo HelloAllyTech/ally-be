@@ -606,6 +606,18 @@ export class LearnController {
     type: String,
     description: 'Search by voice name',
   })
+  @ApiQuery({
+    name: 'providers',
+    required: false,
+    type: String,
+    description: 'Filter by providers (comma-separated)',
+  })
+  @ApiQuery({
+    name: 'languageIds',
+    required: false,
+    type: String,
+    description: 'Filter by languageIds (comma-separated)',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_VOICES])
   @Get('scenario-voices')
   async getScenarioVoices(
@@ -614,13 +626,20 @@ export class LearnController {
     @Query('sortBy') sortBy?: string,
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('searchName') searchName?: string,
+    @Query('providers') providers?: string,
+    @Query('languageIds') languageIds?: string,
   ) {
-    return this.scenarioService.getScenarioVoices(searchName, {
-      limit,
-      offset,
-      sortBy,
-      order,
-    });
+    return this.scenarioService.getScenarioVoices(
+      searchName,
+      providers,
+      languageIds,
+      {
+        limit,
+        offset,
+        sortBy,
+        order,
+      },
+    );
   }
 
   @ApiOperation({ summary: 'Create scenario voices' })
