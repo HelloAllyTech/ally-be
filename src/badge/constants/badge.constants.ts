@@ -1,4 +1,4 @@
-import { CreateBadgeDto } from '../dto/create-badge.dto';
+import { CreateBadgeDto } from '../dto/badge.dto';
 
 export enum BadgeStatus {
   DRAFT = 'DRAFT',

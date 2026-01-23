@@ -192,4 +192,26 @@ export class BadgeUserService {
       count,
     }));
   }
+
+  async removeBadgeUsersForTenants(
+    badgeId: string,
+    tenantIds: string[],
+  ): Promise<void> {
+    if (tenantIds.length === 0) {
+      return;
+    }
+
+    const badgeUserIds =
+      await this.badgeUserRepository.findBadgeUserIdsByTenants(
+        badgeId,
+        tenantIds,
+      );
+
+    if (badgeUserIds.length > 0) {
+      await this.badgeUserRepository.softDelete(badgeUserIds);
+      this.logger.log(
+        `Removed ${badgeUserIds.length} badge_user records for badge ${badgeId} from tenants: ${tenantIds.join(', ')}`,
+      );
+    }
+  }
 }
