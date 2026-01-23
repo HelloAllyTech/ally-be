@@ -5,6 +5,14 @@ import {
   BadgeViewedStatus,
 } from '../constants/badge.constants';
 
+export class BadgeAchievementParamsDto {
+  @ApiProperty({
+    description: 'Achievement count threshold',
+    example: 5,
+    required: false,
+  })
+  count?: number;
+}
 export class UserBadgeWithDetailsDto {
   @ApiProperty({ description: 'User badge assignment ID' })
   id!: string;
@@ -35,6 +43,15 @@ export class UserBadgeWithDetailsDto {
 
   @ApiProperty({ description: 'Badge image URL' })
   imageUrl?: string;
+
+  @ApiProperty({ enum: BadgeCategory, description: 'Badge category' })
+  category?: BadgeCategory;
+
+  @ApiProperty({
+    description: 'Achievement parameters',
+    required: false,
+  })
+  achievementParams?: BadgeAchievementParamsDto;
 }
 
 export class UserBadgeResponseDto {
@@ -52,15 +69,6 @@ export class UserBadgeCountResponseDto {
     example: 5,
   })
   count!: number;
-}
-
-export class BadgeAchievementParamsDto {
-  @ApiProperty({
-    description: 'Achievement count threshold',
-    example: 5,
-    required: false,
-  })
-  count?: number;
 }
 
 export class UserAvailableBadgeDto {

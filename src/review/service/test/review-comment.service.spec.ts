@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DataSource } from 'typeorm';
 import { ReviewCommentService } from '../review-comment.service';
 import { ReviewCommentRepository } from '../../repository/review-comment.repository';
@@ -130,6 +131,12 @@ describe('ReviewCommentService', () => {
         {
           provide: CommunitySharedService,
           useValue: {},
+        },
+        {
+          provide: EventEmitter2,
+          useValue: {
+            emit: jest.fn(),
+          },
         },
       ],
     }).compile();
