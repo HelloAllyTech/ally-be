@@ -1220,9 +1220,16 @@ export class ScenarioService {
 
   async getScenarioVoices(
     searchName: string | undefined,
+    providers: string | undefined,
+    languageIds: string | undefined,
     options: Pagination,
   ): Promise<ScenarioVoices[]> {
-    return this.scenarioVoiceRepository.getScenarioVoices(searchName, options);
+    return this.scenarioVoiceRepository.getScenarioVoices(
+      searchName,
+      providers,
+      languageIds,
+      options,
+    );
   }
 
   async getScenarioVoice(id: string): Promise<ScenarioVoices> {

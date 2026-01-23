@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -27,7 +28,8 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import {
   CreateBadgeDto,
   CreateBadgeResponseDto,
-} from '../dto/create-badge.dto';
+  UpdateBadgeDto,
+} from '../dto/badge.dto';
 import {
   UserBadgeResponseDto,
   UserBadgeCountResponseDto,
@@ -184,5 +186,45 @@ export class BadgeController {
     return {
       message: 'Badge added to tenants successfully',
     };
+  }
+
+  @ApiOperation({ summary: 'Update a badge' })
+  @ApiParam({
+    name: 'badgeId',
+    type: String,
+    description: 'The ID of the badge to update',
+  })
+  @ApiBody({ type: UpdateBadgeDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Badge updated successfully',
+    type: Boolean,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @Patch(':badgeId')
+  async updateBadge(
+    @Param('badgeId', ParseUUIDPipe) badgeId: string,
+    @Body() updateBadgeDto: UpdateBadgeDto,
+  ): Promise<boolean> {
+    return this.badgeService.updateBadge(badgeId, updateBadgeDto);
+  }
+
+  @ApiOperation({ summary: 'Delete a badge' })
+  @ApiParam({
+    name: 'badgeId',
+    type: String,
+    description: 'The ID of the badge to delete',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Badge deleted successfully',
+    type: Boolean,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @Delete(':badgeId')
+  async deleteBadge(
+    @Param('badgeId', ParseUUIDPipe) badgeId: string,
+  ): Promise<boolean> {
+    return this.badgeService.deleteBadge(badgeId);
   }
 }

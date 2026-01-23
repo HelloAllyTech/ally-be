@@ -61,4 +61,7 @@ export class SessionEvents extends BaseWithoutTenantEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   detectionConfig?: DetectionConfigDto;
+
+  @Column({ type: 'text', array: true, nullable: true })
+  tags?: string[];
 }

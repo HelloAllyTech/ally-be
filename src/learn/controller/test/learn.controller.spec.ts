@@ -782,6 +782,8 @@ describe('LearnController', () => {
       expect(result).toEqual(mockVoices);
       expect(scenarioService.getScenarioVoices).toHaveBeenCalledWith(
         undefined,
+        undefined,
+        undefined,
         {
           limit: undefined,
           offset: undefined,
@@ -805,6 +807,8 @@ describe('LearnController', () => {
       expect(result).toEqual(mockVoices);
       expect(scenarioService.getScenarioVoices).toHaveBeenCalledWith(
         undefined,
+        undefined,
+        undefined,
         {
           limit: 10,
           offset: 0,
@@ -827,15 +831,74 @@ describe('LearnController', () => {
       );
 
       expect(result).toEqual(mockVoices);
-      expect(scenarioService.getScenarioVoices).toHaveBeenCalledWith('priya', {
-        limit: 10,
-        offset: 0,
-        sortBy: undefined,
-        order: SortOrder.ASC,
-      });
+      expect(scenarioService.getScenarioVoices).toHaveBeenCalledWith(
+        'priya',
+        undefined,
+        undefined,
+        {
+          limit: 10,
+          offset: 0,
+          sortBy: undefined,
+          order: SortOrder.ASC,
+        },
+      );
+    });
+
+    it('should return scenario voices with providers filter', async () => {
+      const mockVoices: any[] = [];
+      scenarioService.getScenarioVoices.mockResolvedValue(mockVoices);
+
+      const result = await controller.getScenarioVoices(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'google,azure',
+      );
+
+      expect(result).toEqual(mockVoices);
+      expect(scenarioService.getScenarioVoices).toHaveBeenCalledWith(
+        undefined,
+        'google,azure',
+        undefined,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: undefined,
+          order: SortOrder.ASC,
+        },
+      );
+    });
+
+    it('should return scenario voices with languageIds filter', async () => {
+      const mockVoices: any[] = [];
+      scenarioService.getScenarioVoices.mockResolvedValue(mockVoices);
+
+      const result = await controller.getScenarioVoices(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        '1,2',
+      );
+
+      expect(result).toEqual(mockVoices);
+      expect(scenarioService.getScenarioVoices).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        '1,2',
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: undefined,
+          order: SortOrder.ASC,
+        },
+      );
     });
   });
-
   describe('createScenarioVoices', () => {
     it('should create scenario voices', async () => {
       const createVoicesDto = {
