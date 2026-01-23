@@ -318,10 +318,11 @@ export class ScenarioSessionService {
             (event: SessionEvents & { checklistVisibilityStatus?: boolean }) =>
               event?.checklistVisibilityStatus,
           )
-          .map(({ name, id, score }) => ({
+          .map(({ name, id, score, message }) => ({
             name,
             id,
             score,
+            message,
           }));
       }
 
@@ -1030,10 +1031,11 @@ export class ScenarioSessionService {
           (event: SessionEvents & { checklistVisibilityStatus?: boolean }) =>
             event?.checklistVisibilityStatus,
         )
-        .map(({ name, id, score }) => ({
+        .map(({ name, id, score, message }) => ({
           name,
           id,
           score,
+          message,
         }));
     }
 
