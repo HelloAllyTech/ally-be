@@ -120,7 +120,7 @@ export class ReviewService {
 
     if (result.reviews.length === 0) return { data: [], count: result.count };
 
-    const reviewIds = result.reviews.map((r: Reviews) => r.id);
+    const reviewIds = result.reviews.map((review: Reviews) => review.id);
 
     const [reactions, comments] = await Promise.all([
       this.reviewReactionRepository.getReactionsByReviewIds(reviewIds),
@@ -218,20 +218,24 @@ export class ReviewService {
     const data = result.reviews.map((review: Reviews) => ({
       id: review.id,
       createdAt: review.createdAt,
-      scenario: {
-        title: review.scenario.title,
-        createdAt: review.scenario.createdAt,
-        description: review.scenario.description,
-        coverImageUrl: review.scenario.coverImageUrl,
-        coverVideoUrl: review.scenario.coverVideoUrl,
-      },
-      scenarioSession: {
-        createdAt: review.scenarioSession.createdAt,
-        duration: getSessionDurationInSeconds(
-          review.scenarioSession.startedAt!,
-          review.scenarioSession.endedAt!,
-        ),
-      },
+      scenario: review.scenario
+        ? {
+            title: review.scenario.title,
+            createdAt: review.scenario.createdAt,
+            description: review.scenario.description,
+            coverImageUrl: review.scenario.coverImageUrl,
+            coverVideoUrl: review.scenario.coverVideoUrl,
+          }
+        : {},
+      scenarioSession: review.scenarioSession
+        ? {
+            createdAt: review.scenarioSession.createdAt,
+            duration: getSessionDurationInSeconds(
+              review.scenarioSession.startedAt!,
+              review.scenarioSession.endedAt!,
+            ),
+          }
+        : {},
       commentsCount: commentsByReviewId[review.id] ?? 0,
       reactions: reactionsByReviewId[review.id] ?? {},
       createdBy: formatCreatedUserDetails(review.createdBy),
