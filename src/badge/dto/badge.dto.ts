@@ -12,7 +12,6 @@ import {
   IsNumber,
   ValidateNested,
   IsArray,
-  ArrayNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -120,7 +119,7 @@ export class CreateBadgeDto {
     type: [Number],
   })
   @IsArray()
-  @ArrayNotEmpty()
+  @IsOptional()
   @IsNumber({}, { each: true })
   groupIds?: number[];
 }
@@ -131,6 +130,106 @@ export class CreateBadgeResponseDto {
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
   id!: string;
+}
+
+export class UpdateBadgeDto {
+  @ApiProperty({
+    description: 'Display name of the badge',
+    example: 'First Simulation',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @ApiProperty({
+    description: 'Code of the badge',
+    example: 'first-simulation',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  code?: string;
+
+  @ApiProperty({
+    description: 'Detailed description of the badge',
+    example: 'Awarded for completing your first simulation session',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @ApiProperty({
+    description: 'URL to the badge image',
+    example: 'https://example.com/badges/first-simulation.png',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  imageUrl?: string;
+
+  @ApiProperty({
+    description: 'Status of the badge (can only change from DRAFT to ACTIVE)',
+    enum: BadgeStatus,
+    example: BadgeStatus.ACTIVE,
+    required: false,
+  })
+  @IsEnum(BadgeStatus)
+  @IsOptional()
+  status?: BadgeStatus;
+
+  @ApiProperty({
+    description: 'Visibility type of the badge',
+    enum: BadgeVisibilityType,
+    example: BadgeVisibilityType.PUBLIC,
+    required: false,
+  })
+  @IsEnum(BadgeVisibilityType)
+  @IsOptional()
+  visibilityType?: BadgeVisibilityType;
+
+  @ApiProperty({
+    description: 'Category of the badge',
+    enum: BadgeCategory,
+    example: BadgeCategory.SIMULATION_MINUTES,
+  })
+  @IsEnum(BadgeCategory)
+  @IsOptional()
+  category?: BadgeCategory;
+
+  @ApiProperty({
+    description: 'Tenant IDs to assign this badge to (used for private badges)',
+    type: [String],
+    example: ['123e4567-e89b-12d3-a456-426614174000'],
+    required: false,
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  tenantIds?: string[];
+
+  @ApiProperty({
+    description:
+      'The achievement parameters for earning this badge (cannot be changed if badge is active)',
+    type: BadgeAchievementParamsDto,
+    required: false,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BadgeAchievementParamsDto)
+  achievementParams?: BadgeAchievementParamsDto;
+
+  @ApiProperty({
+    description: 'Array of group IDs (roles) to assign',
+    example: [1, 2],
+    type: [Number],
+    required: false,
+  })
+  @IsArray()
+  @IsNumber({}, { each: true })
+  @IsOptional()
+  groupIds?: number[];
 }
 
 export class BadgeDto {}

@@ -9,8 +9,9 @@ import {
 } from 'typeorm';
 
 @Entity('badge_tenants')
-@Index('uq_badge_tenants_badge_id_tenant_id_idx', ['badgeId', 'tenantId'], {
+@Index('uq_badge_tenant_badge_id_tenant_id_idx', ['badgeId', 'tenantId'], {
   unique: true,
+  where: '"deletedAt" IS NULL',
 })
 export class BadgeTenant extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
