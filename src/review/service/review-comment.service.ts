@@ -318,12 +318,26 @@ export class ReviewCommentService {
       ...new Set(result.comments.map((comment) => comment.c_createdBy)),
     ];
 
-    const [reactions, users] = await Promise.all([
+    const [reactions, users, myReactions] = await Promise.all([
       this.reviewCommentReactionRepository.getReactionAndCountByCommentIds(
         commentIds,
       ),
       this.userService.getUsersByIds(creatorIds),
+      this.reviewCommentReactionRepository.find({
+        where: {
+          reviewCommentId: In(commentIds),
+          createdBy: userId,
+        },
+      }),
     ]);
+
+    const myReactionsByCommentId = myReactions.reduce(
+      (acc, reaction) => {
+        acc[reaction.reviewCommentId] = reaction.reaction;
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
 
     const userMap = new Map(
       users.map((user) => [user.id, formatCreatedUserDetails(user)]),
@@ -348,6 +362,7 @@ export class ReviewCommentService {
         content: comment.c_content,
         createdAt: comment.c_createdAt,
         createdBy: user,
+        myReaction: myReactionsByCommentId[comment.c_id] || null,
         reactions: reactionsByComment[comment.c_id] || {},
         replyCount: parseInt(comment.reply_count) || 0,
         hidden: comment.c_hidden || false,
@@ -430,12 +445,26 @@ export class ReviewCommentService {
     const replyIds = replies.map((reply) => reply.id);
     const creatorIds = [...new Set(replies.map((reply) => reply.createdBy))];
 
-    const [reactions, users] = await Promise.all([
+    const [reactions, users, myReactions] = await Promise.all([
       this.reviewCommentReactionRepository.getReactionAndCountByCommentIds(
         replyIds,
       ),
       this.userService.getUsersByIds(creatorIds),
+      this.reviewCommentReactionRepository.find({
+        where: {
+          reviewCommentId: In(replyIds),
+          createdBy: userId,
+        },
+      }),
     ]);
+
+    const myReactionsByReply = myReactions.reduce(
+      (acc, reaction) => {
+        acc[reaction.reviewCommentId] = reaction.reaction;
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
 
     const userMap = new Map(
       users.map((user) => [user.id, formatCreatedUserDetails(user)]),
@@ -460,6 +489,7 @@ export class ReviewCommentService {
         createdAt: reply.createdAt,
         createdBy: user!,
         reactions: reactionsByReply[reply.id] || {},
+        myReaction: myReactionsByReply[reply.id] || null,
         hidden: reply.hidden || false,
       };
     });

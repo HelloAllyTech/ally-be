@@ -348,12 +348,26 @@ export class ReviewService {
       ]),
     ];
 
-    const [reactions, users] = await Promise.all([
+    const [reactions, users, myReactions] = await Promise.all([
       this.reviewCommentReactionRepository.getReactionAndCountByCommentIds(
         commentIds,
       ),
       this.userService.getUsersByIds(userIds),
+      this.reviewCommentReactionRepository.find({
+        where: {
+          reviewCommentId: In(commentIds),
+          createdBy: userId,
+        },
+      }),
     ]);
+
+    const myReactionsByCommentId = myReactions.reduce(
+      (acc, reaction) => {
+        acc[reaction.reviewCommentId] = reaction.reaction;
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
 
     const reactionsByComment = reactions.reduce(
       (acc, { commentId, reaction, count }) => {
@@ -383,6 +397,7 @@ export class ReviewService {
           createdAt: comment.c_createdAt,
           createdBy: user || {},
           reactions: reactionsByComment[comment.c_id] || {},
+          myReaction: myReactionsByCommentId[comment.c_id] || null,
           hidden: comment.c_hidden,
           replyCount: parseInt(comment.reply_count, 10) || 0,
         });
