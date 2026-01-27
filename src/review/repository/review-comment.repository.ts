@@ -4,6 +4,7 @@ import { ReviewComment } from '../entity/review-comment.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { ReviewThread } from '../entity/review-thread.entity';
 import { Review } from '../entity/review.entity';
+import { CommentCountByThread } from '../type/review-thread.type';
 
 @Injectable()
 export class ReviewCommentRepository extends Repository<ReviewComment> {
@@ -204,5 +205,22 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
     }
 
     return query.getRawMany();
+  }
+
+  async getCommentCountsByThreadIds(
+    threadIds: string[],
+    isHidden: boolean,
+  ): Promise<CommentCountByThread[]> {
+    const query = this.createQueryBuilder('c')
+      .select('c.reviewThreadId', 'reviewThreadId')
+      .addSelect('COUNT(*)', 'commentCount')
+      .where('c.reviewThreadId IN (:...threadIds)', { threadIds })
+      .andWhere('c.parentCommentId IS NULL')
+      .andWhere('c.deletedAt IS NULL');
+
+    if (!isHidden) {
+      query.andWhere('c.hidden = :isHidden', { isHidden });
+    }
+    return query.groupBy('c.reviewThreadId').getRawMany();
   }
 }

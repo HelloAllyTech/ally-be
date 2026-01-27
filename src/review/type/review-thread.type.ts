@@ -8,3 +8,8 @@ export interface ReviewCommentCount {
   reviewId: string;
   count: number;
 }
+
+export type CommentCountByThread = {
+  reviewThreadId: string;
+  commentCount: number;
+};
