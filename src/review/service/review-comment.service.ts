@@ -671,7 +671,7 @@ export class ReviewCommentService {
     // If it is a top-level comment, update the comment and its replies
     if (!comment.parentCommentId) {
       try {
-        await this.dataSource.transaction(async (entityManager) => {
+        return await this.dataSource.transaction(async (entityManager) => {
           const commentRepo = entityManager.getRepository(ReviewComment);
 
           // Update the comment itself
