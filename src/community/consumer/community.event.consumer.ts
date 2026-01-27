@@ -17,6 +17,7 @@ import {
   ScenarioSessionLeaderboardEvent,
   ScenarioSessionLeaderboardEndedEventParams,
 } from 'src/learn/type/scenario-session-leaderboard-event.type';
+import { DataSource, EntityManager } from 'typeorm';
 
 @Injectable()
 export class CommunityEventConsumer {
@@ -26,6 +27,7 @@ export class CommunityEventConsumer {
 
   constructor(
     private readonly userDailyScoreRepository: UserDailyScoreRepository,
+    private readonly dataSource: DataSource,
   ) {}
 
   @OnEvent(ReviewEvents.REVIEW_REACTION_ADDED, { async: true })
@@ -98,16 +100,57 @@ export class CommunityEventConsumer {
   async handleReviewCommentRemoved({
     review,
     comment,
+    commentReplies,
+    commentReactions,
+    commentReplyReactions,
   }: ReviewCommentRemovedEventParams): Promise<void> {
     if (review.createdBy === comment.createdBy) {
       return;
     }
 
     try {
-      await this.userDailyScoreRepository.decrementTotalScore(
-        comment.createdBy,
-        comment.tenantId,
-        scorePoints.COMMENT,
+      await this.dataSource.transaction(
+        async (entityManager: EntityManager) => {
+          await this.userDailyScoreRepository.decrementTotalScore(
+            comment.createdBy,
+            comment.tenantId,
+            scorePoints.COMMENT,
+            entityManager,
+          );
+
+          if (commentReplies && commentReplies?.length > 0) {
+            for (const reply of commentReplies) {
+              await this.userDailyScoreRepository.decrementTotalScore(
+                reply.createdBy,
+                reply.tenantId,
+                scorePoints.COMMENT,
+                entityManager,
+              );
+            }
+          }
+
+          if (commentReactions && commentReactions?.length > 0) {
+            for (const reaction of commentReactions) {
+              await this.userDailyScoreRepository.decrementTotalScore(
+                reaction.createdBy,
+                reaction.tenantId,
+                scorePoints.REACTION,
+                entityManager,
+              );
+            }
+          }
+
+          if (commentReplyReactions && commentReplyReactions?.length > 0) {
+            for (const reaction of commentReplyReactions) {
+              await this.userDailyScoreRepository.decrementTotalScore(
+                reaction.createdBy,
+                reaction.tenantId,
+                scorePoints.REACTION,
+                entityManager,
+              );
+            }
+          }
+        },
       );
     } catch (error) {
       this.logger.error(

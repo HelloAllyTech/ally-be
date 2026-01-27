@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { UserDailyScores } from '../entity/user-daily-scores.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { LeaderboardEntryDto } from '../dto/leaderboard.dto';
@@ -82,10 +82,14 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     userId: number,
     tenantId: string,
     amount: number,
+    em?: EntityManager,
   ): Promise<void> {
     const normalizedDate = new Date().toISOString().split('T')[0];
 
-    await this.query(
+    const userDailyScoreRepo = em
+      ? em.getRepository(UserDailyScores)
+      : this.dataSource.getRepository(UserDailyScores);
+    await userDailyScoreRepo.query(
       `
       INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
       VALUES (uuid_generate_v4(), $1, $2, $3, 0, -$4, NOW(), NOW())
