@@ -555,6 +555,7 @@ export class ReviewCommentService {
           this.communitySharedService.decrementCommentScore(userId, tenantId);
         }
 
+        this.emitCommentDeletedEvent(comment);
         return { success: true };
       } catch (error) {
         this.logger.error(`Failed to delete reply: ${error.message}`);
@@ -612,8 +613,47 @@ export class ReviewCommentService {
     if (reviewCreatedBy !== null && reviewCreatedBy !== userId) {
       this.communitySharedService.decrementCommentScore(userId, tenantId);
     }
+    this.emitCommentDeletedEvent(comment);
 
     return { success: true };
+  }
+
+  private async emitCommentDeletedEvent(comment: ReviewComment) {
+    if (!comment) return;
+    const commentThread = await this.reviewThreadRepository.findOne({
+      where: { id: comment.reviewThreadId },
+      withDeleted: true,
+    });
+    if (!commentThread) return;
+    const review = await this.reviewRepository.findOne({
+      where: { id: commentThread.reviewId },
+      withDeleted: true,
+    });
+    const commentReactions = await this.reviewCommentReactionRepository.find({
+      where: { reviewCommentId: comment.id },
+      withDeleted: true,
+    });
+    const commentReplies = await this.reviewCommentRepository.find({
+      where: { parentCommentId: comment.id },
+      withDeleted: true,
+    });
+    let commentReplyReactions: ReviewCommentReaction[] = [];
+    if (commentReplies.length > 0) {
+      commentReplyReactions = await this.reviewCommentReactionRepository.find({
+        where: {
+          reviewCommentId: In(commentReplies.map((reply) => reply.id)),
+        },
+        withDeleted: true,
+      });
+    }
+
+    this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_REMOVED, {
+      review,
+      comment,
+      commentReplies,
+      commentReactions,
+      commentReplyReactions,
+    });
   }
 
   async toggleCommentVisibility(
