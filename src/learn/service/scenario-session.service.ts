@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
@@ -69,6 +70,10 @@ import { ScenarioVoicesRepository } from '../repository/scenario-voices.reposito
 import { Languages } from 'src/language/entity/languages.entity';
 import { ReviewSharedService } from 'src/review/service/review-shared.service';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
+import {
+  ScenarioSessionLeaderboardEvent,
+  ScenarioSessionLeaderboardEndedEventParams,
+} from '../type/scenario-session-leaderboard-event.type';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -94,6 +99,7 @@ export class ScenarioSessionService {
     private sharedLanguageService: SharedLanguageService,
     private scenarioVoicesRepository: ScenarioVoicesRepository,
     private reviewSharedService: ReviewSharedService,
+    private eventEmitter: EventEmitter2,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -679,6 +685,20 @@ export class ScenarioSessionService {
     this.logger.info(
       `Updated scenario ${scenarioSessionId} eventStatus to COMPLETED`,
     );
+
+    // Emit event for community leaderboard score update
+    const durationMinutes = callDuration / (1000 * 60);
+    if (durationMinutes > 0) {
+      this.eventEmitter.emit(
+        ScenarioSessionLeaderboardEvent.SCENARIO_SESSION_ENDED,
+        {
+          userId: scenarioSession.counselorId,
+          tenantId: scenarioSession.tenantId,
+          date: endedAt,
+          durationMinutes,
+        } as ScenarioSessionLeaderboardEndedEventParams,
+      );
+    }
   }
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
