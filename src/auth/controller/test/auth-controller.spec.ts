@@ -11,8 +11,6 @@ import { UserRole } from 'src/common/constants/user.constants';
 
 const mockAuthService = {
   login: jest.fn(),
-  generateOtp: jest.fn(),
-  verifyOtp: jest.fn(),
   generateOtpV2: jest.fn(),
   verifyOtpV2: jest.fn(),
   refreshTokens: jest.fn(),
@@ -62,25 +60,6 @@ describe('AuthController', () => {
       password: 'pass',
     });
     expect(result).toEqual({ accessToken: 'token' });
-  });
-
-  it('should generate OTP', async () => {
-    mockAuthService.generateOtp.mockResolvedValue({ otp: '1234' });
-    const result = await controller.generateOtp({
-      phone: '123',
-      email: 'a@b.com',
-    });
-    expect(result).toEqual({ otp: '1234' });
-  });
-
-  it('should verify OTP', async () => {
-    mockAuthService.verifyOtp.mockResolvedValue({ verified: true });
-    const result = await controller.verifyOtp({
-      otp: '1234',
-      phone: '123',
-      email: 'a@b.com',
-    });
-    expect(result).toEqual({ verified: true });
   });
 
   it('should refresh tokens successfully', async () => {
