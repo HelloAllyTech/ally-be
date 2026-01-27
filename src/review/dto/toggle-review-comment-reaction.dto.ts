@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsEnum } from 'class-validator';
-import { ReactionAction } from '../type/review.type';
+import { ReactionAction } from '../type/review-reaction.type';
 
 export class ToggleReviewCommentReactionDto {
   @ApiProperty({
