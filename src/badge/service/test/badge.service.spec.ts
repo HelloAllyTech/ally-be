@@ -383,4 +383,103 @@ describe('BadgeService', () => {
       );
     });
   });
+
+  describe('createBadgesBatch', () => {
+    const createMockBadgeDto = (code: string) => ({
+      code,
+      name: `Badge ${code}`,
+      description: 'Test description',
+      imageUrl: 'https://example.com/badge.png',
+      category: 'SIMULATION_MINUTES',
+      achievementParams: { count: 10 },
+      groupIds: [1],
+      tenantIds: [],
+    });
+
+    it('should throw BadRequestException when duplicate codes in batch', async () => {
+      const batchDto = {
+        badges: [createMockBadgeDto('TEST-1'), createMockBadgeDto('TEST-1')],
+      };
+
+      await expect(service.createBadgesBatch(batchDto as any)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should validate all badges have mandatory fields for ACTIVE status', async () => {
+      const batchDto = {
+        badges: [
+          {
+            code: 'TEST-1',
+            name: 'Test Badge',
+            // missing mandatory fields for ACTIVE status
+          },
+        ],
+      };
+
+      await expect(service.createBadgesBatch(batchDto as any)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should validate tenant and group IDs once for all badges', async () => {
+      const batchDto = {
+        badges: [
+          { ...createMockBadgeDto('TEST-1'), groupIds: [1, 2] },
+          { ...createMockBadgeDto('TEST-2'), groupIds: [2, 3] },
+        ],
+      };
+
+      // Return only 2 groups when 3 unique are requested (1, 2, 3)
+      mockGroupRepository.getAll.mockResolvedValue([
+        { id: 1 },
+        { id: 2 },
+      ] as any);
+
+      await expect(service.createBadgesBatch(batchDto as any)).rejects.toThrow(
+        NotFoundException,
+      );
+
+      // Should call getAll once with all unique group IDs
+      expect(mockGroupRepository.getAll).toHaveBeenCalledTimes(1);
+    });
+
+    it('should create all badges in a single transaction', async () => {
+      const batchDto = {
+        badges: [createMockBadgeDto('TEST-1'), createMockBadgeDto('TEST-2')],
+      };
+
+      mockGroupRepository.getAll.mockResolvedValue([{ id: 1 }] as any);
+
+      const mockBadgeRepo = {
+        create: jest.fn((dto) => ({ ...dto, id: `id-${dto.code}` })),
+        save: jest.fn((entities) =>
+          entities.map((e: any) => ({ ...e, status: BadgeStatus.DRAFT })),
+        ),
+      };
+      const mockBadgeGroupRepo = {
+        create: jest.fn((entity) => entity),
+        save: jest.fn(),
+      };
+
+      (mockDataSource.transaction as jest.Mock).mockImplementation(
+        async (cb: any) => {
+          return cb({
+            getRepository: (entity: any) => {
+              if (entity.name === 'Badge') return mockBadgeRepo;
+              if (entity.name === 'BadgeGroup') return mockBadgeGroupRepo;
+              return {};
+            },
+          });
+        },
+      );
+
+      const result = await service.createBadgesBatch(batchDto as any);
+
+      expect(mockDataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(result.ids).toHaveLength(2);
+      expect(mockBadgeRepo.save).toHaveBeenCalledTimes(1);
+      expect(mockBadgeGroupRepo.save).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -5,6 +5,7 @@ import {
   BadgeVisibilityType,
 } from '../constants/badge.constants';
 import {
+  ArrayMinSize,
   IsEnum,
   IsNotEmpty,
   IsOptional,
@@ -233,3 +234,24 @@ export class UpdateBadgeDto {
 }
 
 export class BadgeDto {}
+
+export class CreateBadgesBatchDto {
+  @ApiProperty({
+    description: 'Array of badges to create',
+    type: [CreateBadgeDto],
+    required: true,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => CreateBadgeDto)
+  badges!: CreateBadgeDto[];
+}
+
+export class CreateBadgesBatchResponseDto {
+  @ApiProperty({
+    description: 'Array of created badge IDs',
+    type: [String],
+  })
+  ids!: string[];
+}

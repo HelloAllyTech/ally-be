@@ -3,6 +3,8 @@ import { BadgeRepository } from '../repository/badge.repository';
 import {
   CreateBadgeDto,
   CreateBadgeResponseDto,
+  CreateBadgesBatchDto,
+  CreateBadgesBatchResponseDto,
   UpdateBadgeDto,
 } from '../dto/badge.dto';
 import { Badge } from '../entity/badge.entity';
@@ -29,7 +31,9 @@ import {
   UserAvailableBadge,
   UserBadgeResponse,
 } from '../type/badge-response.type';
-import { NotFoundException } from 'src/exception/custom.exception';
+import isDuplicateKeyException, {
+  NotFoundException,
+} from 'src/exception/custom.exception';
 import { BadgeUserRepository } from '../repository/badge-user.repository';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { BadgeGroupRepository } from '../repository/badge-group.repository';
@@ -63,7 +67,7 @@ export class BadgeService {
       try {
         savedBadge = await badgeRepo.save(badge);
       } catch (error) {
-        if (error.code === '23505') {
+        if (isDuplicateKeyException(error)) {
           throw new BadRequestException('Badge with this code already exists');
         }
         throw error;
@@ -94,6 +98,99 @@ export class BadgeService {
       }
       return { id: savedBadge.id };
     });
+  }
+
+  async createBadgesBatch(
+    createBadgesBatchDto: CreateBadgesBatchDto,
+  ): Promise<CreateBadgesBatchResponseDto> {
+    const { badges } = createBadgesBatchDto;
+
+    // 1. Validate all badges upfront (outside transaction)
+    await this.validateBadgesBatch(badges);
+
+    // 2. Single transaction for all inserts
+    const savedBadges = await this.dataSource.transaction(
+      async (entityManager) => {
+        const badgeRepo = entityManager.getRepository(Badge);
+        const badgeGroupRepo = entityManager.getRepository(BadgeGroup);
+
+        // Bulk insert badges
+        const badgeEntities = badges.map((dto) => badgeRepo.create(dto));
+        let inserted: Badge[];
+        try {
+          inserted = await badgeRepo.save(badgeEntities);
+        } catch (error) {
+          if (isDuplicateKeyException(error)) {
+            throw new BadRequestException(
+              'One or more badge codes already exists',
+            );
+          }
+          throw error;
+        }
+
+        // Bulk insert badge-group mappings
+        const allBadgeGroups: BadgeGroup[] = [];
+        inserted.forEach((badge, index) => {
+          const groupIds = badges[index].groupIds ?? [];
+          groupIds.forEach((groupId) => {
+            allBadgeGroups.push(
+              badgeGroupRepo.create({ badgeId: badge.id, groupId }),
+            );
+          });
+        });
+        if (allBadgeGroups.length > 0) {
+          await badgeGroupRepo.save(allBadgeGroups);
+        }
+
+        return inserted;
+      },
+    );
+
+    // 3. Trigger async jobs for active badges (after transaction commits)
+    for (let i = 0; i < savedBadges.length; i++) {
+      const badge = savedBadges[i];
+      if (badge.status === BadgeStatus.ACTIVE) {
+        this.badgeTenantService
+          .assignBadgeToTenants(badge, badges[i].tenantIds)
+          .then((assignedTenantIds) => {
+            if (assignedTenantIds && assignedTenantIds.length > 0) {
+              this.badgeUserService.awardBadgeToUsersByTenant(
+                badge,
+                assignedTenantIds,
+              );
+            }
+          });
+      }
+    }
+
+    return { ids: savedBadges.map((b) => b.id) };
+  }
+
+  private async validateBadgesBatch(badges: CreateBadgeDto[]): Promise<void> {
+    // Check for duplicate codes within the batch
+    const codes = badges.map((b) => b.code);
+    const duplicateCodes = codes.filter((c, i) => codes.indexOf(c) !== i);
+    if (duplicateCodes.length > 0) {
+      throw new BadRequestException(
+        `Duplicate badge codes in batch: ${[...new Set(duplicateCodes)].join(', ')}`,
+      );
+    }
+
+    // Validate mandatory fields for each badge
+    for (const badge of badges) {
+      this.validateMandatoryFieldsForActiveStatus(
+        badge,
+        badge.status ?? BadgeStatus.ACTIVE,
+      );
+    }
+
+    // Collect all unique tenant/group IDs and validate once
+    const allTenantIds = [...new Set(badges.flatMap((b) => b.tenantIds ?? []))];
+    const allGroupIds = [...new Set(badges.flatMap((b) => b.groupIds ?? []))];
+    await this.validateTenantAndGroupIds(
+      allTenantIds.length > 0 ? allTenantIds : undefined,
+      allGroupIds.length > 0 ? allGroupIds : undefined,
+    );
   }
 
   private validateMandatoryFieldsForActiveStatus(
@@ -328,7 +425,7 @@ export class BadgeService {
         try {
           await badgeRepo.update(badgeId, updateData);
         } catch (error) {
-          if (error.code === '23505') {
+          if (isDuplicateKeyException(error)) {
             throw new BadRequestException(
               'Badge with this code already exists',
             );
