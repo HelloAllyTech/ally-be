@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { BadgeUserService } from './badge-user.service';
 import { BadgeService } from './badge.service';
 import { BadgeCategory } from '../constants/badge.constants';
+import { filterInvalidBadges } from '../util/badge.util';
 
 import { ReviewCommentRemovedEventParams } from 'src/review/type/review-event.type';
 
@@ -207,10 +208,163 @@ export class BadgeAwardService {
     }
   }
 
-  async revokeInvalideBadgesOnCommentDeletion({
+  private getRevokeInvalidReceiverGiverUserIdList({
     review,
     comment,
+    commentReactions,
+    commentReplies,
+    commentReplyReactions,
+  }: ReviewCommentRemovedEventParams) {
+    const giverRecheckList: number[] = [];
+    const receiverRecheckList: number[] = [];
+    if (comment.createdBy !== review.createdBy) {
+      giverRecheckList.push(comment.createdBy);
+      receiverRecheckList.push(review.createdBy);
+    }
+
+    // Find comment reactions not given by the comment owner.
+    // Add reaction creators to the giver list and the comment owner to the receiver list.
+    const commentReactionsNotGivenByCommentOwner = commentReactions?.filter(
+      (reaction) => reaction.createdBy !== comment.createdBy,
+    );
+    if (
+      commentReactionsNotGivenByCommentOwner &&
+      commentReactionsNotGivenByCommentOwner?.length > 0
+    ) {
+      giverRecheckList.push(
+        ...commentReactionsNotGivenByCommentOwner.map(
+          (reaction) => reaction.createdBy,
+        ),
+      );
+      receiverRecheckList.push(comment.createdBy);
+    }
+
+    // Find comment replies not given by the comment owner.
+    // Add reply creators to the giver list and the comment owner to the receiver list.
+    const commentRepliesNotGivenByCommentOwner = commentReplies?.filter(
+      (reply) => reply.createdBy !== comment.createdBy,
+    );
+    if (
+      commentRepliesNotGivenByCommentOwner &&
+      commentRepliesNotGivenByCommentOwner?.length > 0
+    ) {
+      giverRecheckList.push(
+        ...commentRepliesNotGivenByCommentOwner.map((reply) => reply.createdBy),
+      );
+      receiverRecheckList.push(comment.createdBy);
+    }
+
+    // Find comment reply reactions not given by the reply owner.
+    // Add reaction creators to the giver list and reply owners to the receiver list.
+    const commentReplyReactionNotGivenByOwner = commentReplyReactions?.filter(
+      (replyReaction) => {
+        const reply = commentReplies?.find(
+          (reply) => reply.id === replyReaction.reviewCommentId,
+        );
+        return reply && reply.createdBy !== replyReaction.createdBy;
+      },
+    );
+    if (
+      commentReplyReactionNotGivenByOwner &&
+      commentReplyReactionNotGivenByOwner?.length > 0
+    ) {
+      giverRecheckList.push(
+        ...commentReplyReactionNotGivenByOwner.map(
+          (replyReaction) => replyReaction.createdBy,
+        ),
+      );
+      const reactionReplyOwner = commentReplyReactionNotGivenByOwner
+        .map((replyReaction) => {
+          const reply = commentReplies?.find(
+            (reply) => reply.id === replyReaction.reviewCommentId,
+          );
+          return reply?.createdBy;
+        })
+        .filter((id): id is number => id !== undefined);
+      receiverRecheckList.push(...reactionReplyOwner);
+    }
+
+    return { receiverRecheckList, giverRecheckList };
+  }
+
+  async revokeInvalidBadgesOnCommentDeletion({
+    review,
+    comment,
+    commentReactions,
+    commentReplies,
+    commentReplyReactions,
   }: ReviewCommentRemovedEventParams) {
     if (!review || !comment) return;
+
+    const { receiverRecheckList, giverRecheckList } =
+      this.getRevokeInvalidReceiverGiverUserIdList({
+        review,
+        comment,
+        commentReactions,
+        commentReplies,
+        commentReplyReactions,
+      });
+
+    const totalList = [
+      ...new Set([...giverRecheckList, ...receiverRecheckList]),
+    ];
+
+    // Validate and identify badges that need to be revoked.
+    // For receivers: check if their COMMENTS_REACTIONS_RECEIVED badges are still valid.
+    // For givers: check if their COMMENTS_REACTIONS_GIVEN badges are still valid.
+    // Delete badges where the achievement count exceeds the current actual count.
+    const receiverGiverBadges =
+      await this.badgeService.getBadgesByUserIdList(totalList);
+    const receiverBadgesWithCommentReactionCategory =
+      receiverGiverBadges?.filter(
+        (badge) =>
+          badge.category === BadgeCategory.COMMENTS_REACTIONS_RECEIVED &&
+          receiverRecheckList?.some((id) => id === badge.userId),
+      );
+    const receiverUserIdsWithCommentReactionCategory = [
+      ...new Set(
+        receiverBadgesWithCommentReactionCategory?.map((badge) => badge.userId),
+      ),
+    ];
+    const receiverCommentReactionsCountMap =
+      await this.badgeUserService.getReceivedCommentsOrReactionsCount(
+        undefined,
+        receiverUserIdsWithCommentReactionCategory,
+      );
+    const receiverUserBadgesToDelete = filterInvalidBadges(
+      receiverBadgesWithCommentReactionCategory,
+      receiverCommentReactionsCountMap,
+    );
+
+    const giverBadgesWithCommentReactionCategory = receiverGiverBadges?.filter(
+      (badge) =>
+        badge.category === BadgeCategory.COMMENTS_REACTIONS_GIVEN &&
+        giverRecheckList?.some((id) => id === badge.userId),
+    );
+    const giverUserIdsWithCommentReactionCategory = [
+      ...new Set(
+        giverBadgesWithCommentReactionCategory?.map((badge) => badge.userId),
+      ),
+    ];
+    const giverCommentReactionsCountMap =
+      await this.badgeUserService.getGivenCommentsOrReactionsCount(
+        undefined,
+        giverUserIdsWithCommentReactionCategory,
+      );
+
+    const giverUserBadgesToDelete = filterInvalidBadges(
+      giverBadgesWithCommentReactionCategory,
+      giverCommentReactionsCountMap,
+    );
+
+    const userBadgesToDelete = [
+      ...receiverUserBadgesToDelete,
+      ...giverUserBadgesToDelete,
+    ];
+    if (userBadgesToDelete?.length > 0) {
+      await this.badgeUserService.deleteUserBadgeList(
+        userBadgesToDelete.map((badge) => badge.id),
+      );
+    }
   }
 }

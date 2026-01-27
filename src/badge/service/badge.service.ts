@@ -316,6 +316,10 @@ export class BadgeService {
     };
   }
 
+  async getBadgesByUserIdList(userIds: number[]) {
+    return await this.badgeRepository.getBadgesByUserIds(userIds);
+  }
+
   async getUserBadgeCount(
     userId: number,
     viewedStatus?: BadgeViewedStatus,

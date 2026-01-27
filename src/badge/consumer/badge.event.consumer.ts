@@ -75,7 +75,7 @@ export class BadgeEventConsumer {
   async handleReviewCommentRemoved(
     reviewCommentReactionEventParams: ReviewCommentRemovedEventParams,
   ) {
-    await this.badgeAwardService.revokeInvalideBadgesOnCommentDeletion(
+    await this.badgeAwardService.revokeInvalidBadgesOnCommentDeletion(
       reviewCommentReactionEventParams,
     );
   }
