@@ -2,6 +2,8 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DataSource, Repository, MoreThan, In } from 'typeorm';
@@ -220,64 +222,6 @@ export class AuthService {
     return false;
   }
 
-  async generateOtp(phone?: string, email?: string) {
-    if (!email && !phone) {
-      throw new BadRequestException('Email or phone is required');
-    }
-
-    const whereConditions = [];
-    if (phone) {
-      whereConditions.push({
-        phone,
-        status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]),
-      });
-    }
-    if (email) {
-      whereConditions.push({
-        email,
-        status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]),
-      });
-    }
-
-    const user = await this.userRepository.findOne({
-      where: whereConditions,
-    });
-    if (!user) {
-      this.logger.error(`User not found for phone ${phone} or email ${email}`);
-      this.logOtpGenerationError(email || phone, 'User not found');
-      return true; // to prevent user enumeration
-    }
-
-    if (!user.email) {
-      this.logger.error(`User ${user.id} has no email`);
-      this.logOtpGenerationError(phone, 'User has no email');
-      return true;
-    }
-
-    const isTestAccount = await this.handleTestAccountOtp(user.email);
-    if (isTestAccount) {
-      return true;
-    }
-
-    const otp = AuthUtil.generateOtp();
-    await this.cache.set(this.getOtpKey(user.email), otp, this.OTP_TTL);
-    // send otp to user
-    this.eventEmitter.emit('otp.generated', {
-      email: user.email,
-      otp,
-    });
-
-    this.auditLogger.log({
-      eventType: AUDIT_EVENTS.OTP_GENERATION_SUCCESS,
-      details: {
-        email: user.email,
-        phone,
-        medium: 'email',
-      },
-    });
-    return true;
-  }
-
   async generateOtpV2(
     generateOtpDto: GenerateOtpV2Dto,
   ): Promise<GenerateOtpV2ResponseDto> {
@@ -292,7 +236,9 @@ export class AuthService {
     if (!user) {
       this.logger.error(`User not found for email ${email}`);
       this.logOtpGenerationError(email, 'User not found');
-      return { success: true, expiresIn: this.OTP_TTL };
+      throw new NotFoundException(
+        'No account found associated with this email',
+      );
     }
 
     const userGroups = await this.groupService.getUserGroupNames(user.id);
@@ -302,7 +248,9 @@ export class AuthService {
     if (!hasAllowedRoles) {
       this.logger.error(`User not authorized for email ${email}`);
       this.logOtpGenerationError(email, 'User not authorized');
-      return { success: true, expiresIn: this.OTP_TTL };
+      throw new ForbiddenException(
+        'This account does not have the required role',
+      );
     }
 
     const isTestAccount = await this.handleTestAccountOtp(email);
@@ -338,83 +286,6 @@ export class AuthService {
     });
   }
 
-  async verifyOtp(otp: string, phone?: string, email?: string) {
-    if (!email && !phone) {
-      throw new BadRequestException('Email or phone is required');
-    }
-
-    let user;
-    if (!email) {
-      user = await this.userRepository.findOne({
-        where: { phone, status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]) },
-      });
-      if (!user || !user.email) {
-        this.logVerificationError(
-          phone,
-          'User not found',
-          AuthProvider.EMAIL_OTP,
-        );
-        throw new BadRequestException('User not found');
-      }
-      email = user.email;
-    }
-
-    const cachedOtp = await this.cache.get(this.getOtpKey(email));
-    if (cachedOtp !== otp) {
-      this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
-      throw new BadRequestException('Invalid OTP');
-    }
-    await this.cache.del(this.getOtpKey(email));
-
-    if (cachedOtp === otp) {
-      // generate token
-      if (!user) {
-        user = await this.userRepository.findOne({
-          where: { email },
-        });
-      }
-      if (!user) {
-        this.logVerificationError(
-          email,
-          'User not found',
-          AuthProvider.EMAIL_OTP,
-        );
-        throw new BadRequestException('User not found');
-      }
-
-      if (user.status === UserStatus.SUSPENDED) {
-        this.logger.error(`User ${email} is suspended`);
-        this.logVerificationError(
-          email,
-          'User suspended',
-          AuthProvider.EMAIL_OTP,
-        );
-        throw new UserSuspendedException();
-      }
-
-      const tokens = await this.generateTokens(user);
-
-      this.auditLogger.log({
-        eventType: AUDIT_EVENTS.OTP_VERIFICATION_SUCCESS,
-        tenantId: user.tenantId,
-        userId: user.id,
-        details: {
-          phone,
-          email,
-        },
-      });
-
-      return {
-        user: {
-          id: user!.id,
-          username: user!.username,
-        },
-        ...tokens,
-        tokenType: 'bearer',
-      };
-    }
-  }
-
   async verifyOtpV2(
     verifyOtpDto: VerifyOtpV2Dto,
   ): Promise<AuthenticationResponseDto> {
@@ -426,7 +297,7 @@ export class AuthService {
     if (cachedOtp !== otp) {
       this.logger.error(`Invalid OTP for email ${email}`);
       this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
-      throw new BadRequestException('Invalid OTP');
+      throw new UnauthorizedException('Invalid OTP');
     }
     await this.cache.del(this.getOtpKey(email));
 
@@ -520,13 +391,12 @@ export class AuthService {
       where: { email, status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]) },
     });
 
-    const errorMessage =
-      await this.getUserVerificationErrorMessage(authProvider);
-
     if (!user) {
       this.logger.error(`User not found for email ${email}`);
       this.logVerificationError(email, 'User not found', authProvider);
-      throw new BadRequestException(errorMessage);
+      throw new NotFoundException(
+        'No account found associated with this email',
+      );
     }
 
     const userGroups = await this.groupService.getUserGroupNames(user.id);
@@ -537,7 +407,9 @@ export class AuthService {
     if (!hasAllowedRoles) {
       this.logger.error(`User not authorized for email ${user.email}`);
       this.logVerificationError(user.email, 'User not found', authProvider);
-      throw new BadRequestException(errorMessage);
+      throw new ForbiddenException(
+        'This account does not have the required role',
+      );
     }
 
     if (user.status === UserStatus.SUSPENDED) {
@@ -565,18 +437,5 @@ export class AuthService {
       ...tokens,
       tokenType: 'bearer',
     };
-  }
-
-  private getUserVerificationErrorMessage(provider: AuthProvider): string {
-    switch (provider) {
-      case AuthProvider.GOOGLE:
-        return 'Google sign in failed';
-
-      case AuthProvider.EMAIL_OTP:
-        return 'Invalid OTP';
-
-      default:
-        return 'Authentication failed';
-    }
   }
 }

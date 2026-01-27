@@ -13,9 +13,7 @@ import {
 import { AuthService } from '../service/auth.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import {
-  GenerateOtpDto,
   LoginDto,
-  VerifyOtpDto,
   GenerateOtpV2Dto,
   GenerateOtpV2ResponseDto,
   VerifyOtpV2Dto,
@@ -45,34 +43,6 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto.username, loginDto.password);
-  }
-
-  @Post('generate-otp')
-  @HttpCode(HttpStatus.OK)
-  @RateLimit({
-    name: 'otp',
-    key: 'ip',
-    errorMessage: 'Too many OTP requests. Please try again later.',
-  })
-  async generateOtp(@Body() generateOtpDto: GenerateOtpDto) {
-    return this.authService.generateOtp(
-      generateOtpDto.phone,
-      generateOtpDto.email,
-    );
-  }
-
-  @RateLimit({
-    name: 'otp',
-    key: 'ip',
-    errorMessage: 'Too many OTP verification attempts. Please try again later.',
-  })
-  @Post('verify-otp')
-  async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
-    return this.authService.verifyOtp(
-      verifyOtpDto.otp,
-      verifyOtpDto.phone,
-      verifyOtpDto.email,
-    );
   }
 
   @Post('generate-otp')

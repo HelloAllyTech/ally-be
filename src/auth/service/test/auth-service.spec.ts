@@ -2,7 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { DataSource, Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { UnauthorizedException, BadRequestException } from '@nestjs/common';
+import {
+  UnauthorizedException,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { UserSuspendedException } from '../../exception/login.exception';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from '../auth.service';
@@ -37,7 +42,6 @@ describe('AuthService', () => {
   let userRepository: jest.Mocked<Repository<User>>;
   let refreshTokenRepository: jest.Mocked<Repository<RefreshToken>>;
   let jwtService: jest.Mocked<JwtService>;
-  let eventEmitter: jest.Mocked<EventEmitter2>;
   let redisService: jest.Mocked<RedisService>;
   let dataSource: jest.Mocked<DataSource>;
   let groupService: jest.Mocked<GroupService>;
@@ -174,7 +178,6 @@ describe('AuthService', () => {
     authService = module.get<AuthService>(AuthService);
     dataSource = module.get(DataSource);
     jwtService = module.get(JwtService);
-    eventEmitter = module.get(EventEmitter2);
     redisService = module.get(RedisService);
     groupService = module.get(GroupService);
 
@@ -344,88 +347,50 @@ describe('AuthService', () => {
     });
   });
 
-  describe('generateOtp', () => {
-    const email = 'test@example.com';
-    const phone = '+1234567890';
+  describe('generateOtpV2', () => {
+    const mockGenerateOtpDto = {
+      email: 'test@example.com',
+      allowedRoles: [UserRole.CLIENT],
+    };
 
-    it('should return true for non-existent user to prevent enumeration', async () => {
-      userRepository.findOne.mockResolvedValue(null);
-
-      const result = await authService.generateOtp(phone, email);
-
-      expect(result).toBe(true);
-    });
-
-    it('should throw BadRequestException when neither email nor phone provided', async () => {
-      await expect(authService.generateOtp()).rejects.toThrow(
-        new BadRequestException('Email or phone is required'),
-      );
-    });
-
-    it('should return true when user has no email', async () => {
-      const userWithoutEmail = {
-        ...mockUser,
-        email: undefined,
-      } as unknown as User;
-      userRepository.findOne.mockResolvedValue(userWithoutEmail);
-
-      const result = await authService.generateOtp(phone);
-
-      expect(result).toBe(true);
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        `User ${userWithoutEmail.id} has no email`,
-      );
-    });
-
-    it('should generate OTP for test account', async () => {
-      const testEmail = 'test@example.com';
-      const testOtp = '999999';
-      mockConfig.testAccounts = JSON.stringify({ [testEmail]: testOtp });
-      userRepository.findOne.mockResolvedValue({
-        ...mockUser,
-        email: testEmail,
-      } as unknown as User);
-
-      const result = await authService.generateOtp(undefined, testEmail);
-
-      expect(result).toBe(true);
-      expect(redisService.set).toHaveBeenCalledWith(
-        `otp:${testEmail}`,
-        testOtp,
-        300,
-      );
-    });
-
-    it('should handle invalid TEST_ACCOUNTS JSON', async () => {
-      mockConfig.testAccounts = '{invalid}';
+    it('should generate OTP successfully', async () => {
       userRepository.findOne.mockResolvedValue(mockUser);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.CLIENT]);
       (AuthUtil.generateOtp as jest.Mock).mockReturnValue('123456');
 
-      await authService.generateOtp(phone, email);
+      const result = await authService.generateOtpV2(mockGenerateOtpDto);
 
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Invalid TEST_ACCOUNTS JSON format',
-      );
+      expect(result).toEqual({
+        success: true,
+        expiresIn: 300,
+      });
+      expect(redisService.set).toHaveBeenCalled();
     });
 
-    it('should generate random OTP for regular user', async () => {
-      mockConfig.testAccounts = '{}';
-      const otp = '123456';
+    it('should throw BadRequestException when email is missing', async () => {
+      await expect(
+        authService.generateOtpV2({
+          email: '',
+          allowedRoles: [UserRole.CLIENT],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw NotFoundException when user is not found', async () => {
+      userRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        authService.generateOtpV2(mockGenerateOtpDto),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw ForbiddenException when user does not have allowed role', async () => {
       userRepository.findOne.mockResolvedValue(mockUser);
-      (AuthUtil.generateOtp as jest.Mock).mockReturnValue(otp);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.ADMIN]);
 
-      const result = await authService.generateOtp(phone, email);
-
-      expect(result).toBe(true);
-      expect(redisService.set).toHaveBeenCalledWith(
-        `otp:${mockUser.email}`,
-        otp,
-        300,
-      );
-      expect(eventEmitter.emit).toHaveBeenCalledWith('otp.generated', {
-        email: mockUser.email,
-        otp,
-      });
+      await expect(
+        authService.generateOtpV2(mockGenerateOtpDto),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -464,7 +429,7 @@ describe('AuthService', () => {
       );
     });
 
-    it('should throw BadRequestException when user is not found', async () => {
+    it('should throw NotFoundException when user is not found', async () => {
       redisService.get.mockResolvedValue('123456');
       redisService.del.mockResolvedValue();
 
@@ -472,7 +437,9 @@ describe('AuthService', () => {
 
       await expect(
         authService.verifyOtpV2(mockVerifyOtpDto as any),
-      ).rejects.toThrow(new BadRequestException('Invalid OTP'));
+      ).rejects.toThrow(
+        new NotFoundException('No account found associated with this email'),
+      );
     });
 
     it('should throw UserSuspendedException when user is suspended', async () => {
@@ -487,7 +454,7 @@ describe('AuthService', () => {
       ).rejects.toThrow(UserSuspendedException);
     });
 
-    it('should throw BadRequestException when user is not authorized', async () => {
+    it('should throw ForbiddenException when user is not authorized', async () => {
       redisService.get.mockResolvedValue('123456');
       redisService.del.mockResolvedValue();
 
@@ -496,10 +463,12 @@ describe('AuthService', () => {
 
       await expect(
         authService.verifyOtpV2(mockVerifyOtpDto as any),
-      ).rejects.toThrow(new BadRequestException('Invalid OTP'));
+      ).rejects.toThrow(
+        new ForbiddenException('This account does not have the required role'),
+      );
     });
 
-    it('should throw BadRequestException when OTP is invalid', async () => {
+    it('should throw UnauthorizedException when OTP is invalid', async () => {
       redisService.get.mockResolvedValue('different-otp');
 
       userRepository.findOne.mockResolvedValue(mockUser);
@@ -507,7 +476,7 @@ describe('AuthService', () => {
 
       await expect(
         authService.verifyOtpV2(mockVerifyOtpDto as any),
-      ).rejects.toThrow(new BadRequestException('Invalid OTP'));
+      ).rejects.toThrow(new UnauthorizedException('Invalid OTP'));
     });
 
     it('should successfully verify OTP and return tokens', async () => {
