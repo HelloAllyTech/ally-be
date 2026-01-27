@@ -283,7 +283,6 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     const totalSimulationMinutesQuery = this.createQueryBuilder(
       'user_daily_score',
     )
-      .andWhere('user_daily_score.minutesPlayed IS NOT NULL')
       .andWhere('user_daily_score.minutesPlayed > 0')
       .select('user_daily_score.userId', 'userId')
       .addSelect('SUM(user_daily_score.minutesPlayed)', 'totalMinutes')
@@ -323,7 +322,8 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       return [];
     }
 
-    const conditions: string[] = ['"minutesPlayed" > 0'];
+    // Only count active days when minutesPlayed is greater than or equal to 1.00
+    const conditions: string[] = ['"minutesPlayed" >= 1.00'];
     const params: any[] = [];
     let paramIndex = 1;
 
