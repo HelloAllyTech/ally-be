@@ -223,6 +223,7 @@ export class ScenarioService {
           }),
       detectionConfig: item.detectionConfig,
       checklistVisibilityStatus: item.checklistVisibilityStatus,
+      tags: item.sessionEvent?.tags,
     }));
 
     return { data, count: result.count };

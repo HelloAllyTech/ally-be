@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SuccessResponse } from 'src/common/type/common.type';
@@ -15,6 +16,8 @@ import { ToggleReviewCommentReactionDto } from '../dto/toggle-review-comment-rea
 import { ReviewCommentRepository } from '../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
+import { CommunitySharedService } from 'src/community/service/community-shared.service';
+import { ReviewEvents } from '../type/review-event.type';
 
 @Injectable()
 export class ReviewCommentReactionService {
@@ -27,6 +30,8 @@ export class ReviewCommentReactionService {
     private readonly reviewCommentRepository: ReviewCommentRepository,
     private readonly permissionValidator: PermissionValidator,
     private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
+    private readonly communitySharedService: CommunitySharedService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async toggleReviewCommentReaction(
@@ -106,6 +111,15 @@ export class ReviewCommentReactionService {
         },
       );
       await this.reviewCommentReactionRepository.save(reviewCommentReaction);
+
+      if (review.createdBy !== userId) {
+        this.communitySharedService.incrementReactionScore(userId, tenantId);
+      }
+      this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_REACTION_ADDED, {
+        comment,
+        reaction: reviewCommentReaction,
+      });
+
       return {
         success: true,
       };
@@ -131,6 +145,14 @@ export class ReviewCommentReactionService {
 
       await this.reviewCommentReactionRepository.softDelete({
         id: reviewReaction.id,
+      });
+
+      if (review.createdBy !== userId) {
+        this.communitySharedService.decrementReactionScore(userId, tenantId);
+      }
+      this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_REACTION_REMOVED, {
+        comment,
+        removedReaction: reviewReaction,
       });
 
       return { success: true };

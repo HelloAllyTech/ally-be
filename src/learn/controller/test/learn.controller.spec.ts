@@ -626,6 +626,7 @@ describe('LearnController', () => {
             branchInstruction: undefined,
             detectionConfig: undefined,
             checklistVisibilityStatus: false,
+            tags: [],
           },
         ],
         count: 1,

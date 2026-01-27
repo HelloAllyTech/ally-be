@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DataSource } from 'typeorm';
 import { ReviewCommentService } from '../review-comment.service';
 import { ReviewCommentRepository } from '../../repository/review-comment.repository';
@@ -13,6 +14,7 @@ import { ReviewStatus } from '../../type/review.type';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ReviewComment } from '../../entity/review-comment.entity';
 import { ReviewThread } from '../../entity/review-thread.entity';
+import { CommunitySharedService } from 'src/community/service/community-shared.service';
 
 jest.mock('src/common/execution/execution-manager');
 
@@ -125,6 +127,16 @@ describe('ReviewCommentService', () => {
         {
           provide: UserService,
           useValue: {},
+        },
+        {
+          provide: CommunitySharedService,
+          useValue: {},
+        },
+        {
+          provide: EventEmitter2,
+          useValue: {
+            emit: jest.fn(),
+          },
         },
       ],
     }).compile();

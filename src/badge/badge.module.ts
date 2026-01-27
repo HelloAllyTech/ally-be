@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { BadgeUserRepository } from './repository/badge-user.repository';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BadgeController } from './controller/badge.controller';
@@ -15,14 +15,16 @@ import { TenantModule } from '../tenant/tenant.module';
 import { BadgeUserService } from './service/badge-user.service';
 import { AuthorizationModule } from 'src/authorization/authorization.module';
 import { CommunityModule } from 'src/community/community.module';
-import { ReviewModule } from 'src/review/review.module';
+import { ReviewModule } from 'src/review/review.module'; // Used with forwardRef
+import { BadgeEventConsumer } from './consumer/badge.event.consumer';
+import { BadgeAwardService } from './service/badge-award.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Badge, BadgeUser, BadgeGroup, BadgeTenant]),
     TenantModule,
     AuthorizationModule,
-    ReviewModule,
+    forwardRef(() => ReviewModule),
     CommunityModule,
   ],
   controllers: [BadgeController],
@@ -34,7 +36,8 @@ import { ReviewModule } from 'src/review/review.module';
     BadgeUserRepository,
     BadgeTenantRepository,
     BadgeUserService,
+    BadgeEventConsumer,
+    BadgeAwardService,
   ],
-  exports: [],
 })
 export class BadgeModule {}
