@@ -12,11 +12,11 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { GetReviewReactionsResponseDto } from '../dto/review-reaction-response.dto';
 import { ToggleReviewReactionDto } from '../dto/toggle-review-reaction.dto';
+import { ReviewStatus } from '../type/review.type';
 import {
-  ReviewStatus,
   ReactionAction,
   ReviewReactionOptions,
-} from '../type/review.type';
+} from '../type/review-reaction.type';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ReviewRepository } from '../repository/review.repository';

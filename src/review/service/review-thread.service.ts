@@ -18,7 +18,7 @@ import { ReviewRepository } from '../repository/review.repository';
 import { ReviewCommentRepository } from '../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { formatCreatedUserDetails } from '../util/review.util';
-import { GetReviewThreadsOptions } from '../type/review.type';
+import { GetReviewThreadsOptions } from '../type/review-thread.type';
 import { ScenarioSessionMessages } from 'src/learn/entity/scenario-session-messages.entity';
 
 @Injectable()
