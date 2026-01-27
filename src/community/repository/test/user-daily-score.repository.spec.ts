@@ -691,9 +691,6 @@ describe('UserDailyScoreRepository', () => {
 
       expect(mockCreateQueryBuilder).toHaveBeenCalledWith('user_daily_score');
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'user_daily_score.minutesPlayed IS NOT NULL',
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         'user_daily_score.minutesPlayed > 0',
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
@@ -783,7 +780,7 @@ describe('UserDailyScoreRepository', () => {
       );
 
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('"minutesPlayed" > 0'),
+        expect.stringContaining('"minutesPlayed" >= 1.00'),
         userIds,
       );
       expect(mockQuery).toHaveBeenCalledWith(
