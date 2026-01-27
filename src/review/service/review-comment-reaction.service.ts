@@ -172,6 +172,12 @@ export class ReviewCommentReactionService {
           'You have already reacted to this comment with this reaction',
         );
       }
+
+      await this.reviewCommentReactionRepository.update(existingReaction.id, {
+        reaction: toggleReviewCommentReactionDto.reaction,
+      });
+
+      return { success: true };
     }
 
     throw new BadRequestException('Invalid request');
