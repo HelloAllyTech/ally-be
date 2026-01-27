@@ -2,13 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
 import { ReviewComment } from '../entity/review-comment.entity';
+import { CommentReactionCount } from '../type/review-reaction.type';
 
 @Injectable()
 export class ReviewCommentReactionRepository extends Repository<ReviewCommentReaction> {
   constructor(private readonly dataSource: DataSource) {
     super(ReviewCommentReaction, dataSource.createEntityManager());
   }
-  async getReactionAndCountByCommentIds(commentIds: string[]): Promise<any[]> {
+  async getReactionAndCountByCommentIds(
+    commentIds: string[],
+  ): Promise<CommentReactionCount[]> {
     if (!commentIds.length) return [];
 
     return this.createQueryBuilder('rcr')
