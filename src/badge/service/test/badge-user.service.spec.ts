@@ -27,9 +27,11 @@ describe('BadgeUserService', () => {
 
     mockReviewSharedService = {
       getGivenCommentsCountPerUser: jest.fn(),
+      getGivenRepliesCountAsReviewOwner: jest.fn(),
       getGivenReviewReactionsCountPerUser: jest.fn(),
       getGivenCommentsReactionsCountPerUser: jest.fn(),
       getReceivedCommentsCountPerUser: jest.fn(),
+      getReceivedRepliesCountAsCommenter: jest.fn(),
       getReceivedReviewReactionsCountPerUser: jest.fn(),
       getReceivedCommentsReactionsCountPerUser: jest.fn(),
     } as any;
@@ -118,6 +120,9 @@ describe('BadgeUserService', () => {
       mockReviewSharedService.getGivenCommentsCountPerUser.mockResolvedValue(
         [],
       );
+      mockReviewSharedService.getGivenRepliesCountAsReviewOwner.mockResolvedValue(
+        [],
+      );
       mockReviewSharedService.getGivenReviewReactionsCountPerUser.mockResolvedValue(
         [],
       );
@@ -129,6 +134,9 @@ describe('BadgeUserService', () => {
 
       expect(
         mockReviewSharedService.getGivenCommentsCountPerUser,
+      ).toHaveBeenCalledWith(['tenant-1'], undefined);
+      expect(
+        mockReviewSharedService.getGivenRepliesCountAsReviewOwner,
       ).toHaveBeenCalledWith(['tenant-1'], undefined);
       expect(
         mockReviewSharedService.getGivenReviewReactionsCountPerUser,
@@ -147,6 +155,9 @@ describe('BadgeUserService', () => {
       mockReviewSharedService.getReceivedCommentsCountPerUser.mockResolvedValue(
         [],
       );
+      mockReviewSharedService.getReceivedRepliesCountAsCommenter.mockResolvedValue(
+        [],
+      );
       mockReviewSharedService.getReceivedReviewReactionsCountPerUser.mockResolvedValue(
         [],
       );
@@ -158,6 +169,9 @@ describe('BadgeUserService', () => {
 
       expect(
         mockReviewSharedService.getReceivedCommentsCountPerUser,
+      ).toHaveBeenCalledWith(['tenant-1'], undefined);
+      expect(
+        mockReviewSharedService.getReceivedRepliesCountAsCommenter,
       ).toHaveBeenCalledWith(['tenant-1'], undefined);
       expect(
         mockReviewSharedService.getReceivedReviewReactionsCountPerUser,
@@ -212,12 +226,18 @@ describe('BadgeUserService', () => {
       const badge = {
         id: 'badge-1',
         category: BadgeCategory.COMMENTS_REACTIONS_GIVEN,
-        achievementParams: { count: 5 },
+        achievementParams: { count: 6 },
       } as unknown as Badge;
       mockReviewSharedService.getGivenCommentsCountPerUser.mockResolvedValue([
         { userId: 1, count: 2 },
         { userId: 2, count: 1 },
       ]);
+      mockReviewSharedService.getGivenRepliesCountAsReviewOwner.mockResolvedValue(
+        [
+          { userId: 1, count: 1 },
+          { userId: 3, count: 1 },
+        ],
+      );
       mockReviewSharedService.getGivenReviewReactionsCountPerUser.mockResolvedValue(
         [
           { userId: 1, count: 2 },
@@ -231,9 +251,48 @@ describe('BadgeUserService', () => {
 
       await service.awardBadgeToUsersByTenant(badge, ['tenant-1']);
 
-      // User 1: 2 + 2 + 1 = 5 (meets threshold)
+      // User 1: 2 + 1 + 2 + 1 = 6 (meets threshold)
       // User 2: 1 (below threshold)
-      // User 3: 3 (below threshold)
+      // User 3: 1 + 3 = 4 (below threshold)
+      expect(mockBadgeUserRepository.save).toHaveBeenCalledWith([
+        { userId: 1, badgeId: 'badge-1' },
+      ]);
+    });
+
+    it('should merge counts from multiple sources including replies for COMMENTS_REACTIONS_RECEIVED', async () => {
+      const badge = {
+        id: 'badge-1',
+        category: BadgeCategory.COMMENTS_REACTIONS_RECEIVED,
+        achievementParams: { count: 5 },
+      } as unknown as Badge;
+      mockReviewSharedService.getReceivedCommentsCountPerUser.mockResolvedValue(
+        [
+          { userId: 1, count: 2 },
+          { userId: 2, count: 1 },
+        ],
+      );
+      mockReviewSharedService.getReceivedRepliesCountAsCommenter.mockResolvedValue(
+        [
+          { userId: 1, count: 1 },
+          { userId: 3, count: 2 },
+        ],
+      );
+      mockReviewSharedService.getReceivedReviewReactionsCountPerUser.mockResolvedValue(
+        [
+          { userId: 1, count: 1 },
+          { userId: 3, count: 2 },
+        ],
+      );
+      mockReviewSharedService.getReceivedCommentsReactionsCountPerUser.mockResolvedValue(
+        [{ userId: 1, count: 1 }],
+      );
+      mockBadgeUserRepository.save.mockResolvedValue([] as any);
+
+      await service.awardBadgeToUsersByTenant(badge, ['tenant-1']);
+
+      // User 1: 2 + 1 + 1 + 1 = 5 (meets threshold)
+      // User 2: 1 (below threshold)
+      // User 3: 2 + 2 = 4 (below threshold)
       expect(mockBadgeUserRepository.save).toHaveBeenCalledWith([
         { userId: 1, badgeId: 'badge-1' },
       ]);

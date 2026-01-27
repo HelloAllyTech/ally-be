@@ -36,3 +36,8 @@ export interface ReviewReactionRemovedEventParams {
   removedReaction: ReviewReaction;
   review: Review;
 }
+
+export interface ReviewCommentRemovedEventParams {
+  review: Review;
+  comment: ReviewComment;
+}

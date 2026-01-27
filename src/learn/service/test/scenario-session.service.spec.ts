@@ -38,6 +38,7 @@ import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-tr
 import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ReviewSharedService } from 'src/review/service/review-shared.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -253,6 +254,10 @@ describe('ScenarioSessionService', () => {
     const mockReviewSharedService = {
       getReviewByScenarioSessionId: jest.fn().mockResolvedValue(null),
     };
+    const mockEventEmitter = {
+      emit: jest.fn(),
+    };
+
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -336,6 +341,10 @@ describe('ScenarioSessionService', () => {
         {
           provide: ReviewSharedService,
           useValue: mockReviewSharedService,
+        },
+        {
+          provide: EventEmitter2,
+          useValue: mockEventEmitter,
         },
       ],
     }).compile();
