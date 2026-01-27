@@ -30,7 +30,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
       VALUES (
         uuid_generate_v4(), $1, $2, $3, $4, 
-        $4 + CASE WHEN $4 >= 1 THEN 1 ELSE 0 END, 
+        $4 + CASE WHEN $4 >= 1.00 THEN 1.00 ELSE 0.00 END, 
         NOW(), NOW()
       )
       ON CONFLICT ("userId", "tenant_id", "date")
@@ -38,8 +38,8 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
         "minutesPlayed" = user_daily_scores."minutesPlayed" + $4,
         "totalScore" = user_daily_scores."totalScore" + $4 + 
           CASE 
-            WHEN user_daily_scores."minutesPlayed" < 1 
-             AND user_daily_scores."minutesPlayed" + $4 >= 1 
+            WHEN user_daily_scores."minutesPlayed" < 1.00 
+             AND user_daily_scores."minutesPlayed" + $4 >= 1.00
             THEN ${scorePoints.ACTIVE_DAY_BONUS} 
             ELSE 0 
           END,
@@ -283,7 +283,6 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     const totalSimulationMinutesQuery = this.createQueryBuilder(
       'user_daily_score',
     )
-      .andWhere('user_daily_score.minutesPlayed IS NOT NULL')
       .andWhere('user_daily_score.minutesPlayed > 0')
       .select('user_daily_score.userId', 'userId')
       .addSelect('SUM(user_daily_score.minutesPlayed)', 'totalMinutes')
@@ -323,7 +322,8 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       return [];
     }
 
-    const conditions: string[] = ['"minutesPlayed" > 0'];
+    // Only count active days when minutesPlayed is greater than or equal to 1.00
+    const conditions: string[] = ['"minutesPlayed" >= 1.00'];
     const params: any[] = [];
     let paramIndex = 1;
 
