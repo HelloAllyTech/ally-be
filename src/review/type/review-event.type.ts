@@ -40,4 +40,7 @@ export interface ReviewReactionRemovedEventParams {
 export interface ReviewCommentRemovedEventParams {
   review: Review;
   comment: ReviewComment;
+  commentReplies?: ReviewComment[];
+  commentReactions?: ReviewCommentReaction[];
+  commentReplyReactions?: ReviewCommentReaction[];
 }
