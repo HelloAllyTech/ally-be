@@ -4,6 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+
 import { ReviewReactionRepository } from '../repository/review-reaction.repository';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -21,6 +23,8 @@ import { ReviewRepository } from '../repository/review.repository';
 import { UserService } from 'src/user/service/user.service';
 import { GetReviewReactionCountResponseDto } from '../dto/get-review-reaction-and-count-response.dto';
 import { formatCreatedUserDetails } from '../util/review.util';
+import { CommunitySharedService } from 'src/community/service/community-shared.service';
+import { ReviewEvents } from '../type/review-event.type';
 
 @Injectable()
 export class ReviewReactionService {
@@ -32,6 +36,8 @@ export class ReviewReactionService {
     private readonly reviewReactionRepository: ReviewReactionRepository,
     private readonly permissionValidator: PermissionValidator,
     private readonly userService: UserService,
+    private readonly communitySharedService: CommunitySharedService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async toggleReviewReactions(
@@ -95,6 +101,15 @@ export class ReviewReactionService {
         reaction: toggleReviewReactionDto.reaction,
       });
       await this.reviewReactionRepository.save(reviewReaction);
+
+      if (review.createdBy !== userId) {
+        this.communitySharedService.incrementReactionScore(userId, tenantId);
+      }
+
+      this.eventEmitter.emit(ReviewEvents.REVIEW_REACTION_ADDED, {
+        review,
+        reaction: reviewReaction,
+      });
       return {
         success: true,
       };
@@ -117,6 +132,15 @@ export class ReviewReactionService {
       }
 
       await this.reviewReactionRepository.softDelete({ id: reviewReaction.id });
+
+      if (review.createdBy !== userId) {
+        this.communitySharedService.decrementReactionScore(userId, tenantId);
+      }
+
+      this.eventEmitter.emit(ReviewEvents.REVIEW_REACTION_REMOVED, {
+        review,
+        removedReaction: reviewReaction,
+      });
       return { success: true };
     }
 

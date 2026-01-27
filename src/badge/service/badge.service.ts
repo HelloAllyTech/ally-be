@@ -14,6 +14,7 @@ import {
   BadgeLockStatus,
   BadgeViewedStatus,
   BadgeVisibilityType,
+  BadgeCategory,
 } from '../constants/badge.constants';
 import { DataSource, In } from 'typeorm';
 import { TenantService } from 'src/tenant/service/tenant.service';
@@ -24,6 +25,7 @@ import { groupAndSortBadgesByCategory } from '../util/badge.util';
 import {
   GroupedUserAvailableBadges,
   MarkBadgeViewedResponse,
+  TenantBadgeResponse,
   UserAvailableBadge,
   UserBadgeResponse,
 } from '../type/badge-response.type';
@@ -474,5 +476,49 @@ export class BadgeService {
     if (updateBadgeDto.achievementParams !== undefined)
       updateData.achievementParams = updateBadgeDto.achievementParams;
     return updateData;
+  }
+
+  /**
+   * Get badges that are available to the user (via tenant + group access)
+   * but have NOT yet been awarded.
+   * Optionally filter by badge category.
+   */
+  async getAvailableUnawardedBadges(
+    userId: number,
+    category?: BadgeCategory,
+  ): Promise<TenantBadgeResponse[]> {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      return [];
+    }
+
+    // Get all badges assigned to the tenant
+    const tenantBadges =
+      await this.badgeRepository.getBadgesForTenant(tenantId);
+
+    if (tenantBadges.length === 0) {
+      return [];
+    }
+
+    // Get badge IDs that the user has access to through their groups
+    const supportedUserGroupBadgeIds =
+      await this.badgeRepository.getBadgeIdsForUserGroups(userId);
+
+    const awardedBadges = await this.badgeUserRepository.find({
+      where: {
+        userId,
+      },
+    });
+    const awardedBadgeIds = new Set(
+      awardedBadges.map((badge) => badge.badgeId),
+    );
+
+    // Filter tenant badges to only include those the user has access to and is not awarded currently
+    return tenantBadges.filter(
+      (badge) =>
+        supportedUserGroupBadgeIds.some((id) => id === badge.id) &&
+        !awardedBadgeIds.has(badge.id) &&
+        (category ? badge.category === category : true),
+    );
   }
 }

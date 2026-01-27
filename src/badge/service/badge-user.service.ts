@@ -1,10 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { In } from 'typeorm';
 import { BadgeUserRepository } from '../repository/badge-user.repository';
 import { Badge } from '../entity/badge.entity';
 import { BadgeCategory } from '../constants/badge.constants';
 import { ReviewSharedService } from 'src/review/service/review-shared.service';
 import { CommunitySharedService } from 'src/community/service/community-shared.service';
 import { UserValueCount } from '../type/badge.type';
+import { SaveBadgeUsersRequest } from '../type/badge-response.type';
 
 @Injectable()
 export class BadgeUserService {
@@ -96,6 +98,10 @@ export class BadgeUserService {
     }
   }
 
+  async saveBadgeUsers(badgeUsers: SaveBadgeUsersRequest): Promise<void> {
+    await this.badgeUserRepository.save(badgeUsers);
+  }
+
   private async saveBadgeUsersAboveThreshold(
     badge: Badge,
     userCounts: UserValueCount[],
@@ -122,7 +128,7 @@ export class BadgeUserService {
     }
   }
 
-  private async getGivenCommentsOrReactionsCount(
+  async getGivenCommentsOrReactionsCount(
     tenantIds?: string[],
     userIds?: number[],
   ): Promise<{ userId: number; count: number }[]> {
@@ -148,7 +154,7 @@ export class BadgeUserService {
     ]);
   }
 
-  private async getReceivedCommentsOrReactionsCount(
+  async getReceivedCommentsOrReactionsCount(
     tenantIds?: string[],
     userIds?: number[],
   ): Promise<{ userId: number; count: number }[]> {
@@ -213,5 +219,12 @@ export class BadgeUserService {
         `Removed ${badgeUserIds.length} badge_user records for badge ${badgeId} from tenants: ${tenantIds.join(', ')}`,
       );
     }
+  }
+
+  async deleteUserBadges(userId: number, badgeIds: string[]): Promise<void> {
+    await this.badgeUserRepository.softDelete({
+      userId,
+      badgeId: In(badgeIds),
+    });
   }
 }

@@ -7,6 +7,7 @@ import {
 import { LeaderboardView } from '../type/leaderboard.type';
 import { Pagination } from 'src/common/type/common.type';
 import { TenantService } from 'src/tenant/service/tenant.service';
+import { UserStatus } from 'src/user/constants/user-status.constants';
 
 @Injectable()
 export class LeaderboardService {
@@ -68,6 +69,7 @@ export class LeaderboardService {
       data,
       window,
       totalCount,
+      hideRankInCommunity,
     };
   }
 
@@ -93,6 +95,7 @@ export class LeaderboardService {
       return {
         ...rankResult,
         window,
+        hideRankInCommunity,
       };
     }
 
@@ -104,10 +107,12 @@ export class LeaderboardService {
       userId,
       name: userDetails.name,
       profileImageUrl: userDetails.profileImageUrl,
+      status: UserStatus.ACTIVE,
       rank: hideRankInCommunity ? undefined : 0, // 0 indicates no rank (no activity)
       minutesPlayed: 0,
       badgeCount: userDetails.badgeCount,
       window,
+      hideRankInCommunity,
     };
   }
 }

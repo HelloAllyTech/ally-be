@@ -1,3 +1,4 @@
+import { UserStatus } from 'src/user/constants/user-status.constants';
 import { LeaderboardEntryDto } from '../dto/leaderboard.dto';
 
 // ENUMS
@@ -24,6 +25,7 @@ export interface UserRankResult {
   userId: number;
   name: string;
   profileImageUrl?: string;
+  status: UserStatus;
   rank?: number;
   minutesPlayed: number;
   badgeCount: number;
