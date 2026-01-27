@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import { BadgeUserService } from './badge-user.service';
 import { BadgeService } from './badge.service';
@@ -6,6 +6,8 @@ import { BadgeCategory } from '../constants/badge.constants';
 
 @Injectable()
 export class BadgeAwardService {
+  private readonly logger = new Logger(BadgeAwardService.name);
+
   constructor(
     private readonly badgeService: BadgeService,
     private readonly badgeUserService: BadgeUserService,
@@ -15,21 +17,27 @@ export class BadgeAwardService {
     receiverId: number,
     giverId: number,
   ) {
+    this.logger.log(
+      `Processing badge award for receiverId=${receiverId}, giverId=${giverId}`,
+    );
+
     // No badges will be awarded for given and received id if the giver and receiver is same
     if (receiverId === giverId) return;
 
-    const availableUnawardedBadges =
-      await this.badgeService.getAvailableUnawardedBadges(receiverId);
-
-    if (!availableUnawardedBadges || availableUnawardedBadges?.length === 0)
-      return;
+    // Fetch unawarded badges separately for receiver and giver
+    const [receiverUnawardedBadges, giverUnawardedBadges] = await Promise.all([
+      this.badgeService.getAvailableUnawardedBadges(
+        receiverId,
+        BadgeCategory.COMMENTS_REACTIONS_RECEIVED,
+      ),
+      this.badgeService.getAvailableUnawardedBadges(
+        giverId,
+        BadgeCategory.COMMENTS_REACTIONS_GIVEN,
+      ),
+    ]);
 
     // Award badge to the receiver for comments/reactions received
-    const availableUnawardedBadgesForCommentsReactionsReceived =
-      availableUnawardedBadges.filter(
-        (badge) => badge.category === BadgeCategory.COMMENTS_REACTIONS_RECEIVED,
-      );
-    if (availableUnawardedBadgesForCommentsReactionsReceived?.length > 0) {
+    if (receiverUnawardedBadges?.length > 0) {
       const receivedCommentsReactionsCountMap =
         await this.badgeUserService.getReceivedCommentsOrReactionsCount(
           undefined,
@@ -41,7 +49,7 @@ export class BadgeAwardService {
           (item) => item.userId === receiverId,
         )?.count ?? 0;
 
-      const badgeToAward = availableUnawardedBadgesForCommentsReactionsReceived
+      const badgeToAward = receiverUnawardedBadges
         .filter(
           (badge) =>
             badge.achievementParams?.count &&
@@ -52,16 +60,22 @@ export class BadgeAwardService {
           badgeId: badge.id,
         }));
       if (badgeToAward.length > 0) {
-        await this.badgeUserService.saveBadgeUsers(badgeToAward);
+        try {
+          await this.badgeUserService.saveBadgeUsers(badgeToAward);
+          this.logger.log(
+            `Awarded ${badgeToAward.length} badge(s) to receiver userId=${receiverId}`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to award badge(s) to receiver userId=${receiverId}`,
+            error.stack,
+          );
+        }
       }
     }
 
-    // award badges to the giver for comments/reactions given
-    const availableUnawardedBadgesForCommentsReactionsGiven =
-      availableUnawardedBadges.filter(
-        (badge) => badge.category === BadgeCategory.COMMENTS_REACTIONS_GIVEN,
-      );
-    if (availableUnawardedBadgesForCommentsReactionsGiven?.length > 0) {
+    // Award badges to the giver for comments/reactions given
+    if (giverUnawardedBadges?.length > 0) {
       const givenCommentsReactionsCountMap =
         await this.badgeUserService.getGivenCommentsOrReactionsCount(
           undefined,
@@ -71,7 +85,7 @@ export class BadgeAwardService {
         givenCommentsReactionsCountMap.find((item) => item.userId === giverId)
           ?.count ?? 0;
 
-      const badgeToAward = availableUnawardedBadgesForCommentsReactionsGiven
+      const badgeToAward = giverUnawardedBadges
         .filter(
           (badge) =>
             badge.achievementParams?.count &&
@@ -82,7 +96,17 @@ export class BadgeAwardService {
           badgeId: badge.id,
         }));
       if (badgeToAward.length > 0) {
-        await this.badgeUserService.saveBadgeUsers(badgeToAward);
+        try {
+          await this.badgeUserService.saveBadgeUsers(badgeToAward);
+          this.logger.log(
+            `Awarded ${badgeToAward.length} badge(s) to giver userId=${giverId}`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to award badge(s) to giver userId=${giverId}`,
+            error.stack,
+          );
+        }
       }
     }
   }
@@ -91,12 +115,20 @@ export class BadgeAwardService {
     receiverId: number,
     giverId: number,
   ) {
+    this.logger.log(
+      `Processing badge revocation for receiverId=${receiverId}, giverId=${giverId}`,
+    );
+
     // No badges will be revoked for given and received id if the giver and receiver is same
     if (receiverId === giverId) return;
 
+    // Fetch badges for both users in parallel
+    const [receiverUserBadges, giverUserBadges] = await Promise.all([
+      this.badgeService.getUserBadges(receiverId),
+      this.badgeService.getUserBadges(giverId),
+    ]);
+
     // Revalidate the received comments/reactions awarded badges when a reaction is removed
-    const receiverUserBadges =
-      await this.badgeService.getUserBadges(receiverId);
     const userCommentsReactionsReceivedBadges =
       receiverUserBadges?.data?.filter(
         (badge) => badge.category === BadgeCategory.COMMENTS_REACTIONS_RECEIVED,
@@ -118,16 +150,24 @@ export class BadgeAwardService {
           badge.achievementParams?.count > receivedCommentsReactionsCount,
       );
       if (invalidBadges.length > 0) {
-        await this.badgeUserService.deleteUserBadges(
-          receiverId,
-          invalidBadges.map((badge) => badge.id),
-        );
+        try {
+          await this.badgeUserService.deleteUserBadges(
+            receiverId,
+            invalidBadges.map((badge) => badge.id),
+          );
+          this.logger.log(
+            `Revoked ${invalidBadges.length} badge(s) from receiver userId=${receiverId}`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to revoke badge(s) from receiver userId=${receiverId}`,
+            error.stack,
+          );
+        }
       }
     }
 
     // Revalidate the given comments/reactions awarded badges when a reaction is removed
-    const giverUserBadges = await this.badgeService.getUserBadges(giverId);
-
     const giverCommentsReactionsGivenBadges = giverUserBadges?.data?.filter(
       (badge) => badge.category === BadgeCategory.COMMENTS_REACTIONS_GIVEN,
     );
@@ -147,10 +187,20 @@ export class BadgeAwardService {
           badge.achievementParams?.count > giverCommentsReactionsCount,
       );
       if (invalidBadges.length > 0) {
-        await this.badgeUserService.deleteUserBadges(
-          giverId,
-          invalidBadges.map((badge) => badge.id),
-        );
+        try {
+          await this.badgeUserService.deleteUserBadges(
+            giverId,
+            invalidBadges.map((badge) => badge.id),
+          );
+          this.logger.log(
+            `Revoked ${invalidBadges.length} badge(s) from giver userId=${giverId}`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to revoke badge(s) from giver userId=${giverId}`,
+            error.stack,
+          );
+        }
       }
     }
   }
