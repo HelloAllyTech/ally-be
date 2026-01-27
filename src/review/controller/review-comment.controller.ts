@@ -28,8 +28,6 @@ import { GetReviewRepliesResponseDto } from '../dto/review-replies-response.dto'
 import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { ToggleCommentVisibilityDto } from '../dto/toggle-comment-visibility.dto';
-import { CurrentUser } from 'src/auth/decorators/user.decorator';
-import { TokenUser } from 'src/auth/type/auth.types';
 
 @Controller({
   path: 'reviews',
@@ -141,12 +139,8 @@ export class ReviewCommentController {
   @Delete('comments/:commentId')
   async deleteReviewComment(
     @Param('commentId', ParseUUIDPipe) commentId: string,
-    @CurrentUser() user: TokenUser,
   ): Promise<SuccessResponse> {
-    return this.reviewCommentService.deleteReviewComment(
-      commentId,
-      user.tenantId,
-    );
+    return this.reviewCommentService.deleteReviewComment(commentId);
   }
 
   @ApiOperation({ description: 'Toggle comment visibility ' })
