@@ -30,7 +30,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
       VALUES (
         uuid_generate_v4(), $1, $2, $3, $4, 
-        $4 + CASE WHEN $4 >= 1 THEN 1 ELSE 0 END, 
+        $4 + CASE WHEN $4 >= 1.00 THEN 1.00 ELSE 0.00 END, 
         NOW(), NOW()
       )
       ON CONFLICT ("userId", "tenant_id", "date")
@@ -38,8 +38,8 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
         "minutesPlayed" = user_daily_scores."minutesPlayed" + $4,
         "totalScore" = user_daily_scores."totalScore" + $4 + 
           CASE 
-            WHEN user_daily_scores."minutesPlayed" < 1 
-             AND user_daily_scores."minutesPlayed" + $4 >= 1 
+            WHEN user_daily_scores."minutesPlayed" < 1.00 
+             AND user_daily_scores."minutesPlayed" + $4 >= 1.00
             THEN ${scorePoints.ACTIVE_DAY_BONUS} 
             ELSE 0 
           END,
