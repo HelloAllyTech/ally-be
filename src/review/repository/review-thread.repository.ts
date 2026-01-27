@@ -13,12 +13,28 @@ export class ReviewThreadRepository extends Repository<ReviewThread> {
 
   async getReviewThreadsByReviewId(
     reviewId: string,
+    isHidden: boolean,
     options?: Pagination,
   ): Promise<{ threads: ReviewThread[]; count: number }> {
     const query = this.createQueryBuilder('reviewThread').where(
       'reviewThread.reviewId = :reviewId',
       { reviewId },
     );
+    if (!isHidden) {
+      query.andWhere(
+        `EXISTS (
+          SELECT 1 
+          FROM review_comments rc 
+          WHERE rc."reviewThreadId" = "reviewThread".id 
+          AND rc."parentCommentId" IS NULL 
+          AND rc."deletedAt" IS NULL
+          AND rc.hidden = false
+        )`,
+      );
+    }
+
+    // Order by creation date
+    query.orderBy('reviewThread.createdAt', 'ASC');
 
     // Apply pagination
     if (options?.limit) {

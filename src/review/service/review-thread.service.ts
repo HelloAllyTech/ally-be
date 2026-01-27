@@ -7,12 +7,10 @@ import {
 import { In } from 'typeorm';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
-import { User } from 'src/user/entity/user.entity';
 import { UserService } from 'src/user/service/user.service';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ReviewThreadsResponseDto } from '../dto/review-threads.dto';
-import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
 import { ReviewRepository } from '../repository/review.repository';
 import { ReviewCommentRepository } from '../repository/review-comment.repository';
@@ -50,6 +48,7 @@ export class ReviewThreadService {
     }
 
     const userId = Number(ExecutionManager.getUserId());
+
     const isReviewer = await this.permissionValidator.validatePermissions(
       userId,
       [PERMISSIONS.REVIEWER_ACCESS],
@@ -65,11 +64,25 @@ export class ReviewThreadService {
       throw new ForbiddenException('You are not allowed to access this review');
     }
 
+    const isHidden = review.createdBy === userId;
+
     const { threads: reviewThreads, count: totalCount } =
       await this.reviewThreadRepository.getReviewThreadsByReviewId(
         reviewId,
+        isHidden,
         options,
       );
+
+    if (totalCount == 0) {
+      return {
+        data: [],
+        count: 0,
+      };
+    }
+
+    // Filter to get only top-level comments
+    const limit = 1;
+    const threadIds = reviewThreads.map((thread) => thread.id);
 
     let messagesPromise;
     if (options?.includeMessage) {
@@ -77,92 +90,105 @@ export class ReviewThreadService {
       messagesPromise = this.scenarioSharedService.getMessagesByIds(messageIds);
     }
 
-    const reviewCommentsPromise = this.reviewCommentRepository.find({
-      where: { reviewThreadId: In(reviewThreads.map((thread) => thread.id)) },
-    });
+    const reviewCommentPromise = this.reviewCommentRepository
+      .getCommentsForThreadIds(threadIds, isHidden)
+      .then((results) => results.filter((result) => result.row_num <= limit));
 
     let reviewComments;
     let messages: ScenarioSessionMessages[];
     if (messagesPromise) {
       [messages, reviewComments] = await Promise.all([
         messagesPromise,
-        reviewCommentsPromise,
+        reviewCommentPromise,
       ]);
     } else {
-      reviewComments = await reviewCommentsPromise;
+      reviewComments = await reviewCommentPromise;
     }
 
-    // Filter to get only top-level comment IDs for reactions query
-    // (we only display top-level comments, so we don't need reactions for replies)
-    const topLevelCommentIds = reviewComments
-      .filter((comment) => !comment.parentCommentId)
-      .map((comment) => comment.id);
+    const commentIds = reviewComments.map((comment) => comment.c_id);
+    const userIds = [
+      ...new Set([...reviewComments.map((comment) => comment.c_createdBy)]),
+    ];
 
-    const usersPromise = this.userService.getUsersByIds(
-      reviewComments.map((comment) => comment.createdBy),
-    );
-    // Only fetch reactions for top-level comments (optimization)
-    const reviewCommentReactionsPromise =
-      topLevelCommentIds.length > 0
-        ? this.reviewCommentReactionRepository.find({
-            where: {
-              reviewCommentId: In(topLevelCommentIds),
-            },
-          })
-        : Promise.resolve([]);
-
-    const [users, reviewCommentReactions] = await Promise.all([
-      usersPromise,
-      reviewCommentReactionsPromise,
+    const [reactions, users, myReactions, commentCount] = await Promise.all([
+      this.reviewCommentReactionRepository.getReactionAndCountByCommentIds(
+        commentIds,
+      ),
+      this.userService.getUsersByIds(userIds),
+      this.reviewCommentReactionRepository.find({
+        where: {
+          reviewCommentId: In(commentIds),
+          createdBy: userId,
+        },
+      }),
+      this.reviewCommentRepository.getCommentCountsByThreadIds(
+        threadIds,
+        isHidden,
+      ),
     ]);
 
-    const usersMap = new Map<number, User>();
-    users.forEach((user) => {
-      usersMap.set(user.id, user);
-    });
-    const reviewCommentReactionsMap = new Map<
-      string,
-      ReviewCommentReaction[]
-    >();
-    reviewCommentReactions.forEach((reaction) => {
-      reviewCommentReactionsMap.set(reaction.reviewCommentId, [
-        ...(reviewCommentReactionsMap.get(reaction.reviewCommentId) || []),
-        reaction,
-      ]);
-    });
+    const commentCountMap = commentCount.reduce(
+      (acc, { reviewThreadId, commentCount }) => {
+        acc[reviewThreadId] = commentCount;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    const myReactionsByCommentId = myReactions.reduce(
+      (acc, reaction) => {
+        acc[reaction.reviewCommentId] = reaction.reaction;
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
+
+    const reactionsByComment = reactions.reduce(
+      (acc, { commentId, reaction, count }) => {
+        if (!acc[commentId]) {
+          acc[commentId] = {};
+        }
+        acc[commentId][reaction] = parseInt(count);
+        return acc;
+      },
+      {} as Record<string, Record<string, number>>,
+    );
+
+    const userMap = new Map(
+      users.map((user) => [user.id, formatCreatedUserDetails(user)]),
+    );
+
+    const commentsByThread = reviewComments.reduce(
+      (acc, comment) => {
+        if (!acc[comment.c_reviewThreadId]) {
+          acc[comment.c_reviewThreadId] = [];
+        }
+
+        const user = userMap.get(comment.c_createdBy);
+        acc[comment.c_reviewThreadId].push({
+          id: comment.c_id,
+          content: comment.c_content,
+          createdAt: comment.c_createdAt,
+          createdBy: user || {},
+          reactions: reactionsByComment[comment.c_id] || {},
+          myReaction: myReactionsByCommentId[comment.c_id] || null,
+          hidden: comment.c_hidden,
+          replyCount: parseInt(comment.reply_count, 10) || 0,
+        });
+        return acc;
+      },
+      {} as Record<string, any[]>,
+    );
 
     const reviewThreadsData = reviewThreads.map((thread) => {
-      const allComments = reviewComments.filter(
-        (comment) => comment.reviewThreadId === thread.id,
-      );
-      // Only include top-level comments (those without parentCommentId)
-      const topLevelComments = allComments.filter(
-        (comment) => !comment.parentCommentId,
-      );
-
       const message = messages?.find(
         (message) => message.id === thread.messageId,
       );
       return {
         id: thread.id,
         selection: thread.selection,
-        comments: topLevelComments.map((comment) => ({
-          id: comment.id,
-          content: comment.content,
-          createdAt: comment.createdAt,
-          createdBy: formatCreatedUserDetails(usersMap.get(comment.createdBy)!),
-          reactions: reviewCommentReactionsMap.get(comment.id)?.reduce(
-            (rec, reaction) => {
-              rec[reaction.reaction] = (rec[reaction.reaction] || 0) + 1;
-              return rec;
-            },
-            {} as Record<string, number>,
-          ),
-          replyCount: allComments.filter(
-            (c) => c.parentCommentId === comment.id,
-          ).length,
-        })),
-        commentCount: topLevelComments.length,
+        comments: commentsByThread[thread.id] || [],
+        commentCount: commentCountMap[thread.id],
         ...(options?.includeMessage && message
           ? {
               message: {

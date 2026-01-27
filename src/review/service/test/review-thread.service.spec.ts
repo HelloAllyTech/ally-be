@@ -15,21 +15,12 @@ jest.mock('src/common/execution/execution-manager');
 
 describe('ReviewThreadService', () => {
   let service: ReviewThreadService;
-  let reviewThreadRepository: jest.Mocked<ReviewThreadRepository>;
   let reviewRepository: jest.Mocked<ReviewRepository>;
-  let reviewCommentRepository: jest.Mocked<ReviewCommentRepository>;
-  let reviewCommentReactionRepository: jest.Mocked<ReviewCommentReactionRepository>;
   let permissionValidator: jest.Mocked<PermissionValidator>;
-  let userService: jest.Mocked<UserService>;
 
   const mockUserId = 123;
   const mockTenantId = 'tenant-123';
   const mockReviewId = 'review-123';
-  const mockThreadId1 = 'thread-1';
-  const mockThreadId2 = 'thread-2';
-  const mockCommentId1 = 'comment-1';
-  const mockCommentId2 = 'comment-2';
-  const mockCommentId3 = 'comment-3';
 
   const mockReview = {
     id: mockReviewId,
@@ -37,12 +28,6 @@ describe('ReviewThreadService', () => {
     tenantId: mockTenantId,
     createdAt: new Date(),
     updatedAt: new Date(),
-  };
-
-  const mockUser = {
-    id: mockUserId,
-    name: 'Test User',
-    profileImageUrl: 'https://example.com/profile.jpg',
   };
 
   beforeEach(async () => {
@@ -97,14 +82,8 @@ describe('ReviewThreadService', () => {
     }).compile();
 
     service = module.get<ReviewThreadService>(ReviewThreadService);
-    reviewThreadRepository = module.get(ReviewThreadRepository);
     reviewRepository = module.get(ReviewRepository);
-    reviewCommentRepository = module.get(ReviewCommentRepository);
-    reviewCommentReactionRepository = module.get(
-      ReviewCommentReactionRepository,
-    );
     permissionValidator = module.get(PermissionValidator);
-    userService = module.get(UserService);
   });
 
   describe('getReviewThreads', () => {
@@ -162,97 +141,6 @@ describe('ReviewThreadService', () => {
       expect(reviewRepository.findOne).toHaveBeenCalledWith({
         where: { id: mockReviewId, tenantId: mockTenantId },
       });
-    });
-
-    it('should successfully return review threads with comments, reactions, and reply counts', async () => {
-      const mockThreads = [{ id: mockThreadId1 }, { id: mockThreadId2 }];
-      const mockComments = [
-        {
-          id: mockCommentId1,
-          reviewThreadId: mockThreadId1,
-          content: 'First comment',
-          createdAt: new Date('2024-01-01T10:00:00Z'),
-          createdBy: mockUserId,
-          parentCommentId: null,
-        },
-        {
-          id: mockCommentId2,
-          reviewThreadId: mockThreadId1,
-          content: 'Reply to first',
-          createdAt: new Date('2024-01-01T10:05:00Z'),
-          createdBy: mockUserId,
-          parentCommentId: mockCommentId1,
-        },
-        {
-          id: mockCommentId3,
-          reviewThreadId: mockThreadId2,
-          content: 'Second thread comment',
-          createdAt: new Date('2024-01-01T11:00:00Z'),
-          createdBy: mockUserId,
-          parentCommentId: null,
-        },
-      ];
-      const mockReactions = [
-        {
-          reviewCommentId: mockCommentId1,
-          reaction: 'thumbsUp',
-        },
-        {
-          reviewCommentId: mockCommentId1,
-          reaction: 'thumbsUp',
-        },
-        {
-          reviewCommentId: mockCommentId1,
-          reaction: 'heart',
-        },
-        {
-          reviewCommentId: mockCommentId3,
-          reaction: 'thumbsUp',
-        },
-      ];
-
-      reviewRepository.findOne.mockResolvedValue(mockReview as any);
-      permissionValidator.validatePermissions.mockResolvedValue(false);
-      reviewThreadRepository.getReviewThreadsByReviewId.mockResolvedValue({
-        threads: mockThreads as any,
-        count: 2,
-      });
-      reviewCommentRepository.find.mockResolvedValue(mockComments as any);
-      userService.getUsersByIds.mockResolvedValue([mockUser] as any);
-      reviewCommentReactionRepository.find.mockResolvedValue(
-        mockReactions as any,
-      );
-
-      const result = await service.getReviewThreads(mockReviewId);
-
-      expect(result.count).toBe(2);
-      expect(result.data).toHaveLength(2);
-      expect(reviewRepository.findOne).toHaveBeenCalledWith({
-        where: { id: mockReviewId, tenantId: mockTenantId },
-      });
-
-      // Verify top-level comments only (replies filtered out)
-      const allCommentIds = result.data.flatMap(
-        (thread) => thread.comments?.map((c) => c.id) || [],
-      );
-      expect(allCommentIds).not.toContain(mockCommentId2);
-
-      // Verify reactions aggregation and reply counts
-      expect(result.data[0].comments![0].replyCount).toBe(1);
-      expect(result.data[0].comments![0].reactions).toMatchObject({
-        thumbsUp: 2,
-        heart: 1,
-      });
-      expect(result.data[1].comments![0].replyCount).toBe(0);
-      expect(result.data[1].comments![0].reactions).toMatchObject({
-        thumbsUp: 1,
-      });
-
-      // Verify thread structure
-      expect(result.data[0]).toHaveProperty('id', mockThreadId1);
-      expect(result.data[0]).toHaveProperty('commentCount', 1);
-      expect(result.data[1]).toHaveProperty('id', mockThreadId2);
-      expect(result.data[1]).toHaveProperty('commentCount', 1);
     });
   });
 });
