@@ -128,6 +128,29 @@ export class BadgeUserService {
     }
   }
 
+  async getSimulationMinutesByUserId(userId: number): Promise<number> {
+    const userMinutesMap =
+      await this.communitySharedService.getTotalSimulationMinutesPerUser(
+        undefined,
+        [userId],
+      );
+    return (
+      userMinutesMap?.find((userMinutes) => userMinutes?.userId === userId)
+        ?.totalMinutes ?? 0
+    );
+  }
+
+  async getMaxActiveDayStreakByUserId(userId: number): Promise<number> {
+    const userDayStreakMap =
+      await this.communitySharedService.getMaxActiveDaysPerUser(undefined, [
+        userId,
+      ]);
+    return (
+      userDayStreakMap?.find((dayStreak) => dayStreak?.userId === userId)
+        ?.maxStreak ?? 0
+    );
+  }
+
   async getGivenCommentsOrReactionsCount(
     tenantIds?: string[],
     userIds?: number[],

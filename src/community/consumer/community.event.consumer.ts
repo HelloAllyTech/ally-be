@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
+import { DataSource, EntityManager } from 'typeorm';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 
 import { UserDailyScoreRepository } from '../repository/user-daily-score.repository';
 import { scorePoints } from '../constant/community.constant';
@@ -16,8 +17,9 @@ import {
 import {
   ScenarioSessionLeaderboardEvent,
   ScenarioSessionLeaderboardEndedEventParams,
+  LeaderboardActionEvent,
+  MinutesPlayedUpdatedEventParams,
 } from 'src/learn/type/scenario-session-leaderboard-event.type';
-import { DataSource, EntityManager } from 'typeorm';
 
 @Injectable()
 export class CommunityEventConsumer {
@@ -28,6 +30,7 @@ export class CommunityEventConsumer {
   constructor(
     private readonly userDailyScoreRepository: UserDailyScoreRepository,
     private readonly dataSource: DataSource,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   @OnEvent(ReviewEvents.REVIEW_REACTION_ADDED, { async: true })
@@ -213,12 +216,24 @@ export class CommunityEventConsumer {
     durationMinutes,
   }: ScenarioSessionLeaderboardEndedEventParams): Promise<void> {
     try {
+      const userDateEntryBeforeUpdation =
+        await this.userDailyScoreRepository.findOne({
+          where: {
+            userId,
+            tenantId,
+            date,
+          },
+        });
       await this.userDailyScoreRepository.upsertDailyScore(
         userId,
         tenantId,
         date,
         durationMinutes,
       );
+      this.eventEmitter.emit(LeaderboardActionEvent.MINUTES_PLAYED_UPDATED, {
+        userId,
+        userDateEntryBeforeUpdation,
+      } as MinutesPlayedUpdatedEventParams);
     } catch (error) {
       this.logger.error(
         `Failed to add minutes played for user ${userId}: ${error.message}`,
