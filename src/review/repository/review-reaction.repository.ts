@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ReviewReaction } from '../entity/review-reaction.entity';
 import { Review } from '../entity/review.entity';
-import { ReviewReactionOptions } from '../type/review.type';
+import { ReviewReactionOptions } from '../type/review-reaction.type';
+import {
+  ReactionCount,
+  ReviewReactionCount,
+} from '../type/review-reaction.type';
 
 @Injectable()
 export class ReviewReactionRepository extends Repository<ReviewReaction> {
@@ -10,7 +14,10 @@ export class ReviewReactionRepository extends Repository<ReviewReaction> {
     super(ReviewReaction, dataSource.createEntityManager());
   }
 
-  async getReactionsByReviewIds(reviewIds: string[]) {
+  async getReactionsByReviewIds(
+    reviewIds: string[],
+  ): Promise<ReviewReactionCount[]> {
+    if (!reviewIds.length) return [];
     return this.createQueryBuilder('rr')
       .select([
         'rr.reviewId AS "reviewId"',
@@ -71,7 +78,10 @@ export class ReviewReactionRepository extends Repository<ReviewReaction> {
 
     return query.getRawMany();
   }
-  async getReviewReactions(reviewId: string, options: ReviewReactionOptions) {
+  async getReviewReactions(
+    reviewId: string,
+    options: ReviewReactionOptions,
+  ): Promise<[ReviewReaction[], number]> {
     const { reaction, limit = 20, offset = 0 } = options;
     const query = this.createQueryBuilder('rr').where(
       'rr.reviewId = :reviewId',
@@ -89,7 +99,7 @@ export class ReviewReactionRepository extends Repository<ReviewReaction> {
       .getManyAndCount();
   }
 
-  async getReviewReactionsAndCount(reviewId: string) {
+  async getReviewReactionsAndCount(reviewId: string): Promise<ReactionCount[]> {
     return this.createQueryBuilder('rr')
       .select(['rr.reaction AS reaction', 'COUNT(*) AS count'])
       .where('rr.reviewId = :reviewId', { reviewId })

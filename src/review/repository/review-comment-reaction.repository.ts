@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
 import { ReviewComment } from '../entity/review-comment.entity';
-import { CommentReactionCount } from '../type/review-reaction.type';
+import { CommentReactionCount } from '../type/review-comment-reaction.type';
 
 @Injectable()
 export class ReviewCommentReactionRepository extends Repository<ReviewCommentReaction> {
