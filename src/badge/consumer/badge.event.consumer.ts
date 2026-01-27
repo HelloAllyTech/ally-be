@@ -11,6 +11,10 @@ import {
   ReviewEvents,
   ReviewCommentRemovedEventParams,
 } from 'src/review/type/review-event.type';
+import {
+  LeaderboardActionEvent,
+  MinutesPlayedUpdatedEventParams,
+} from 'src/learn/type/scenario-session-leaderboard-event.type';
 
 @Injectable()
 export class BadgeEventConsumer {
@@ -78,5 +82,20 @@ export class BadgeEventConsumer {
     await this.badgeAwardService.revokeInvalidBadgesOnCommentDeletion(
       reviewCommentReactionEventParams,
     );
+  }
+
+  @OnEvent(LeaderboardActionEvent.MINUTES_PLAYED_UPDATED, { async: true })
+  async handleMinutesPlayedUpdated({
+    userId,
+    userDateEntryBeforeUpdation,
+  }: MinutesPlayedUpdatedEventParams) {
+    // Award simulation minutes badges for user
+    await this.badgeAwardService.awardSimulationMinutesBadgeByUserId(userId);
+
+    // Skip active day streak badge award if a user-date entry already exists.
+    // This indicates the active day streak was already calculated for this date,
+    // so no new badges calculation should be done to optimize queries.
+    if (userDateEntryBeforeUpdation?.id) return;
+    await this.badgeAwardService.awardActiveDayStreakBadgeByUserId(userId);
   }
 }

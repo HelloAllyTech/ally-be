@@ -19,7 +19,7 @@ export class BadgeAwardService {
   async awardCommentReactionBadgeByReceiverGiverId(
     receiverId: number,
     giverId: number,
-  ) {
+  ): Promise<void> {
     this.logger.log(
       `Processing badge award for receiverId=${receiverId}, giverId=${giverId}`,
     );
@@ -117,7 +117,7 @@ export class BadgeAwardService {
   async revokeInvalidReactionBadgesByReceiverGiverId(
     receiverId: number,
     giverId: number,
-  ) {
+  ): Promise<void> {
     this.logger.log(
       `Processing badge revocation for receiverId=${receiverId}, giverId=${giverId}`,
     );
@@ -239,6 +239,9 @@ export class BadgeAwardService {
       receiverRecheckList.push(comment.createdBy);
     }
 
+    if (!commentReplies?.length)
+      return { receiverRecheckList, giverRecheckList };
+
     // Find comment replies not given by the comment owner.
     // Add reply creators to the giver list and the comment owner to the receiver list.
     const commentRepliesNotGivenByCommentOwner = commentReplies?.filter(
@@ -253,6 +256,9 @@ export class BadgeAwardService {
       );
       receiverRecheckList.push(comment.createdBy);
     }
+
+    if (!commentReplyReactions?.length)
+      return { receiverRecheckList, giverRecheckList };
 
     // Find comment reply reactions not given by the reply owner.
     // Add reaction creators to the giver list and reply owners to the receiver list.
@@ -364,6 +370,79 @@ export class BadgeAwardService {
     if (userBadgesToDelete?.length > 0) {
       await this.badgeUserService.deleteUserBadgeList(
         userBadgesToDelete.map((badge) => badge.id),
+      );
+    }
+  }
+
+  async awardSimulationMinutesBadgeByUserId(userId: number): Promise<void> {
+    try {
+      const simulationMinutes =
+        await this.badgeUserService.getSimulationMinutesByUserId(userId);
+      if (!simulationMinutes) return;
+
+      const unawardedAvailableSimulationMinutesBadges =
+        await this.badgeService.getAvailableUnawardedBadges(
+          userId,
+          BadgeCategory.SIMULATION_MINUTES,
+        );
+
+      const badgesToAward = unawardedAvailableSimulationMinutesBadges.filter(
+        (badge) => {
+          return (
+            badge.achievementParams?.count &&
+            badge.achievementParams?.count <= simulationMinutes
+          );
+        },
+      );
+      if (badgesToAward.length === 0) return;
+
+      await this.badgeUserService.saveBadgeUsers(
+        badgesToAward.map((badge) => ({ badgeId: badge.id, userId })),
+      );
+
+      this.logger.log(
+        `Awarded ${badgesToAward.length} simulation minutes badge(s) to user id=${userId}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to award simulation minutes badge to user id=${userId}`,
+        error.stack,
+      );
+    }
+  }
+
+  async awardActiveDayStreakBadgeByUserId(userId: number): Promise<void> {
+    try {
+      const activeDayStreak =
+        await this.badgeUserService.getMaxActiveDayStreakByUserId(userId);
+      if (!activeDayStreak) return;
+
+      const unawardedAvailableActiveDayStreakBadges =
+        await this.badgeService.getAvailableUnawardedBadges(
+          userId,
+          BadgeCategory.ACTIVE_DAY_STREAK,
+        );
+      const badgesToAward = unawardedAvailableActiveDayStreakBadges?.filter(
+        (badge) => {
+          return (
+            badge.achievementParams?.count &&
+            badge.achievementParams?.count <= activeDayStreak
+          );
+        },
+      );
+      if (badgesToAward?.length === 0) return;
+
+      await this.badgeUserService.saveBadgeUsers(
+        badgesToAward.map((badge) => ({ badgeId: badge.id, userId })),
+      );
+
+      this.logger.log(
+        `Awarded ${badgesToAward?.length} active day streak badge(s) to user id=${userId}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to award active day streak badge to user id=${userId}`,
+        error.stack,
       );
     }
   }
