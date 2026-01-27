@@ -28,6 +28,8 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import {
   CreateBadgeDto,
   CreateBadgeResponseDto,
+  CreateBadgesBatchDto,
+  CreateBadgesBatchResponseDto,
   UpdateBadgeDto,
 } from '../dto/badge.dto';
 import {
@@ -65,6 +67,21 @@ export class BadgeController {
     @Body() createBadgeDto: CreateBadgeDto,
   ): Promise<CreateBadgeResponseDto> {
     return this.badgeService.createBadge(createBadgeDto);
+  }
+
+  @ApiOperation({ summary: 'Create badges in batch' })
+  @ApiBody({ type: CreateBadgesBatchDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Badges created successfully',
+    type: CreateBadgesBatchResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @Post('/batch')
+  async createBadgesBatch(
+    @Body() createBadgesBatchDto: CreateBadgesBatchDto,
+  ): Promise<CreateBadgesBatchResponseDto> {
+    return this.badgeService.createBadgesBatch(createBadgesBatchDto);
   }
 
   @ApiOperation({ summary: 'Get all badges for the current user' })
