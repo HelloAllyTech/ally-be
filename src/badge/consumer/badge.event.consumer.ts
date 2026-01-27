@@ -9,6 +9,7 @@ import {
   ReviewReactionAddedEventParams,
   ReviewReactionRemovedEventParams,
   ReviewEvents,
+  ReviewCommentRemovedEventParams,
 } from 'src/review/type/review-event.type';
 
 @Injectable()
@@ -67,6 +68,15 @@ export class BadgeEventConsumer {
     await this.badgeAwardService.revokeInvalidReactionBadgesByReceiverGiverId(
       comment.createdBy,
       removedReaction.createdBy,
+    );
+  }
+
+  @OnEvent(ReviewEvents.REVIEW_COMMENT_REMOVED, { async: true })
+  async handleReviewCommentRemoved(
+    reviewCommentReactionEventParams: ReviewCommentRemovedEventParams,
+  ) {
+    await this.badgeAwardService.revokeInvalideBadgesOnCommentDeletion(
+      reviewCommentReactionEventParams,
     );
   }
 }

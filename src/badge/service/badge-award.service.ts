@@ -4,6 +4,8 @@ import { BadgeUserService } from './badge-user.service';
 import { BadgeService } from './badge.service';
 import { BadgeCategory } from '../constants/badge.constants';
 
+import { ReviewCommentRemovedEventParams } from 'src/review/type/review-event.type';
+
 @Injectable()
 export class BadgeAwardService {
   private readonly logger = new Logger(BadgeAwardService.name);
@@ -203,5 +205,12 @@ export class BadgeAwardService {
         }
       }
     }
+  }
+
+  async revokeInvalideBadgesOnCommentDeletion({
+    review,
+    comment,
+  }: ReviewCommentRemovedEventParams) {
+    if (!review || !comment) return;
   }
 }
