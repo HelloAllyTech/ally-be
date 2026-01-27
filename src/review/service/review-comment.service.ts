@@ -31,6 +31,7 @@ import {
 import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
 import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
 import { formatCreatedUserDetails } from '../util/review.util';
+import { ToggleCommentVisibilityDto } from '../dto/toggle-comment-visibility.dto';
 
 @Injectable()
 export class ReviewCommentService {
@@ -555,5 +556,89 @@ export class ReviewCommentService {
     this.logger.info(`Comment deleted successfully: ${commentId}`);
 
     return { success: true };
+  }
+
+  async toggleCommentVisibility(
+    commentId: string,
+    toggleCommentVisibilityDto: ToggleCommentVisibilityDto,
+  ) {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+
+    this.logger.info(`Toggling comment visibility: ${commentId}`);
+    const comment = await this.reviewCommentRepository.findOne({
+      where: { id: commentId, tenantId },
+    });
+    if (!comment) {
+      this.logger.error(`Comment not found: ${commentId}`);
+      throw new NotFoundException('Comment not found');
+    }
+
+    const thread = await this.reviewThreadRepository.findOne({
+      where: { id: comment.reviewThreadId, tenantId },
+    });
+    if (!thread) {
+      this.logger.error(`Thread not found: ${comment.reviewThreadId}`);
+      throw new NotFoundException('Thread not found');
+    }
+
+    const review = await this.reviewRepository.findOne({
+      where: { id: thread.reviewId },
+    });
+    if (!review) {
+      this.logger.error(`Review not found: ${thread.reviewId}`);
+      throw new NotFoundException('Review not found');
+    }
+
+    if (review.createdBy !== userId) {
+      this.logger.error(`User not allowed to access this review: ${userId}`);
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
+    // If it is a reply, update the reply
+    if (comment.parentCommentId) {
+      this.logger.info(`Updating reply visibility: ${commentId}`);
+      await this.reviewCommentRepository.update(commentId, {
+        hidden: toggleCommentVisibilityDto.hidden,
+      });
+      return { success: true };
+    }
+
+    // If it is a top-level comment, update the comment and its replies
+    if (!comment.parentCommentId) {
+      try {
+        await this.dataSource.transaction(async (entityManager) => {
+          const commentRepo = entityManager.getRepository(ReviewComment);
+
+          // Update the comment itself
+          await commentRepo.update(
+            { id: commentId },
+            { hidden: toggleCommentVisibilityDto.hidden },
+          );
+
+          // If it's a top-level comment, update all its replies
+          await commentRepo.update(
+            { parentCommentId: commentId },
+            { hidden: toggleCommentVisibilityDto.hidden },
+          );
+          this.logger.info(
+            `Comment and replies visibility updated: ${commentId}`,
+          );
+          return { success: true };
+        });
+      } catch (error) {
+        this.logger.error(`Failed hide comment: ${error.message}`);
+        throw new InternalServerErrorException(
+          `Failed to change visibility of comment`,
+        );
+      }
+    }
+    throw new BadRequestException('Invalid request');
   }
 }

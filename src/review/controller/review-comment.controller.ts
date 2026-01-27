@@ -27,6 +27,7 @@ import {
 import { GetReviewRepliesResponseDto } from '../dto/review-replies-response.dto';
 import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
 import { SuccessResponse } from 'src/common/type/common.type';
+import { ToggleCommentVisibilityDto } from '../dto/toggle-comment-visibility.dto';
 
 @Controller({
   path: 'reviews',
@@ -140,5 +141,18 @@ export class ReviewCommentController {
     @Param('commentId', ParseUUIDPipe) commentId: string,
   ): Promise<SuccessResponse> {
     return this.reviewCommentService.deleteReviewComment(commentId);
+  }
+
+  @ApiOperation({ description: 'Toggle comment visibility ' })
+  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
+  @Patch('comments/:commentId/visibility')
+  async toggleCommentVisibility(
+    @Param('commentId', ParseUUIDPipe) commentId: string,
+    @Body() toggleCommentVisibilityDto: ToggleCommentVisibilityDto,
+  ) {
+    return this.reviewCommentService.toggleCommentVisibility(
+      commentId,
+      toggleCommentVisibilityDto,
+    );
   }
 }
