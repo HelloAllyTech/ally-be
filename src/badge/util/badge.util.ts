@@ -1,6 +1,7 @@
 import {
   GroupedUserAvailableBadges,
   UserAvailableBadge,
+  UserBadgeWithDetails,
 } from '../type/badge-response.type';
 import { BadgeCategory } from '../constants/badge.constants';
 
@@ -35,4 +36,18 @@ export function groupAndSortBadgesByCategory(
       }),
     }),
   );
+}
+
+export function filterInvalidBadges(
+  badges: UserBadgeWithDetails[],
+  countMap: { userId: number; count: number }[],
+): UserBadgeWithDetails[] {
+  return badges.filter((badge) => {
+    const actualCount =
+      countMap.find((item) => item.userId === badge.userId)?.count ?? 0;
+    return (
+      badge.achievementParams?.count &&
+      badge.achievementParams?.count > actualCount
+    );
+  });
 }

@@ -91,6 +91,32 @@ export class BadgeRepository extends Repository<Badge> {
     return query.orderBy('badgeUser.createdAt', 'DESC').getRawMany();
   }
 
+  async getBadgesByUserIds(userIds: number[]): Promise<UserBadgeWithDetails[]> {
+    const query = this.dataSource
+      .createQueryBuilder(BadgeUser, 'badgeUser')
+      .innerJoin(Badge, 'badge', 'badge.id = badgeUser.badgeId')
+      .select([
+        'badgeUser.id AS "id"',
+        'badgeUser.badgeId AS "badgeId"',
+        'badgeUser.userId AS "userId"',
+        'badgeUser.viewedStatus AS "viewedStatus"',
+        'badgeUser.createdAt AS "createdAt"',
+        'badge.id AS "badge_id"',
+        'badge.code AS "code"',
+        'badge.name AS "name"',
+        'badge.description AS "description"',
+        'badge.imageUrl AS "imageUrl"',
+        'badge.category AS "category"',
+        'badge.achievementParams AS "achievementParams"',
+      ])
+      .where('badgeUser.userId IN (:...userIds)', { userIds })
+      .andWhere('badgeUser.deletedAt IS NULL')
+      .andWhere('badge.deletedAt IS NULL')
+      .andWhere('badge.status = :status', { status: BadgeStatus.ACTIVE });
+
+    return query.orderBy('badgeUser.createdAt', 'DESC').getRawMany();
+  }
+
   async getUserBadgeCount(
     userId: number,
     viewedStatus?: BadgeViewedStatus,

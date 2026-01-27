@@ -239,4 +239,10 @@ export class BadgeUserService {
       badgeId: In(badgeIds),
     });
   }
+
+  async deleteUserBadgeList(userBadgeIds: string[]): Promise<void> {
+    await this.badgeUserRepository.softDelete({
+      id: In(userBadgeIds),
+    });
+  }
 }
