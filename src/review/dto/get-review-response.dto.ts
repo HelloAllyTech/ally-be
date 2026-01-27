@@ -44,4 +44,10 @@ export class GetReviewResponseDto {
 
   @ApiProperty()
   createdBy!: CreatedByDto;
+
+  @ApiProperty()
+  reactions!: Record<string, number>;
+
+  @ApiProperty()
+  myReaction!: string | null;
 }

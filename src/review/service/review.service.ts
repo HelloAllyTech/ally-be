@@ -174,11 +174,26 @@ export class ReviewService {
       throw new BadRequestException('Scenario session not found');
     }
 
-    const [user, scenario, comments] = await Promise.all([
-      this.userService.get(review.createdBy),
-      this.scenarioSharedService.getScenarioById(scenarioSession.scenarioId),
-      this.reviewThreadRepository.getCommentsCountByReviewIds([review.id]),
-    ]);
+    const [user, scenario, comments, reactions, myReaction] = await Promise.all(
+      [
+        this.userService.get(review.createdBy),
+        this.scenarioSharedService.getScenarioById(scenarioSession.scenarioId),
+        this.reviewThreadRepository.getCommentsCountByReviewIds([review.id]),
+        this.reviewReactionRepository.getReactionsByReviewIds([review.id]),
+        this.reviewReactionRepository.findOne({
+          where: { reviewId: review.id, createdBy: userId },
+        }),
+      ],
+    );
+
+    const updatedReactions = reactions.reduce(
+      (acc, reaction) => {
+        acc[reaction.reaction] = Number(reaction.count);
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
     return {
       id: review.id,
       scenario: {
@@ -198,6 +213,8 @@ export class ReviewService {
       },
       commentsCount: comments.length > 0 ? Number(comments[0].count) : 0,
       createdBy: formatCreatedUserDetails(user!),
+      reactions: updatedReactions,
+      myReaction: myReaction?.reaction ?? null,
     };
   }
 

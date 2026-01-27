@@ -86,6 +86,7 @@ describe('ReviewService', () => {
           provide: ReviewReactionRepository,
           useValue: {
             getReactionsByReviewIds: jest.fn(),
+            findOne: jest.fn(),
           },
         },
         {
@@ -348,6 +349,10 @@ describe('ReviewService', () => {
       reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue([
         { reviewId: mockReviewId, count: 5 },
       ] as any);
+      reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.findOne.mockResolvedValue(null as any);
 
       const result = await service.getReviewById(mockReviewId);
 
