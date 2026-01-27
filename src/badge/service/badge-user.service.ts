@@ -18,12 +18,15 @@ export class BadgeUserService {
     private readonly reviewSharedService: ReviewSharedService,
   ) {}
 
-  async awardBadgeToUsersByTenant(badge: Badge, tenantIds: string[]) {
+  async awardBadgeToUsersByTenant(
+    badge: Badge,
+    tenantIds: string[],
+  ): Promise<void> {
     this.logger.log(
       `Awarding badge ${badge.id} to users in tenants: ${tenantIds.join(', ')}`,
     );
     if (!badge.achievementParams?.count) {
-      return null;
+      return;
     }
 
     try {

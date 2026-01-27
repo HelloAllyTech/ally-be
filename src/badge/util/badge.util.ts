@@ -42,9 +42,13 @@ export function filterInvalidBadges(
   badges: UserBadgeWithDetails[],
   countMap: { userId: number; count: number }[],
 ): UserBadgeWithDetails[] {
+  // Create a Map for O(1) lookup instead of O(n) find operations
+  const countMapByUserId = new Map(
+    countMap.map((item) => [item.userId, item.count]),
+  );
+
   return badges.filter((badge) => {
-    const actualCount =
-      countMap.find((item) => item.userId === badge.userId)?.count ?? 0;
+    const actualCount = countMapByUserId.get(badge.userId) ?? 0;
     return (
       badge.achievementParams?.count &&
       badge.achievementParams?.count > actualCount

@@ -62,7 +62,7 @@ describe('BadgeUserService', () => {
   });
 
   describe('awardBadgeToUsersByTenant', () => {
-    it('should return null when badge has no achievementParams', async () => {
+    it('should return undefined when badge has no achievementParams', async () => {
       const badge = {
         id: 'badge-1',
         category: BadgeCategory.SIMULATION_MINUTES,
@@ -73,7 +73,7 @@ describe('BadgeUserService', () => {
         'tenant-1',
       ]);
 
-      expect(result).toBeNull();
+      expect(result).toBeUndefined();
       expect(
         mockCommunitySharedService.getTotalSimulationMinutesPerUser,
       ).not.toHaveBeenCalled();

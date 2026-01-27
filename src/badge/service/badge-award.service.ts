@@ -58,7 +58,7 @@ export class BadgeAwardService {
             badge.achievementParams?.count &&
             badge.achievementParams?.count <= receivedCommentsReactionsCount,
         )
-        ?.map((badge) => ({
+        .map((badge) => ({
           userId: receiverId,
           badgeId: badge.id,
         }));
@@ -94,7 +94,7 @@ export class BadgeAwardService {
             badge.achievementParams?.count &&
             badge.achievementParams?.count <= givenCommentsReactionsCount,
         )
-        ?.map((badge) => ({
+        .map((badge) => ({
           userId: giverId,
           badgeId: badge.id,
         }));
@@ -264,10 +264,12 @@ export class BadgeAwardService {
     // Add reaction creators to the giver list and reply owners to the receiver list.
     const commentReplyReactionNotGivenByOwner = commentReplyReactions?.filter(
       (replyReaction) => {
-        const reply = commentReplies?.find(
+        const matchingReply = commentReplies?.find(
           (reply) => reply.id === replyReaction.reviewCommentId,
         );
-        return reply && reply.createdBy !== replyReaction.createdBy;
+        return (
+          matchingReply && matchingReply.createdBy !== replyReaction.createdBy
+        );
       },
     );
     if (
@@ -281,10 +283,10 @@ export class BadgeAwardService {
       );
       const reactionReplyOwner = commentReplyReactionNotGivenByOwner
         .map((replyReaction) => {
-          const reply = commentReplies?.find(
+          const matchingReply = commentReplies?.find(
             (reply) => reply.id === replyReaction.reviewCommentId,
           );
-          return reply?.createdBy;
+          return matchingReply?.createdBy;
         })
         .filter((id): id is number => id !== undefined);
       receiverRecheckList.push(...reactionReplyOwner);
@@ -302,74 +304,87 @@ export class BadgeAwardService {
   }: ReviewCommentRemovedEventParams) {
     if (!review || !comment) return;
 
-    const { receiverRecheckList, giverRecheckList } =
-      this.getRevokeInvalidReceiverGiverUserIdList({
-        review,
-        comment,
-        commentReactions,
-        commentReplies,
-        commentReplyReactions,
-      });
+    try {
+      const { receiverRecheckList, giverRecheckList } =
+        this.getRevokeInvalidReceiverGiverUserIdList({
+          review,
+          comment,
+          commentReactions,
+          commentReplies,
+          commentReplyReactions,
+        });
 
-    const totalList = [
-      ...new Set([...giverRecheckList, ...receiverRecheckList]),
-    ];
+      const totalList = [
+        ...new Set([...giverRecheckList, ...receiverRecheckList]),
+      ];
 
-    // Validate and identify badges that need to be revoked.
-    // For receivers: check if their COMMENTS_REACTIONS_RECEIVED badges are still valid.
-    // For givers: check if their COMMENTS_REACTIONS_GIVEN badges are still valid.
-    // Delete badges where the achievement count exceeds the current actual count.
-    const receiverGiverBadges =
-      await this.badgeService.getBadgesByUserIdList(totalList);
-    const receiverBadgesWithCommentReactionCategory =
-      receiverGiverBadges?.filter(
-        (badge) =>
-          badge.category === BadgeCategory.COMMENTS_REACTIONS_RECEIVED &&
-          receiverRecheckList?.some((id) => id === badge.userId),
-      );
-    const receiverUserIdsWithCommentReactionCategory = [
-      ...new Set(
-        receiverBadgesWithCommentReactionCategory?.map((badge) => badge.userId),
-      ),
-    ];
-    const receiverCommentReactionsCountMap =
-      await this.badgeUserService.getReceivedCommentsOrReactionsCount(
-        undefined,
-        receiverUserIdsWithCommentReactionCategory,
-      );
-    const receiverUserBadgesToDelete = filterInvalidBadges(
-      receiverBadgesWithCommentReactionCategory,
-      receiverCommentReactionsCountMap,
-    );
-
-    const giverBadgesWithCommentReactionCategory = receiverGiverBadges?.filter(
-      (badge) =>
-        badge.category === BadgeCategory.COMMENTS_REACTIONS_GIVEN &&
-        giverRecheckList?.some((id) => id === badge.userId),
-    );
-    const giverUserIdsWithCommentReactionCategory = [
-      ...new Set(
-        giverBadgesWithCommentReactionCategory?.map((badge) => badge.userId),
-      ),
-    ];
-    const giverCommentReactionsCountMap =
-      await this.badgeUserService.getGivenCommentsOrReactionsCount(
-        undefined,
-        giverUserIdsWithCommentReactionCategory,
+      // Validate and identify badges that need to be revoked.
+      // For receivers: check if their COMMENTS_REACTIONS_RECEIVED badges are still valid.
+      // For givers: check if their COMMENTS_REACTIONS_GIVEN badges are still valid.
+      // Delete badges where the achievement count exceeds the current actual count.
+      const receiverGiverBadges =
+        await this.badgeService.getBadgesByUserIdList(totalList);
+      const receiverBadgesWithCommentReactionCategory =
+        receiverGiverBadges?.filter(
+          (badge) =>
+            badge.category === BadgeCategory.COMMENTS_REACTIONS_RECEIVED &&
+            receiverRecheckList?.some((id) => id === badge.userId),
+        );
+      const receiverUserIdsWithCommentReactionCategory = [
+        ...new Set(
+          receiverBadgesWithCommentReactionCategory?.map(
+            (badge) => badge.userId,
+          ),
+        ),
+      ];
+      const receiverCommentReactionsCountMap =
+        await this.badgeUserService.getReceivedCommentsOrReactionsCount(
+          undefined,
+          receiverUserIdsWithCommentReactionCategory,
+        );
+      const receiverUserBadgesToDelete = filterInvalidBadges(
+        receiverBadgesWithCommentReactionCategory,
+        receiverCommentReactionsCountMap,
       );
 
-    const giverUserBadgesToDelete = filterInvalidBadges(
-      giverBadgesWithCommentReactionCategory,
-      giverCommentReactionsCountMap,
-    );
+      const giverBadgesWithCommentReactionCategory =
+        receiverGiverBadges?.filter(
+          (badge) =>
+            badge.category === BadgeCategory.COMMENTS_REACTIONS_GIVEN &&
+            giverRecheckList?.some((id) => id === badge.userId),
+        );
+      const giverUserIdsWithCommentReactionCategory = [
+        ...new Set(
+          giverBadgesWithCommentReactionCategory?.map((badge) => badge.userId),
+        ),
+      ];
+      const giverCommentReactionsCountMap =
+        await this.badgeUserService.getGivenCommentsOrReactionsCount(
+          undefined,
+          giverUserIdsWithCommentReactionCategory,
+        );
 
-    const userBadgesToDelete = [
-      ...receiverUserBadgesToDelete,
-      ...giverUserBadgesToDelete,
-    ];
-    if (userBadgesToDelete?.length > 0) {
-      await this.badgeUserService.deleteUserBadgeList(
-        userBadgesToDelete.map((badge) => badge.id),
+      const giverUserBadgesToDelete = filterInvalidBadges(
+        giverBadgesWithCommentReactionCategory,
+        giverCommentReactionsCountMap,
+      );
+
+      const userBadgesToDelete = [
+        ...receiverUserBadgesToDelete,
+        ...giverUserBadgesToDelete,
+      ];
+      if (userBadgesToDelete?.length > 0) {
+        await this.badgeUserService.deleteUserBadgeList(
+          userBadgesToDelete.map((badge) => badge.id),
+        );
+        this.logger.log(
+          `Revoked ${userBadgesToDelete.length} invalid badge(s) on comment deletion for commentId=${comment.id}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to revoke invalid badges on comment deletion for commentId=${comment?.id}`,
+        error.stack,
       );
     }
   }
