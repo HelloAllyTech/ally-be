@@ -13,14 +13,15 @@ import { PERMISSIONS } from '../../../authorization/constants/permissions.consta
 import { ANONYMOUS_CLIENT_ID } from '../../../common/constants/user.constants';
 import { UserRole } from '../../../common/constants/user.constants';
 import { Message, MessageType } from 'src/chat/entity/message.entity';
-import { Feedback } from 'src/chat/entity/feedback.entity';
 
 describe('MessageService', () => {
   let service: MessageService;
-  let messageRepository: MessageRepository;
-  let cryptoService: CryptoService;
-  let permissionValidator: PermissionValidator;
+  let messageRepository: jest.Mocked<MessageRepository>;
+  let cryptoService: jest.Mocked<CryptoService>;
+  let permissionValidator: jest.Mocked<PermissionValidator>;
   let mockAuditLogger: any;
+
+  const mockTenantId = 'test-tenant';
 
   const mockMessage: Message = {
     id: 1,
@@ -31,7 +32,7 @@ describe('MessageService', () => {
     context: undefined,
     createdAt: new Date('2024-01-01T10:00:00Z'),
     updatedAt: new Date(),
-    tenantId: 'test-tenant',
+    tenantId: mockTenantId,
     parentMessageId: undefined,
     startSeconds: undefined,
     endSeconds: undefined,
@@ -47,22 +48,9 @@ describe('MessageService', () => {
     counselorId: 200,
   };
 
-  const createMockQueryBuilder = () => ({
-    where: jest.fn().mockReturnThis(),
-    andWhere: jest.fn().mockReturnThis(),
-    leftJoinAndMapOne: jest.fn().mockReturnThis(),
-    orderBy: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockReturnThis(),
-    offset: jest.fn().mockReturnThis(),
-    getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
-    getMany: jest.fn().mockResolvedValue([]),
-  });
-
   beforeEach(async () => {
-    // Mock ExecutionManager
-    jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue('test-tenant');
+    jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(mockTenantId);
 
-    // Mock AuditLoggerService - must be done before module creation
     mockAuditLogger = {
       log: jest.fn(),
     };
@@ -76,10 +64,8 @@ describe('MessageService', () => {
         {
           provide: MessageRepository,
           useValue: {
-            create: jest.fn((data) => ({ ...data, id: 1 })),
-            save: jest.fn((message) => Promise.resolve(message)),
-            createQueryBuilder: jest.fn(() => createMockQueryBuilder()),
-            findOne: jest.fn(),
+            getMessagesByChatIdQuery: jest.fn(),
+            getChatHistoryQuery: jest.fn(),
           },
         },
         {
@@ -115,9 +101,9 @@ describe('MessageService', () => {
     }).compile();
 
     service = module.get<MessageService>(MessageService);
-    messageRepository = module.get<MessageRepository>(MessageRepository);
-    cryptoService = module.get<CryptoService>(CryptoService);
-    permissionValidator = module.get<PermissionValidator>(PermissionValidator);
+    messageRepository = module.get(MessageRepository);
+    cryptoService = module.get(CryptoService);
+    permissionValidator = module.get(PermissionValidator);
   });
 
   afterEach(() => {
@@ -125,85 +111,73 @@ describe('MessageService', () => {
   });
 
   describe('getMessageByChatId', () => {
-    it('should get messages with default sorting', async () => {
+    it('should get messages and decrypt them', async () => {
       const mockMessages = [mockEncryptedMessage];
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
+      messageRepository.getMessagesByChatIdQuery.mockResolvedValue({
+        messages: mockMessages as any,
+        count: 1,
+      });
 
       const result = await service.getMessageByChatId(1);
 
-      expect(messageRepository.createQueryBuilder).toHaveBeenCalledWith(
-        'message',
-      );
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'message.chatId = :chatId',
-        { chatId: 1 },
-      );
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'message.createdAt',
-        'DESC',
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'message.tenantId = :tenantId',
-        { tenantId: 'test-tenant' },
+      expect(messageRepository.getMessagesByChatIdQuery).toHaveBeenCalledWith(
+        1,
+        mockTenantId,
+        undefined,
+        undefined,
       );
       expect(result.messages).toHaveLength(1);
       expect(result.messages[0].content).toBe('Test message');
       expect(result.count).toBe(1);
     });
 
-    it('should apply filters when provided', async () => {
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+    it('should pass filters to repository', async () => {
+      messageRepository.getMessagesByChatIdQuery.mockResolvedValue({
+        messages: [],
+        count: 0,
+      });
 
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
-
-      await service.getMessageByChatId(1, {
+      const filter = {
         type: MessageType.NUDGE,
         limit: 10,
         offset: 5,
         sortBy: 'id',
-        order: 'ASC',
-      });
+        order: 'ASC' as const,
+      };
 
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'message.type = :type',
-        { type: MessageType.NUDGE },
-      );
-      expect(mockQueryBuilder.limit).toHaveBeenCalledWith(10);
-      expect(mockQueryBuilder.offset).toHaveBeenCalledWith(5);
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'message.id',
-        'ASC',
+      await service.getMessageByChatId(1, filter);
+
+      expect(messageRepository.getMessagesByChatIdQuery).toHaveBeenCalledWith(
+        1,
+        mockTenantId,
+        filter,
+        undefined,
       );
     });
 
-    it('should use custom entity manager when provided', async () => {
-      const mockEntityManager = {
-        getRepository: jest.fn(() => ({
-          createQueryBuilder: jest.fn(() => createMockQueryBuilder()),
-        })),
-      };
+    it('should pass entity manager to repository', async () => {
+      const mockEntityManager = {} as any;
+      messageRepository.getMessagesByChatIdQuery.mockResolvedValue({
+        messages: [],
+        count: 0,
+      });
 
-      await service.getMessageByChatId(1, {}, mockEntityManager as any);
+      await service.getMessageByChatId(1, {}, mockEntityManager);
 
-      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(Message);
+      expect(messageRepository.getMessagesByChatIdQuery).toHaveBeenCalledWith(
+        1,
+        mockTenantId,
+        {},
+        mockEntityManager,
+      );
     });
 
     it('should decrypt messages', async () => {
       const mockMessages = [mockEncryptedMessage];
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
+      messageRepository.getMessagesByChatIdQuery.mockResolvedValue({
+        messages: mockMessages as any,
+        count: 1,
+      });
 
       const result = await service.getMessageByChatId(1);
 
@@ -212,24 +186,6 @@ describe('MessageService', () => {
         'test-key',
       );
       expect(result.messages[0].content).toBe('Test message');
-    });
-
-    it('should join feedback data', async () => {
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
-
-      await service.getMessageByChatId(1);
-
-      expect(mockQueryBuilder.leftJoinAndMapOne).toHaveBeenCalledWith(
-        'message.feedback',
-        Feedback,
-        'feedback',
-        'feedback.messageId = message.id',
-      );
     });
   });
 
@@ -278,15 +234,11 @@ describe('MessageService', () => {
   describe('getMessages', () => {
     it('should get messages for authorized user (participant)', async () => {
       const mockMessages = [mockMessage];
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(false);
+      messageRepository.getMessagesByChatIdQuery.mockResolvedValue({
+        messages: mockMessages as any,
+        count: 1,
+      });
+      permissionValidator.validatePermissions.mockResolvedValue(false);
 
       const result = await service.getMessages(1, 100, mockChat, {
         limit: 10,
@@ -305,15 +257,11 @@ describe('MessageService', () => {
 
     it('should get messages for user with VIEW_MESSAGES permission', async () => {
       const mockMessages = [mockMessage];
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([mockMessages, 1]);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(true);
+      messageRepository.getMessagesByChatIdQuery.mockResolvedValue({
+        messages: mockMessages as any,
+        count: 1,
+      });
+      permissionValidator.validatePermissions.mockResolvedValue(true);
 
       const result = await service.getMessages(1, 999, mockChat, {});
 
@@ -325,9 +273,7 @@ describe('MessageService', () => {
     });
 
     it('should throw error for unauthorized user', async () => {
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(false);
+      permissionValidator.validatePermissions.mockResolvedValue(false);
 
       await expect(service.getMessages(1, 999, mockChat, {})).rejects.toThrow(
         HttpException,
@@ -338,55 +284,51 @@ describe('MessageService', () => {
     });
 
     it('should use default pagination values', async () => {
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(true);
+      messageRepository.getMessagesByChatIdQuery.mockResolvedValue({
+        messages: [],
+        count: 0,
+      });
+      permissionValidator.validatePermissions.mockResolvedValue(true);
 
       await service.getMessages(1, 100, mockChat, {});
 
-      expect(mockQueryBuilder.limit).toHaveBeenCalledWith(10);
-      // offset(0) won't be called because 0 is falsy
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'message.createdAt',
-        'DESC',
+      expect(messageRepository.getMessagesByChatIdQuery).toHaveBeenCalledWith(
+        1,
+        mockTenantId,
+        {
+          limit: 10,
+          offset: 0,
+          sortBy: 'createdAt',
+          order: 'DESC',
+          type: MessageType.TEXT,
+        },
+        undefined,
       );
     });
 
     it('should filter only TEXT messages', async () => {
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(true);
+      messageRepository.getMessagesByChatIdQuery.mockResolvedValue({
+        messages: [],
+        count: 0,
+      });
+      permissionValidator.validatePermissions.mockResolvedValue(true);
 
       await service.getMessages(1, 100, mockChat, {});
 
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'message.type = :type',
-        { type: MessageType.TEXT },
+      expect(messageRepository.getMessagesByChatIdQuery).toHaveBeenCalledWith(
+        1,
+        mockTenantId,
+        expect.objectContaining({ type: MessageType.TEXT }),
+        undefined,
       );
     });
 
     it('should allow counselor to access messages', async () => {
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(false);
+      messageRepository.getMessagesByChatIdQuery.mockResolvedValue({
+        messages: [],
+        count: 0,
+      });
+      permissionValidator.validatePermissions.mockResolvedValue(false);
 
       const result = await service.getMessages(1, 200, mockChat, {});
 
@@ -395,36 +337,23 @@ describe('MessageService', () => {
   });
 
   describe('getChatHistoryForAIService', () => {
-    it('should get chat history with default sorting', async () => {
+    it('should get chat history and transform to message requests', async () => {
       const mockMessages = [
         {
           ...mockEncryptedMessage,
           sender: { id: 100, role: UserRole.CLIENT },
         },
       ];
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
+      messageRepository.getChatHistoryQuery.mockResolvedValue(
+        mockMessages as any,
+      );
 
       const result = await service.getChatHistoryForAIService(1);
 
-      expect(messageRepository.createQueryBuilder).toHaveBeenCalledWith(
-        'message',
-      );
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'message.chatId = :chatId',
-        { chatId: 1 },
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'message.type = :type',
-        { type: MessageType.TEXT },
-      );
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'message.createdAt',
-        'DESC',
+      expect(messageRepository.getChatHistoryQuery).toHaveBeenCalledWith(
+        1,
+        mockTenantId,
+        undefined,
       );
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
@@ -435,39 +364,25 @@ describe('MessageService', () => {
       });
     });
 
-    it('should apply pagination when provided', async () => {
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getMany.mockResolvedValue([]);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
+    it('should pass pagination to repository', async () => {
+      messageRepository.getChatHistoryQuery.mockResolvedValue([]);
 
       await service.getChatHistoryForAIService(1, {
         limit: 10,
         offset: 5,
-      });
-
-      expect(mockQueryBuilder.limit).toHaveBeenCalledWith(10);
-      expect(mockQueryBuilder.offset).toHaveBeenCalledWith(5);
-    });
-
-    it('should apply custom sorting when provided', async () => {
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getMany.mockResolvedValue([]);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
-
-      await service.getChatHistoryForAIService(1, {
         sortBy: 'id',
         order: 'ASC',
       });
 
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'message.id',
-        'ASC',
+      expect(messageRepository.getChatHistoryQuery).toHaveBeenCalledWith(
+        1,
+        mockTenantId,
+        {
+          limit: 10,
+          offset: 5,
+          sortBy: 'id',
+          order: 'ASC',
+        },
       );
     });
 
@@ -479,12 +394,9 @@ describe('MessageService', () => {
           sender: null,
         },
       ];
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
+      messageRepository.getChatHistoryQuery.mockResolvedValue(
+        mockMessages as any,
+      );
 
       const result = await service.getChatHistoryForAIService(1);
 
@@ -500,12 +412,9 @@ describe('MessageService', () => {
           endSeconds: 20,
         },
       ];
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
+      messageRepository.getChatHistoryQuery.mockResolvedValue(
+        mockMessages as any,
+      );
 
       const result = await service.getChatHistoryForAIService(1);
 
@@ -520,12 +429,9 @@ describe('MessageService', () => {
           sender: { id: 100, role: UserRole.CLIENT },
         },
       ];
-      const mockQueryBuilder = createMockQueryBuilder();
-      mockQueryBuilder.getMany.mockResolvedValue(mockMessages);
-
-      jest
-        .spyOn(messageRepository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder as any);
+      messageRepository.getChatHistoryQuery.mockResolvedValue(
+        mockMessages as any,
+      );
 
       const result = await service.getChatHistoryForAIService(1);
 

@@ -12,11 +12,9 @@ import { PERMISSIONS } from '../../authorization/constants/permissions.constants
 import { ANONYMOUS_CLIENT_ID } from '../../common/constants/user.constants';
 import { Pagination } from '../../common/type/common.type';
 import { MessageWithFeedback } from '../type/chat.type';
-import { MessageSortBy } from '../enum/message-sort-by.enum';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
-import { User } from 'src/user/entity/user.entity';
-import { Feedback } from '../entity/feedback.entity';
 import { MessageType, Message } from '../entity/message.entity';
+import { MessageFilter } from '../type/message.type';
 
 @Injectable()
 export class MessageService {
@@ -32,47 +30,16 @@ export class MessageService {
 
   async getMessageByChatId(
     chatId: number,
-    filter?: {
-      type?: MessageType;
-      limit?: number;
-      offset?: number;
-      sortBy?: string;
-      order?: 'ASC' | 'DESC';
-    },
+    filter?: MessageFilter,
     entityManager?: EntityManager,
   ) {
-    const repo =
-      entityManager?.getRepository(Message) || this.messageRepository;
-    const query = repo
-      .createQueryBuilder('message')
-      .where('message.chatId = :chatId', { chatId })
-      .leftJoinAndMapOne(
-        'message.feedback',
-        Feedback,
-        'feedback',
-        'feedback.messageId = message.id',
+    const { messages, count } =
+      await this.messageRepository.getMessagesByChatIdQuery(
+        chatId,
+        ExecutionManager.getTenantId()!,
+        filter,
+        entityManager,
       );
-
-    const sortColumn = this.getValidatedSortColumn(
-      filter?.sortBy || 'createdAt',
-    );
-    if (sortColumn) {
-      query.orderBy(`message.${sortColumn}`, filter?.order || 'DESC');
-    }
-
-    if (filter?.type) {
-      query.andWhere('message.type = :type', { type: filter.type });
-    }
-    if (filter?.limit) {
-      query.limit(filter.limit);
-    }
-    if (filter?.offset) {
-      query.offset(filter.offset);
-    }
-    query.andWhere('message.tenantId = :tenantId', {
-      tenantId: ExecutionManager.getTenantId(),
-    });
-    const [messages, count] = await query.getManyAndCount();
     const decryptedMessages = await this.decryptMessages(messages);
     return {
       messages: decryptedMessages,
@@ -152,36 +119,11 @@ export class MessageService {
   }
 
   async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {
-    const query = this.messageRepository
-      .createQueryBuilder('message')
-      .leftJoinAndMapOne(
-        'message.sender',
-        User,
-        'sender',
-        'sender.id = message.senderId',
-      )
-      .where('message.chatId = :chatId', { chatId })
-      .andWhere('message.type = :type', { type: MessageType.TEXT })
-      .orderBy('message.createdAt', 'DESC');
-
-    if (pagination) {
-      query.offset(pagination.offset).limit(pagination.limit);
-    }
-
-    if (pagination?.sortBy) {
-      const sortColumn = this.getValidatedSortColumn(pagination.sortBy);
-      if (sortColumn) {
-        query.orderBy(
-          `message.${sortColumn}`,
-          pagination.order as 'ASC' | 'DESC',
-        );
-      }
-    }
-    query.andWhere('message.tenantId = :tenantId', {
-      tenantId: ExecutionManager.getTenantId(),
-    });
-
-    const messages = await query.getMany();
+    const messages = await this.messageRepository.getChatHistoryQuery(
+      chatId,
+      ExecutionManager.getTenantId()!,
+      pagination,
+    );
 
     const decryptedMessages = await this.decryptMessages(messages);
 
@@ -197,16 +139,6 @@ export class MessageService {
       }),
     );
     return messageRequests;
-  }
-
-  private getValidatedSortColumn(sortBy?: string): string | null {
-    if (!sortBy) {
-      return MessageSortBy.CREATED_AT;
-    }
-    const validColumns = Object.values(MessageSortBy);
-    return validColumns.includes(sortBy as MessageSortBy)
-      ? sortBy
-      : MessageSortBy.CREATED_AT;
   }
 
   private async decryptMessages(messages: Message[]) {
