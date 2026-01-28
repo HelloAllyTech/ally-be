@@ -4,11 +4,12 @@ import { ReferenceDocument } from './entity/reference-document.entity';
 import { ReferenceDocumentController } from './controller/reference-document.controller';
 import { ReferenceDocumentService } from './service/reference-document.service';
 import { AiModule } from '../ai/ai.module';
+import { ReferenceDocumentRepository } from './repository/reference-document.repository';
 
 @Module({
   imports: [TypeOrmModule.forFeature([ReferenceDocument]), AiModule],
   controllers: [ReferenceDocumentController],
-  providers: [ReferenceDocumentService],
+  providers: [ReferenceDocumentService, ReferenceDocumentRepository],
   exports: [ReferenceDocumentService],
 })
 export class ReferenceDocumentModule {}
