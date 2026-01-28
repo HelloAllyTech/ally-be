@@ -54,22 +54,6 @@ export const mapCreateScenarioRequestToEntity = (
   };
 };
 
-export const formatSingleAutoTerminationEventsList = (
-  createScenariosDto: CreateScenariosDto,
-  savedScenarios: Scenarios[],
-) =>
-  savedScenarios
-    .map((savedScenario, index) => {
-      const correspondingDto = createScenariosDto.scenarios[index];
-      return {
-        scenarioId: savedScenario.id,
-        eventId: correspondingDto.terminationEventId,
-        autoTerminationStatus: correspondingDto.autoTerminationStatus,
-        message: correspondingDto.terminationMessage,
-      };
-    })
-    .filter((event) => event.eventId && event.autoTerminationStatus);
-
 export const formatAutoTerminationEventsList = (
   createScenariosDto: CreateScenariosDto,
   savedScenarios: Scenarios[],

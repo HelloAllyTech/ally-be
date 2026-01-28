@@ -4,13 +4,10 @@ import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 class TerminationEventDto {
   eventId?: string;
   name?: string;
-  autoTerminationStatus?: boolean;
   message?: string;
 }
 
 export class GetAdminScenarioDto extends Scenarios {
-  // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): Remove terminationEvent
-  terminationEvent?: TerminationEventDto;
   triggerWarnings?: TriggerWarnings[];
   terminationEvents?: TerminationEventDto[];
 }

@@ -265,12 +265,7 @@ export class AppConfigService {
   }
 
   get featureFlag() {
-    return {
-      multipleTerminationEvents:
-        this.configService.get<string>(
-          'FEATURE_MULTIPLE_TERMINATION_EVENTS',
-        ) === 'true',
-    };
+    return {};
   }
 
   get googleCloudTranslationConfig() {

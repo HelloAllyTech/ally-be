@@ -268,10 +268,10 @@ describe('ScenariosRepository', () => {
       mockQueryBuilder.getOne.mockResolvedValue({} as GetAdminScenarioDto);
       await repository.getAdminScenarioById(1);
 
-      expect(mockQueryBuilder.leftJoinAndMapOne).toHaveBeenCalledWith(
-        'scenario.terminationEvent',
+      expect(mockQueryBuilder.leftJoinAndMapMany).toHaveBeenCalledWith(
+        'scenario.terminationEvents',
         ScenarioEvents,
-        'scenarioEvent',
+        'scenarioEvents',
         expect.stringContaining('autoTerminationStatus'),
         expect.any(Object),
       );

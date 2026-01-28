@@ -192,14 +192,6 @@ export class ScenariosRepository extends Repository<Scenarios> {
 
   async getAdminScenarioById(id: number): Promise<GetAdminScenarioDto | null> {
     return await this.createQueryBuilder('scenario')
-      .leftJoinAndMapOne(
-        // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): Remove leftJoinAndMapOne
-        'scenario.terminationEvent',
-        ScenarioEvents,
-        'scenarioEvent',
-        'scenarioEvent.scenarioId = scenario.id AND scenarioEvent.autoTerminationStatus = :autoTerminationStatus',
-        { autoTerminationStatus: true },
-      )
       .leftJoinAndMapMany(
         'scenario.terminationEvents',
         ScenarioEvents,
