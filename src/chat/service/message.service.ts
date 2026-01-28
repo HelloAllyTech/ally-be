@@ -12,6 +12,7 @@ import { PERMISSIONS } from '../../authorization/constants/permissions.constants
 import { ANONYMOUS_CLIENT_ID } from '../../common/constants/user.constants';
 import { Pagination } from '../../common/type/common.type';
 import { MessageWithFeedback } from '../type/chat.type';
+import { MessageSortBy } from '../enum/message-sort-by.enum';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { User } from 'src/user/entity/user.entity';
 import { Feedback } from '../entity/feedback.entity';
@@ -52,10 +53,12 @@ export class MessageService {
         'feedback.messageId = message.id',
       );
 
-    query.orderBy(
-      `message.${filter?.sortBy || 'createdAt'}`,
-      filter?.order || 'DESC',
+    const sortColumn = this.getValidatedSortColumn(
+      filter?.sortBy || 'createdAt',
     );
+    if (sortColumn) {
+      query.orderBy(`message.${sortColumn}`, filter?.order || 'DESC');
+    }
 
     if (filter?.type) {
       query.andWhere('message.type = :type', { type: filter.type });
@@ -166,10 +169,13 @@ export class MessageService {
     }
 
     if (pagination?.sortBy) {
-      query.orderBy(
-        `message.${pagination.sortBy}`,
-        pagination.order as 'ASC' | 'DESC',
-      );
+      const sortColumn = this.getValidatedSortColumn(pagination.sortBy);
+      if (sortColumn) {
+        query.orderBy(
+          `message.${sortColumn}`,
+          pagination.order as 'ASC' | 'DESC',
+        );
+      }
     }
     query.andWhere('message.tenantId = :tenantId', {
       tenantId: ExecutionManager.getTenantId(),
@@ -191,6 +197,16 @@ export class MessageService {
       }),
     );
     return messageRequests;
+  }
+
+  private getValidatedSortColumn(sortBy?: string): string | null {
+    if (!sortBy) {
+      return MessageSortBy.CREATED_AT;
+    }
+    const validColumns = Object.values(MessageSortBy);
+    return validColumns.includes(sortBy as MessageSortBy)
+      ? sortBy
+      : MessageSortBy.CREATED_AT;
   }
 
   private async decryptMessages(messages: Message[]) {

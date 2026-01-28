@@ -51,10 +51,11 @@ export class CallLogService {
       query.offset(options.offset);
     }
     if (options.sortBy) {
-      query.orderBy(
-        `details.${options.sortBy}`,
-        options.order as 'ASC' | 'DESC',
-      );
+      const sortOrder =
+        options.order === 'ASC' || options.order === 'DESC'
+          ? (options.order as SortOrder)
+          : SortOrder.DESC;
+      this.applySorting(query, options.sortBy as CallLogSortBy, sortOrder);
     }
     query.andWhere('chat.tenantId = :tenantId', {
       tenantId: ExecutionManager.getTenantId(),

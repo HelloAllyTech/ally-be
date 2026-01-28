@@ -11,6 +11,7 @@ import { ScenarioSessionDetails } from '../entity/scenario-session-details.entit
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
+import { ScenarioSessionSortBy } from '../enum/scenario-session-sort-by.enum';
 
 @Injectable()
 export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
@@ -68,12 +69,23 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     }
   }
 
+  private getValidatedSortColumn(sortBy: string): string | null {
+    const allowedColumns = Object.values(ScenarioSessionSortBy);
+    if (allowedColumns.includes(sortBy as ScenarioSessionSortBy)) {
+      return sortBy;
+    }
+    return null;
+  }
+
   private applySorting(
     query: SelectQueryBuilder<ScenarioSessions>,
     options: Pagination,
   ) {
     if (options.sortBy && options.order) {
-      query.orderBy(`"scenarioSession"."${options.sortBy}"`, options.order);
+      const sortColumn = this.getValidatedSortColumn(options.sortBy);
+      if (sortColumn) {
+        query.orderBy(`"scenarioSession"."${sortColumn}"`, options.order);
+      }
     }
   }
 

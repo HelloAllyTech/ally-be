@@ -4,6 +4,7 @@ import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SortOrder } from 'src/user/enum/user.enum';
+import { ScenarioEventsSortBy } from '../enum/scenario-events-sort-by-enum';
 
 @Injectable()
 export class ScenarioEventsRepository extends Repository<ScenarioEvents> {
@@ -57,15 +58,27 @@ export class ScenarioEventsRepository extends Repository<ScenarioEvents> {
     }
   }
 
+  private getValidatedSortColumn(sortBy?: string): string | null {
+    if (!sortBy) return null;
+    const allowedColumns = Object.values(ScenarioEventsSortBy);
+    if (allowedColumns.includes(sortBy as ScenarioEventsSortBy)) {
+      return sortBy;
+    }
+    return null;
+  }
+
   private applySort(
     query: SelectQueryBuilder<ScenarioEvents>,
     options?: Pagination,
   ): void {
     if (options?.sortBy) {
-      query.orderBy(
-        `scenarioEvent.${options.sortBy}`,
-        options.order || SortOrder.DESC,
-      );
+      const sortColumn = this.getValidatedSortColumn(options.sortBy);
+      if (sortColumn) {
+        query.orderBy(
+          `scenarioEvent.${sortColumn}`,
+          options.order || SortOrder.DESC,
+        );
+      }
     }
   }
 }

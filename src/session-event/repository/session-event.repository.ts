@@ -16,6 +16,7 @@ import {
   EVENT_TYPE_PREFIX_MAP,
   SYSTEM_EVENT_DETECTION_TYPES,
 } from '../constants/event.constant';
+import { SessionEventSortBy } from '../enum/session-event-sort-by.enum';
 
 @Injectable()
 export class SessionEventRepository extends Repository<SessionEvents> {
@@ -73,6 +74,15 @@ export class SessionEventRepository extends Repository<SessionEvents> {
     return query.getMany();
   }
 
+  private getValidatedSortColumn(sortBy?: string): string {
+    if (!sortBy) return 'createdAt';
+    const allowedColumns = Object.values(SessionEventSortBy);
+    if (allowedColumns.includes(sortBy as SessionEventSortBy)) {
+      return sortBy;
+    }
+    return 'createdAt';
+  }
+
   private applySorting(
     query: SelectQueryBuilder<SessionEvents>,
     pagination?: Pagination,
@@ -84,7 +94,7 @@ export class SessionEventRepository extends Repository<SessionEvents> {
       )
       .setParameters({ SYSTEM_EVENT_DETECTION_TYPES })
       .addOrderBy(
-        `sessionEvent.${pagination?.sortBy || 'createdAt'}`,
+        `sessionEvent.${this.getValidatedSortColumn(pagination?.sortBy)}`,
         pagination?.order || 'DESC',
       );
   }
