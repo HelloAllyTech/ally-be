@@ -26,10 +26,7 @@ import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { UserService } from 'src/user/service/user.service';
 import { GetReviewRepliesResponseDto } from '../dto/review-replies-response.dto';
-import {
-  DELETE_COMMENT_TIME_LIMIT_MS,
-  EDIT_COMMENT_TIME_LIMIT_MS,
-} from '../constant/review.constant';
+import { EDIT_COMMENT_TIME_LIMIT_MS } from '../constant/review.constant';
 import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
 import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
 import { formatCreatedUserDetails } from '../util/review.util';
@@ -525,14 +522,6 @@ export class ReviewCommentService {
 
     if (!comment) {
       throw new NotFoundException('Review comment not found');
-    }
-
-    const now = new Date();
-    if (
-      now.getTime() - comment.createdAt.getTime() >
-      DELETE_COMMENT_TIME_LIMIT_MS
-    ) {
-      throw new BadRequestException('Cannot delete this comment');
     }
 
     const parentCommentId = comment?.parentCommentId;
