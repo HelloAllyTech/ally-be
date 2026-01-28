@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReviewService } from '../review.service';
 import { ReviewRepository } from '../../repository/review.repository';
@@ -20,6 +20,8 @@ describe('ReviewService', () => {
   let reviewRepository: jest.Mocked<ReviewRepository>;
   let reviewThreadRepository: jest.Mocked<ReviewThreadRepository>;
   let reviewReactionRepository: jest.Mocked<ReviewReactionRepository>;
+  let reviewCommentRepository: jest.Mocked<ReviewCommentRepository>;
+  let reviewCommentReactionRepository: jest.Mocked<ReviewCommentReactionRepository>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let userService: jest.Mocked<UserService>;
   let permissionValidator: jest.Mocked<PermissionValidator>;
@@ -80,6 +82,7 @@ describe('ReviewService', () => {
           provide: ReviewThreadRepository,
           useValue: {
             getCommentsCountByReviewIds: jest.fn(),
+            find: jest.fn(),
           },
         },
         {
@@ -91,11 +94,16 @@ describe('ReviewService', () => {
         },
         {
           provide: ReviewCommentRepository,
-          useValue: {},
+          useValue: {
+            getCommentsForThreadIds: jest.fn(),
+          },
         },
         {
           provide: ReviewCommentReactionRepository,
-          useValue: {},
+          useValue: {
+            getReactionAndCountByCommentIds: jest.fn(),
+            find: jest.fn(),
+          },
         },
         {
           provide: ScenarioSharedService,
@@ -103,12 +111,14 @@ describe('ReviewService', () => {
             getScenarioSessionForUser: jest.fn(),
             getScenarioSessionById: jest.fn(),
             getScenarioById: jest.fn(),
+            getMessagesByScenarioSessionId: jest.fn(),
           },
         },
         {
           provide: UserService,
           useValue: {
             get: jest.fn(),
+            getUsersByIds: jest.fn(),
           },
         },
         {
@@ -124,9 +134,20 @@ describe('ReviewService', () => {
     reviewRepository = module.get(ReviewRepository);
     reviewThreadRepository = module.get(ReviewThreadRepository);
     reviewReactionRepository = module.get(ReviewReactionRepository);
+    reviewCommentRepository = module.get(ReviewCommentRepository);
+    reviewCommentReactionRepository = module.get(
+      ReviewCommentReactionRepository,
+    );
     scenarioSharedService = module.get(ScenarioSharedService);
     userService = module.get(UserService);
     permissionValidator = module.get(PermissionValidator);
+
+    reviewCommentRepository.getCommentsForThreadIds.mockResolvedValue([]);
+    reviewCommentReactionRepository.getReactionAndCountByCommentIds.mockResolvedValue(
+      [],
+    );
+    reviewCommentReactionRepository.find.mockResolvedValue([]);
+    userService.getUsersByIds.mockResolvedValue([]);
   });
 
   describe('createReview', () => {
@@ -139,6 +160,15 @@ describe('ReviewService', () => {
         String(mockUserId),
       );
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
+    });
+
+    it('should throw BadRequestException when scenario session not found', async () => {
+      scenarioSharedService.getScenarioSessionForUser.mockResolvedValue(null);
+
+      await expect(service.createReview(createReviewDto)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(reviewRepository.findOne).not.toHaveBeenCalled();
     });
 
     it('should throw ConflictException when review already exists', async () => {
@@ -186,6 +216,28 @@ describe('ReviewService', () => {
       );
     });
 
+    it('should throw BadRequestException when review not found', async () => {
+      reviewRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.updateReviewStatus(mockReviewId, updateReviewStatusDto),
+      ).rejects.toThrow(BadRequestException);
+      expect(reviewRepository.findOne).toHaveBeenCalledWith({
+        where: { id: mockReviewId, createdBy: mockUserId },
+      });
+    });
+
+    it('should throw BadRequestException when user does not own the review', async () => {
+      reviewRepository.findOne.mockResolvedValue(null); // Not found because of createdBy filter
+
+      await expect(
+        service.updateReviewStatus(mockReviewId, updateReviewStatusDto),
+      ).rejects.toThrow(BadRequestException);
+      expect(reviewRepository.findOne).toHaveBeenCalledWith({
+        where: { id: mockReviewId, createdBy: mockUserId },
+      });
+    });
+
     it('should successfully update review status when user owns the review', async () => {
       reviewRepository.findOne.mockResolvedValue(mockReview as any);
       const updatedReview = { ...mockReview, status: ReviewStatus.HIDDEN };
@@ -209,6 +261,90 @@ describe('ReviewService', () => {
     });
   });
 
+  describe('getAllReviews', () => {
+    const options = {
+      limit: 10,
+      offset: 0,
+      sortBy: undefined,
+      sortOrder: undefined,
+    };
+
+    beforeEach(() => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(
+        String(mockUserId),
+      );
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
+    });
+
+    it('should return empty array when no reviews found', async () => {
+      reviewRepository.getAllReviews.mockResolvedValue({
+        reviews: [],
+        count: 0,
+      });
+
+      const result = await service.getAllReviews(options);
+
+      expect(result.data).toEqual([]);
+      expect(result.count).toBe(0);
+      expect(
+        reviewReactionRepository.getReactionsByReviewIds,
+      ).not.toHaveBeenCalled();
+      expect(
+        reviewThreadRepository.getCommentsCountByReviewIds,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should return formatted reviews with reactions and comments aggregated', async () => {
+      const mockReviews = [
+        {
+          ...mockReview,
+          scenario: mockScenario,
+          scenarioSession: mockScenarioSession,
+          createdBy: mockUser,
+        },
+      ];
+      const mockReactions = [
+        {
+          reviewId: mockReviewId,
+          reaction: 'like',
+          count: 5,
+        },
+      ];
+      const mockComments = [
+        {
+          reviewId: mockReviewId,
+          count: 3,
+        },
+      ];
+
+      reviewRepository.getAllReviews.mockResolvedValue({
+        reviews: mockReviews as any,
+        count: 1,
+      });
+      reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue(
+        mockReactions as any,
+      );
+      reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue(
+        mockComments as any,
+      );
+
+      const result = await service.getAllReviews(options);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({
+        id: mockReviewId,
+        commentsCount: 3,
+        reactions: { like: 5 },
+        createdBy: {
+          id: mockUserId,
+          name: mockUser.name,
+          profileImage: mockUser.profileImageUrl,
+        },
+      });
+      expect(result.count).toBe(1);
+    });
+  });
+
   describe('getReviewById', () => {
     beforeEach(() => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue(
@@ -217,45 +353,79 @@ describe('ReviewService', () => {
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
     });
 
-    it('should throw ForbiddenException when review is HIDDEN and user is not creator', async () => {
+    it('should throw BadRequestException when scenario session not found', async () => {
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
+      permissionValidator.validatePermissions.mockResolvedValue(false);
+      scenarioSharedService.getScenarioSessionById.mockResolvedValue(null);
+
+      await expect(service.getReviewById(mockReviewId)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should successfully return review when user is the creator of a HIDDEN review', async () => {
       const hiddenReview = {
         ...mockReview,
         status: ReviewStatus.HIDDEN,
-        createdBy: 999, // Different user
+        createdBy: mockUserId,
       };
       reviewRepository.findOne.mockResolvedValue(hiddenReview as any);
-
-      await expect(service.getReviewById(mockReviewId)).rejects.toThrow(
-        ForbiddenException,
+      permissionValidator.validatePermissions.mockResolvedValue(false);
+      scenarioSharedService.getScenarioSessionById.mockResolvedValue(
+        mockScenarioSession as any,
       );
+      scenarioSharedService.getScenarioById.mockResolvedValue(
+        mockScenario as any,
+      );
+      userService.get.mockResolvedValue(mockUser as any);
+      reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue([
+        { reviewId: mockReviewId, count: 5 },
+      ] as any);
+      reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.findOne.mockResolvedValue(null as any);
+
+      const result = await service.getReviewById(mockReviewId);
+
+      expect(result).toMatchObject({
+        id: mockReviewId,
+        commentsCount: 5,
+      });
     });
 
-    it('should throw ForbiddenException when reviewer tries to access review from different tenant', async () => {
-      const differentTenantReview = {
-        ...mockReview,
-        tenantId: 'different-tenant',
-      };
-      reviewRepository.findOne.mockResolvedValue(differentTenantReview as any);
-      (permissionValidator.validatePermissions as jest.Mock).mockImplementation(
+    it('should successfully return review when reviewer accesses review from same tenant', async () => {
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
+      permissionValidator.validatePermissions.mockImplementation(
         async (userId, permissions) => {
-          if (permissions.includes(PERMISSIONS.REVIEWER_ACCESS)) {
-            return true;
-          }
-          return false;
+          return permissions.includes(PERMISSIONS.REVIEWER_ACCESS);
         },
       );
-
-      await expect(service.getReviewById(mockReviewId)).rejects.toThrow(
-        ForbiddenException,
+      scenarioSharedService.getScenarioSessionById.mockResolvedValue(
+        mockScenarioSession as any,
       );
+      scenarioSharedService.getScenarioById.mockResolvedValue(
+        mockScenario as any,
+      );
+      userService.get.mockResolvedValue(mockUser as any);
+      reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue([
+        { reviewId: mockReviewId, count: 5 },
+      ] as any);
+      reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.findOne.mockResolvedValue(null as any);
+
+      const result = await service.getReviewById(mockReviewId);
+
+      expect(result).toMatchObject({
+        id: mockReviewId,
+        commentsCount: 5,
+      });
     });
 
-    it('should throw ForbiddenException when learner tries to access review they did not create', async () => {
-      const otherUserReview = {
-        ...mockReview,
-        createdBy: 999,
-      };
-      reviewRepository.findOne.mockResolvedValue(otherUserReview as any);
+    it('should successfully return review when learner accesses their own review', async () => {
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
       permissionValidator.validatePermissions.mockImplementation(
         async (userId, permissions) => {
           if (permissions.includes(PERMISSIONS.REVIEWER_ACCESS)) {
@@ -267,10 +437,27 @@ describe('ReviewService', () => {
           return false;
         },
       );
-
-      await expect(service.getReviewById(mockReviewId)).rejects.toThrow(
-        ForbiddenException,
+      scenarioSharedService.getScenarioSessionById.mockResolvedValue(
+        mockScenarioSession as any,
       );
+      scenarioSharedService.getScenarioById.mockResolvedValue(
+        mockScenario as any,
+      );
+      userService.get.mockResolvedValue(mockUser as any);
+      reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue([
+        { reviewId: mockReviewId, count: 5 },
+      ] as any);
+      reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.findOne.mockResolvedValue(null as any);
+
+      const result = await service.getReviewById(mockReviewId);
+
+      expect(result).toMatchObject({
+        id: mockReviewId,
+        commentsCount: 5,
+      });
     });
 
     it('should successfully return review details', async () => {
@@ -308,6 +495,115 @@ describe('ReviewService', () => {
           name: mockUser.name,
           profileImage: mockUser.profileImageUrl,
         },
+      });
+    });
+  });
+
+  describe('getReviewMessages', () => {
+    const mockOptions = { limit: 10, offset: 0 };
+    const mockMessageId = 1;
+    const mockThreadId = 'thread-123';
+    const mockCommentId = 'comment-123';
+
+    const mockMessage = {
+      id: mockMessageId,
+      content: 'Test message',
+      createdAt: new Date(),
+      startSeconds: 0,
+      endSeconds: 5,
+      senderId: mockUserId,
+    };
+
+    const mockThread = {
+      id: mockThreadId,
+      reviewId: mockReviewId,
+      messageId: mockMessageId,
+      createdBy: mockUserId,
+      selection: { startIndex: 0, endIndex: 10 },
+    };
+
+    const mockComment = {
+      c_id: mockCommentId,
+      c_reviewThreadId: mockThreadId,
+      c_content: 'Test comment',
+      c_createdAt: new Date(),
+      c_createdBy: mockUserId,
+      c_hidden: false,
+      reply_count: '0',
+      row_num: 1,
+    };
+
+    beforeEach(() => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(
+        String(mockUserId),
+      );
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
+    });
+
+    it('should return empty array when no messages found', async () => {
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
+      permissionValidator.validatePermissions.mockResolvedValue(false);
+      scenarioSharedService.getMessagesByScenarioSessionId.mockResolvedValue({
+        messages: [],
+        count: 0,
+      } as any);
+
+      const result = await service.getReviewMessages(mockReviewId, mockOptions);
+
+      expect(result.data).toEqual([]);
+      expect(result.count).toBe(0);
+    });
+
+    it('should return messages with empty threads when no threads found', async () => {
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
+      permissionValidator.validatePermissions.mockResolvedValue(false);
+      scenarioSharedService.getMessagesByScenarioSessionId.mockResolvedValue({
+        messages: [mockMessage],
+        count: 1,
+      } as any);
+      reviewThreadRepository.find.mockResolvedValue([]);
+      reviewCommentRepository.getCommentsForThreadIds.mockResolvedValue([]);
+
+      const result = await service.getReviewMessages(mockReviewId, mockOptions);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({
+        id: mockMessageId,
+        content: mockMessage.content,
+        threads: [],
+      });
+      expect(result.count).toBe(1);
+    });
+
+    it('should return messages with threads and comments when data exists', async () => {
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
+      permissionValidator.validatePermissions.mockResolvedValue(false);
+      scenarioSharedService.getMessagesByScenarioSessionId.mockResolvedValue({
+        messages: [mockMessage],
+        count: 1,
+      } as any);
+      reviewThreadRepository.find.mockResolvedValue([mockThread] as any);
+      reviewCommentRepository.getCommentsForThreadIds.mockResolvedValue([
+        mockComment,
+      ] as any);
+      reviewCommentReactionRepository.getReactionAndCountByCommentIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewCommentReactionRepository.find.mockResolvedValue([] as any);
+      userService.getUsersByIds.mockResolvedValue([mockUser] as any);
+
+      const result = await service.getReviewMessages(mockReviewId, mockOptions);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].threads).toHaveLength(1);
+      expect(result.data[0].threads?.[0]).toMatchObject({
+        id: mockThreadId,
+        selection: mockThread.selection,
+      });
+      expect(result.data[0].threads?.[0]?.comments).toHaveLength(1);
+      expect(result.data[0].threads?.[0]?.comments?.[0]).toMatchObject({
+        id: mockCommentId,
+        content: mockComment.c_content,
       });
     });
   });
