@@ -318,12 +318,21 @@ export class BadgeAwardService {
         ...new Set([...giverRecheckList, ...receiverRecheckList]),
       ];
 
+      // Early return if no users to check - prevents SQL syntax error with empty IN clause
+      if (totalList.length === 0) {
+        return;
+      }
+
       // Validate and identify badges that need to be revoked.
       // For receivers: check if their COMMENTS_REACTIONS_RECEIVED badges are still valid.
       // For givers: check if their COMMENTS_REACTIONS_GIVEN badges are still valid.
       // Delete badges where the achievement count exceeds the current actual count.
       const receiverGiverBadges =
         await this.badgeService.getBadgesByUserIdList(totalList);
+
+      // Early return if no badges found - nothing to revoke
+      if (!receiverGiverBadges?.length) return;
+
       const receiverBadgesWithCommentReactionCategory =
         receiverGiverBadges?.filter(
           (badge) =>
@@ -337,11 +346,14 @@ export class BadgeAwardService {
           ),
         ),
       ];
+      // Skip query if no receiver badges found - prevents unnecessary database calls
       const receiverCommentReactionsCountMap =
-        await this.badgeUserService.getReceivedCommentsOrReactionsCount(
-          undefined,
-          receiverUserIdsWithCommentReactionCategory,
-        );
+        receiverUserIdsWithCommentReactionCategory.length > 0
+          ? await this.badgeUserService.getReceivedCommentsOrReactionsCount(
+              undefined,
+              receiverUserIdsWithCommentReactionCategory,
+            )
+          : [];
       const receiverUserBadgesToDelete = filterInvalidBadges(
         receiverBadgesWithCommentReactionCategory,
         receiverCommentReactionsCountMap,
@@ -358,11 +370,14 @@ export class BadgeAwardService {
           giverBadgesWithCommentReactionCategory?.map((badge) => badge.userId),
         ),
       ];
+      // Skip query if no giver badges found - prevents unnecessary database calls
       const giverCommentReactionsCountMap =
-        await this.badgeUserService.getGivenCommentsOrReactionsCount(
-          undefined,
-          giverUserIdsWithCommentReactionCategory,
-        );
+        giverUserIdsWithCommentReactionCategory.length > 0
+          ? await this.badgeUserService.getGivenCommentsOrReactionsCount(
+              undefined,
+              giverUserIdsWithCommentReactionCategory,
+            )
+          : [];
 
       const giverUserBadgesToDelete = filterInvalidBadges(
         giverBadgesWithCommentReactionCategory,
