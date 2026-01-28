@@ -1,15 +1,15 @@
 import { Dashboard } from '../../entity/dashboard.entity';
 import { AnalyticsService } from '../analytics.service';
-import { In, Repository } from 'typeorm';
-import { Chat } from '../../../chat/entity/chat.entity';
+import { In } from 'typeorm';
 import { AnalyticsInterface } from 'src/analytics/interface/analytics.interface';
 import { GroupService } from 'src/authorization/service/group.service';
 import { NotFoundException } from '@nestjs/common';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { AnalyticsUtil } from 'src/analytics/util/analytics.util';
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { CreateDashboardDto } from '../../dto/analytics.dto';
+import { DashboardRepository } from '../../repository/dashboard.repository';
+import { ChatSharedService } from '../../../chat/service/chat-shared.service';
 
 // Mock the static classes at the top level
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -27,11 +27,10 @@ jest.mock('src/analytics/util/analytics.util', () => ({
 
 describe('AnalyticsService', () => {
   let service: AnalyticsService;
-  let dashboardRepository: jest.Mocked<Repository<Dashboard>>;
-  let chatRepository: jest.Mocked<Repository<Chat>>;
+  let dashboardRepository: jest.Mocked<DashboardRepository>;
+  let chatSharedService: jest.Mocked<ChatSharedService>;
   let analyticsInterface: jest.Mocked<AnalyticsInterface>;
   let groupService: jest.Mocked<GroupService>;
-  let mockQueryBuilder: any;
 
   const mockTenantId = 'tenant-23';
   const mockUserId = 123;
@@ -56,23 +55,14 @@ describe('AnalyticsService', () => {
       create: jest.fn(),
       save: jest.fn(),
       update: jest.fn(),
+      findByExternalIdAndTenant: jest.fn(),
     };
-    const mockChatRepo = {
-      createQueryBuilder: jest.fn(),
+    const mockChatSharedService = {
+      getCounselorStatsRaw: jest.fn(),
     };
     const mockGroupService = {
       getUserGroups: jest.fn(),
       getUserRolesByUserId: jest.fn(),
-    };
-    mockQueryBuilder = {
-      innerJoin: jest.fn().mockReturnThis(),
-      select: jest.fn().mockReturnThis(),
-      addSelect: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      groupBy: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      getRawOne: jest.fn(),
     };
 
     // Now you can use mockReturnValue since the classes are mocked
@@ -87,12 +77,12 @@ describe('AnalyticsService', () => {
           useValue: mockAnalyticsInterface,
         },
         {
-          provide: getRepositoryToken(Dashboard),
+          provide: DashboardRepository,
           useValue: mockDashboardRepo,
         },
         {
-          provide: getRepositoryToken(Chat),
-          useValue: mockChatRepo,
+          provide: ChatSharedService,
+          useValue: mockChatSharedService,
         },
         {
           provide: GroupService,
@@ -103,11 +93,9 @@ describe('AnalyticsService', () => {
 
     service = module.get<AnalyticsService>(AnalyticsService);
     analyticsInterface = module.get('AnalyticsInterface');
-    dashboardRepository = module.get(getRepositoryToken(Dashboard));
-    chatRepository = module.get(getRepositoryToken(Chat));
+    dashboardRepository = module.get(DashboardRepository);
+    chatSharedService = module.get(ChatSharedService);
     groupService = module.get(GroupService);
-
-    chatRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
   });
 
   afterEach(() => {
@@ -151,19 +139,18 @@ describe('AnalyticsService', () => {
     it('should throw NotFoundException when dashboard not found', async () => {
       const dashboardId = 'nonexistent-dashboard';
 
-      dashboardRepository.findOne.mockResolvedValue(null);
+      dashboardRepository.findByExternalIdAndTenant.mockResolvedValue(null);
 
       await expect(service.getDashboardUrl(dashboardId)).rejects.toThrow(
         new NotFoundException('Dashboard not found'),
       );
 
-      expect(dashboardRepository.findOne).toHaveBeenCalledTimes(1);
-      expect(dashboardRepository.findOne).toHaveBeenCalledWith({
-        where: {
-          externalId: dashboardId,
-          tenantId: mockTenantId,
-        },
-      });
+      expect(
+        dashboardRepository.findByExternalIdAndTenant,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        dashboardRepository.findByExternalIdAndTenant,
+      ).toHaveBeenCalledWith(dashboardId, mockTenantId);
       expect(AnalyticsUtil.generateParamList).not.toHaveBeenCalled();
       expect(analyticsInterface.getDashboardUrl).not.toHaveBeenCalled();
     });
@@ -172,7 +159,9 @@ describe('AnalyticsService', () => {
       const expectedUrl =
         'https://analytics.com/dashboard-123?organization_id=tenant-23&user_id=user-123';
 
-      dashboardRepository.findOne.mockResolvedValue(mockDashboard);
+      dashboardRepository.findByExternalIdAndTenant.mockResolvedValue(
+        mockDashboard,
+      );
       (AnalyticsUtil.generateParamList as jest.Mock).mockReturnValue({
         organization_id: mockTenantId,
         user_id: mockUserId,
@@ -183,13 +172,12 @@ describe('AnalyticsService', () => {
 
       expect(result.url).toBe(expectedUrl);
 
-      expect(dashboardRepository.findOne).toHaveBeenCalledTimes(1);
-      expect(dashboardRepository.findOne).toHaveBeenCalledWith({
-        where: {
-          externalId: dashboardId,
-          tenantId: mockTenantId,
-        },
-      });
+      expect(
+        dashboardRepository.findByExternalIdAndTenant,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        dashboardRepository.findByExternalIdAndTenant,
+      ).toHaveBeenCalledWith(dashboardId, mockTenantId);
 
       expect(AnalyticsUtil.generateParamList).toHaveBeenCalledTimes(1);
       expect(AnalyticsUtil.generateParamList).toHaveBeenCalledWith(
@@ -208,7 +196,9 @@ describe('AnalyticsService', () => {
         data: null,
       } as unknown as Dashboard;
 
-      dashboardRepository.findOne.mockResolvedValue(dashboardWithNoParams);
+      dashboardRepository.findByExternalIdAndTenant.mockResolvedValue(
+        dashboardWithNoParams,
+      );
       (AnalyticsUtil.generateParamList as jest.Mock).mockReturnValue([]);
       analyticsInterface.getDashboardUrl.mockResolvedValue(
         'https://analytics.com/simple',
@@ -218,13 +208,12 @@ describe('AnalyticsService', () => {
 
       expect(result.url).toBe('https://analytics.com/simple');
 
-      expect(dashboardRepository.findOne).toHaveBeenCalledTimes(1);
-      expect(dashboardRepository.findOne).toHaveBeenCalledWith({
-        where: {
-          externalId: 'dashboard-123',
-          tenantId: mockTenantId,
-        },
-      });
+      expect(
+        dashboardRepository.findByExternalIdAndTenant,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        dashboardRepository.findByExternalIdAndTenant,
+      ).toHaveBeenCalledWith('dashboard-123', mockTenantId);
 
       expect(AnalyticsUtil.generateParamList).toHaveBeenCalledTimes(1);
       expect(AnalyticsUtil.generateParamList).toHaveBeenCalledWith([]);
@@ -253,7 +242,7 @@ describe('AnalyticsService', () => {
         ...mockDashboardDto,
         tenantId: mockTenantId,
       };
-      dashboardRepository.findOne.mockResolvedValue(null);
+      dashboardRepository.findByExternalIdAndTenant.mockResolvedValue(null);
 
       dashboardRepository.create.mockReturnValue(savedDashboard as Dashboard);
       dashboardRepository.save.mockResolvedValue(savedDashboard as Dashboard);
@@ -261,14 +250,16 @@ describe('AnalyticsService', () => {
 
       expect(result).toEqual(savedDashboard);
 
-      expect(dashboardRepository.findOne).toHaveBeenCalledTimes(1);
-      expect(dashboardRepository.findOne).toHaveBeenCalledWith({
-        where: {
-          externalId: mockDashboardDto.externalId,
-          tenantId: mockTenantId,
-          groupId: mockDashboardDto.groupId,
-        },
-      });
+      expect(
+        dashboardRepository.findByExternalIdAndTenant,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        dashboardRepository.findByExternalIdAndTenant,
+      ).toHaveBeenCalledWith(
+        mockDashboardDto.externalId,
+        mockTenantId,
+        mockDashboardDto.groupId,
+      );
 
       expect(dashboardRepository.create).toHaveBeenCalledTimes(1);
       expect(dashboardRepository.create).toHaveBeenCalledWith({
@@ -282,21 +273,25 @@ describe('AnalyticsService', () => {
     it('should update existing dashboard when found', async () => {
       const existingDashboard = { id: 1, ...mockDashboardDto } as Dashboard;
 
-      dashboardRepository.findOne.mockResolvedValue(existingDashboard);
+      dashboardRepository.findByExternalIdAndTenant.mockResolvedValue(
+        existingDashboard,
+      );
       dashboardRepository.update.mockResolvedValue({ affected: 1 } as any);
 
       const result = await service.createDashboard(mockDashboardDto);
 
       expect(result).toEqual(existingDashboard);
 
-      expect(dashboardRepository.findOne).toHaveBeenCalledTimes(1);
-      expect(dashboardRepository.findOne).toHaveBeenCalledWith({
-        where: {
-          externalId: mockDashboardDto.externalId,
-          tenantId: mockTenantId,
-          groupId: mockDashboardDto.groupId,
-        },
-      });
+      expect(
+        dashboardRepository.findByExternalIdAndTenant,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        dashboardRepository.findByExternalIdAndTenant,
+      ).toHaveBeenCalledWith(
+        mockDashboardDto.externalId,
+        mockTenantId,
+        mockDashboardDto.groupId,
+      );
 
       expect(dashboardRepository.update).toHaveBeenCalledTimes(1);
       expect(dashboardRepository.update).toHaveBeenCalledWith(
@@ -372,20 +367,20 @@ describe('AnalyticsService', () => {
   });
 
   describe('getCounselorStats', () => {
-    it('should calculate counselor stats successfully', async () => {
+    it('should calculate counselor stats from raw data', async () => {
       const queryParams = {
         startDate: '2024-01-01',
         endDate: '2024-01-31',
       };
       const userId = mockUserId;
 
-      const mockDbResult = {
+      const mockRawResult = {
         counselorName: 'John Doe',
         counselorListeningDuration: '1800.50',
         counselorSharingDuration: '600.25',
       };
 
-      mockQueryBuilder.getRawOne.mockResolvedValue(mockDbResult);
+      chatSharedService.getCounselorStatsRaw.mockResolvedValue(mockRawResult);
 
       const result = await service.getCounselorStats(queryParams, userId);
 
@@ -395,81 +390,24 @@ describe('AnalyticsService', () => {
         counselorSharingDuration: 600.25,
         counselorSharingPercentage: 25,
       });
-
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledWith('chat');
-
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'users',
-        'user',
-        'user.id = chat.counselorId',
+      expect(chatSharedService.getCounselorStatsRaw).toHaveBeenCalledTimes(1);
+      expect(chatSharedService.getCounselorStatsRaw).toHaveBeenCalledWith(
+        queryParams,
+        userId,
       );
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'call_details',
-        'callDetails',
-        'callDetails.chatId = chat.id',
-      );
-
-      expect(mockQueryBuilder.select).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.select).toHaveBeenCalledWith(
-        'user.name',
-        'counselorName',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'clientTalkingTime')::float)`,
-        'counselorListeningDuration',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'counselorTalkingTime')::float)`,
-        'counselorSharingDuration',
-      );
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'clientTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledTimes(5);
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'clientTalkingTime')::float > 0`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'counselorTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        '"chat"."startedAt" BETWEEN :startDate AND :endDate',
-        {
-          startDate: '2024-01-01 00:00:00',
-          endDate: '2024-01-31 23:59:59',
-        },
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'user.id = :userId',
-        { userId: 123 },
-      );
-
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledWith('user.name');
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('user.name', 'ASC');
-
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledWith();
     });
 
-    it('should handle only start date provided', async () => {
+    it('should pass through query params to ChatSharedService', async () => {
       const queryParams = { startDate: '2024-01-01' };
       const userId = mockUserId;
 
-      mockQueryBuilder.getRawOne.mockResolvedValue({
+      const mockRawResult = {
         counselorName: 'Jane Doe',
         counselorListeningDuration: '1800.5',
         counselorSharingDuration: '600.25',
-      });
+      };
+
+      chatSharedService.getCounselorStatsRaw.mockResolvedValue(mockRawResult);
 
       const result = await service.getCounselorStats(queryParams, userId);
 
@@ -479,308 +417,17 @@ describe('AnalyticsService', () => {
         counselorSharingDuration: 600.25,
         counselorSharingPercentage: 25,
       });
-
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledWith('chat');
-
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'users',
-        'user',
-        'user.id = chat.counselorId',
+      expect(chatSharedService.getCounselorStatsRaw).toHaveBeenCalledWith(
+        queryParams,
+        userId,
       );
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'call_details',
-        'callDetails',
-        'callDetails.chatId = chat.id',
-      );
-
-      expect(mockQueryBuilder.select).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.select).toHaveBeenCalledWith(
-        'user.name',
-        'counselorName',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'clientTalkingTime')::float)`,
-        'counselorListeningDuration',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'counselorTalkingTime')::float)`,
-        'counselorSharingDuration',
-      );
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'clientTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledTimes(5);
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'clientTalkingTime')::float > 0`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'counselorTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        '"chat"."startedAt" >= :startDate',
-        { startDate: '2024-01-01 00:00:00' },
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'user.id = :userId',
-        { userId: 123 },
-      );
-
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledWith('user.name');
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('user.name', 'ASC');
-
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledWith();
     });
 
-    it('should handle only end date provided', async () => {
-      const queryParams = { endDate: '2024-01-31' };
-      const userId = mockUserId;
-
-      mockQueryBuilder.getRawOne.mockResolvedValue({
-        counselorName: 'Bob Smith',
-        counselorListeningDuration: '100',
-        counselorSharingDuration: '50',
-      });
-
-      const result = await service.getCounselorStats(queryParams, userId);
-
-      expect(result).toEqual({
-        counselorName: 'Bob Smith',
-        counselorListeningDuration: 100,
-        counselorSharingDuration: 50,
-        counselorSharingPercentage: 33.33,
-      });
-
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledWith('chat');
-
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'users',
-        'user',
-        'user.id = chat.counselorId',
-      );
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'call_details',
-        'callDetails',
-        'callDetails.chatId = chat.id',
-      );
-
-      expect(mockQueryBuilder.select).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.select).toHaveBeenCalledWith(
-        'user.name',
-        'counselorName',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'clientTalkingTime')::float)`,
-        'counselorListeningDuration',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'counselorTalkingTime')::float)`,
-        'counselorSharingDuration',
-      );
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'clientTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledTimes(5);
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'clientTalkingTime')::float > 0`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'counselorTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        '"chat"."startedAt" <= :endDate',
-        { endDate: '2024-01-31 23:59:59' },
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'user.id = :userId',
-        { userId: 123 },
-      );
-
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledWith('user.name');
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('user.name', 'ASC');
-
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledWith();
-    });
-
-    it('should handle no date filters provided', async () => {
+    it('should handle null result from ChatSharedService', async () => {
       const queryParams = {};
       const userId = mockUserId;
 
-      mockQueryBuilder.getRawOne.mockResolvedValue({
-        counselorName: 'Alice Johnson',
-        counselorListeningDuration: '200',
-        counselorSharingDuration: '100',
-      });
-
-      const result = await service.getCounselorStats(queryParams, userId);
-
-      expect(result).toEqual({
-        counselorName: 'Alice Johnson',
-        counselorListeningDuration: 200,
-        counselorSharingDuration: 100,
-        counselorSharingPercentage: 33.33,
-      });
-
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledWith('chat');
-
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'users',
-        'user',
-        'user.id = chat.counselorId',
-      );
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'call_details',
-        'callDetails',
-        'callDetails.chatId = chat.id',
-      );
-
-      expect(mockQueryBuilder.select).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.select).toHaveBeenCalledWith(
-        'user.name',
-        'counselorName',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'clientTalkingTime')::float)`,
-        'counselorListeningDuration',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'counselorTalkingTime')::float)`,
-        'counselorSharingDuration',
-      );
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'clientTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledTimes(4);
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'clientTalkingTime')::float > 0`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'counselorTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'user.id = :userId',
-        { userId: 123 },
-      );
-
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledWith('user.name');
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('user.name', 'ASC');
-
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledWith();
-
-      const dateFilterCalls = (
-        mockQueryBuilder.andWhere as jest.Mock
-      ).mock.calls.filter((call) => call[0].includes('createdAt'));
-      expect(dateFilterCalls).toHaveLength(0);
-    });
-
-    it('should handle zero talking time (avoid division by zero)', async () => {
-      const queryParams = {};
-      const userId = mockUserId;
-
-      mockQueryBuilder.getRawOne.mockResolvedValue({
-        counselorName: 'Silent Counselor',
-        counselorListeningDuration: '0',
-        counselorSharingDuration: '0',
-      });
-
-      const result = await service.getCounselorStats(queryParams, userId);
-
-      expect(result).toEqual({
-        counselorName: 'Silent Counselor',
-        counselorListeningDuration: 0,
-        counselorSharingDuration: 0,
-        counselorSharingPercentage: 0,
-      });
-
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledWith('chat');
-
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'users',
-        'user',
-        'user.id = chat.counselorId',
-      );
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'call_details',
-        'callDetails',
-        'callDetails.chatId = chat.id',
-      );
-
-      expect(mockQueryBuilder.select).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.select).toHaveBeenCalledWith(
-        'user.name',
-        'counselorName',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'clientTalkingTime')::float)`,
-        'counselorListeningDuration',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'counselorTalkingTime')::float)`,
-        'counselorSharingDuration',
-      );
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'clientTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledTimes(4);
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'clientTalkingTime')::float > 0`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'counselorTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`,
-      );
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledWith('user.name');
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('user.name', 'ASC');
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledWith();
-    });
-
-    it('should handle null database result', async () => {
-      const queryParams = {};
-      const userId = 999;
-
-      mockQueryBuilder.getRawOne.mockResolvedValue(null);
+      chatSharedService.getCounselorStatsRaw.mockResolvedValue(null);
 
       const result = await service.getCounselorStats(queryParams, userId);
 
@@ -790,129 +437,49 @@ describe('AnalyticsService', () => {
         counselorSharingDuration: 0,
         counselorSharingPercentage: 0,
       });
-
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledWith('chat');
-
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'users',
-        'user',
-        'user.id = chat.counselorId',
+      expect(chatSharedService.getCounselorStatsRaw).toHaveBeenCalledWith(
+        queryParams,
+        userId,
       );
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'call_details',
-        'callDetails',
-        'callDetails.chatId = chat.id',
-      );
-
-      expect(mockQueryBuilder.select).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.select).toHaveBeenCalledWith(
-        'user.name',
-        'counselorName',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'clientTalkingTime')::float)`,
-        'counselorListeningDuration',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'counselorTalkingTime')::float)`,
-        'counselorSharingDuration',
-      );
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'clientTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledTimes(4);
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'clientTalkingTime')::float > 0`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'counselorTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`,
-      );
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledWith('user.name');
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('user.name', 'ASC');
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledWith();
     });
 
-    it('should handle malformed data gracefully', async () => {
+    it('should handle zero talking time (avoid division by zero)', async () => {
       const queryParams = {};
       const userId = mockUserId;
 
-      // Mock result with invalid numbers
-      mockQueryBuilder.getRawOne.mockResolvedValue({
-        counselorName: 'Test User',
-        counselorListeningDuration: 'invalid-number',
-        counselorSharingDuration: null,
-      });
+      const mockRawResult = {
+        counselorName: 'Silent Counselor',
+        counselorListeningDuration: '0',
+        counselorSharingDuration: '0',
+      };
+
+      chatSharedService.getCounselorStatsRaw.mockResolvedValue(mockRawResult);
 
       const result = await service.getCounselorStats(queryParams, userId);
 
       expect(result).toEqual({
-        counselorName: 'Test User',
+        counselorName: 'Silent Counselor',
         counselorListeningDuration: 0,
         counselorSharingDuration: 0,
         counselorSharingPercentage: 0,
       });
+    });
 
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(chatRepository.createQueryBuilder).toHaveBeenCalledWith('chat');
+    it('should handle errors from ChatSharedService', async () => {
+      const queryParams = {};
+      const userId = mockUserId;
+      const error = new Error('Database error');
 
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'users',
-        'user',
-        'user.id = chat.counselorId',
-      );
-      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
-        'call_details',
-        'callDetails',
-        'callDetails.chatId = chat.id',
-      );
+      chatSharedService.getCounselorStatsRaw.mockRejectedValue(error);
 
-      expect(mockQueryBuilder.select).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.select).toHaveBeenCalledWith(
-        'user.name',
-        'counselorName',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(2);
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'clientTalkingTime')::float)`,
-        'counselorListeningDuration',
-      );
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
-        `SUM(("callDetails"."callInfo" ->> 'counselorTalkingTime')::float)`,
-        'counselorSharingDuration',
-      );
+      await expect(
+        service.getCounselorStats(queryParams, userId),
+      ).rejects.toThrow('Database error');
 
-      expect(mockQueryBuilder.where).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'clientTalkingTime' IS NOT NULL`,
+      expect(chatSharedService.getCounselorStatsRaw).toHaveBeenCalledWith(
+        queryParams,
+        userId,
       );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledTimes(4);
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'clientTalkingTime')::float > 0`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `callDetails.callInfo ->> 'counselorTalkingTime' IS NOT NULL`,
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`,
-      );
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.groupBy).toHaveBeenCalledWith('user.name');
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('user.name', 'ASC');
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledTimes(1);
-      expect(mockQueryBuilder.getRawOne).toHaveBeenCalledWith();
     });
   });
 });
