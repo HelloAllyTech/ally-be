@@ -58,7 +58,6 @@ describe('LeaderboardService', () => {
     const mockUserDailyScoreRepository = {
       getLeaderboardWithUserDetails: jest.fn(),
       getUserRankWithDetails: jest.fn(),
-      getUserDetailsForNoActivity: jest.fn(),
     };
 
     const mockTenantService = {
@@ -300,6 +299,7 @@ describe('LeaderboardService', () => {
 
       await service.getLeaderboard(mockTenantId, LeaderboardView.LAST_WEEK);
 
+      // hideRankInCommunity defaults to false when settings is undefined
       expect(
         userDailyScoreRepository.getLeaderboardWithUserDetails,
       ).toHaveBeenCalledWith(
@@ -307,7 +307,7 @@ describe('LeaderboardService', () => {
         expect.any(Date),
         expect.any(Date),
         undefined,
-        undefined,
+        false,
       );
     });
 
@@ -321,6 +321,7 @@ describe('LeaderboardService', () => {
 
       await service.getLeaderboard(mockTenantId, LeaderboardView.LAST_WEEK);
 
+      // hideRankInCommunity defaults to false when tenant is not found
       expect(
         userDailyScoreRepository.getLeaderboardWithUserDetails,
       ).toHaveBeenCalledWith(
@@ -328,7 +329,7 @@ describe('LeaderboardService', () => {
         expect.any(Date),
         expect.any(Date),
         undefined,
-        undefined,
+        false,
       );
     });
   });
@@ -372,17 +373,8 @@ describe('LeaderboardService', () => {
       );
     });
 
-    it('should return zero rank when user has no activity in window', async () => {
-      const userDetails = {
-        name: 'John Doe',
-        profileImageUrl: 'https://example.com/avatar.jpg',
-        badgeCount: 3,
-      };
-
+    it('should return null when user has no activity in window', async () => {
       userDailyScoreRepository.getUserRankWithDetails.mockResolvedValue(null);
-      userDailyScoreRepository.getUserDetailsForNoActivity.mockResolvedValue(
-        userDetails,
-      );
 
       const result = await service.getMyRank(
         mockUserId,
@@ -390,20 +382,16 @@ describe('LeaderboardService', () => {
         LeaderboardView.LAST_WEEK,
       );
 
-      expect(result).toEqual({
-        userId: mockUserId,
-        name: 'John Doe',
-        profileImageUrl: 'https://example.com/avatar.jpg',
-        status: UserStatus.ACTIVE,
-        rank: 0,
-        minutesPlayed: 0,
-        badgeCount: 3,
-        window: LeaderboardView.LAST_WEEK,
-        hideRankInCommunity: false,
-      });
+      expect(result).toBeNull();
       expect(
-        userDailyScoreRepository.getUserDetailsForNoActivity,
-      ).toHaveBeenCalledWith(mockUserId);
+        userDailyScoreRepository.getUserRankWithDetails,
+      ).toHaveBeenCalledWith(
+        mockUserId,
+        mockTenantId,
+        expect.any(Date),
+        expect.any(Date),
+        false,
+      );
     });
 
     it('should pass hideRankInCommunity=true when tenant setting is enabled', async () => {
@@ -431,7 +419,8 @@ describe('LeaderboardService', () => {
         LeaderboardView.LAST_WEEK,
       );
 
-      expect(result.rank).toBeUndefined();
+      expect(result).not.toBeNull();
+      expect(result!.rank).toBeUndefined();
       expect(
         userDailyScoreRepository.getUserRankWithDetails,
       ).toHaveBeenCalledWith(
@@ -443,7 +432,7 @@ describe('LeaderboardService', () => {
       );
     });
 
-    it('should return undefined rank when user has no activity and hideRankInCommunity is true', async () => {
+    it('should return null when user has no activity even with hideRankInCommunity true', async () => {
       tenantService.findById.mockResolvedValue({
         id: mockTenantId,
         name: 'Test Tenant',
@@ -453,11 +442,6 @@ describe('LeaderboardService', () => {
       } as any);
 
       userDailyScoreRepository.getUserRankWithDetails.mockResolvedValue(null);
-      userDailyScoreRepository.getUserDetailsForNoActivity.mockResolvedValue({
-        name: 'John Doe',
-        profileImageUrl: 'https://example.com/avatar.jpg',
-        badgeCount: 3,
-      });
 
       const result = await service.getMyRank(
         mockUserId,
@@ -465,17 +449,16 @@ describe('LeaderboardService', () => {
         LeaderboardView.LAST_WEEK,
       );
 
-      expect(result).toEqual({
-        userId: mockUserId,
-        name: 'John Doe',
-        profileImageUrl: 'https://example.com/avatar.jpg',
-        status: UserStatus.ACTIVE,
-        rank: undefined,
-        minutesPlayed: 0,
-        badgeCount: 3,
-        window: LeaderboardView.LAST_WEEK,
-        hideRankInCommunity: true,
-      });
+      expect(result).toBeNull();
+      expect(
+        userDailyScoreRepository.getUserRankWithDetails,
+      ).toHaveBeenCalledWith(
+        mockUserId,
+        mockTenantId,
+        expect.any(Date),
+        expect.any(Date),
+        true,
+      );
     });
 
     it('should return rank for LAST_MONTH window', async () => {
@@ -610,7 +593,8 @@ describe('LeaderboardService', () => {
         LeaderboardView.LAST_WEEK,
       );
 
-      expect(result.profileImageUrl).toBeUndefined();
+      expect(result).not.toBeNull();
+      expect(result!.profileImageUrl).toBeUndefined();
     });
 
     it('should handle repository errors', async () => {

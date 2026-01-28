@@ -7,7 +7,6 @@ import {
 import { LeaderboardView } from '../type/leaderboard.type';
 import { Pagination } from 'src/common/type/common.type';
 import { TenantService } from 'src/tenant/service/tenant.service';
-import { UserStatus } from 'src/user/constants/user-status.constants';
 
 @Injectable()
 export class LeaderboardService {
@@ -53,7 +52,8 @@ export class LeaderboardService {
     pagination?: Pagination,
   ): Promise<LeaderboardResponseDto> {
     const tenantSettings = await this.tenantService.findById(tenantId);
-    const hideRankInCommunity = tenantSettings?.settings?.hideRankInCommunity;
+    const hideRankInCommunity =
+      tenantSettings?.settings?.hideRankInCommunity ?? false;
     const { startDate, endDate } = this.getDateRange(window);
 
     const { data, totalCount } =
@@ -77,9 +77,10 @@ export class LeaderboardService {
     userId: number,
     tenantId: string,
     window: LeaderboardView,
-  ): Promise<MyRankResponseDto> {
+  ): Promise<MyRankResponseDto | null> {
     const tenantSettings = await this.tenantService.findById(tenantId);
-    const hideRankInCommunity = tenantSettings?.settings?.hideRankInCommunity;
+    const hideRankInCommunity =
+      tenantSettings?.settings?.hideRankInCommunity ?? false;
     const { startDate, endDate } = this.getDateRange(window);
 
     const rankResult =
@@ -99,20 +100,6 @@ export class LeaderboardService {
       };
     }
 
-    // User has no activity in this window - get their details anyway
-    const userDetails =
-      await this.userDailyScoreRepository.getUserDetailsForNoActivity(userId);
-
-    return {
-      userId,
-      name: userDetails.name,
-      profileImageUrl: userDetails.profileImageUrl,
-      status: UserStatus.ACTIVE,
-      rank: hideRankInCommunity ? undefined : 0, // 0 indicates no rank (no activity)
-      minutesPlayed: 0,
-      badgeCount: userDetails.badgeCount,
-      window,
-      hideRankInCommunity,
-    };
+    return null;
   }
 }

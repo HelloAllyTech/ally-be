@@ -374,29 +374,16 @@ describe('CommunityController', () => {
       expect(result).toEqual(expectedResponse);
     });
 
-    it('should return rank 0 when user has no activity', async () => {
+    it('should return null when user has no activity', async () => {
       const query: GetMyRankQueryDto = {
         window: LeaderboardView.LAST_WEEK,
       };
 
-      const expectedResponse = {
-        userId: mockUser.id,
-        name: 'John Doe',
-        profileImageUrl: undefined,
-        status: UserStatus.ACTIVE,
-        rank: 0,
-        minutesPlayed: 0,
-        badgeCount: 0,
-        window: LeaderboardView.LAST_WEEK,
-        hideRankInCommunity: false,
-      };
-
-      leaderboardService.getMyRank.mockResolvedValue(expectedResponse);
+      leaderboardService.getMyRank.mockResolvedValue(null);
 
       const result = await controller.getMyRank(query, mockUser);
 
-      expect(result?.rank).toBe(0);
-      expect(result?.minutesPlayed).toBe(0);
+      expect(result).toBeNull();
     });
 
     it('should handle service errors', async () => {
