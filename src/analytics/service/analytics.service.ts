@@ -1,9 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AnalyticsInterface } from '../interface/analytics.interface';
-import { In, Repository } from 'typeorm';
-import { Dashboard } from '../entity/dashboard.entity';
-import { Chat } from '../../chat/entity/chat.entity';
-import { InjectRepository } from '@nestjs/typeorm';
+import { In } from 'typeorm';
 import { GroupService } from 'src/authorization/service/group.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { AnalyticsUtil } from '../util/analytics.util';
@@ -13,16 +10,16 @@ import {
   CreateDashboardDto,
 } from '../dto/analytics.dto';
 import { UserRole } from 'src/common/constants/user.constants';
+import { DashboardRepository } from '../repository/dashboard.repository';
+import { ChatSharedService } from '../../chat/service/chat-shared.service';
 
 @Injectable()
 export class AnalyticsService {
   constructor(
     @Inject('AnalyticsInterface')
     private readonly analyticsInterface: AnalyticsInterface,
-    @InjectRepository(Dashboard)
-    private readonly dashboardRepository: Repository<Dashboard>,
-    @InjectRepository(Chat)
-    private readonly chatRepository: Repository<Chat>,
+    private readonly dashboardRepository: DashboardRepository,
+    private readonly chatSharedService: ChatSharedService,
     private readonly groupService: GroupService,
   ) {}
   async refreshDashboardUrl(dashboardId: string) {
@@ -32,12 +29,10 @@ export class AnalyticsService {
   }
 
   async getDashboardUrl(dashboardId: string) {
-    const dashboard = await this.dashboardRepository.findOne({
-      where: {
-        externalId: dashboardId,
-        tenantId: ExecutionManager.getTenantId(),
-      },
-    });
+    const dashboard = await this.dashboardRepository.findByExternalIdAndTenant(
+      dashboardId,
+      ExecutionManager.getTenantId()!,
+    );
     if (!dashboard) {
       throw new NotFoundException('Dashboard not found');
     }
@@ -53,13 +48,12 @@ export class AnalyticsService {
   }
 
   async createDashboard(dashboard: CreateDashboardDto) {
-    const existingDashboard = await this.dashboardRepository.findOne({
-      where: {
-        externalId: dashboard.externalId,
-        tenantId: dashboard.tenantId,
-        groupId: dashboard.groupId,
-      },
-    });
+    const existingDashboard =
+      await this.dashboardRepository.findByExternalIdAndTenant(
+        dashboard.externalId,
+        dashboard.tenantId,
+        dashboard.groupId,
+      );
     if (existingDashboard) {
       await this.dashboardRepository.update(
         { id: existingDashboard.id },
@@ -108,53 +102,15 @@ export class AnalyticsService {
     queryParams: CounselorStatsQueryDto,
     userId: number,
   ): Promise<CounselorStatsResponseDto> {
-    const query = this.chatRepository
-      .createQueryBuilder('chat')
-      .innerJoin('users', 'user', 'user.id = chat.counselorId')
-      .innerJoin('call_details', 'callDetails', 'callDetails.chatId = chat.id')
-      .select('user.name', 'counselorName')
-      .addSelect(
-        `SUM(("callDetails"."callInfo" ->> 'clientTalkingTime')::float)`,
-        'counselorListeningDuration',
-      )
-      .addSelect(
-        `SUM(("callDetails"."callInfo" ->> 'counselorTalkingTime')::float)`,
-        'counselorSharingDuration',
-      )
-      .where(`callDetails.callInfo ->> 'clientTalkingTime' IS NOT NULL`)
-      .andWhere(`(callDetails.callInfo ->> 'clientTalkingTime')::float > 0`)
-      .andWhere(`callDetails.callInfo ->> 'counselorTalkingTime' IS NOT NULL`)
-      .andWhere(`(callDetails.callInfo ->> 'counselorTalkingTime')::float >= 0`)
-      .groupBy('user.name')
-      .orderBy('user.name', 'ASC');
-
-    if (queryParams.startDate && queryParams.endDate) {
-      const startDateTime = `${queryParams.startDate} 00:00:00`;
-      const endDateTime = `${queryParams.endDate} 23:59:59`;
-      query.andWhere('"chat"."startedAt" BETWEEN :startDate AND :endDate', {
-        startDate: startDateTime,
-        endDate: endDateTime,
-      });
-    } else if (queryParams.startDate) {
-      const startDateTime = `${queryParams.startDate} 00:00:00`;
-      query.andWhere('"chat"."startedAt" >= :startDate', {
-        startDate: startDateTime,
-      });
-    } else if (queryParams.endDate) {
-      const endDateTime = `${queryParams.endDate} 23:59:59`;
-      query.andWhere('"chat"."startedAt" <= :endDate', {
-        endDate: endDateTime,
-      });
-    }
-
-    query.andWhere('user.id = :userId', { userId });
-
-    const result = await query.getRawOne();
+    const result = await this.chatSharedService.getCounselorStatsRaw(
+      queryParams,
+      userId,
+    );
 
     const counselorListeningDuration =
-      parseFloat(result?.counselorListeningDuration) || 0;
+      parseFloat(result?.counselorListeningDuration ?? '0') || 0;
     const counselorSharingDuration =
-      parseFloat(result?.counselorSharingDuration) || 0;
+      parseFloat(result?.counselorSharingDuration ?? '0') || 0;
     const totalTalkingTime =
       counselorListeningDuration + counselorSharingDuration;
     const counselorSharingPercentage =

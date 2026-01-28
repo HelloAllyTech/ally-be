@@ -90,20 +90,10 @@ export class ChatService {
     ) {
       throw new ForbiddenException('You are not allowed to access this chat');
     }
-    const chatQuery = this.chatRepository
-      .createQueryBuilder('chat')
-      .leftJoinAndMapOne(
-        'chat.details',
-        CallDetails,
-        'details',
-        'details.chatId = chat.id',
-      )
-      .where('chat.id = :id', { id })
-      .andWhere('chat.tenantId = :tenantId', {
-        tenantId: ExecutionManager.getTenantId(),
-      });
-
-    const chat = (await chatQuery.getOne()) as Chat & { details: CallDetails };
+    const chat = await this.chatRepository.findChatWithDetails(
+      id,
+      ExecutionManager.getTenantId()!,
+    );
     if (!chat) {
       throw new HttpException('Chat not found', 404);
     }
