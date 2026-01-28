@@ -84,7 +84,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     amount: number,
     em?: EntityManager,
   ): Promise<void> {
-    const normalizedDate = new Date().toISOString().split('T')[0];
+    const normalizedDate = new Date(new Date().toISOString().split('T')[0]);
 
     const userDailyScoreRepo = em
       ? em.getRepository(UserDailyScores)
@@ -116,14 +116,16 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       `
       WITH aggregated_scores AS (
         SELECT 
-          "userId",
-          SUM("minutesPlayed") as "minutesPlayed",
-          SUM("totalScore") as score
-        FROM user_daily_scores
-        WHERE "tenant_id" = $1
-          AND "date" >= $2
-          AND "date" <= $3
-        GROUP BY "userId"
+          uds."userId",
+          SUM(uds."minutesPlayed") as "minutesPlayed",
+          SUM(uds."totalScore") as score
+        FROM user_daily_scores uds
+        INNER JOIN user_groups ug ON ug."userId" = uds."userId"
+        INNER JOIN groups g ON g.id = ug."groupId" AND g.name = 'LEARNER'
+        WHERE uds."tenant_id" = $1
+          AND uds."date" >= $2
+          AND uds."date" <= $3
+        GROUP BY uds."userId"
       ),
       ranked_scores AS (
         SELECT 
@@ -156,11 +158,13 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
 
     const countResult = await this.query(
       `
-      SELECT COUNT(DISTINCT "userId") as count
-      FROM user_daily_scores
-      WHERE "tenant_id" = $1
-        AND "date" >= $2
-        AND "date" <= $3
+      SELECT COUNT(DISTINCT uds."userId") as count
+      FROM user_daily_scores uds
+      INNER JOIN user_groups ug ON ug."userId" = uds."userId"
+      INNER JOIN groups g ON g.id = ug."groupId" AND g.name = 'LEARNER'
+      WHERE uds."tenant_id" = $1
+        AND uds."date" >= $2
+        AND uds."date" <= $3
       `,
       [tenantId, startDate, endDate],
     );
@@ -191,14 +195,16 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       `
       WITH aggregated_scores AS (
         SELECT 
-          "userId",
-          SUM("minutesPlayed") as "minutesPlayed",
-          SUM("totalScore") as score
-        FROM user_daily_scores
-        WHERE "tenant_id" = $1
-          AND "date" >= $2
-          AND "date" <= $3
-        GROUP BY "userId"
+          uds."userId",
+          SUM(uds."minutesPlayed") as "minutesPlayed",
+          SUM(uds."totalScore") as score
+        FROM user_daily_scores uds
+        INNER JOIN user_groups ug ON ug."userId" = uds."userId"
+        INNER JOIN groups g ON g.id = ug."groupId" AND g.name = 'LEARNER'
+        WHERE uds."tenant_id" = $1
+          AND uds."date" >= $2
+          AND uds."date" <= $3
+        GROUP BY uds."userId"
       ),
       ranked_scores AS (
         SELECT 

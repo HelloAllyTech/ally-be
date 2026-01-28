@@ -104,6 +104,148 @@ describe('UserDailyScoreRepository', () => {
     });
   });
 
+  describe('incrementTotalScore', () => {
+    it('should call query with correct parameters for incrementing total score', async () => {
+      mockQuery.mockResolvedValue(undefined);
+
+      await repository.incrementTotalScore(mockUserId, mockTenantId, 0.5);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO user_daily_scores'),
+        expect.arrayContaining([
+          mockUserId,
+          mockTenantId,
+          expect.any(String),
+          0.5,
+        ]),
+      );
+    });
+
+    it('should normalize date to current date without time component', async () => {
+      mockQuery.mockResolvedValue(undefined);
+
+      await repository.incrementTotalScore(mockUserId, mockTenantId, 0.25);
+
+      const queryCall = mockQuery.mock.calls[0];
+      const normalizedDate = queryCall[1][2];
+      // The date is a Date object created from YYYY-MM-DD string (midnight UTC)
+      expect(normalizedDate).toBeInstanceOf(Date);
+      expect(normalizedDate.getUTCHours()).toBe(0);
+      expect(normalizedDate.getUTCMinutes()).toBe(0);
+      expect(normalizedDate.getUTCSeconds()).toBe(0);
+    });
+
+    it('should handle database errors gracefully', async () => {
+      const error = new Error('Database connection failed');
+      mockQuery.mockRejectedValue(error);
+
+      await expect(
+        repository.incrementTotalScore(mockUserId, mockTenantId, 0.5),
+      ).rejects.toThrow('Database connection failed');
+    });
+
+    it('should use correct SQL for upsert with ON CONFLICT', async () => {
+      mockQuery.mockResolvedValue(undefined);
+
+      await repository.incrementTotalScore(mockUserId, mockTenantId, 0.5);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('ON CONFLICT ("userId", "tenant_id", "date")'),
+        expect.any(Array),
+      );
+    });
+  });
+
+  describe('decrementTotalScore', () => {
+    let mockEntityManager: jest.Mocked<any>;
+
+    beforeEach(() => {
+      mockEntityManager = {
+        getRepository: jest.fn().mockReturnValue({
+          query: mockQuery,
+        }),
+      };
+
+      // Mock dataSource.getRepository for the no-EntityManager case
+      (mockDataSource as any).getRepository = jest
+        .fn()
+        .mockReturnValue({ query: mockQuery });
+    });
+
+    it('should call query with correct parameters for decrementing total score', async () => {
+      mockQuery.mockResolvedValue(undefined);
+
+      await repository.decrementTotalScore(mockUserId, mockTenantId, 0.5);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO user_daily_scores'),
+        expect.arrayContaining([
+          mockUserId,
+          mockTenantId,
+          expect.any(String),
+          0.5,
+        ]),
+      );
+    });
+
+    it('should use provided EntityManager when passed', async () => {
+      mockQuery.mockResolvedValue(undefined);
+
+      await repository.decrementTotalScore(
+        mockUserId,
+        mockTenantId,
+        0.25,
+        mockEntityManager,
+      );
+
+      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(
+        expect.anything(),
+      );
+    });
+
+    it('should use dataSource.getRepository when no EntityManager provided', async () => {
+      mockQuery.mockResolvedValue(undefined);
+
+      await repository.decrementTotalScore(mockUserId, mockTenantId, 0.25);
+
+      expect((mockDataSource as any).getRepository).toHaveBeenCalled();
+    });
+
+    it('should normalize date to current date without time component', async () => {
+      mockQuery.mockResolvedValue(undefined);
+
+      await repository.decrementTotalScore(mockUserId, mockTenantId, 0.5);
+
+      const queryCall = mockQuery.mock.calls[0];
+      const normalizedDate = queryCall[1][2];
+      // decrementTotalScore uses a Date object (midnight UTC)
+      expect(normalizedDate).toBeInstanceOf(Date);
+      expect(normalizedDate.getUTCHours()).toBe(0);
+      expect(normalizedDate.getUTCMinutes()).toBe(0);
+      expect(normalizedDate.getUTCSeconds()).toBe(0);
+    });
+
+    it('should handle database errors gracefully', async () => {
+      const error = new Error('Database connection failed');
+      mockQuery.mockRejectedValue(error);
+
+      await expect(
+        repository.decrementTotalScore(mockUserId, mockTenantId, 0.5),
+      ).rejects.toThrow('Database connection failed');
+    });
+
+    it('should use negative score in INSERT for new rows', async () => {
+      mockQuery.mockResolvedValue(undefined);
+
+      await repository.decrementTotalScore(mockUserId, mockTenantId, 0.5);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('-$4'),
+        expect.any(Array),
+      );
+    });
+  });
+
   describe('getLeaderboardWithUserDetails', () => {
     const mockLeaderboardData = [
       {
