@@ -116,7 +116,16 @@ export class ReviewService {
     if (!tenantId) {
       throw new BadRequestException('Tenant not found');
     }
-    const result = await this.reviewRepository.getAllReviews(options, tenantId);
+
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User or tenant not found');
+    }
+    const result = await this.reviewRepository.getAllReviews(
+      options,
+      tenantId,
+      userId,
+    );
 
     if (result.reviews.length === 0) return { data: [], count: result.count };
 
@@ -124,7 +133,10 @@ export class ReviewService {
 
     const [reactions, comments] = await Promise.all([
       this.reviewReactionRepository.getReactionsByReviewIds(reviewIds),
-      this.reviewThreadRepository.getCommentsCountByReviewIds(reviewIds),
+      this.reviewThreadRepository.getCommentsCountByReviewIds(
+        reviewIds,
+        userId,
+      ),
     ]);
 
     const data = this.formatReviewListResponse({
@@ -178,7 +190,10 @@ export class ReviewService {
       [
         this.userService.get(review.createdBy),
         this.scenarioSharedService.getScenarioById(scenarioSession.scenarioId),
-        this.reviewThreadRepository.getCommentsCountByReviewIds([review.id]),
+        this.reviewThreadRepository.getCommentsCountByReviewIds(
+          [review.id],
+          userId,
+        ),
         this.reviewReactionRepository.getReactionsByReviewIds([review.id]),
         this.reviewReactionRepository.findOne({
           where: { reviewId: review.id, createdBy: userId },
@@ -395,7 +410,7 @@ export class ReviewService {
           id: comment.c_id,
           content: comment.c_content,
           createdAt: comment.c_createdAt,
-          createdBy: user || {},
+          createdBy: user,
           reactions: reactionsByComment[comment.c_id] || {},
           myReaction: myReactionsByCommentId[comment.c_id] || null,
           hidden: comment.c_hidden,
@@ -409,6 +424,9 @@ export class ReviewService {
     // Group threads by message
     const threadsByMessage = threads.reduce(
       (acc, thread) => {
+        const threadComments = commentsByThread[thread.id] || [];
+        if (threadComments.length === 0) return acc;
+
         if (!acc[thread.messageId]) {
           acc[thread.messageId] = [];
         }
@@ -416,7 +434,7 @@ export class ReviewService {
         const user = userMap.get(thread.createdBy);
         acc[thread.messageId].push({
           id: thread.id,
-          comments: commentsByThread[thread.id] || [],
+          comments: threadComments,
           selection: thread.selection,
           createdBy: user,
         });
