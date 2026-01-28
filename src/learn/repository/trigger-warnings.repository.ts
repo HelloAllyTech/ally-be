@@ -4,6 +4,7 @@ import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { LoggerService } from 'src/logger/logger.service';
+import { TriggerWarningsSortBy } from '../enum/trigger-warnings-sort-by.enum';
 
 @Injectable()
 export class TriggerWarningsRepository extends Repository<TriggerWarnings> {
@@ -32,10 +33,22 @@ export class TriggerWarningsRepository extends Repository<TriggerWarnings> {
     query: SelectQueryBuilder<TriggerWarnings>,
     options: Pagination,
   ) {
-    query.orderBy(
-      `triggerWarning.${options.sortBy || 'createdAt'}`,
-      options.order || 'ASC',
+    const sortColumn = this.getValidatedSortColumn(
+      options.sortBy || 'createdAt',
     );
+    if (sortColumn) {
+      query.orderBy(`triggerWarning.${sortColumn}`, options.order || 'ASC');
+    }
+  }
+
+  private getValidatedSortColumn(sortBy?: string): string | null {
+    if (!sortBy) {
+      return TriggerWarningsSortBy.CREATED_AT;
+    }
+    const validColumns = Object.values(TriggerWarningsSortBy);
+    return validColumns.includes(sortBy as TriggerWarningsSortBy)
+      ? sortBy
+      : TriggerWarningsSortBy.CREATED_AT;
   }
 
   private applyPagination(

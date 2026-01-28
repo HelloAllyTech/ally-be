@@ -3,6 +3,7 @@ import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { ScenarioSessionMessages } from '../entity/scenario-session-messages.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { Pagination } from 'src/common/type/common.type';
+import { ScenarioSessionMessageSortBy } from '../enum/scenario-session-message-sort-by.enum';
 
 @Injectable()
 export class ScenarioSessionMessagesRepository extends Repository<ScenarioSessionMessages> {
@@ -32,10 +33,22 @@ export class ScenarioSessionMessagesRepository extends Repository<ScenarioSessio
     query: SelectQueryBuilder<ScenarioSessionMessages>,
     pagination: Pagination,
   ) {
-    query.orderBy(
-      `message.${pagination.sortBy || 'createdAt'}`,
-      pagination.order || 'ASC',
+    const sortColumn = this.getValidatedSortColumn(
+      pagination.sortBy || 'createdAt',
     );
+    if (sortColumn) {
+      query.orderBy(`message.${sortColumn}`, pagination.order || 'ASC');
+    }
+  }
+
+  private getValidatedSortColumn(sortBy?: string): string | null {
+    if (!sortBy) {
+      return ScenarioSessionMessageSortBy.CREATED_AT;
+    }
+    const validColumns = Object.values(ScenarioSessionMessageSortBy);
+    return validColumns.includes(sortBy as ScenarioSessionMessageSortBy)
+      ? sortBy
+      : ScenarioSessionMessageSortBy.CREATED_AT;
   }
 
   private applyPagination(

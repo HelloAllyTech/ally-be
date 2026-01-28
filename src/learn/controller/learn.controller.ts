@@ -65,6 +65,7 @@ import {
   ScenarioVoiceLanguage,
 } from '../type/scenario-language-voice.type';
 import { ScenarioSharedService } from '../service/scenario-shared.service';
+import { TriggerWarningsSortBy } from '../enum/trigger-warnings-sort-by.enum';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -761,7 +762,7 @@ export class LearnController {
   @ApiQuery({
     name: 'sortBy',
     required: false,
-    type: String,
+    enum: TriggerWarningsSortBy,
     description: 'Field to sort by',
   })
   @ApiQuery({
@@ -781,7 +782,7 @@ export class LearnController {
     @Query('name') name?: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
-    @Query('sortBy') sortBy?: string,
+    @Query('sortBy') sortBy?: TriggerWarningsSortBy,
     @Query('order') order?: SortOrder,
   ) {
     return this.triggerWarningService.getTriggerWarnings(name, {

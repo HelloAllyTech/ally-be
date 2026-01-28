@@ -6,6 +6,7 @@ import {
   ScenarioPathsWithSession,
   ScenarioPathWithSession,
   ScenarioPathWithSessionFilterOptions,
+  ScenarioPathSortBy,
 } from '../type/scenario-paths.type';
 import { ScenarioPathSession } from '../entity/scenario-path-session.entity';
 
@@ -38,10 +39,13 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
     this.applySearchFilter(query, filters);
 
     if (filters?.sortBy) {
-      query.orderBy(
-        `scenarioPath.${filters.sortBy}`,
-        filters.order as 'ASC' | 'DESC',
-      );
+      const sortColumn = this.getValidatedSortColumn(filters.sortBy);
+      if (sortColumn) {
+        query.orderBy(
+          `scenarioPath.${sortColumn}`,
+          filters.order as 'ASC' | 'DESC',
+        );
+      }
     }
 
     if (filters?.limit) {
@@ -106,10 +110,13 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
     }
 
     if (filters?.sortBy) {
-      query.orderBy(
-        `scenarioPathSession.${filters.sortBy}`,
-        filters.order as 'ASC' | 'DESC',
-      );
+      const sortColumn = this.getValidatedSortColumn(filters.sortBy);
+      if (sortColumn) {
+        query.orderBy(
+          `scenarioPathSession.${sortColumn}`,
+          filters.order as 'ASC' | 'DESC',
+        );
+      }
     }
 
     if (filters?.limit) {
@@ -123,5 +130,13 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
     const [data, count] = await query.getManyAndCount();
 
     return { data: data as ScenarioPathWithSession[], count };
+  }
+
+  private getValidatedSortColumn(sortBy?: string): string | null {
+    if (!sortBy) {
+      return null;
+    }
+    const validColumns = Object.values(ScenarioPathSortBy);
+    return validColumns.includes(sortBy as ScenarioPathSortBy) ? sortBy : null;
   }
 }

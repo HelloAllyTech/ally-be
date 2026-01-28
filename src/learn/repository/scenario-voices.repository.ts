@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Raw, Repository, SelectQueryBuilder } from 'typeorm';
 import { ScenarioVoices } from '../entity/scenario-voices.entity';
 import { Pagination } from 'src/common/type/common.type';
+import { ScenarioVoiceSortBy } from '../enum/scenario-voice-sort-by.enum';
 
 @Injectable()
 export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
@@ -49,10 +50,22 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     query: SelectQueryBuilder<ScenarioVoices>,
     options: Pagination,
   ) {
-    query.orderBy(
-      `scenarioVoice.${options.sortBy || 'createdAt'}`,
-      options.order || 'ASC',
+    const sortColumn = this.getValidatedSortColumn(
+      options.sortBy || 'createdAt',
     );
+    if (sortColumn) {
+      query.orderBy(`scenarioVoice.${sortColumn}`, options.order || 'ASC');
+    }
+  }
+
+  private getValidatedSortColumn(sortBy?: string): string | null {
+    if (!sortBy) {
+      return ScenarioVoiceSortBy.CREATED_AT;
+    }
+    const validColumns = Object.values(ScenarioVoiceSortBy);
+    return validColumns.includes(sortBy as ScenarioVoiceSortBy)
+      ? sortBy
+      : ScenarioVoiceSortBy.CREATED_AT;
   }
 
   private applyPagination(

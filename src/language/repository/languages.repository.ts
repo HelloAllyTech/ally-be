@@ -2,6 +2,7 @@ import { DataSource, In, Repository, SelectQueryBuilder } from 'typeorm';
 import { Languages } from '../entity/languages.entity';
 import { Injectable } from '@nestjs/common';
 import { Pagination } from 'src/common/type/common.type';
+import { LanguageSortBy } from '../enum/language-sort-by.enum';
 
 @Injectable()
 export class LanguagesRepository extends Repository<Languages> {
@@ -45,10 +46,22 @@ export class LanguagesRepository extends Repository<Languages> {
     query: SelectQueryBuilder<Languages>,
     options: Pagination,
   ) {
-    query.orderBy(
-      `language.${options.sortBy || 'createdAt'}`,
-      options.order || 'ASC',
+    const sortColumn = this.getValidatedSortColumn(
+      options.sortBy || 'createdAt',
     );
+    if (sortColumn) {
+      query.orderBy(`language.${sortColumn}`, options.order || 'ASC');
+    }
+  }
+
+  private getValidatedSortColumn(sortBy?: string): string | null {
+    if (!sortBy) {
+      return LanguageSortBy.CREATED_AT;
+    }
+    const validColumns = Object.values(LanguageSortBy);
+    return validColumns.includes(sortBy as LanguageSortBy)
+      ? sortBy
+      : LanguageSortBy.CREATED_AT;
   }
 
   private applyPagination(

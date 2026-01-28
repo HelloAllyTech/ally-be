@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Tenant } from 'src/tenant/entity/tenant.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
+import { TenantSortBy } from '../enum/tenant.enum';
 
 @Injectable()
 export class TenantsRepository extends Repository<Tenant> {
@@ -16,10 +17,10 @@ export class TenantsRepository extends Repository<Tenant> {
     this.applySearchFilter(query, search);
 
     if (options?.sortBy) {
-      query.orderBy(
-        `tenant.${options?.sortBy}`,
-        options.order as 'ASC' | 'DESC',
-      );
+      const sortColumn = this.getValidatedSortColumn(options.sortBy);
+      if (sortColumn) {
+        query.orderBy(`tenant.${sortColumn}`, options.order as 'ASC' | 'DESC');
+      }
     }
 
     const count = await query.getCount();
@@ -48,5 +49,13 @@ export class TenantsRepository extends Repository<Tenant> {
         search: searchTerm,
       });
     }
+  }
+
+  private getValidatedSortColumn(sortBy?: string): string | null {
+    if (!sortBy) {
+      return null;
+    }
+    const validColumns = Object.values(TenantSortBy);
+    return validColumns.includes(sortBy as TenantSortBy) ? sortBy : null;
   }
 }

@@ -13,7 +13,7 @@ import {
 import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.entity';
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { GetScenarioDto } from '../dto/get-scenario.dto';
-import { ScenarioStatus } from '../type/scenario.type';
+import { ScenarioStatus, ScenarioSortBy } from '../type/scenario.type';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { GetScenarioResponse } from '../interface/session.interface';
 
@@ -153,13 +153,16 @@ export class ScenariosRepository extends Repository<Scenarios> {
       }
     }
     if (options?.sortBy) {
-      if (options.sortBy === 'usage') {
+      if (options.sortBy === ScenarioSortBy.USAGE) {
         query.orderBy('usage', options.order as 'ASC' | 'DESC');
       } else {
-        query.orderBy(
-          `scenario.${options.sortBy}`,
-          options.order as 'ASC' | 'DESC',
-        );
+        const sortColumn = this.getValidatedSortColumn(options.sortBy);
+        if (sortColumn) {
+          query.orderBy(
+            `scenario.${sortColumn}`,
+            options.order as 'ASC' | 'DESC',
+          );
+        }
       }
     }
 
@@ -231,5 +234,13 @@ export class ScenariosRepository extends Repository<Scenarios> {
 
       query.andWhere('(scenario.title ILIKE :search)', { search: searchTerm });
     }
+  }
+
+  private getValidatedSortColumn(sortBy?: string): string | null {
+    if (!sortBy) {
+      return null;
+    }
+    const validColumns = Object.values(ScenarioSortBy);
+    return validColumns.includes(sortBy as ScenarioSortBy) ? sortBy : null;
   }
 }
