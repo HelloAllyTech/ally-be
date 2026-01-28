@@ -1430,27 +1430,6 @@ describe('ScenarioService', () => {
   });
 
   describe('getAdminScenario', () => {
-    it('should return admin scenario with termination event name', async () => {
-      const mockAdminScenario = {
-        id: 1,
-        title: 'Test',
-        terminationEvent: {
-          eventId: 'event-1',
-        },
-      };
-      scenariosRepository.getAdminScenarioById.mockResolvedValue(
-        mockAdminScenario as any,
-      );
-      sessionEventService.findSessionEventById.mockResolvedValue({
-        id: 'event-1',
-        name: 'Termination Event',
-      } as any);
-
-      const result = await service.getAdminScenario(1);
-
-      expect(result.terminationEvent?.name).toBe('Termination Event');
-    });
-
     it('should throw NotFoundException when scenario not found', async () => {
       scenariosRepository.getAdminScenarioById.mockResolvedValue(null);
 
@@ -2122,6 +2101,7 @@ describe('ScenarioService', () => {
           }
           if (entity === ScenarioEvents) {
             return {
+              find: jest.fn().mockResolvedValue([]),
               create: jest.fn().mockReturnValue([]),
               save: jest.fn().mockResolvedValue([]),
             };
@@ -2188,6 +2168,7 @@ describe('ScenarioService', () => {
           }
           if (entity === ScenarioEvents) {
             return {
+              find: jest.fn().mockResolvedValue([]),
               create: jest.fn().mockReturnValue([]),
               save: jest.fn().mockResolvedValue([]),
             };
@@ -2233,6 +2214,7 @@ describe('ScenarioService', () => {
           }
           if (entity === ScenarioEvents) {
             return {
+              find: jest.fn().mockResolvedValue([]),
               findOne: jest.fn().mockResolvedValue(null),
               delete: jest.fn().mockResolvedValue({ affected: 0 }),
               update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -2284,6 +2266,7 @@ describe('ScenarioService', () => {
           }
           if (entity === ScenarioEvents) {
             return {
+              find: jest.fn().mockResolvedValue([]),
               findOne: jest.fn().mockResolvedValue(null),
               update: jest.fn().mockResolvedValue({ affected: 0 }),
               delete: jest.fn().mockResolvedValue({ affected: 0 }),
@@ -2337,6 +2320,7 @@ describe('ScenarioService', () => {
             }
             if (entity === ScenarioEvents) {
               return {
+                find: jest.fn().mockResolvedValue([]),
                 findOne: jest.fn().mockResolvedValue(null),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
                 update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -2408,6 +2392,7 @@ describe('ScenarioService', () => {
             }
             if (entity === ScenarioEvents) {
               return {
+                find: jest.fn().mockResolvedValue([]),
                 findOne: jest.fn().mockResolvedValue(null),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
                 update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -2482,6 +2467,7 @@ describe('ScenarioService', () => {
             }
             if (entity === ScenarioEvents) {
               return {
+                find: jest.fn().mockResolvedValue([]),
                 findOne: jest.fn().mockResolvedValue(null),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
                 update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -2543,6 +2529,7 @@ describe('ScenarioService', () => {
             }
             if (entity === ScenarioEvents) {
               return {
+                find: jest.fn().mockResolvedValue([]),
                 findOne: jest.fn().mockResolvedValue(null),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
                 update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -2605,6 +2592,7 @@ describe('ScenarioService', () => {
             }
             if (entity === ScenarioEvents) {
               return {
+                find: jest.fn().mockResolvedValue([]),
                 findOne: jest.fn().mockResolvedValue(null),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
                 update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -2664,6 +2652,7 @@ describe('ScenarioService', () => {
             }
             if (entity === ScenarioEvents) {
               return {
+                find: jest.fn().mockResolvedValue([]),
                 findOne: jest.fn().mockResolvedValue(null),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
                 update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -2726,6 +2715,7 @@ describe('ScenarioService', () => {
             }
             if (entity === ScenarioEvents) {
               return {
+                find: jest.fn().mockResolvedValue([]),
                 findOne: jest.fn().mockResolvedValue(null),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
                 update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -2786,6 +2776,7 @@ describe('ScenarioService', () => {
             }
             if (entity === ScenarioEvents) {
               return {
+                find: jest.fn().mockResolvedValue([]),
                 findOne: jest.fn().mockResolvedValue(null),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
                 update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -2849,6 +2840,7 @@ describe('ScenarioService', () => {
             }
             if (entity === ScenarioEvents) {
               return {
+                find: jest.fn().mockResolvedValue([]),
                 findOne: jest.fn().mockResolvedValue(null),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
                 update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -2911,6 +2903,7 @@ describe('ScenarioService', () => {
             }
             if (entity === ScenarioEvents) {
               return {
+                find: jest.fn().mockResolvedValue([]),
                 findOne: jest.fn().mockResolvedValue(null),
                 delete: jest.fn().mockResolvedValue({ affected: 0 }),
                 update: jest.fn().mockResolvedValue({ affected: 1 }),

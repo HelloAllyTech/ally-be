@@ -225,31 +225,6 @@ export class CreateScenarioDto {
   @IsOptional()
   voiceId?: string;
 
-  // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): Remove single terminationEvent data
-  @ApiProperty({
-    description: 'AutoTermination status',
-    example: true,
-  })
-  @IsOptional()
-  @IsBoolean()
-  autoTerminationStatus?: boolean;
-
-  @ApiProperty({
-    description: 'Termination message',
-    example: 'Termination message',
-  })
-  @IsOptional()
-  @IsString()
-  terminationMessage?: string;
-
-  @ApiProperty({
-    description: 'Termination event ID',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @IsOptional()
-  @IsString()
-  terminationEventId?: string;
-
   @ApiProperty({
     description: 'Termination events',
     example: [

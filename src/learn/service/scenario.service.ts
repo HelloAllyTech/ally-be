@@ -47,7 +47,6 @@ import {
   GetScenarioDtoWithPagination,
 } from '../dto/get-scenario.dto';
 import {
-  formatSingleAutoTerminationEventsList,
   formatScenarioTriggerWarningsList,
   getActiveScenarioMandatoryFields,
   mapCreateScenarioRequestToEntity,
@@ -250,14 +249,6 @@ export class ScenarioService {
 
     if (!result) {
       throw new NotFoundException('Scenario not found');
-    }
-
-    // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): Remove this check and vale inside
-    if (result?.terminationEvent?.eventId) {
-      const eventDetails = await this.sessionEventService.findSessionEventById(
-        result.terminationEvent.eventId,
-      );
-      result.terminationEvent.name = eventDetails?.name;
     }
 
     if (result?.terminationEvents && result?.terminationEvents?.length > 0) {
@@ -467,13 +458,10 @@ export class ScenarioService {
             await scenarioTenantRepository.save(scenarioTenant);
           }
         }
-        const autoTerminationEventList = this.configService?.featureFlag
-          ?.multipleTerminationEvents
-          ? formatAutoTerminationEventsList(createScenariosDto, savedScenarios)
-          : formatSingleAutoTerminationEventsList(
-              createScenariosDto,
-              savedScenarios,
-            );
+        const autoTerminationEventList = formatAutoTerminationEventsList(
+          createScenariosDto,
+          savedScenarios,
+        );
 
         const scenarioTerminationEvents = scenarioEventsRepo.create(
           autoTerminationEventList,
@@ -604,16 +592,6 @@ export class ScenarioService {
 
     // Validate ACTIVE: all required fields must be present
     if (status === ScenarioStatus.ACTIVE) {
-      // FEATURE_CLEANUP(FEATURE_MULTIPLE_TERMINATION_EVENTS): Remove this check
-      if (
-        data.autoTerminationStatus &&
-        (!data.terminationEventId || !data.terminationMessage)
-      ) {
-        throw new BadRequestException(
-          'Termination event and message are required for enabling auto termination',
-        );
-      }
-
       const ACTIVE_SCENARIO_MANDATORY_FIELDS =
         getActiveScenarioMandatoryFields();
       const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
@@ -737,75 +715,11 @@ export class ScenarioService {
               }),
           );
         }
-
-        const isMultipleTerminationEventSupported =
-          this.configService?.featureFlag?.multipleTerminationEvents;
-        if (isMultipleTerminationEventSupported) {
-          await this.updateScenarioTerminationEvents(
-            id,
-            updateScenarioDto?.terminationEvents || [],
-            entityManager,
-          );
-        } else {
-          // Single termination event support
-          const scenarioEventsRepo =
-            entityManager.getRepository(ScenarioEvents);
-          const existingScenarioTerminationEvent =
-            await scenarioEventsRepo.findOne({
-              where: { scenarioId: id, autoTerminationStatus: true },
-            });
-          // The already existing termination event is not the one in update query or the autoterminationstatus is set to false- delete the event
-          if (
-            existingScenarioTerminationEvent &&
-            (!updateScenarioDto.autoTerminationStatus ||
-              existingScenarioTerminationEvent.eventId !==
-                updateScenarioDto.terminationEventId)
-          ) {
-            await scenarioEventsRepo.delete({
-              scenarioId: id,
-              eventId: existingScenarioTerminationEvent.eventId,
-              autoTerminationStatus: true,
-            });
-
-            this.scenarioEventTranslationsRepository.delete({
-              scenarioId: id,
-              eventId: existingScenarioTerminationEvent.eventId,
-            });
-          }
-          // If the input termination event id is the same as the existing one - update the message
-          if (
-            existingScenarioTerminationEvent?.eventId ===
-              updateScenarioDto.terminationEventId &&
-            updateScenarioDto.autoTerminationStatus
-          ) {
-            await scenarioEventsRepo.update(
-              {
-                scenarioId: id,
-                eventId: updateScenarioDto.terminationEventId,
-                autoTerminationStatus: true,
-              },
-              { message: updateScenarioDto.terminationMessage },
-            );
-            // Create/update the translation for the new termination event
-            this.createUpdateScenarioEventsTranslations([
-              {
-                scenarioId: id,
-                eventId: updateScenarioDto.terminationEventId,
-                message: updateScenarioDto.terminationMessage,
-              },
-            ]);
-          } else if (updateScenarioDto.autoTerminationStatus) {
-            const newTerminationEvent = scenarioEventsRepo.create({
-              scenarioId: id,
-              eventId: updateScenarioDto.terminationEventId,
-              autoTerminationStatus: true,
-              message: updateScenarioDto.terminationMessage,
-            });
-            scenarioEventsRepo.save(newTerminationEvent);
-            // Create/update the translation for the new termination event
-            this.createUpdateScenarioEventsTranslations([newTerminationEvent]);
-          }
-        }
+        await this.updateScenarioTerminationEvents(
+          id,
+          updateScenarioDto?.terminationEvents || [],
+          entityManager,
+        );
         if (updated.affected === 0) return false;
 
         const updatedScenario = await scenarioRepository.findOne({
