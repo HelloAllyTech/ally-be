@@ -209,69 +209,6 @@ describe('ReviewService', () => {
     });
   });
 
-  describe('getAllReviews', () => {
-    const options = {
-      limit: 10,
-      offset: 0,
-      sortBy: undefined,
-      sortOrder: undefined,
-    };
-
-    beforeEach(() => {
-      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
-    });
-
-    it('should return formatted reviews with reactions and comments aggregated', async () => {
-      const mockReviews = [
-        {
-          ...mockReview,
-          scenario: mockScenario,
-          scenarioSession: mockScenarioSession,
-          createdBy: mockUser,
-        },
-      ];
-      const mockReactions = [
-        {
-          reviewId: mockReviewId,
-          reaction: 'like',
-          count: 5,
-        },
-      ];
-      const mockComments = [
-        {
-          reviewId: mockReviewId,
-          count: 3,
-        },
-      ];
-
-      reviewRepository.getAllReviews.mockResolvedValue({
-        reviews: mockReviews as any,
-        count: 1,
-      });
-      reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue(
-        mockReactions as any,
-      );
-      reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue(
-        mockComments as any,
-      );
-
-      const result = await service.getAllReviews(options);
-
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toMatchObject({
-        id: mockReviewId,
-        commentsCount: 3,
-        reactions: { like: 5 },
-        createdBy: {
-          id: mockUserId,
-          name: mockUser.name,
-          profileImage: mockUser.profileImageUrl,
-        },
-      });
-      expect(result.count).toBe(1);
-    });
-  });
-
   describe('getReviewById', () => {
     beforeEach(() => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue(

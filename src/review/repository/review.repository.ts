@@ -22,6 +22,7 @@ export class ReviewRepository extends Repository<Review> {
   async getAllReviews(
     options: GetReviewsOptions,
     tenantId: string,
+    userId: number,
   ): Promise<ReviewsResult> {
     const query = this.createQueryBuilder('r')
       .leftJoinAndMapOne(
@@ -30,6 +31,7 @@ export class ReviewRepository extends Repository<Review> {
         'ss',
         'ss.id = r.scenarioSessionId',
       )
+      .withDeleted()
       .leftJoinAndMapOne('r.scenario', Scenarios, 's', 's.id = ss.scenarioId')
       .leftJoinAndMapOne('r.createdBy', User, 'u', 'u.id = r.createdBy')
       .where('r.tenantId = :tenantId', { tenantId })
@@ -38,14 +40,24 @@ export class ReviewRepository extends Repository<Review> {
     if (options.sortBy === ReviewSortBy.MOST_REVIEWED) {
       query
         .leftJoin('review_threads', 'rt', 'rt.reviewId = r.id')
-        .leftJoin(ReviewComment, 'rc', 'rc.reviewThreadId = rt.id')
+        .leftJoin(
+          ReviewComment,
+          'rc',
+          'rc.reviewThreadId = rt.id AND (rc.hidden = false OR r.createdBy = :userId)',
+          { userId },
+        )
         .addSelect('COUNT(rc.id)', 'comments_count')
         .groupBy('r.id, ss.id, s.id, u.id')
         .orderBy('comments_count', 'DESC');
     } else if (options.sortBy === ReviewSortBy.UNDISCOVERED) {
       query
         .leftJoin('review_threads', 'rt', 'rt.reviewId = r.id')
-        .leftJoin(ReviewComment, 'rc', 'rc.reviewThreadId = rt.id')
+        .leftJoin(
+          ReviewComment,
+          'rc',
+          'rc.reviewThreadId = rt.id AND (rc.hidden = false OR r.createdBy = :userId)',
+          { userId },
+        )
         .addSelect('COUNT(rc.id)', 'comments_count')
         .groupBy('r.id, ss.id, s.id, u.id')
         .orderBy('comments_count', 'ASC');

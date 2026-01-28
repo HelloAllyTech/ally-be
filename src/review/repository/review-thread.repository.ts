@@ -4,6 +4,7 @@ import { ReviewThread } from '../entity/review-thread.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { ReviewComment } from '../entity/review-comment.entity';
 import { ReviewCommentCount } from '../type/review-thread.type';
+import { Review } from '../entity/review.entity';
 
 @Injectable()
 export class ReviewThreadRepository extends Repository<ReviewThread> {
@@ -52,14 +53,20 @@ export class ReviewThreadRepository extends Repository<ReviewThread> {
 
   async getCommentsCountByReviewIds(
     reviewIds: string[],
+    userId: number,
   ): Promise<ReviewCommentCount[]> {
     if (!reviewIds.length) return [];
     return this.createQueryBuilder('rt')
       .select(['rt.reviewId AS "reviewId"', 'COUNT(rc.id) AS "count"'])
+      .innerJoin(Review, 'review', 'review.id = rt.reviewId')
       .innerJoin(
         ReviewComment,
         'rc',
-        'rc.reviewThreadId = rt.id AND rc.hidden = false',
+        `rc.reviewThreadId = rt.id AND (
+        rc.hidden = false OR 
+        review.createdBy = :userId
+      )`,
+        { userId },
       )
       .where('rt.reviewId IN (:...reviewIds)', { reviewIds })
       .groupBy('rt.reviewId')

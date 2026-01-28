@@ -54,6 +54,7 @@ describe('Scenario Util', () => {
         updatedBy: userId,
         title: scenario.title,
         scenario: '',
+        isPublic: true,
         description: scenario.description,
         coverImageUrl: scenario.coverImageUrl,
         coverVideoUrl: scenario.coverVideoUrl,
