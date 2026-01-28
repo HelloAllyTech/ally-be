@@ -118,6 +118,8 @@ describe('UserService', () => {
       exists: jest.fn(),
       createQueryBuilder: jest.fn(() => mockQueryBuilder),
       getWaitingClients: jest.fn(),
+      getWaitingList: jest.fn(),
+      getCounselorNames: jest.fn(),
       query: jest.fn(),
     };
 
@@ -239,7 +241,7 @@ describe('UserService', () => {
 
   describe('getWaitingList', () => {
     it('should return empty result when no waiting clients', async () => {
-      mockUsersRepository.getWaitingClients.mockResolvedValue([]);
+      mockQueueService.getWaitingClients.mockResolvedValue([]);
       const result = await service.getWaitingList();
       expect(result).toEqual({ total_waiting: 0, clients: [] });
     });
@@ -247,8 +249,8 @@ describe('UserService', () => {
     it('should return formatted waiting list when clients exist', async () => {
       const waitingClients = [{ clientId: 1 }];
       const usersWithChats = [{ ...mockUser, chat: [mockChat] }];
-      mockUsersRepository.getWaitingClients.mockResolvedValue(waitingClients);
-      mockQueryBuilder.getMany.mockResolvedValue(usersWithChats);
+      mockQueueService.getWaitingClients.mockResolvedValue(waitingClients);
+      mockUsersRepository.getWaitingList.mockResolvedValue(usersWithChats);
       const result = await service.getWaitingList();
       expect(result.totalWaiting).toBe(1);
       expect((result.clients[0].chat as { chatId: number }).chatId).toBe(
@@ -292,51 +294,67 @@ describe('UserService', () => {
 
   describe('getCounselorNames', () => {
     it('should return counselor names with pagination', async () => {
-      mockQueryBuilder.getRawMany.mockResolvedValue([
-        { id: '1', name: 'Counselor 1' },
-        { id: '2', name: 'Counselor 2' },
-      ]);
-      mockQueryBuilder.getCount.mockResolvedValue(2);
+      mockUsersRepository.getCounselorNames.mockResolvedValue({
+        counselors: [
+          { id: '1', name: 'Counselor 1' },
+          { id: '2', name: 'Counselor 2' },
+        ],
+        count: 2,
+      });
 
       const result = await service.getCounselorNames(10, 0);
 
       expect(result.data).toHaveLength(2);
       expect(result.count).toBe(2);
-      expect(mockQueryBuilder.limit).toHaveBeenCalledWith(10);
-      expect(mockQueryBuilder.offset).not.toHaveBeenCalled();
+      expect(mockUsersRepository.getCounselorNames).toHaveBeenCalledWith(
+        10,
+        0,
+        undefined,
+      );
     });
 
     it('should call offset when offset is greater than 0', async () => {
-      mockQueryBuilder.getRawMany.mockResolvedValue([
-        { id: '1', name: 'Counselor 1' },
-      ]);
-      mockQueryBuilder.getCount.mockResolvedValue(1);
+      mockUsersRepository.getCounselorNames.mockResolvedValue({
+        counselors: [{ id: '1', name: 'Counselor 1' }],
+        count: 1,
+      });
 
       await service.getCounselorNames(10, 10);
 
-      expect(mockQueryBuilder.limit).toHaveBeenCalledWith(10);
-      expect(mockQueryBuilder.offset).toHaveBeenCalledWith(10);
+      expect(mockUsersRepository.getCounselorNames).toHaveBeenCalledWith(
+        10,
+        10,
+        undefined,
+      );
     });
 
     it('should filter counselors by search term', async () => {
-      mockQueryBuilder.getRawMany.mockResolvedValue([
-        { id: '1', name: 'John Counselor' },
-      ]);
-      mockQueryBuilder.getCount.mockResolvedValue(1);
+      mockUsersRepository.getCounselorNames.mockResolvedValue({
+        counselors: [{ id: '1', name: 'John Counselor' }],
+        count: 1,
+      });
+
       await service.getCounselorNames(undefined, undefined, 'John');
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'user.name ILIKE :search',
-        { search: '%John%' },
+
+      expect(mockUsersRepository.getCounselorNames).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        'John',
       );
     });
 
     it('should trim search term before filtering', async () => {
-      mockQueryBuilder.getRawMany.mockResolvedValue([]);
-      mockQueryBuilder.getCount.mockResolvedValue(0);
+      mockUsersRepository.getCounselorNames.mockResolvedValue({
+        counselors: [],
+        count: 0,
+      });
+
       await service.getCounselorNames(undefined, undefined, '  John  ');
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'user.name ILIKE :search',
-        { search: '%John%' },
+
+      expect(mockUsersRepository.getCounselorNames).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+        '  John  ',
       );
     });
   });

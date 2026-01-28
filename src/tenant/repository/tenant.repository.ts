@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Tenant } from 'src/tenant/entity/tenant.entity';
+import { Tenant, TenantStatus } from 'src/tenant/entity/tenant.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { TenantSortBy } from '../enum/tenant.enum';
@@ -57,5 +57,16 @@ export class TenantsRepository extends Repository<Tenant> {
     }
     const validColumns = Object.values(TenantSortBy);
     return validColumns.includes(sortBy as TenantSortBy) ? sortBy : null;
+  }
+
+  async updateStatus(id: string, status: TenantStatus): Promise<Tenant | null> {
+    const result = await this.tenantRepository
+      .createQueryBuilder()
+      .update(Tenant)
+      .set({ status })
+      .where('id = :id', { id })
+      .returning('*')
+      .execute();
+    return result.affected ? result.raw[0] : null;
   }
 }

@@ -4,13 +4,12 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 import { User } from '../entity/user.entity';
 import { QueueService } from '../../queue/service/queue.service';
-import { Chat, ChatStatus } from '../../chat/entity/chat.entity';
+import { Chat } from '../../chat/entity/chat.entity';
 import { UserRole } from '../../common/constants/user.constants';
 import { UserStatus } from '../constants/user-status.constants';
 import { RedisService } from '../../redis/service/redis.service';
@@ -24,7 +23,6 @@ import {
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { UserRepository } from '../repository/user.repository';
 import { TenantService } from 'src/tenant/service/tenant.service';
-import { UserGroup } from 'src/authorization/entity/user-group.entity';
 import { Group } from 'src/authorization/entity/group.entity';
 import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { GroupService } from 'src/authorization/service/group.service';
@@ -59,7 +57,6 @@ export class UserService {
   private readonly logger = LoggerService.getInstance(UserService.name);
 
   constructor(
-    @InjectRepository(User)
     private queueService: QueueService,
     private readonly cache: RedisService,
     private groupRepository: GroupRepository,
@@ -128,22 +125,9 @@ export class UserService {
     const waitingClients = await this.queueService.getWaitingClients();
     const clientIds = new Set(waitingClients.map((queue) => queue.clientId));
     if (!clientIds.size) return { total_waiting: clientIds.size, clients: [] };
-    const data = await this.userRepository
-      .createQueryBuilder('user')
-      .where('user.id IN (:...clientIds)', { clientIds: Array.from(clientIds) })
-      .andWhere('user.tenantId = :tenantId', {
-        tenantId: ExecutionManager.getTenantId(),
-      })
-      .leftJoinAndMapMany(
-        'user.chat',
-        Chat,
-        'chat',
-        `chat.clientId = user.id and chat.status = '${ChatStatus.PAUSED}'`,
-      )
-      .andWhere('chat.tenantId = :tenantId', {
-        tenantId: ExecutionManager.getTenantId(),
-      })
-      .getMany();
+    const data = await this.userRepository.getWaitingList(
+      Array.from(clientIds).map((id) => id.toString()),
+    );
     const formattedData = data.map((user: any) => {
       const chat = user.chat?.[0] as Chat;
       return {
@@ -184,33 +168,11 @@ export class UserService {
   }
 
   async getCounselorNames(limit?: number, offset?: number, search?: string) {
-    const query = this.userRepository
-      .createQueryBuilder('user')
-      .select('user.id', 'id')
-      .addSelect('user.name', 'name')
-      .andWhere('user.tenantId = :tenantId', {
-        tenantId: ExecutionManager.getTenantId(),
-      })
-      .leftJoin(UserGroup, 'userGroup', 'userGroup.userId = user.id')
-      .leftJoin(Group, 'group', 'group.id = userGroup.groupId')
-      .andWhere('group.name = :role', { role: UserRole.COUNSELOR })
-      .orderBy('user.id', 'ASC');
-
-    if (search && search.trim()) {
-      query.andWhere('user.name ILIKE :search', {
-        search: `%${search.trim()}%`,
-      });
-    }
-
-    if (limit) {
-      query.limit(limit);
-    }
-    if (offset) {
-      query.offset(offset);
-    }
-
-    const counselors = await query.getRawMany();
-    const count = await query.getCount();
+    const { counselors, count } = await this.userRepository.getCounselorNames(
+      limit,
+      offset,
+      search,
+    );
 
     return {
       data: counselors.map((counselor: any) => ({

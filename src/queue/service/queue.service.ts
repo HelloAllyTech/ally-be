@@ -1,25 +1,20 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { Injectable } from '@nestjs/common';
 import { QueueEntry } from '../entity/queue-entry.entity';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { QueueStatus } from '../../common/constants/chat.constants';
-import { ChatService } from '../../chat/service/chat.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
+import { QueueRepository } from '../repository/queue.repository';
 
 @Injectable()
 export class QueueService {
-  constructor(
-    @InjectRepository(QueueEntry)
-    private queueRepo: Repository<QueueEntry>,
-    @Inject(forwardRef(() => ChatService))
-    private chatService: ChatService,
-  ) {}
+  constructor(private queueRepository: QueueRepository) {}
 
   async enqueue(
     data: { userId: number; chatId: number; priority: number },
     entityManager?: EntityManager,
   ) {
-    const repo = entityManager?.getRepository(QueueEntry) || this.queueRepo;
+    const repo =
+      entityManager?.getRepository(QueueEntry) || this.queueRepository;
     const queueEntry = repo.create({
       clientId: data.userId,
       chatId: data.chatId,
@@ -31,18 +26,10 @@ export class QueueService {
   }
 
   async getStats(status?: string, entityManager?: EntityManager) {
-    const repo = entityManager?.getRepository(QueueEntry) || this.queueRepo;
-    const query = repo
-      .createQueryBuilder('queue')
-      .orderBy('queue.priority', 'DESC')
-      .addOrderBy('queue.waitStartTime', 'ASC');
-    if (status) {
-      query.where('queue.status = :status', { status });
-    }
-    query.andWhere('queue.tenantId = :tenantId', {
-      tenantId: ExecutionManager.getTenantId(),
-    });
-    const stats = await query.getMany();
+    const stats = await this.queueRepository.getQueueStats(
+      status,
+      entityManager,
+    );
     return stats.map((stat) => ({
       entryId: stat.entryId,
       clientId: stat.clientId,
@@ -54,7 +41,7 @@ export class QueueService {
   }
 
   async getWaitingClients() {
-    return this.queueRepo.find({
+    return this.queueRepository.find({
       where: {
         status: QueueStatus.WAITING,
         tenantId: ExecutionManager.getTenantId(),
@@ -63,7 +50,8 @@ export class QueueService {
   }
 
   getQueueByChatId(chatId: number, entityManager?: EntityManager) {
-    const repo = entityManager?.getRepository(QueueEntry) || this.queueRepo;
+    const repo =
+      entityManager?.getRepository(QueueEntry) || this.queueRepository;
     return repo.findOne({
       where: { chatId, tenantId: ExecutionManager.getTenantId() },
     });
@@ -74,7 +62,8 @@ export class QueueService {
     status: QueueStatus,
     entityManager?: EntityManager,
   ) {
-    const repo = entityManager?.getRepository(QueueEntry) || this.queueRepo;
+    const repo =
+      entityManager?.getRepository(QueueEntry) || this.queueRepository;
     return repo.update(
       { entryId: id, tenantId: ExecutionManager.getTenantId() },
       { status },

@@ -1,23 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { Place } from '../entity/place.entity';
+import { PlaceRepository } from '../repository/place.repository';
 
 @Injectable()
 export class PlaceService {
-  constructor(
-    @InjectRepository(Place)
-    private placeRepository: Repository<Place>,
-  ) {}
+  constructor(private placeRepository: PlaceRepository) {}
 
   async searchCities(query: string): Promise<Place[]> {
-    return this.placeRepository
-      .createQueryBuilder('place')
-      .where('LOWER(place.city) LIKE LOWER(:query)', {
-        query: `%${query.trim()}%`,
-      })
-      .orderBy('place.city', 'ASC')
-      .getMany();
+    return this.placeRepository.searchCities(query);
   }
 
   async listPlaces(
