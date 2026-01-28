@@ -359,7 +359,7 @@ export class ReviewService {
     const userIds = [
       ...new Set([
         ...threads.map((thread) => thread.createdBy),
-        ...comments.map((comment) => comment.createdBy),
+        ...comments.map((comment) => comment.c_createdBy),
       ]),
     ];
 
