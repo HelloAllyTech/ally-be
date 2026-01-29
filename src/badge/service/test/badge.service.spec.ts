@@ -366,6 +366,7 @@ describe('BadgeService', () => {
 
   describe('updateBadge', () => {
     it('should throw NotFoundException when badge does not exist', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
       mockBadgeRepository.findOne.mockResolvedValue(null);
 
       await expect(
@@ -423,6 +424,7 @@ describe('BadgeService', () => {
     });
 
     it('should validate tenant and group IDs once for all badges', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
       const batchDto = {
         badges: [
           { ...createMockBadgeDto('TEST-1'), groupIds: [1, 2] },
@@ -445,6 +447,7 @@ describe('BadgeService', () => {
     });
 
     it('should create all badges in a single transaction', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
       const batchDto = {
         badges: [createMockBadgeDto('TEST-1'), createMockBadgeDto('TEST-2')],
       };

@@ -57,11 +57,21 @@ export class BadgeService {
   async createBadge(
     createBadgeDto: CreateBadgeDto,
   ): Promise<CreateBadgeResponseDto> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
     await this.validateCreateBadgeDto(createBadgeDto);
 
     return await this.dataSource.transaction(async (entityManager) => {
       const badgeRepo = entityManager.getRepository(Badge);
-      const badge = badgeRepo.create(createBadgeDto);
+
+      const badge = badgeRepo.create({
+        ...createBadgeDto,
+        createdBy: userId,
+        updatedBy: userId,
+      });
 
       let savedBadge: Badge;
       try {
@@ -105,6 +115,11 @@ export class BadgeService {
   ): Promise<CreateBadgesBatchResponseDto> {
     const { badges } = createBadgesBatchDto;
 
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
     // 1. Validate all badges upfront (outside transaction)
     await this.validateBadgesBatch(badges);
 
@@ -115,7 +130,13 @@ export class BadgeService {
         const badgeGroupRepo = entityManager.getRepository(BadgeGroup);
 
         // Bulk insert badges
-        const badgeEntities = badges.map((dto) => badgeRepo.create(dto));
+        const badgeEntities = badges.map((dto) =>
+          badgeRepo.create({
+            ...dto,
+            createdBy: userId,
+            updatedBy: userId,
+          }),
+        );
         let inserted: Badge[];
         try {
           inserted = await badgeRepo.save(badgeEntities);
@@ -410,6 +431,11 @@ export class BadgeService {
     badgeId: string,
     updateBadgeDto: UpdateBadgeDto,
   ): Promise<boolean> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
     const badge = await this.badgeRepository.findOne({
       where: { id: badgeId },
     });
@@ -423,7 +449,7 @@ export class BadgeService {
       const badgeRepo = entityManager.getRepository(Badge);
 
       // 1. Update badge fields
-      const updateData = this.buildBadgeUpdateData(updateBadgeDto);
+      const updateData = this.buildBadgeUpdateData(updateBadgeDto, userId);
 
       if (Object.keys(updateData).length > 0) {
         try {
@@ -558,7 +584,10 @@ export class BadgeService {
     });
   }
 
-  private buildBadgeUpdateData(updateBadgeDto: UpdateBadgeDto): Partial<Badge> {
+  private buildBadgeUpdateData(
+    updateBadgeDto: UpdateBadgeDto,
+    userId: number,
+  ): Partial<Badge> {
     const updateData: Partial<Badge> = {};
     if (updateBadgeDto.code !== undefined)
       updateData.code = updateBadgeDto.code;
@@ -576,6 +605,7 @@ export class BadgeService {
       updateData.category = updateBadgeDto.category;
     if (updateBadgeDto.achievementParams !== undefined)
       updateData.achievementParams = updateBadgeDto.achievementParams;
+    updateData.updatedBy = userId;
     return updateData;
   }
 
