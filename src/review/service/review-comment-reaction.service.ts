@@ -5,11 +5,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { LoggerService } from 'src/logger/logger.service';
-import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { ReviewStatus } from '../type/review.type';
 import { ReactionAction } from '../type/review-reaction.type';
 import { ReviewRepository } from '../repository/review.repository';
@@ -18,6 +16,7 @@ import { ReviewCommentRepository } from '../repository/review-comment.repository
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
 import { ReviewEvents } from '../type/review-event.type';
+import { ReviewAccessValidator } from '../util/review-access-policy.util';
 
 @Injectable()
 export class ReviewCommentReactionService {
@@ -28,9 +27,9 @@ export class ReviewCommentReactionService {
     private readonly reviewRepository: ReviewRepository,
     private readonly reviewThreadRepository: ReviewThreadRepository,
     private readonly reviewCommentRepository: ReviewCommentRepository,
-    private readonly permissionValidator: PermissionValidator,
     private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
     private readonly eventEmitter: EventEmitter2,
+    private readonly reviewAccessValidator: ReviewAccessValidator,
   ) {}
 
   async toggleReviewCommentReaction(
@@ -72,20 +71,7 @@ export class ReviewCommentReactionService {
       throw new ForbiddenException('You are not allowed to access this review');
     }
 
-    const isReviewer = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
-    );
-    const isLearner = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.LEARNER_ACCESS],
-    );
-    if (
-      (isReviewer && review.tenantId !== tenantId) ||
-      (!isReviewer && isLearner && review.createdBy !== userId)
-    ) {
-      throw new ForbiddenException('You are not allowed to access this review');
-    }
+    await this.reviewAccessValidator.validateAccess(review, userId);
 
     if (toggleReviewCommentReactionDto.action === ReactionAction.ADD) {
       const existingReaction =

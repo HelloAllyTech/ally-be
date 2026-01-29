@@ -13,8 +13,6 @@ import {
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
-import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { UpdateReviewStatusDto } from '../dto/update-review-status.dto';
 import {
@@ -35,6 +33,7 @@ import { In } from 'typeorm';
 import { ReviewCommentRepository } from '../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { GetReviewMessagesResponseDto } from '../dto/review-messages-response.dto';
+import { ReviewAccessValidator } from '../util/review-access-policy.util';
 
 @Injectable()
 export class ReviewService {
@@ -47,7 +46,7 @@ export class ReviewService {
     private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly userService: UserService,
-    private readonly permissionValidator: PermissionValidator,
+    private readonly reviewAccessValidator: ReviewAccessValidator,
   ) {}
 
   async createReview(
@@ -151,7 +150,18 @@ export class ReviewService {
   async getReviewById(id: string): Promise<GetReviewResponseDto> {
     const userId = Number(ExecutionManager.getUserId());
 
-    const review = await this.reviewRepository.findOne({ where: { id } });
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+
+    const review = await this.reviewRepository.findOne({
+      where: { id, tenantId },
+    });
 
     if (!review) {
       throw new BadRequestException('Review not found');
@@ -161,21 +171,7 @@ export class ReviewService {
       throw new ForbiddenException('You are not allowed to access this review');
     }
 
-    const isReviewer = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
-    );
-    const isLearner = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.LEARNER_ACCESS],
-    );
-
-    if (
-      (isReviewer && review.tenantId !== ExecutionManager.getTenantId()) ||
-      (!isReviewer && isLearner && review.createdBy !== userId)
-    ) {
-      throw new ForbiddenException('You are not allowed to access this review');
-    }
+    await this.reviewAccessValidator.validateAccess(review, userId);
 
     const scenarioSession =
       await this.scenarioSharedService.getScenarioSessionById(
@@ -301,21 +297,7 @@ export class ReviewService {
       throw new ForbiddenException('You are not allowed to access this review');
     }
 
-    const isReviewer = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
-    );
-    const isLearner = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.LEARNER_ACCESS],
-    );
-
-    if (
-      (isReviewer && review.tenantId !== tenantId) ||
-      (!isReviewer && isLearner && review.createdBy !== userId)
-    ) {
-      throw new ForbiddenException('You are not allowed to access this review');
-    }
+    await this.reviewAccessValidator.validateAccess(review, userId);
 
     const transcript =
       await this.scenarioSharedService.getMessagesByScenarioSessionId(

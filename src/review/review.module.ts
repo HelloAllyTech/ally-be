@@ -18,6 +18,7 @@ import { ReviewCommentReactionController } from './controller/review-comment-rea
 import { ReviewReactionService } from './service/review-reaction.service';
 import { ReviewCommentReactionService } from './service/review-comment-reaction.service';
 import { BadgeModule } from 'src/badge/badge.module';
+import { ReviewAccessValidator } from './util/review-access-policy.util';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { BadgeModule } from 'src/badge/badge.module';
     ReviewSharedService,
     ReviewReactionService,
     ReviewCommentReactionService,
+    ReviewAccessValidator,
   ],
   exports: [ReviewSharedService],
 })

@@ -7,7 +7,6 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { ReviewReactionRepository } from '../repository/review-reaction.repository';
-import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { GetReviewReactionsResponseDto } from '../dto/review-reaction-response.dto';
@@ -17,13 +16,13 @@ import {
   ReactionAction,
   ReviewReactionOptions,
 } from '../type/review-reaction.type';
-import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ReviewRepository } from '../repository/review.repository';
 import { UserService } from 'src/user/service/user.service';
 import { GetReviewReactionCountResponseDto } from '../dto/get-review-reaction-and-count-response.dto';
 import { formatCreatedUserDetails } from '../util/review.util';
 import { ReviewEvents } from '../type/review-event.type';
+import { ReviewAccessValidator } from '../util/review-access-policy.util';
 
 @Injectable()
 export class ReviewReactionService {
@@ -33,9 +32,9 @@ export class ReviewReactionService {
   constructor(
     private readonly reviewRepository: ReviewRepository,
     private readonly reviewReactionRepository: ReviewReactionRepository,
-    private readonly permissionValidator: PermissionValidator,
     private readonly userService: UserService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly reviewAccessValidator: ReviewAccessValidator,
   ) {}
 
   async toggleReviewReactions(
@@ -63,20 +62,7 @@ export class ReviewReactionService {
       throw new ForbiddenException('You are not allowed to access this review');
     }
 
-    const isReviewer = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
-    );
-    const isLearner = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.LEARNER_ACCESS],
-    );
-    if (
-      (isReviewer && review.tenantId !== tenantId) ||
-      (!isReviewer && isLearner && review.createdBy !== userId)
-    ) {
-      throw new ForbiddenException('You are not allowed to access this review');
-    }
+    await this.reviewAccessValidator.validateAccess(review, userId);
 
     if (toggleReviewReactionDto.action === ReactionAction.ADD) {
       const existingReaction = await this.reviewReactionRepository.findOne({
@@ -191,20 +177,7 @@ export class ReviewReactionService {
       throw new ForbiddenException('You are not allowed to access this review');
     }
 
-    const isReviewer = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
-    );
-    const isLearner = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.LEARNER_ACCESS],
-    );
-    if (
-      (isReviewer && review.tenantId !== tenantId) ||
-      (!isReviewer && isLearner && review.createdBy !== userId)
-    ) {
-      throw new ForbiddenException('You are not allowed to access this review');
-    }
+    await this.reviewAccessValidator.validateAccess(review, userId);
 
     const [reviewReactions, count] =
       await this.reviewReactionRepository.getReviewReactions(reviewId, options);
@@ -263,21 +236,7 @@ export class ReviewReactionService {
       throw new ForbiddenException('You are not allowed to access this review');
     }
 
-    const isReviewer = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
-    );
-    const isLearner = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.LEARNER_ACCESS],
-    );
-
-    if (
-      (isReviewer && review.tenantId !== tenantId) ||
-      (!isReviewer && isLearner && review.createdBy !== userId)
-    ) {
-      throw new ForbiddenException('You are not allowed to access this review');
-    }
+    await this.reviewAccessValidator.validateAccess(review, userId);
 
     const result =
       await this.reviewReactionRepository.getReviewReactionsAndCount(reviewId);

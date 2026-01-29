@@ -8,9 +8,7 @@ import {
 import { DataSource, In } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
-import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { LoggerService } from 'src/logger/logger.service';
 import {
   CreateReviewCommentDto,
@@ -32,6 +30,7 @@ import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity'
 import { formatCreatedUserDetails } from '../util/review.util';
 import { ToggleCommentVisibilityDto } from '../dto/toggle-comment-visibility.dto';
 import { ReviewEvents } from '../type/review-event.type';
+import { ReviewAccessValidator } from '../util/review-access-policy.util';
 
 @Injectable()
 export class ReviewCommentService {
@@ -43,10 +42,10 @@ export class ReviewCommentService {
     private readonly reviewCommentRepository: ReviewCommentRepository,
     private readonly reviewRepository: ReviewRepository,
     private readonly reviewThreadRepository: ReviewThreadRepository,
-    private readonly permissionValidator: PermissionValidator,
     private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
     private readonly userService: UserService,
     private eventEmitter: EventEmitter2,
+    private readonly reviewAccessValidator: ReviewAccessValidator,
   ) {}
 
   async addCommentToReview(
@@ -76,22 +75,7 @@ export class ReviewCommentService {
       this.logger.info(`Review not found: ${reviewId}`);
       throw new NotFoundException('Review not found');
     }
-
-    const isReviewer = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
-    );
-    const isLearner = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.LEARNER_ACCESS],
-    );
-
-    if (
-      (isReviewer && review.tenantId !== ExecutionManager.getTenantId()) ||
-      (!isReviewer && isLearner && review.createdBy !== userId)
-    ) {
-      throw new ForbiddenException('You are not allowed to access this review');
-    }
+    await this.reviewAccessValidator.validateAccess(review, userId);
 
     if (!createReviewCommentDto.content.trim()) {
       this.logger.info(`Content cannot be empty: ${reviewId}`);
@@ -269,21 +253,7 @@ export class ReviewCommentService {
       throw new ForbiddenException('You are not allowed to access this review');
     }
 
-    const isReviewer = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
-    );
-    const isLearner = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.LEARNER_ACCESS],
-    );
-
-    if (
-      (isReviewer && review.tenantId !== tenantId) ||
-      (!isReviewer && isLearner && review.createdBy !== userId)
-    ) {
-      throw new ForbiddenException('You are not allowed to access this review');
-    }
+    await this.reviewAccessValidator.validateAccess(review, userId);
 
     const isHidden = review.createdBy === userId;
 
@@ -396,22 +366,7 @@ export class ReviewCommentService {
     if (review.status === ReviewStatus.HIDDEN && review.createdBy !== userId) {
       throw new ForbiddenException('You are not allowed to access this review');
     }
-
-    const isReviewer = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
-    );
-    const isLearner = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.LEARNER_ACCESS],
-    );
-
-    if (
-      (isReviewer && review.tenantId !== tenantId) ||
-      (!isReviewer && isLearner && review.createdBy !== userId)
-    ) {
-      throw new ForbiddenException('You are not allowed to access this review');
-    }
+    await this.reviewAccessValidator.validateAccess(review, userId);
 
     const isHidden = review.createdBy === userId;
 

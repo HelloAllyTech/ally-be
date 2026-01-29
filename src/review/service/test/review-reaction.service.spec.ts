@@ -4,6 +4,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ReviewReactionService } from '../review-reaction.service';
 import { ReviewRepository } from '../../repository/review.repository';
 import { ReviewReactionRepository } from '../../repository/review-reaction.repository';
+import { ReviewAccessValidator } from '../../util/review-access-policy.util';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { UserService } from 'src/user/service/user.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -92,6 +93,12 @@ describe('ReviewReactionService', () => {
           provide: EventEmitter2,
           useValue: {
             emit: jest.fn(),
+          },
+        },
+        {
+          provide: ReviewAccessValidator,
+          useValue: {
+            validateAccess: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

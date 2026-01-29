@@ -7,6 +7,7 @@ import { ReviewCommentRepository } from '../../repository/review-comment.reposit
 import { ReviewRepository } from '../../repository/review.repository';
 import { ReviewThreadRepository } from '../../repository/review-thread.repository';
 import { ReviewCommentReactionRepository } from '../../repository/review-comment-reaction.repository';
+import { ReviewAccessValidator } from '../../util/review-access-policy.util';
 import { UserService } from 'src/user/service/user.service';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -154,6 +155,12 @@ describe('ReviewCommentService', () => {
           provide: EventEmitter2,
           useValue: {
             emit: jest.fn(),
+          },
+        },
+        {
+          provide: ReviewAccessValidator,
+          useValue: {
+            validateAccess: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
