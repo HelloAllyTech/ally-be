@@ -6,6 +6,7 @@ import { ReviewThreadRepository } from '../../repository/review-thread.repositor
 import { ReviewReactionRepository } from '../../repository/review-reaction.repository';
 import { ReviewCommentRepository } from '../../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../../repository/review-comment-reaction.repository';
+import { ReviewAccessValidator } from '../../util/review-access-policy.util';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { UserService } from 'src/user/service/user.service';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
@@ -125,6 +126,12 @@ describe('ReviewService', () => {
           provide: PermissionValidator,
           useValue: {
             validatePermissions: jest.fn(),
+          },
+        },
+        {
+          provide: ReviewAccessValidator,
+          useValue: {
+            validateAccess: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

@@ -4,6 +4,7 @@ import { ReviewThreadRepository } from '../../repository/review-thread.repositor
 import { ReviewRepository } from '../../repository/review.repository';
 import { ReviewCommentRepository } from '../../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../../repository/review-comment-reaction.repository';
+import { ReviewAccessValidator } from '../../util/review-access-policy.util';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { UserService } from 'src/user/service/user.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -118,6 +119,12 @@ describe('ReviewThreadService', () => {
           provide: ScenarioSharedService,
           useValue: {
             getMessagesByIds: jest.fn(),
+          },
+        },
+        {
+          provide: ReviewAccessValidator,
+          useValue: {
+            validateAccess: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

@@ -1,14 +1,11 @@
 import {
   NotFoundException,
-  ForbiddenException,
   Injectable,
   BadRequestException,
 } from '@nestjs/common';
 import { In } from 'typeorm';
-import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { UserService } from 'src/user/service/user.service';
-import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ReviewThreadsResponseDto } from '../dto/review-threads.dto';
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
@@ -18,6 +15,7 @@ import { ReviewCommentReactionRepository } from '../repository/review-comment-re
 import { formatCreatedUserDetails } from '../util/review.util';
 import { GetReviewThreadsOptions } from '../type/review-thread.type';
 import { ScenarioSessionMessages } from 'src/learn/entity/scenario-session-messages.entity';
+import { ReviewAccessValidator } from '../util/review-access-policy.util';
 
 @Injectable()
 export class ReviewThreadService {
@@ -26,9 +24,9 @@ export class ReviewThreadService {
     private readonly reviewRepository: ReviewRepository,
     private readonly reviewCommentRepository: ReviewCommentRepository,
     private readonly reviewCommentReactionRepository: ReviewCommentReactionRepository,
-    private readonly permissionValidator: PermissionValidator,
     private readonly userService: UserService,
     private readonly scenarioSharedService: ScenarioSharedService,
+    private readonly reviewAccessValidator: ReviewAccessValidator,
   ) {}
 
   async getReviewThreads(
@@ -49,20 +47,7 @@ export class ReviewThreadService {
 
     const userId = Number(ExecutionManager.getUserId());
 
-    const isReviewer = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
-    );
-    const isLearner = await this.permissionValidator.validatePermissions(
-      userId,
-      [PERMISSIONS.LEARNER_ACCESS],
-    );
-    if (
-      (isReviewer && review.tenantId !== tenantId) ||
-      (!isReviewer && isLearner && review.createdBy !== userId)
-    ) {
-      throw new ForbiddenException('You are not allowed to access this review');
-    }
+    await this.reviewAccessValidator.validateAccess(review, userId);
 
     const isHidden = review.createdBy === userId;
 
