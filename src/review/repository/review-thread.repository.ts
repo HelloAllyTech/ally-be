@@ -14,14 +14,14 @@ export class ReviewThreadRepository extends Repository<ReviewThread> {
 
   async getReviewThreadsByReviewId(
     reviewId: string,
-    isHidden: boolean,
+    isCommentVisible: boolean,
     options?: Pagination,
   ): Promise<{ threads: ReviewThread[]; count: number }> {
     const query = this.createQueryBuilder('reviewThread').where(
       'reviewThread.reviewId = :reviewId',
       { reviewId },
     );
-    if (!isHidden) {
+    if (!isCommentVisible) {
       query.andWhere(
         `EXISTS (
           SELECT 1 

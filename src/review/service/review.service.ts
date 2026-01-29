@@ -318,12 +318,12 @@ export class ReviewService {
       },
     });
 
-    const isHidden = review.createdBy === userId;
+    const isCommentVisible = review.createdBy === userId;
     const limit = 5;
     const threadIds = threads.map((thread) => thread.id);
 
     const comments = await this.reviewCommentRepository
-      .getCommentsForThreadIds(threadIds, isHidden)
+      .getCommentsForThreadIds(threadIds, isCommentVisible)
       .then((results) => results.filter((result) => result.row_num <= limit));
 
     if (comments.length === 0) {
