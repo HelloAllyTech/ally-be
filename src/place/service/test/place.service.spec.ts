@@ -1,12 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { PlaceService } from '../../../place/service/place.service';
 import { Place } from '../../../place/entity/place.entity';
+import { PlaceRepository } from '../../../place/repository/place.repository';
 
 describe('PlaceService', () => {
   let service: PlaceService;
   let mockPlaceRepository: any;
-  let mockQueryBuilder: any;
 
   const mockPlace: Place = {
     id: 1,
@@ -17,14 +16,8 @@ describe('PlaceService', () => {
   } as Place;
 
   beforeEach(async () => {
-    mockQueryBuilder = {
-      where: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      getMany: jest.fn(),
-    };
-
     mockPlaceRepository = {
-      createQueryBuilder: jest.fn(() => mockQueryBuilder),
+      searchCities: jest.fn(),
       findAndCount: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
@@ -34,7 +27,7 @@ describe('PlaceService', () => {
       providers: [
         PlaceService,
         {
-          provide: getRepositoryToken(Place),
+          provide: PlaceRepository,
           useValue: mockPlaceRepository,
         },
       ],
@@ -47,57 +40,31 @@ describe('PlaceService', () => {
     it('should search cities with query', async () => {
       const query = 'New York';
       const expectedPlaces = [mockPlace];
-      mockQueryBuilder.getMany.mockResolvedValue(expectedPlaces);
+      mockPlaceRepository.searchCities.mockResolvedValue(expectedPlaces);
 
       const result = await service.searchCities(query);
 
-      expect(mockPlaceRepository.createQueryBuilder).toHaveBeenCalledWith(
-        'place',
-      );
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'LOWER(place.city) LIKE LOWER(:query)',
-        { query: `%${query.trim()}%` },
-      );
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'place.city',
-        'ASC',
-      );
-      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
+      expect(mockPlaceRepository.searchCities).toHaveBeenCalledWith(query);
       expect(result).toEqual(expectedPlaces);
-    });
-
-    it('should trim whitespace from search query', async () => {
-      const query = '  Los Angeles  ';
-      const expectedPlaces = [mockPlace];
-      mockQueryBuilder.getMany.mockResolvedValue(expectedPlaces);
-
-      await service.searchCities(query);
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'LOWER(place.city) LIKE LOWER(:query)',
-        { query: '%Los Angeles%' },
-      );
     });
 
     it('should return empty array when no cities match', async () => {
       const query = 'NonexistentCity';
-      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockPlaceRepository.searchCities.mockResolvedValue([]);
 
       const result = await service.searchCities(query);
 
+      expect(mockPlaceRepository.searchCities).toHaveBeenCalledWith(query);
       expect(result).toEqual([]);
     });
 
     it('should handle empty string query', async () => {
       const query = '';
-      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockPlaceRepository.searchCities.mockResolvedValue([]);
 
       await service.searchCities(query);
 
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'LOWER(place.city) LIKE LOWER(:query)',
-        { query: '%%' },
-      );
+      expect(mockPlaceRepository.searchCities).toHaveBeenCalledWith(query);
     });
   });
 

@@ -1,10 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import {
-  DocumentUploadStatus,
-  ReferenceDocument,
-} from '../entity/reference-document.entity';
+import { DocumentUploadStatus } from '../entity/reference-document.entity';
 import {
   AddDocumentDto,
   SearchDocumentsDto,
@@ -24,6 +19,7 @@ import { OrganizationRequiredException } from '../../exception/custom.exception'
 import { parseCsvBuffer } from '../../common/util/csv.util';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { ReferenceDocumentRepository } from '../repository/reference-document.repository';
 
 @Injectable()
 export class ReferenceDocumentService {
@@ -32,8 +28,7 @@ export class ReferenceDocumentService {
   );
 
   constructor(
-    @InjectRepository(ReferenceDocument)
-    private referenceDocumentRepository: Repository<ReferenceDocument>,
+    private referenceDocumentRepository: ReferenceDocumentRepository,
     private aiService: AiService,
     private permissionValidator: PermissionValidator,
   ) {}
@@ -337,14 +332,8 @@ export class ReferenceDocumentService {
   }
 
   async getDistinctCategories() {
-    const categories = await this.referenceDocumentRepository
-      .createQueryBuilder('document')
-      .select('document.category', 'category')
-      .addSelect('COUNT(document.category)', 'count')
-      .where('document.category IS NOT NULL')
-      .groupBy('document.category')
-      .orderBy('count', 'DESC')
-      .getRawMany();
+    const categories =
+      await this.referenceDocumentRepository.getDistinctCategories();
 
     return categories.map((cat) => cat.category);
   }
