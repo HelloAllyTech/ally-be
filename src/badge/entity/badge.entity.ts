@@ -43,4 +43,10 @@ export class Badge extends BaseWithoutTenantEntity {
 
   @DeleteDateColumn()
   deletedAt?: Date;
+
+  @Column()
+  createdBy!: number;
+
+  @Column()
+  updatedBy!: number;
 }
