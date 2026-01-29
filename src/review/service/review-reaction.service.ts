@@ -21,8 +21,12 @@ import { ReviewRepository } from '../repository/review.repository';
 import { UserService } from 'src/user/service/user.service';
 import { GetReviewReactionCountResponseDto } from '../dto/get-review-reaction-and-count-response.dto';
 import { formatCreatedUserDetails } from '../util/review.util';
-import { ReviewEvents } from '../type/review-event.type';
 import { ReviewAccessValidator } from '../util/review-access-policy.util';
+import {
+  ReviewEvents,
+  ReviewReactionAddedEventParams,
+  ReviewReactionRemovedEventParams,
+} from '../type/review-event.type';
 
 @Injectable()
 export class ReviewReactionService {
@@ -89,7 +93,7 @@ export class ReviewReactionService {
       this.eventEmitter.emit(ReviewEvents.REVIEW_REACTION_ADDED, {
         review,
         reaction: reviewReaction,
-      });
+      } as ReviewReactionAddedEventParams);
       return {
         success: true,
       };
@@ -116,7 +120,7 @@ export class ReviewReactionService {
       this.eventEmitter.emit(ReviewEvents.REVIEW_REACTION_REMOVED, {
         review,
         removedReaction: reviewReaction,
-      });
+      } as ReviewReactionRemovedEventParams);
       return { success: true };
     }
 

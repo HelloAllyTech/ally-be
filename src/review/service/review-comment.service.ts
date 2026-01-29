@@ -29,8 +29,12 @@ import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
 import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
 import { formatCreatedUserDetails } from '../util/review.util';
 import { ToggleCommentVisibilityDto } from '../dto/toggle-comment-visibility.dto';
-import { ReviewEvents } from '../type/review-event.type';
 import { ReviewAccessValidator } from '../util/review-access-policy.util';
+import {
+  ReviewCommentRemovedEventParams,
+  ReviewCommentAddedEventParams,
+  ReviewEvents,
+} from '../type/review-event.type';
 
 @Injectable()
 export class ReviewCommentService {
@@ -112,7 +116,7 @@ export class ReviewCommentService {
       this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_ADDED, {
         review,
         comment: reply,
-      });
+      } as ReviewCommentAddedEventParams);
       return {
         reply: {
           id: reply.id,
@@ -149,7 +153,7 @@ export class ReviewCommentService {
       this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_ADDED, {
         review,
         comment,
-      });
+      } as ReviewCommentAddedEventParams);
 
       return {
         comment: {
@@ -174,7 +178,7 @@ export class ReviewCommentService {
         `Creating new thread for messageId: ${createReviewCommentDto.messageId}`,
       );
       try {
-        const result = await this.dataSource.transaction(
+        const transactionOutput = await this.dataSource.transaction(
           async (entityManager) => {
             const thread = entityManager.create(ReviewThread, {
               reviewId,
@@ -191,26 +195,30 @@ export class ReviewCommentService {
               tenantId,
             });
             await entityManager.save(ReviewComment, comment);
-            this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_ADDED, {
-              review,
-              comment,
-            });
             return {
-              thread: {
-                id: thread.id,
-                createdAt: thread.createdAt,
+              result: {
+                thread: {
+                  id: thread.id,
+                  createdAt: thread.createdAt,
+                },
+                comment: {
+                  id: comment.id,
+                  createdAt: comment.createdAt,
+                },
               },
-              comment: {
-                id: comment.id,
-                createdAt: comment.createdAt,
-              },
+              comment,
             };
           },
         );
 
+        const { result, comment } = transactionOutput;
         this.logger.info(
           `Thread: ${result.thread?.id} and comment: ${result.comment?.id} created successfully for messageId: ${createReviewCommentDto.messageId}`,
         );
+        this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_ADDED, {
+          review,
+          comment,
+        } as ReviewCommentAddedEventParams);
 
         return result;
       } catch (error) {
@@ -590,7 +598,7 @@ export class ReviewCommentService {
       commentReplies,
       commentReactions,
       commentReplyReactions,
-    });
+    } as ReviewCommentRemovedEventParams);
   }
 
   async toggleCommentVisibility(
