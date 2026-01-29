@@ -49,12 +49,12 @@ export class ReviewThreadService {
 
     await this.reviewAccessValidator.validateAccess(review, userId);
 
-    const isHidden = review.createdBy === userId;
+    const isCommentVisible = review.createdBy === userId;
 
     const { threads: reviewThreads, count: totalCount } =
       await this.reviewThreadRepository.getReviewThreadsByReviewId(
         reviewId,
-        isHidden,
+        isCommentVisible,
         options,
       );
 
@@ -76,7 +76,7 @@ export class ReviewThreadService {
     }
 
     const reviewCommentPromise = this.reviewCommentRepository
-      .getCommentsForThreadIds(threadIds, isHidden)
+      .getCommentsForThreadIds(threadIds, isCommentVisible)
       .then((results) => results.filter((result) => result.row_num <= limit));
 
     let reviewComments;
@@ -108,7 +108,7 @@ export class ReviewThreadService {
       }),
       this.reviewCommentRepository.getCommentCountsByThreadIds(
         threadIds,
-        isHidden,
+        isCommentVisible,
       ),
     ]);
 
