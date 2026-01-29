@@ -59,6 +59,13 @@ const seedTasks: SeedTask[] = [
     required: false,
     timeout: 60000,
   },
+  {
+    name: 'Badges',
+    description: 'Creating achievement badges for all categories',
+    script: 'seed-badges.ts',
+    required: false,
+    timeout: 30000,
+  },
 ];
 
 let completedTasks = 0;
