@@ -178,23 +178,30 @@ export class SessionEventService {
         event.sessionEvents_detectionConfig
           ? {
               startTime:
-                event.scenarioEvents_detectionConfig?.startTime ??
-                event.sessionEvents_detectionConfig?.startTime,
+                event.scenarioEvents_detectionConfig?.startTime === undefined
+                  ? event.sessionEvents_detectionConfig?.startTime
+                  : event.scenarioEvents_detectionConfig?.startTime,
               endTime:
-                event.scenarioEvents_detectionConfig?.endTime ??
-                event.sessionEvents_detectionConfig?.endTime,
+                event.scenarioEvents_detectionConfig?.endTime === undefined
+                  ? event.sessionEvents_detectionConfig?.endTime
+                  : event.scenarioEvents_detectionConfig?.endTime,
               maxOccurrences:
-                event.scenarioEvents_detectionConfig?.maxOccurrences ??
-                event.sessionEvents_detectionConfig?.maxOccurrences,
+                event.scenarioEvents_detectionConfig?.maxOccurrences ===
+                undefined
+                  ? event.sessionEvents_detectionConfig?.maxOccurrences
+                  : event.scenarioEvents_detectionConfig?.maxOccurrences,
               minGapTime:
-                event.scenarioEvents_detectionConfig?.minGapTime ??
-                event.sessionEvents_detectionConfig?.minGapTime,
+                event.scenarioEvents_detectionConfig?.minGapTime === undefined
+                  ? event.sessionEvents_detectionConfig?.minGapTime
+                  : event.scenarioEvents_detectionConfig?.minGapTime,
               minScore:
-                event.scenarioEvents_detectionConfig?.minScore ??
-                event.sessionEvents_detectionConfig?.minScore,
+                event.scenarioEvents_detectionConfig?.minScore === undefined
+                  ? event.sessionEvents_detectionConfig?.minScore
+                  : event.scenarioEvents_detectionConfig?.minScore,
               maxScore:
-                event.scenarioEvents_detectionConfig?.maxScore ??
-                event.sessionEvents_detectionConfig?.maxScore,
+                event.scenarioEvents_detectionConfig?.maxScore === undefined
+                  ? event.sessionEvents_detectionConfig?.maxScore
+                  : event.scenarioEvents_detectionConfig?.maxScore,
             }
           : undefined,
     }));
