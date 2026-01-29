@@ -210,6 +210,7 @@ export class ReviewService {
       scenario: {
         title: scenario?.title,
         createdAt: scenario?.createdAt,
+        name: scenario?.metadata?.name,
         description: scenario?.description,
         coverImageUrl: scenario?.coverImageUrl,
         coverVideoUrl: scenario?.coverVideoUrl,
@@ -226,6 +227,7 @@ export class ReviewService {
       createdBy: formatCreatedUserDetails(user!),
       reactions: updatedReactions,
       myReaction: myReaction?.reaction ?? null,
+      ...(userId === review.createdBy && { reviewStatus: review.status }),
     };
   }
 
