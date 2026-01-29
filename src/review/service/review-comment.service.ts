@@ -263,11 +263,11 @@ export class ReviewCommentService {
 
     await this.reviewAccessValidator.validateAccess(review, userId);
 
-    const isHidden = review.createdBy === userId;
+    const isCommentVisible = review.createdBy === userId;
 
     const result = await this.reviewCommentRepository.getCommentsByThreadId(
       threadId,
-      isHidden,
+      isCommentVisible,
       options,
     );
 
@@ -376,12 +376,12 @@ export class ReviewCommentService {
     }
     await this.reviewAccessValidator.validateAccess(review, userId);
 
-    const isHidden = review.createdBy === userId;
+    const isCommentVisible = review.createdBy === userId;
 
     const [replies, count] =
       await this.reviewCommentRepository.getRepliesByCommentId(
         commentId,
-        isHidden,
+        isCommentVisible,
         options,
       );
 
