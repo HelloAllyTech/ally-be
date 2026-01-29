@@ -171,13 +171,14 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         'scenarioSession.events',
         ScenarioSessionEvents,
         'scenarioSessionEvent',
-        '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id',
+        '"scenarioSessionEvent"."scenarioSessionId"::uuid = scenarioSession.id AND "scenarioSessionEvent"."autoTerminationStatus" = false',
       )
       .leftJoinAndMapOne(
         'scenarioSessionEvent.events',
         SessionEvents,
         'events',
-        'events.id = scenarioSessionEvent.eventId',
+        'events.id = scenarioSessionEvent.eventId AND events.visibilityType = :visibilityType',
+        { visibilityType: SessionEventVisibilityType.ACTIVE },
       )
       .where('scenarioSession.id = :scenarioSessionId', { scenarioSessionId })
       .andWhere('scenarioSession.tenantId = :tenantId', {
