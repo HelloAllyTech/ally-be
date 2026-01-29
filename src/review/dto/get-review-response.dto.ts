@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { CreatedByDto } from './created-user.dto';
+import { ReviewStatus } from '../type/review.type';
 
 export class ScenarioDto {
   @ApiProperty()
@@ -7,6 +8,9 @@ export class ScenarioDto {
 
   @ApiProperty()
   createdAt?: Date;
+
+  @ApiProperty()
+  name?: string;
 
   @ApiProperty()
   description?: string;
@@ -50,4 +54,7 @@ export class GetReviewResponseDto {
 
   @ApiProperty()
   myReaction!: string | null;
+
+  @ApiProperty()
+  reviewStatus?: ReviewStatus;
 }
