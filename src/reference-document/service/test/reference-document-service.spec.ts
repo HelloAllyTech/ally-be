@@ -1,7 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { ReferenceDocumentService } from '../reference-document.service';
 import {
   DocumentUploadStatus,
@@ -19,6 +17,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { OrganizationRequiredException } from 'src/exception/custom.exception';
 import { parseCsvBuffer } from 'src/common/util/csv.util';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { ReferenceDocumentRepository } from 'src/reference-document/repository/reference-document.repository';
 
 import {
   AddReferenceDocumentResponse,
@@ -35,7 +34,7 @@ jest.mock('src/common/util/csv.util');
 
 describe('ReferenceDocumentService', () => {
   let service: ReferenceDocumentService;
-  let repo: jest.Mocked<Repository<ReferenceDocument>>;
+  let repo: jest.Mocked<ReferenceDocumentRepository>;
   let ai: jest.Mocked<AiService>;
   let permissionValidator: jest.Mocked<PermissionValidator>;
 
@@ -65,7 +64,8 @@ describe('ReferenceDocumentService', () => {
     find: jest.fn(),
     findOneBy: jest.fn(),
     createQueryBuilder: jest.fn(),
-  } as unknown as jest.Mocked<Repository<ReferenceDocument>>;
+    getDistinctCategories: jest.fn(),
+  } as unknown as jest.Mocked<ReferenceDocumentRepository>;
 
   const mockAi: jest.Mocked<AiService> = {
     addReferenceDocument: jest.fn(),
@@ -93,14 +93,14 @@ describe('ReferenceDocumentService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReferenceDocumentService,
-        { provide: getRepositoryToken(ReferenceDocument), useValue: mockRepo },
+        { provide: ReferenceDocumentRepository, useValue: mockRepo },
         { provide: AiService, useValue: mockAi },
         { provide: PermissionValidator, useValue: mockPermissionValidator },
       ],
     }).compile();
 
     service = module.get(ReferenceDocumentService);
-    repo = module.get(getRepositoryToken(ReferenceDocument));
+    repo = module.get(ReferenceDocumentRepository);
     ai = module.get(AiService);
     permissionValidator = module.get(PermissionValidator);
   });
@@ -472,19 +472,13 @@ describe('ReferenceDocumentService', () => {
 
   describe('getDistinctCategories', () => {
     it('returns mapped categories', async () => {
-      const qb = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest
-          .fn()
-          .mockResolvedValue([{ category: 'A' }, { category: 'B' }]),
-      };
-      (repo.createQueryBuilder as jest.Mock).mockReturnValue(qb as any);
+      (repo.getDistinctCategories as jest.Mock).mockResolvedValue([
+        { category: 'A', count: 5 },
+        { category: 'B', count: 3 },
+      ]);
 
       const res = await service.getDistinctCategories();
+      expect(repo.getDistinctCategories).toHaveBeenCalled();
       expect(res).toEqual(['A', 'B']);
     });
   });
@@ -759,22 +753,13 @@ describe('ReferenceDocumentService', () => {
     });
   });
 
-  describe('getDistinctCategories', () => {
-    it('returns mapped categories', async () => {
-      const qb = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawMany: jest
-          .fn()
-          .mockResolvedValue([{ category: 'A' }, { category: 'B' }]),
-      };
-      (repo.createQueryBuilder as jest.Mock).mockReturnValue(qb as any);
+  describe('getDistinctCategories (additional)', () => {
+    it('returns empty array when no categories exist', async () => {
+      (repo.getDistinctCategories as jest.Mock).mockResolvedValue([]);
 
       const res = await service.getDistinctCategories();
-      expect(res).toEqual(['A', 'B']);
+      expect(repo.getDistinctCategories).toHaveBeenCalled();
+      expect(res).toEqual([]);
     });
   });
 

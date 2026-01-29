@@ -2,8 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { QueueService } from '../queue.service';
 import { QueueEntry } from 'src/queue/entity/queue-entry.entity';
 import { QueueStatus } from 'src/common/constants/chat.constants';
-import { ChatService } from 'src/chat/service/chat.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { QueueRepository } from 'src/queue/repository/queue.repository';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -15,7 +15,6 @@ jest.mock('src/common/execution/execution-manager', () => ({
 describe('QueueService', () => {
   let service: QueueService;
   let mockQueueRepository: any;
-  let mockChatService: any;
   let mockEntityManager: any;
   let mockQueryBuilder: any;
 
@@ -66,24 +65,20 @@ describe('QueueService', () => {
       findOne: jest.fn(),
       update: jest.fn(),
       createQueryBuilder: jest.fn(() => mockQueryBuilder),
+      getQueueStats: jest.fn(),
     };
 
     mockEntityManager = {
       getRepository: jest.fn(() => mockQueueRepository),
     };
 
-    mockChatService = {
-      // Mock ChatService methods if needed
-    };
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         QueueService,
         {
-          provide: 'QueueEntryRepository', // getRepositoryToken(QueueEntry)
+          provide: QueueRepository,
           useValue: mockQueueRepository,
         },
-        { provide: ChatService, useValue: mockChatService },
       ],
     }).compile();
 
@@ -132,60 +127,37 @@ describe('QueueService', () => {
 
   describe('getStats', () => {
     it('should get stats without status filter', async () => {
-      mockQueryBuilder.getMany.mockResolvedValue(mockQueueStats);
+      mockQueueRepository.getQueueStats.mockResolvedValue(mockQueueStats);
 
       const result = await service.getStats();
 
-      expect(mockQueueRepository.createQueryBuilder).toHaveBeenCalledWith(
-        'queue',
+      expect(mockQueueRepository.getQueueStats).toHaveBeenCalledWith(
+        undefined,
+        undefined,
       );
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'queue.priority',
-        'DESC',
-      );
-      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
-        'queue.waitStartTime',
-        'ASC',
-      );
-      expect(mockQueryBuilder.where).not.toHaveBeenCalled();
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'queue.tenantId = :tenantId',
-        {
-          tenantId: 'test-tenant',
-        },
-      );
-      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
       expect(result).toEqual(mockQueueStats);
     });
 
     it('should get stats with status filter', async () => {
-      mockQueryBuilder.getMany.mockResolvedValue([mockQueueStats[0]]);
+      mockQueueRepository.getQueueStats.mockResolvedValue([mockQueueStats[0]]);
 
       const result = await service.getStats(QueueStatus.WAITING);
 
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'queue.status = :status',
-        {
-          status: QueueStatus.WAITING,
-        },
-      );
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'queue.tenantId = :tenantId',
-        {
-          tenantId: 'test-tenant',
-        },
+      expect(mockQueueRepository.getQueueStats).toHaveBeenCalledWith(
+        QueueStatus.WAITING,
+        undefined,
       );
       expect(result).toEqual([mockQueueStats[0]]);
     });
 
     it('should get stats with entity manager', async () => {
-      mockQueryBuilder.getMany.mockResolvedValue(mockQueueStats);
+      mockQueueRepository.getQueueStats.mockResolvedValue(mockQueueStats);
 
       const result = await service.getStats(undefined, mockEntityManager);
 
-      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(QueueEntry);
-      expect(mockQueueRepository.createQueryBuilder).toHaveBeenCalledWith(
-        'queue',
+      expect(mockQueueRepository.getQueueStats).toHaveBeenCalledWith(
+        undefined,
+        mockEntityManager,
       );
       expect(result).toEqual(mockQueueStats);
     });

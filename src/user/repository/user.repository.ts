@@ -5,6 +5,11 @@ import { UserFilterOptions } from '../interface/user-filter-options.interface';
 import { DataSource, SelectQueryBuilder } from 'typeorm';
 import { Injectable } from '@nestjs/common';
 import { SimulationCredits } from 'src/learn/entity/simulation-credits.entity';
+import { Group } from 'src/authorization/entity/group.entity';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { UserGroup } from 'src/authorization/entity/user-group.entity';
+import { UserRole } from 'src/common/constants/user.constants';
+import { Chat, ChatStatus } from 'src/chat/entity/chat.entity';
 
 @Injectable()
 export class UserRepository extends Repository<User> {
@@ -165,5 +170,54 @@ export class UserRepository extends Repository<User> {
       .getRawMany();
 
     return userCounts;
+  }
+
+  async getWaitingList(clientIds: string[]) {
+    return this.createQueryBuilder('user')
+      .where('user.id IN (:...clientIds)', { clientIds })
+      .andWhere('user.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
+      })
+      .leftJoinAndMapMany(
+        'user.chat',
+        Chat,
+        'chat',
+        `chat.clientId = user.id and chat.status = '${ChatStatus.PAUSED}'`,
+      )
+      .andWhere('chat.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
+      })
+      .getMany();
+  }
+
+  async getCounselorNames(limit?: number, offset?: number, search?: string) {
+    const query = this.createQueryBuilder('user')
+      .select('user.id', 'id')
+      .addSelect('user.name', 'name')
+      .andWhere('user.tenantId = :tenantId', {
+        tenantId: ExecutionManager.getTenantId(),
+      })
+      .leftJoin(UserGroup, 'userGroup', 'userGroup.userId = user.id')
+      .leftJoin(Group, 'group', 'group.id = userGroup.groupId')
+      .andWhere('group.name = :role', { role: UserRole.COUNSELOR })
+      .orderBy('user.id', 'ASC');
+
+    if (search && search.trim()) {
+      query.andWhere('user.name ILIKE :search', {
+        search: `%${search.trim()}%`,
+      });
+    }
+
+    if (limit) {
+      query.limit(limit);
+    }
+    if (offset) {
+      query.offset(offset);
+    }
+
+    const counselors = await query.getRawMany();
+    const count = await query.getCount();
+
+    return { counselors, count };
   }
 }

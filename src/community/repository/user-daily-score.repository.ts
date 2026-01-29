@@ -144,7 +144,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
         u.status,
         COALESCE(bu.badge_count, 0) as "badgeCount"
       FROM ranked_scores rs
-      JOIN users u ON u.id = rs."userId"
+      JOIN users u ON u.id = rs."userId" AND u.status != 'SUSPENDED'
       LEFT JOIN (
         SELECT "userId", COUNT(*) as badge_count
         FROM badge_users
@@ -223,7 +223,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
         u.status,
         COALESCE(bu.badge_count, 0) as "badgeCount"
       FROM ranked_scores rs
-      JOIN users u ON u.id = rs."userId"
+      JOIN users u ON u.id = rs."userId" AND u.status != 'SUSPENDED'
       LEFT JOIN (
         SELECT "userId", COUNT(*) as badge_count
         FROM badge_users
@@ -246,38 +246,6 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       status: row.status,
       rank: hideRankInCommunity ? undefined : parseInt(row.rank) || 0,
       minutesPlayed: parseInt(row.minutesPlayed) || 0,
-      badgeCount: parseInt(row.badgeCount) || 0,
-    };
-  }
-
-  async getUserDetailsForNoActivity(
-    userId: number,
-  ): Promise<{ name: string; profileImageUrl?: string; badgeCount: number }> {
-    const result = await this.query(
-      `
-      SELECT 
-        u.name,
-        u."profileImageUrl",
-        COALESCE(bu.badge_count, 0) as "badgeCount"
-      FROM users u
-      LEFT JOIN (
-        SELECT "userId", COUNT(*) as badge_count
-        FROM badge_users
-        GROUP BY "userId"
-      ) bu ON bu."userId" = u.id
-      WHERE u.id = $1
-      `,
-      [userId],
-    );
-
-    if (result.length === 0) {
-      return { name: '', profileImageUrl: undefined, badgeCount: 0 };
-    }
-
-    const row = result[0];
-    return {
-      name: row.name,
-      profileImageUrl: row.profileImageUrl || null,
       badgeCount: parseInt(row.badgeCount) || 0,
     };
   }
