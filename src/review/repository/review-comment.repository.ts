@@ -14,7 +14,7 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
 
   async getCommentsForThreadIds(
     threadIds: string[],
-    isHidden: boolean,
+    isCommentVisible: boolean,
   ): Promise<any[]> {
     if (!threadIds.length) return [];
 
@@ -23,7 +23,10 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
         return subQuery
           .select('COUNT(*)', 'count')
           .from(ReviewComment, 'rc')
-          .where('rc.parentCommentId = c.id');
+          .where(
+            'rc.parentCommentId = c.id  AND (:isCommentVisible = true OR rc.hidden = false)',
+            { isCommentVisible },
+          );
       }, 'reply_count')
       .addSelect(
         `ROW_NUMBER() OVER (PARTITION BY c."reviewThreadId" ORDER BY c."createdAt" ASC)`,
@@ -32,7 +35,7 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
       .where('c.reviewThreadId IN (:...threadIds)', { threadIds })
       .andWhere('c.parentCommentId IS NULL');
 
-    if (!isHidden) {
+    if (!isCommentVisible) {
       query.andWhere('c.hidden = false');
     }
     return query.addOrderBy('c.createdAt', 'ASC').getRawMany();
@@ -40,7 +43,7 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
 
   async getCommentsByThreadId(
     threadId: string,
-    isHidden: boolean,
+    isCommentVisible: boolean,
     options?: Pagination,
   ) {
     const { limit = 20, offset = 0 } = options || {};
@@ -50,13 +53,16 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
         return subQuery
           .select('COUNT(*)', 'count')
           .from(ReviewComment, 'rc')
-          .where('rc.parentCommentId = c.id')
+          .where(
+            'rc.parentCommentId = c.id AND (:isCommentVisible = true OR rc.hidden = false)',
+            { isCommentVisible },
+          )
           .andWhere('rc.deletedAt IS NULL');
       }, 'reply_count')
       .where('c.reviewThreadId = :threadId', { threadId })
       .andWhere('c.parentCommentId IS NULL');
 
-    if (!isHidden) {
+    if (!isCommentVisible) {
       query.andWhere('(c.hidden = false)');
     }
 
@@ -73,7 +79,7 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
 
   async getRepliesByCommentId(
     commentId: string,
-    isHidden: boolean,
+    isCommentVisible: boolean,
     options?: Pagination,
   ) {
     const { limit = 20, offset = 0 } = options || {};
@@ -81,7 +87,7 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
       'c.parentCommentId = :commentId',
       { commentId },
     );
-    if (!isHidden) {
+    if (!isCommentVisible) {
       query.andWhere('c.hidden=false');
     }
 
@@ -209,7 +215,7 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
 
   async getCommentCountsByThreadIds(
     threadIds: string[],
-    isHidden: boolean,
+    isCommentVisible: boolean,
   ): Promise<CommentCountByThread[]> {
     const query = this.createQueryBuilder('c')
       .select('c.reviewThreadId', 'reviewThreadId')
@@ -218,8 +224,8 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
       .andWhere('c.parentCommentId IS NULL')
       .andWhere('c.deletedAt IS NULL');
 
-    if (!isHidden) {
-      query.andWhere('c.hidden = :isHidden', { isHidden });
+    if (!isCommentVisible) {
+      query.andWhere('c.hidden = false');
     }
     return query.groupBy('c.reviewThreadId').getRawMany();
   }
