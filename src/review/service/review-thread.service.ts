@@ -90,9 +90,11 @@ export class ReviewThreadService {
       reviewComments = await reviewCommentPromise;
     }
 
-    const commentIds = reviewComments.map((comment) => comment.c_id);
+    const commentIds = reviewComments.map((comment) => comment.comment_id);
     const userIds = [
-      ...new Set([...reviewComments.map((comment) => comment.c_createdBy)]),
+      ...new Set([
+        ...reviewComments.map((comment) => comment.comment_createdBy),
+      ]),
     ];
 
     const [reactions, users, myReactions, commentCount] = await Promise.all([
@@ -145,19 +147,19 @@ export class ReviewThreadService {
 
     const commentsByThread = reviewComments.reduce(
       (acc, comment) => {
-        if (!acc[comment.c_reviewThreadId]) {
-          acc[comment.c_reviewThreadId] = [];
+        if (!acc[comment.comment_reviewThreadId]) {
+          acc[comment.comment_reviewThreadId] = [];
         }
 
-        const user = userMap.get(comment.c_createdBy);
-        acc[comment.c_reviewThreadId].push({
-          id: comment.c_id,
-          content: comment.c_content,
-          createdAt: comment.c_createdAt,
+        const user = userMap.get(comment.comment_createdBy);
+        acc[comment.comment_reviewThreadId].push({
+          id: comment.comment_id,
+          content: comment.comment_content,
+          createdAt: comment.comment_createdAt,
           createdBy: user || {},
-          reactions: reactionsByComment[comment.c_id] || {},
-          myReaction: myReactionsByCommentId[comment.c_id] || null,
-          hidden: comment.c_hidden,
+          reactions: reactionsByComment[comment.comment_id] || {},
+          myReaction: myReactionsByCommentId[comment.comment_id] || null,
+          hidden: comment.comment_hidden,
           replyCount: parseInt(comment.reply_count, 10) || 0,
         });
         return acc;
