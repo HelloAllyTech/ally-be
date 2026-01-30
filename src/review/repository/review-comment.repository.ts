@@ -5,6 +5,10 @@ import { Pagination } from 'src/common/type/common.type';
 import { ReviewThread } from '../entity/review-thread.entity';
 import { Review } from '../entity/review.entity';
 import { CommentCountByThread } from '../type/review-thread.type';
+import {
+  CommentForThreadIdsResult,
+  GetCommentsByThreadIdResult,
+} from '../type/review-comment.type';
 
 @Injectable()
 export class ReviewCommentRepository extends Repository<ReviewComment> {
@@ -15,8 +19,10 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
   async getCommentsForThreadIds(
     threadIds: string[],
     isCommentVisible: boolean,
-  ): Promise<any[]> {
-    if (!threadIds.length) return [];
+  ): Promise<CommentForThreadIdsResult[]> {
+    if (!threadIds.length) {
+      return [];
+    }
 
     const query = this.createQueryBuilder('comment')
       .addSelect((subQuery) => {
@@ -44,7 +50,7 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
     threadId: string,
     isCommentVisible: boolean,
     options?: Pagination,
-  ) {
+  ): Promise<GetCommentsByThreadIdResult> {
     const { limit = 20, offset = 0 } = options || {};
 
     const query = this.createQueryBuilder('comment')

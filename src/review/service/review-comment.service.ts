@@ -35,6 +35,7 @@ import {
   ReviewCommentAddedEventParams,
   ReviewEvents,
 } from '../type/review-event.type';
+import { GetReviewCommentsResponseDto } from '../dto/review-comments-response.dto';
 
 @Injectable()
 export class ReviewCommentService {
@@ -232,7 +233,10 @@ export class ReviewCommentService {
     throw new BadRequestException('Invalid request');
   }
 
-  async getReviewComments(threadId: string, options?: Pagination) {
+  async getReviewComments(
+    threadId: string,
+    options?: Pagination,
+  ): Promise<GetReviewCommentsResponseDto> {
     const userId = Number(ExecutionManager.getUserId());
     if (!userId) {
       throw new BadRequestException('User not found');
@@ -317,19 +321,21 @@ export class ReviewCommentService {
     );
 
     // Map comments with reactions and user data
-    const data = result.comments.map((comment) => {
-      const user = userMap.get(comment.comment_createdBy);
-      return {
-        id: comment.comment_id,
-        content: comment.comment_content,
-        createdAt: comment.comment_createdAt,
-        createdBy: user,
-        myReaction: myReactionsByCommentId[comment.comment_id] || null,
-        reactions: reactionsByComment[comment.comment_id] || {},
-        replyCount: parseInt(comment.reply_count) || 0,
-        hidden: comment.comment_hidden || false,
-      };
-    });
+    const data: GetReviewCommentsResponseDto['data'] = result.comments.map(
+      (comment) => {
+        const user = userMap.get(comment.comment_createdBy);
+        return {
+          id: comment.comment_id,
+          content: comment.comment_content,
+          createdAt: comment.comment_createdAt,
+          createdBy: user!,
+          myReaction: myReactionsByCommentId[comment.comment_id] || null,
+          reactions: reactionsByComment[comment.comment_id] || {},
+          replyCount: parseInt(comment.reply_count) || 0,
+          hidden: comment.comment_hidden || false,
+        };
+      },
+    );
 
     return {
       data,
@@ -604,7 +610,7 @@ export class ReviewCommentService {
   async toggleCommentVisibility(
     commentId: string,
     toggleCommentVisibilityDto: ToggleCommentVisibilityDto,
-  ) {
+  ): Promise<SuccessResponse> {
     const userId = Number(ExecutionManager.getUserId());
     if (!userId) {
       throw new BadRequestException('User not found');
