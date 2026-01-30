@@ -18,14 +18,14 @@ export class ReviewReactionRepository extends Repository<ReviewReaction> {
     reviewIds: string[],
   ): Promise<ReviewReactionCount[]> {
     if (!reviewIds.length) return [];
-    return this.createQueryBuilder('rr')
+    return this.createQueryBuilder('reviewReaction')
       .select([
-        'rr.reviewId AS "reviewId"',
-        'rr.reaction AS "reaction"',
-        'COUNT(rr.id) AS "count"',
+        'reviewReaction.reviewId AS "reviewId"',
+        'reviewReaction.reaction AS "reaction"',
+        'COUNT(reviewReaction.id) AS "count"',
       ])
-      .where('rr.reviewId IN (:...reviewIds)', { reviewIds })
-      .groupBy('rr.reviewId, rr.reaction')
+      .where('reviewReaction.reviewId IN (:...reviewIds)', { reviewIds })
+      .groupBy('reviewReaction.reviewId, reviewReaction.reaction')
       .getRawMany();
   }
 
@@ -83,27 +83,27 @@ export class ReviewReactionRepository extends Repository<ReviewReaction> {
     options: ReviewReactionOptions,
   ): Promise<[ReviewReaction[], number]> {
     const { reaction, limit = 20, offset = 0 } = options;
-    const query = this.createQueryBuilder('rr').where(
-      'rr.reviewId = :reviewId',
+    const query = this.createQueryBuilder('reviewReaction').where(
+      'reviewReaction.reviewId = :reviewId',
       { reviewId },
     );
 
     if (reaction) {
-      query.andWhere('rr.reaction = :reaction', { reaction });
+      query.andWhere('reviewReaction.reaction = :reaction', { reaction });
     }
 
     return query
-      .orderBy('rr.createdAt', 'DESC')
+      .orderBy('reviewReaction.createdAt', 'DESC')
       .limit(limit)
       .offset(offset)
       .getManyAndCount();
   }
 
   async getReviewReactionsAndCount(reviewId: string): Promise<ReactionCount[]> {
-    return this.createQueryBuilder('rr')
-      .select(['rr.reaction AS reaction', 'COUNT(*) AS count'])
-      .where('rr.reviewId = :reviewId', { reviewId })
-      .groupBy('rr.reaction')
+    return this.createQueryBuilder('reviewReaction')
+      .select(['reviewReaction.reaction AS reaction', 'COUNT(*) AS count'])
+      .where('reviewReaction.reviewId = :reviewId', { reviewId })
+      .groupBy('reviewReaction.reaction')
       .getRawMany();
   }
 }

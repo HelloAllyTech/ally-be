@@ -24,47 +24,65 @@ export class ReviewRepository extends Repository<Review> {
     tenantId: string,
     userId: number,
   ): Promise<ReviewsResult> {
-    const query = this.createQueryBuilder('r')
+    const query = this.createQueryBuilder('review')
       .leftJoinAndMapOne(
-        'r.scenarioSession',
+        'review.scenarioSession',
         ScenarioSessions,
-        'ss',
-        'ss.id = r.scenarioSessionId',
+        'scenarioSession',
+        'scenarioSession.id = review.scenarioSessionId',
       )
       .withDeleted()
-      .leftJoinAndMapOne('r.scenario', Scenarios, 's', 's.id = ss.scenarioId')
-      .leftJoinAndMapOne('r.createdBy', User, 'u', 'u.id = r.createdBy')
-      .where('r.tenantId = :tenantId', { tenantId })
-      .andWhere('r.status = :status', { status: ReviewStatus.IN_REVIEW });
+      .leftJoinAndMapOne(
+        'review.scenario',
+        Scenarios,
+        'scenario',
+        'scenario.id = scenarioSession.scenarioId',
+      )
+      .leftJoinAndMapOne(
+        'review.createdBy',
+        User,
+        'user',
+        'user.id = review.createdBy',
+      )
+      .where('review.tenantId = :tenantId', { tenantId })
+      .andWhere('review.status = :status', { status: ReviewStatus.IN_REVIEW });
 
     if (options.sortBy === ReviewSortBy.MOST_REVIEWED) {
       query
-        .leftJoin('review_threads', 'rt', 'rt.reviewId = r.id')
+        .leftJoin(
+          'review_threads',
+          'reviewThread',
+          'reviewThread.reviewId = review.id',
+        )
         .leftJoin(
           ReviewComment,
-          'rc',
-          'rc.reviewThreadId = rt.id AND (rc.hidden = false OR r.createdBy = :userId)',
+          'reviewComment',
+          'reviewComment.reviewThreadId = reviewThread.id AND (reviewComment.hidden = false OR review.createdBy = :userId)',
           { userId },
         )
-        .addSelect('COUNT(rc.id)', 'comments_count')
-        .groupBy('r.id, ss.id, s.id, u.id')
+        .addSelect('COUNT(reviewComment.id)', 'comments_count')
+        .groupBy('review.id, scenarioSession.id, scenario.id, user.id')
         .orderBy('comments_count', 'DESC');
     } else if (options.sortBy === ReviewSortBy.UNDISCOVERED) {
       query
-        .leftJoin('review_threads', 'rt', 'rt.reviewId = r.id')
+        .leftJoin(
+          'review_threads',
+          'reviewThread',
+          'reviewThread.reviewId = review.id',
+        )
         .leftJoin(
           ReviewComment,
-          'rc',
-          'rc.reviewThreadId = rt.id AND (rc.hidden = false OR r.createdBy = :userId)',
+          'reviewComment',
+          'reviewComment.reviewThreadId = reviewThread.id AND (reviewComment.hidden = false OR review.createdBy = :userId)',
           { userId },
         )
-        .addSelect('COUNT(rc.id)', 'comments_count')
-        .groupBy('r.id, ss.id, s.id, u.id')
+        .addSelect('COUNT(reviewComment.id)', 'comments_count')
+        .groupBy('review.id, scenarioSession.id, scenario.id, user.id')
         .orderBy('comments_count', 'ASC');
     } else {
       const sortBy =
         options.sortBy === ReviewSortBy.LATEST ? 'updatedAt' : 'createdAt';
-      query.orderBy(`r.${sortBy}`, options.sortOrder);
+      query.orderBy(`review.${sortBy}`, options.sortOrder);
     }
     if (options.limit) {
       query.limit(options.limit);
