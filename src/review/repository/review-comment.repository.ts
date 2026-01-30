@@ -18,27 +18,26 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
   ): Promise<any[]> {
     if (!threadIds.length) return [];
 
-    const query = this.createQueryBuilder('c')
+    const query = this.createQueryBuilder('comment')
       .addSelect((subQuery) => {
         return subQuery
           .select('COUNT(*)', 'count')
-          .from(ReviewComment, 'rc')
+          .from(ReviewComment, 'reviewComment')
           .where(
-            'rc.parentCommentId = c.id  AND (:isCommentVisible = true OR rc.hidden = false)',
+            'reviewComment.parentCommentId = comment.id  AND (:isCommentVisible = true OR reviewComment.hidden = false)',
             { isCommentVisible },
           );
       }, 'reply_count')
       .addSelect(
-        `ROW_NUMBER() OVER (PARTITION BY c."reviewThreadId" ORDER BY c."createdAt" ASC)`,
+        `ROW_NUMBER() OVER (PARTITION BY comment."reviewThreadId" ORDER BY comment."createdAt" ASC)`,
         'row_num',
       )
-      .where('c.reviewThreadId IN (:...threadIds)', { threadIds })
-      .andWhere('c.parentCommentId IS NULL');
-
+      .where('comment.reviewThreadId IN (:...threadIds)', { threadIds })
+      .andWhere('comment.parentCommentId IS NULL');
     if (!isCommentVisible) {
-      query.andWhere('c.hidden = false');
+      query.andWhere('comment.hidden = false');
     }
-    return query.addOrderBy('c.createdAt', 'ASC').getRawMany();
+    return query.addOrderBy('comment.createdAt', 'ASC').getRawMany();
   }
 
   async getCommentsByThreadId(
@@ -48,28 +47,28 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
   ) {
     const { limit = 20, offset = 0 } = options || {};
 
-    const query = this.createQueryBuilder('c')
+    const query = this.createQueryBuilder('comment')
       .addSelect((subQuery) => {
         return subQuery
           .select('COUNT(*)', 'count')
-          .from(ReviewComment, 'rc')
+          .from(ReviewComment, 'reviewComment')
           .where(
-            'rc.parentCommentId = c.id AND (:isCommentVisible = true OR rc.hidden = false)',
+            'reviewComment.parentCommentId = comment.id AND (:isCommentVisible = true OR reviewComment.hidden = false)',
             { isCommentVisible },
           )
-          .andWhere('rc.deletedAt IS NULL');
+          .andWhere('reviewComment.deletedAt IS NULL');
       }, 'reply_count')
-      .where('c.reviewThreadId = :threadId', { threadId })
-      .andWhere('c.parentCommentId IS NULL');
+      .where('comment.reviewThreadId = :threadId', { threadId })
+      .andWhere('comment.parentCommentId IS NULL');
 
     if (!isCommentVisible) {
-      query.andWhere('(c.hidden = false)');
+      query.andWhere('(comment.hidden = false)');
     }
 
     const count = await query.getCount();
 
     const comments = await query
-      .orderBy('c.createdAt', 'ASC')
+      .orderBy('comment.createdAt', 'ASC')
       .limit(limit)
       .offset(offset)
       .getRawMany();
@@ -83,15 +82,15 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
     options?: Pagination,
   ) {
     const { limit = 20, offset = 0 } = options || {};
-    const query = this.createQueryBuilder('c').where(
-      'c.parentCommentId = :commentId',
+    const query = this.createQueryBuilder('comment').where(
+      'comment.parentCommentId = :commentId',
       { commentId },
     );
     if (!isCommentVisible) {
-      query.andWhere('c.hidden=false');
+      query.andWhere('comment.hidden=false');
     }
 
-    query.orderBy('c.createdAt', 'ASC').limit(limit).offset(offset);
+    query.orderBy('comment.createdAt', 'ASC').limit(limit).offset(offset);
     return query.getManyAndCount();
   }
 
@@ -217,16 +216,16 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
     threadIds: string[],
     isCommentVisible: boolean,
   ): Promise<CommentCountByThread[]> {
-    const query = this.createQueryBuilder('c')
-      .select('c.reviewThreadId', 'reviewThreadId')
+    const query = this.createQueryBuilder('comment')
+      .select('comment.reviewThreadId', 'reviewThreadId')
       .addSelect('COUNT(*)', 'commentCount')
-      .where('c.reviewThreadId IN (:...threadIds)', { threadIds })
-      .andWhere('c.parentCommentId IS NULL')
-      .andWhere('c.deletedAt IS NULL');
+      .where('comment.reviewThreadId IN (:...threadIds)', { threadIds })
+      .andWhere('comment.parentCommentId IS NULL')
+      .andWhere('comment.deletedAt IS NULL');
 
     if (!isCommentVisible) {
-      query.andWhere('c.hidden = false');
+      query.andWhere('comment.hidden = false');
     }
-    return query.groupBy('c.reviewThreadId').getRawMany();
+    return query.groupBy('comment.reviewThreadId').getRawMany();
   }
 }

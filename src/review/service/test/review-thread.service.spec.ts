@@ -49,12 +49,12 @@ describe('ReviewThreadService', () => {
   };
 
   const mockComment = {
-    c_id: mockCommentId,
-    c_reviewThreadId: mockThreadId,
-    c_content: 'Test comment',
-    c_createdAt: new Date(),
-    c_createdBy: mockUserId,
-    c_hidden: false,
+    comment_id: mockCommentId,
+    comment_reviewThreadId: mockThreadId,
+    comment_content: 'Test comment',
+    comment_createdAt: new Date(),
+    comment_createdBy: mockUserId,
+    comment_hidden: false,
     reply_count: '0',
     row_num: 1,
   };
@@ -375,7 +375,7 @@ describe('ReviewThreadService', () => {
       expect(result.data[0]?.comments).toHaveLength(1);
       expect(result.data[0]?.comments?.[0]).toMatchObject({
         id: mockCommentId,
-        content: mockComment.c_content,
+        content: mockComment.comment_content,
         reactions: { like: 5 },
         myReaction: 'like',
         replyCount: 0,

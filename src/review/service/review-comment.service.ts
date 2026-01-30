@@ -275,9 +275,9 @@ export class ReviewCommentService {
       return { data: [], count: result.count };
     }
 
-    const commentIds = result.comments.map((comment) => comment.c_id);
+    const commentIds = result.comments.map((comment) => comment.comment_id);
     const creatorIds = [
-      ...new Set(result.comments.map((comment) => comment.c_createdBy)),
+      ...new Set(result.comments.map((comment) => comment.comment_createdBy)),
     ];
 
     const [reactions, users, myReactions] = await Promise.all([
@@ -318,16 +318,16 @@ export class ReviewCommentService {
 
     // Map comments with reactions and user data
     const data = result.comments.map((comment) => {
-      const user = userMap.get(comment.c_createdBy);
+      const user = userMap.get(comment.comment_createdBy);
       return {
-        id: comment.c_id,
-        content: comment.c_content,
-        createdAt: comment.c_createdAt,
+        id: comment.comment_id,
+        content: comment.comment_content,
+        createdAt: comment.comment_createdAt,
         createdBy: user,
-        myReaction: myReactionsByCommentId[comment.c_id] || null,
-        reactions: reactionsByComment[comment.c_id] || {},
+        myReaction: myReactionsByCommentId[comment.comment_id] || null,
+        reactions: reactionsByComment[comment.comment_id] || {},
         replyCount: parseInt(comment.reply_count) || 0,
-        hidden: comment.c_hidden || false,
+        hidden: comment.comment_hidden || false,
       };
     });
 
