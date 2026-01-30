@@ -216,6 +216,9 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
     threadIds: string[],
     isCommentVisible: boolean,
   ): Promise<CommentCountByThread[]> {
+    if (!threadIds.length) {
+      return [];
+    }
     const query = this.createQueryBuilder('comment')
       .select('comment.reviewThreadId', 'reviewThreadId')
       .addSelect('COUNT(*)', 'commentCount')

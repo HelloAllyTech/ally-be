@@ -58,10 +58,10 @@ export class ReviewThreadService {
         options,
       );
 
-    if (totalCount == 0) {
+    if (totalCount === 0 || reviewThreads.length === 0) {
       return {
         data: [],
-        count: 0,
+        count: totalCount,
       };
     }
 
