@@ -28,6 +28,7 @@ import { GetReviewRepliesResponseDto } from '../dto/review-replies-response.dto'
 import { UpdateReviewCommentDto } from '../dto/update-review-comment.dto';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { ToggleCommentVisibilityDto } from '../dto/toggle-comment-visibility.dto';
+import { GetReviewCommentsResponseDto } from '../dto/review-comments-response.dto';
 
 @Controller({
   path: 'reviews',
@@ -80,7 +81,7 @@ export class ReviewCommentController {
     @Param('threadId', ParseUUIDPipe) threadId: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
-  ) {
+  ): Promise<GetReviewCommentsResponseDto> {
     return this.reviewCommentService.getReviewComments(threadId, {
       limit,
       offset,
@@ -144,12 +145,16 @@ export class ReviewCommentController {
   }
 
   @ApiOperation({ description: 'Toggle comment visibility ' })
+  @ApiResponse({
+    status: 200,
+    description: 'Comment visibility updated successfully',
+  })
   @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
   @Patch('comments/:commentId/visibility')
   async toggleCommentVisibility(
     @Param('commentId', ParseUUIDPipe) commentId: string,
     @Body() toggleCommentVisibilityDto: ToggleCommentVisibilityDto,
-  ) {
+  ): Promise<SuccessResponse> {
     return this.reviewCommentService.toggleCommentVisibility(
       commentId,
       toggleCommentVisibilityDto,

@@ -18,7 +18,18 @@ export class ReviewCommentItemDto {
   @ApiProperty({ type: CreatedByDto })
   createdBy!: CreatedByDto;
 
-  reactions?: Record<string, number>;
+  @ApiProperty({
+    example: '1f44d',
+    nullable: true,
+    description: "Current user's reaction on this comment",
+  })
+  myReaction!: string | null;
+
+  @ApiProperty({
+    example: { '1f44d': 5 },
+    description: 'Reaction counts by type',
+  })
+  reactions!: Record<string, number>;
 
   @ApiProperty({ example: 8 })
   replyCount!: number;
