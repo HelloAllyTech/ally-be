@@ -14,13 +14,15 @@ export class ReviewCommentReactionRepository extends Repository<ReviewCommentRea
   ): Promise<CommentReactionCount[]> {
     if (!commentIds.length) return [];
 
-    return this.createQueryBuilder('rcr')
-      .select('rcr.reviewCommentId', 'commentId')
-      .addSelect('rcr.reaction', 'reaction')
+    return this.createQueryBuilder('reviewCommentReaction')
+      .select('reviewCommentReaction.reviewCommentId', 'commentId')
+      .addSelect('reviewCommentReaction.reaction', 'reaction')
       .addSelect('COUNT(*)', 'count')
-      .where('rcr.reviewCommentId IN (:...commentIds)', { commentIds })
-      .groupBy('rcr.reviewCommentId')
-      .addGroupBy('rcr.reaction')
+      .where('reviewCommentReaction.reviewCommentId IN (:...commentIds)', {
+        commentIds,
+      })
+      .groupBy('reviewCommentReaction.reviewCommentId')
+      .addGroupBy('reviewCommentReaction.reaction')
       .getRawMany();
   }
 

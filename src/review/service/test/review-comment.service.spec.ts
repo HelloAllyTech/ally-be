@@ -538,11 +538,11 @@ describe('ReviewCommentService', () => {
 
     it('should successfully return comments with reactions and user data', async () => {
       const mockCommentData = {
-        c_id: mockCommentId,
-        c_content: 'Test comment',
-        c_createdAt: new Date(),
-        c_createdBy: mockUserId,
-        c_hidden: false,
+        comment_id: mockCommentId,
+        comment_content: 'Test comment',
+        comment_createdAt: new Date(),
+        comment_createdBy: mockUserId,
+        comment_hidden: false,
         reply_count: '0',
       };
       const mockReaction = {
@@ -575,7 +575,7 @@ describe('ReviewCommentService', () => {
       expect(result.data).toHaveLength(1);
       expect(result.data[0]).toMatchObject({
         id: mockCommentId,
-        content: mockCommentData.c_content,
+        content: mockCommentData.comment_content,
         reactions: { like: 5 },
         myReaction: 'like',
         replyCount: 0,

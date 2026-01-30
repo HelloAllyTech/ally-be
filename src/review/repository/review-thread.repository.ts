@@ -25,11 +25,11 @@ export class ReviewThreadRepository extends Repository<ReviewThread> {
       query.andWhere(
         `EXISTS (
           SELECT 1 
-          FROM review_comments rc 
-          WHERE rc."reviewThreadId" = "reviewThread".id 
-          AND rc."parentCommentId" IS NULL 
-          AND rc."deletedAt" IS NULL
-          AND rc.hidden = false
+          FROM review_comments comment   
+          WHERE comment."reviewThreadId" = "reviewThread".id 
+          AND comment."parentCommentId" IS NULL 
+          AND comment."deletedAt" IS NULL
+          AND comment.hidden = false
         )`,
       );
     }
@@ -56,20 +56,23 @@ export class ReviewThreadRepository extends Repository<ReviewThread> {
     userId: number,
   ): Promise<ReviewCommentCount[]> {
     if (!reviewIds.length) return [];
-    return this.createQueryBuilder('rt')
-      .select(['rt.reviewId AS "reviewId"', 'COUNT(rc.id) AS "count"'])
-      .innerJoin(Review, 'review', 'review.id = rt.reviewId')
+    return this.createQueryBuilder('reviewThread')
+      .select([
+        'reviewThread.reviewId AS "reviewId"',
+        'COUNT(reviewComment.id) AS "count"',
+      ])
+      .innerJoin(Review, 'review', 'review.id = reviewThread.reviewId')
       .innerJoin(
         ReviewComment,
-        'rc',
-        `rc.reviewThreadId = rt.id AND (
-        rc.hidden = false OR 
+        'reviewComment',
+        `reviewComment.reviewThreadId = reviewThread.id AND (
+        reviewComment.hidden = false OR 
         review.createdBy = :userId
       )`,
         { userId },
       )
-      .where('rt.reviewId IN (:...reviewIds)', { reviewIds })
-      .groupBy('rt.reviewId')
+      .where('reviewThread.reviewId IN (:...reviewIds)', { reviewIds })
+      .groupBy('reviewThread.reviewId')
       .getRawMany();
   }
 }
