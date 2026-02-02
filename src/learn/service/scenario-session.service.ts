@@ -144,11 +144,12 @@ export class ScenarioSessionService {
       throw new BadRequestException('Scenario session not found');
     }
 
-    // Filter events to only include ACTIVE ones and non-termination events,
-    // then remove sensitive fields from nested events
+    // Filter events to only include those with ACTIVE session events (null when
+    // visibility is PASSIVE or event missing), then remove sensitive fields
     if ((scenarioSession as any).events) {
-      (scenarioSession as any).events = (scenarioSession as any).events.map(
-        (event: any) => {
+      (scenarioSession as any).events = (scenarioSession as any).events
+        .filter((event: any) => event.events != null)
+        .map((event: any) => {
           const sanitizedEvents = { ...event.events };
           delete sanitizedEvents.detectionData;
           delete sanitizedEvents.detectionConfig;
@@ -156,8 +157,7 @@ export class ScenarioSessionService {
           delete sanitizedEvents.description;
           delete sanitizedEvents.detectionType;
           return { ...event, events: sanitizedEvents };
-        },
-      );
+        });
     }
 
     const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
