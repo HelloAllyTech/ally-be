@@ -96,24 +96,6 @@ export class BinaryClassificationExampleDto {
   text!: string;
 }
 
-export class HelperUtteranceLengthDetectionDataDto {
-  @ApiProperty({
-    description: 'The minimum helper utterance length',
-    example: 10,
-  })
-  @IsNumber()
-  @IsNotEmpty()
-  minUtteranceLength!: number;
-
-  @ApiProperty({
-    description: 'The maximum helper utterance length',
-    example: 50,
-  })
-  @IsNumber()
-  @IsOptional()
-  maxUtteranceLength?: number;
-}
-
 export class DetectionDataDto<T> {
   @ApiProperty({ required: false })
   @IsArray()
@@ -173,13 +155,20 @@ export class DetectionDataDto<T> {
   negativeExamples?: BinaryClassificationExampleDto[];
 
   @ApiProperty({
-    required: false,
-    type: HelperUtteranceLengthDetectionDataDto,
-    description: 'Helper utterance length detection data',
+    description: 'The minimum helper utterance length',
+    example: 10,
   })
+  @IsNumber()
   @IsOptional()
-  @Type(() => HelperUtteranceLengthDetectionDataDto)
-  helperUtteranceLength?: HelperUtteranceLengthDetectionDataDto;
+  minUtteranceLength?: number;
+
+  @ApiProperty({
+    description: 'The maximum helper utterance length',
+    example: 50,
+  })
+  @IsNumber()
+  @IsOptional()
+  maxUtteranceLength?: number;
 }
 
 export class DetectionDataRequestDto extends DetectionDataDto<CombinationExpressionRequestDto> {}
@@ -321,10 +310,8 @@ export class SessionEventDto<T> {
           left: { id: 'eventId-2' },
         },
       },
-      helperUtteranceLength: {
-        minUtteranceLength: 10,
-        maxUtteranceLength: 50,
-      },
+      minUtteranceLength: 10,
+      maxUtteranceLength: 50,
     },
   })
   @ValidateNested()
