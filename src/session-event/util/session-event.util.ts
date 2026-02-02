@@ -301,3 +301,29 @@ export const validateNoCycles = async (
   };
   await checkCycle(eventId, expression, 0);
 };
+
+/**
+ * Wraps <field_name> patterns with HTML notranslate spans for Google Translate.
+ */
+export const wrapFieldPlaceholders = (
+  text: string | null | undefined,
+): string | undefined => {
+  if (!text) return undefined;
+  return text.replace(
+    /<([^>]+)>/g,
+    '<span class="notranslate">&lt;$1&gt;</span>',
+  );
+};
+
+/**
+ * Converts notranslate spans back to <field_name> format after translation.
+ */
+export const unwrapFieldPlaceholders = (
+  text: string | null | undefined,
+): string | undefined => {
+  if (!text) return undefined;
+  return text.replace(
+    /<span class="notranslate">&lt;([^&]+)&gt;<\/span>/g,
+    '<$1>',
+  );
+};

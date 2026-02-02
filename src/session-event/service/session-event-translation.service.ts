@@ -11,6 +11,10 @@ import {
 import { SessionEvents } from '../entity/session-events.entity';
 import { CreateSessionEventTranslation } from '../interface/session-events-translation.interface';
 import { DETECTION_DATA_TRANSLATABLE_PATHS } from '../constants/event.constant';
+import {
+  wrapFieldPlaceholders,
+  unwrapFieldPlaceholders,
+} from '../util/session-event.util';
 
 @Injectable()
 export class SessionEventTranslationService {
@@ -78,6 +82,7 @@ export class SessionEventTranslationService {
         await this.googleTranslationService.translateObjectToLanguages(
           metadataObj,
           codes,
+          { mimeType: 'text/html' }, // Use HTML mode to support notranslate spans in branchInstruction
         );
       return translated ?? {};
     } catch (err) {
@@ -113,7 +118,9 @@ export class SessionEventTranslationService {
         const sanitized = this.sanitizeSessionEventMetadata({
           name: rawMetadata?.name,
           message: rawMetadata?.message,
-          branchInstruction: rawMetadata?.branchInstruction,
+          branchInstruction: wrapFieldPlaceholders(
+            rawMetadata?.branchInstruction,
+          ),
           detectionData: translatable,
         });
 
@@ -158,7 +165,8 @@ export class SessionEventTranslationService {
             languageId: Number(language.id),
             name: translatedData.name ?? '',
             message: translatedData.message ?? '',
-            branchInstruction: translatedData.branchInstruction ?? '',
+            branchInstruction:
+              unwrapFieldPlaceholders(translatedData.branchInstruction) ?? '',
             detectionData: this.mergeTranslatedFields(
               passthrough,
               translatedData.detectionData as TranslatableMap,
