@@ -19,8 +19,7 @@ export const mapCreateScenarioRequestToEntity = (
     coverImageUrl: scenario.coverImageUrl,
     coverVideoUrl: scenario.coverVideoUrl,
     status: scenario.status,
-    // TODO: Will remove this optional boolean once public/private scenario feature is live
-    isPublic: scenario.isPublic || true,
+    isPublic: scenario.isPublic,
     prompt: scenario.prompt,
     isGlobal: scenario.isGlobal,
     difficultyLevel: scenario.difficultyLevel,
