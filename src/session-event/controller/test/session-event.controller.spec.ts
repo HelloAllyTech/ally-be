@@ -99,6 +99,7 @@ describe('SessionEventController', () => {
       getAllSessionEvents: jest.fn(),
       deleteSessionEvents: jest.fn(),
       translatePassiveSessionEvents: jest.fn(),
+      getUniqueTags: jest.fn(),
     };
 
     const mockPermissionsService = {
@@ -954,6 +955,97 @@ describe('SessionEventController', () => {
       expect(
         sessionEventService.translatePassiveSessionEvents,
       ).toHaveBeenCalled();
+    });
+  });
+
+  describe('getUniqueTags', () => {
+    it('should get all unique tags without search filter', async () => {
+      const mockTags = ['tag1', 'tag2', 'tag3'];
+      sessionEventService.getUniqueTags = jest.fn().mockResolvedValue(mockTags);
+
+      const result = await controller.getUniqueTags();
+
+      expect(sessionEventService.getUniqueTags).toHaveBeenCalledWith(undefined);
+      expect(result).toEqual({ data: mockTags });
+    });
+
+    it('should get unique tags with search filter', async () => {
+      const mockTags = ['important', 'important-event'];
+      const searchFilter = 'important';
+      sessionEventService.getUniqueTags = jest.fn().mockResolvedValue(mockTags);
+
+      const result = await controller.getUniqueTags(searchFilter);
+
+      expect(sessionEventService.getUniqueTags).toHaveBeenCalledWith(
+        searchFilter,
+      );
+      expect(result).toEqual({ data: mockTags });
+    });
+
+    it('should return empty array when no tags found', async () => {
+      const mockTags: string[] = [];
+      sessionEventService.getUniqueTags = jest.fn().mockResolvedValue(mockTags);
+
+      const result = await controller.getUniqueTags();
+
+      expect(sessionEventService.getUniqueTags).toHaveBeenCalledWith(undefined);
+      expect(result).toEqual({ data: [] });
+    });
+
+    it('should handle empty search string', async () => {
+      const mockTags = ['tag1', 'tag2'];
+      sessionEventService.getUniqueTags = jest.fn().mockResolvedValue(mockTags);
+
+      const result = await controller.getUniqueTags('');
+
+      expect(sessionEventService.getUniqueTags).toHaveBeenCalledWith('');
+      expect(result).toEqual({ data: mockTags });
+    });
+
+    it('should handle search with special characters', async () => {
+      const mockTags = ['test-tag'];
+      const searchFilter = 'test-tag';
+      sessionEventService.getUniqueTags = jest.fn().mockResolvedValue(mockTags);
+
+      const result = await controller.getUniqueTags(searchFilter);
+
+      expect(sessionEventService.getUniqueTags).toHaveBeenCalledWith(
+        searchFilter,
+      );
+      expect(result).toEqual({ data: mockTags });
+    });
+
+    it('should handle service error', async () => {
+      const error = new Error('Database error');
+      sessionEventService.getUniqueTags = jest.fn().mockRejectedValue(error);
+
+      await expect(controller.getUniqueTags()).rejects.toThrow(
+        'Database error',
+      );
+      expect(sessionEventService.getUniqueTags).toHaveBeenCalledWith(undefined);
+    });
+
+    it('should get tags with case-insensitive search', async () => {
+      const mockTags = ['Test', 'Testing'];
+      const searchFilter = 'test';
+      sessionEventService.getUniqueTags = jest.fn().mockResolvedValue(mockTags);
+
+      const result = await controller.getUniqueTags(searchFilter);
+
+      expect(sessionEventService.getUniqueTags).toHaveBeenCalledWith(
+        searchFilter,
+      );
+      expect(result).toEqual({ data: mockTags });
+    });
+
+    it('should return tags in alphabetical order', async () => {
+      const mockTags = ['apple', 'banana', 'cherry'];
+      sessionEventService.getUniqueTags = jest.fn().mockResolvedValue(mockTags);
+
+      const result = await controller.getUniqueTags();
+
+      expect(result).toEqual({ data: mockTags });
+      expect(result.data).toEqual(['apple', 'banana', 'cherry']);
     });
   });
 });

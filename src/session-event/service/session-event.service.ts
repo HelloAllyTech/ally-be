@@ -410,6 +410,15 @@ export class SessionEventService {
     return { success: true };
   }
 
+  /**
+   * Get all unique tags from session events
+   * @param search Optional search filter for tags
+   * @returns Array of unique tag strings
+   */
+  async getUniqueTags(search?: string): Promise<string[]> {
+    return this.sessionEventRepository.getUniqueTags(search);
+  }
+
   private async mapDbExpressionToResponse(
     expr: CombinationExpressionDto,
   ): Promise<CombinationExpressionResponseDto | undefined> {

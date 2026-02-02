@@ -158,4 +158,20 @@ export class SessionEventController {
   async translatePassiveSessionEvents(): Promise<SuccessResponse> {
     return await this.sessionEventService.translatePassiveSessionEvents();
   }
+
+  @ApiOperation({ summary: 'Get all unique tags from session events' })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Search filter for tags (case-insensitive)',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SESSION_EVENTS])
+  @Get('tags')
+  async getUniqueTags(
+    @Query('search') search?: string,
+  ): Promise<{ data: string[] }> {
+    const tags = await this.sessionEventService.getUniqueTags(search);
+    return { data: tags };
+  }
 }
