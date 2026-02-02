@@ -79,6 +79,10 @@ import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from '../constants/scenario-session
 import { TerminationEventsDto } from '../dto/termination-events.dto';
 import isDuplicateKeyException from 'src/exception/custom.exception';
 import { BRANCHING_INSTRUCTION_DYNAMIC_SHORTCUTS } from '../constants/scenario.constants';
+import {
+  wrapFieldPlaceholders,
+  unwrapFieldPlaceholders,
+} from 'src/session-event/util/session-event.util';
 
 @Injectable()
 export class ScenarioService {
@@ -1268,6 +1272,7 @@ export class ScenarioService {
         await this.googleTranslationsService.translateObjectToLanguages(
           metadataObj,
           codes,
+          { mimeType: 'text/html' },
         );
 
       // Expect translated to be a map { langCode: { tone: '...', ... } }
@@ -1451,7 +1456,9 @@ export class ScenarioService {
       const rawMetadata = metadataExtractor(scenarioEvent);
       const sanitized = this.sanitizeMetadata({
         message: rawMetadata?.message,
-        branchInstruction: rawMetadata?.branchInstruction,
+        branchInstruction: wrapFieldPlaceholders(
+          rawMetadata?.branchInstruction,
+        ),
       });
 
       if (!sanitized || Object.keys(sanitized).length === 0) {
@@ -1494,7 +1501,8 @@ export class ScenarioService {
           eventId: scenarioEvent.eventId,
           languageId: Number(language.id),
           message: translatedData.message ?? '',
-          branchInstruction: translatedData.branchInstruction ?? '',
+          branchInstruction:
+            unwrapFieldPlaceholders(translatedData.branchInstruction) ?? '',
         });
 
         if (!translatedList.length) {

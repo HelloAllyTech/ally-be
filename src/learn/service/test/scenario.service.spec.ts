@@ -4053,7 +4053,7 @@ describe('ScenarioService', () => {
 
       expect(
         mockGoogleTranslationsService.translateObjectToLanguages,
-      ).toHaveBeenCalledWith(metadata, ['en', 'es']);
+      ).toHaveBeenCalledWith(metadata, ['en', 'es'], { mimeType: 'text/html' });
       expect(result).toEqual({
         en: { ...metadata, translated: true },
         es: { ...metadata, translated: true },
@@ -4103,6 +4103,7 @@ describe('ScenarioService', () => {
       ).toHaveBeenCalledWith(
         metadata,
         ['en', 'es'], // Only valid, trimmed codes should be passed
+        { mimeType: 'text/html' },
       );
     });
 
