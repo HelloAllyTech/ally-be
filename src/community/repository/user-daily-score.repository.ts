@@ -148,6 +148,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       LEFT JOIN (
         SELECT "userId", COUNT(*) as badge_count
         FROM badge_users
+        WHERE badge_users."deletedAt" IS NULL
         GROUP BY "userId"
       ) bu ON bu."userId" = rs."userId"
       ORDER BY rs.rank ASC
@@ -227,6 +228,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       LEFT JOIN (
         SELECT "userId", COUNT(*) as badge_count
         FROM badge_users
+        WHERE badge_users."deletedAt" IS NULL
         GROUP BY "userId"
       ) bu ON bu."userId" = rs."userId"
       WHERE rs."userId" = $4
