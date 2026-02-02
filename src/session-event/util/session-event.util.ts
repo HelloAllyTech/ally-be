@@ -92,7 +92,8 @@ export const mapRequestToDbDetectionDataByType = (
       };
     case SessionEventDetectionType.HELPER_UTTERANCE_LENGTH:
       return {
-        helperUtteranceLength: eventDetectiondata.helperUtteranceLength,
+        minUtteranceLength: eventDetectiondata.minUtteranceLength,
+        maxUtteranceLength: eventDetectiondata.maxUtteranceLength,
       };
     default:
       return undefined;
