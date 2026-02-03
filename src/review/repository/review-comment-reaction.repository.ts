@@ -70,15 +70,15 @@ export class ReviewCommentReactionRepository extends Repository<ReviewCommentRea
       .innerJoin(Review, 'r', 'r.id = rt.reviewId')
       .where('rc.createdBy != rcr.createdBy')
       .andWhere('r.createdBy != rc.createdBy') // only count reactions on comments that are on others' sessions
-      .select('rc.createdBy', 'userId')
+      .select('r.createdBy', 'userId')
       .addSelect('COUNT(rcr.id)', 'count')
-      .groupBy('rc.createdBy');
+      .groupBy('r.createdBy');
 
     if (userIds) {
-      query.andWhere('rc.createdBy IN (:...userIds)', { userIds });
+      query.andWhere('r.createdBy IN (:...userIds)', { userIds });
     }
     if (tenantIds) {
-      query.andWhere('rc.tenantId IN (:...tenantIds)', { tenantIds });
+      query.andWhere('r.tenantId IN (:...tenantIds)', { tenantIds });
     }
 
     return query.getRawMany();
