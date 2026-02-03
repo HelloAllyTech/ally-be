@@ -126,39 +126,6 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
     return query.getRawMany();
   }
 
-  async getGivenRepliesCountAsReviewOwner(
-    tenantIds?: string[],
-    userIds?: number[],
-  ): Promise<{ userId: number; count: number }[]> {
-    if (!tenantIds?.length && !userIds?.length) {
-      return [];
-    }
-
-    const query = this.createQueryBuilder('reply')
-      .innerJoin(
-        ReviewComment,
-        'parentComment',
-        'parentComment.id = reply.parentCommentId',
-      )
-      .innerJoin(ReviewThread, 'rt', 'rt.id = reply.reviewThreadId')
-      .innerJoin(Review, 'r', 'r.id = rt.reviewId')
-      .where('reply.parentCommentId IS NOT NULL')
-      .andWhere('parentComment.createdBy != reply.createdBy') // I'm replying to someone else
-      .andWhere('reply.createdBy = r.createdBy') // I AM the review owner (the gap)
-      .select('reply.createdBy', 'userId')
-      .addSelect('COUNT(reply.id)', 'count')
-      .groupBy('reply.createdBy');
-
-    if (userIds) {
-      query.andWhere('reply.createdBy IN (:...userIds)', { userIds });
-    }
-    if (tenantIds) {
-      query.andWhere('r.tenantId IN (:...tenantIds)', { tenantIds });
-    }
-
-    return query.getRawMany();
-  }
-
   async getReceivedCommentsCountPerUser(
     tenantIds?: string[],
     userIds?: number[],
@@ -177,39 +144,6 @@ export class ReviewCommentRepository extends Repository<ReviewComment> {
 
     if (userIds) {
       query.andWhere('r.createdBy IN (:...userIds)', { userIds });
-    }
-    if (tenantIds) {
-      query.andWhere('r.tenantId IN (:...tenantIds)', { tenantIds });
-    }
-
-    return query.getRawMany();
-  }
-
-  async getReceivedRepliesCountAsCommenter(
-    tenantIds?: string[],
-    userIds?: number[],
-  ): Promise<{ userId: number; count: number }[]> {
-    if (!tenantIds?.length && !userIds?.length) {
-      return [];
-    }
-
-    const query = this.createQueryBuilder('reply')
-      .innerJoin(
-        ReviewComment,
-        'parentComment',
-        'parentComment.id = reply.parentCommentId',
-      )
-      .innerJoin(ReviewThread, 'rt', 'rt.id = reply.reviewThreadId')
-      .innerJoin(Review, 'r', 'r.id = rt.reviewId')
-      .where('reply.parentCommentId IS NOT NULL')
-      .andWhere('parentComment.createdBy != reply.createdBy')
-      .andWhere('parentComment.createdBy != r.createdBy') // Avoid double counting with getReceivedCommentsCountPerUser
-      .select('parentComment.createdBy', 'userId')
-      .addSelect('COUNT(reply.id)', 'count')
-      .groupBy('parentComment.createdBy');
-
-    if (userIds) {
-      query.andWhere('parentComment.createdBy IN (:...userIds)', { userIds });
     }
     if (tenantIds) {
       query.andWhere('r.tenantId IN (:...tenantIds)', { tenantIds });
