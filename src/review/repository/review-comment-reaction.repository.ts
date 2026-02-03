@@ -40,8 +40,7 @@ export class ReviewCommentReactionRepository extends Repository<ReviewCommentRea
       .innerJoin(ReviewComment, 'rc', 'rc.id = rcr.reviewCommentId')
       .innerJoin(ReviewThread, 'rt', 'rt.id = rc.reviewThreadId')
       .innerJoin(Review, 'r', 'r.id = rt.reviewId')
-      .where('rc.createdBy != rcr.createdBy')
-      .andWhere('r.createdBy != rcr.createdBy') // only count reactions on others' sessions
+      .where('r.createdBy != rcr.createdBy') // only count reactions on others' sessions
       .select('rcr.createdBy', 'userId')
       .addSelect('COUNT(rcr.id)', 'count')
       .groupBy('rcr.createdBy');
@@ -68,8 +67,6 @@ export class ReviewCommentReactionRepository extends Repository<ReviewCommentRea
       .innerJoin(ReviewComment, 'rc', 'rc.id = rcr.reviewCommentId')
       .innerJoin(ReviewThread, 'rt', 'rt.id = rc.reviewThreadId')
       .innerJoin(Review, 'r', 'r.id = rt.reviewId')
-      .where('rc.createdBy != rcr.createdBy')
-      .andWhere('r.createdBy != rc.createdBy') // only count reactions on comments that are on others' sessions
       .select('r.createdBy', 'userId')
       .addSelect('COUNT(rcr.id)', 'count')
       .groupBy('r.createdBy');
