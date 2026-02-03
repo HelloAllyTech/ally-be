@@ -59,6 +59,7 @@ export class BadgeRepository extends Repository<Badge> {
   async getUserBadges(
     userId: number,
     viewedStatus?: BadgeViewedStatus,
+    enableGroupFilter?: boolean,
   ): Promise<UserBadgeWithDetails[]> {
     const query = this.dataSource
       .createQueryBuilder(BadgeUser, 'badgeUser')
@@ -81,6 +82,17 @@ export class BadgeRepository extends Repository<Badge> {
       .andWhere('badgeUser.deletedAt IS NULL')
       .andWhere('badge.deletedAt IS NULL')
       .andWhere('badge.status = :status', { status: BadgeStatus.ACTIVE });
+
+    if (enableGroupFilter) {
+      query
+        .leftJoin(BadgeGroup, 'badgeGroup', 'badgeGroup.badgeId = badge.id')
+        .innerJoin(
+          UserGroup,
+          'userGroup',
+          'userGroup.groupId = badgeGroup.groupId',
+        )
+        .andWhere('userGroup.userId = :userId', { userId });
+    }
 
     if (viewedStatus) {
       query.andWhere('badgeUser.viewedStatus = :viewedStatus', {
@@ -124,7 +136,14 @@ export class BadgeRepository extends Repository<Badge> {
     const query = this.dataSource
       .createQueryBuilder(BadgeUser, 'badgeUser')
       .innerJoin(Badge, 'badge', 'badge.id = badgeUser.badgeId')
+      .innerJoin(BadgeGroup, 'badgeGroup', 'badgeGroup.badgeId = badge.id')
+      .innerJoin(
+        UserGroup,
+        'userGroup',
+        'userGroup.groupId = badgeGroup.groupId',
+      )
       .where('badgeUser.userId = :userId', { userId })
+      .andWhere('userGroup.userId = :userId', { userId })
       .andWhere('badgeUser.deletedAt IS NULL')
       .andWhere('badge.deletedAt IS NULL')
       .andWhere('badge.status = :status', { status: BadgeStatus.ACTIVE });

@@ -327,10 +327,12 @@ export class BadgeService {
   async getUserBadges(
     userId: number,
     viewedStatus?: BadgeViewedStatus,
+    enableGroupFilter: boolean = false,
   ): Promise<UserBadgeResponse> {
     const badges = await this.badgeRepository.getUserBadges(
       userId,
       viewedStatus,
+      enableGroupFilter,
     );
     return {
       data: badges,

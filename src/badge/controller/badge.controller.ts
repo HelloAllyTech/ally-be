@@ -103,7 +103,7 @@ export class BadgeController {
     @CurrentUser() tokenUser: TokenUser,
     @Query('viewedStatus') viewedStatus?: BadgeViewedStatus,
   ): Promise<UserBadgeResponseDto> {
-    return this.badgeService.getUserBadges(tokenUser.id, viewedStatus);
+    return this.badgeService.getUserBadges(tokenUser.id, viewedStatus, true);
   }
 
   @ApiOperation({ summary: 'Get count of badges awarded to the current user' })

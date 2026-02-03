@@ -69,32 +69,6 @@ export class BadgeTenantService {
     return true;
   }
 
-  async addPublicBadgesToTenant(tenantId: string): Promise<boolean> {
-    const tenant = await this.tenantsRepository.findOne({
-      where: { id: tenantId },
-    });
-    if (!tenant) {
-      throw new NotFoundException('Tenant not found');
-    }
-    const publicBadges = await this.badgeRepository.find({
-      where: {
-        visibilityType: BadgeVisibilityType.PUBLIC,
-        status: BadgeStatus.ACTIVE,
-      },
-    });
-    if (publicBadges.length === 0) {
-      throw new NotFoundException('No public badges found');
-    }
-    await this.badgeTenantRepository.save(
-      publicBadges.map((badge) => ({
-        badgeId: badge.id,
-        tenantId: tenant.id,
-      })),
-    );
-
-    return true;
-  }
-
   async assignBadgeToTenants(
     badge: Badge,
     tenantIds?: string[],
