@@ -45,10 +45,10 @@ export class BadgeEventConsumer {
   @OnEvent(ReviewEvents.REVIEW_COMMENT_REACTION_ADDED, { async: true })
   async handleAddReviewCommentReaction({
     reaction,
-    comment,
+    review,
   }: ReviewCommentReactionAddedEventParams) {
     await this.badgeAwardService.awardCommentReactionBadgeByReceiverGiverId(
-      comment.createdBy,
+      review.createdBy,
       reaction.createdBy,
     );
   }
@@ -66,11 +66,11 @@ export class BadgeEventConsumer {
 
   @OnEvent(ReviewEvents.REVIEW_COMMENT_REACTION_REMOVED, { async: true })
   async handleRemoveReviewCommentReaction({
-    comment,
     removedReaction,
+    review,
   }: ReviewCommentReactionRemovedEventParams) {
     await this.badgeAwardService.revokeInvalidReactionBadgesByReceiverGiverId(
-      comment.createdBy,
+      review.createdBy,
       removedReaction.createdBy,
     );
   }

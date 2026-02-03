@@ -104,6 +104,7 @@ export class ReviewCommentReactionService {
       this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_REACTION_ADDED, {
         comment,
         reaction: reviewCommentReaction,
+        review,
       } as ReviewCommentReactionAddedEventParams);
 
       return {
@@ -136,6 +137,7 @@ export class ReviewCommentReactionService {
       this.eventEmitter.emit(ReviewEvents.REVIEW_COMMENT_REACTION_REMOVED, {
         comment,
         removedReaction: reviewReaction,
+        review,
       } as ReviewCommentReactionRemovedEventParams);
 
       return { success: true };

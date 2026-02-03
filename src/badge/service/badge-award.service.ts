@@ -156,10 +156,10 @@ export class BadgeAwardService {
         try {
           await this.badgeUserService.deleteUserBadges(
             receiverId,
-            invalidBadges.map((badge) => badge.id),
+            invalidBadges.map((badge) => badge.badgeId),
           );
           this.logger.log(
-            `Revoked ${invalidBadges.length} badge(s) from receiver userId=${receiverId}`,
+            `Revoked ${invalidBadges.length} badge(s) from receiver userId=${receiverId} badgeIds=[${invalidBadges.map((b) => b.id).join(', ')}] (required counts were ${invalidBadges.map((b) => b.achievementParams?.count).join(', ')}, current receivedCount=${receivedCommentsReactionsCount})`,
           );
         } catch (error) {
           this.logger.error(
@@ -193,10 +193,10 @@ export class BadgeAwardService {
         try {
           await this.badgeUserService.deleteUserBadges(
             giverId,
-            invalidBadges.map((badge) => badge.id),
+            invalidBadges.map((badge) => badge.badgeId),
           );
           this.logger.log(
-            `Revoked ${invalidBadges.length} badge(s) from giver userId=${giverId}`,
+            `Revoked ${invalidBadges.length} badge(s) from giver userId=${giverId} badgeIds=[${invalidBadges.map((b) => b.id).join(', ')}] (required counts were ${invalidBadges.map((b) => b.achievementParams?.count).join(', ')}, current givenCount=${giverCommentsReactionsCount})`,
           );
         } catch (error) {
           this.logger.error(
