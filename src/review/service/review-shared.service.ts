@@ -67,31 +67,11 @@ export class ReviewSharedService {
     );
   }
 
-  async getGivenRepliesCountAsReviewOwner(
-    tenantIds?: string[],
-    userIds?: number[],
-  ): Promise<{ userId: number; count: number }[]> {
-    return this.reviewCommentRepository.getGivenRepliesCountAsReviewOwner(
-      tenantIds,
-      userIds,
-    );
-  }
-
   async getReceivedCommentsCountPerUser(
     tenantIds?: string[],
     userIds?: number[],
   ): Promise<{ userId: number; count: number }[]> {
     return this.reviewCommentRepository.getReceivedCommentsCountPerUser(
-      tenantIds,
-      userIds,
-    );
-  }
-
-  async getReceivedRepliesCountAsCommenter(
-    tenantIds?: string[],
-    userIds?: number[],
-  ): Promise<{ userId: number; count: number }[]> {
-    return this.reviewCommentRepository.getReceivedRepliesCountAsCommenter(
       tenantIds,
       userIds,
     );

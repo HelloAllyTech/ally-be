@@ -158,29 +158,23 @@ export class BadgeUserService {
     tenantIds?: string[],
     userIds?: number[],
   ): Promise<{ userId: number; count: number }[]> {
-    const [
-      givenComments,
-      givenReplies,
-      givenReviewReactions,
-      givenCommentReactions,
-    ] = await Promise.all([
-      this.reviewSharedService.getGivenCommentsCountPerUser(tenantIds, userIds),
-      this.reviewSharedService.getGivenRepliesCountAsReviewOwner(
-        tenantIds,
-        userIds,
-      ),
-      this.reviewSharedService.getGivenReviewReactionsCountPerUser(
-        tenantIds,
-        userIds,
-      ),
-      this.reviewSharedService.getGivenCommentsReactionsCountPerUser(
-        tenantIds,
-        userIds,
-      ),
-    ]);
+    const [givenComments, givenReviewReactions, givenCommentReactions] =
+      await Promise.all([
+        this.reviewSharedService.getGivenCommentsCountPerUser(
+          tenantIds,
+          userIds,
+        ),
+        this.reviewSharedService.getGivenReviewReactionsCountPerUser(
+          tenantIds,
+          userIds,
+        ),
+        this.reviewSharedService.getGivenCommentsReactionsCountPerUser(
+          tenantIds,
+          userIds,
+        ),
+      ]);
     return this.mergeCountsByUserId([
       ...givenComments,
-      ...givenReplies,
       ...givenReviewReactions,
       ...givenCommentReactions,
     ]);
@@ -192,15 +186,10 @@ export class BadgeUserService {
   ): Promise<{ userId: number; count: number }[]> {
     const [
       receivedComments,
-      receivedReplies,
       receivedReviewReactions,
       receivedCommentReactions,
     ] = await Promise.all([
       this.reviewSharedService.getReceivedCommentsCountPerUser(
-        tenantIds,
-        userIds,
-      ),
-      this.reviewSharedService.getReceivedRepliesCountAsCommenter(
         tenantIds,
         userIds,
       ),
@@ -215,7 +204,6 @@ export class BadgeUserService {
     ]);
     return this.mergeCountsByUserId([
       ...receivedComments,
-      ...receivedReplies,
       ...receivedReviewReactions,
       ...receivedCommentReactions,
     ]);

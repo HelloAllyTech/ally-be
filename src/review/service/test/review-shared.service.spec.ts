@@ -411,67 +411,6 @@ describe('ReviewSharedService', () => {
     });
   });
 
-  describe('getGivenRepliesCountAsReviewOwner', () => {
-    it('should return count data when tenantIds are provided', async () => {
-      reviewCommentRepository.getGivenRepliesCountAsReviewOwner.mockResolvedValue(
-        mockCountResult,
-      );
-
-      const result =
-        await service.getGivenRepliesCountAsReviewOwner(mockTenantIds);
-
-      expect(result).toEqual(mockCountResult);
-      expect(
-        reviewCommentRepository.getGivenRepliesCountAsReviewOwner,
-      ).toHaveBeenCalledWith(mockTenantIds, undefined);
-    });
-
-    it('should return count data when userIds are provided', async () => {
-      reviewCommentRepository.getGivenRepliesCountAsReviewOwner.mockResolvedValue(
-        mockCountResult,
-      );
-
-      const result = await service.getGivenRepliesCountAsReviewOwner(
-        undefined,
-        mockUserIds,
-      );
-
-      expect(result).toEqual(mockCountResult);
-      expect(
-        reviewCommentRepository.getGivenRepliesCountAsReviewOwner,
-      ).toHaveBeenCalledWith(undefined, mockUserIds);
-    });
-
-    it('should return count data when both tenantIds and userIds are provided', async () => {
-      reviewCommentRepository.getGivenRepliesCountAsReviewOwner.mockResolvedValue(
-        mockCountResult,
-      );
-
-      const result = await service.getGivenRepliesCountAsReviewOwner(
-        mockTenantIds,
-        mockUserIds,
-      );
-
-      expect(result).toEqual(mockCountResult);
-      expect(
-        reviewCommentRepository.getGivenRepliesCountAsReviewOwner,
-      ).toHaveBeenCalledWith(mockTenantIds, mockUserIds);
-    });
-
-    it('should return empty array when no parameters are provided', async () => {
-      reviewCommentRepository.getGivenRepliesCountAsReviewOwner.mockResolvedValue(
-        [],
-      );
-
-      const result = await service.getGivenRepliesCountAsReviewOwner();
-
-      expect(result).toEqual([]);
-      expect(
-        reviewCommentRepository.getGivenRepliesCountAsReviewOwner,
-      ).toHaveBeenCalledWith(undefined, undefined);
-    });
-  });
-
   describe('getReceivedCommentsCountPerUser', () => {
     it('should return count data when tenantIds are provided', async () => {
       reviewCommentRepository.getReceivedCommentsCountPerUser.mockResolvedValue(
@@ -529,67 +468,6 @@ describe('ReviewSharedService', () => {
       expect(result).toEqual([]);
       expect(
         reviewCommentRepository.getReceivedCommentsCountPerUser,
-      ).toHaveBeenCalledWith(undefined, undefined);
-    });
-  });
-
-  describe('getReceivedRepliesCountAsCommenter', () => {
-    it('should return count data when tenantIds are provided', async () => {
-      reviewCommentRepository.getReceivedRepliesCountAsCommenter.mockResolvedValue(
-        mockCountResult,
-      );
-
-      const result =
-        await service.getReceivedRepliesCountAsCommenter(mockTenantIds);
-
-      expect(result).toEqual(mockCountResult);
-      expect(
-        reviewCommentRepository.getReceivedRepliesCountAsCommenter,
-      ).toHaveBeenCalledWith(mockTenantIds, undefined);
-    });
-
-    it('should return count data when userIds are provided', async () => {
-      reviewCommentRepository.getReceivedRepliesCountAsCommenter.mockResolvedValue(
-        mockCountResult,
-      );
-
-      const result = await service.getReceivedRepliesCountAsCommenter(
-        undefined,
-        mockUserIds,
-      );
-
-      expect(result).toEqual(mockCountResult);
-      expect(
-        reviewCommentRepository.getReceivedRepliesCountAsCommenter,
-      ).toHaveBeenCalledWith(undefined, mockUserIds);
-    });
-
-    it('should return count data when both tenantIds and userIds are provided', async () => {
-      reviewCommentRepository.getReceivedRepliesCountAsCommenter.mockResolvedValue(
-        mockCountResult,
-      );
-
-      const result = await service.getReceivedRepliesCountAsCommenter(
-        mockTenantIds,
-        mockUserIds,
-      );
-
-      expect(result).toEqual(mockCountResult);
-      expect(
-        reviewCommentRepository.getReceivedRepliesCountAsCommenter,
-      ).toHaveBeenCalledWith(mockTenantIds, mockUserIds);
-    });
-
-    it('should return empty array when no parameters are provided', async () => {
-      reviewCommentRepository.getReceivedRepliesCountAsCommenter.mockResolvedValue(
-        [],
-      );
-
-      const result = await service.getReceivedRepliesCountAsCommenter();
-
-      expect(result).toEqual([]);
-      expect(
-        reviewCommentRepository.getReceivedRepliesCountAsCommenter,
       ).toHaveBeenCalledWith(undefined, undefined);
     });
   });
