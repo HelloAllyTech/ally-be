@@ -66,7 +66,7 @@ export class BadgeAwardService {
         try {
           await this.badgeUserService.saveBadgeUsers(badgeToAward);
           this.logger.log(
-            `Awarded ${badgeToAward.length} badge(s) to receiver userId=${receiverId}`,
+            `Awarded ${badgeToAward.length} badge(s) to receiver userId=${receiverId} badgeIds=[${badgeToAward.map((b) => b.badgeId).join(', ')}] (receivedCount=${receivedCommentsReactionsCount})`,
           );
         } catch (error) {
           this.logger.error(
@@ -102,7 +102,7 @@ export class BadgeAwardService {
         try {
           await this.badgeUserService.saveBadgeUsers(badgeToAward);
           this.logger.log(
-            `Awarded ${badgeToAward.length} badge(s) to giver userId=${giverId}`,
+            `Awarded ${badgeToAward.length} badge(s) to giver userId=${giverId} badgeIds=[${badgeToAward.map((b) => b.badgeId).join(', ')}] (givenCount=${givenCommentsReactionsCount})`,
           );
         } catch (error) {
           this.logger.error(
@@ -159,7 +159,7 @@ export class BadgeAwardService {
             invalidBadges.map((badge) => badge.badgeId),
           );
           this.logger.log(
-            `Revoked ${invalidBadges.length} badge(s) from receiver userId=${receiverId} badgeIds=[${invalidBadges.map((b) => b.id).join(', ')}] (required counts were ${invalidBadges.map((b) => b.achievementParams?.count).join(', ')}, current receivedCount=${receivedCommentsReactionsCount})`,
+            `Revoked ${invalidBadges.length} badge(s) from receiver userId=${receiverId} badgeIds=[${invalidBadges.map((b) => b.badgeId).join(', ')}] (required counts were ${invalidBadges.map((b) => b.achievementParams?.count).join(', ')}, current receivedCount=${receivedCommentsReactionsCount})`,
           );
         } catch (error) {
           this.logger.error(
@@ -196,7 +196,7 @@ export class BadgeAwardService {
             invalidBadges.map((badge) => badge.badgeId),
           );
           this.logger.log(
-            `Revoked ${invalidBadges.length} badge(s) from giver userId=${giverId} badgeIds=[${invalidBadges.map((b) => b.id).join(', ')}] (required counts were ${invalidBadges.map((b) => b.achievementParams?.count).join(', ')}, current givenCount=${giverCommentsReactionsCount})`,
+            `Revoked ${invalidBadges.length} badge(s) from giver userId=${giverId} badgeIds=[${invalidBadges.map((b) => b.badgeId).join(', ')}] (required counts were ${invalidBadges.map((b) => b.achievementParams?.count).join(', ')}, current givenCount=${giverCommentsReactionsCount})`,
           );
         } catch (error) {
           this.logger.error(
