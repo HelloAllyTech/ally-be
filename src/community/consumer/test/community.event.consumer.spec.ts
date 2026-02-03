@@ -468,6 +468,7 @@ describe('CommunityEventConsumer', () => {
           createdBy: mockUserId,
           tenantId: mockTenantId,
         } as any,
+        review: { createdBy: mockReviewOwnerId } as any,
       };
 
       await consumer.handleReviewCommentReactionAdded(params);
@@ -486,6 +487,7 @@ describe('CommunityEventConsumer', () => {
           createdBy: mockUserId,
           tenantId: mockTenantId,
         } as any,
+        review: { createdBy: mockReviewOwnerId } as any,
       };
 
       await consumer.handleReviewCommentReactionAdded(params);
@@ -506,6 +508,7 @@ describe('CommunityEventConsumer', () => {
           createdBy: mockUserId,
           tenantId: mockTenantId,
         } as any,
+        review: { createdBy: mockReviewOwnerId } as any,
       };
 
       await expect(
@@ -522,6 +525,7 @@ describe('CommunityEventConsumer', () => {
           createdBy: mockUserId,
           tenantId: mockTenantId,
         } as any,
+        review: { createdBy: mockReviewOwnerId } as any,
       };
 
       await consumer.handleReviewCommentReactionRemoved(params);
@@ -540,6 +544,7 @@ describe('CommunityEventConsumer', () => {
           createdBy: mockUserId,
           tenantId: mockTenantId,
         } as any,
+        review: { createdBy: mockReviewOwnerId } as any,
       };
 
       await consumer.handleReviewCommentReactionRemoved(params);
@@ -560,6 +565,7 @@ describe('CommunityEventConsumer', () => {
           createdBy: mockUserId,
           tenantId: mockTenantId,
         } as any,
+        review: { createdBy: mockReviewOwnerId } as any,
       };
 
       await expect(
