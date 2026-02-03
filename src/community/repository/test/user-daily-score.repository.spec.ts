@@ -182,8 +182,8 @@ describe('UserDailyScoreRepository', () => {
         expect.arrayContaining([
           mockUserId,
           mockTenantId,
-          expect.any(String),
-          0.5,
+          expect.any(Date),
+          -0.5,
         ]),
       );
     });
@@ -234,15 +234,14 @@ describe('UserDailyScoreRepository', () => {
       ).rejects.toThrow('Database connection failed');
     });
 
-    it('should use negative score in INSERT for new rows', async () => {
+    it('should pass negative amount as parameter for decrementing', async () => {
       mockQuery.mockResolvedValue(undefined);
 
       await repository.decrementTotalScore(mockUserId, mockTenantId, 0.5);
 
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('-$4'),
-        expect.any(Array),
-      );
+      const queryCall = mockQuery.mock.calls[0];
+      const amount = queryCall[1][3];
+      expect(amount).toBe(-0.5);
     });
   });
 

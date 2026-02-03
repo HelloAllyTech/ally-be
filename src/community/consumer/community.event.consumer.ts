@@ -48,6 +48,9 @@ export class CommunityEventConsumer {
         reaction.tenantId,
         scorePoints.REACTION,
       );
+      this.logger.info(
+        `Incremented reaction score for user ${reaction.createdBy} for review ${review.id}`,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to increment reaction score for user ${reaction.createdBy}: ${error.message}`,
@@ -70,6 +73,9 @@ export class CommunityEventConsumer {
         removedReaction.tenantId,
         scorePoints.REACTION,
       );
+      this.logger.info(
+        `Decremented reaction score for user ${removedReaction.createdBy} for review ${review.id}`,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to decrement reaction score for user ${removedReaction.createdBy}: ${error.message}`,
@@ -91,6 +97,9 @@ export class CommunityEventConsumer {
         comment.createdBy,
         comment.tenantId,
         scorePoints.COMMENT,
+      );
+      this.logger.info(
+        `Incremented comment score for user ${comment.createdBy} for review ${review.id}`,
       );
     } catch (error) {
       this.logger.error(
@@ -155,6 +164,9 @@ export class CommunityEventConsumer {
           }
         },
       );
+      this.logger.info(
+        `Decremented comment score for user ${comment.createdBy} for review ${review.id}`,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to decrement comment score for user ${comment.createdBy}: ${error.message}`,
@@ -177,6 +189,9 @@ export class CommunityEventConsumer {
         reaction.tenantId,
         scorePoints.REACTION,
       );
+      this.logger.info(
+        `Incremented comment reaction score for user ${reaction.createdBy} for review ${comment.id}`,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to increment comment reaction score for user ${reaction.createdBy}: ${error.message}`,
@@ -198,6 +213,9 @@ export class CommunityEventConsumer {
         removedReaction.createdBy,
         removedReaction.tenantId,
         scorePoints.REACTION,
+      );
+      this.logger.info(
+        `Decremented comment reaction score for user ${removedReaction.createdBy} for review ${comment.id}`,
       );
     } catch (error) {
       this.logger.error(
@@ -234,6 +252,7 @@ export class CommunityEventConsumer {
         userId,
         userDateEntryBeforeUpdation,
       } as MinutesPlayedUpdatedEventParams);
+      this.logger.info(`Upserted minutes played score for user ${userId}`);
     } catch (error) {
       this.logger.error(
         `Failed to add minutes played for user ${userId}: ${error.message}`,
