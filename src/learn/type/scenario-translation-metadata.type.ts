@@ -9,3 +9,14 @@ export type MetadataShape = {
   genderIdentity?: string;
   customFields?: { name: string; value: string }[];
 };
+
+export type TranslationConsiderableData = {
+  currentLocation: string;
+  lifeHistory: string;
+  personality: string;
+  coreMemories: string;
+  profession: string;
+  context: string;
+  age: string;
+  gender: string;
+};

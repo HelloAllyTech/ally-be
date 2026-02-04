@@ -286,4 +286,14 @@ export class AppConfigService {
       ),
     };
   }
+
+  get openai() {
+    return {
+      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
+      translationModel: this.configService.get<string>(
+        'OPENAI_TRANSLATION_MODEL',
+        'gpt-4o-mini',
+      ),
+    };
+  }
 }
