@@ -49,6 +49,7 @@ describe('CallDetailsService', () => {
     updatedAt: new Date(),
     tenantId: 'test-tenant',
     externalId: undefined,
+    archivedAt: undefined,
   };
 
   const mockCallDetails: CallDetails = {

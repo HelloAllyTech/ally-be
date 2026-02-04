@@ -467,14 +467,12 @@ describe('ChatRepository', () => {
       const mockChats = [{ id: 1 }, { id: 2 }];
       mockQueryBuilder.getManyAndCount.mockResolvedValue([mockChats, 2]);
 
-      const result = await repository.getCallLogsQuery(
-        mockUserId,
-        mockTenantId,
-        {
-          limit: 10,
-          offset: 5,
-        },
-      );
+      const result = await repository.getCallLogsQuery({
+        counselorId: mockUserId,
+        tenantId: mockTenantId,
+        limit: 10,
+        offset: 5,
+      });
 
       expect(createQueryBuilderSpy).toHaveBeenCalledWith('chat');
       expect(mockQueryBuilder.leftJoinAndMapOne).toHaveBeenCalledTimes(2);
@@ -498,7 +496,9 @@ describe('ChatRepository', () => {
     it('should apply sorting when sortBy is provided', async () => {
       mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
 
-      await repository.getCallLogsQuery(mockUserId, mockTenantId, {
+      await repository.getCallLogsQuery({
+        counselorId: mockUserId,
+        tenantId: mockTenantId,
         sortBy: 'callDuration',
         order: 'DESC',
       });
@@ -512,7 +512,10 @@ describe('ChatRepository', () => {
     it('should not apply limit/offset when not provided', async () => {
       mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
 
-      await repository.getCallLogsQuery(mockUserId, mockTenantId, {});
+      await repository.getCallLogsQuery({
+        counselorId: mockUserId,
+        tenantId: mockTenantId,
+      });
 
       expect(mockQueryBuilder.limit).not.toHaveBeenCalled();
       expect(mockQueryBuilder.offset).not.toHaveBeenCalled();

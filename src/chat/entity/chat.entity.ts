@@ -46,6 +46,9 @@ export class Chat extends BaseEntity {
   @Column({ default: ChatSummaryStatus.PENDING })
   summaryStatus!: ChatSummaryStatus;
 
+  @Column({ type: 'timestamp', nullable: true })
+  archivedAt?: Date;
+
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
 
