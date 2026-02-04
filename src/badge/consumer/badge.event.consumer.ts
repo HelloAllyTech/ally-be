@@ -15,6 +15,10 @@ import {
   LeaderboardActionEvent,
   MinutesPlayedUpdatedEventParams,
 } from 'src/learn/type/scenario-session-leaderboard-event.type';
+import {
+  AuthorizationEvents,
+  UserRoleAssignedEventParams,
+} from 'src/authorization/type/authorization-event.type';
 
 @Injectable()
 export class BadgeEventConsumer {
@@ -97,5 +101,18 @@ export class BadgeEventConsumer {
     // so no new badges calculation should be done to optimize queries.
     if (userDateEntryBeforeUpdation?.id) return;
     await this.badgeAwardService.awardActiveDayStreakBadgeByUserId(userId);
+  }
+
+  @OnEvent(AuthorizationEvents.USER_ROLE_ASSIGNED, { async: true })
+  async handleUserRoleAssigned({
+    userId,
+    groupId,
+    tenantId,
+  }: UserRoleAssignedEventParams) {
+    await this.badgeAwardService.awardBadgesForUserRole(
+      userId,
+      groupId,
+      tenantId,
+    );
   }
 }
