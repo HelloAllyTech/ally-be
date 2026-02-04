@@ -17,7 +17,9 @@ describe('SettingsController', () => {
 
   const mockService: jest.Mocked<SettingsService> = {
     getSummaryFieldsConfig: jest.fn(),
+    getSummarySectionsConfig: jest.fn(),
     updateSummaryFields: jest.fn(),
+    updateSummarySections: jest.fn(),
     getNudgeStatus: jest.fn(),
     updateNudgeStatus: jest.fn(),
     getChatTypes: jest.fn(),
@@ -109,16 +111,7 @@ describe('SettingsController', () => {
         hiddenFields: ['callId', 'callDuration'],
         tenantId: 'tenant-id',
       };
-      const mockResult = {
-        id: 'pref-id',
-        name: 'SUMMARY_HIDDEN_FIELDS',
-        relatedId: 'tenant-id',
-        relatedEntity: 'ORGANIZATION',
-        value: { fields: requestBody.hiddenFields },
-        tenantId: 'tenant-id',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any;
+      const mockResult = { success: true };
       service.updateSummaryFields.mockResolvedValue(mockResult);
 
       const result = await controller.updateSummaryFields(requestBody);
@@ -129,16 +122,7 @@ describe('SettingsController', () => {
 
     it('should update summary fields with empty hidden fields array', async () => {
       const requestBody = { hiddenFields: [], tenantId: 'tenant-id' };
-      const mockResult = {
-        id: 'pref-id',
-        name: 'SUMMARY_HIDDEN_FIELDS',
-        relatedId: 'tenant-id',
-        relatedEntity: 'ORGANIZATION',
-        value: { fields: [] },
-        tenantId: 'tenant-id',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any;
+      const mockResult = { success: true };
       service.updateSummaryFields.mockResolvedValue(mockResult);
 
       const result = await controller.updateSummaryFields(requestBody);
@@ -158,6 +142,68 @@ describe('SettingsController', () => {
       await expect(controller.updateSummaryFields(requestBody)).rejects.toThrow(
         error,
       );
+    });
+  });
+
+  describe('getSummarySections', () => {
+    it('should return summary sections config without query', async () => {
+      const mockSections = {
+        sections: [
+          {
+            id: 'other',
+            label: 'Other',
+            defaultVisibility: true,
+            enabled: true,
+            fields: [{ id: 'callId', label: 'Call ID', visible: false }],
+          },
+        ],
+      };
+      service.getSummarySectionsConfig.mockResolvedValue(mockSections);
+
+      const result = await controller.getSummarySections();
+
+      expect(service.getSummarySectionsConfig).toHaveBeenCalledWith({});
+      expect(result).toEqual(mockSections);
+    });
+
+    it('should return summary sections config with tenantId query', async () => {
+      const query = { tenantId: 'test-tenant-id' };
+      const mockSections = { sections: [] };
+      service.getSummarySectionsConfig.mockResolvedValue(mockSections);
+
+      const result = await controller.getSummarySections(query);
+
+      expect(service.getSummarySectionsConfig).toHaveBeenCalledWith(query);
+      expect(result).toEqual(mockSections);
+    });
+  });
+
+  describe('updateSummarySections', () => {
+    it('should update summary sections with valid hidden sections', async () => {
+      const requestBody = {
+        hiddenSections: ['intake', 'ongoingRisks'],
+        tenantId: 'tenant-id',
+      };
+      const mockResult = { success: true };
+      service.updateSummarySections.mockResolvedValue(mockResult);
+
+      const result = await controller.updateSummarySections(requestBody);
+
+      expect(service.updateSummarySections).toHaveBeenCalledWith(requestBody);
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should handle service errors', async () => {
+      const requestBody = {
+        hiddenSections: ['intake'],
+        tenantId: 'tenant-id',
+      };
+      const error = new Error('Forbidden');
+      service.updateSummarySections.mockRejectedValue(error);
+
+      await expect(
+        controller.updateSummarySections(requestBody),
+      ).rejects.toThrow(error);
     });
   });
 

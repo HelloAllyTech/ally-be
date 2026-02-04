@@ -45,51 +45,6 @@ export const LANGUAGE_MAP = {
   en: 'English',
 };
 
-export const SESSION_FIELDS = [
-  'sessionSummary',
-  'counselingProcessFlow',
-  'keyConcerns',
-  'subjectiveObservations',
-  'objectiveObservations',
-  'assessment',
-  'dominantFeelings',
-  'issuesWorkedOn',
-  'keyTherapeuticTechniques',
-  'referralsProvided',
-  'homework',
-  'planForNextCall',
-];
-
-export const METRIC_FIELDS = [
-  'reflectiveQuestionsAsked',
-  'openEndedQuestionsAsked',
-  'emotionalLift',
-  'listeningShare',
-];
-
-export const OTHER_FIELDS = [
-  'callId',
-  'callDuration',
-  'callDate',
-  'callTime',
-  'clientId',
-  'counsellor',
-  'callType',
-  'tags',
-  'callQuality',
-  'newCallFollowUp',
-];
-
-export const DEMOGRAPHIC_FIELDS = [
-  'age',
-  'gender',
-  'location',
-  'profession',
-  'relationshipStatus',
-  'languages',
-  'codeOfConcern',
-];
-
 export const UPLOADED_AUDIO_FILE_SIZE_LIMIT = 800 * 1024 * 1024; // 800 MB
 
 export const SUPPORTED_AUDIO_FILE_TYPES = [

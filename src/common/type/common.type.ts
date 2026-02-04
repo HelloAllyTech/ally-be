@@ -21,10 +21,15 @@ export type SummaryPreferenceValue = {
 
 export type HiddenChatTypesPreferenceValue = Array<string>;
 
+export type HiddenSectionsPreferenceValue = {
+  sections: Array<string>;
+};
+
 export type PreferenceValue =
   | SummaryPreferenceValue
   | NudgePreferenceValue
-  | HiddenChatTypesPreferenceValue;
+  | HiddenChatTypesPreferenceValue
+  | HiddenSectionsPreferenceValue;
 
 export type RequestWithUser = Request & {
   user?: {

@@ -6,13 +6,11 @@ import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type'
 import { TokenUser } from '../../auth/type/auth.types';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ChatUtil } from '../util/chat.util';
+import { LANGUAGE_MAP } from '../constants/chat.constants';
 import {
-  DEMOGRAPHIC_FIELDS,
-  LANGUAGE_MAP,
-  METRIC_FIELDS,
-  OTHER_FIELDS,
-  SESSION_FIELDS,
-} from '../constants/chat.constants';
+  SUMMARY_FIELD_ID_TO_LABEL,
+  SUMMARY_SECTIONS,
+} from '../../settings/constants/summary-sections.constants';
 import { ChatService } from './chat.service';
 import { SettingsService } from '../../settings/service/settings.service';
 import { UserService } from '../../user/service/user.service';
@@ -68,7 +66,6 @@ export class ChatSummaryService {
     const summaryName =
       callDetails?.callInfo?.summaryName || ChatUtil.getSummaryName(chat);
 
-    const displayNameMap = this.buildDisplayNameMap();
     const valueMap = this.buildFieldValueMap(
       chat,
       callDetails,
@@ -78,32 +75,17 @@ export class ChatSummaryService {
 
     let summary = `Chat Summary\n============\n\nSummary Name: ${summaryName}\n\n`;
 
-    const top = OTHER_FIELDS.filter((f) => visibleFields.includes(f as any))
-      .map((f) => this.renderField(f, displayNameMap, valueMap))
-      .join('\n');
-    if (top) summary += `${top}\n\n`;
-
-    summary += this.renderSection(
-      'Demographic Details',
-      DEMOGRAPHIC_FIELDS,
-      visibleFields,
-      displayNameMap,
-      valueMap,
-    );
-    summary += this.renderSection(
-      'Session Documentation',
-      SESSION_FIELDS,
-      visibleFields,
-      displayNameMap,
-      valueMap,
-    );
-    summary += this.renderSection(
-      'Metrics',
-      METRIC_FIELDS,
-      visibleFields,
-      displayNameMap,
-      valueMap,
-    );
+    for (const section of SUMMARY_SECTIONS) {
+      const fieldIds = section.fields.map((field) => field.id);
+      const title = section.id === 'other' ? '' : section.label;
+      summary += this.renderSection(
+        title,
+        fieldIds,
+        visibleFields,
+        SUMMARY_FIELD_ID_TO_LABEL,
+        valueMap,
+      );
+    }
 
     this.auditLogger.log({
       eventType: AUDIT_EVENTS.EXPORT_SUMMARY,
@@ -113,44 +95,6 @@ export class ChatSummaryService {
     });
 
     return { summary, fileName: summaryName };
-  }
-
-  private buildDisplayNameMap(): Record<string, string> {
-    return {
-      callId: 'Call ID',
-      callDuration: 'Call Duration (seconds)',
-      callDate: 'Call Date',
-      callTime: 'Call Time',
-      clientId: 'Client ID',
-      counsellor: 'Counselor',
-      callType: 'Call Type',
-      age: 'Age',
-      gender: 'Gender',
-      profession: 'Profession',
-      relationshipStatus: 'Relationship Status',
-      languages: 'Languages',
-      location: 'Location',
-      codeOfConcern: 'Code of Concern',
-      sessionSummary: 'Session Summary',
-      counselingProcessFlow: 'Counseling Process Flow',
-      keyConcerns: 'Key Concerns',
-      subjectiveObservations: 'Subjective Observations',
-      objectiveObservations: 'Objective Observations',
-      assessment: 'Assessment',
-      dominantFeelings: 'Dominant Feelings',
-      issuesWorkedOn: 'Issues Worked On',
-      keyTherapeuticTechniques: 'Key Therapeutic Techniques',
-      referralsProvided: 'Referrals Provided',
-      homework: 'Homework',
-      planForNextCall: 'Plan for Next Call',
-      tags: 'Tags',
-      listeningShare: 'Listening Share',
-      reflectiveQuestionsAsked: 'Reflective Questions Asked',
-      openEndedQuestionsAsked: 'Open-ended Questions Asked',
-      emotionalLift: 'Emotional Lift',
-      callQuality: 'Call Quality',
-      newCallFollowUp: 'New Call Follow-up',
-    };
   }
 
   private formatLanguages(
@@ -224,6 +168,52 @@ export class ChatSummaryService {
       emotionalLift: summaryInfo.emotionalLift ?? defaultVal,
       callQuality: summaryInfo.callQuality?.toString() ?? defaultVal,
       newCallFollowUp: summaryInfo.newCallFollowUp ?? defaultVal,
+      // Intake section fields
+      intakeNotes: summaryInfo.intakeNotes ?? defaultVal,
+      riskSelfHarm: summaryInfo.riskSelfHarm ?? defaultVal,
+      riskSelfHarmNotes: summaryInfo.riskSelfHarmNotes ?? defaultVal,
+      riskSuicidalThoughts: summaryInfo.riskSuicidalThoughts ?? defaultVal,
+      riskSuicidalPlan: summaryInfo.riskSuicidalPlan ?? defaultVal,
+      riskSuicidalAction: summaryInfo.riskSuicidalAction ?? defaultVal,
+      riskSuicidalThoughtsNotes:
+        summaryInfo.riskSuicidalThoughtsNotes ?? defaultVal,
+      riskRunningAway: summaryInfo.riskRunningAway ?? defaultVal,
+      riskRunningAwayNotes: summaryInfo.riskRunningAwayNotes ?? defaultVal,
+      traumaPhysicalAbuse: summaryInfo.traumaPhysicalAbuse ?? defaultVal,
+      traumaSexualAbuse: summaryInfo.traumaSexualAbuse ?? defaultVal,
+      traumaVerbalAbuse: summaryInfo.traumaVerbalAbuse ?? defaultVal,
+      traumaNeglect: summaryInfo.traumaNeglect ?? defaultVal,
+      traumaSeparationFromCaregiverParent:
+        summaryInfo.traumaSeparationFromCaregiverParent ?? defaultVal,
+      traumaWitnessedDomesticViolence:
+        summaryInfo.traumaWitnessedDomesticViolence ?? defaultVal,
+      traumaNotes: summaryInfo.traumaNotes ?? defaultVal,
+      assessmentPsychologicalDiagnosis:
+        summaryInfo.assessmentPsychologicalDiagnosis ?? defaultVal,
+      assessmentPsychologicalDiagnosisNotes:
+        summaryInfo.assessmentPsychologicalDiagnosisNotes ?? defaultVal,
+      assessmentUseOfPsychotropicMedications:
+        summaryInfo.assessmentUseOfPsychotropicMedications ?? defaultVal,
+      assessmentUseOfPsychotropicMedicationsNotes:
+        summaryInfo.assessmentUseOfPsychotropicMedicationsNotes ?? defaultVal,
+      assessmentHallucinations:
+        summaryInfo.assessmentHallucinations ?? defaultVal,
+      assessmentHallucinationsNotes:
+        summaryInfo.assessmentHallucinationsNotes ?? defaultVal,
+      assessmentAffect: summaryInfo.assessmentAffect ?? defaultVal,
+      assessmentSpeech: summaryInfo.assessmentSpeech ?? defaultVal,
+      // Ongoing Risks section fields
+      ongoingRiskSelfHarm: summaryInfo.ongoingRiskSelfHarm ?? defaultVal,
+      ongoingRiskSelfHarmNotes:
+        summaryInfo.ongoingRiskSelfHarmNotes ?? defaultVal,
+      ongoingRiskSuicidalThoughts:
+        summaryInfo.ongoingRiskSuicidalThoughts ?? defaultVal,
+      ongoingRiskSuicidalPlan:
+        summaryInfo.ongoingRiskSuicidalPlan ?? defaultVal,
+      ongoingRiskSuicidalAction:
+        summaryInfo.ongoingRiskSuicidalAction ?? defaultVal,
+      ongoingRiskSuicidalThoughtsNotes:
+        summaryInfo.ongoingRiskSuicidalThoughtsNotes ?? defaultVal,
     };
   }
 
