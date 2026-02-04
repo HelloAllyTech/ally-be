@@ -30,6 +30,7 @@ import { SharedLanguageService } from 'src/language/service/shared-language.serv
 import { ScenarioEventsTranslationsRepository } from 'src/learn/repository/scenario-events-translations.repository';
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 import { ScenarioSharedService } from '../scenario-shared.service';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -231,6 +232,12 @@ describe('ScenarioService', () => {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
     };
 
+    const mockOpenAITranslationsService = {
+      translateObjectToLanguages: jest.fn().mockResolvedValue({}),
+      isConfigured: jest.fn().mockReturnValue(true),
+      getLanguageConfig: jest.fn(),
+    };
+
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -303,6 +310,10 @@ describe('ScenarioService', () => {
         {
           provide: ScenarioEventsTranslationsRepository,
           useValue: mockScenarioEventsTranslationsRepository,
+        },
+        {
+          provide: OpenAITranslationsService,
+          useValue: mockOpenAITranslationsService,
         },
       ],
     }).compile();
