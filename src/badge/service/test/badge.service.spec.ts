@@ -17,6 +17,8 @@ import {
 } from '../../constants/badge.constants';
 import { NotFoundException } from 'src/exception/custom.exception';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { AppConfigService } from 'src/config/config.service';
+import { S3Service } from 'src/aws/service/s3.service';
 
 jest.mock('src/common/execution/execution-manager');
 
@@ -30,6 +32,8 @@ describe('BadgeService', () => {
   let mockTenantService: jest.Mocked<TenantService>;
   let mockGroupRepository: jest.Mocked<GroupRepository>;
   let mockDataSource: jest.Mocked<DataSource>;
+  let mockAppConfigService: jest.Mocked<AppConfigService>;
+  let mockS3Service: jest.Mocked<S3Service>;
 
   beforeEach(async () => {
     mockBadgeRepository = {
@@ -79,6 +83,9 @@ describe('BadgeService', () => {
       transaction: jest.fn(),
     } as any;
 
+    mockAppConfigService = {} as any;
+    mockS3Service = {} as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BadgeService,
@@ -90,6 +97,8 @@ describe('BadgeService', () => {
         { provide: TenantService, useValue: mockTenantService },
         { provide: GroupRepository, useValue: mockGroupRepository },
         { provide: DataSource, useValue: mockDataSource },
+        { provide: AppConfigService, useValue: mockAppConfigService },
+        { provide: S3Service, useValue: mockS3Service },
       ],
     }).compile();
 

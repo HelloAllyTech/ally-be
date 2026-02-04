@@ -18,6 +18,7 @@ import { CommunityModule } from 'src/community/community.module';
 import { ReviewModule } from 'src/review/review.module'; // Used with forwardRef
 import { BadgeEventConsumer } from './consumer/badge.event.consumer';
 import { BadgeAwardService } from './service/badge-award.service';
+import { AwsModule } from 'src/aws/aws.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { BadgeAwardService } from './service/badge-award.service';
     AuthorizationModule,
     forwardRef(() => ReviewModule),
     CommunityModule,
+    AwsModule,
   ],
   controllers: [BadgeController],
   providers: [
