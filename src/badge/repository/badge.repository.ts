@@ -156,4 +156,32 @@ export class BadgeRepository extends Repository<Badge> {
 
     return query.getCount();
   }
+
+  async getUnawardedBadgesForUserRole(
+    userId: number,
+    groupId: number,
+    tenantId?: string,
+  ): Promise<Badge[]> {
+    const query = this.dataSource
+      .createQueryBuilder(Badge, 'badge')
+      .innerJoin(BadgeGroup, 'badgeGroup', 'badgeGroup.badgeId = badge.id')
+      .innerJoin(BadgeTenant, 'badgeTenant', 'badgeTenant.badgeId = badge.id')
+      .leftJoin(
+        BadgeUser,
+        'badgeUser',
+        'badgeUser.badgeId = badge.id AND badgeUser.userId = :userId AND badgeUser.deletedAt IS NULL',
+        { userId },
+      )
+      .where('badgeGroup.groupId = :groupId', { groupId })
+      .andWhere('badge.deletedAt IS NULL')
+      .andWhere('badgeTenant.deletedAt IS NULL')
+      .andWhere('badge.status = :status', { status: BadgeStatus.ACTIVE })
+      .andWhere('badgeUser.id IS NULL');
+
+    if (tenantId) {
+      query.andWhere('badgeTenant.tenantId = :tenantId', { tenantId });
+    }
+
+    return query.setParameter('userId', userId).getMany();
+  }
 }
