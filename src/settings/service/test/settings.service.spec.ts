@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { SettingsService } from '../settings.service';
 import { PreferenceService } from '../preference.service';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
@@ -14,13 +14,22 @@ import {
   DEFAULT_SUMMARY_FIELDS_SET,
   DEFAULT_CHAT_TYPES,
 } from '../../constants/settings.constants';
-import { SummaryPreferenceValue } from '../../../common/type/common.type';
+import {
+  DEFAULT_HIDDEN_SECTION_IDS,
+  SECTION_ID_TO_FIELD_IDS,
+  SUMMARY_SECTIONS,
+} from '../../constants/summary-sections.constants';
+import {
+  HiddenSectionsPreferenceValue,
+  SummaryPreferenceValue,
+} from '../../../common/type/common.type';
 import { ChatTypes } from '../../../common/constants/chat.constants';
 import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
 import {
   GetSummaryFieldsDto,
   UpdateSummaryFieldsDto,
 } from '../../dto/summary-fields.dto';
+import { UpdateSummarySectionsDto } from '../../dto/summary-sections.dto';
 import { UpdateChatTypesDto } from '../../dto/chat-types.dto';
 
 describe('SettingsService', () => {
@@ -128,6 +137,7 @@ describe('SettingsService', () => {
     it('should return visible fields for counselor (no system access) with org and counselor preferences', async () => {
       preferenceService.getPreference
         .mockResolvedValueOnce(mockOrgPreference)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(mockCounselorPreference);
 
       const getSummaryFieldsDto: GetSummaryFieldsDto = {};
@@ -137,9 +147,14 @@ describe('SettingsService', () => {
         parseInt(mockUserId),
         [PERMISSIONS.SYSTEM_ACCESS],
       );
-      expect(preferenceService.getPreference).toHaveBeenCalledTimes(2);
+      expect(preferenceService.getPreference).toHaveBeenCalledTimes(3);
       expect(preferenceService.getPreference).toHaveBeenCalledWith(
         PreferenceName.SUMMARY_HIDDEN_FIELDS,
+        mockTenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.SUMMARY_HIDDEN_SECTIONS,
         mockTenantId,
         PreferenceRelatedEntity.ORGANIZATION,
       );
@@ -149,7 +164,15 @@ describe('SettingsService', () => {
         PreferenceRelatedEntity.COUNSELOR,
       );
 
-      const hiddenFields = ['callId', 'callDuration', 'clientId'];
+      const fieldsFromDefaultHidden = DEFAULT_HIDDEN_SECTION_IDS.flatMap(
+        (id) => SECTION_ID_TO_FIELD_IDS[id] ?? [],
+      );
+      const hiddenFields = [
+        'callId',
+        'callDuration',
+        'clientId',
+        ...fieldsFromDefaultHidden,
+      ];
       const expectedVisibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
         (field) => !hiddenFields.includes(field),
       );
@@ -162,7 +185,9 @@ describe('SettingsService', () => {
         .mockResolvedValue(true);
 
       const selectedTenantId = 'selected-tenant-id';
-      preferenceService.getPreference.mockResolvedValueOnce(mockOrgPreference);
+      preferenceService.getPreference
+        .mockResolvedValueOnce(mockOrgPreference)
+        .mockResolvedValueOnce(null);
 
       const getSummaryFieldsDto: GetSummaryFieldsDto = {
         tenantId: selectedTenantId,
@@ -173,14 +198,21 @@ describe('SettingsService', () => {
         parseInt(mockUserId),
         [PERMISSIONS.SYSTEM_ACCESS],
       );
-      expect(preferenceService.getPreference).toHaveBeenCalledTimes(1);
+      expect(preferenceService.getPreference).toHaveBeenCalledTimes(2);
       expect(preferenceService.getPreference).toHaveBeenCalledWith(
         PreferenceName.SUMMARY_HIDDEN_FIELDS,
         selectedTenantId,
         PreferenceRelatedEntity.ORGANIZATION,
       );
 
-      const hiddenFields = ['callId', 'callDuration'];
+      const fieldsFromDefaultHidden = DEFAULT_HIDDEN_SECTION_IDS.flatMap(
+        (id) => SECTION_ID_TO_FIELD_IDS[id] ?? [],
+      );
+      const hiddenFields = [
+        'callId',
+        'callDuration',
+        ...fieldsFromDefaultHidden,
+      ];
       const expectedVisibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
         (field) => !hiddenFields.includes(field),
       );
@@ -192,7 +224,9 @@ describe('SettingsService', () => {
         .spyOn(permissionValidator, 'validatePermissions')
         .mockResolvedValue(true);
 
-      preferenceService.getPreference.mockResolvedValueOnce(mockOrgPreference);
+      preferenceService.getPreference
+        .mockResolvedValueOnce(mockOrgPreference)
+        .mockResolvedValueOnce(null);
 
       const getSummaryFieldsDto: GetSummaryFieldsDto = {
         tenantId: mockTenantId,
@@ -205,7 +239,14 @@ describe('SettingsService', () => {
         PreferenceRelatedEntity.ORGANIZATION,
       );
 
-      const hiddenFields = ['callId', 'callDuration'];
+      const fieldsFromDefaultHidden = DEFAULT_HIDDEN_SECTION_IDS.flatMap(
+        (id) => SECTION_ID_TO_FIELD_IDS[id] ?? [],
+      );
+      const hiddenFields = [
+        'callId',
+        'callDuration',
+        ...fieldsFromDefaultHidden,
+      ];
       const expectedVisibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
         (field) => !hiddenFields.includes(field),
       );
@@ -215,12 +256,20 @@ describe('SettingsService', () => {
     it('should return visible fields when only org preference exists (counselor)', async () => {
       preferenceService.getPreference
         .mockResolvedValueOnce(mockOrgPreference)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
 
       const getSummaryFieldsDto: GetSummaryFieldsDto = {};
       const result = await service.getSummaryFieldsConfig(getSummaryFieldsDto);
 
-      const hiddenFields = ['callId', 'callDuration'];
+      const fieldsFromDefaultHidden = DEFAULT_HIDDEN_SECTION_IDS.flatMap(
+        (id) => SECTION_ID_TO_FIELD_IDS[id] ?? [],
+      );
+      const hiddenFields = [
+        'callId',
+        'callDuration',
+        ...fieldsFromDefaultHidden,
+      ];
       const expectedVisibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
         (field) => !hiddenFields.includes(field),
       );
@@ -230,27 +279,38 @@ describe('SettingsService', () => {
     it('should return visible fields when only counselor preference exists', async () => {
       preferenceService.getPreference
         .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(mockCounselorPreference);
 
       const getSummaryFieldsDto: GetSummaryFieldsDto = {};
       const result = await service.getSummaryFieldsConfig(getSummaryFieldsDto);
 
-      const hiddenFields = ['clientId'];
+      const fieldsFromDefaultHidden = DEFAULT_HIDDEN_SECTION_IDS.flatMap(
+        (id) => SECTION_ID_TO_FIELD_IDS[id] ?? [],
+      );
+      const hiddenFields = ['clientId', ...fieldsFromDefaultHidden];
       const expectedVisibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
         (field) => !hiddenFields.includes(field),
       );
       expect(result).toEqual(expectedVisibleFields);
     });
 
-    it('should return all default fields when no preferences exist', async () => {
+    it('should return visible fields excluding default-hidden sections when no preferences exist', async () => {
       preferenceService.getPreference
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
 
       const getSummaryFieldsDto: GetSummaryFieldsDto = {};
       const result = await service.getSummaryFieldsConfig(getSummaryFieldsDto);
 
-      expect(result).toEqual(DEFAULT_SUMMARY_FIELDS_ARRAY);
+      const fieldsFromDefaultHidden = DEFAULT_HIDDEN_SECTION_IDS.flatMap(
+        (id) => SECTION_ID_TO_FIELD_IDS[id] ?? [],
+      );
+      const expectedVisibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
+        (field) => !fieldsFromDefaultHidden.includes(field),
+      );
+      expect(result).toEqual(expectedVisibleFields);
     });
 
     it('should return visible fields when preferences have empty fields arrays', async () => {
@@ -265,12 +325,19 @@ describe('SettingsService', () => {
 
       preferenceService.getPreference
         .mockResolvedValueOnce(emptyOrgPreference)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(emptyCounselorPreference);
 
       const getSummaryFieldsDto: GetSummaryFieldsDto = {};
       const result = await service.getSummaryFieldsConfig(getSummaryFieldsDto);
 
-      expect(result).toEqual(DEFAULT_SUMMARY_FIELDS_ARRAY);
+      const fieldsFromDefaultHidden = DEFAULT_HIDDEN_SECTION_IDS.flatMap(
+        (id) => SECTION_ID_TO_FIELD_IDS[id] ?? [],
+      );
+      const expectedVisibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
+        (field) => !fieldsFromDefaultHidden.includes(field),
+      );
+      expect(result).toEqual(expectedVisibleFields);
     });
 
     it('should throw BadRequestException when userId is missing', async () => {
@@ -301,6 +368,53 @@ describe('SettingsService', () => {
       await expect(
         service.getSummaryFieldsConfig(getSummaryFieldsDto),
       ).rejects.toThrow(new BadRequestException('Tenant ID is required'));
+    });
+  });
+
+  describe('getSummarySectionsConfig', () => {
+    it('should return sections with defaultVisibility, enabled and per-field visible', async () => {
+      preferenceService.getPreference
+        .mockResolvedValueOnce(mockOrgPreference)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+
+      const result = await service.getSummarySectionsConfig({});
+
+      expect(result.sections).toHaveLength(SUMMARY_SECTIONS.length);
+      const otherSection = result.sections.find((s) => s.id === 'other');
+      expect(otherSection).toBeDefined();
+      expect(otherSection?.defaultVisibility).toBe(true);
+      expect(otherSection?.enabled).toBe(true);
+      expect(otherSection?.fields.some((f) => f.id === 'callId')).toBe(true);
+      expect(otherSection?.fields.find((f) => f.id === 'callId')?.visible).toBe(
+        false,
+      );
+      const intakeSection = result.sections.find((s) => s.id === 'intake');
+      expect(intakeSection?.defaultVisibility).toBe(false);
+      expect(intakeSection?.enabled).toBe(false);
+    });
+
+    it('should return section as hidden when in SUMMARY_HIDDEN_SECTIONS', async () => {
+      const hiddenSectionsPref = {
+        id: 'pref-id',
+        name: PreferenceName.SUMMARY_HIDDEN_SECTIONS,
+        relatedId: mockTenantId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { sections: ['metrics'] } as HiddenSectionsPreferenceValue,
+        tenantId: mockTenantId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      preferenceService.getPreference
+        .mockResolvedValueOnce(mockOrgPreference)
+        .mockResolvedValueOnce(hiddenSectionsPref)
+        .mockResolvedValueOnce(null);
+
+      const result = await service.getSummarySectionsConfig({});
+
+      const metricsSection = result.sections.find((s) => s.id === 'metrics');
+      expect(metricsSection?.enabled).toBe(false);
+      metricsSection?.fields.forEach((f) => expect(f.visible).toBe(false));
     });
   });
 
@@ -353,7 +467,7 @@ describe('SettingsService', () => {
       tenantId: mockTenantId,
     };
 
-    it('should update existing preference', async () => {
+    it('should update existing preference when hiddenFields and tenantId provided', async () => {
       jest.spyOn(CommonUtil, 'getInvalidKeysFromSet').mockReturnValue([]);
       preferenceService.getPreference.mockResolvedValue(mockOrgPreference);
       preferenceService.updatePreference.mockResolvedValue(mockOrgPreference);
@@ -373,7 +487,25 @@ describe('SettingsService', () => {
         mockPreferenceId,
         { fields: validFields },
       );
-      expect(result).toEqual(mockOrgPreference);
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should use ExecutionManager.getTenantId() when counselor (no tenantId in body)', async () => {
+      jest.spyOn(CommonUtil, 'getInvalidKeysFromSet').mockReturnValue([]);
+      preferenceService.getPreference.mockResolvedValue(mockOrgPreference);
+      preferenceService.updatePreference.mockResolvedValue(mockOrgPreference);
+
+      const counselorDto: UpdateSummaryFieldsDto = {
+        hiddenFields: validFields,
+      };
+      const result = await service.updateSummaryFields(counselorDto);
+
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.SUMMARY_HIDDEN_FIELDS,
+        mockTenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
+      expect(result).toEqual({ success: true });
     });
 
     it('should create new preference when none exists', async () => {
@@ -390,7 +522,7 @@ describe('SettingsService', () => {
         value: { fields: validFields },
         tenantId: mockTenantId,
       });
-      expect(result).toEqual(mockOrgPreference);
+      expect(result).toEqual({ success: true });
     });
 
     it('should throw BadRequestException for invalid fields', async () => {
@@ -407,6 +539,98 @@ describe('SettingsService', () => {
         new BadRequestException(
           `Invalid summary fields - ${invalidFields.join(', ')}`,
         ),
+      );
+    });
+
+    it('should throw BadRequestException when tenantId missing for counselor', async () => {
+      jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(undefined);
+      const counselorDto: UpdateSummaryFieldsDto = {
+        hiddenFields: validFields,
+      };
+
+      await expect(service.updateSummaryFields(counselorDto)).rejects.toThrow(
+        new BadRequestException('Tenant ID is required'),
+      );
+    });
+  });
+
+  describe('updateSummarySections', () => {
+    const updateDto: UpdateSummarySectionsDto = {
+      hiddenSections: ['intake', 'ongoingRisks'],
+      tenantId: mockTenantId,
+    };
+
+    beforeEach(() => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+    });
+
+    it('should update SUMMARY_HIDDEN_SECTIONS when valid section ids provided', async () => {
+      const existingPref = {
+        id: 'pref-hidden-id',
+        name: PreferenceName.SUMMARY_HIDDEN_SECTIONS,
+        relatedId: mockTenantId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { sections: ['intake'] } as HiddenSectionsPreferenceValue,
+        tenantId: mockTenantId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      preferenceService.getPreference.mockResolvedValue(existingPref);
+      preferenceService.updatePreference.mockResolvedValue(existingPref);
+
+      const result = await service.updateSummarySections(updateDto);
+
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.SUMMARY_HIDDEN_SECTIONS,
+        mockTenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
+      expect(preferenceService.updatePreference).toHaveBeenCalledWith(
+        'pref-hidden-id',
+        { sections: ['intake', 'ongoingRisks'] },
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should create SUMMARY_HIDDEN_SECTIONS when none exists', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+      preferenceService.createPreference.mockResolvedValue({} as any);
+
+      const result = await service.updateSummarySections(updateDto);
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith({
+        name: PreferenceName.SUMMARY_HIDDEN_SECTIONS,
+        relatedId: mockTenantId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { sections: ['intake', 'ongoingRisks'] },
+        tenantId: mockTenantId,
+      });
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should throw BadRequestException for invalid section ids', async () => {
+      const invalidDto: UpdateSummarySectionsDto = {
+        hiddenSections: ['invalidSection'],
+        tenantId: mockTenantId,
+      };
+
+      await expect(service.updateSummarySections(invalidDto)).rejects.toThrow(
+        new BadRequestException('Invalid section ids - invalidSection'),
+      );
+    });
+
+    it('should throw ForbiddenException when user does not have SYSTEM_ACCESS', async () => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+
+      await expect(service.updateSummarySections(updateDto)).rejects.toThrow(
+        ForbiddenException,
+      );
+      await expect(service.updateSummarySections(updateDto)).rejects.toThrow(
+        'Only super admin can update summary sections',
       );
     });
   });

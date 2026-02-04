@@ -15,6 +15,10 @@ import {
   GetSummaryFieldsDto,
   UpdateSummaryFieldsDto,
 } from '../dto/summary-fields.dto';
+import {
+  GetSummarySectionsResponseDto,
+  UpdateSummarySectionsDto,
+} from '../dto/summary-sections.dto';
 import { GetChatTypesDto, UpdateChatTypesDto } from '../dto/chat-types.dto';
 
 @ApiTags('Settings')
@@ -43,12 +47,13 @@ export class SettingsController {
   }
 
   @Put('summary-fields')
-  @ApiOperation({ summary: 'Update summary fields' })
+  @ApiOperation({ summary: 'Update hidden summary fields' })
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
         hiddenFields: { type: 'array', items: { type: 'string' } },
+        tenantId: { type: 'string', format: 'uuid' },
       },
     },
   })
@@ -59,6 +64,51 @@ export class SettingsController {
   @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_SUMMARY_FIELDS])
   updateSummaryFields(@Body() body: UpdateSummaryFieldsDto) {
     return this.service.updateSummaryFields(body);
+  }
+
+  @Get('summary-sections')
+  @ApiOperation({ summary: 'Get summary sections config' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns sections with defaultVisibility, enabled state and per-section fields with visible state',
+    type: GetSummarySectionsResponseDto,
+  })
+  @ApiQuery({
+    name: 'tenantId',
+    required: false,
+    type: String,
+    description: 'Tenant ID',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_SUMMARY_FIELDS])
+  getSummarySections(@Query() query?: GetSummaryFieldsDto) {
+    return this.service.getSummarySectionsConfig(query || {});
+  }
+
+  @Put('summary-sections')
+  @ApiOperation({
+    summary: 'Update hidden summary sections (super admin only)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        hiddenSections: { type: 'array', items: { type: 'string' } },
+        tenantId: { type: 'string', format: 'uuid' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Summary sections updated successfully',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - only super admin can update',
+  })
+  @AuthPermissions([PERMISSIONS.SYSTEM_ACCESS])
+  updateSummarySections(@Body() body: UpdateSummarySectionsDto) {
+    return this.service.updateSummarySections(body);
   }
 
   @Get('nudge-status')

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { CommonUtil } from '../../common/util/common.util';
 import {
   DEFAULT_SUMMARY_FIELDS_ARRAY,
@@ -12,14 +16,24 @@ import {
 } from '../../common/constants/user.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
-import { SummaryPreferenceValue } from '../../common/type/common.type';
+import {
+  HiddenSectionsPreferenceValue,
+  SummaryPreferenceValue,
+} from '../../common/type/common.type';
 import { DEFAULT_CHAT_TYPES } from '../constants/settings.constants';
+import {
+  DEFAULT_HIDDEN_SECTION_IDS,
+  SECTION_ID_TO_FIELD_IDS,
+  SUMMARY_SECTION_IDS,
+  SUMMARY_SECTIONS,
+} from '../constants/summary-sections.constants';
 import * as _ from 'lodash';
 import { ChatTypes } from '../../common/constants/chat.constants';
 import {
   GetSummaryFieldsDto,
   UpdateSummaryFieldsDto,
 } from '../dto/summary-fields.dto';
+import { UpdateSummarySectionsDto } from '../dto/summary-sections.dto';
 import { GetChatTypesDto, UpdateChatTypesDto } from '../dto/chat-types.dto';
 
 @Injectable()
@@ -47,11 +61,18 @@ export class SettingsService {
       throw new BadRequestException('Tenant ID is required');
     }
 
-    const orgPreference = await this.preferenceService.getPreference(
-      PreferenceName.SUMMARY_HIDDEN_FIELDS,
-      tenantId,
-      PreferenceRelatedEntity.ORGANIZATION,
-    );
+    const [hiddenOrgPreference, hiddenSectionsPreference] = await Promise.all([
+      this.preferenceService.getPreference(
+        PreferenceName.SUMMARY_HIDDEN_FIELDS,
+        tenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      ),
+      this.preferenceService.getPreference(
+        PreferenceName.SUMMARY_HIDDEN_SECTIONS,
+        tenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      ),
+    ]);
 
     let counselorPreference;
     if (!hasSystemAccess) {
@@ -62,8 +83,31 @@ export class SettingsService {
       );
     }
 
+    const hiddenSectionIdsFromPreference = (
+      hiddenSectionsPreference?.value as HiddenSectionsPreferenceValue
+    )?.sections;
+    const hiddenSectionIds =
+      hiddenSectionIdsFromPreference !== undefined &&
+      hiddenSectionIdsFromPreference !== null &&
+      hiddenSectionIdsFromPreference.length > 0
+        ? hiddenSectionIdsFromPreference
+        : [...DEFAULT_HIDDEN_SECTION_IDS];
+
+    const orgValue = hiddenOrgPreference?.value as
+      | SummaryPreferenceValue
+      | undefined;
+    const orgHiddenFromPreference = orgValue?.fields || [];
+
+    const fieldsFromHiddenSections = hiddenSectionIds.flatMap(
+      (sectionId) => SECTION_ID_TO_FIELD_IDS[sectionId] ?? [],
+    );
+
+    const orgHiddenFields = [
+      ...new Set([...orgHiddenFromPreference, ...fieldsFromHiddenSections]),
+    ];
+
     const hiddenFields = [
-      ...((orgPreference?.value as SummaryPreferenceValue)?.fields || []),
+      ...orgHiddenFields,
       ...((counselorPreference?.value as SummaryPreferenceValue)?.fields || []),
     ];
     const hiddenFieldsSet = new Set(hiddenFields);
@@ -71,6 +115,98 @@ export class SettingsService {
       (field) => !hiddenFieldsSet.has(field),
     );
     return visibleFields;
+  }
+
+  async getSummarySectionsConfig(
+    getSummaryFieldsDto?: GetSummaryFieldsDto,
+  ): Promise<{
+    sections: Array<{
+      id: string;
+      label: string;
+      defaultVisibility: boolean;
+      enabled: boolean;
+      fields: Array<{ id: string; label: string; visible: boolean }>;
+    }>;
+  }> {
+    const { tenantId: selectedTenantId } = getSummaryFieldsDto || {};
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('User ID is required');
+    }
+
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    const tenantId = hasSystemAccess
+      ? selectedTenantId
+      : ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+
+    const [hiddenOrgPreference, hiddenSectionsPreference] = await Promise.all([
+      this.preferenceService.getPreference(
+        PreferenceName.SUMMARY_HIDDEN_FIELDS,
+        tenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      ),
+      this.preferenceService.getPreference(
+        PreferenceName.SUMMARY_HIDDEN_SECTIONS,
+        tenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      ),
+    ]);
+
+    let counselorPreference;
+    if (!hasSystemAccess) {
+      counselorPreference = await this.preferenceService.getPreference(
+        PreferenceName.SUMMARY_HIDDEN_FIELDS,
+        userId,
+        PreferenceRelatedEntity.COUNSELOR,
+      );
+    }
+
+    const hiddenSectionIdsFromPreference = (
+      hiddenSectionsPreference?.value as HiddenSectionsPreferenceValue
+    )?.sections;
+    const hiddenSectionIds =
+      hiddenSectionIdsFromPreference !== undefined &&
+      hiddenSectionIdsFromPreference !== null &&
+      hiddenSectionIdsFromPreference.length > 0
+        ? hiddenSectionIdsFromPreference
+        : [...DEFAULT_HIDDEN_SECTION_IDS];
+
+    const orgValue = hiddenOrgPreference?.value as
+      | SummaryPreferenceValue
+      | undefined;
+    const orgHiddenFromPreference = orgValue?.fields || [];
+    const fieldsFromHiddenSections = hiddenSectionIds.flatMap(
+      (sectionId) => SECTION_ID_TO_FIELD_IDS[sectionId] ?? [],
+    );
+    const orgHiddenFields = [
+      ...new Set([...orgHiddenFromPreference, ...fieldsFromHiddenSections]),
+    ];
+    const hiddenFields = [
+      ...orgHiddenFields,
+      ...((counselorPreference?.value as SummaryPreferenceValue)?.fields || []),
+    ];
+    const hiddenFieldsSet = new Set(hiddenFields);
+
+    const sections = SUMMARY_SECTIONS.map((section) => ({
+      id: section.id,
+      label: section.label,
+      defaultVisibility: section.defaultVisibility,
+      enabled: !hiddenSectionIds.includes(section.id),
+      fields: section.fields.map((f) => ({
+        id: f.id,
+        label: f.label,
+        visible:
+          !hiddenSectionIds.includes(section.id) && !hiddenFieldsSet.has(f.id),
+      })),
+    }));
+
+    return { sections };
   }
 
   async getHiddenSummaryFields() {
@@ -92,7 +228,24 @@ export class SettingsService {
   }
 
   async updateSummaryFields(updateSummaryFieldsDto: UpdateSummaryFieldsDto) {
-    const { hiddenFields: summaryFields, tenantId } = updateSummaryFieldsDto;
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('User ID is required');
+    }
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    const tenantId =
+      hasSystemAccess && updateSummaryFieldsDto.tenantId != null
+        ? updateSummaryFieldsDto.tenantId
+        : ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+
+    const { hiddenFields: summaryFields } = updateSummaryFieldsDto;
+
     const invalidKeys = CommonUtil.getInvalidKeysFromSet(
       DEFAULT_SUMMARY_FIELDS_SET,
       summaryFields,
@@ -103,29 +256,82 @@ export class SettingsService {
       );
     }
 
-    const relatedId = tenantId;
     const relatedEntity = PreferenceRelatedEntity.ORGANIZATION;
+    const relatedId = tenantId;
+    const tenantIdForCreate = ExecutionManager.getTenantId();
+
     const existingPreference = await this.preferenceService.getPreference(
       PreferenceName.SUMMARY_HIDDEN_FIELDS,
       relatedId,
       relatedEntity,
     );
     if (existingPreference) {
-      return await this.preferenceService.updatePreference(
-        existingPreference.id,
-        {
-          fields: summaryFields,
-        },
+      await this.preferenceService.updatePreference(existingPreference.id, {
+        fields: summaryFields,
+      });
+    } else {
+      await this.preferenceService.createPreference({
+        name: PreferenceName.SUMMARY_HIDDEN_FIELDS,
+        relatedId,
+        relatedEntity,
+        value: { fields: summaryFields },
+        tenantId: tenantIdForCreate,
+      });
+    }
+
+    return { success: true };
+  }
+
+  async updateSummarySections(dto: UpdateSummarySectionsDto) {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('User ID is required');
+    }
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    if (!hasSystemAccess) {
+      throw new ForbiddenException(
+        'Only super admin can update summary sections',
       );
     }
 
-    return await this.preferenceService.createPreference({
-      name: PreferenceName.SUMMARY_HIDDEN_FIELDS,
+    const { hiddenSections, tenantId } = dto;
+
+    const invalidSectionIds = hiddenSections.filter(
+      (id) => !SUMMARY_SECTION_IDS.includes(id),
+    );
+    if (invalidSectionIds.length > 0) {
+      throw new BadRequestException(
+        `Invalid section ids - ${invalidSectionIds.join(', ')}`,
+      );
+    }
+
+    const relatedEntity = PreferenceRelatedEntity.ORGANIZATION;
+    const relatedId = tenantId;
+    const tenantIdForCreate = ExecutionManager.getTenantId();
+
+    const existing = await this.preferenceService.getPreference(
+      PreferenceName.SUMMARY_HIDDEN_SECTIONS,
       relatedId,
       relatedEntity,
-      value: { fields: summaryFields },
-      tenantId: ExecutionManager.getTenantId(),
-    });
+    );
+    if (existing) {
+      await this.preferenceService.updatePreference(existing.id, {
+        sections: hiddenSections,
+      });
+    } else {
+      await this.preferenceService.createPreference({
+        name: PreferenceName.SUMMARY_HIDDEN_SECTIONS,
+        relatedId,
+        relatedEntity,
+        value: { sections: hiddenSections },
+        tenantId: tenantIdForCreate,
+      });
+    }
+
+    return { success: true };
   }
 
   async getNudgeStatus() {

@@ -143,4 +143,38 @@ export type FlattenedSummaryNotePayloadCamelCase = {
   emotionalLift: string;
   callQuality: number;
   newCallFollowUp: string;
+
+  // Intake section fields
+  intakeNotes?: string | null;
+  riskSelfHarm?: string | null;
+  riskSelfHarmNotes?: string | null;
+  riskSuicidalThoughts?: string | null;
+  riskSuicidalPlan?: string | null;
+  riskSuicidalAction?: string | null;
+  riskSuicidalThoughtsNotes?: string | null;
+  riskRunningAway?: string | null;
+  riskRunningAwayNotes?: string | null;
+  traumaPhysicalAbuse?: string | null;
+  traumaSexualAbuse?: string | null;
+  traumaVerbalAbuse?: string | null;
+  traumaNeglect?: string | null;
+  traumaSeparationFromCaregiverParent?: string | null;
+  traumaWitnessedDomesticViolence?: string | null;
+  traumaNotes?: string | null;
+  assessmentPsychologicalDiagnosis?: string | null;
+  assessmentPsychologicalDiagnosisNotes?: string | null;
+  assessmentUseOfPsychotropicMedications?: string | null;
+  assessmentUseOfPsychotropicMedicationsNotes?: string | null;
+  assessmentHallucinations?: string | null;
+  assessmentHallucinationsNotes?: string | null;
+  assessmentAffect?: string | null;
+  assessmentSpeech?: string | null;
+
+  // Ongoing Risks section fields
+  ongoingRiskSelfHarm?: string | null;
+  ongoingRiskSelfHarmNotes?: string | null;
+  ongoingRiskSuicidalThoughts?: string | null;
+  ongoingRiskSuicidalPlan?: string | null;
+  ongoingRiskSuicidalAction?: string | null;
+  ongoingRiskSuicidalThoughtsNotes?: string | null;
 };
