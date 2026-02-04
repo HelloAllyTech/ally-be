@@ -654,4 +654,16 @@ export class BadgeService {
         (category ? badge.category === category : true),
     );
   }
+
+  async getUnawardedBadgesForUserRole(
+    userId: number,
+    groupId: number,
+    tenantId?: string,
+  ): Promise<Badge[]> {
+    return this.badgeRepository.getUnawardedBadgesForUserRole(
+      userId,
+      groupId,
+      tenantId,
+    );
+  }
 }

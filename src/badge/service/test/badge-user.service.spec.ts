@@ -91,7 +91,7 @@ describe('BadgeUserService', () => {
 
       expect(
         mockCommunitySharedService.getTotalSimulationMinutesPerUser,
-      ).toHaveBeenCalledWith(['tenant-1']);
+      ).toHaveBeenCalledWith(['tenant-1'], undefined);
     });
 
     it('should fetch max active days for ACTIVE_DAY_STREAK category', async () => {
@@ -106,7 +106,7 @@ describe('BadgeUserService', () => {
 
       expect(
         mockCommunitySharedService.getMaxActiveDaysPerUser,
-      ).toHaveBeenCalledWith(['tenant-1']);
+      ).toHaveBeenCalledWith(['tenant-1'], undefined);
     });
 
     it('should fetch given comments/reactions for COMMENTS_REACTIONS_GIVEN category', async () => {

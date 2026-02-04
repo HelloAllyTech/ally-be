@@ -15,6 +15,9 @@ import { In, DataSource } from 'typeorm';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from '../repository/user-group.repository';
 import { UserRepository } from 'src/user/repository/user.repository';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AuthorizationEvents } from '../type/authorization-event.type';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 @Injectable()
 export class GroupService {
@@ -25,6 +28,7 @@ export class GroupService {
     private readonly userGroupRepository: UserGroupRepository,
     private readonly userRepository: UserRepository,
     private readonly dataSource: DataSource,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async getAllRoles(): Promise<Group[]> {
@@ -62,6 +66,8 @@ export class GroupService {
   }
 
   async assignRole(assignUserRoleDto: AssignUserRoleDto): Promise<boolean> {
+    const tenantId = ExecutionManager.getTenantId();
+
     const { role, userId } = assignUserRoleDto;
     const group = await this.groupRepository.findOne({ where: { name: role } });
     if (!group) {
@@ -86,6 +92,13 @@ export class GroupService {
     await this.userGroupRepository.save(newUserGroup);
     await this.cache.del(`user:groups:${userId}`);
     await this.cache.del(`user:roles:${userId}`);
+
+    this.eventEmitter.emit(AuthorizationEvents.USER_ROLE_ASSIGNED, {
+      userId,
+      groupId: group.id,
+      tenantId,
+    });
+
     return true;
   }
 
