@@ -284,34 +284,24 @@ export class ScenarioService {
       );
     }
 
-    const { fileName, fileSize, contentType } = scenarioImageUploadRequestDto;
-
-    if (!Object.values(ScenarioImageUploadContentType).includes(contentType)) {
+    if (
+      !Object.values(ScenarioImageUploadContentType).includes(
+        scenarioImageUploadRequestDto.contentType,
+      )
+    ) {
       throw new BadRequestException('Invalid file type');
     }
 
-    const maxFileSize = 2 * 1024 * 1024; // 2 MB
-    if (fileSize > maxFileSize) {
-      throw new BadRequestException(
-        `File size must be less than ${maxFileSize / 1024 / 1024} MB`,
+    const { presignedUrl, imageUrl } =
+      await this.s3Service.getPresignedUrlForImageUpload(
+        bucket,
+        'scenario-cover-images',
+        scenarioImageUploadRequestDto.fileName,
+        scenarioImageUploadRequestDto.fileSize,
+        scenarioImageUploadRequestDto.contentType,
       );
-    }
 
-    const sanitizedFileName = this.s3Service.sanitizeFileName(fileName);
-
-    const storageKey = `scenario-cover-images/${Date.now()}-${sanitizedFileName}`;
-    const presignedUrl = await this.s3Service.generatePresignedUrl({
-      bucket,
-      key: storageKey,
-      operation: 'put',
-      expiresIn: 600, // 10 minutes
-      contentType,
-    });
-
-    const region = this.configService.aws.region;
-    const coverImageUrl = `https://${bucket}.s3.${region}.amazonaws.com/${storageKey}`;
-
-    return { presignedUrl, coverImageUrl };
+    return { presignedUrl, coverImageUrl: imageUrl };
   }
 
   async deleteCoverImage(deleteCoverImageDto: DeleteCoverImageDto) {
@@ -321,29 +311,10 @@ export class ScenarioService {
         'S3 bucket name for learnMediaPublicBucket is not defined',
       );
     }
-    const coverImageUrl = deleteCoverImageDto.coverImageUrl;
-    const s3CoverImageUrlPattern =
-      /^https:\/\/[^.]+\.s3\.[^.]+\.amazonaws\.com\/(.+)$/;
-    const coverImageUrlMatch = coverImageUrl.match(s3CoverImageUrlPattern);
-    const storageKey = coverImageUrlMatch ? coverImageUrlMatch[1] : null;
-    if (!storageKey) {
-      this.logger.warn(`Invalid or unrecognized S3 URL: ${coverImageUrl}`);
-      return { success: false };
-    }
-    try {
-      await this.s3Service.deleteObject({
-        bucket,
-        key: storageKey,
-      });
-      return { success: true };
-    } catch (error) {
-      this.logger.error(
-        `Failed to delete uploaded cover image with error ${JSON.stringify(
-          error,
-        )}`,
-      );
-      return { success: false };
-    }
+    return this.s3Service.deleteS3Image(
+      bucket,
+      deleteCoverImageDto.coverImageUrl,
+    );
   }
 
   async getPresignedUrlForScenarioCoverVideo(

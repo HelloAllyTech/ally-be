@@ -128,12 +128,34 @@ describe('ScenarioService', () => {
       getScenarioVoices: jest.fn(),
     };
 
+    const s3CoverImageUrlPattern =
+      /^https:\/\/[^.]+\.s3\.[^.]+\.amazonaws\.com\/(.+)$/;
     mockS3Service = {
       generatePresignedUrl: jest.fn(),
       uploadFile: jest.fn(),
       deleteFile: jest.fn(),
-      deleteObject: jest.fn(),
+      deleteObject: jest.fn().mockResolvedValue(true),
       sanitizeFileName: jest.fn((fileName) => fileName),
+      getPresignedUrlForImageUpload: jest.fn().mockResolvedValue({
+        presignedUrl: 'https://s3.amazonaws.com/presigned',
+        imageUrl:
+          'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-images/123-test.jpg',
+      }),
+      deleteS3Image: jest.fn().mockImplementation(async function (
+        this: { deleteObject: jest.Mock },
+        bucket: string,
+        imageUrl: string,
+      ) {
+        const match = imageUrl?.match(s3CoverImageUrlPattern);
+        const key = match ? match[1] : null;
+        if (!key) return { success: false };
+        try {
+          await this.deleteObject({ bucket, key });
+          return { success: true };
+        } catch {
+          return { success: false };
+        }
+      }),
     };
 
     mockConfigService = {
@@ -727,8 +749,6 @@ describe('ScenarioService', () => {
         bucket: 'test-bucket',
         key: 'scenario-cover-images/12345-test.jpg',
       });
-      expect(mockLogger.warn).not.toHaveBeenCalled();
-      expect(mockLogger.error).not.toHaveBeenCalled();
     });
 
     it('should throw error when S3 bucket is not defined', async () => {
@@ -754,9 +774,6 @@ describe('ScenarioService', () => {
       const result = await service.deleteCoverImage(deleteCoverImageDto);
 
       expect(result).toEqual({ success: false });
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Invalid or unrecognized S3 URL: https://invalid-url.com/test.jpg',
-      );
       expect(mockS3Service.deleteObject).not.toHaveBeenCalled();
     });
 
@@ -768,9 +785,6 @@ describe('ScenarioService', () => {
       const result = await service.deleteCoverImage(deleteCoverImageDto);
 
       expect(result).toEqual({ success: false });
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Invalid or unrecognized S3 URL: not-a-valid-url',
-      );
     });
 
     it('should return { success: false } and log error when S3 deletion fails', async () => {
@@ -785,11 +799,6 @@ describe('ScenarioService', () => {
       const result = await service.deleteCoverImage(deleteCoverImageDto);
 
       expect(result).toEqual({ success: false });
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'Failed to delete uploaded cover image with error',
-        ),
-      );
       expect(mockS3Service.deleteObject).toHaveBeenCalledWith({
         bucket: 'test-bucket',
         key: 'scenario-cover-images/12345-test.jpg',
@@ -834,9 +843,6 @@ describe('ScenarioService', () => {
       const result = await service.deleteCoverImage(deleteCoverImageDto);
 
       expect(result).toEqual({ success: false });
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Invalid or unrecognized S3 URL: ',
-      );
     });
 
     it('should handle S3 URL with special characters in key', async () => {
@@ -863,11 +869,9 @@ describe('ScenarioService', () => {
       const s3Error = { code: 'NoSuchKey', message: 'Key not found' };
       mockS3Service.deleteObject.mockRejectedValue(s3Error);
 
-      await service.deleteCoverImage(deleteCoverImageDto);
+      const result = await service.deleteCoverImage(deleteCoverImageDto);
 
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        `Failed to delete uploaded cover image with error ${JSON.stringify(s3Error)}`,
-      );
+      expect(result).toEqual({ success: false });
     });
 
     it('should return { success: false } for S3 URL without storage key', async () => {
@@ -878,7 +882,6 @@ describe('ScenarioService', () => {
       const result = await service.deleteCoverImage(deleteCoverImageDto);
 
       expect(result).toEqual({ success: false });
-      expect(mockLogger.warn).toHaveBeenCalled();
     });
 
     it('should handle bucket name mismatch gracefully', async () => {
@@ -1447,25 +1450,40 @@ describe('ScenarioService', () => {
         contentType: ScenarioImageUploadContentType.JPEG,
       };
       const mockPresignedUrl = 'https://s3.amazonaws.com/presigned';
-      mockS3Service.generatePresignedUrl.mockResolvedValue(mockPresignedUrl);
+      const mockImageUrl =
+        'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-images/123-test.jpg';
+      mockS3Service.getPresignedUrlForImageUpload.mockResolvedValue({
+        presignedUrl: mockPresignedUrl,
+        imageUrl: mockImageUrl,
+      });
 
       const result =
         await service.getPresignedUrlForScenarioCoverImage(requestDto);
 
       expect(result.presignedUrl).toBe(mockPresignedUrl);
-      expect(result.coverImageUrl).toContain('scenario-cover-images');
+      expect(result.coverImageUrl).toBe(mockImageUrl);
+      expect(mockS3Service.getPresignedUrlForImageUpload).toHaveBeenCalledWith(
+        'test-bucket',
+        'scenario-cover-images',
+        requestDto.fileName,
+        requestDto.fileSize,
+        requestDto.contentType,
+      );
     });
 
     it('should throw BadRequestException for invalid file type', async () => {
       const requestDto: ScenarioImageUploadRequestDto = {
         fileName: 'test.txt',
         fileSize: 1024,
-        contentType: 'text/plain' as any,
+        contentType: 'text/plain' as ScenarioImageUploadContentType,
       };
 
       await expect(
         service.getPresignedUrlForScenarioCoverImage(requestDto),
       ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.getPresignedUrlForScenarioCoverImage(requestDto),
+      ).rejects.toThrow('Invalid file type');
     });
 
     it('should throw BadRequestException when file size exceeds limit', async () => {
@@ -1474,6 +1492,9 @@ describe('ScenarioService', () => {
         fileSize: 3 * 1024 * 1024, // 3MB (exceeds 2MB limit)
         contentType: ScenarioImageUploadContentType.JPEG,
       };
+      mockS3Service.getPresignedUrlForImageUpload.mockRejectedValue(
+        new BadRequestException('File size must be less than 2 MB'),
+      );
 
       await expect(
         service.getPresignedUrlForScenarioCoverImage(requestDto),

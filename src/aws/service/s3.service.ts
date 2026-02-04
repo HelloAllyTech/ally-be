@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   S3Client,
   PutObjectCommand,
@@ -26,10 +26,12 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AppConfigService } from '../../config/config.service';
+import { LoggerService } from 'src/logger/logger.service';
 
 @Injectable()
 export class S3Service {
   private readonly s3: S3Client;
+  private readonly logger = LoggerService.getInstance(S3Service.name);
 
   constructor(private readonly config: AppConfigService) {
     const { region, accessKeyId, secretAccessKey, sessionToken } = config.aws;
@@ -204,5 +206,61 @@ export class S3Service {
       .replace(/^\.+/, '') // Remove leading dots
       .toLowerCase()
       .substring(0, maxLength); // Limit length
+  }
+
+  async getPresignedUrlForImageUpload(
+    bucket: string,
+    storageFolder: string,
+    fileName: string,
+    fileSize: number,
+    contentType: string,
+  ): Promise<{ presignedUrl: string; imageUrl: string }> {
+    const maxFileSize = 2 * 1024 * 1024; // 2 MB
+    if (fileSize > maxFileSize) {
+      throw new BadRequestException(
+        `File size must be less than ${maxFileSize / 1024 / 1024} MB`,
+      );
+    }
+
+    const sanitizedFileName = this.sanitizeFileName(fileName);
+
+    const storageKey = `${storageFolder}/${Date.now()}-${sanitizedFileName}`;
+    const presignedUrl = await this.generatePresignedUrl({
+      bucket,
+      key: storageKey,
+      operation: 'put',
+      expiresIn: 600, // 10 minutes
+      contentType,
+    });
+
+    const region = this.config.aws.region;
+    const imageUrl = `https://${bucket}.s3.${region}.amazonaws.com/${storageKey}`;
+
+    return { presignedUrl, imageUrl };
+  }
+
+  async deleteS3Image(bucket: string, imageUrl: string) {
+    const s3ImageUrlPattern =
+      /^https:\/\/[^.]+\.s3\.[^.]+\.amazonaws\.com\/(.+)$/;
+    const imageUrlMatch = imageUrl.match(s3ImageUrlPattern);
+
+    const storageKey = imageUrlMatch ? imageUrlMatch[1] : null;
+    if (!storageKey) {
+      this.logger.warn(`Invalid or unrecognized S3 URL: ${imageUrl}`);
+      return { success: false };
+    }
+
+    try {
+      await this.deleteObject({
+        bucket,
+        key: storageKey,
+      });
+      return { success: true };
+    } catch (error) {
+      this.logger.error(
+        `Failed to delete uploaded image with error ${JSON.stringify(error)}`,
+      );
+      return { success: false };
+    }
   }
 }

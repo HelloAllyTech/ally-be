@@ -41,6 +41,9 @@ import {
 } from '../dto/user-badge-response.dto';
 import { BadgeTenantService } from '../service/badge-tenant.service';
 import { AddBadgeToTenantsRequestDto } from '../dto/badge-tenant.dto';
+import { BadgeImageUploadRequestDto } from '../dto/badge-image-upload-request.dto';
+import { BadgeImageUploadResponseDto } from '../dto/badge-image-upload-response.dto';
+import { DeleteBadgeImageDto } from '../dto/delete-badge-image.dto';
 
 @ApiTags('Badge')
 @ApiBearerAuth()
@@ -203,6 +206,25 @@ export class BadgeController {
     return {
       message: 'Badge added to tenants successfully',
     };
+  }
+
+  @ApiOperation({ summary: 'Get presigned URL for badge image' })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @Post('badge-image-url')
+  async getPresignedUrlForScenarioCoverImage(
+    @Body() badgeImageUploadRequestDto: BadgeImageUploadRequestDto,
+  ): Promise<BadgeImageUploadResponseDto> {
+    return this.badgeService.getPresignedUrlForBadgeImage(
+      badgeImageUploadRequestDto,
+    );
+  }
+
+  @ApiOperation({ summary: 'Delete badge image' })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @ApiBody({ type: DeleteBadgeImageDto })
+  @Delete('badge-image')
+  async deleteBadgeImage(@Body() deleteBadgeImageDto: DeleteBadgeImageDto) {
+    return this.badgeService.deleteBadgeImage(deleteBadgeImageDto);
   }
 
   @ApiOperation({ summary: 'Update a badge' })

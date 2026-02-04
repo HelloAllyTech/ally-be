@@ -38,6 +38,12 @@ import { BadgeUserRepository } from '../repository/badge-user.repository';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { BadgeGroupRepository } from '../repository/badge-group.repository';
 import { BadgeTenant } from '../entity/badge-tenant.entity';
+import { AppConfigService } from 'src/config/config.service';
+import { S3Service } from 'src/aws/service/s3.service';
+import { BadgeImageUploadRequestDto } from '../dto/badge-image-upload-request.dto';
+import { BadgeImageUploadResponseDto } from '../dto/badge-image-upload-response.dto';
+import { BadgeImageUploadContentType } from '../enum/badge-image-upload-content-type.enum';
+import { DeleteBadgeImageDto } from '../dto/delete-badge-image.dto';
 
 @Injectable()
 export class BadgeService {
@@ -52,6 +58,8 @@ export class BadgeService {
     private readonly badgeUserRepository: BadgeUserRepository,
     private readonly groupRepository: GroupRepository,
     private readonly badgeGroupRepository: BadgeGroupRepository,
+    private readonly configService: AppConfigService,
+    private readonly s3Service: S3Service,
   ) {}
 
   async createBadge(
@@ -665,5 +673,43 @@ export class BadgeService {
       groupId,
       tenantId,
     );
+  }
+
+  async getPresignedUrlForBadgeImage(
+    badgeImageUploadRequestDto: BadgeImageUploadRequestDto,
+  ): Promise<BadgeImageUploadResponseDto> {
+    const bucket = this._validateAndRetrieveBucket();
+
+    if (
+      !Object.values(BadgeImageUploadContentType).includes(
+        badgeImageUploadRequestDto.contentType,
+      )
+    ) {
+      throw new BadRequestException('Invalid file type');
+    }
+
+    const { presignedUrl, imageUrl } =
+      await this.s3Service.getPresignedUrlForImageUpload(
+        bucket,
+        'badges',
+        badgeImageUploadRequestDto.fileName,
+        badgeImageUploadRequestDto.fileSize,
+        badgeImageUploadRequestDto.contentType,
+      );
+
+    return { presignedUrl, imageUrl };
+  }
+
+  async deleteBadgeImage(deleteBadgeImageDto: DeleteBadgeImageDto) {
+    const bucket = this._validateAndRetrieveBucket();
+    return this.s3Service.deleteS3Image(bucket, deleteBadgeImageDto.imageUrl);
+  }
+
+  private _validateAndRetrieveBucket() {
+    const bucket = this.configService.s3.assetsBucket;
+    if (!bucket) {
+      throw new Error('S3 bucket name for assetsBucket is not defined');
+    }
+    return bucket;
   }
 }
