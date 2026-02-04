@@ -49,6 +49,7 @@ describe('CallLogService', () => {
     updatedAt: new Date(),
     tenantId: mockTenantId,
     externalId: undefined,
+    archivedAt: undefined,
   };
 
   const mockCallDetails: CallDetails = {
@@ -165,11 +166,15 @@ describe('CallLogService', () => {
         offset: 0,
       });
 
-      expect(chatRepository.getCallLogsQuery).toHaveBeenCalledWith(
-        mockTokenUser.id,
-        mockTenantId,
-        { limit: 10, offset: 0 },
-      );
+      expect(chatRepository.getCallLogsQuery).toHaveBeenCalledWith({
+        counselorId: mockTokenUser.id,
+        tenantId: mockTenantId,
+        limit: 10,
+        offset: 0,
+        sortBy: undefined,
+        order: undefined,
+        archive: undefined,
+      });
       expect(result).toEqual({
         data: [mockCallLog],
         count: 1,

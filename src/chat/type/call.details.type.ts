@@ -1,3 +1,5 @@
+import { Pagination } from 'src/common/type/common.type';
+
 export enum NewCallFollowUp {
   NEW_CALL = 'New Call',
   FOLLOW_UP = 'Follow-Up',
@@ -178,3 +180,9 @@ export type FlattenedSummaryNotePayloadCamelCase = {
   ongoingRiskSuicidalAction?: string | null;
   ongoingRiskSuicidalThoughtsNotes?: string | null;
 };
+
+export interface CallLogsParams extends Pagination {
+  counselorId: number;
+  tenantId: string;
+  archive?: string;
+}

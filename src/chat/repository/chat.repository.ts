@@ -15,7 +15,7 @@ import {
   CallLogSortBy,
   SortOrder,
 } from '../dto/call-log.request.dto';
-import { Pagination } from 'src/common/type/common.type';
+import { CallLogsParams } from '../type/call.details.type';
 
 @Injectable()
 export class ChatRepository extends Repository<Chat> {
@@ -24,9 +24,7 @@ export class ChatRepository extends Repository<Chat> {
   }
 
   async getCallLogsQuery(
-    counselorId: number,
-    tenantId: string,
-    options: Pagination,
+    params: CallLogsParams,
   ): Promise<{ data: Chat[]; count: number }> {
     const query = this.createQueryBuilder('chat')
       .leftJoinAndMapOne(
@@ -42,24 +40,33 @@ export class ChatRepository extends Repository<Chat> {
         'client.id = chat.clientId',
       );
 
-    query.where('chat.counselorId = :counselorId', { counselorId });
+    query.where('chat.counselorId = :counselorId', {
+      counselorId: params.counselorId,
+    });
 
-    if (options.limit) {
-      query.limit(options.limit);
+    if (params.limit) {
+      query.limit(params.limit);
     }
-    if (options.offset) {
-      query.offset(options.offset);
+    if (params.offset) {
+      query.offset(params.offset);
     }
-    if (options.sortBy) {
+    if (params.sortBy) {
       const sortOrder =
-        options.order === 'ASC' || options.order === 'DESC'
-          ? (options.order as SortOrder)
+        params.order === 'ASC' || params.order === 'DESC'
+          ? (params.order as SortOrder)
           : SortOrder.DESC;
-      this.applySorting(query, options.sortBy as CallLogSortBy, sortOrder);
+      this.applySorting(query, params.sortBy as CallLogSortBy, sortOrder);
     }
 
-    query.andWhere('chat.tenantId = :tenantId', { tenantId });
+    query.andWhere('chat.tenantId = :tenantId', { tenantId: params.tenantId });
     query.andWhere('chat.status = :status', { status: ChatStatus.ENDED });
+    if (params.archive) {
+      if (params.archive === 'true') {
+        query.andWhere('chat.archivedAt IS NOT NULL');
+      } else {
+        query.andWhere('chat.archivedAt IS NULL');
+      }
+    }
 
     const [data, count] = await query.getManyAndCount();
     return { data, count };
@@ -91,6 +98,13 @@ export class ChatRepository extends Repository<Chat> {
 
     // Only show ENDED calls for admin call logs
     query.andWhere('chat.status = :status', { status: ChatStatus.ENDED });
+    if (filters.archive) {
+      if (filters.archive === 'true') {
+        query.andWhere('chat.archivedAt IS NOT NULL');
+      } else {
+        query.andWhere('chat.archivedAt IS NULL');
+      }
+    }
 
     this.applyStringFilters(query, filters);
     this.applyIdFilters(query, filters);

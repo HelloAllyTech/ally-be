@@ -15,7 +15,7 @@ import {
   AudioChatProvider,
 } from '../../common/constants/chat.constants';
 import { CallDetails } from '../entity/call.details.entity';
-import { Pagination } from '../../common/type/common.type';
+import { Pagination, SuccessResponse } from '../../common/type/common.type';
 import { UserService } from '../../user/service/user.service';
 import { ChatEvents } from '../constants/chat.constants';
 import { UpdateChatInput } from '../type/chat.type';
@@ -48,6 +48,7 @@ import { CallDetailsService } from './call-details.service';
 import { CallLogService } from './call-log.service';
 import { AiChatIntegrationService } from './ai-chat-integration.service';
 import { ChatFeedbackService } from './chat-feedback.service';
+import { ToggleArchiveStatusDto } from '../dto/toggle-archive-status.dto';
 
 @Injectable()
 export class ChatService {
@@ -419,8 +420,15 @@ export class ChatService {
     );
   }
 
-  async getCallLogs(user: TokenUser, options: Pagination) {
-    return this.callLogService.getCallLogs(user, options);
+  async getCallLogs(user: TokenUser, options: Pagination, archive?: string) {
+    return this.callLogService.getCallLogs(user, options, archive);
+  }
+
+  async updateArchiveStatus(
+    id: number,
+    toggleArchiveStatusDto: ToggleArchiveStatusDto,
+  ): Promise<SuccessResponse> {
+    return this.callLogService.updateArchiveStatus(id, toggleArchiveStatusDto);
   }
 
   async getAdminCallLogs(filters: CallLogFilters) {

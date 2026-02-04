@@ -30,6 +30,7 @@ describe('ChatTranscriptService', () => {
     updatedAt: new Date(),
     tenantId: 'test-tenant',
     externalId: undefined,
+    archivedAt: undefined,
   };
 
   beforeEach(async () => {
