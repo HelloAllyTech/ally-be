@@ -89,6 +89,7 @@ describe('ChatAiService', () => {
     updatedAt: new Date(),
     tenantId: 'test-tenant',
     externalId: undefined,
+    archivedAt: undefined,
   };
 
   const mockCounselor = {

@@ -11,6 +11,9 @@ import { User } from 'src/user/entity/user.entity';
 import { UserRepository } from 'src/user/repository/user.repository';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { UserGroup } from 'src/authorization/entity/user-group.entity';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { AuthorizationEvents } from '../../type/authorization-event.type';
 
 describe('GroupService', () => {
   let service: GroupService;
@@ -19,6 +22,7 @@ describe('GroupService', () => {
   let userGroupRepo: jest.Mocked<UserGroupRepository>;
   let userRepository: jest.Mocked<UserRepository>;
   let dataSource: jest.Mocked<DataSource>;
+  let eventEmitter: jest.Mocked<EventEmitter2>;
 
   beforeEach(async () => {
     jest.spyOn(LoggerService, 'getInstance').mockReturnValue({
@@ -29,8 +33,14 @@ describe('GroupService', () => {
       log: jest.fn(),
     } as any);
 
+    jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue('tenant-1');
+
     const mockDataSource = {
       transaction: jest.fn((callback) => callback()),
+    };
+
+    const mockEventEmitter = {
+      emit: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -73,6 +83,10 @@ describe('GroupService', () => {
             findOne: jest.fn(),
           },
         },
+        {
+          provide: EventEmitter2,
+          useValue: mockEventEmitter,
+        },
       ],
     }).compile();
 
@@ -82,10 +96,12 @@ describe('GroupService', () => {
     userGroupRepo = module.get(UserGroupRepository);
     userRepository = module.get(UserRepository);
     dataSource = module.get(DataSource);
+    eventEmitter = module.get(EventEmitter2);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
 
   it('should be defined', () => {
@@ -236,6 +252,10 @@ describe('GroupService', () => {
       expect(redisService.del).toHaveBeenCalledWith('user:groups:1');
       expect(redisService.del).toHaveBeenCalledWith('user:roles:1');
       expect(redisService.del).toHaveBeenCalledTimes(2);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        AuthorizationEvents.USER_ROLE_ASSIGNED,
+        { userId: 1, groupId: 2, tenantId: 'tenant-1' },
+      );
     });
 
     it('should throw NotFoundException when role not found', async () => {

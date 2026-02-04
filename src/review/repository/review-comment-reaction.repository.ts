@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
 import { ReviewComment } from '../entity/review-comment.entity';
+import { ReviewThread } from '../entity/review-thread.entity';
+import { Review } from '../entity/review.entity';
 import { CommentReactionCount } from '../type/review-comment-reaction.type';
 
 @Injectable()
@@ -36,7 +38,9 @@ export class ReviewCommentReactionRepository extends Repository<ReviewCommentRea
 
     const query = this.createQueryBuilder('rcr')
       .innerJoin(ReviewComment, 'rc', 'rc.id = rcr.reviewCommentId')
-      .where('rc.createdBy != rcr.createdBy')
+      .innerJoin(ReviewThread, 'rt', 'rt.id = rc.reviewThreadId')
+      .innerJoin(Review, 'r', 'r.id = rt.reviewId')
+      .where('r.createdBy != rcr.createdBy') // only count reactions on others' sessions
       .select('rcr.createdBy', 'userId')
       .addSelect('COUNT(rcr.id)', 'count')
       .groupBy('rcr.createdBy');
@@ -61,16 +65,17 @@ export class ReviewCommentReactionRepository extends Repository<ReviewCommentRea
 
     const query = this.createQueryBuilder('rcr')
       .innerJoin(ReviewComment, 'rc', 'rc.id = rcr.reviewCommentId')
-      .where('rc.createdBy != rcr.createdBy')
-      .select('rc.createdBy', 'userId')
+      .innerJoin(ReviewThread, 'rt', 'rt.id = rc.reviewThreadId')
+      .innerJoin(Review, 'r', 'r.id = rt.reviewId')
+      .select('r.createdBy', 'userId')
       .addSelect('COUNT(rcr.id)', 'count')
-      .groupBy('rc.createdBy');
+      .groupBy('r.createdBy');
 
     if (userIds) {
-      query.andWhere('rc.createdBy IN (:...userIds)', { userIds });
+      query.andWhere('r.createdBy IN (:...userIds)', { userIds });
     }
     if (tenantIds) {
-      query.andWhere('rc.tenantId IN (:...tenantIds)', { tenantIds });
+      query.andWhere('r.tenantId IN (:...tenantIds)', { tenantIds });
     }
 
     return query.getRawMany();

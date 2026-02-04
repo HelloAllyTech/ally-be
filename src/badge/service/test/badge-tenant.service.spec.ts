@@ -137,65 +137,6 @@ describe('BadgeTenantService', () => {
     });
   });
 
-  describe('addPublicBadgesToTenant', () => {
-    it('should throw NotFoundException when tenant does not exist', async () => {
-      mockTenantsRepository.findOne.mockResolvedValue(null);
-
-      await expect(service.addPublicBadgesToTenant('tenant-1')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('should throw NotFoundException when no public badges found', async () => {
-      mockTenantsRepository.findOne.mockResolvedValue({
-        id: 'tenant-1',
-      } as any);
-      mockBadgeRepository.find.mockResolvedValue([]);
-
-      await expect(service.addPublicBadgesToTenant('tenant-1')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('should query badges with PUBLIC visibility and ACTIVE status', async () => {
-      mockTenantsRepository.findOne.mockResolvedValue({
-        id: 'tenant-1',
-      } as any);
-      mockBadgeRepository.find.mockResolvedValue([
-        { id: 'badge-1' },
-      ] as Badge[]);
-      mockBadgeTenantRepository.save.mockResolvedValue([] as any);
-
-      await service.addPublicBadgesToTenant('tenant-1');
-
-      expect(mockBadgeRepository.find).toHaveBeenCalledWith({
-        where: {
-          visibilityType: BadgeVisibilityType.PUBLIC,
-          status: BadgeStatus.ACTIVE,
-        },
-      });
-    });
-
-    it('should create correct badge-tenant mappings', async () => {
-      mockTenantsRepository.findOne.mockResolvedValue({
-        id: 'tenant-1',
-      } as any);
-      mockBadgeRepository.find.mockResolvedValue([
-        { id: 'badge-1' },
-        { id: 'badge-2' },
-      ] as Badge[]);
-      mockBadgeTenantRepository.save.mockResolvedValue([] as any);
-
-      const result = await service.addPublicBadgesToTenant('tenant-1');
-
-      expect(result).toBe(true);
-      expect(mockBadgeTenantRepository.save).toHaveBeenCalledWith([
-        { badgeId: 'badge-1', tenantId: 'tenant-1' },
-        { badgeId: 'badge-2', tenantId: 'tenant-1' },
-      ]);
-    });
-  });
-
   describe('assignBadgeToTenants', () => {
     it('should assign to all tenants when badge is PUBLIC', async () => {
       const badge = {

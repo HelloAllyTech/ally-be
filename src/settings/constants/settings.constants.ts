@@ -67,6 +67,40 @@ export const DEFAULT_AI_SUMMARY_FIELDS_ARRAY =
     'emotionalLift',
     'callQuality',
     'newCallFollowUp',
+
+    // Intake section fields
+    'intakeNotes',
+    'riskSelfHarm',
+    'riskSelfHarmNotes',
+    'riskSuicidalThoughts',
+    'riskSuicidalPlan',
+    'riskSuicidalAction',
+    'riskSuicidalThoughtsNotes',
+    'riskRunningAway',
+    'riskRunningAwayNotes',
+    'traumaPhysicalAbuse',
+    'traumaSexualAbuse',
+    'traumaVerbalAbuse',
+    'traumaNeglect',
+    'traumaSeparationFromCaregiverParent',
+    'traumaWitnessedDomesticViolence',
+    'traumaNotes',
+    'assessmentPsychologicalDiagnosis',
+    'assessmentPsychologicalDiagnosisNotes',
+    'assessmentUseOfPsychotropicMedications',
+    'assessmentUseOfPsychotropicMedicationsNotes',
+    'assessmentHallucinations',
+    'assessmentHallucinationsNotes',
+    'assessmentAffect',
+    'assessmentSpeech',
+
+    // Ongoing Risks section fields
+    'ongoingRiskSelfHarm',
+    'ongoingRiskSelfHarmNotes',
+    'ongoingRiskSuicidalThoughts',
+    'ongoingRiskSuicidalPlan',
+    'ongoingRiskSuicidalAction',
+    'ongoingRiskSuicidalThoughtsNotes',
   ]);
 
 export const DEFAULT_SUMMARY_FIELDS_ARRAY = [

@@ -15,6 +15,10 @@ import {
   LeaderboardActionEvent,
   MinutesPlayedUpdatedEventParams,
 } from 'src/learn/type/scenario-session-leaderboard-event.type';
+import {
+  AuthorizationEvents,
+  UserRoleAssignedEventParams,
+} from 'src/authorization/type/authorization-event.type';
 
 @Injectable()
 export class BadgeEventConsumer {
@@ -45,10 +49,10 @@ export class BadgeEventConsumer {
   @OnEvent(ReviewEvents.REVIEW_COMMENT_REACTION_ADDED, { async: true })
   async handleAddReviewCommentReaction({
     reaction,
-    comment,
+    review,
   }: ReviewCommentReactionAddedEventParams) {
     await this.badgeAwardService.awardCommentReactionBadgeByReceiverGiverId(
-      comment.createdBy,
+      review.createdBy,
       reaction.createdBy,
     );
   }
@@ -66,11 +70,11 @@ export class BadgeEventConsumer {
 
   @OnEvent(ReviewEvents.REVIEW_COMMENT_REACTION_REMOVED, { async: true })
   async handleRemoveReviewCommentReaction({
-    comment,
     removedReaction,
+    review,
   }: ReviewCommentReactionRemovedEventParams) {
     await this.badgeAwardService.revokeInvalidReactionBadgesByReceiverGiverId(
-      comment.createdBy,
+      review.createdBy,
       removedReaction.createdBy,
     );
   }
@@ -97,5 +101,18 @@ export class BadgeEventConsumer {
     // so no new badges calculation should be done to optimize queries.
     if (userDateEntryBeforeUpdation?.id) return;
     await this.badgeAwardService.awardActiveDayStreakBadgeByUserId(userId);
+  }
+
+  @OnEvent(AuthorizationEvents.USER_ROLE_ASSIGNED, { async: true })
+  async handleUserRoleAssigned({
+    userId,
+    groupId,
+    tenantId,
+  }: UserRoleAssignedEventParams) {
+    await this.badgeAwardService.awardBadgesForUserRole(
+      userId,
+      groupId,
+      tenantId,
+    );
   }
 }

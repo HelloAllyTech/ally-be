@@ -25,11 +25,13 @@ export interface ReviewReactionAddedEventParams {
 export interface ReviewCommentReactionAddedEventParams {
   reaction: ReviewCommentReaction;
   comment: ReviewComment;
+  review: Review;
 }
 
 export interface ReviewCommentReactionRemovedEventParams {
   removedReaction: ReviewCommentReaction;
   comment: ReviewComment;
+  review: Review;
 }
 
 export interface ReviewReactionRemovedEventParams {

@@ -92,13 +92,13 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     await userDailyScoreRepo.query(
       `
       INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
-      VALUES (uuid_generate_v4(), $1, $2, $3, 0, -$4, NOW(), NOW())
+      VALUES (uuid_generate_v4(), $1, $2, $3, 0, $4, NOW(), NOW())
       ON CONFLICT ("userId", "tenant_id", "date")
       DO UPDATE SET
-        "totalScore" = user_daily_scores."totalScore" - $4,
+        "totalScore" = user_daily_scores."totalScore" + $4,
         "updatedAt" = NOW()
       `,
-      [userId, tenantId, normalizedDate, amount],
+      [userId, tenantId, normalizedDate, -amount],
     );
   }
 

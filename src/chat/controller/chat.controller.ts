@@ -40,7 +40,10 @@ import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { Response } from 'express';
 import { GetMessagesResponse } from '../dto/message.response.dto';
 import { CallLogSortBy, SortOrder } from '../dto/call-log.request.dto';
-import { PaginatedResponse } from '../../common/type/common.type';
+import {
+  PaginatedResponse,
+  SuccessResponse,
+} from '../../common/type/common.type';
 import { CounselorNameResponse } from '../dto/call-log.response.dto';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { ChatSummaryService } from '../service/chat-summary.service';
@@ -50,6 +53,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ChatTranscriptService } from '../service/chat-transcript.service';
 import { TranscriptRequestDto } from '../dto/transcript.dto';
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
+import { ToggleArchiveStatusDto } from '../dto/toggle-archive-status.dto';
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -73,6 +77,21 @@ export class ChatController {
   @Get('counsellor-chat')
   async getCounselorChat(@CurrentUser() tokenUser: TokenUser) {
     return this.service.getCounselorChat(tokenUser.id);
+  }
+
+  @ApiOperation({ summary: 'change Archive status of call log' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the updated call log',
+    type: CallLogResponse,
+  })
+  @AuthPermissions([PERMISSIONS.ARCHIVE_CALL_LOG])
+  @Patch('call-logs/:id/archive')
+  async updateArchiveStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() toggleArchiveStatusDto: ToggleArchiveStatusDto,
+  ): Promise<SuccessResponse> {
+    return this.service.updateArchiveStatus(id, toggleArchiveStatusDto);
   }
 
   @ApiOperation({ summary: 'Get counsellor call logs' })
@@ -106,6 +125,12 @@ export class ChatController {
     enum: SortOrder,
     description: 'Sort order (default: DESC)',
   })
+  @ApiQuery({
+    name: 'archive',
+    required: false,
+    type: String,
+    description: 'Filter by archive status',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_CALL_LOGS])
   @Get('call-logs')
   async getCallLogs(
@@ -114,13 +139,18 @@ export class ChatController {
     @Query('offset') offset?: number,
     @Query('sortBy') sortBy: CallLogSortBy = CallLogSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
+    @Query('archive') archive?: 'true' | 'false',
   ) {
-    return this.service.getCallLogs(tokenUser, {
-      limit,
-      offset,
-      sortBy,
-      order,
-    });
+    return this.service.getCallLogs(
+      tokenUser,
+      {
+        limit,
+        offset,
+        sortBy,
+        order,
+      },
+      archive,
+    );
   }
 
   @ApiOperation({ summary: 'Get admin call logs with filtering' })
@@ -214,6 +244,12 @@ export class ChatController {
     type: String,
     description: 'Filter by tags (comma-separated)',
   })
+  @ApiQuery({
+    name: 'archive',
+    required: false,
+    type: String,
+    description: 'Filter by archive status',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_CALL_LOGS_SUMMARY])
   @Get('call-logs-summary')
   async getAdminCallLogs(
@@ -230,6 +266,7 @@ export class ChatController {
     @Query('minQualityScore') minQualityScore?: string,
     @Query('maxQualityScore') maxQualityScore?: string,
     @Query('tags') tags?: string,
+    @Query('archive') archive?: 'true' | 'false',
   ) {
     const parsedMinDuration = minDuration ? parseFloat(minDuration) : undefined;
     const parsedMaxDuration = maxDuration ? parseFloat(maxDuration) : undefined;
@@ -254,6 +291,7 @@ export class ChatController {
       minQualityScore: parsedMinQualityScore,
       maxQualityScore: parsedMaxQualityScore,
       tags,
+      archive,
     });
   }
 

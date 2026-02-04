@@ -21,6 +21,7 @@ export class BadgeUserService {
   async awardBadgeToUsersByTenant(
     badge: Badge,
     tenantIds: string[],
+    userIds?: number[],
   ): Promise<void> {
     this.logger.log(
       `Awarding badge ${badge.id} to users in tenants: ${tenantIds.join(', ')}`,
@@ -40,6 +41,7 @@ export class BadgeUserService {
           const totalSimulationMinutesPerUser =
             await this.communitySharedService.getTotalSimulationMinutesPerUser(
               tenantIds,
+              userIds,
             );
 
           userCounts = totalSimulationMinutesPerUser.map((row) => ({
@@ -52,8 +54,10 @@ export class BadgeUserService {
           this.logger.log(
             `Getting given comments/reactions count for badge ${badge.id}`,
           );
-          const givenCounts =
-            await this.getGivenCommentsOrReactionsCount(tenantIds);
+          const givenCounts = await this.getGivenCommentsOrReactionsCount(
+            tenantIds,
+            userIds,
+          );
 
           userCounts = givenCounts.map((row) => ({
             userId: row.userId,
@@ -65,8 +69,10 @@ export class BadgeUserService {
           this.logger.log(
             `Getting received comments/reactions count for badge ${badge.id}`,
           );
-          const receivedCounts =
-            await this.getReceivedCommentsOrReactionsCount(tenantIds);
+          const receivedCounts = await this.getReceivedCommentsOrReactionsCount(
+            tenantIds,
+            userIds,
+          );
 
           userCounts = receivedCounts.map((row) => ({
             userId: row.userId,
@@ -81,6 +87,7 @@ export class BadgeUserService {
           const maxActiveDaysPerUser =
             await this.communitySharedService.getMaxActiveDaysPerUser(
               tenantIds,
+              userIds,
             );
 
           userCounts = maxActiveDaysPerUser.map((row) => ({
@@ -158,29 +165,23 @@ export class BadgeUserService {
     tenantIds?: string[],
     userIds?: number[],
   ): Promise<{ userId: number; count: number }[]> {
-    const [
-      givenComments,
-      givenReplies,
-      givenReviewReactions,
-      givenCommentReactions,
-    ] = await Promise.all([
-      this.reviewSharedService.getGivenCommentsCountPerUser(tenantIds, userIds),
-      this.reviewSharedService.getGivenRepliesCountAsReviewOwner(
-        tenantIds,
-        userIds,
-      ),
-      this.reviewSharedService.getGivenReviewReactionsCountPerUser(
-        tenantIds,
-        userIds,
-      ),
-      this.reviewSharedService.getGivenCommentsReactionsCountPerUser(
-        tenantIds,
-        userIds,
-      ),
-    ]);
+    const [givenComments, givenReviewReactions, givenCommentReactions] =
+      await Promise.all([
+        this.reviewSharedService.getGivenCommentsCountPerUser(
+          tenantIds,
+          userIds,
+        ),
+        this.reviewSharedService.getGivenReviewReactionsCountPerUser(
+          tenantIds,
+          userIds,
+        ),
+        this.reviewSharedService.getGivenCommentsReactionsCountPerUser(
+          tenantIds,
+          userIds,
+        ),
+      ]);
     return this.mergeCountsByUserId([
       ...givenComments,
-      ...givenReplies,
       ...givenReviewReactions,
       ...givenCommentReactions,
     ]);
@@ -192,15 +193,10 @@ export class BadgeUserService {
   ): Promise<{ userId: number; count: number }[]> {
     const [
       receivedComments,
-      receivedReplies,
       receivedReviewReactions,
       receivedCommentReactions,
     ] = await Promise.all([
       this.reviewSharedService.getReceivedCommentsCountPerUser(
-        tenantIds,
-        userIds,
-      ),
-      this.reviewSharedService.getReceivedRepliesCountAsCommenter(
         tenantIds,
         userIds,
       ),
@@ -215,7 +211,6 @@ export class BadgeUserService {
     ]);
     return this.mergeCountsByUserId([
       ...receivedComments,
-      ...receivedReplies,
       ...receivedReviewReactions,
       ...receivedCommentReactions,
     ]);

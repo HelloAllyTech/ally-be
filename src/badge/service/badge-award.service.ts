@@ -66,7 +66,7 @@ export class BadgeAwardService {
         try {
           await this.badgeUserService.saveBadgeUsers(badgeToAward);
           this.logger.log(
-            `Awarded ${badgeToAward.length} badge(s) to receiver userId=${receiverId}`,
+            `Awarded ${badgeToAward.length} badge(s) to receiver userId=${receiverId} badgeIds=[${badgeToAward.map((b) => b.badgeId).join(', ')}] (receivedCount=${receivedCommentsReactionsCount})`,
           );
         } catch (error) {
           this.logger.error(
@@ -102,7 +102,7 @@ export class BadgeAwardService {
         try {
           await this.badgeUserService.saveBadgeUsers(badgeToAward);
           this.logger.log(
-            `Awarded ${badgeToAward.length} badge(s) to giver userId=${giverId}`,
+            `Awarded ${badgeToAward.length} badge(s) to giver userId=${giverId} badgeIds=[${badgeToAward.map((b) => b.badgeId).join(', ')}] (givenCount=${givenCommentsReactionsCount})`,
           );
         } catch (error) {
           this.logger.error(
@@ -156,10 +156,10 @@ export class BadgeAwardService {
         try {
           await this.badgeUserService.deleteUserBadges(
             receiverId,
-            invalidBadges.map((badge) => badge.id),
+            invalidBadges.map((badge) => badge.badgeId),
           );
           this.logger.log(
-            `Revoked ${invalidBadges.length} badge(s) from receiver userId=${receiverId}`,
+            `Revoked ${invalidBadges.length} badge(s) from receiver userId=${receiverId} badgeIds=[${invalidBadges.map((b) => b.badgeId).join(', ')}] (required counts were ${invalidBadges.map((b) => b.achievementParams?.count).join(', ')}, current receivedCount=${receivedCommentsReactionsCount})`,
           );
         } catch (error) {
           this.logger.error(
@@ -193,10 +193,10 @@ export class BadgeAwardService {
         try {
           await this.badgeUserService.deleteUserBadges(
             giverId,
-            invalidBadges.map((badge) => badge.id),
+            invalidBadges.map((badge) => badge.badgeId),
           );
           this.logger.log(
-            `Revoked ${invalidBadges.length} badge(s) from giver userId=${giverId}`,
+            `Revoked ${invalidBadges.length} badge(s) from giver userId=${giverId} badgeIds=[${invalidBadges.map((b) => b.badgeId).join(', ')}] (required counts were ${invalidBadges.map((b) => b.achievementParams?.count).join(', ')}, current givenCount=${giverCommentsReactionsCount})`,
           );
         } catch (error) {
           this.logger.error(
@@ -472,6 +472,44 @@ export class BadgeAwardService {
     } catch (error) {
       this.logger.error(
         `Failed to award active day streak badge to user id=${userId}`,
+        error.stack,
+      );
+    }
+  }
+
+  async awardBadgesForUserRole(
+    userId: number,
+    groupId: number,
+    tenantId?: string,
+  ): Promise<void> {
+    try {
+      this.logger.log(
+        `[Role Change Event] Awarding badges for user id=${userId} and group id=${groupId} and tenant id=${tenantId}`,
+      );
+
+      const unawardedBadges =
+        await this.badgeService.getUnawardedBadgesForUserRole(
+          userId,
+          groupId,
+          tenantId,
+        );
+
+      this.logger.debug(
+        `[Role Change Event] Unawarded badges: ${JSON.stringify(unawardedBadges)}`,
+      );
+
+      if (unawardedBadges?.length > 0) {
+        unawardedBadges.forEach(async (badge) => {
+          await this.badgeUserService.awardBadgeToUsersByTenant(
+            badge,
+            tenantId ? [tenantId] : [],
+            [userId],
+          );
+        });
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to award badges for user role for user id=${userId} and group id=${groupId}`,
         error.stack,
       );
     }

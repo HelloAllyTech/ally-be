@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
 import { S3Service } from '../s3.service';
 import { AppConfigService } from '../../../config/config.service';
 import {
@@ -264,6 +265,128 @@ describe('S3Service', () => {
 
       await expect(service.generatePresignedUrl(params)).rejects.toThrow(
         'Failed to generate presigned URL: Presigned URL generation failed',
+      );
+    });
+  });
+
+  describe('getPresignedUrlForImageUpload', () => {
+    const bucket = 'test-bucket';
+    const storageFolder = 'scenario-cover-images';
+
+    beforeEach(() => {
+      (getSignedUrl as jest.Mock).mockResolvedValue(
+        'https://presigned-url.com',
+      );
+    });
+
+    it('should return presignedUrl and imageUrl for valid request', async () => {
+      const fileName = 'cover.jpg';
+      const fileSize = 1024 * 1024; // 1 MB
+      const contentType = 'image/jpeg';
+
+      const result = await service.getPresignedUrlForImageUpload(
+        bucket,
+        storageFolder,
+        fileName,
+        fileSize,
+        contentType,
+      );
+
+      expect(result.presignedUrl).toBe('https://presigned-url.com');
+      expect(result.imageUrl).toMatch(
+        new RegExp(
+          `^https://${bucket}\\.s3\\.us-east-1\\.amazonaws\\.com/${storageFolder}/\\d+-.+\\.jpg$`,
+        ),
+      );
+      expect(getSignedUrl).toHaveBeenCalledWith(
+        mockS3Client,
+        expect.any(PutObjectCommand),
+        { expiresIn: 600 },
+      );
+    });
+
+    it('should throw BadRequestException when file size exceeds 2 MB', async () => {
+      const fileName = 'large.jpg';
+      const fileSize = 3 * 1024 * 1024; // 3 MB
+      const contentType = 'image/jpeg';
+
+      await expect(
+        service.getPresignedUrlForImageUpload(
+          bucket,
+          storageFolder,
+          fileName,
+          fileSize,
+          contentType,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.getPresignedUrlForImageUpload(
+          bucket,
+          storageFolder,
+          fileName,
+          fileSize,
+          contentType,
+        ),
+      ).rejects.toThrow('File size must be less than 2 MB');
+    });
+
+    it('should succeed when file size is exactly 2 MB', async () => {
+      const fileName = 'exact.jpg';
+      const fileSize = 2 * 1024 * 1024; // 2 MB
+      const contentType = 'image/png';
+
+      const result = await service.getPresignedUrlForImageUpload(
+        bucket,
+        storageFolder,
+        fileName,
+        fileSize,
+        contentType,
+      );
+
+      expect(result.presignedUrl).toBe('https://presigned-url.com');
+      expect(result.imageUrl).toContain(bucket);
+      expect(result.imageUrl).toContain(storageFolder);
+    });
+
+    it('should use sanitized fileName in storage key', async () => {
+      const fileName = '  UPPER  Space  .jpg  ';
+      const fileSize = 1024;
+      const contentType = 'image/jpg';
+
+      const result = await service.getPresignedUrlForImageUpload(
+        bucket,
+        storageFolder,
+        fileName,
+        fileSize,
+        contentType,
+      );
+
+      expect(result.imageUrl).toContain(storageFolder);
+      expect(result.imageUrl).not.toMatch(/\s/);
+      expect(getSignedUrl).toHaveBeenCalledTimes(1);
+    });
+
+    it('should call generatePresignedUrl with contentType in PutObjectCommand', async () => {
+      const fileName = 'image.png';
+      const fileSize = 512;
+      const contentType = 'image/png';
+
+      await service.getPresignedUrlForImageUpload(
+        bucket,
+        storageFolder,
+        fileName,
+        fileSize,
+        contentType,
+      );
+
+      expect(PutObjectCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Bucket: bucket,
+          Key: expect.stringMatching(
+            new RegExp(`^${storageFolder}/\\d+-.+\\.png$`),
+          ),
+          ContentType: 'image/png',
+        }),
       );
     });
   });
@@ -634,6 +757,96 @@ describe('S3Service', () => {
         expect.any(DeleteObjectCommand),
       );
       expect(result).toEqual(mockResponse);
+    });
+  });
+
+  describe('deleteS3Image', () => {
+    const bucket = 'test-bucket';
+
+    it('should return { success: true } and call deleteObject when URL is valid S3 format', async () => {
+      const imageUrl =
+        'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-images/12345-test.jpg';
+      mockS3Client.send.mockResolvedValue({ $metadata: {} });
+
+      const result = await service.deleteS3Image(bucket, imageUrl);
+
+      expect(result).toEqual({ success: true });
+      expect(mockS3Client.send).toHaveBeenCalledWith(
+        expect.any(DeleteObjectCommand),
+      );
+      expect(DeleteObjectCommand).toHaveBeenCalledWith({
+        Bucket: bucket,
+        Key: 'scenario-cover-images/12345-test.jpg',
+      });
+    });
+
+    it('should return { success: false } and not call deleteObject for non-S3 URL', async () => {
+      const imageUrl = 'https://invalid-url.com/test.jpg';
+
+      const result = await service.deleteS3Image(bucket, imageUrl);
+
+      expect(result).toEqual({ success: false });
+      expect(mockS3Client.send).not.toHaveBeenCalled();
+    });
+
+    it('should return { success: false } for malformed URL', async () => {
+      const imageUrl = 'not-a-valid-url';
+
+      const result = await service.deleteS3Image(bucket, imageUrl);
+
+      expect(result).toEqual({ success: false });
+      expect(mockS3Client.send).not.toHaveBeenCalled();
+    });
+
+    it('should extract full path as key for nested S3 URL', async () => {
+      const imageUrl =
+        'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-images/subfolder/12345-test.jpg';
+      mockS3Client.send.mockResolvedValue({ $metadata: {} });
+
+      const result = await service.deleteS3Image(bucket, imageUrl);
+
+      expect(result).toEqual({ success: true });
+      expect(DeleteObjectCommand).toHaveBeenCalledWith({
+        Bucket: bucket,
+        Key: 'scenario-cover-images/subfolder/12345-test.jpg',
+      });
+    });
+
+    it('should preserve special characters in key from URL', async () => {
+      const imageUrl =
+        'https://test-bucket.s3.us-east-1.amazonaws.com/scenario-cover-images/test%20image%20(1).jpg';
+      mockS3Client.send.mockResolvedValue({ $metadata: {} });
+
+      const result = await service.deleteS3Image(bucket, imageUrl);
+
+      expect(result).toEqual({ success: true });
+      expect(DeleteObjectCommand).toHaveBeenCalledWith({
+        Bucket: bucket,
+        Key: 'scenario-cover-images/test%20image%20(1).jpg',
+      });
+    });
+
+    it('should return { success: false } for S3 URL with no path (trailing slash only)', async () => {
+      const imageUrl = 'https://test-bucket.s3.us-east-1.amazonaws.com/';
+
+      const result = await service.deleteS3Image(bucket, imageUrl);
+
+      expect(result).toEqual({ success: false });
+      expect(mockS3Client.send).not.toHaveBeenCalled();
+    });
+
+    it('should extract key correctly for S3 URL in different region', async () => {
+      const imageUrl =
+        'https://another-bucket.s3.eu-west-1.amazonaws.com/images/photo.png';
+      mockS3Client.send.mockResolvedValue({ $metadata: {} });
+
+      const result = await service.deleteS3Image(bucket, imageUrl);
+
+      expect(result).toEqual({ success: true });
+      expect(DeleteObjectCommand).toHaveBeenCalledWith({
+        Bucket: bucket,
+        Key: 'images/photo.png',
+      });
     });
   });
 

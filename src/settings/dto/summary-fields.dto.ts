@@ -12,15 +12,18 @@ export class GetSummaryFieldsDto {
 
 export class UpdateSummaryFieldsDto {
   @ApiProperty({
-    description: 'Hidden fields',
+    description: 'Hidden field keys',
   })
   @IsArray()
   @IsString({ each: true })
   hiddenFields!: string[];
 
   @ApiProperty({
-    description: 'Tenant ID',
+    description:
+      'Tenant ID (optional; super admin may pass to target a tenant)',
+    required: false,
   })
+  @IsOptional()
   @IsUUID()
-  tenantId!: string;
+  tenantId?: string;
 }
