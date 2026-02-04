@@ -476,4 +476,42 @@ export class BadgeAwardService {
       );
     }
   }
+
+  async awardBadgesForUserRole(
+    userId: number,
+    groupId: number,
+    tenantId?: string,
+  ): Promise<void> {
+    try {
+      this.logger.log(
+        `[Role Change Event] Awarding badges for user id=${userId} and group id=${groupId} and tenant id=${tenantId}`,
+      );
+
+      const unawardedBadges =
+        await this.badgeService.getUnawardedBadgesForUserRole(
+          userId,
+          groupId,
+          tenantId,
+        );
+
+      this.logger.debug(
+        `[Role Change Event] Unawarded badges: ${JSON.stringify(unawardedBadges)}`,
+      );
+
+      if (unawardedBadges?.length > 0) {
+        unawardedBadges.forEach(async (badge) => {
+          await this.badgeUserService.awardBadgeToUsersByTenant(
+            badge,
+            tenantId ? [tenantId] : [],
+            [userId],
+          );
+        });
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to award badges for user role for user id=${userId} and group id=${groupId}`,
+        error.stack,
+      );
+    }
+  }
 }
