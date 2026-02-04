@@ -88,8 +88,7 @@ export class SettingsService {
     )?.sections;
     const hiddenSectionIds =
       hiddenSectionIdsFromPreference !== undefined &&
-      hiddenSectionIdsFromPreference !== null &&
-      hiddenSectionIdsFromPreference.length > 0
+      hiddenSectionIdsFromPreference !== null
         ? hiddenSectionIdsFromPreference
         : [...DEFAULT_HIDDEN_SECTION_IDS];
 
@@ -172,8 +171,7 @@ export class SettingsService {
     )?.sections;
     const hiddenSectionIds =
       hiddenSectionIdsFromPreference !== undefined &&
-      hiddenSectionIdsFromPreference !== null &&
-      hiddenSectionIdsFromPreference.length > 0
+      hiddenSectionIdsFromPreference !== null
         ? hiddenSectionIdsFromPreference
         : [...DEFAULT_HIDDEN_SECTION_IDS];
 
