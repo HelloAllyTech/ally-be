@@ -99,4 +99,8 @@ export const validationSchema = Joi.object({
   GOOGLE_WEB_CLIENT_ID: Joi.string().required(),
   GOOGLE_IOS_CLIENT_ID: Joi.string().required(),
   GOOGLE_ANDROID_CLIENT_ID: Joi.string().required(),
+
+  // OpenAI
+  OPENAI_API_KEY: Joi.string().optional(),
+  OPENAI_TRANSLATION_MODEL: Joi.string().default('gpt-4o-mini'),
 });
