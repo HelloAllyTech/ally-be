@@ -8,6 +8,10 @@ export type MetadataShape = {
   sexualOrientation?: string;
   genderIdentity?: string;
   customFields?: { name: string; value: string }[];
+  stateInstructions?: {
+    instructions: string;
+    dialogues: string[];
+  };
 };
 
 export type TranslationConsiderableData = {
