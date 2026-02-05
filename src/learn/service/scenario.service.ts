@@ -69,7 +69,10 @@ import { GoogleTranslationsService } from 'src/common/service/google-translation
 import { SharedLanguageService } from '../../language/service/shared-language.service';
 import { ScenarioSharedService } from './scenario-shared.service';
 import { ScenarioEventsTranslationsRepository } from '../repository/scenario-events-translations.repository';
-import { MetadataShape } from '../type/scenario-translation-metadata.type';
+import {
+  MetadataShape,
+  TranslationConsiderableData,
+} from '../type/scenario-translation-metadata.type';
 import { CreateScenarioTranslation } from '../interface/scenario-translation.interface';
 import {
   CreateScenarioEventsTranslation,
@@ -83,6 +86,7 @@ import {
   wrapFieldPlaceholders,
   unwrapFieldPlaceholders,
 } from 'src/session-event/util/session-event.util';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 
 @Injectable()
 export class ScenarioService {
@@ -101,6 +105,7 @@ export class ScenarioService {
     private triggerWarningsService: TriggerWarningsService,
     private scenarioTranslationsRepository: ScenarioTranslationsRepository,
     private googleTranslationsService: GoogleTranslationsService,
+    private openaiTranslationsService: OpenAITranslationsService,
     private sharedLanguageService: SharedLanguageService,
     private scenarioSharedService: ScenarioSharedService,
     private scenarioEventTranslationsRepository: ScenarioEventsTranslationsRepository,
@@ -461,23 +466,42 @@ export class ScenarioService {
           await scenarioTriggerWarningsRepo.save(scenarioTriggerWarnings);
         }
 
-        await this.persistTranslationsForScenarios(
-          savedScenarios.filter(
-            (scenario) => scenario.status == ScenarioStatus.ACTIVE,
-          ),
-          (scenario) =>
-            this.sanitizeMetadata({
-              title: scenario.title,
-              description: scenario.description,
-              tone: scenario.metadata?.tone,
-              personality: scenario.metadata?.personality,
-              context: scenario.metadata?.context,
-              openingStatements: scenario.metadata?.openingStatements,
-              sexualOrientation: scenario.metadata?.sexualOrientation,
-              genderIdentity: scenario.metadata?.genderIdentity,
-              customFields: scenario.metadata?.customFields,
-            }),
+        // Persist translations for active scenarios
+        const activeScenarios = savedScenarios.filter(
+          (scenario) => scenario.status == ScenarioStatus.ACTIVE,
         );
+
+        if (activeScenarios.length === 0) {
+          for (const scenario of activeScenarios) {
+            const translationConsiderableData: TranslationConsiderableData = {
+              currentLocation: scenario.metadata?.currentLocation,
+              lifeHistory: scenario.metadata?.lifeHistory,
+              personality: scenario.metadata?.personality,
+              coreMemories: scenario.metadata?.coreMemories,
+              profession: scenario.metadata?.profession,
+              context: scenario.metadata?.context,
+              age: scenario.metadata?.age,
+              gender: scenario.metadata?.gender,
+            };
+
+            this.persistTranslationsForScenarios(
+              [scenario],
+              () =>
+                this.sanitizeMetadata({
+                  title: scenario.title,
+                  description: scenario.description,
+                  tone: scenario.metadata?.tone,
+                  personality: scenario.metadata?.personality,
+                  context: scenario.metadata?.context,
+                  openingStatements: scenario.metadata?.openingStatements,
+                  sexualOrientation: scenario.metadata?.sexualOrientation,
+                  genderIdentity: scenario.metadata?.genderIdentity,
+                  customFields: scenario.metadata?.customFields,
+                }),
+              translationConsiderableData,
+            );
+          }
+        }
 
         return savedScenarios;
       });
@@ -674,7 +698,17 @@ export class ScenarioService {
         const scenarioRepository = entityManager.getRepository(Scenarios);
         const updated = await scenarioRepository.update(id, updateData);
         if (scenario.status == ScenarioStatus.ACTIVE) {
-          await this.persistTranslationsForScenarios(
+          const translationConsiderableData: TranslationConsiderableData = {
+            currentLocation: scenario.metadata?.currentLocation,
+            lifeHistory: scenario.metadata?.lifeHistory,
+            personality: scenario.metadata?.personality,
+            coreMemories: scenario.metadata?.coreMemories,
+            profession: scenario.metadata?.profession,
+            context: scenario.metadata?.context,
+            age: scenario.metadata?.age,
+            gender: scenario.metadata?.gender,
+          };
+          this.persistTranslationsForScenarios(
             [scenario], // single-item array so helper can reuse same logic
             () =>
               this.sanitizeMetadata({
@@ -688,6 +722,7 @@ export class ScenarioService {
                 genderIdentity: updateScenarioDto.genderIdentity,
                 customFields: updateScenarioDto?.customFields,
               }),
+            translationConsiderableData,
           );
         }
         await this.updateScenarioTerminationEvents(
@@ -1212,12 +1247,15 @@ export class ScenarioService {
   /**
    * Build translated metadata map for a list of language codes.
    * Returns an object: { [langCode]: Partial<MetadataShape> }
+   * Uses OpenAI for Indian languages (natural code-mixing)
+   * Falls back to Google Translate for other languages
    */
   private async buildTranslatedMetadataForLanguageCodes(
     metadataObj:
       | Partial<MetadataShape>
       | Partial<{ message: string; branchInstruction: string }>,
     languageCodes: string[],
+    translationConsiderableData?: TranslationConsiderableData,
   ): Promise<Record<string, Partial<MetadataShape>>> {
     // validation
     const codes = (languageCodes ?? [])
@@ -1239,6 +1277,27 @@ export class ScenarioService {
     // Delegate to external translations service. It should itself validate/truncate and handle retries.
     // Expect translateObjectToLanguages to accept a sanitized metadata object and array of codes.
     try {
+      const openaiTranslatedVersion =
+        await this.openaiTranslationsService.translateObjectToLanguages(
+          metadataObj,
+          codes,
+          translationConsiderableData,
+        );
+
+      if (
+        openaiTranslatedVersion &&
+        Object.keys(openaiTranslatedVersion).length > 0
+      ) {
+        this.logger?.debug?.(
+          '[buildTranslatedMetadataForLanguageCodes] successfully translated using OpenAI',
+        );
+        return openaiTranslatedVersion;
+      }
+
+      this.logger?.debug?.(
+        '[buildTranslatedMetadataForLanguageCodes] OpenAI translation returned empty, falling back to Google Translate',
+      );
+
       const translated =
         await this.googleTranslationsService.translateObjectToLanguages(
           metadataObj,
@@ -1266,6 +1325,7 @@ export class ScenarioService {
   private async persistTranslationsForScenarios(
     scenarios: Array<Scenarios>,
     metadataExtractor: (scenario: Scenarios) => MetadataShape,
+    translationConsiderableData?: TranslationConsiderableData,
   ) {
     if (!scenarios.length) {
       return;
@@ -1309,6 +1369,7 @@ export class ScenarioService {
           await this.buildTranslatedMetadataForLanguageCodes(
             sanitized as Partial<MetadataShape>,
             languageCodes,
+            translationConsiderableData as TranslationConsiderableData,
           );
 
         // Build translatedList: map back to languageId
