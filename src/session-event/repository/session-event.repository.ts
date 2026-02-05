@@ -129,4 +129,32 @@ export class SessionEventRepository extends Repository<SessionEvents> {
       )
       .getRawMany();
   }
+
+  /**
+   * Fetch all unique tags from session_events table
+   * @param search Optional search filter for tags
+   * @returns Array of unique tag strings
+   */
+  async getUniqueTags(search?: string): Promise<string[]> {
+    const query = this.createQueryBuilder('sessionEvent')
+      .select('DISTINCT UNNEST(sessionEvent.tags)', 'tag')
+      .andWhere('sessionEvent.tags IS NOT NULL')
+      .andWhere('array_length(sessionEvent.tags, 1) > 0');
+
+    if (search) {
+      query.andWhere(
+        'EXISTS (SELECT 1 FROM UNNEST(sessionEvent.tags) AS t WHERE t ILIKE :search)',
+        {
+          search: `%${search}%`,
+        },
+      );
+    }
+
+    query.orderBy('tag', 'ASC');
+
+    const result = await query.getRawMany();
+    return result
+      .map((row) => row.tag)
+      .filter((tag) => tag && tag.trim() !== '');
+  }
 }

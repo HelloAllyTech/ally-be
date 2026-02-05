@@ -828,4 +828,206 @@ describe('SessionEventRepository', () => {
       );
     });
   });
+
+  describe('getUniqueTags', () => {
+    beforeEach(() => {
+      queryBuilder.select = jest.fn().mockReturnThis();
+      queryBuilder.getRawMany = jest.fn();
+    });
+
+    it('should get all unique tags without search filter', async () => {
+      const mockResult = [{ tag: 'tag1' }, { tag: 'tag2' }, { tag: 'tag3' }];
+      queryBuilder.getRawMany.mockResolvedValue(mockResult);
+
+      const result = await repository.getUniqueTags();
+
+      expect(repository.createQueryBuilder).toHaveBeenCalledWith(
+        'sessionEvent',
+      );
+      expect(queryBuilder.select).toHaveBeenCalledWith(
+        'DISTINCT UNNEST(sessionEvent.tags)',
+        'tag',
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'sessionEvent.tags IS NOT NULL',
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'array_length(sessionEvent.tags, 1) > 0',
+      );
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith('tag', 'ASC');
+      expect(queryBuilder.getRawMany).toHaveBeenCalled();
+      expect(result).toEqual(['tag1', 'tag2', 'tag3']);
+    });
+
+    it('should get unique tags with search filter', async () => {
+      const mockResult = [{ tag: 'important' }, { tag: 'important-event' }];
+      const search = 'important';
+      queryBuilder.getRawMany.mockResolvedValue(mockResult);
+
+      const result = await repository.getUniqueTags(search);
+
+      expect(repository.createQueryBuilder).toHaveBeenCalledWith(
+        'sessionEvent',
+      );
+      expect(queryBuilder.select).toHaveBeenCalledWith(
+        'DISTINCT UNNEST(sessionEvent.tags)',
+        'tag',
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'sessionEvent.tags IS NOT NULL',
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'array_length(sessionEvent.tags, 1) > 0',
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'EXISTS (SELECT 1 FROM UNNEST(sessionEvent.tags) AS t WHERE t ILIKE :search)',
+        { search: '%important%' },
+      );
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith('tag', 'ASC');
+      expect(result).toEqual(['important', 'important-event']);
+    });
+
+    it('should return empty array when no tags found', async () => {
+      queryBuilder.getRawMany.mockResolvedValue([]);
+
+      const result = await repository.getUniqueTags();
+
+      expect(repository.createQueryBuilder).toHaveBeenCalledWith(
+        'sessionEvent',
+      );
+      expect(queryBuilder.getRawMany).toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+
+    it('should filter out empty and whitespace-only tags', async () => {
+      const mockResult = [
+        { tag: 'valid-tag' },
+        { tag: '' },
+        { tag: '   ' },
+        { tag: 'another-tag' },
+        { tag: null },
+      ];
+      queryBuilder.getRawMany.mockResolvedValue(mockResult);
+
+      const result = await repository.getUniqueTags();
+
+      expect(result).toEqual(['valid-tag', 'another-tag']);
+      expect(result).not.toContain('');
+      expect(result).not.toContain('   ');
+      expect(result).not.toContain(null);
+    });
+
+    it('should handle search with special characters', async () => {
+      const mockResult = [{ tag: "test's-tag" }];
+      const search = "test's";
+      queryBuilder.getRawMany.mockResolvedValue(mockResult);
+
+      const result = await repository.getUniqueTags(search);
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'EXISTS (SELECT 1 FROM UNNEST(sessionEvent.tags) AS t WHERE t ILIKE :search)',
+        { search: "%test's%" },
+      );
+      expect(result).toEqual(["test's-tag"]);
+    });
+
+    it('should handle empty search string', async () => {
+      const mockResult = [{ tag: 'tag1' }, { tag: 'tag2' }];
+      queryBuilder.getRawMany.mockResolvedValue(mockResult);
+
+      const result = await repository.getUniqueTags('');
+
+      // Empty string is falsy, so search filter should NOT be applied
+      const andWhereCalls = (queryBuilder.andWhere as jest.Mock).mock.calls;
+      const searchFilterCall = andWhereCalls.find(
+        (call) => call[0] && call[0].includes('EXISTS'),
+      );
+      expect(searchFilterCall).toBeUndefined();
+      expect(result).toEqual(['tag1', 'tag2']);
+    });
+
+    it('should return tags in alphabetical order', async () => {
+      const mockResult = [{ tag: 'zebra' }, { tag: 'apple' }, { tag: 'mango' }];
+      queryBuilder.getRawMany.mockResolvedValue(mockResult);
+
+      await repository.getUniqueTags();
+
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith('tag', 'ASC');
+    });
+
+    it('should handle case-insensitive search', async () => {
+      const mockResult = [{ tag: 'Test' }, { tag: 'Testing' }];
+      const search = 'test';
+      queryBuilder.getRawMany.mockResolvedValue(mockResult);
+
+      const result = await repository.getUniqueTags(search);
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'EXISTS (SELECT 1 FROM UNNEST(sessionEvent.tags) AS t WHERE t ILIKE :search)',
+        { search: '%test%' },
+      );
+      expect(result).toEqual(['Test', 'Testing']);
+    });
+
+    it('should handle database query error', async () => {
+      const error = new Error('Database query failed');
+      queryBuilder.getRawMany.mockRejectedValue(error);
+
+      await expect(repository.getUniqueTags()).rejects.toThrow(
+        'Database query failed',
+      );
+      expect(repository.createQueryBuilder).toHaveBeenCalledWith(
+        'sessionEvent',
+      );
+    });
+
+    it('should handle null or empty result from query', async () => {
+      queryBuilder.getRawMany.mockResolvedValue([]);
+
+      const result = await repository.getUniqueTags();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should handle tags with Unicode characters', async () => {
+      const mockResult = [
+        { tag: 'emoji-🎉' },
+        { tag: 'unicode-文字' },
+        { tag: 'special-café' },
+      ];
+      queryBuilder.getRawMany.mockResolvedValue(mockResult);
+
+      const result = await repository.getUniqueTags();
+
+      expect(result).toEqual(['emoji-🎉', 'unicode-文字', 'special-café']);
+    });
+
+    it('should handle search with wildcards in search term', async () => {
+      const mockResult = [{ tag: 'test%tag' }];
+      const search = 'test%';
+      queryBuilder.getRawMany.mockResolvedValue(mockResult);
+
+      const result = await repository.getUniqueTags(search);
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'EXISTS (SELECT 1 FROM UNNEST(sessionEvent.tags) AS t WHERE t ILIKE :search)',
+        { search: '%test%%' },
+      );
+      expect(result).toEqual(['test%tag']);
+    });
+
+    it('should not include search filter when search is undefined', async () => {
+      const mockResult = [{ tag: 'tag1' }];
+      queryBuilder.getRawMany.mockResolvedValue(mockResult);
+
+      await repository.getUniqueTags(undefined);
+
+      // andWhere should only be called for non-search conditions
+      const andWhereCalls = (queryBuilder.andWhere as jest.Mock).mock.calls;
+      const searchFilterCall = andWhereCalls.find(
+        (call) => call[0] && call[0].includes('EXISTS'),
+      );
+      expect(searchFilterCall).toBeUndefined();
+    });
+  });
 });
