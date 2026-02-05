@@ -874,7 +874,7 @@ describe('SettingsService', () => {
   });
 
   describe('updateChatTypes', () => {
-    const validChatTypes = [ChatTypes.MICROPHONE_CHAT, ChatTypes.WEBRTC_CHAT];
+    const validChatTypes = [ChatTypes.MICROPHONE_CHAT, ChatTypes.AUDIO_UPLOAD];
     const updateDto: UpdateChatTypesDto = {
       hiddenChatTypes: validChatTypes,
       tenantId: mockTenantId,
