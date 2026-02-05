@@ -22,7 +22,6 @@ export enum AudioChatPlatform {
 
 // Chat types that can be hidden via preferences
 export enum ChatTypes {
-  WEBRTC_CHAT = 'WEBRTC_CHAT',
   MICROPHONE_CHAT = 'MICROPHONE_CHAT',
-  EXOTEL_CONFERENCE_CHAT = 'EXOTEL_CONFERENCE_CHAT',
+  AUDIO_UPLOAD = 'AUDIO_UPLOAD',
 }

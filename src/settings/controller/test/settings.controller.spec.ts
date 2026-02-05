@@ -288,10 +288,7 @@ describe('SettingsController', () => {
 
   describe('getChatTypes', () => {
     it('should return enabled chat types', async () => {
-      const mockChatTypes = [
-        ChatTypes.WEBRTC_CHAT,
-        ChatTypes.EXOTEL_CONFERENCE_CHAT,
-      ];
+      const mockChatTypes = [ChatTypes.MICROPHONE_CHAT, ChatTypes.AUDIO_UPLOAD];
       service.getChatTypes.mockResolvedValue(mockChatTypes);
 
       const result = await controller.getChatTypes();
@@ -363,7 +360,7 @@ describe('SettingsController', () => {
 
     it('should update hidden chat types with multiple types', async () => {
       const requestBody = {
-        hiddenChatTypes: [ChatTypes.MICROPHONE_CHAT, ChatTypes.WEBRTC_CHAT],
+        hiddenChatTypes: [ChatTypes.MICROPHONE_CHAT, ChatTypes.AUDIO_UPLOAD],
         tenantId: 'tenant-id',
       };
       const mockResult = {
