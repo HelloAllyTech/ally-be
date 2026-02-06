@@ -52,13 +52,7 @@ export class AddNewDashboardTables1770359046653 implements MigrationInterface {
     JOIN "groups" g ON d."groupId"::int = g."id"
     WHERE d."externalId" IS NOT NULL
       AND g."name" IN ('ADMIN', 'COUNSELOR', 'LEARNER')
-    ON CONFLICT ("externalId") DO UPDATE
-    SET
-      "name" = EXCLUDED."name",
-      "description" = EXCLUDED."description",
-      "data" = EXCLUDED."data",
-      "analyticsType" = EXCLUDED."analyticsType",
-      "deletedAt" = NULL;
+    ON CONFLICT ("externalId") DO NOTHING;
   `);
 
     // 2) Insert dashboard_groups (Table C)
