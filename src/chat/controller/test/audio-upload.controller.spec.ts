@@ -72,6 +72,7 @@ describe('AudioUploadController', () => {
 
       const mockResponse: AudioUploadResponseDto = {
         chatId: 1,
+        s3Key: 'mock',
         presignedUrl: 'https://dummy-s3-url',
       };
 

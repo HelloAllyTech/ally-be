@@ -75,6 +75,11 @@ export class AudioUploadResponseDto {
   presignedUrl!: string;
 
   @ApiProperty({
+    description: 'S3 key of the audio file',
+  })
+  s3Key!: string;
+
+  @ApiProperty({
     description: 'Chat ID',
   })
   @IsNumber()

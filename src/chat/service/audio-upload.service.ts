@@ -159,6 +159,7 @@ export class AudioUploadService {
 
     return {
       presignedUrl,
+      s3Key,
       chatId: chat.id,
     };
   }
