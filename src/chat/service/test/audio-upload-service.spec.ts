@@ -180,6 +180,9 @@ describe('AudioUploadService', () => {
       });
       expect(result).toEqual({
         presignedUrl: mockPresignedUrl,
+        s3Key: expect.stringContaining(
+          `-${mockChat.id}-${validRequestDto.fileName}`,
+        ),
         chatId: mockChat.id,
       });
       expect(mockLogger.info).toHaveBeenCalledWith(
