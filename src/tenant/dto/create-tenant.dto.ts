@@ -4,6 +4,8 @@ import {
   IsObject,
   Matches,
   Length,
+  IsArray,
+  IsUUID,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -48,4 +50,12 @@ export class CreateTenantDto {
   @IsObject()
   @IsOptional()
   settings?: Record<string, any>;
+
+  @ApiProperty({
+    description: 'List of dashboard IDs to enable for the tenant',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  enabledDashboardIds?: string[];
 }

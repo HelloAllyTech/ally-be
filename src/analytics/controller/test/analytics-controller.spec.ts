@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsController } from '../analytics.controller';
 import { AnalyticsService } from '../../service/analytics.service';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
@@ -11,23 +11,27 @@ import { PERMISSIONS } from '../../../authorization/constants/permissions.consta
 import { UserService } from '../../../user/service/user.service';
 import {
   CreateDashboardDto,
+  CreateDashboardResponseDto,
   DashboardIdParamDto,
   CounselorStatsQueryDto,
+  UpdateDashboardDto,
+  DashboardResponseDTO,
 } from '../../dto/analytics.dto';
+import { AnalyticsTypeEnum } from '../../constants/analytics.constants';
+import { DashboardWithGroupId } from '../../type/dashboard.data.type';
 
 describe('AnalyticsController', () => {
   let controller: AnalyticsController;
   let analyticsService: jest.Mocked<AnalyticsService>;
 
-  const mockDashboard = {
-    id: 1,
+  const mockDashboard: DashboardWithGroupId = {
+    id: '550e8400-e29b-41d4-a716-446655440000',
     name: 'Test Dashboard',
     externalId: 'dashboard-123',
-    groupId: '1',
-    tenantId: 'tenant-123',
+    groupId: 1,
     createdAt: new Date(),
     updatedAt: new Date(),
-    analyticsType: 'CALL_LOG_ANALYTICS',
+    analyticsType: AnalyticsTypeEnum.CALL_LOG_ANALYTICS,
   };
 
   const mockDashboardUrl = {
@@ -47,7 +51,9 @@ describe('AnalyticsController', () => {
       refreshDashboardUrl: jest.fn(),
       createDashboard: jest.fn(),
       getDashboards: jest.fn(),
+      getAllDashboards: jest.fn(),
       getCounselorStats: jest.fn(),
+      updateDashboard: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -128,8 +134,8 @@ describe('AnalyticsController', () => {
 
   describe('getDashboardUrl', () => {
     it('should return dashboard URL successfully', async () => {
-      const dashboardId = 'dashboard-123';
-      const params: DashboardIdParamDto = { dashboardId };
+      const externalId = 'dashboard-123';
+      const params: DashboardIdParamDto = { externalId };
 
       analyticsService.getDashboardUrl.mockResolvedValue(mockDashboardUrl);
 
@@ -137,14 +143,12 @@ describe('AnalyticsController', () => {
 
       expect(result).toEqual(mockDashboardUrl);
       expect(analyticsService.getDashboardUrl).toHaveBeenCalledTimes(1);
-      expect(analyticsService.getDashboardUrl).toHaveBeenCalledWith(
-        dashboardId,
-      );
+      expect(analyticsService.getDashboardUrl).toHaveBeenCalledWith(externalId);
     });
 
     it('should throw NotFoundException when dashboard not found', async () => {
-      const dashboardId = 'nonexistent-dashboard';
-      const params: DashboardIdParamDto = { dashboardId };
+      const externalId = 'nonexistent-dashboard';
+      const params: DashboardIdParamDto = { externalId };
 
       analyticsService.getDashboardUrl.mockRejectedValue(
         new NotFoundException('Dashboard not found'),
@@ -155,14 +159,12 @@ describe('AnalyticsController', () => {
       );
 
       expect(analyticsService.getDashboardUrl).toHaveBeenCalledTimes(1);
-      expect(analyticsService.getDashboardUrl).toHaveBeenCalledWith(
-        dashboardId,
-      );
+      expect(analyticsService.getDashboardUrl).toHaveBeenCalledWith(externalId);
     });
 
     it('should handle service errors gracefully', async () => {
-      const dashboardId = 'dashboard-123';
-      const params: DashboardIdParamDto = { dashboardId };
+      const externalId = 'dashboard-123';
+      const params: DashboardIdParamDto = { externalId };
       const error = new Error('Service error');
 
       analyticsService.getDashboardUrl.mockRejectedValue(error);
@@ -170,16 +172,14 @@ describe('AnalyticsController', () => {
       await expect(controller.getDashboardUrl(params)).rejects.toThrow(error);
 
       expect(analyticsService.getDashboardUrl).toHaveBeenCalledTimes(1);
-      expect(analyticsService.getDashboardUrl).toHaveBeenCalledWith(
-        dashboardId,
-      );
+      expect(analyticsService.getDashboardUrl).toHaveBeenCalledWith(externalId);
     });
   });
 
   describe('refreshDashboardUrl', () => {
     it('should refresh dashboard URL successfully', async () => {
-      const dashboardId = 'dashboard-123';
-      const params: DashboardIdParamDto = { dashboardId };
+      const externalId = 'dashboard-123';
+      const params: DashboardIdParamDto = { externalId };
       const refreshedUrl = {
         url: 'https://metabase.example.com/embed/dashboard/new-token',
       };
@@ -191,13 +191,13 @@ describe('AnalyticsController', () => {
       expect(result).toEqual(refreshedUrl);
       expect(analyticsService.refreshDashboardUrl).toHaveBeenCalledTimes(1);
       expect(analyticsService.refreshDashboardUrl).toHaveBeenCalledWith(
-        dashboardId,
+        externalId,
       );
     });
 
     it('should handle refresh errors', async () => {
-      const dashboardId = 'dashboard-123';
-      const params: DashboardIdParamDto = { dashboardId };
+      const externalId = 'dashboard-123';
+      const params: DashboardIdParamDto = { externalId };
       const error = new Error('Refresh failed');
 
       analyticsService.refreshDashboardUrl.mockRejectedValue(error);
@@ -208,27 +208,54 @@ describe('AnalyticsController', () => {
 
       expect(analyticsService.refreshDashboardUrl).toHaveBeenCalledTimes(1);
       expect(analyticsService.refreshDashboardUrl).toHaveBeenCalledWith(
-        dashboardId,
+        externalId,
       );
     });
   });
 
   describe('createDashboard', () => {
+    const mockCreateResponse: CreateDashboardResponseDto = {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+    };
+
     it('should create dashboard successfully', async () => {
       const createDashboardDto: CreateDashboardDto = {
         name: 'New Dashboard',
         externalId: 'new-dashboard',
-        groupId: '2',
+        groupIds: [2],
         description: 'Test dashboard',
-        order: 1,
-        tenantId: 'tenant-123',
+        tenantIds: ['tenant-123'],
+        analyticsType: AnalyticsTypeEnum.CALL_LOG_ANALYTICS,
       };
 
-      analyticsService.createDashboard.mockResolvedValue(mockDashboard);
+      analyticsService.createDashboard.mockResolvedValue(mockCreateResponse);
 
       const result = await controller.createDashboard(createDashboardDto);
 
-      expect(result).toEqual(mockDashboard);
+      expect(result).toEqual(mockCreateResponse);
+      expect(analyticsService.createDashboard).toHaveBeenCalledTimes(1);
+      expect(analyticsService.createDashboard).toHaveBeenCalledWith(
+        createDashboardDto,
+      );
+    });
+
+    it('should throw BadRequestException when dashboard already exists', async () => {
+      const createDashboardDto: CreateDashboardDto = {
+        name: 'New Dashboard',
+        externalId: 'new-dashboard',
+        groupIds: [2],
+        tenantIds: ['tenant-123'],
+        analyticsType: AnalyticsTypeEnum.CALL_LOG_ANALYTICS,
+      };
+
+      analyticsService.createDashboard.mockRejectedValue(
+        new BadRequestException('Dashboard already exists'),
+      );
+
+      await expect(
+        controller.createDashboard(createDashboardDto),
+      ).rejects.toThrow(BadRequestException);
+
       expect(analyticsService.createDashboard).toHaveBeenCalledTimes(1);
       expect(analyticsService.createDashboard).toHaveBeenCalledWith(
         createDashboardDto,
@@ -239,8 +266,9 @@ describe('AnalyticsController', () => {
       const createDashboardDto: CreateDashboardDto = {
         name: 'New Dashboard',
         externalId: 'new-dashboard',
-        groupId: '2',
-        tenantId: 'tenant-123',
+        groupIds: [2],
+        tenantIds: ['tenant-123'],
+        analyticsType: AnalyticsTypeEnum.CALL_LOG_ANALYTICS,
       };
       const error = new Error('Creation failed');
 
@@ -260,26 +288,16 @@ describe('AnalyticsController', () => {
       const createDashboardDto: CreateDashboardDto = {
         name: 'Minimal Dashboard',
         externalId: 'minimal-dashboard',
-        groupId: '1',
-        tenantId: 'tenant-123',
+        groupIds: [1],
+        tenantIds: ['tenant-123'],
+        analyticsType: AnalyticsTypeEnum.CALL_LOG_ANALYTICS,
       };
 
-      const minimalDashboard = {
-        id: 2,
-        name: 'Minimal Dashboard',
-        externalId: 'minimal-dashboard',
-        groupId: '1',
-        tenantId: 'tenant-123',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        analyticsType: 'CALL_LOG_ANALYTICS',
-      };
-
-      analyticsService.createDashboard.mockResolvedValue(minimalDashboard);
+      analyticsService.createDashboard.mockResolvedValue(mockCreateResponse);
 
       const result = await controller.createDashboard(createDashboardDto);
 
-      expect(result).toEqual(minimalDashboard);
+      expect(result).toEqual(mockCreateResponse);
       expect(analyticsService.createDashboard).toHaveBeenCalledTimes(1);
       expect(analyticsService.createDashboard).toHaveBeenCalledWith(
         createDashboardDto,
@@ -290,14 +308,13 @@ describe('AnalyticsController', () => {
   describe('getDashboards', () => {
     it('should return user dashboards successfully', async () => {
       const mockUser = { id: 123 };
-      const mockDashboards = [
+      const mockDashboards: DashboardWithGroupId[] = [
         mockDashboard,
         {
           ...mockDashboard,
-          id: 2,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          analyticsType: 'ORG_ANALYTICS',
+          id: '550e8400-e29b-41d4-a716-446655440001',
+          groupId: 2,
+          analyticsType: AnalyticsTypeEnum.ORG_ANALYTICS,
         },
       ];
 
@@ -346,6 +363,88 @@ describe('AnalyticsController', () => {
 
       expect(analyticsService.getDashboards).toHaveBeenCalledTimes(1);
       expect(analyticsService.getDashboards).toHaveBeenCalledWith(mockUser.id);
+    });
+  });
+
+  describe('getAllDashboards', () => {
+    const mockDashboardResponses: DashboardResponseDTO[] = [
+      {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        externalId: 'dashboard-123',
+        name: 'Test Dashboard',
+        description: 'Test',
+      },
+      {
+        id: '550e8400-e29b-41d4-a716-446655440001',
+        externalId: 'dashboard-456',
+        name: 'Another Dashboard',
+        description: 'Another',
+      },
+    ];
+
+    it('should return all dashboards successfully', async () => {
+      analyticsService.getAllDashboards.mockResolvedValue(
+        mockDashboardResponses,
+      );
+
+      const result = await controller.getAllDashboards();
+
+      expect(result).toEqual(mockDashboardResponses);
+      expect(analyticsService.getAllDashboards).toHaveBeenCalledTimes(1);
+      expect(analyticsService.getAllDashboards).toHaveBeenCalledWith();
+    });
+
+    it('should return empty array when no dashboards exist', async () => {
+      analyticsService.getAllDashboards.mockResolvedValue([]);
+
+      const result = await controller.getAllDashboards();
+
+      expect(result).toEqual([]);
+      expect(analyticsService.getAllDashboards).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('updateDashboard', () => {
+    it('should update dashboard successfully', async () => {
+      const dashboardId = '550e8400-e29b-41d4-a716-446655440000';
+      const updateDashboardDto: UpdateDashboardDto = {
+        name: 'Updated Dashboard',
+        tenantIds: ['tenant-456'],
+        groupIds: [1, 2],
+      };
+
+      analyticsService.updateDashboard.mockResolvedValue(undefined);
+
+      const result = await controller.updateDashboard(
+        dashboardId,
+        updateDashboardDto,
+      );
+
+      expect(result).toBeUndefined();
+      expect(analyticsService.updateDashboard).toHaveBeenCalledTimes(1);
+      expect(analyticsService.updateDashboard).toHaveBeenCalledWith(
+        dashboardId,
+        updateDashboardDto,
+      );
+    });
+
+    it('should throw BadRequestException when dashboard not found', async () => {
+      const dashboardId = '550e8400-e29b-41d4-a716-446655440000';
+      const updateDashboardDto: UpdateDashboardDto = { name: 'Updated Name' };
+
+      analyticsService.updateDashboard.mockRejectedValue(
+        new BadRequestException('Dashboard not found'),
+      );
+
+      await expect(
+        controller.updateDashboard(dashboardId, updateDashboardDto),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(analyticsService.updateDashboard).toHaveBeenCalledTimes(1);
+      expect(analyticsService.updateDashboard).toHaveBeenCalledWith(
+        dashboardId,
+        updateDashboardDto,
+      );
     });
   });
 

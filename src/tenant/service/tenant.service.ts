@@ -29,6 +29,7 @@ import {
 
 import { DeleteLogoDto } from '../dto/delete-organization-logo.dto';
 import { LogoUploadContentType } from '../enum/tenant.enum';
+import { TenantDashboardSharedService } from './tenant-dashboard-shared';
 
 @Injectable()
 export class TenantService {
@@ -41,6 +42,7 @@ export class TenantService {
     private readonly tenantScenarioSharedService: TenantScenarioSharedService,
     private readonly tenantScenarioPathSharedService: TenantScenarioPathSharedService,
     private readonly badgeTenantSharedService: BadgeTenantSharedService,
+    private readonly tenantDashboardSharedService: TenantDashboardSharedService,
     @Inject(forwardRef(() => UserRepository))
     private readonly userRepository: UserRepository,
     private readonly dataSource: DataSource,
@@ -52,7 +54,9 @@ export class TenantService {
     return this.tenantRepository.find();
   }
 
-  async create(tenantData: Partial<Tenant>): Promise<Tenant> {
+  async create(
+    tenantData: Partial<Tenant & { enabledDashboardIds?: string[] }>,
+  ): Promise<Tenant> {
     const existingTenant = await this.tenantRepository.findOne({
       where: [{ name: tenantData.name }, { code: tenantData.code }],
     });
@@ -64,6 +68,16 @@ export class TenantService {
     if (existingTenant?.code === tenantData.code) {
       throw new ConflictException(
         `Tenant with code "${tenantData.code}" already exists`,
+      );
+    }
+
+    if (
+      tenantData.enabledDashboardIds &&
+      tenantData.enabledDashboardIds.length > 0
+    ) {
+      await this.tenantDashboardSharedService.validateDashboardIds(
+        tenantData.enabledDashboardIds,
+        this.dataSource.manager,
       );
     }
 
@@ -97,6 +111,17 @@ export class TenantService {
             savedTenant.id,
             entityManager,
           );
+
+          if (
+            tenantData.enabledDashboardIds &&
+            tenantData.enabledDashboardIds.length > 0
+          ) {
+            await this.tenantDashboardSharedService.assignDashboardsToTenant(
+              savedTenant.id,
+              tenantData.enabledDashboardIds,
+              entityManager,
+            );
+          }
 
           return savedTenant;
         },
