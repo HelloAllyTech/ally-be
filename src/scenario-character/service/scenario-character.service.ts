@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { In } from 'typeorm';
 import { ScenarioCharacter } from '../entity/scenario-character.entity';
 import { ScenarioCharacterRepository } from '../repository/scenario-character.repository';
 import { ScenarioCharacterGetOptions } from '../type/scenario-character.type';
@@ -94,5 +96,23 @@ export class ScenarioCharacterService {
     await this.scenarioCharacterRepository.delete(id);
     this.logger.info(`Scenario character deleted: ${id}`);
     return { success: true };
+  }
+
+  async deleteScenarioCharacters(
+    scenarioCharacterIds: string[],
+  ): Promise<boolean> {
+    if (scenarioCharacterIds.length === 0) {
+      throw new BadRequestException(
+        'At least one scenario character ID is required',
+      );
+    }
+
+    const result = await this.scenarioCharacterRepository.delete({
+      id: In(scenarioCharacterIds),
+    });
+    this.logger.info(
+      `Scenario characters deleted: ${result.affected ?? 0} of ${scenarioCharacterIds.length} requested`,
+    );
+    return (result.affected ?? 0) > 0;
   }
 }

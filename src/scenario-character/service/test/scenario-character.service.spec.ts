@@ -1,5 +1,6 @@
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { In } from 'typeorm';
 import { ScenarioCharacterService } from '../scenario-character.service';
 import { ScenarioCharacterRepository } from '../../repository/scenario-character.repository';
 import { ScenarioCharacter } from '../../entity/scenario-character.entity';
@@ -211,6 +212,28 @@ describe('ScenarioCharacterService', () => {
         service.deleteScenarioCharacter('non-existent'),
       ).rejects.toThrow(NotFoundException);
       expect(mockRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteScenarioCharacters', () => {
+    it('returns false when no characters are deleted', async () => {
+      const ids = ['non-existent-1', 'non-existent-2'];
+      mockRepo.delete.mockResolvedValue({ affected: 0 });
+
+      const res = await service.deleteScenarioCharacters(ids);
+
+      expect(mockRepo.delete).toHaveBeenCalledWith({
+        id: In(ids),
+      });
+      expect(res).toBe(false);
+    });
+
+    it('deletes multiple characters and returns true', async () => {
+      const ids = ['char-uuid-1', 'char-uuid-2'];
+      mockRepo.delete.mockResolvedValue({ affected: 2 });
+
+      const res = await service.deleteScenarioCharacters(ids);
+      expect(res).toBe(true);
     });
   });
 });

@@ -10,12 +10,13 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOperation,
-  ApiQuery,
-  ApiTags,
-  ApiSecurity,
-  ApiResponse,
   ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiSecurity,
+  ApiTags,
 } from '@nestjs/swagger';
 import { ScenarioCharacterService } from '../service/scenario-character.service';
 import { AuthPermissions } from '../../auth/decorators/auth-permissions.decorator';
@@ -30,6 +31,7 @@ import {
   GetScenarioCharactersResponseDto,
   ScenarioCharacterResponseDto,
 } from '../dto/scenario-character.dto';
+import { DeleteScenarioCharactersDto } from '../dto/delete-scenario-characters.dto';
 
 @ApiTags('Scenario Character library')
 @ApiBearerAuth()
@@ -153,6 +155,23 @@ export class ScenarioCharacterController {
     return this.scenarioCharacterService.updateScenarioCharacter(
       id,
       scenarioCharacterDto,
+    );
+  }
+
+  @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_CHARACTER])
+  @ApiOperation({ summary: 'Delete multiple scenario characters' })
+  @ApiBody({ type: DeleteScenarioCharactersDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns true if at least one character was deleted',
+    schema: { type: 'boolean' },
+  })
+  @Delete()
+  async deleteScenarioCharacters(
+    @Body() deleteScenarioCharactersDto: DeleteScenarioCharactersDto,
+  ): Promise<boolean> {
+    return this.scenarioCharacterService.deleteScenarioCharacters(
+      deleteScenarioCharactersDto.scenarioCharacterIds,
     );
   }
 
