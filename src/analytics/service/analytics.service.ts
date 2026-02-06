@@ -57,7 +57,7 @@ export class AnalyticsService {
     if (!dashboard) {
       throw new NotFoundException('Dashboard not found');
     }
-    const paramKeyList = dashboard?.metadata?.params ?? [];
+    const paramKeyList = dashboard?.data?.params ?? [];
     const generatedParams = AnalyticsUtil.generateParamList(paramKeyList);
     const url = await this.analyticsInterface.getDashboardUrl(
       externalId,

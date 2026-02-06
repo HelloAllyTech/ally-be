@@ -23,7 +23,7 @@ export class Dashboard extends BaseWithoutTenantEntity {
   description?: string;
 
   @Column({ nullable: true, type: 'jsonb' })
-  metadata?: DashboardMetadata;
+  data?: DashboardMetadata;
 
   @Column({ enum: AnalyticsTypeEnum })
   analyticsType!: AnalyticsTypeEnum;
