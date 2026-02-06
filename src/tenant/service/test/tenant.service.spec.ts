@@ -18,6 +18,7 @@ import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { LogoUploadContentType } from 'src/tenant/enum/tenant.enum';
 import { BadgeTenantSharedService } from 'src/badge/service/badge-tenant-shared.service';
+import { TenantDashboardSharedService } from '../tenant-dashboard-shared';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -102,6 +103,11 @@ describe('TenantService', () => {
       addPublicBadgesToTenant: jest.fn(),
     };
 
+    const mockTenantDashboardSharedService = {
+      assignDashboardsToTenant: jest.fn().mockResolvedValue(undefined),
+      validateDashboardIds: jest.fn().mockResolvedValue(undefined),
+    };
+
     const mockDataSource = {
       transaction: jest.fn(),
     };
@@ -148,6 +154,10 @@ describe('TenantService', () => {
         {
           provide: BadgeTenantSharedService,
           useValue: mockBadgeTenantSharedService,
+        },
+        {
+          provide: TenantDashboardSharedService,
+          useValue: mockTenantDashboardSharedService,
         },
         {
           provide: DataSource,
