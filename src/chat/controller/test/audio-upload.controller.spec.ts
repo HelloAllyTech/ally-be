@@ -6,6 +6,7 @@ import {
   AudioUploadRequestDto,
   AudioUploadResponseDto,
   CancelUploadRequestDto,
+  ProcessAudioUploadRequestDto,
 } from '../../dto/audio-upload.dto';
 import { AudioChatPlatform } from 'src/common/constants/chat.constants';
 
@@ -144,8 +145,9 @@ describe('AudioUploadController', () => {
 
   describe('processAudioUpload', () => {
     it('should process audio upload successfully', async () => {
-      const s3Key = 'uploads/audio/chat-1/audio.wav';
-
+      const dto: ProcessAudioUploadRequestDto = {
+        s3Key: 'uploads/audio/chat-1/audio.wav',
+      };
       const mockResponse = {
         message: 'Audio processed successfully',
         chatId: 1,
@@ -153,24 +155,26 @@ describe('AudioUploadController', () => {
 
       mockAudioUploadService.processAudioUpload.mockResolvedValue(mockResponse);
 
-      const result = await controller.processAudioUpload(s3Key);
+      const result = await controller.processAudioUpload(dto);
 
       expect(result).toEqual(mockResponse);
       expect(mockAudioUploadService.processAudioUpload).toHaveBeenCalledTimes(
         1,
       );
       expect(mockAudioUploadService.processAudioUpload).toHaveBeenCalledWith(
-        s3Key,
+        dto.s3Key,
       );
     });
 
     it('should propagate errors from service', async () => {
-      const s3Key = 'uploads/audio/chat-1/audio.wav';
+      const dto: ProcessAudioUploadRequestDto = {
+        s3Key: 'uploads/audio/chat-1/audio.wav',
+      };
       const error = new Error('Processing failed');
 
       mockAudioUploadService.processAudioUpload.mockRejectedValue(error);
 
-      await expect(controller.processAudioUpload(s3Key)).rejects.toThrow(
+      await expect(controller.processAudioUpload(dto)).rejects.toThrow(
         'Processing failed',
       );
     });

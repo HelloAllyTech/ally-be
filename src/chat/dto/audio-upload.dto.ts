@@ -90,3 +90,12 @@ export class CancelUploadRequestDto {
   @IsNotEmpty()
   chatId!: number;
 }
+
+export class ProcessAudioUploadRequestDto {
+  @ApiProperty({
+    description: 'S3 key of audio file',
+  })
+  @IsString()
+  @IsNotEmpty()
+  s3Key!: string;
+}
