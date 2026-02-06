@@ -45,7 +45,7 @@ describe('AnalyticsService', () => {
     id: 'uuid-dashboard-123',
     externalId: 'dashboard-123',
     name: 'Test Dashboard',
-    metadata: {
+    data: {
       params: ['organization_id', 'user_id'],
     },
     analyticsType: AnalyticsTypeEnum.CALL_LOG_ANALYTICS,
@@ -249,7 +249,7 @@ describe('AnalyticsService', () => {
 
       expect(AnalyticsUtil.generateParamList).toHaveBeenCalledTimes(1);
       expect(AnalyticsUtil.generateParamList).toHaveBeenCalledWith(
-        mockDashboard.metadata?.params,
+        mockDashboard.data?.params,
       );
 
       expect(analyticsInterface.getDashboardUrl).toHaveBeenCalledTimes(1);
@@ -261,7 +261,7 @@ describe('AnalyticsService', () => {
     it('should handle dashboard with no parameters', async () => {
       const dashboardWithNoParams: Dashboard = {
         ...mockDashboard,
-        metadata: undefined,
+        data: undefined,
       };
 
       dashboardRepository.findByExternalIdAndTenant.mockResolvedValue(
