@@ -1,10 +1,9 @@
-import { Controller, Post, Body, Query } from '@nestjs/common';
+import { Controller, Post, Body } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
   ApiSecurity,
 } from '@nestjs/swagger';
 import { AudioUploadService } from '../service/audio-upload.service';
@@ -12,6 +11,7 @@ import {
   AudioUploadRequestDto,
   AudioUploadResponseDto,
   CancelUploadRequestDto,
+  ProcessAudioUploadRequestDto,
 } from '../dto/audio-upload.dto';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -51,13 +51,11 @@ export class AudioUploadController {
   @AuthPermissions([PERMISSIONS.VIEW_AUDIO_UPLOAD])
   @ApiOperation({ summary: 'Process audio upload' })
   @ApiResponse({ status: 200, description: 'Audio upload processed' })
-  @ApiQuery({
-    name: 's3Key',
-    type: String,
-    required: true,
-    description: 'S3 object key of the uploaded audio file',
-  })
-  async processAudioUpload(@Query('s3Key') s3Key: string) {
-    return this.audioUploadService.processAudioUpload(s3Key);
+  async processAudioUpload(
+    @Body() processAudioUploadRequestDto: ProcessAudioUploadRequestDto,
+  ) {
+    return this.audioUploadService.processAudioUpload(
+      processAudioUploadRequestDto.s3Key,
+    );
   }
 }
