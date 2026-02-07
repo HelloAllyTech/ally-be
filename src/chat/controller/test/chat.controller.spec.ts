@@ -708,7 +708,7 @@ describe('ChatController', () => {
     });
   });
 
-  describe('processTranscrip', () => {
+  describe('processTranscript', () => {
     it('should process transcript successfully', async () => {
       const dto: TranscriptRequestDto = {
         chatId: 1,
@@ -722,7 +722,7 @@ describe('ChatController', () => {
         undefined,
       );
 
-      await controller.processTranscrip(dto);
+      await controller.processTranscript(dto);
 
       expect(
         mockChatTranscriptService.processTranscribeResult,
@@ -743,7 +743,7 @@ describe('ChatController', () => {
         error,
       );
 
-      await expect(controller.processTranscrip(dto)).rejects.toThrow(
+      await expect(controller.processTranscript(dto)).rejects.toThrow(
         'Processing failed',
       );
     });
