@@ -73,6 +73,7 @@ import {
   ScenarioSessionLeaderboardEvent,
   ScenarioSessionLeaderboardEndedEventParams,
 } from '../type/scenario-session-leaderboard-event.type';
+import { ConversationalGuardrailsService } from './conversational-guardrails.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -99,6 +100,7 @@ export class ScenarioSessionService {
     private scenarioVoicesRepository: ScenarioVoicesRepository,
     private reviewSharedService: ReviewSharedService,
     private eventEmitter: EventEmitter2,
+    private conversationalGuardrailsService: ConversationalGuardrailsService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -378,6 +380,23 @@ export class ScenarioSessionService {
       },
       scenario.id,
     );
+
+    // Apply guardrails if opted in
+    if (metadata?.optGuardrails) {
+      const languageId = metadata?.languageId ?? metadata?.defaultLanguageId;
+      const guardrails = await this.conversationalGuardrailsService.getRandomGuardrailsForSession(
+        languageId,
+      );
+      const guardrailsPrompt = this.conversationalGuardrailsService.formatGuardrailsForPrompt(
+        guardrails,
+      );
+      if (guardrailsPrompt) {
+        // Append to roleInstruction or add as separate field if supported.
+        // Appending to roleInstruction ensures it is part of the system prompt.
+        promptData.roleInstruction = `${promptData.roleInstruction || ''}\n\n${guardrailsPrompt}`;
+        promptData.guardrails = guardrailsPrompt; // Also keep as separate field just in case
+      }
+    }
 
     const languageCode = metadata?.language as LanguageCode;
 
