@@ -72,13 +72,15 @@ export class ScenarioCharacterController {
     name: 'sortBy',
     required: false,
     enum: ScenarioCharacterSortBy,
-    description: 'Field to sort by (default: name)',
+    default: ScenarioCharacterSortBy.CREATED_AT,
+    description: 'Field to sort by (default: createdAt)',
   })
   @ApiQuery({
     name: 'sortOrder',
     required: false,
     enum: ScenarioCharacterSortOrder,
-    description: 'Sort order (default: ASC)',
+    default: ScenarioCharacterSortOrder.DESC,
+    description: 'Sort order (default: DESC)',
   })
   @Get()
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_CHARACTER])
