@@ -39,6 +39,7 @@ describe('BadgeService', () => {
     mockBadgeRepository = {
       findOne: jest.fn(),
       findAndCount: jest.fn(),
+      getAllBadges: jest.fn().mockResolvedValue([[], 0]),
       getUserBadges: jest.fn(),
       getUserBadgeCount: jest.fn(),
       getBadgesForTenant: jest.fn(),
@@ -56,6 +57,7 @@ describe('BadgeService', () => {
       save: jest.fn(),
       delete: jest.fn(),
       findByBadgeId: jest.fn(),
+      getGroupNamesByBadgeIds: jest.fn().mockResolvedValue(new Map()),
     } as any;
 
     mockBadgeUserService = {
@@ -77,6 +79,7 @@ describe('BadgeService', () => {
 
     mockGroupRepository = {
       getAll: jest.fn(),
+      find: jest.fn(),
     } as any;
 
     mockDataSource = {
@@ -233,6 +236,61 @@ describe('BadgeService', () => {
       await expect(
         (service as any).validateTenantAndGroupIds(['tenant-1'], [1, 2]),
       ).resolves.not.toThrow();
+    });
+  });
+
+  describe('getAllBadges', () => {
+    it('should return data and count from repository', async () => {
+      const pagination = {
+        limit: 10,
+        offset: 0,
+        sortBy: 'createdAt',
+        order: 'DESC' as const,
+      };
+      const badges = [
+        { id: 'badge-1', name: 'Badge 1', code: 'B1' },
+      ] as Badge[];
+      mockBadgeRepository.getAllBadges.mockResolvedValue([badges, 1]);
+      mockBadgeGroupRepository.getGroupNamesByBadgeIds.mockResolvedValue(
+        new Map(),
+      );
+
+      const result = await service.getAllBadges(pagination);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({
+        id: 'badge-1',
+        name: 'Badge 1',
+        code: 'B1',
+      });
+      expect(result.data[0].roles).toEqual([]);
+      expect(result.count).toBe(1);
+      expect(mockBadgeRepository.getAllBadges).toHaveBeenCalledWith(
+        pagination,
+        undefined,
+      );
+    });
+
+    it('should return empty data and zero count when no badges', async () => {
+      mockBadgeRepository.getAllBadges.mockResolvedValue([[], 0]);
+
+      const result = await service.getAllBadges({});
+
+      expect(result).toEqual({ data: [], count: 0 });
+    });
+
+    it('should attach group names as roles to each badge', async () => {
+      const badges = [
+        { id: 'badge-1', name: 'Badge 1', code: 'B1' },
+      ] as Badge[];
+      mockBadgeRepository.getAllBadges.mockResolvedValue([badges, 1]);
+      mockBadgeGroupRepository.getGroupNamesByBadgeIds.mockResolvedValue(
+        new Map([['badge-1', ['Admin', 'Manager']]]),
+      );
+
+      const result = await service.getAllBadges({});
+
+      expect(result.data[0].roles).toEqual(['Admin', 'Manager']);
     });
   });
 
