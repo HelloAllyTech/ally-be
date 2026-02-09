@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { Prompt } from '../entity/prompt.entity';
 import { PromptsRepository } from '../repository/prompt.repository';
 import { PromptVersionRepository } from '../repository/prompt-version.repository';
@@ -9,12 +10,14 @@ import { Pagination } from 'src/common/type/common.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { PromptResponse } from '../type/prompt-response.type';
 import { standardizePromptCode } from '../util/prompt-code.util';
+import { PROMPT_VERSION_RETENTION_LIMIT } from '../constants/prompt.constants';
 
 @Injectable()
 export class PromptsService {
   constructor(
     private readonly promptsRepository: PromptsRepository,
     private readonly promptVersionRepository: PromptVersionRepository,
+    private readonly dataSource: DataSource,
   ) {}
 
   async createPrompts(createPromptsDto: CreatePromptsDto): Promise<Prompt[]> {
@@ -84,30 +87,39 @@ export class PromptsService {
     }
 
     const updated = await this.promptsRepository.update(id, updateData);
-    const isNameOrDescriptionUpdated =
-      (updatePromptDto.name && updatePromptDto.name !== prompt.name) ||
-      (updatePromptDto.description !== undefined &&
-        updatePromptDto.description !== prompt.description);
 
-    // If prompt content is being updated, create a new version
-    if (updatePromptDto.prompt && isNameOrDescriptionUpdated) {
-      const latestVersion =
-        await this.promptVersionRepository.getLatestPromptVersion(id);
-      const newVersion = (latestVersion?.version || 0) + 1;
+    // If prompt content is being updated, create a new version and apply retention policy
+    if (updatePromptDto.prompt) {
+      await this.dataSource.transaction(async () => {
+        const latestVersion =
+          await this.promptVersionRepository.getLatestPromptVersion(id);
+        const newVersion = (latestVersion?.version || 0) + 1;
 
-      const promptVersion = this.promptVersionRepository.create({
-        promptId: id,
-        version: newVersion,
-        prompt: updatePromptDto.prompt,
-        createdBy: userId,
-        updatedBy: userId,
-      });
+        // Create new version in transaction
+        const promptVersion = this.promptVersionRepository.create({
+          promptId: id,
+          version: newVersion,
+          prompt: updatePromptDto.prompt,
+          createdBy: userId,
+          updatedBy: userId,
+        });
 
-      await this.promptVersionRepository.save(promptVersion);
+        await this.promptVersionRepository.save(promptVersion);
 
-      // Update current version
-      await this.promptsRepository.update(id, {
-        currentVersion: newVersion,
+        // Update current version
+        await this.promptsRepository.update(id, {
+          currentVersion: newVersion,
+        });
+
+        // Apply retention policy: delete versions older than limit
+        const minVersionToKeep = Math.max(
+          1,
+          newVersion - (PROMPT_VERSION_RETENTION_LIMIT - 1),
+        );
+        await this.promptVersionRepository.deleteVersionsBefore(
+          id,
+          minVersionToKeep,
+        );
       });
     }
 

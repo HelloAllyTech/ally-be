@@ -15,4 +15,16 @@ export class PromptVersionRepository extends Repository<PromptVersion> {
       .limit(1)
       .getOne();
   }
+
+  async deleteVersionsBefore(
+    promptId: string,
+    minVersionToKeep: number,
+  ): Promise<void> {
+    await this.createQueryBuilder()
+      .delete()
+      .from(PromptVersion)
+      .where('promptId = :promptId', { promptId })
+      .andWhere('version < :minVersionToKeep', { minVersionToKeep })
+      .execute();
+  }
 }
