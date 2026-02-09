@@ -1,15 +1,22 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Badge } from '../entity/badge.entity';
 import { BadgeUser } from '../entity/badge-user.entity';
 import { BadgeTenant } from '../entity/badge-tenant.entity';
 import { BadgeGroup } from '../entity/badge-group.entity';
 import { UserGroup } from 'src/authorization/entity/user-group.entity';
-import { BadgeStatus, BadgeViewedStatus } from '../constants/badge.constants';
+import {
+  BadgeStatus,
+  BadgeViewedStatus,
+  BadgeCategory,
+} from '../constants/badge.constants';
 import {
   TenantBadgeResponse,
   UserBadgeWithDetails,
 } from '../type/badge-response.type';
+import { Pagination } from 'src/common/type/common.type';
+import { BadgeSortBy } from '../enum/badge-sort-by.enum';
+import { BadgeFilterDto } from '../dto/badge-filter.dto';
 
 @Injectable()
 export class BadgeRepository extends Repository<Badge> {
@@ -155,6 +162,72 @@ export class BadgeRepository extends Repository<Badge> {
     }
 
     return query.getCount();
+  }
+
+  async getAllBadges(
+    pagination: Pagination,
+    filter?: BadgeFilterDto,
+  ): Promise<[Badge[], number]> {
+    const query = this.createQueryBuilder('badge');
+
+    if (filter?.search?.trim()) {
+      const term = `%${filter.search.trim()}%`;
+      query.andWhere('(badge.name ILIKE :term OR badge.code ILIKE :term)', {
+        term,
+      });
+    }
+
+    if (
+      filter?.category &&
+      Object.values(BadgeCategory).includes(filter.category)
+    ) {
+      query.andWhere('badge.category = :category', {
+        category: filter.category,
+      });
+    }
+
+    if (filter?.status && Object.values(BadgeStatus).includes(filter.status)) {
+      query.andWhere('badge.status = :status', { status: filter.status });
+    }
+
+    this.applySorting(query, pagination);
+    this.applyPagination(query, pagination);
+
+    return query.getManyAndCount();
+  }
+
+  private applySorting(
+    query: SelectQueryBuilder<Badge>,
+    pagination: Pagination,
+  ) {
+    const sortColumn = this.getValidatedSortColumn(
+      pagination.sortBy || BadgeSortBy.CREATED_AT,
+    );
+    if (sortColumn) {
+      query.orderBy(`badge.${sortColumn}`, pagination.order || 'DESC');
+    }
+  }
+
+  private getValidatedSortColumn(sortBy?: string): string | null {
+    if (!sortBy) {
+      return BadgeSortBy.CREATED_AT;
+    }
+    const validColumns = Object.values(BadgeSortBy);
+    return validColumns.includes(sortBy as BadgeSortBy)
+      ? sortBy
+      : BadgeSortBy.CREATED_AT;
+  }
+
+  private applyPagination(
+    query: SelectQueryBuilder<Badge>,
+    pagination: Pagination,
+  ) {
+    if (pagination.limit) {
+      query.limit(pagination.limit);
+    }
+    if (pagination.offset) {
+      query.offset(pagination.offset);
+    }
   }
 
   async getUnawardedBadgesForUserRole(
