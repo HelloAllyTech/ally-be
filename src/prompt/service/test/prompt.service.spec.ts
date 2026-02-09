@@ -193,7 +193,7 @@ describe('PromptsService', () => {
 
       const createdPrompt = {
         ...mockPrompt,
-        promptCode: 'ally_my_ai_learn',
+        promptCode: 'my_ai_learn',
       };
       (promptsRepository.create as jest.Mock).mockReturnValue(createdPrompt);
       (promptsRepository.save as jest.Mock)
@@ -210,7 +210,7 @@ describe('PromptsService', () => {
 
       expect(promptsRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          promptCode: expect.stringMatching(/^ally_/),
+          promptCode: expect.stringMatching(/^my_ai_learn/),
         }),
       );
     });
