@@ -373,4 +373,122 @@ describe('PromptVersionRepository', () => {
       expect(result?.updatedAt).toBeInstanceOf(Date);
     });
   });
+
+  describe('deleteVersionsBefore', () => {
+    let deleteQueryBuilder: Partial<SelectQueryBuilder<PromptVersion>>;
+
+    beforeEach(() => {
+      deleteQueryBuilder = {
+        delete: jest.fn().mockReturnThis(),
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 2 }),
+      };
+
+      jest
+        .spyOn(repository, 'createQueryBuilder')
+        .mockReturnValue(deleteQueryBuilder as any);
+    });
+
+    it('should delete versions before specified version number', async () => {
+      await repository.deleteVersionsBefore(mockPromptId, 3);
+
+      expect(deleteQueryBuilder.delete).toHaveBeenCalled();
+      expect(deleteQueryBuilder.from).toHaveBeenCalledWith(PromptVersion);
+      expect(deleteQueryBuilder.where).toHaveBeenCalled();
+      expect(deleteQueryBuilder.andWhere).toHaveBeenCalled();
+    });
+
+    it('should use correct promptId in where clause', async () => {
+      await repository.deleteVersionsBefore(mockPromptId, 5);
+
+      expect(deleteQueryBuilder.where).toHaveBeenCalledWith(
+        'promptId = :promptId',
+        { promptId: mockPromptId },
+      );
+    });
+
+    it('should use correct minVersionToKeep in andWhere clause', async () => {
+      const minVersionToKeep = 5;
+      await repository.deleteVersionsBefore(mockPromptId, minVersionToKeep);
+
+      expect(deleteQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'version < :minVersionToKeep',
+        { minVersionToKeep },
+      );
+    });
+
+    it('should execute the delete query', async () => {
+      await repository.deleteVersionsBefore(mockPromptId, 3);
+
+      expect(deleteQueryBuilder.execute).toHaveBeenCalled();
+    });
+
+    it('should handle deletion of multiple versions', async () => {
+      (deleteQueryBuilder.execute as jest.Mock).mockResolvedValue({
+        affected: 5,
+      });
+
+      await repository.deleteVersionsBefore(mockPromptId, 6);
+
+      expect(deleteQueryBuilder.execute).toHaveBeenCalled();
+    });
+
+    it('should handle deletion of zero versions', async () => {
+      (deleteQueryBuilder.execute as jest.Mock).mockResolvedValue({
+        affected: 0,
+      });
+
+      await repository.deleteVersionsBefore(mockPromptId, 1);
+
+      expect(deleteQueryBuilder.execute).toHaveBeenCalled();
+    });
+
+    it('should handle high minVersionToKeep values', async () => {
+      await repository.deleteVersionsBefore(mockPromptId, 100);
+
+      expect(deleteQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'version < :minVersionToKeep',
+        { minVersionToKeep: 100 },
+      );
+    });
+
+    it('should handle version 1 as minVersionToKeep', async () => {
+      await repository.deleteVersionsBefore(mockPromptId, 1);
+
+      expect(deleteQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'version < :minVersionToKeep',
+        { minVersionToKeep: 1 },
+      );
+    });
+
+    it('should construct query chain correctly', async () => {
+      await repository.deleteVersionsBefore(mockPromptId, 5);
+
+      // Verify the order of method calls
+      const deleteCall = (deleteQueryBuilder.delete as jest.Mock).mock.calls[0];
+      const fromCall = (deleteQueryBuilder.from as jest.Mock).mock.calls[0];
+      const whereCall = (deleteQueryBuilder.where as jest.Mock).mock.calls[0];
+      const andWhereCall = (deleteQueryBuilder.andWhere as jest.Mock).mock
+        .calls[0];
+      const executeCall = (deleteQueryBuilder.execute as jest.Mock).mock
+        .calls[0];
+
+      expect(deleteCall).toBeDefined();
+      expect(fromCall).toBeDefined();
+      expect(whereCall).toBeDefined();
+      expect(andWhereCall).toBeDefined();
+      expect(executeCall).toBeDefined();
+    });
+
+    it('should handle database errors during deletion', async () => {
+      const error = new Error('Database error');
+      (deleteQueryBuilder.execute as jest.Mock).mockRejectedValue(error);
+
+      await expect(
+        repository.deleteVersionsBefore(mockPromptId, 5),
+      ).rejects.toThrow('Database error');
+    });
+  });
 });

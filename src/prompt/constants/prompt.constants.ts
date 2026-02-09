@@ -1,0 +1,1 @@
+export const PROMPT_VERSION_RETENTION_LIMIT = 5;

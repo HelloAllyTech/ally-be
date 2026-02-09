@@ -17,6 +17,7 @@ jest.mock('src/common/execution/execution-manager', () => ({
 }));
 
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { DataSource } from 'typeorm';
 
 describe('PromptsService', () => {
   let service: PromptsService;
@@ -61,6 +62,10 @@ describe('PromptsService', () => {
     // Mock ExecutionManager.getUserId()
     (ExecutionManager.getUserId as jest.Mock).mockReturnValue(mockUserId);
 
+    const mockDataSource = {
+      transaction: jest.fn().mockImplementation(async (cb: any) => await cb()),
+    } as unknown as DataSource;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PromptsService,
@@ -84,10 +89,18 @@ describe('PromptsService', () => {
             findOne: jest.fn(),
             delete: jest.fn(),
             getLatestPromptVersion: jest.fn(),
+            deleteVersionsBefore: jest.fn(),
           },
         },
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
+        },
       ],
-    }).compile();
+    })
+      .overrideProvider(DataSource)
+      .useValue(mockDataSource)
+      .compile();
 
     service = module.get<PromptsService>(PromptsService);
     promptsRepository = module.get<PromptsRepository>(PromptsRepository);
@@ -426,6 +439,98 @@ describe('PromptsService', () => {
       await service.updatePrompt(mockPromptId, updatePromptDto);
 
       expect(promptVersionRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('should create new version even if only one word changes in prompt content', async () => {
+      const updatePromptDto: UpdatePromptDto = {
+        prompt: 'This is the updated prompt content',
+      };
+
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue(mockPrompt);
+      (promptsRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+      (
+        promptVersionRepository.getLatestPromptVersion as jest.Mock
+      ).mockResolvedValue(mockPromptVersion);
+      (promptVersionRepository.create as jest.Mock).mockReturnValue(
+        mockPromptVersion,
+      );
+      (promptVersionRepository.save as jest.Mock).mockResolvedValue(
+        mockPromptVersion,
+      );
+      (
+        promptVersionRepository.deleteVersionsBefore as jest.Mock
+      ).mockResolvedValue(undefined);
+
+      await service.updatePrompt(mockPromptId, updatePromptDto);
+
+      expect(promptVersionRepository.create).toHaveBeenCalled();
+      expect(promptVersionRepository.save).toHaveBeenCalled();
+    });
+
+    it('should apply version retention limit when creating new version', async () => {
+      const updatePromptDto: UpdatePromptDto = {
+        prompt: 'New prompt content',
+      };
+
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue(mockPrompt);
+      (promptsRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+      (
+        promptVersionRepository.getLatestPromptVersion as jest.Mock
+      ).mockResolvedValue({ ...mockPromptVersion, version: 5 });
+      (promptVersionRepository.create as jest.Mock).mockReturnValue(
+        mockPromptVersion,
+      );
+      (promptVersionRepository.save as jest.Mock).mockResolvedValue(
+        mockPromptVersion,
+      );
+      (
+        promptVersionRepository.deleteVersionsBefore as jest.Mock
+      ).mockResolvedValue(undefined);
+
+      await service.updatePrompt(mockPromptId, updatePromptDto);
+
+      // With retention limit of 5, if latest version is 5 and we create 6,
+      // we should keep versions >= (6 - (5 - 1)) = 2
+      expect(promptVersionRepository.deleteVersionsBefore).toHaveBeenCalledWith(
+        mockPromptId,
+        2,
+      );
+    });
+
+    it('should keep version 1 even when retention deletes older versions', async () => {
+      const updatePromptDto: UpdatePromptDto = {
+        prompt: 'New prompt content',
+      };
+
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue(mockPrompt);
+      (promptsRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+      (
+        promptVersionRepository.getLatestPromptVersion as jest.Mock
+      ).mockResolvedValue({ ...mockPromptVersion, version: 100 });
+      (promptVersionRepository.create as jest.Mock).mockReturnValue(
+        mockPromptVersion,
+      );
+      (promptVersionRepository.save as jest.Mock).mockResolvedValue(
+        mockPromptVersion,
+      );
+      (
+        promptVersionRepository.deleteVersionsBefore as jest.Mock
+      ).mockResolvedValue(undefined);
+
+      await service.updatePrompt(mockPromptId, updatePromptDto);
+
+      // minVersionToKeep should never be less than 1
+      // With version 100 and new version 101, minVersionToKeep = max(1, 101 - 4) = 97
+      const callArgs = (
+        promptVersionRepository.deleteVersionsBefore as jest.Mock
+      ).mock.calls[0];
+      expect(callArgs[1]).toBeGreaterThanOrEqual(1);
     });
   });
 
