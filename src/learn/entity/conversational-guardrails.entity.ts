@@ -6,10 +6,10 @@ export class ConversationalGuardrails extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'text' })
+  @Column()
   helperDialogue!: string;
 
-  @Column({ type: 'text' })
+  @Column()
   actorDialogue!: string;
 
   @Column({ default: true })

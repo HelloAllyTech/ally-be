@@ -16,12 +16,12 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ConversationalGuardrailsService } from '../service/conversational-guardrails.service';
 import {
   CreateConversationalGuardrailDto,
   UpdateConversationalGuardrailDto,
-  CreateConversationalGuardrailTranslationDto,
-  UpdateConversationalGuardrailTranslationDto,
 } from '../dto/conversational-guardrails.dto';
 
 @ApiTags('Conversational Guardrails')
@@ -34,6 +34,7 @@ export class ConversationalGuardrailsController {
   ) {}
 
   @Get()
+  @AuthPermissions([PERMISSIONS.VIEW_GUARDRAILS])
   @ApiOperation({
     summary: 'Get all guardrails with optional search and pagination',
   })
@@ -60,6 +61,7 @@ export class ConversationalGuardrailsController {
   }
 
   @Get('random')
+  @AuthPermissions([PERMISSIONS.VIEW_GUARDRAILS])
   @ApiOperation({ summary: 'Get random guardrails for a session (max 25)' })
   @ApiQuery({ name: 'languageId', required: false })
   async getRandomGuardrails(@Query('languageId') languageId?: number) {
@@ -67,18 +69,21 @@ export class ConversationalGuardrailsController {
   }
 
   @Get(':id')
+  @AuthPermissions([PERMISSIONS.VIEW_GUARDRAILS])
   @ApiOperation({ summary: 'Get guardrail by ID' })
   async getGuardrailById(@Param('id') id: string) {
     return this.guardrailsService.getGuardrailById(id);
   }
 
   @Post()
+  @AuthPermissions([PERMISSIONS.EDIT_GUARDRAILS])
   @ApiOperation({ summary: 'Create a new guardrail' })
   async createGuardrail(@Body() createDto: CreateConversationalGuardrailDto) {
     return this.guardrailsService.createGuardrail(createDto);
   }
 
   @Post('bulk')
+  @AuthPermissions([PERMISSIONS.EDIT_GUARDRAILS])
   @ApiOperation({ summary: 'Create multiple guardrails' })
   async createGuardrails(
     @Body() createDtos: CreateConversationalGuardrailDto[],
@@ -87,6 +92,7 @@ export class ConversationalGuardrailsController {
   }
 
   @Put(':id')
+  @AuthPermissions([PERMISSIONS.EDIT_GUARDRAILS])
   @ApiOperation({ summary: 'Update a guardrail' })
   async updateGuardrail(
     @Param('id') id: string,
@@ -96,43 +102,16 @@ export class ConversationalGuardrailsController {
   }
 
   @Delete(':id')
+  @AuthPermissions([PERMISSIONS.EDIT_GUARDRAILS])
   @ApiOperation({ summary: 'Delete a guardrail' })
   async deleteGuardrail(@Param('id') id: string) {
     return this.guardrailsService.deleteGuardrail(id);
   }
 
   @Delete()
+  @AuthPermissions([PERMISSIONS.EDIT_GUARDRAILS])
   @ApiOperation({ summary: 'Delete multiple guardrails' })
   async deleteGuardrails(@Body() body: { ids: string[] }) {
     return this.guardrailsService.deleteGuardrails(body.ids);
-  }
-
-  @Get(':id/translations')
-  @ApiOperation({ summary: 'Get translations for a guardrail' })
-  async getTranslations(@Param('id') guardrailId: string) {
-    return this.guardrailsService.getTranslationsByGuardrailId(guardrailId);
-  }
-
-  @Post('translations')
-  @ApiOperation({ summary: 'Create a translation for a guardrail' })
-  async createTranslation(
-    @Body() createDto: CreateConversationalGuardrailTranslationDto,
-  ) {
-    return this.guardrailsService.createTranslation(createDto);
-  }
-
-  @Put('translations/:id')
-  @ApiOperation({ summary: 'Update a translation' })
-  async updateTranslation(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateConversationalGuardrailTranslationDto,
-  ) {
-    return this.guardrailsService.updateTranslation(id, updateDto);
-  }
-
-  @Delete('translations/:id')
-  @ApiOperation({ summary: 'Delete a translation' })
-  async deleteTranslation(@Param('id') id: string) {
-    return this.guardrailsService.deleteTranslation(id);
   }
 }

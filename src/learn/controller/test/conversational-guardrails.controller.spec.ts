@@ -179,46 +179,4 @@ describe('ConversationalGuardrailsController', () => {
       expect(service.getRandomGuardrailsForSession).toHaveBeenCalledWith(2);
     });
   });
-
-  describe('getTranslations', () => {
-    it('should return translations for a guardrail', async () => {
-      const mockTranslations = [
-        {
-          id: 'translation-1',
-          guardrailId: 'guardrail-uuid-1',
-          languageId: 2,
-          helperDialogue: 'grosero',
-          actorDialogue: 'Por favor sea respetuoso',
-        },
-      ];
-      service.getTranslationsByGuardrailId.mockResolvedValue(
-        mockTranslations as any,
-      );
-
-      const result = await controller.getTranslations('guardrail-uuid-1');
-
-      expect(result).toEqual(mockTranslations);
-      expect(service.getTranslationsByGuardrailId).toHaveBeenCalledWith(
-        'guardrail-uuid-1',
-      );
-    });
-  });
-
-  describe('createTranslation', () => {
-    it('should create a translation for a guardrail', async () => {
-      const createDto = {
-        guardrailId: 'guardrail-uuid-1',
-        languageId: 2,
-        helperDialogue: 'grosero',
-        actorDialogue: 'Por favor sea respetuoso',
-      };
-      const mockTranslation = { id: 'translation-1', ...createDto };
-      service.createTranslation.mockResolvedValue(mockTranslation as any);
-
-      const result = await controller.createTranslation(createDto);
-
-      expect(result).toEqual(mockTranslation);
-      expect(service.createTranslation).toHaveBeenCalledWith(createDto);
-    });
-  });
 });

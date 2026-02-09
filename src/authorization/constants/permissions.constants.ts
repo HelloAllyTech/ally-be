@@ -142,6 +142,9 @@ const PERMISSIONS = {
   VIEW_PROMPT: 'view:admin:prompts',
   EDIT_PROMPT: 'edit:admin:prompts',
 
+  VIEW_GUARDRAILS: 'view:admin:guardrails',
+  EDIT_GUARDRAILS: 'edit:admin:guardrails',
+
   // === CACHE ===
   VIEW_CACHE: 'view:cache',
   DELETE_CACHE: 'delete:cache',
@@ -246,6 +249,8 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.CREATE_SCENARIO_CHARACTER,
   PERMISSIONS.VIEW_PROMPT,
   PERMISSIONS.EDIT_PROMPT,
+  PERMISSIONS.VIEW_GUARDRAILS,
+  PERMISSIONS.EDIT_GUARDRAILS,
 ];
 
 const COUNSELOR_PERMISSIONS = [

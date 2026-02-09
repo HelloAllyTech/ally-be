@@ -3,7 +3,7 @@ import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.e
 
 @Entity('conversational_guardrails_translations')
 @Index(
-  'uq_conversational_guardrails_translations_guardrail_id_language_id_idx',
+  'uq_conversational_guard_translations_guard_id_lang_id_idx',
   ['guardrailId', 'languageId'],
   { unique: true },
 )
@@ -17,9 +17,9 @@ export class ConversationalGuardrailsTranslations extends BaseWithoutTenantEntit
   @Column()
   languageId!: number;
 
-  @Column({ type: 'text' })
+  @Column()
   helperDialogue!: string;
 
-  @Column({ type: 'text' })
+  @Column()
   actorDialogue!: string;
 }
