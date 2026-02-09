@@ -2,8 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ScenarioCharacter } from '../entity/scenario-character.entity';
 import { ScenarioCharacterGetOptions as ScenarioCharacterGetOptions } from '../type/scenario-character.type';
-import { ScenarioCharacterSortBy } from '../enum/scenario-character.enum';
-import { ScenarioCharacterSortOrder } from '../enum/scenario-character.enum';
 
 @Injectable()
 export class ScenarioCharacterRepository extends Repository<ScenarioCharacter> {
@@ -14,24 +12,12 @@ export class ScenarioCharacterRepository extends Repository<ScenarioCharacter> {
   async getScenarioCharactersQuery(
     options: ScenarioCharacterGetOptions = {},
   ): Promise<{ characters: ScenarioCharacter[]; count: number }> {
-    const {
-      search,
-      limit = 15,
-      offset = 0,
-      sortBy = ScenarioCharacterSortBy.CREATED_AT,
-      sortOrder = ScenarioCharacterSortOrder.DESC,
-    } = options;
-
-    const sortColumn = Object.values(ScenarioCharacterSortBy).includes(
-      sortBy as ScenarioCharacterSortBy,
-    )
-      ? sortBy
-      : ScenarioCharacterSortBy.CREATED_AT;
+    const { search, limit, offset, sortBy, sortOrder } = options;
 
     const query = this.createQueryBuilder('scenarioCharacter')
-      .orderBy(`scenarioCharacter.${sortColumn}`, sortOrder)
-      .limit(limit)
-      .offset(offset);
+      .orderBy(`scenarioCharacter.${sortBy}`, sortOrder)
+      .limit(Number(limit))
+      .offset(Number(offset));
 
     if (search?.trim()) {
       const term = `%${search.trim()}%`;

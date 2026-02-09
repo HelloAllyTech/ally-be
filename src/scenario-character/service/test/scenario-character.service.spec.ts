@@ -73,8 +73,8 @@ describe('ScenarioCharacterService', () => {
         ...options,
         limit: 10,
         offset: 0,
-        sortBy: ScenarioCharacterSortBy.NAME,
-        sortOrder: ScenarioCharacterSortOrder.ASC,
+        sortBy: ScenarioCharacterSortBy.CREATED_AT,
+        sortOrder: ScenarioCharacterSortOrder.DESC,
       });
       expect(res).toEqual(result);
     });
