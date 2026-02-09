@@ -18,15 +18,15 @@ export class ScenarioCharacterRepository extends Repository<ScenarioCharacter> {
       search,
       limit = 15,
       offset = 0,
-      sortBy = ScenarioCharacterSortBy.NAME,
-      sortOrder = ScenarioCharacterSortOrder.ASC,
+      sortBy = ScenarioCharacterSortBy.CREATED_AT,
+      sortOrder = ScenarioCharacterSortOrder.DESC,
     } = options;
 
     const sortColumn = Object.values(ScenarioCharacterSortBy).includes(
       sortBy as ScenarioCharacterSortBy,
     )
       ? sortBy
-      : ScenarioCharacterSortBy.NAME;
+      : ScenarioCharacterSortBy.CREATED_AT;
 
     const query = this.createQueryBuilder('scenarioCharacter')
       .orderBy(`scenarioCharacter.${sortColumn}`, sortOrder)
