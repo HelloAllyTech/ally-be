@@ -29,6 +29,7 @@ import {
   MAX_TERMINATION_EVENT_COUNT,
 } from '../constants/scenario.constants';
 import { TerminationEventsDto } from './termination-events.dto';
+import { StateInstructionsDto } from './state-instructions.dto';
 
 export class CreateScenarioDto {
   @ApiProperty({
@@ -308,4 +309,14 @@ export class CreateScenarioDto {
   @IsNotEmpty()
   @IsString()
   maxTimeValue?: string;
+
+  @ApiProperty({
+    description: 'State instructions',
+    type: [StateInstructionsDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => StateInstructionsDto)
+  stateInstructions?: StateInstructionsDto[];
 }

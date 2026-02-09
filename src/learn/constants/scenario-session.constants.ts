@@ -300,4 +300,5 @@ export const SCENARIO_SESSION_TRANSLATABLE_FIELDS: string[] = [
   'sexualOrientation',
   'genderIdentity',
   'customFields',
+  'stateInstructions',
 ];

@@ -1943,6 +1943,21 @@ describe('ScenarioService', () => {
 
   describe('createScenarios', () => {
     it('should create scenarios and add termination events successfully', async () => {
+      const mockStateInstructions = [
+        {
+          id: 1,
+          instruction: 'Express mild doubt about if talking is helping',
+          dialogues: [
+            'I highly doubt if this is helping',
+            'I think we should stop talking',
+          ],
+        },
+        {
+          id: 2,
+          instruction: 'Show more engagement',
+          dialogues: ['Tell me more', 'I understand'],
+        },
+      ];
       const createDto = {
         scenarios: [
           {
@@ -1958,6 +1973,7 @@ describe('ScenarioService', () => {
             currentLocation: 'NY',
             context: 'Context',
             openingStatements: ['Hi'],
+            stateInstructions: mockStateInstructions,
             terminationEvents: [
               { id: 'event-1', message: 'Termination message 1' },
               { id: 'event-2', message: 'Termination message 2' },
@@ -1982,13 +1998,20 @@ describe('ScenarioService', () => {
         save: jest.fn().mockResolvedValue([]),
       };
 
+      const mockScenariosRepo = {
+        create: jest.fn().mockImplementation((data) => data),
+        save: jest.fn().mockResolvedValue([
+          {
+            id: 1,
+            isGlobal: false,
+            metadata: { stateInstructions: mockStateInstructions },
+          },
+        ]),
+      };
+
       const mockEntityManager = {
         getRepository: jest.fn((entity: any) => {
-          if (entity === Scenarios)
-            return {
-              create: jest.fn().mockReturnValue([{ id: 1 }]),
-              save: jest.fn().mockResolvedValue([{ id: 1, isGlobal: false }]),
-            };
+          if (entity === Scenarios) return mockScenariosRepo;
           if (entity === ScenarioEvents) return mockScenarioEventsRepo;
           return {
             create: jest.fn().mockReturnValue([]),
@@ -2007,6 +2030,17 @@ describe('ScenarioService', () => {
       const result = await service.createScenarios(createDto as any, 1);
 
       expect(result).toHaveLength(1);
+
+      // Verify create was called with stateInstructions in metadata
+      expect(mockScenariosRepo.create).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              stateInstructions: mockStateInstructions,
+            }),
+          }),
+        ]),
+      );
 
       // Verify create was called with termination events list
       expect(mockScenarioEventsRepo.create).toHaveBeenCalledWith([
@@ -2227,22 +2261,39 @@ describe('ScenarioService', () => {
 
   describe('updateScenario', () => {
     it('should update scenario successfully', async () => {
+      const mockStateInstructions = [
+        {
+          stateId: 1,
+          instruction: 'Express mild doubt about if talking is helping',
+          dialogues: [
+            'I highly doubt if this is helping',
+            'I think we should stop talking',
+          ],
+        },
+        {
+          stateId: 2,
+          instruction: 'Show more engagement',
+          dialogues: ['Tell me more', 'I understand'],
+        },
+      ];
       const updateDto: UpdateScenarioDto = {
         title: 'Updated Title',
         name: 'Updated Name',
+        stateInstructions: mockStateInstructions,
       };
       const existingScenario = { ...mockScenario, isGlobal: false };
       scenariosRepository.findOne.mockResolvedValue(existingScenario);
       scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
         null,
       );
+      const mockScenariosRepo = {
+        update: jest.fn().mockResolvedValue({ affected: 1 }),
+        findOne: jest.fn().mockResolvedValue(existingScenario),
+      };
       const mockEntityManager = {
         getRepository: jest.fn().mockImplementation((entity) => {
           if (entity === Scenarios) {
-            return {
-              update: jest.fn().mockResolvedValue({ affected: 1 }),
-              findOne: jest.fn().mockResolvedValue(existingScenario),
-            };
+            return mockScenariosRepo;
           }
           if (entity === ScenarioEvents) {
             return {
@@ -2278,6 +2329,15 @@ describe('ScenarioService', () => {
       const result = await service.updateScenario(1, updateDto, 1);
 
       expect(result).toBe(true);
+      // Verify update was called with stateInstructions in metadata
+      expect(mockScenariosRepo.update).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            stateInstructions: mockStateInstructions,
+          }),
+        }),
+      );
     });
 
     it('should return false when update affects no rows', async () => {
