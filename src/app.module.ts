@@ -36,6 +36,7 @@ import { ReviewModule } from './review/review.module';
 import { BadgeModule } from './badge/badge.module';
 import { CommunityModule } from './community/community.module';
 import { ScenarioCharacterModule } from './scenario-character/scenario-character.module';
+import { PromptModule } from './prompt/prompt.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { ScenarioCharacterModule } from './scenario-character/scenario-character
     BadgeModule,
     CommunityModule,
     ScenarioCharacterModule,
+    PromptModule,
   ],
   controllers: [],
   providers: [
