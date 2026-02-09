@@ -138,6 +138,10 @@ const PERMISSIONS = {
   DELETE_SCENARIO_CHARACTER: 'delete:scenario-character',
   CREATE_SCENARIO_CHARACTER: 'create:scenario-character',
 
+  // === PROMPTS ===
+  VIEW_PROMPT: 'view:admin:prompts',
+  EDIT_PROMPT: 'edit:admin:prompts',
+
   // === CACHE ===
   VIEW_CACHE: 'view:cache',
   DELETE_CACHE: 'delete:cache',
@@ -240,6 +244,8 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_SCENARIO_CHARACTER,
   PERMISSIONS.DELETE_SCENARIO_CHARACTER,
   PERMISSIONS.CREATE_SCENARIO_CHARACTER,
+  PERMISSIONS.VIEW_PROMPT,
+  PERMISSIONS.EDIT_PROMPT,
 ];
 
 const COUNSELOR_PERMISSIONS = [
