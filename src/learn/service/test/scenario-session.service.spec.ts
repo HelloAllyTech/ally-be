@@ -701,6 +701,41 @@ describe('ScenarioSessionService', () => {
   describe('previewScenario', () => {
     it('should create preview scenario session successfully', async () => {
       const previewDto = { scenarioId: mockScenarioId };
+      const mockStateInstructions = [
+        {
+          stateId: 1,
+          instruction: 'Express mild doubt about if talking is helping',
+          dialogues: [
+            'I highly doubt if this is helping',
+            'I think we should stop talking',
+          ],
+        },
+        {
+          stateId: 2,
+          instruction: 'Show more engagement',
+          dialogues: ['Tell me more', 'I understand'],
+        },
+      ];
+      // Expected formatted stateInstructions with score ranges from stateConfig
+      const expectedFormattedStateInstructions = [
+        {
+          stateId: 1,
+          instruction: 'Express mild doubt about if talking is helping',
+          dialogues: [
+            'I highly doubt if this is helping',
+            'I think we should stop talking',
+          ],
+          scoreUpper: -50,
+          scoreLower: undefined,
+        },
+        {
+          stateId: 2,
+          instruction: 'Show more engagement',
+          dialogues: ['Tell me more', 'I understand'],
+          scoreUpper: 20,
+          scoreLower: -50,
+        },
+      ];
       const mockScenarioWithMetadata = {
         ...mockScenario,
         title: 'Test Scenario',
@@ -725,6 +760,7 @@ describe('ScenarioSessionService', () => {
           checklistType: ChecklistType.GUIDED,
           timerMode: true,
           maxTimeValue: '1:20:00',
+          stateInstructions: mockStateInstructions,
         },
         isGlobal: false,
         isPublic: false,
@@ -760,6 +796,15 @@ describe('ScenarioSessionService', () => {
 
       expect(result.roomName).toMatch(/^preview-\d+-/);
       expect(result.accessToken).toEqual(mockTokenResponse);
+      expect(livekitService.createRoom).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            scenario: expect.objectContaining({
+              stateInstructions: expectedFormattedStateInstructions,
+            }),
+          }),
+        }),
+      );
     });
     it('should use default voice ID from languageVoices when not set in metadata', async () => {
       const scenarioWithoutVoiceId = {
@@ -1042,12 +1087,49 @@ describe('ScenarioSessionService', () => {
         scenarioId: mockScenarioId,
         ttl: 3600,
       };
+      const mockStateInstructions = [
+        {
+          stateId: 1,
+          instruction: 'Express mild doubt about if talking is helping',
+          dialogues: [
+            'I highly doubt if this is helping',
+            'I think we should stop talking',
+          ],
+        },
+        {
+          stateId: 2,
+          instruction: 'Show more engagement',
+          dialogues: ['Tell me more', 'I understand'],
+        },
+      ];
+      // Expected formatted stateInstructions with score ranges from stateConfig
+      const expectedFormattedStateInstructions = [
+        {
+          stateId: 1,
+          instruction: 'Express mild doubt about if talking is helping',
+          dialogues: [
+            'I highly doubt if this is helping',
+            'I think we should stop talking',
+          ],
+          scoreUpper: -50,
+          scoreLower: undefined,
+        },
+        {
+          stateId: 2,
+          instruction: 'Show more engagement',
+          dialogues: ['Tell me more', 'I understand'],
+          scoreUpper: 20,
+          scoreLower: -50,
+        },
+      ];
       const mockScenarioWithMetadata = {
         ...mockScenario,
+        difficultyLevel: ScenarioDifficultyLevel.EASY,
         metadata: {
           title: 'Test Scenario',
           description: 'Test Description',
           voiceId: 'test-voice',
+          stateInstructions: mockStateInstructions,
         },
         isGlobal: false,
       };
@@ -1121,6 +1203,11 @@ describe('ScenarioSessionService', () => {
         expect.objectContaining({
           name: mockCreatedSession.roomId,
           ttl: 3600,
+          metadata: expect.objectContaining({
+            scenario: expect.objectContaining({
+              stateInstructions: expectedFormattedStateInstructions,
+            }),
+          }),
         }),
       );
     });

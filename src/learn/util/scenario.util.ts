@@ -1,5 +1,8 @@
 import { DeepPartial } from 'typeorm';
-import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
+import {
+  SCENARIO_MANDATORY_FIELDS,
+  SCENARIO_MANDATORY_FIELDS_WITHOUT_STATE_BASED_CHANGES,
+} from '../constants/scenario-mandatory-fields.constants';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
@@ -50,6 +53,7 @@ export const mapCreateScenarioRequestToEntity = (
       ...(scenario.timerMode === true && {
         maxTimeValue: scenario.maxTimeValue,
       }),
+      stateInstructions: scenario.stateInstructions,
     },
   };
 };
@@ -86,7 +90,11 @@ export const formatScenarioTriggerWarningsList = (
     }));
   });
 
-export const getActiveScenarioMandatoryFields = () => SCENARIO_MANDATORY_FIELDS;
+// FEATURE_CLEANUP(FEATURE_SCENARIO_STATE_INSTRUCTIONS): remove the input feature flag and util accordingly
+export const getActiveScenarioMandatoryFields = (stateBasedFeature: boolean) =>
+  stateBasedFeature
+    ? SCENARIO_MANDATORY_FIELDS
+    : SCENARIO_MANDATORY_FIELDS_WITHOUT_STATE_BASED_CHANGES;
 
 export const mapUpdateScenarioRequestToEntity = (
   updateScenarioDto: UpdateScenarioDto,
@@ -138,6 +146,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'checklistType',
     'timerMode',
     'maxTimeValue',
+    'stateInstructions',
   ];
 
   // Handle metadata fields - merge with existing metadata

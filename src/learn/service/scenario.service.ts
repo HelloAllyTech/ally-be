@@ -178,7 +178,9 @@ export class ScenarioService {
   private checkPreviewEnabled(item: any): boolean {
     const metadata = item.scenario_metadata || {};
 
-    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields();
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
+      this.configService.featureFlag.stateBasedScenarioInstructions,
+    );
     const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter((field) => {
       let value = undefined;
 
@@ -497,6 +499,7 @@ export class ScenarioService {
                   sexualOrientation: scenario.metadata?.sexualOrientation,
                   genderIdentity: scenario.metadata?.genderIdentity,
                   customFields: scenario.metadata?.customFields,
+                  stateInstructions: scenario.metadata?.stateInstructions,
                 }),
               translationConsiderableData,
             );
@@ -591,8 +594,9 @@ export class ScenarioService {
 
     // Validate ACTIVE: all required fields must be present
     if (status === ScenarioStatus.ACTIVE) {
-      const ACTIVE_SCENARIO_MANDATORY_FIELDS =
-        getActiveScenarioMandatoryFields();
+      const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
+        this.configService.featureFlag.stateBasedScenarioInstructions,
+      );
       const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
         (field) => !data[field as keyof typeof data],
       );
@@ -721,6 +725,7 @@ export class ScenarioService {
                 sexualOrientation: updateScenarioDto.sexualOrientation,
                 genderIdentity: updateScenarioDto.genderIdentity,
                 customFields: updateScenarioDto?.customFields,
+                stateInstructions: updateScenarioDto?.stateInstructions,
               }),
             translationConsiderableData,
           );
