@@ -1,21 +1,26 @@
-import { Dashboard } from '../../entity/dashboard.entity';
+import { Dashboard } from '../../entity/dashboards.entity';
 import { AnalyticsService } from '../analytics.service';
-import { In } from 'typeorm';
 import { AnalyticsInterface } from 'src/analytics/interface/analytics.interface';
 import { GroupService } from 'src/authorization/service/group.service';
-import { NotFoundException } from '@nestjs/common';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { AnalyticsUtil } from 'src/analytics/util/analytics.util';
 import { Test, TestingModule } from '@nestjs/testing';
 import { CreateDashboardDto } from '../../dto/analytics.dto';
+import { AnalyticsTypeEnum } from '../../constants/analytics.constants';
 import { DashboardRepository } from '../../repository/dashboard.repository';
 import { ChatSharedService } from '../../../chat/service/chat-shared.service';
+import { TenantService } from 'src/tenant/service/tenant.service';
+import { DataSource } from 'typeorm';
+import { DashboardTenant } from '../../entity/dashboard-tenant.entity';
+import { DashboardGroup } from '../../entity/dashboard-group.entity';
+import { getRepositoryToken } from '@nestjs/typeorm';
 
 // Mock the static classes at the top level
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
     getTenantId: jest.fn(),
     getUserId: jest.fn(),
+    getExecutionId: jest.fn(),
   },
 }));
 
@@ -31,18 +36,20 @@ describe('AnalyticsService', () => {
   let chatSharedService: jest.Mocked<ChatSharedService>;
   let analyticsInterface: jest.Mocked<AnalyticsInterface>;
   let groupService: jest.Mocked<GroupService>;
+  let tenantService: jest.Mocked<TenantService>;
+  let dataSource: jest.Mocked<DataSource>;
 
   const mockTenantId = 'tenant-23';
   const mockUserId = 123;
-  const mockDashboard = {
-    id: 1,
+  const mockDashboard: Dashboard = {
+    id: 'uuid-dashboard-123',
     externalId: 'dashboard-123',
-    groupId: 1,
-    tenantId: mockTenantId,
+    name: 'Test Dashboard',
     data: {
       params: ['organization_id', 'user_id'],
     },
-  } as unknown as Dashboard;
+    analyticsType: AnalyticsTypeEnum.CALL_LOG_ANALYTICS,
+  } as Dashboard;
 
   beforeEach(async () => {
     const mockAnalyticsInterface = {
@@ -55,7 +62,9 @@ describe('AnalyticsService', () => {
       create: jest.fn(),
       save: jest.fn(),
       update: jest.fn(),
+      findByExternalId: jest.fn(),
       findByExternalIdAndTenant: jest.fn(),
+      findByGroupIdAndTenant: jest.fn(),
     };
     const mockChatSharedService = {
       getCounselorStatsRaw: jest.fn(),
@@ -63,11 +72,56 @@ describe('AnalyticsService', () => {
     const mockGroupService = {
       getUserGroups: jest.fn(),
       getUserRolesByUserId: jest.fn(),
+      getGroupNames: jest.fn(),
+    };
+    const mockTenantService = {
+      findById: jest.fn(),
+    };
+    const mockDashboardTenantRepo = {
+      create: jest.fn(),
+      save: jest.fn(),
+    };
+    const mockTransactionEntityManager = {
+      getRepository: jest.fn(),
+    };
+    const mockDataSource = {
+      transaction: jest
+        .fn()
+        .mockImplementation(async (fn: (em: any) => any) => {
+          const dashboardRepo = {
+            create: jest
+              .fn()
+              .mockImplementation((dto: any) => ({ ...dto, id: 'new-uuid' })),
+            save: jest
+              .fn()
+              .mockImplementation((entity: any) =>
+                Promise.resolve({ ...entity, id: entity.id || 'new-uuid' }),
+              ),
+          };
+          const dashboardTenantRepo = {
+            create: jest.fn().mockImplementation((dto: any) => dto),
+            save: jest.fn().mockResolvedValue(undefined),
+          };
+          const dashboardGroupRepo = {
+            create: jest.fn().mockImplementation((dto: any) => dto),
+            save: jest.fn().mockResolvedValue(undefined),
+          };
+          mockTransactionEntityManager.getRepository.mockImplementation(
+            (entity: any) => {
+              if (entity === Dashboard) return dashboardRepo;
+              if (entity === DashboardTenant) return dashboardTenantRepo;
+              if (entity === DashboardGroup) return dashboardGroupRepo;
+              return {};
+            },
+          );
+          return fn(mockTransactionEntityManager);
+        }),
     };
 
     // Now you can use mockReturnValue since the classes are mocked
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
     (ExecutionManager.getUserId as jest.Mock).mockReturnValue(mockUserId);
+    (ExecutionManager.getExecutionId as jest.Mock).mockReturnValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -88,6 +142,18 @@ describe('AnalyticsService', () => {
           provide: GroupService,
           useValue: mockGroupService,
         },
+        {
+          provide: TenantService,
+          useValue: mockTenantService,
+        },
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
+        },
+        {
+          provide: getRepositoryToken(DashboardTenant),
+          useValue: mockDashboardTenantRepo,
+        },
       ],
     }).compile();
 
@@ -96,6 +162,8 @@ describe('AnalyticsService', () => {
     dashboardRepository = module.get(DashboardRepository);
     chatSharedService = module.get(ChatSharedService);
     groupService = module.get(GroupService);
+    tenantService = module.get(TenantService);
+    dataSource = module.get(DataSource);
   });
 
   afterEach(() => {
@@ -104,13 +172,13 @@ describe('AnalyticsService', () => {
 
   // Refresh dashboard url
   describe('refreshDashboardUrl', () => {
-    it('should handle errors fom analytics interface', () => {
+    it('should handle errors from analytics interface', async () => {
       const dashboardId = 'dashboard-123';
       const error = new Error('External service error');
 
       analyticsInterface.refreshDashboardUrl.mockRejectedValue(error);
 
-      expect(service.refreshDashboardUrl(dashboardId)).rejects.toThrow(
+      await expect(service.refreshDashboardUrl(dashboardId)).rejects.toThrow(
         'External service error',
       );
       expect(analyticsInterface.refreshDashboardUrl).toHaveBeenCalledTimes(1);
@@ -142,7 +210,7 @@ describe('AnalyticsService', () => {
       dashboardRepository.findByExternalIdAndTenant.mockResolvedValue(null);
 
       await expect(service.getDashboardUrl(dashboardId)).rejects.toThrow(
-        new NotFoundException('Dashboard not found'),
+        'Dashboard not found',
       );
 
       expect(
@@ -191,10 +259,10 @@ describe('AnalyticsService', () => {
       );
     });
     it('should handle dashboard with no parameters', async () => {
-      const dashboardWithNoParams = {
+      const dashboardWithNoParams: Dashboard = {
         ...mockDashboard,
-        data: null,
-      } as unknown as Dashboard;
+        data: undefined,
+      };
 
       dashboardRepository.findByExternalIdAndTenant.mockResolvedValue(
         dashboardWithNoParams,
@@ -230,77 +298,41 @@ describe('AnalyticsService', () => {
     const mockDashboardDto: CreateDashboardDto = {
       name: 'New Dashboard',
       externalId: 'new-dashboard',
-      groupId: '2',
       description: 'Test dashboard',
-      order: 1,
-      tenantId: mockTenantId,
+      tenantIds: [mockTenantId],
+      groupIds: [1, 2],
+      analyticsType: AnalyticsTypeEnum.CALL_LOG_ANALYTICS,
     };
 
-    it('it should create a dashboard when none exists', async () => {
-      const savedDashboard = {
-        id: 2,
-        ...mockDashboardDto,
-        tenantId: mockTenantId,
-      };
-      dashboardRepository.findByExternalIdAndTenant.mockResolvedValue(null);
+    it('should create a dashboard when none exists', async () => {
+      dashboardRepository.findByExternalId.mockResolvedValue(null);
+      groupService.getGroupNames.mockResolvedValue(['COUNSELOR', 'ADMIN']);
+      tenantService.findById.mockResolvedValue({ id: mockTenantId } as any);
 
-      dashboardRepository.create.mockReturnValue(savedDashboard as Dashboard);
-      dashboardRepository.save.mockResolvedValue(savedDashboard as Dashboard);
-      const result = await service.createDashboard(mockDashboardDto);
+      await service.createDashboard(mockDashboardDto);
 
-      expect(result).toEqual(savedDashboard);
-
-      expect(
-        dashboardRepository.findByExternalIdAndTenant,
-      ).toHaveBeenCalledTimes(1);
-      expect(
-        dashboardRepository.findByExternalIdAndTenant,
-      ).toHaveBeenCalledWith(
+      expect(dashboardRepository.findByExternalId).toHaveBeenCalledTimes(1);
+      expect(dashboardRepository.findByExternalId).toHaveBeenCalledWith(
         mockDashboardDto.externalId,
-        mockTenantId,
-        mockDashboardDto.groupId,
       );
-
-      expect(dashboardRepository.create).toHaveBeenCalledTimes(1);
-      expect(dashboardRepository.create).toHaveBeenCalledWith({
-        ...mockDashboardDto,
-        tenantId: mockTenantId,
-      });
-
-      expect(dashboardRepository.save).toHaveBeenCalledTimes(1);
-      expect(dashboardRepository.save).toHaveBeenCalledWith(savedDashboard);
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
     });
-    it('should update existing dashboard when found', async () => {
-      const existingDashboard = { id: 1, ...mockDashboardDto } as Dashboard;
 
-      dashboardRepository.findByExternalIdAndTenant.mockResolvedValue(
-        existingDashboard,
+    it('should throw BadRequestException when dashboard already exists', async () => {
+      const existingDashboard = {
+        id: 'existing-uuid',
+        ...mockDashboardDto,
+      } as Dashboard;
+      dashboardRepository.findByExternalId.mockResolvedValue(existingDashboard);
+
+      await expect(service.createDashboard(mockDashboardDto)).rejects.toThrow(
+        'Dashboard already exists',
       );
-      dashboardRepository.update.mockResolvedValue({ affected: 1 } as any);
 
-      const result = await service.createDashboard(mockDashboardDto);
-
-      expect(result).toEqual(existingDashboard);
-
-      expect(
-        dashboardRepository.findByExternalIdAndTenant,
-      ).toHaveBeenCalledTimes(1);
-      expect(
-        dashboardRepository.findByExternalIdAndTenant,
-      ).toHaveBeenCalledWith(
+      expect(dashboardRepository.findByExternalId).toHaveBeenCalledWith(
         mockDashboardDto.externalId,
-        mockTenantId,
-        mockDashboardDto.groupId,
       );
-
-      expect(dashboardRepository.update).toHaveBeenCalledTimes(1);
-      expect(dashboardRepository.update).toHaveBeenCalledWith(
-        { id: existingDashboard.id },
-        { ...mockDashboardDto },
-      );
-
-      expect(dashboardRepository.create).not.toHaveBeenCalled();
-      expect(dashboardRepository.save).not.toHaveBeenCalled();
+      expect(dataSource.transaction).not.toHaveBeenCalled();
     });
   });
 
@@ -317,7 +349,7 @@ describe('AnalyticsService', () => {
         mockUserId,
       );
 
-      expect(dashboardRepository.find).not.toHaveBeenCalled();
+      expect(dashboardRepository.findByGroupIdAndTenant).not.toHaveBeenCalled();
     });
     it('should return dashboards when user has groups', async () => {
       const mockUserGroups = [
@@ -337,32 +369,42 @@ describe('AnalyticsService', () => {
       ];
       groupService.getUserRolesByUserId.mockResolvedValue(mockUserGroups);
       const mockDashboards = [
-        { ...mockDashboard, groupId: '1' }, // COUNSELOR
-        { ...mockDashboard, groupId: '2' }, // ADMIN
-        { ...mockDashboard, groupId: '3' }, // LEARNER
+        {
+          ...mockDashboard,
+          groupId: 1,
+          analyticsType: AnalyticsTypeEnum.CALL_LOG_ANALYTICS,
+        },
+        {
+          ...mockDashboard,
+          groupId: 2,
+          analyticsType: AnalyticsTypeEnum.CALL_LOG_ANALYTICS,
+        },
+        {
+          ...mockDashboard,
+          groupId: 3,
+          analyticsType: AnalyticsTypeEnum.CALL_LOG_ANALYTICS,
+        },
       ];
-      dashboardRepository.find.mockResolvedValue(mockDashboards);
+      dashboardRepository.findByGroupIdAndTenant.mockResolvedValue(
+        mockDashboards,
+      );
 
       const result = await service.getDashboards(mockUserId);
 
-      expect(result).toEqual([
-        { ...mockDashboards[0], analyticsType: 'CALL_LOG_ANALYTICS' },
-        { ...mockDashboards[1], analyticsType: 'ORG_ANALYTICS' },
-        { ...mockDashboards[2], analyticsType: 'SIMULATION_ANALYTICS' },
-      ]);
+      expect(result).toEqual(mockDashboards);
 
       expect(groupService.getUserRolesByUserId).toHaveBeenCalledTimes(1);
       expect(groupService.getUserRolesByUserId).toHaveBeenCalledWith(
         mockUserId,
       );
 
-      expect(dashboardRepository.find).toHaveBeenCalledTimes(1);
-      expect(dashboardRepository.find).toHaveBeenCalledWith({
-        where: {
-          groupId: In([1, 2, 3]),
-          tenantId: mockTenantId,
-        },
-      });
+      expect(dashboardRepository.findByGroupIdAndTenant).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(dashboardRepository.findByGroupIdAndTenant).toHaveBeenCalledWith(
+        mockTenantId,
+        [1, 2, 3],
+      );
     });
   });
 

@@ -10,6 +10,7 @@ import { UpdateTenantDto } from '../../dto/update-tenant.dto';
 import { GetAllTenantsResponseDto } from '../../dto/get-tenants.dto';
 import { TenantSortBy } from '../../enum/tenant.enum';
 import { SortOrder } from '../../../user/enum/user.enum';
+import { TenantResponseDto } from '../../dto/tenant-response.dto';
 
 jest.mock('../../../auth/decorators/auth-permissions.decorator', () => ({
   AuthPermissions: () => () => {},
@@ -32,6 +33,14 @@ describe('TenantController', () => {
     deletedAt: undefined,
     createdBy: undefined,
     updatedBy: undefined,
+  };
+
+  const mockTenantResponse: TenantResponseDto = {
+    ...mockTenant,
+    enabledDashboardIds: [],
+    hideRankInLeaderboard: false,
+    enableAudioUpload: true,
+    enableMicrophoneMode: true,
   };
 
   const mockTenantWithUserCount = {
@@ -84,10 +93,10 @@ describe('TenantController', () => {
 
       const result = await controller.create(mockCreateTenantDto);
 
-      expect(tenantService.create).toHaveBeenCalledWith({
-        ...mockCreateTenantDto,
-        status: TenantStatus.ACTIVE,
-      });
+      expect(tenantService.create).toHaveBeenCalledWith(
+        mockCreateTenantDto,
+        TenantStatus.ACTIVE,
+      );
       expect(result).toEqual(expectedTenant);
     });
 
@@ -103,11 +112,11 @@ describe('TenantController', () => {
 
   describe('findById', () => {
     it('should return tenant by ID', async () => {
-      tenantService.findById.mockResolvedValue(mockTenant);
+      tenantService.findById.mockResolvedValue(mockTenantResponse);
       const result = await controller.findById('test-tenant-id');
 
       expect(tenantService.findById).toHaveBeenCalledWith('test-tenant-id');
-      expect(result).toEqual(mockTenant);
+      expect(result).toEqual(mockTenantResponse);
     });
 
     it('should return null when not found', async () => {
@@ -119,11 +128,11 @@ describe('TenantController', () => {
 
   describe('findByCode', () => {
     it('should return tenant by code', async () => {
-      tenantService.findByCode.mockResolvedValue(mockTenant);
+      tenantService.findByCode.mockResolvedValue(mockTenantResponse);
       const result = await controller.findByCode('test-tenant');
 
       expect(tenantService.findByCode).toHaveBeenCalledWith('test-tenant');
-      expect(result).toEqual(mockTenant);
+      expect(result).toEqual(mockTenantResponse);
     });
 
     it('should return null when not found', async () => {
@@ -228,13 +237,16 @@ describe('TenantController', () => {
         name: 'Updated Tenant',
         description: 'Updated desc',
       };
-      const updatedTenant = { ...mockTenant, ...dto };
-      tenantService.updateTenant.mockResolvedValue(updatedTenant);
+      const updatedTenantResponse: TenantResponseDto = {
+        ...mockTenantResponse,
+        ...dto,
+      };
+      tenantService.updateTenant.mockResolvedValue(updatedTenantResponse);
 
       const result = await controller.updateTenant('id1', dto);
 
       expect(tenantService.updateTenant).toHaveBeenCalledWith('id1', dto);
-      expect(result).toEqual(updatedTenant);
+      expect(result).toEqual(updatedTenantResponse);
     });
 
     it('should return null if tenant not found', async () => {

@@ -47,6 +47,7 @@ import { AppConfigService } from 'src/config/config.service';
 import {
   ChecklistItem,
   ExperienceMode,
+  ScenarioDifficultyLevel,
   ScenarioStatus,
 } from '../type/scenario.type';
 import { ScenarioTenantService } from './scenario-tenant.service';
@@ -73,6 +74,8 @@ import {
   ScenarioSessionLeaderboardEvent,
   ScenarioSessionLeaderboardEndedEventParams,
 } from '../type/scenario-session-leaderboard-event.type';
+import { getScenarioStateConfigByDifficultyLevel } from '../util/scenario-state.util';
+import { ScenarioStateInstruction } from '../type/scenario-state.type';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -489,6 +492,25 @@ export class ScenarioSessionService {
       };
     });
 
+    const stateConfig = getScenarioStateConfigByDifficultyLevel(
+      scenario.difficultyLevel as ScenarioDifficultyLevel,
+    );
+
+    const formattedStateInstructions = metadata?.stateInstructions?.map(
+      (stateItem: ScenarioStateInstruction) => {
+        const stateConfigInfo = stateConfig.find(
+          (state) => state.stateId === stateItem.stateId,
+        );
+        return {
+          stateId: stateItem.stateId,
+          instruction: stateItem.instruction,
+          dialogues: stateItem.dialogues,
+          scoreUpper: stateConfigInfo?.scoreRange?.max,
+          scoreLower: stateConfigInfo?.scoreRange?.min,
+        };
+      },
+    );
+
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
@@ -510,6 +532,7 @@ export class ScenarioSessionService {
         events: allEvents,
         triggerEvents: Array.from(triggerEvents),
         autoTerminationEvents,
+        stateInstructions: formattedStateInstructions,
       },
     };
   }
@@ -1041,7 +1064,9 @@ export class ScenarioSessionService {
       ...(metadata ?? {}),
     };
 
-    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields();
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
+      this.configService.featureFlag.stateBasedScenarioInstructions,
+    );
     const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
       (field) => !flatScenario[field as keyof typeof flatScenario],
     );

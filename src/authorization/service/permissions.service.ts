@@ -1,11 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GroupService } from 'src/authorization/service/group.service';
 import { GroupPermissionsService } from './group-permissions.service';
 import { UserGroupService } from './user-group.service';
+import { ValidatePermissionsDto } from '../dto/validate-permissions.dto';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { SuccessResponse } from 'src/common/type/common.type';
+import { PermissionOperator } from '../type/authorization-event.type';
+import { LoggerService } from 'src/logger/logger.service';
 
 @Injectable()
 export class PermissionsService {
+  private readonly logger = LoggerService.getInstance(PermissionsService.name);
   constructor(
     private readonly groupService: GroupService,
     private readonly cache: RedisService,
@@ -23,6 +33,34 @@ export class PermissionsService {
     const roleNames = userRoles.map((role) => role.name);
     await this.cache.set(`user:roles:${userId}`, JSON.stringify(roleNames));
     return roleNames;
+  }
+
+  async validatePermissions(
+    validatePermissionsDto: ValidatePermissionsDto,
+  ): Promise<SuccessResponse> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const userPermissions = await this.getUserPermissions(Number(userId));
+    const operator = validatePermissionsDto.operator ?? PermissionOperator.AND;
+
+    const hasPermission =
+      operator === PermissionOperator.AND
+        ? validatePermissionsDto.permissions.every((permission) =>
+            userPermissions.includes(permission),
+          )
+        : validatePermissionsDto.permissions.some((permission) =>
+            userPermissions.includes(permission),
+          );
+
+    if (!hasPermission) {
+      this.logger.warn(`User ${userId} does not have the required permissions`);
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    return { success: true };
   }
 
   async getUserPermissions(id: number): Promise<string[]> {

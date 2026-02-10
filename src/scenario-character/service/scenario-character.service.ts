@@ -34,14 +34,14 @@ export class ScenarioCharacterService {
       search,
       limit = 15,
       offset = 0,
-      sortBy = ScenarioCharacterSortBy.NAME,
-      sortOrder = ScenarioCharacterSortOrder.ASC,
+      sortBy = ScenarioCharacterSortBy.CREATED_AT,
+      sortOrder = ScenarioCharacterSortOrder.DESC,
     } = options;
 
     return this.scenarioCharacterRepository.getScenarioCharactersQuery({
       search,
-      limit: Number(limit) ?? 15,
-      offset: Number(offset) ?? 0,
+      limit: Number(limit),
+      offset: Number(offset),
       sortBy,
       sortOrder,
     });

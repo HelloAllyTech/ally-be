@@ -19,7 +19,11 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { BadgeViewedStatus } from '../constants/badge.constants';
+import {
+  BadgeViewedStatus,
+  BadgeCategory,
+  BadgeStatus,
+} from '../constants/badge.constants';
 import { BadgeService } from '../service/badge.service';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
@@ -44,6 +48,9 @@ import { AddBadgeToTenantsRequestDto } from '../dto/badge-tenant.dto';
 import { BadgeImageUploadRequestDto } from '../dto/badge-image-upload-request.dto';
 import { BadgeImageUploadResponseDto } from '../dto/badge-image-upload-response.dto';
 import { DeleteBadgeImageDto } from '../dto/delete-badge-image.dto';
+import { BadgeFilterDto } from '../dto/badge-filter.dto';
+import { SortOrder } from 'src/common/type/common.type';
+import { BadgeSortBy } from '../enum/badge-sort-by.enum';
 
 @ApiTags('Badge')
 @ApiBearerAuth()
@@ -177,6 +184,38 @@ export class BadgeController {
   }
 
   @ApiOperation({ summary: 'Get all badges (Admin)' })
+  @ApiQuery({ name: 'limit', type: Number, required: false })
+  @ApiQuery({ name: 'offset', type: Number, required: false })
+  @ApiQuery({
+    name: 'search',
+    type: String,
+    required: false,
+    description: 'Search by name or code (case-insensitive)',
+  })
+  @ApiQuery({
+    name: 'category',
+    required: false,
+    enum: BadgeCategory,
+    description: 'Filter by badge category',
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: BadgeStatus,
+    description: 'Filter by badge status',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: BadgeSortBy,
+    description: 'Sort column',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order (default: DESC)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Returns all badges in the system',
@@ -184,8 +223,20 @@ export class BadgeController {
   })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_BADGES])
   @Get()
-  async getAllBadges(): Promise<AdminBadgeListResponseDto> {
-    return this.badgeService.getAllBadges();
+  async getAllBadges(
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('search') search?: string,
+    @Query('category') category?: BadgeCategory,
+    @Query('status') status?: BadgeStatus,
+    @Query('sortBy') sortBy: BadgeSortBy = BadgeSortBy.CREATED_AT,
+    @Query('order') order: SortOrder = SortOrder.DESC,
+  ): Promise<AdminBadgeListResponseDto> {
+    const filter: BadgeFilterDto = { search, category, status };
+    return this.badgeService.getAllBadges(
+      { limit, offset, sortBy, order },
+      filter,
+    );
   }
 
   @ApiOperation({ summary: 'Add badge to tenants' })

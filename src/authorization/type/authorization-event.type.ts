@@ -7,3 +7,8 @@ export interface UserRoleAssignedEventParams {
   groupId: number;
   tenantId?: string;
 }
+
+export enum PermissionOperator {
+  OR = 'OR',
+  AND = 'AND',
+}

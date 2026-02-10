@@ -36,6 +36,7 @@ import {
 
 import { SuccessResponse } from 'src/common/type/common.type';
 import { DeleteLogoDto } from '../dto/delete-organization-logo.dto';
+import { TenantResponseDto } from '../dto/tenant-response.dto';
 
 @ApiTags('Tenant')
 @Controller('v1/tenants')
@@ -47,21 +48,20 @@ export class TenantController {
   @Post()
   @AuthPermissions([PERMISSIONS.EDIT_TENANT])
   async create(@Body() createTenantDto: CreateTenantDto): Promise<Tenant> {
-    return this.tenantService.create({
-      ...createTenantDto,
-      status: TenantStatus.ACTIVE,
-    });
+    return this.tenantService.create(createTenantDto, TenantStatus.ACTIVE);
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_TENANT])
   @Get(':id')
-  async findById(@Param('id') id: string): Promise<Tenant | null> {
+  async findById(@Param('id') id: string): Promise<TenantResponseDto | null> {
     return this.tenantService.findById(id);
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_TENANT])
   @Get('code/:code')
-  async findByCode(@Param('code') code: string): Promise<Tenant | null> {
+  async findByCode(
+    @Param('code') code: string,
+  ): Promise<TenantResponseDto | null> {
     return this.tenantService.findByCode(code);
   }
 
@@ -160,7 +160,7 @@ export class TenantController {
   async updateTenant(
     @Param('id') id: string,
     @Body() updateTenantDto: UpdateTenantDto,
-  ): Promise<Tenant | null> {
+  ): Promise<TenantResponseDto | null> {
     return this.tenantService.updateTenant(id, updateTenantDto);
   }
 

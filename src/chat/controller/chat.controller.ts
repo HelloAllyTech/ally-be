@@ -671,7 +671,7 @@ export class ChatController {
     status: 200,
     description: 'Chat transcript processed successfully',
   })
-  async processTranscrip(
+  async processTranscript(
     @Body() chatTranscriptDto: TranscriptRequestDto,
   ): Promise<void> {
     return this.chatTranscriptService.processTranscribeResult(
