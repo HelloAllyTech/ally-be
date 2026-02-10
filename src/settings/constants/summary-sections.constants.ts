@@ -20,7 +20,6 @@ export const SUMMARY_SECTIONS: readonly SummarySection[] = [
       { id: 'clientId', label: 'Client ID' },
       { id: 'counsellor', label: 'Counselor' },
       { id: 'callType', label: 'Call Type' },
-      { id: 'tags', label: 'Tags' },
       { id: 'callQuality', label: 'Call Quality' },
       { id: 'newCallFollowUp', label: 'New Call Follow-up' },
     ],
@@ -56,6 +55,7 @@ export const SUMMARY_SECTIONS: readonly SummarySection[] = [
       { id: 'referralsProvided', label: 'Referrals Provided' },
       { id: 'homework', label: 'Homework' },
       { id: 'planForNextCall', label: 'Plan for Next Call' },
+      { id: 'tags', label: 'Tags' },
     ],
   },
   {
