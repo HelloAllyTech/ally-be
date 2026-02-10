@@ -19,6 +19,9 @@ import { S3Service } from 'src/aws/service/s3.service';
 import { LogoUploadContentType } from 'src/tenant/enum/tenant.enum';
 import { BadgeTenantSharedService } from 'src/badge/service/badge-tenant-shared.service';
 import { TenantDashboardSharedService } from '../tenant-dashboard-shared';
+import { SettingsService } from 'src/settings/service/settings.service';
+import { ChatTypes } from 'src/common/constants/chat.constants';
+import { TenantResponseDto } from 'src/tenant/dto/tenant-response.dto';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -48,6 +51,8 @@ describe('TenantService', () => {
   let dataSource: jest.Mocked<DataSource>;
   let configService: jest.Mocked<AppConfigService>;
   let s3Service: jest.Mocked<S3Service>;
+  let settingsService: jest.Mocked<SettingsService>;
+  let tenantDashboardSharedService: jest.Mocked<TenantDashboardSharedService>;
 
   const mockTenant: Tenant = {
     id: 'test-tenant-id',
@@ -64,6 +69,14 @@ describe('TenantService', () => {
     createdBy: undefined,
     updatedBy: undefined,
   } as Tenant;
+
+  const mockTenantResponse: TenantResponseDto = {
+    ...mockTenant,
+    enabledDashboardIds: [],
+    hideRankInLeaderboard: false,
+    enableAudioUpload: true,
+    enableMicrophoneMode: true,
+  };
 
   const mockCreateTenantData = {
     name: 'New Tenant',
@@ -106,10 +119,22 @@ describe('TenantService', () => {
     const mockTenantDashboardSharedService = {
       assignDashboardsToTenant: jest.fn().mockResolvedValue(undefined),
       validateDashboardIds: jest.fn().mockResolvedValue(undefined),
+      getEnabledDashboardIdsForTenant: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockSettingsService = {
+      updateChatTypes: jest.fn().mockResolvedValue(undefined),
+      getHiddenChatTypesForEntity: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockDashboardTenantRepository = {
+      find: jest.fn().mockResolvedValue([]),
     };
 
     const mockDataSource = {
       transaction: jest.fn(),
+      manager: {},
+      getRepository: jest.fn().mockReturnValue(mockDashboardTenantRepository),
     };
 
     const mockConfigService = {
@@ -160,6 +185,10 @@ describe('TenantService', () => {
           useValue: mockTenantDashboardSharedService,
         },
         {
+          provide: SettingsService,
+          useValue: mockSettingsService,
+        },
+        {
           provide: DataSource,
           useValue: mockDataSource,
         },
@@ -183,6 +212,8 @@ describe('TenantService', () => {
     dataSource = module.get(DataSource);
     configService = module.get(AppConfigService);
     s3Service = module.get(S3Service);
+    settingsService = module.get(SettingsService);
+    tenantDashboardSharedService = module.get(TenantDashboardSharedService);
   });
 
   afterEach(() => {
@@ -230,7 +261,10 @@ describe('TenantService', () => {
         undefined,
       );
 
-      const result = await service.create(mockCreateTenantData);
+      const result = await service.create(
+        mockCreateTenantData,
+        TenantStatus.ACTIVE,
+      );
 
       expect(tenantRepository.findOne).toHaveBeenCalledWith({
         where: [
@@ -241,7 +275,10 @@ describe('TenantService', () => {
       expect(dataSource.transaction).toHaveBeenCalled();
       expect(mockEntityManager.create).toHaveBeenCalledWith(
         Tenant,
-        mockCreateTenantData,
+        expect.objectContaining({
+          ...mockCreateTenantData,
+          status: TenantStatus.ACTIVE,
+        }),
       );
       expect(mockEntityManager.save).toHaveBeenCalledWith(
         Tenant,
@@ -277,13 +314,14 @@ describe('TenantService', () => {
         undefined,
       );
 
-      await service.create(mockCreateTenantData);
+      await service.create(mockCreateTenantData, TenantStatus.ACTIVE);
 
       expect(mockEntityManager.create).toHaveBeenCalledWith(
         Tenant,
         expect.objectContaining({
           createdBy: 123,
           updatedBy: 123,
+          status: TenantStatus.ACTIVE,
         }),
       );
     });
@@ -292,10 +330,12 @@ describe('TenantService', () => {
       const existingTenant = { ...mockTenant, name: mockCreateTenantData.name };
       tenantRepository.findOne.mockResolvedValue(existingTenant);
 
-      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
-        ConflictException,
-      );
-      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
+      await expect(
+        service.create(mockCreateTenantData, TenantStatus.ACTIVE),
+      ).rejects.toThrow(ConflictException);
+      await expect(
+        service.create(mockCreateTenantData, TenantStatus.ACTIVE),
+      ).rejects.toThrow(
         `Tenant with name "${mockCreateTenantData.name}" already exists`,
       );
       expect(dataSource.transaction).not.toHaveBeenCalled();
@@ -309,10 +349,12 @@ describe('TenantService', () => {
       };
       tenantRepository.findOne.mockResolvedValue(existingTenant);
 
-      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
-        ConflictException,
-      );
-      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
+      await expect(
+        service.create(mockCreateTenantData, TenantStatus.ACTIVE),
+      ).rejects.toThrow(ConflictException);
+      await expect(
+        service.create(mockCreateTenantData, TenantStatus.ACTIVE),
+      ).rejects.toThrow(
         `Tenant with code "${mockCreateTenantData.code}" already exists`,
       );
       expect(dataSource.transaction).not.toHaveBeenCalled();
@@ -324,17 +366,17 @@ describe('TenantService', () => {
       tenantRepository.findOne.mockResolvedValue(null);
       dataSource.transaction.mockRejectedValue(error);
 
-      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
-        BadRequestException,
-      );
-      await expect(service.create(mockCreateTenantData)).rejects.toThrow(
-        'Failed to create tenant: Transaction failed',
-      );
+      await expect(
+        service.create(mockCreateTenantData, TenantStatus.ACTIVE),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.create(mockCreateTenantData, TenantStatus.ACTIVE),
+      ).rejects.toThrow('Failed to create tenant: Transaction failed');
     });
   });
 
   describe('findById', () => {
-    it('should return tenant when found by ID', async () => {
+    it('should return enriched tenant response when found by ID', async () => {
       tenantRepository.findOne.mockResolvedValue(mockTenant);
 
       const result = await service.findById('test-tenant-id');
@@ -342,7 +384,11 @@ describe('TenantService', () => {
       expect(tenantRepository.findOne).toHaveBeenCalledWith({
         where: { id: 'test-tenant-id' },
       });
-      expect(result).toEqual(mockTenant);
+      expect(result).toEqual(mockTenantResponse);
+      expect(result).toHaveProperty('enabledDashboardIds');
+      expect(result).toHaveProperty('hideRankInLeaderboard');
+      expect(result).toHaveProperty('enableAudioUpload');
+      expect(result).toHaveProperty('enableMicrophoneMode');
     });
 
     it('should return null when tenant not found by ID', async () => {
@@ -356,7 +402,7 @@ describe('TenantService', () => {
 
   describe('validateTenant', () => {
     it('should return true for existing active tenant', async () => {
-      jest.spyOn(service, 'findById').mockResolvedValue(mockTenant);
+      tenantRepository.findOne.mockResolvedValue(mockTenant);
 
       const result = await service.validateTenant('test-tenant-id');
 
@@ -364,7 +410,7 @@ describe('TenantService', () => {
     });
 
     it('should return false for non-existent tenant', async () => {
-      jest.spyOn(service, 'findById').mockResolvedValue(null);
+      tenantRepository.findOne.mockResolvedValue(null);
 
       const result = await service.validateTenant('non-existent-id');
 
@@ -372,8 +418,11 @@ describe('TenantService', () => {
     });
 
     it('should return false for inactive tenant', async () => {
-      const inactiveTenant = { ...mockTenant, status: TenantStatus.INACTIVE };
-      jest.spyOn(service, 'findById').mockResolvedValue(inactiveTenant);
+      const inactiveTenant = {
+        ...mockTenant,
+        status: TenantStatus.INACTIVE,
+      } as Tenant;
+      tenantRepository.findOne.mockResolvedValue(inactiveTenant);
 
       const result = await service.validateTenant('test-tenant-id');
 
@@ -382,54 +431,60 @@ describe('TenantService', () => {
   });
 
   describe('updateTenant', () => {
+    let mockEntityManager: any;
+
+    beforeEach(() => {
+      mockEntityManager = {
+        update: jest.fn().mockResolvedValue({ affected: 1 }),
+      };
+      dataSource.transaction.mockImplementation((async (callback: any) => {
+        return await callback(mockEntityManager);
+      }) as any);
+    });
+
     it('should update tenant successfully', async () => {
       const updateDto = { description: 'Updated description' };
-      const updatedTenant = { ...mockTenant, ...updateDto };
+      const updatedTenantEntity = { ...mockTenant, ...updateDto } as Tenant;
 
-      jest
-        .spyOn(service, 'findById')
+      // First call: findTenantEntityById, second call: findById -> findTenantEntityById
+      tenantRepository.findOne
         .mockResolvedValueOnce(mockTenant)
-        .mockResolvedValueOnce(updatedTenant);
-
-      tenantRepository.update.mockResolvedValue({
-        affected: 1,
-        raw: [],
-        generatedMaps: [],
-      } as any);
+        .mockResolvedValueOnce(updatedTenantEntity);
 
       const result = await service.updateTenant(
         'test-tenant-id',
         updateDto as any,
       );
 
-      expect(service.findById).toHaveBeenCalledWith('test-tenant-id');
-      expect(tenantRepository.update).toHaveBeenCalledWith(
+      expect(dataSource.transaction).toHaveBeenCalled();
+      expect(mockEntityManager.update).toHaveBeenCalledWith(
+        Tenant,
         'test-tenant-id',
         updateDto,
       );
-      expect(result).toEqual(updatedTenant);
+      expect(result).toEqual(
+        expect.objectContaining({
+          ...updateDto,
+          enabledDashboardIds: [],
+          enableAudioUpload: true,
+          enableMicrophoneMode: true,
+        }),
+      );
     });
 
     it('should set updatedBy when userId is available', async () => {
       const userId = '456';
       const updateDto = { description: 'Updated description' };
-      const updatedTenant = { ...mockTenant, ...updateDto };
 
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
-      jest
-        .spyOn(service, 'findById')
+      tenantRepository.findOne
         .mockResolvedValueOnce(mockTenant)
-        .mockResolvedValueOnce(updatedTenant);
-
-      tenantRepository.update.mockResolvedValue({
-        affected: 1,
-        raw: [],
-        generatedMaps: [],
-      } as any);
+        .mockResolvedValueOnce(mockTenant);
 
       await service.updateTenant('test-tenant-id', updateDto as any);
 
-      expect(tenantRepository.update).toHaveBeenCalledWith(
+      expect(mockEntityManager.update).toHaveBeenCalledWith(
+        Tenant,
         'test-tenant-id',
         expect.objectContaining({
           updatedBy: 456,
@@ -438,7 +493,7 @@ describe('TenantService', () => {
     });
 
     it('should throw NotFoundException when tenant not found', async () => {
-      jest.spyOn(service, 'findById').mockResolvedValue(null);
+      tenantRepository.findOne.mockResolvedValue(null);
 
       await expect(
         service.updateTenant('non-existent-id', { name: 'Test' } as any),
@@ -453,12 +508,113 @@ describe('TenantService', () => {
         name: 'Existing Tenant',
       };
 
-      jest.spyOn(service, 'findById').mockResolvedValue(mockTenant);
-      tenantRepository.findOne.mockResolvedValue(existingTenant);
+      // First call: findTenantEntityById, second call: conflict check
+      tenantRepository.findOne
+        .mockResolvedValueOnce(mockTenant)
+        .mockResolvedValueOnce(existingTenant);
 
       await expect(
         service.updateTenant('test-tenant-id', updateDto as any),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when transaction fails', async () => {
+      const updateDto = { description: 'Updated description' };
+      const error = new Error('Transaction failed');
+
+      tenantRepository.findOne.mockResolvedValue(mockTenant);
+      dataSource.transaction.mockRejectedValue(error);
+
+      await expect(
+        service.updateTenant('test-tenant-id', updateDto as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.updateTenant('test-tenant-id', updateDto as any),
+      ).rejects.toThrow('Failed to update tenant: Transaction failed');
+    });
+
+    it('should merge hideRankInLeaderboard into current tenant settings when true', async () => {
+      const updateDto = { hideRankInLeaderboard: true };
+      const tenantWithSettings = {
+        ...mockTenant,
+        settings: { existingSetting: 'value' },
+      } as Tenant;
+
+      tenantRepository.findOne
+        .mockResolvedValueOnce(tenantWithSettings)
+        .mockResolvedValueOnce(tenantWithSettings);
+
+      const result = await service.updateTenant(
+        'test-tenant-id',
+        updateDto as any,
+      );
+
+      expect(mockEntityManager.update).toHaveBeenCalledWith(
+        Tenant,
+        'test-tenant-id',
+        expect.objectContaining({
+          settings: { existingSetting: 'value', hideRankInLeaderboard: true },
+        }),
+      );
+      expect(result).toEqual(
+        expect.objectContaining({
+          hideRankInLeaderboard: false,
+        }),
+      );
+    });
+
+    it('should call settingsService.updateChatTypes when enableAudioUpload or enableMicrophoneMode is provided', async () => {
+      const updateDto = {
+        enableAudioUpload: false,
+        enableMicrophoneMode: false,
+      };
+
+      tenantRepository.findOne
+        .mockResolvedValueOnce(mockTenant)
+        .mockResolvedValueOnce(mockTenant);
+
+      await service.updateTenant('test-tenant-id', updateDto as any);
+
+      expect(settingsService.updateChatTypes).toHaveBeenCalledWith(
+        {
+          tenantId: 'test-tenant-id',
+          hiddenChatTypes: expect.arrayContaining([
+            ChatTypes.AUDIO_UPLOAD,
+            ChatTypes.MICROPHONE_CHAT,
+          ]),
+        },
+        mockEntityManager,
+      );
+    });
+
+    it('should not call settingsService.updateChatTypes when neither enableAudioUpload nor enableMicrophoneMode is provided', async () => {
+      const updateDto = { description: 'Updated description' };
+
+      tenantRepository.findOne
+        .mockResolvedValueOnce(mockTenant)
+        .mockResolvedValueOnce(mockTenant);
+
+      await service.updateTenant('test-tenant-id', updateDto as any);
+
+      expect(settingsService.updateChatTypes).not.toHaveBeenCalled();
+    });
+
+    it('should validate and assign dashboard IDs when enabledDashboardIds is provided', async () => {
+      const dashboardIds = ['dashboard-id-1', 'dashboard-id-2'];
+      const updateDto = { enabledDashboardIds: dashboardIds };
+
+      tenantRepository.findOne
+        .mockResolvedValueOnce(mockTenant)
+        .mockResolvedValueOnce(mockTenant);
+
+      await service.updateTenant('test-tenant-id', updateDto as any);
+
+      expect(
+        tenantDashboardSharedService.validateDashboardIds,
+      ).toHaveBeenCalledWith(dashboardIds, expect.anything());
+      expect(
+        tenantDashboardSharedService.assignDashboardsToTenant,
+      ).toHaveBeenCalledWith('test-tenant-id', dashboardIds, mockEntityManager);
     });
   });
 

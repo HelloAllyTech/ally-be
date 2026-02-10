@@ -12,6 +12,18 @@ export class TenantDashboardSharedService {
 
   constructor() {}
 
+  async getEnabledDashboardIdsForTenant(
+    tenantId: string,
+    entityManager: EntityManager,
+  ): Promise<string[]> {
+    const repo = entityManager.getRepository(DashboardTenant);
+    const dashboardTenants = await repo.find({
+      where: { tenantId },
+      select: ['dashboardId'],
+    });
+    return dashboardTenants.map((dt) => dt.dashboardId);
+  }
+
   async assignDashboardsToTenant(
     tenantId: string,
     enabledDashboardIds: string[],
