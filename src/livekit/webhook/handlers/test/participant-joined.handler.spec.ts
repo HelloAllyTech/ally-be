@@ -1,10 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ParticipantInfo_Kind } from '@livekit/protocol';
 import {
   ParticipantJoinedHandler,
   ParticipantJoinedEvent,
 } from '../participant-joined.handler';
 import { LiveKitService } from '../../../service/livekit.service';
 import { LoggerService } from 'src/logger/logger.service';
+import { ScenarioSessionService } from 'src/learn/service/scenario-session.service';
 
 // Mock LoggerService
 jest.mock('src/logger/logger.service');
@@ -12,6 +14,7 @@ jest.mock('src/logger/logger.service');
 describe('ParticipantJoinedHandler', () => {
   let handler: ParticipantJoinedHandler;
   let liveKitService: jest.Mocked<LiveKitService>;
+  let scenarioSessionService: jest.Mocked<ScenarioSessionService>;
   let mockLogger: jest.Mocked<LoggerService>;
 
   const mockParticipantJoinedEvent: ParticipantJoinedEvent = {
@@ -52,6 +55,11 @@ describe('ParticipantJoinedHandler', () => {
       agentDispatch: jest.fn(),
     };
 
+    const mockScenarioSessionService = {
+      getScenarioSessionByRoomId: jest.fn(),
+      updateScenarioSession: jest.fn(),
+    };
+
     mockLogger = {
       info: jest.fn(),
       error: jest.fn(),
@@ -70,11 +78,16 @@ describe('ParticipantJoinedHandler', () => {
           provide: LiveKitService,
           useValue: mockLiveKitService,
         },
+        {
+          provide: ScenarioSessionService,
+          useValue: mockScenarioSessionService,
+        },
       ],
     }).compile();
 
     handler = module.get<ParticipantJoinedHandler>(ParticipantJoinedHandler);
     liveKitService = module.get(LiveKitService);
+    scenarioSessionService = module.get(ScenarioSessionService);
   });
 
   afterEach(() => {
@@ -83,6 +96,11 @@ describe('ParticipantJoinedHandler', () => {
 
   describe('handle', () => {
     it('should handle participant joined event with metadata successfully', async () => {
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
       liveKitService.agentDispatch.mockResolvedValue(undefined);
 
       await handler.handle(mockParticipantJoinedEvent);
@@ -103,6 +121,84 @@ describe('ParticipantJoinedHandler', () => {
       );
     });
 
+    it('should add startedAt value if joined participant is Agent and scenario session startedAt is null', async () => {
+      const agentEvent: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        participant: {
+          ...mockParticipantJoinedEvent.participant,
+          kind: ParticipantInfo_Kind.AGENT,
+        },
+      };
+
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(agentEvent);
+
+      expect(
+        scenarioSessionService.getScenarioSessionByRoomId,
+      ).toHaveBeenCalledWith('test-room');
+      expect(scenarioSessionService.updateScenarioSession).toHaveBeenCalledWith(
+        'session-123',
+        expect.objectContaining({
+          startedAt: expect.any(Date),
+        }),
+      );
+    });
+
+    it('shouldnot add startedAt value if joined participant is Agent and scenario session startedAt is not null', async () => {
+      const agentEvent: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        participant: {
+          ...mockParticipantJoinedEvent.participant,
+          kind: ParticipantInfo_Kind.AGENT,
+        },
+      };
+
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: new Date(),
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(agentEvent);
+
+      expect(
+        scenarioSessionService.getScenarioSessionByRoomId,
+      ).toHaveBeenCalledWith('test-room');
+      expect(
+        scenarioSessionService.updateScenarioSession,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('shouldnot add startedAt value if joined participant is non-Agent', async () => {
+      const agentEvent: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        participant: {
+          ...mockParticipantJoinedEvent.participant,
+          kind: ParticipantInfo_Kind.STANDARD,
+        },
+      };
+
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(agentEvent);
+
+      expect(
+        scenarioSessionService.updateScenarioSession,
+      ).not.toHaveBeenCalled();
+    });
+
     it('should handle participant joined event with empty metadata', async () => {
       const eventWithEmptyMetadata: ParticipantJoinedEvent = {
         ...mockParticipantJoinedEvent,
@@ -112,6 +208,11 @@ describe('ParticipantJoinedHandler', () => {
         },
       };
 
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
       liveKitService.agentDispatch.mockResolvedValue(undefined);
 
       await handler.handle(eventWithEmptyMetadata);
@@ -135,6 +236,11 @@ describe('ParticipantJoinedHandler', () => {
         },
       };
 
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
       liveKitService.agentDispatch.mockResolvedValue(undefined);
 
       await handler.handle(eventWithNullMetadata);
@@ -158,6 +264,11 @@ describe('ParticipantJoinedHandler', () => {
         },
       };
 
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
       liveKitService.agentDispatch.mockResolvedValue(undefined);
 
       await handler.handle(eventWithWhitespaceMetadata);
@@ -181,6 +292,12 @@ describe('ParticipantJoinedHandler', () => {
         },
       };
 
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
+
       await expect(handler.handle(eventWithInvalidMetadata)).rejects.toThrow();
 
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -190,6 +307,11 @@ describe('ParticipantJoinedHandler', () => {
     });
 
     it('should handle agent dispatch error', async () => {
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
       const error = new Error('Agent dispatch failed');
       liveKitService.agentDispatch.mockRejectedValue(error);
 
@@ -223,6 +345,11 @@ describe('ParticipantJoinedHandler', () => {
         },
       };
 
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
       liveKitService.agentDispatch.mockResolvedValue(undefined);
 
       await handler.handle(eventWithComplexMetadata);
@@ -246,6 +373,11 @@ describe('ParticipantJoinedHandler', () => {
         },
       };
 
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
       liveKitService.agentDispatch.mockResolvedValue(undefined);
 
       await handler.handle(eventWithDifferentRoom);
@@ -270,6 +402,11 @@ describe('ParticipantJoinedHandler', () => {
         },
       };
 
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
       liveKitService.agentDispatch.mockResolvedValue(undefined);
 
       await handler.handle(eventWithDifferentParticipant);
@@ -318,6 +455,11 @@ describe('ParticipantJoinedHandler', () => {
         created_at: Date.now(),
       };
 
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
       liveKitService.agentDispatch.mockResolvedValue(undefined);
 
       await handler.handle(minimalEvent);
@@ -345,6 +487,11 @@ describe('ParticipantJoinedHandler', () => {
         },
       };
 
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
       liveKitService.agentDispatch.mockResolvedValue(undefined);
 
       await handler.handle(eventWithNumericMetadata);

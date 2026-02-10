@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { LiveKitService } from '../../service/livekit.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ParticipantInfo_Kind } from '@livekit/protocol';
+import { ScenarioSessionService } from 'src/learn/service/scenario-session.service';
 
 export interface ParticipantJoinedEvent {
   event: 'participant_joined';
@@ -40,7 +41,10 @@ export interface ParticipantJoinedEvent {
 export class ParticipantJoinedHandler {
   private readonly logger = new LoggerService(ParticipantJoinedHandler.name);
 
-  constructor(private readonly liveKitService: LiveKitService) {}
+  constructor(
+    private readonly liveKitService: LiveKitService,
+    private readonly scenarioSessionService: ScenarioSessionService,
+  ) {}
 
   async handle(event: ParticipantJoinedEvent): Promise<void> {
     try {
@@ -60,6 +64,22 @@ export class ParticipantJoinedHandler {
         this.logger.info(
           'Room metadata is empty or null, using default values',
         );
+      }
+
+      if (event.participant.kind === ParticipantInfo_Kind.AGENT) {
+        const scenarioSession =
+          await this.scenarioSessionService.getScenarioSessionByRoomId(
+            roomName,
+          );
+        if (!scenarioSession.startedAt) {
+          const startedAt = new Date();
+          await this.scenarioSessionService.updateScenarioSession(
+            scenarioSession.id,
+            {
+              startedAt,
+            },
+          );
+        }
       }
 
       if (event.participant.kind !== ParticipantInfo_Kind.AGENT) {
