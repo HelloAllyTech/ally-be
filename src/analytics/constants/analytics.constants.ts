@@ -1,3 +1,9 @@
 export enum AnalyticsIntegrationEnum {
   METABASE = 'METABASE',
 }
+
+export enum AnalyticsTypeEnum {
+  CALL_LOG_ANALYTICS = 'CALL_LOG_ANALYTICS',
+  SIMULATION_ANALYTICS = 'SIMULATION_ANALYTICS',
+  ORG_ANALYTICS = 'ORG_ANALYTICS',
+}

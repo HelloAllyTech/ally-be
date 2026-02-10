@@ -1,3 +1,5 @@
+import { ScenarioStateInstruction } from './scenario-state.type';
+
 export type MetadataShape = {
   title?: string;
   description?: string;
@@ -8,10 +10,7 @@ export type MetadataShape = {
   sexualOrientation?: string;
   genderIdentity?: string;
   customFields?: { name: string; value: string }[];
-  stateInstructions?: {
-    instructions: string;
-    dialogues: string[];
-  };
+  stateInstructions?: ScenarioStateInstruction[];
 };
 
 export type TranslationConsiderableData = {

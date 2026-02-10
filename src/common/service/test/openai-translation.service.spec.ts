@@ -565,7 +565,7 @@ describe('OpenAITranslationsService', () => {
 
       const prompt = buildSystemPrompt('hi-IN');
 
-      expect(prompt).toContain('code-mix');
+      expect(prompt).toContain('CODE-MIX');
       expect(prompt).toContain('native script');
       expect(prompt).toContain('English');
     });

@@ -3,6 +3,8 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -15,6 +17,9 @@ import {
   DashboardIdParamDto,
   CounselorStatsQueryDto,
   CounselorStatsResponseDto,
+  UpdateDashboardDto,
+  DashboardResponseDTO,
+  CreateDashboardResponseDto,
 } from '../dto/analytics.dto';
 import {
   ApiTags,
@@ -22,6 +27,8 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiSecurity,
+  ApiParam,
+  ApiBody,
 } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
@@ -35,21 +42,36 @@ import { UserRole } from 'src/common/constants/user.constants';
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
-  @Get('dashboard/:dashboardId')
-  @AuthPermissions([PERMISSIONS.VIEW_ANALYTICS_DASHBOARD_URL])
-  getDashboardUrl(@Param() { dashboardId }: DashboardIdParamDto) {
-    return this.analyticsService.getDashboardUrl(dashboardId);
+  @ApiOperation({ summary: 'Get all dashboards' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the list of all dashboards',
+    type: DashboardResponseDTO,
+    isArray: true,
+  })
+  @Get('dashboard/all')
+  @AuthPermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
+  async getAllDashboards(): Promise<DashboardResponseDTO[]> {
+    return this.analyticsService.getAllDashboards();
   }
 
-  @Post('dashboard/:dashboardId/refresh')
+  @Get('dashboard/:externalId')
+  @AuthPermissions([PERMISSIONS.VIEW_ANALYTICS_DASHBOARD_URL])
+  getDashboardUrl(@Param() { externalId }: DashboardIdParamDto) {
+    return this.analyticsService.getDashboardUrl(externalId);
+  }
+
+  @Post('dashboard/:externalId/refresh')
   @UseGuards(JwtAuthGuard)
-  refreshDashboardUrl(@Param() { dashboardId }: DashboardIdParamDto) {
-    return this.analyticsService.refreshDashboardUrl(dashboardId);
+  refreshDashboardUrl(@Param() { externalId }: DashboardIdParamDto) {
+    return this.analyticsService.refreshDashboardUrl(externalId);
   }
 
   @Post('dashboard')
   @AuthPermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
-  createDashboard(@Body() dashboard: CreateDashboardDto) {
+  createDashboard(
+    @Body() dashboard: CreateDashboardDto,
+  ): Promise<CreateDashboardResponseDto> {
     return this.analyticsService.createDashboard(dashboard);
   }
 
@@ -57,6 +79,25 @@ export class AnalyticsController {
   @AuthPermissions([PERMISSIONS.VIEW_ANALYTICS_DASHBOARD])
   getDashboards(@Req() req: { user: { id: number } }) {
     return this.analyticsService.getDashboards(req.user.id);
+  }
+
+  @ApiOperation({ summary: 'Update a dashboard' })
+  @ApiParam({
+    name: 'dashboardId',
+    type: String,
+    description: 'The ID of the dashboard to update',
+  })
+  @ApiBody({ type: UpdateDashboardDto })
+  @Patch('dashboard/:dashboardId')
+  @AuthPermissions([PERMISSIONS.EDIT_ANALYTICS_DASHBOARD])
+  updateDashboard(
+    @Param('dashboardId', ParseUUIDPipe) dashboardId: string,
+    @Body() updateDashboardDto: UpdateDashboardDto,
+  ) {
+    return this.analyticsService.updateDashboard(
+      dashboardId,
+      updateDashboardDto,
+    );
   }
 
   @AuthRoles(UserRole.COUNSELOR)

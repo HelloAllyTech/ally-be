@@ -9,12 +9,15 @@ import { TenantScenarioSharedService } from './service/tenant-scenario-shared';
 import { TenantScenarioPathSharedService } from './service/tenant-scenario-path-shared';
 import { AwsModule } from 'src/aws/aws.module';
 import { BadgeTenantSharedService } from 'src/badge/service/badge-tenant-shared.service';
+import { TenantDashboardSharedService } from './service/tenant-dashboard-shared';
+import { SettingsModule } from 'src/settings/settings.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Tenant]),
     forwardRef(() => UserModule),
     AwsModule,
+    SettingsModule,
   ],
   providers: [
     TenantService,
@@ -22,6 +25,7 @@ import { BadgeTenantSharedService } from 'src/badge/service/badge-tenant-shared.
     TenantScenarioSharedService,
     TenantScenarioPathSharedService,
     BadgeTenantSharedService,
+    TenantDashboardSharedService,
   ],
   controllers: [TenantController],
   exports: [TenantService, TenantsRepository],

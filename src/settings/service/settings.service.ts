@@ -27,6 +27,7 @@ import {
   SUMMARY_SECTION_IDS,
   SUMMARY_SECTIONS,
 } from '../constants/summary-sections.constants';
+import { EntityManager } from 'typeorm';
 import * as _ from 'lodash';
 import { ChatTypes } from '../../common/constants/chat.constants';
 import {
@@ -440,7 +441,10 @@ export class SettingsService {
     return Array.isArray(hiddenChatTypes) ? hiddenChatTypes : [];
   }
 
-  async updateChatTypes(updateChatTypesDto: UpdateChatTypesDto) {
+  async updateChatTypes(
+    updateChatTypesDto: UpdateChatTypesDto,
+    entityManager?: EntityManager,
+  ) {
     const { hiddenChatTypes: chatTypes, tenantId } = updateChatTypesDto;
     const invalidChatTypes = chatTypes.filter(
       (type) => !DEFAULT_CHAT_TYPES.includes(type as ChatTypes),
@@ -455,20 +459,25 @@ export class SettingsService {
       PreferenceName.HIDDEN_CHAT_TYPES,
       tenantId,
       PreferenceRelatedEntity.ORGANIZATION,
+      entityManager,
     );
     if (existingPreference) {
       return await this.preferenceService.updatePreference(
         existingPreference.id,
         chatTypes,
+        entityManager,
       );
     }
 
-    return await this.preferenceService.createPreference({
-      name: PreferenceName.HIDDEN_CHAT_TYPES,
-      relatedId: tenantId,
-      relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
-      value: chatTypes,
-      tenantId: ExecutionManager.getTenantId(),
-    });
+    return await this.preferenceService.createPreference(
+      {
+        name: PreferenceName.HIDDEN_CHAT_TYPES,
+        relatedId: tenantId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: chatTypes,
+        tenantId: ExecutionManager.getTenantId(),
+      },
+      entityManager,
+    );
   }
 }

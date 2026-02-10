@@ -87,7 +87,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       .addSelect('la.label', 'label')
       .addSelect(
         voicesNeeded
-          ? `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider))`
+          ? `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider,'config',sv.config))`
           : `'[]'::jsonb`,
         'voices',
       )

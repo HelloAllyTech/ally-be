@@ -1,7 +1,8 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseEntity } from '../../common/entity/base.entity';
-import { DashboardData } from '../type/dashboard.data.type';
+import { DashboardMetadata } from '../type/dashboard.data.type';
 
+//TODO: Remove this entity by 10 March 2026
 @Entity()
 export class Dashboard extends BaseEntity {
   @PrimaryGeneratedColumn()
@@ -23,5 +24,5 @@ export class Dashboard extends BaseEntity {
   groupId!: string;
 
   @Column({ nullable: true, type: 'jsonb' })
-  data?: DashboardData;
+  data?: DashboardMetadata;
 }

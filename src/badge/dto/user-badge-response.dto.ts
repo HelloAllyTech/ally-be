@@ -175,6 +175,13 @@ export class AdminBadgeDto {
 
   @ApiProperty({ description: 'Date when the badge was last updated' })
   updatedAt!: Date;
+
+  @ApiProperty({
+    type: [String],
+    description: 'Roles associated with this badge',
+    example: ['Learner'],
+  })
+  roles!: string[];
 }
 
 export class AdminBadgeListResponseDto {

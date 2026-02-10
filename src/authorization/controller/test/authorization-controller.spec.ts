@@ -3,16 +3,19 @@ import { AuthorizationController } from '../authorization.controller';
 import { PermissionsService } from '../../service/permissions.service';
 import { GroupService } from '../../service/group.service';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
-import { ExecutionContext } from '@nestjs/common';
+import { AiApiKeyGuard } from '../../../auth/guards/ai-auth.guard';
+import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { ChangeUserRolesDto } from '../../../user/dto/group.dto';
+import { ValidatePermissionsDto } from '../../dto/validate-permissions.dto';
+import { PermissionOperator } from '../../type/authorization-event.type';
 import { PERMISSIONS } from '../../constants/permissions.constants';
 import { AppConfigService } from '../../../config/config.service';
 import { UserService } from '../../../user/service/user.service';
 
 describe('AuthorizationController', () => {
   let controller: AuthorizationController;
-  let permissionsService: jest.Mocked<PermissionsService>;
   let groupService: jest.Mocked<GroupService>;
+  let permissionsService: jest.Mocked<PermissionsService>;
 
   const mockPermissions = [
     'user.read',
@@ -32,6 +35,7 @@ describe('AuthorizationController', () => {
   beforeEach(async () => {
     const mockPermissionsService = {
       getUserPermissions: jest.fn(),
+      validatePermissions: jest.fn(),
     };
 
     const mockGroupService = {
@@ -75,6 +79,10 @@ describe('AuthorizationController', () => {
           request.user = mockRequest.user;
           return true;
         },
+      })
+      .overrideGuard(AiApiKeyGuard)
+      .useValue({
+        canActivate: () => true,
       })
       .compile();
 
@@ -402,6 +410,117 @@ describe('AuthorizationController', () => {
     });
   });
 
+  describe('authorize', () => {
+    const mockAuthorizeDto: ValidatePermissionsDto = {
+      permissions: ['view:admin:scenarios'],
+    };
+
+    const mockSuccessResponse = { success: true };
+
+    it('should authorize successfully when user has permissions', async () => {
+      permissionsService.validatePermissions.mockResolvedValue(
+        mockSuccessResponse,
+      );
+
+      const result = await controller.validatePermissions(mockAuthorizeDto);
+
+      expect(result).toEqual(mockSuccessResponse);
+      expect(permissionsService.validatePermissions).toHaveBeenCalledWith(
+        mockAuthorizeDto,
+      );
+      expect(permissionsService.validatePermissions).toHaveBeenCalledTimes(1);
+    });
+
+    it('should pass permissions with AND operator', async () => {
+      const dtoWithOperator: ValidatePermissionsDto = {
+        permissions: ['view:admin:scenarios', 'edit:admin:scenario'],
+        operator: PermissionOperator.AND,
+      };
+      permissionsService.validatePermissions.mockResolvedValue(
+        mockSuccessResponse,
+      );
+
+      const result = await controller.validatePermissions(dtoWithOperator);
+
+      expect(result).toEqual(mockSuccessResponse);
+      expect(permissionsService.validatePermissions).toHaveBeenCalledWith(
+        dtoWithOperator,
+      );
+    });
+
+    it('should pass permissions with OR operator', async () => {
+      const dtoWithOperator: ValidatePermissionsDto = {
+        permissions: ['view:admin:scenarios', 'edit:admin:scenario'],
+        operator: PermissionOperator.OR,
+      };
+      permissionsService.validatePermissions.mockResolvedValue(
+        mockSuccessResponse,
+      );
+
+      const result = await controller.validatePermissions(dtoWithOperator);
+
+      expect(result).toEqual(mockSuccessResponse);
+      expect(permissionsService.validatePermissions).toHaveBeenCalledWith(
+        dtoWithOperator,
+      );
+    });
+
+    it('should throw ForbiddenException when user lacks permissions', async () => {
+      permissionsService.validatePermissions.mockRejectedValue(
+        new ForbiddenException('Insufficient permissions'),
+      );
+
+      await expect(
+        controller.validatePermissions(mockAuthorizeDto),
+      ).rejects.toThrow(ForbiddenException);
+      expect(permissionsService.validatePermissions).toHaveBeenCalledWith(
+        mockAuthorizeDto,
+      );
+    });
+
+    it('should propagate errors from permissions service', async () => {
+      const error = new Error('Service unavailable');
+      permissionsService.validatePermissions.mockRejectedValue(error);
+
+      await expect(
+        controller.validatePermissions(mockAuthorizeDto),
+      ).rejects.toThrow('Service unavailable');
+      expect(permissionsService.validatePermissions).toHaveBeenCalledWith(
+        mockAuthorizeDto,
+      );
+    });
+
+    it('should handle multiple permissions in the request', async () => {
+      const multiPermDto: ValidatePermissionsDto = {
+        permissions: [
+          'view:admin:scenarios',
+          'edit:admin:scenario',
+          'delete:admin:scenario',
+        ],
+      };
+      permissionsService.validatePermissions.mockResolvedValue(
+        mockSuccessResponse,
+      );
+
+      const result = await controller.validatePermissions(multiPermDto);
+
+      expect(result).toEqual(mockSuccessResponse);
+      expect(permissionsService.validatePermissions).toHaveBeenCalledWith(
+        multiPermDto,
+      );
+    });
+
+    it('should call service only once per request', async () => {
+      permissionsService.validatePermissions.mockResolvedValue(
+        mockSuccessResponse,
+      );
+
+      await controller.validatePermissions(mockAuthorizeDto);
+
+      expect(permissionsService.validatePermissions).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('Controller metadata', () => {
     it('should have correct route path', () => {
       const metadata = Reflect.getMetadata('path', AuthorizationController);
@@ -434,6 +553,19 @@ describe('AuthorizationController', () => {
     it('should have correct route path for getAllRoles', () => {
       const path = Reflect.getMetadata('path', controller.getAllRoles);
       expect(path).toBe('roles');
+    });
+
+    it('should have correct HTTP method for authorize', () => {
+      const method = Reflect.getMetadata(
+        'method',
+        controller.validatePermissions,
+      );
+      expect(method).toBe(1); // 1 = POST method
+    });
+
+    it('should have correct route path for authorize', () => {
+      const path = Reflect.getMetadata('path', controller.validatePermissions);
+      expect(path).toBe('/permissions/validate');
     });
 
     it('should be decorated with ApiTags', () => {
