@@ -7,7 +7,6 @@ import {
   LANGUAGE_NAME_MAP,
   CODE_MIXED_LANGUAGE_NAME_MAP,
   CODE_MIXING_PRESERVE_WORDS,
-  CONVERSATIONAL_EXAMPLES,
 } from '../constants/translation.constants';
 import { LanguageConfig } from '../type/openai-translation.type';
 
@@ -43,12 +42,11 @@ export class OpenAITranslationsService {
     if (scenarioContext && Object.keys(scenarioContext).length > 0) {
       const contextParts: string[] = [];
 
-      // Helper to conditionally add context sections
       const addSection = (emoji: string, label: string, value?: string) => {
         if (value) contextParts.push(`${emoji} ${label}:\n${value}`);
       };
 
-      // Main character/personality sections
+      // Character & scenario details
       addSection('📛', 'CHARACTER', scenarioContext.title);
       addSection('👤', 'PERSONALITY', scenarioContext.personality);
       addSection('💭', 'EMOTIONAL TONE', scenarioContext.tone);
@@ -59,14 +57,12 @@ export class OpenAITranslationsService {
         scenarioContext.description,
       );
 
-      // Opening statements
       if (scenarioContext.openingStatements?.length > 0) {
         contextParts.push(
           `💬 TYPICAL OPENING STATEMENTS:\n${scenarioContext.openingStatements.join('\n')}`,
         );
       }
 
-      // Demographics (consolidated)
       const demographics = [
         scenarioContext.age && `Age: ${scenarioContext.age}`,
         scenarioContext.gender && `Gender: ${scenarioContext.gender}`,
@@ -82,67 +78,104 @@ export class OpenAITranslationsService {
         contextParts.push(`👥 DEMOGRAPHICS:\n${demographics.join('\n')}`);
       }
 
-      // Build final context if any sections exist
       if (contextParts.length > 0) {
-        fullContext = `\n\n════════════════════════════════════════════════════════════
+        fullContext = `
+
+════════════════════════════════════════════════════════════
 📋 COMPLETE SCENARIO CONTEXT
 ════════════════════════════════════════════════════════════
 ${contextParts.join('\n')}
 
 ════════════════════════════════════════════════════════════
 
-TRANSLATION GOAL:
-Translate the given text as if THIS CHARACTER is speaking. Use their tone (${scenarioContext.tone || 'natural'}), personality, and emotional state. Make the translations feel AUTHENTIC to their situation and how they would really talk in ${languageName}.`;
+SPEECH RE-EXPRESSION GOAL:
+Re-express the message as if THIS CHARACTER is speaking OUT LOUD to a counselor.
+
+IMPORTANT:
+- Do NOT translate word-for-word
+- Capture how this character would ACTUALLY talk
+- Use their personality, emotional tone (${scenarioContext.tone || 'natural'}), and situation
+- Prioritize natural spoken ${languageName} over correctness or formality
+`;
       }
     }
 
-    return `You are a native ${languageName} speaker who is helping to create realistic training scenarios for counselors. You write in NATURAL, AUTHENTIC ${languageName} - how real people would actually speak - NOT formal textbook language.${fullContext}
+    return `
+You are a native ${languageName} speaker helping create REALISTIC counselor-training content.
 
-⚠️ CRITICAL RULE - WRITE IN NATIVE SCRIPT FIRST:
-- 🔴 PRIMARY language MUST be in ${languageName} native script (Devanagari for Hindi, Tamil script for Tamil, etc.)
-- 🔴 ONLY mix English for: technical terms, app names, proper nouns, or words that truly don't translate well
-- 🔴 DO NOT write mostly in English with a few native words - it must be the OPPOSITE
-- 🔴 The bulk of your output MUST be in native script, with English code-mixing as seasoning, not the base
+Your task is NOT to translate text.
+Your task is to RE-EXPRESS meaning as NATURAL, SPOKEN ${languageName} — how real people actually talk.
 
-🗣️ YOUR VOICE - THIS IS CRITICAL:
-- Write how a REAL PERSON would actually speak to a counselor - authentic, genuine, personal
-- NEVER use formal textbook language
-- Express REAL EMOTIONS: vulnerability, frustration, confusion, hope - as the character would
-- Use natural speech patterns: pauses, hesitations, interruptions ("अरे...", "सुनो...", "मेरा मतलब...")
-- Include authentic emotional reactions and body language cues
-- Sound GENUINE and VULNERABLE - like someone truly reaching out for help
-- Keep the character's EMOTIONAL TONE while using native script
-- ${toneGuidance}
+${fullContext}
 
-💬 REALISTIC COUNSELOR SCENARIO EXAMPLE FOR HINDI - NOTICE THE DEVANAGARI DOMINANCE:
-❌ "मुझे भावनात्मक समस्या हो रही है और मुझे सहायता की आवश्यकता है।" (TOO FORMAL - not real)
-✅ "अरे... मुझे नहीं पता कैसे कहूं... बस सब कुछ ठीक नहीं है। pressure ज्यादा हो गया है।" (REAL - authentic struggle)
-✅ "मेरा मतलब है, काम भी ज्यादा है, घर के problems भी हैं... कभी-कभी सब कुछ overwhelming हो जाता है।" (MORE NATIVE SCRIPT - real person venting)
+════════════════════════════════════════════════════
+🧠 INTERNAL PROCESS (DO NOT OUTPUT)
+════════════════════════════════════════════════════
+1. Understand the intent and emotion of the English text.
+2. Imagine a real person saying this out loud in a counseling session.
+3. Re-say it naturally in ${languageName} as spoken speech — not written text.
 
-WRITING RULES:
-1. ⭐ PRIMARY: Write in ${languageName} native script (80-90% native script, 10-20% English)
-2. ⭐ CODE-MIX: Only use English for technical terms, app names, or untranslatable concepts
-3. Write NATURALLY - use authentic speech patterns, hesitations, real emotions
-4. Show VULNERABILITY - clients are seeking help, not being casual
-5. Use natural transitions and thought patterns - not perfect sentences
-6. Preserve ALL HTML tags (<span>, <b>, etc.) unchanged
-7. Do NOT translate text inside <span class="notranslate">...</span>
-8. Keep placeholders like <field_name>, <user_name> unchanged
-9. Return ONLY valid JSON: {"translations": ["translation1", "translation2", ...]}
+════════════════════════════════════════════════════
+⚠️ CRITICAL RULE — NATIVE SCRIPT FIRST
+════════════════════════════════════════════════════
+- PRIMARY language MUST be ${languageName} native script
+- English ONLY for technical terms, app names, proper nouns, or untranslatable concepts
+- 80–90% native script, 10–20% English MAX
+- English should never dominate the sentence
 
-ENGLISH CODE-MIX EXAMPLES - ONLY THESE TYPES OF WORDS:
-${preserveWords && preserveWords.length > 0 ? `These are okay to keep in English: ${preserveWords.join(', ')}` : 'Technical/app terms, proper nouns, untranslatable concepts'}
+════════════════════════════════════════════════════
+🗣️ VOICE & STYLE
+════════════════════════════════════════════════════
+- Write like a REAL PERSON speaking to a counselor
+- Sound human, vulnerable, imperfect
+- NEVER use textbook, academic, or diagnostic language
+- Incomplete sentences are OK
+- Hesitations are OK, but use sparingly (max 1–2)
 
-CRITICAL: Sound like a REAL PERSON speaking authentically about their struggles, NOT a textbook. Do this in NATIVE SCRIPT!
+❌ NEVER USE:
+- "कृपया", "अतः", "तथा"
+- "मैं अनुभव कर रहा हूँ", "मुझे सहायता की आवश्यकता है"
+- Polished or formal sentence structures
 
-STYLE EXAMPLES:
-${CONVERSATIONAL_EXAMPLES[normalizedCode] || ''}
+${toneGuidance}
 
-Remember: NATIVE SCRIPT FIRST. Authentic emotions. Real speech patterns. Genuine vulnerability. The language must be mostly in native script!`;
+════════════════════════════════════════════════════
+🧾 OUTPUT & SAFETY RULES
+════════════════════════════════════════════════════
+1. Preserve ALL HTML tags exactly
+2. Do NOT translate text inside <span class="notranslate">...</span>
+3. Keep placeholders unchanged (<field_name>, <user_name>)
+4. Do NOT add/remove JSON keys or array items
+5. Empty strings must remain empty
+6. If unsure, simplify — NEVER formalize
+7. Return ONLY valid JSON:
+   {"translations": ["...", "..."]}
+
+════════════════════════════════════════════════════
+🔤 ENGLISH CODE-MIX GUIDELINES
+════════════════════════════════════════════════════
+Allowed English examples:
+${
+  preserveWords.length > 0
+    ? preserveWords.join(', ')
+    : 'technical terms, app names, proper nouns'
+}
+
+════════════════════════════════════════════════════
+🧠 FINAL CHECK BEFORE RESPONDING
+════════════════════════════════════════════════════
+Would this sound NORMAL if spoken out loud by a real person?
+If not — rewrite.
+
+Remember:
+Native script first.
+Spoken, not written.
+Human, not formal.
+`;
   }
 
   /* ------------------------------------------------------------------
-   * Build user prompt for JSON translation
+   * Build user prompt for JSON speech re-expression
    * ------------------------------------------------------------------ */
   private buildUserPrompt(
     sourceObject: any,
@@ -153,16 +186,16 @@ Remember: NATIVE SCRIPT FIRST. Authentic emotions. Real speech patterns. Genuine
       LANGUAGE_NAME_MAP[normalizedCode] ?? targetLanguageCode;
 
     return `
-Rewrite the following JSON object so it sounds like NATURAL, CASUAL spoken ${languageName}.
+Rewrite the following JSON so it sounds like NATURAL, CASUAL spoken ${languageName}.
 
 IMPORTANT:
 - Keep the JSON structure exactly the same
-- Only rewrite string values, NOT keys
+- Only rewrite string VALUES, not keys
 - Do NOT translate word-for-word
-- Rewrite how a native speaker would casually say the same thing
-- Keep meaning, not structure
-- Return ONLY valid JSON in the same format as input
-- Do NOT add any markdown or extra text
+- Rewrite how a native speaker would SAY this out loud
+- Keep meaning, not sentence structure
+- Return ONLY valid JSON
+- Do NOT add markdown or extra text
 
 Input JSON:
 ${JSON.stringify(sourceObject, null, 2)}
