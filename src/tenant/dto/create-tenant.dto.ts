@@ -6,6 +6,7 @@ import {
   Length,
   IsArray,
   IsUUID,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -58,4 +59,25 @@ export class CreateTenantDto {
   @IsUUID('4', { each: true })
   @IsOptional()
   enabledDashboardIds?: string[];
+
+  @ApiProperty({
+    description: 'Enable microphone mode for the tenant',
+  })
+  @IsBoolean()
+  @IsOptional()
+  enableMicrophoneMode?: boolean;
+
+  @ApiProperty({
+    description: 'Enable audio upload for the tenant',
+  })
+  @IsBoolean()
+  @IsOptional()
+  enableAudioUpload?: boolean;
+
+  @ApiProperty({
+    description: 'Hide rank in leaderboard for the tenant',
+  })
+  @IsBoolean()
+  @IsOptional()
+  hideRankInLeaderboard?: boolean;
 }

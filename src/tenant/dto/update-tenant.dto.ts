@@ -1,5 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, Length, Matches } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Matches,
+} from 'class-validator';
 
 export class UpdateTenantDto {
   @ApiProperty({ description: 'new name for teanant' })
@@ -34,4 +42,33 @@ export class UpdateTenantDto {
   })
   @IsOptional()
   code?: string;
+
+  @ApiProperty({
+    description: 'List of dashboard IDs to enable for the tenant',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  enabledDashboardIds?: string[];
+
+  @ApiProperty({
+    description: 'Enable microphone mode for the tenant',
+  })
+  @IsBoolean()
+  @IsOptional()
+  enableMicrophoneMode?: boolean;
+
+  @ApiProperty({
+    description: 'Enable audio upload for the tenant',
+  })
+  @IsBoolean()
+  @IsOptional()
+  enableAudioUpload?: boolean;
+
+  @ApiProperty({
+    description: 'Hide rank in leaderboard for the tenant',
+  })
+  @IsBoolean()
+  @IsOptional()
+  hideRankInLeaderboard?: boolean;
 }
