@@ -414,7 +414,6 @@ describe('ScenarioSessionRepository', () => {
         scenarioId: mockScenarioId,
         roomId: `ss_${mockUuid}`,
         counselorId: mockCounselorId,
-        startedAt: mockDate,
         tenantId: mockTenantId,
         metadata: {
           sessionName: 'SS-1-2024-01-01',
@@ -431,7 +430,6 @@ describe('ScenarioSessionRepository', () => {
         roomId: `ss_${mockUuid}`,
         counselorId: mockCounselorId,
         scenarioId: mockStartDto.scenarioId,
-        startedAt: mockDate,
         tenantId: mockTenantId,
         metadata: {
           sessionName: 'SS-1-2024-01-01',
@@ -465,7 +463,6 @@ describe('ScenarioSessionRepository', () => {
         scenarioId: mockScenarioId,
         roomId: `ss_${mockUuid}`,
         counselorId: mockCounselorId,
-        startedAt: mockDate,
         tenantId: mockTenantId,
         metadata: {
           sessionName: 'SS-undefined-2024-01-01',
@@ -486,7 +483,6 @@ describe('ScenarioSessionRepository', () => {
         roomId: `ss_${mockUuid}`,
         counselorId: mockCounselorId,
         scenarioId: mockStartDto.scenarioId,
-        startedAt: mockDate,
         tenantId: mockTenantId,
         metadata: {
           sessionName: 'SS-undefined-2024-01-01',

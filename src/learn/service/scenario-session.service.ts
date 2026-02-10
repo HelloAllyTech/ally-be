@@ -354,6 +354,16 @@ export class ScenarioSessionService {
     }
   }
 
+  async updateScenarioSession(
+    scenarioSessionId: string,
+    updateScenarioSessionDto: Partial<ScenarioSessions>,
+  ) {
+    return this.scenarioSessionRepository.update(scenarioSessionId, {
+      ...updateScenarioSessionDto,
+      updatedAt: new Date(),
+    });
+  }
+
   private async getFallbackVoiceForLanguageGender(
     languageId: number,
     gender: string,
@@ -634,10 +644,10 @@ export class ScenarioSessionService {
     const score = event.event_data.totalScore;
 
     let callDuration = 0;
+    const startedAt = scenarioSession.startedAt ?? new Date();
     const endedAt = scenarioSession.endedAt ?? new Date();
-    if (scenarioSession.startedAt && endedAt) {
-      callDuration =
-        endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
+    if (startedAt && endedAt) {
+      callDuration = endedAt.getTime() - startedAt.getTime() || 0;
     }
     if (scenarioSession.scenarioPathSessionItemId)
       await this.scenarioPathSessionService.handleEndScenarioPathSession({
@@ -648,6 +658,7 @@ export class ScenarioSessionService {
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
+      startedAt,
       endedAt,
       score,
       eventStatus: ScenarioSessionEventStatus.COMPLETED,
@@ -689,18 +700,19 @@ export class ScenarioSessionService {
       );
     }
 
+    const startedAt = scenarioSession.startedAt ?? new Date();
     const endedAt = scenarioSession.endedAt ?? new Date();
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
       endedAt,
+      startedAt,
     });
     this.logger.info(`Updated scenario ${scenarioSessionId} status to ENDED`);
 
     let callDuration = 0;
-    if (scenarioSession.startedAt && endedAt) {
-      callDuration =
-        endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
+    if (startedAt && endedAt) {
+      callDuration = endedAt.getTime() - startedAt.getTime() || 0;
     }
     try {
       this.getScenarioSessionSummaryFromAI(

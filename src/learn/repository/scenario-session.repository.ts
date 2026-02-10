@@ -125,15 +125,14 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       `SELECT last_value from scenario_sessions_id_seq`,
     );
     const sessionId = sequenceResult[0]?.last_value;
-    const startedAt = new Date();
-    const date = startedAt.toISOString().split('T')[0];
+    const currentDate = new Date();
+    const date = currentDate.toISOString().split('T')[0];
 
     const scenarioSession = this.create({
       id: uuid,
       roomId: `ss_${uuid}`,
       counselorId,
       scenarioId: createScenarioSessionDto.scenarioId,
-      startedAt,
       tenantId: ExecutionManager.getTenantId(),
       scenarioPathSessionItemId:
         createScenarioSessionDto.scenarioPathSessionItemId,
