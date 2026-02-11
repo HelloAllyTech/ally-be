@@ -388,7 +388,7 @@ export class TenantService {
         }
 
         // Handle dashboard assignments
-        if (enabledDashboardIds && enabledDashboardIds.length > 0) {
+        if (enabledDashboardIds) {
           await this.tenantDashboardSharedService.assignDashboardsToTenant(
             id,
             enabledDashboardIds,
