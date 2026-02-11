@@ -192,6 +192,7 @@ export class CreateScenarioDto {
   @IsOptional()
   responseLength?: ScenarioResponseLength;
 
+  // FEATURE_CLEANUP(FEATURE_SCENARIO_STATE_INSTRUCTIONS): remove agentDialogues, context
   @ApiProperty({
     description: 'Your dialogues',
     example: ['Absolutely', 'Probably'],
