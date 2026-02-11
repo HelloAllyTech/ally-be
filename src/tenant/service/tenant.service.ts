@@ -35,6 +35,7 @@ import { SettingsService } from 'src/settings/service/settings.service';
 import { ChatTypes } from 'src/common/constants/chat.constants';
 import { TenantResponseDto } from '../dto/tenant-response.dto';
 import { PreferenceRelatedEntity } from 'src/common/constants/user.constants';
+import { PreferenceService } from 'src/settings/service/preference.service';
 
 @Injectable()
 export class TenantService {
@@ -54,6 +55,7 @@ export class TenantService {
     private configService: AppConfigService,
     private s3Service: S3Service,
     private readonly settingsService: SettingsService,
+    private readonly preferenceService: PreferenceService,
   ) {}
 
   async findAll(): Promise<Tenant[]> {
@@ -187,9 +189,9 @@ export class TenantService {
   private async buildTenantResponse(
     tenant: Tenant,
   ): Promise<TenantResponseDto> {
-    const [enabledDashboardIds, hiddenChatTypes] = await Promise.all([
-      this.tenantDashboardSharedService.getEnabledDashboardIdsForTenant(
-        tenant.id,
+    const [dashboardIdsList, hiddenChatTypes] = await Promise.all([
+      this.tenantDashboardSharedService.getEnabledDashboardIdsForTenants(
+        [tenant.id],
         this.dataSource.manager,
       ),
       this.settingsService.getHiddenChatTypesForEntity(
@@ -200,7 +202,7 @@ export class TenantService {
 
     return {
       ...tenant,
-      enabledDashboardIds,
+      enabledDashboardIds: dashboardIdsList[0]?.dashboardIds ?? [],
       hideRankInLeaderboard: tenant.settings?.hideRankInLeaderboard ?? false,
       enableAudioUpload: !hiddenChatTypes.includes(ChatTypes.AUDIO_UPLOAD),
       enableMicrophoneMode: !hiddenChatTypes.includes(
@@ -248,20 +250,41 @@ export class TenantService {
 
     const tenantIds = tenants.map((t) => t.id);
 
-    const userCount =
-      await this.userRepository.getUserCountByTenantIds(tenantIds);
+    const [userCount, dashboardIdsPerTenant, hiddenChatTypesPerTenant] =
+      await Promise.all([
+        this.userRepository.getUserCountByTenantIds(tenantIds),
+        this.tenantDashboardSharedService.getEnabledDashboardIdsForTenants(
+          tenantIds,
+          this.dataSource.manager,
+        ),
+        this.preferenceService.getHiddenChatTypesForTenants(tenantIds),
+      ]);
 
     const userCountMap = new Map(
       userCount.map((uc) => [uc.tenantId, parseInt(uc.userCount)]),
     );
 
-    const tenantsWithUserCount = tenants.map((tenant) => ({
-      ...tenant,
-      userCount: userCountMap.get(tenant.id) || 0,
-    }));
+    const tenantsWithDetails = tenants.map((tenant) => {
+      const hiddenChatTypes =
+        hiddenChatTypesPerTenant.find((entry) => entry.tenantId === tenant.id)
+          ?.hiddenChatTypes ?? [];
+      const enabledDashboardIds =
+        dashboardIdsPerTenant.find((entry) => entry.tenantId === tenant.id)
+          ?.dashboardIds ?? [];
+      return {
+        ...tenant,
+        userCount: userCountMap.get(tenant.id) || 0,
+        enabledDashboardIds,
+        hideRankInLeaderboard: tenant.settings?.hideRankInLeaderboard ?? false,
+        enableAudioUpload: !hiddenChatTypes.includes(ChatTypes.AUDIO_UPLOAD),
+        enableMicrophoneMode: !hiddenChatTypes.includes(
+          ChatTypes.MICROPHONE_CHAT,
+        ),
+      };
+    });
 
     return {
-      data: tenantsWithUserCount,
+      data: tenantsWithDetails,
       count,
     };
   }

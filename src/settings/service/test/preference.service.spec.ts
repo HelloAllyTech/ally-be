@@ -3,6 +3,7 @@ import { PreferenceService } from '../preference.service';
 import { Preference } from '../../entity/preference.entity';
 import { RedisService } from '../../../redis/service/redis.service';
 import { PreferenceName } from '../../../common/constants/user.constants';
+import { PreferenceRepository } from '../../repository/preference.repository';
 
 // Mock LoggerService
 const mockLoggerInstance = {
@@ -12,6 +13,14 @@ const mockLoggerInstance = {
 jest.mock('../../../logger/logger.service', () => ({
   LoggerService: {
     getInstance: jest.fn(() => mockLoggerInstance),
+  },
+}));
+
+jest.mock('src/audit/service/audit-logger.service', () => ({
+  AuditLoggerService: {
+    getInstance: jest.fn(() => ({
+      log: jest.fn(),
+    })),
   },
 }));
 
@@ -36,6 +45,7 @@ describe('PreferenceService', () => {
       findOne: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      getHiddenChatTypesForTenants: jest.fn(),
     };
 
     mockPreferenceCache = {
@@ -48,7 +58,7 @@ describe('PreferenceService', () => {
       providers: [
         PreferenceService,
         {
-          provide: 'PreferenceRepository', // getRepositoryToken(Preference)
+          provide: PreferenceRepository,
           useValue: mockPreferenceRepository,
         },
         { provide: RedisService, useValue: mockPreferenceCache },
