@@ -46,6 +46,10 @@ describe('TenantController', () => {
   const mockTenantWithUserCount = {
     ...mockTenant,
     userCount: 5,
+    enabledDashboardIds: [],
+    hideRankInLeaderboard: false,
+    enableAudioUpload: true,
+    enableMicrophoneMode: true,
   };
 
   const mockCreateTenantDto: CreateTenantDto = {

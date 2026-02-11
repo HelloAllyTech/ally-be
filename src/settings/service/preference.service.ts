@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
@@ -7,15 +6,15 @@ import { PreferenceName } from '../../common/constants/user.constants';
 import { Preference } from '../entity/preference.entity';
 import { PreferenceValue } from '../../common/type/common.type';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { PreferenceRepository } from '../repository/preference.repository';
 
 @Injectable()
 export class PreferenceService {
   private readonly auditLogger = AuditLoggerService.getInstance();
 
   constructor(
-    @InjectRepository(Preference)
-    private readonly preferenceRepository: Repository<Preference>,
     private readonly preferenceCache: RedisService,
+    private readonly preferenceRepository: PreferenceRepository,
   ) {}
 
   private readonly logger = LoggerService.getInstance(PreferenceService.name);
@@ -52,6 +51,12 @@ export class PreferenceService {
       await this.preferenceCache.set(cacheKey, JSON.stringify(preference));
     }
     return preference;
+  }
+
+  async getHiddenChatTypesForTenants(
+    tenantIds: string[],
+  ): Promise<{ tenantId: string; hiddenChatTypes: string[] }[]> {
+    return this.preferenceRepository.getHiddenChatTypesForTenants(tenantIds);
   }
 
   async updatePreference(

@@ -12,16 +12,19 @@ export class TenantDashboardSharedService {
 
   constructor() {}
 
-  async getEnabledDashboardIdsForTenant(
-    tenantId: string,
+  async getEnabledDashboardIdsForTenants(
+    tenantIds: string[],
     entityManager: EntityManager,
-  ): Promise<string[]> {
-    const repo = entityManager.getRepository(DashboardTenant);
-    const dashboardTenants = await repo.find({
-      where: { tenantId },
-      select: ['dashboardId'],
-    });
-    return dashboardTenants.map((dt) => dt.dashboardId);
+  ): Promise<{ tenantId: string; dashboardIds: string[] }[]> {
+    const results = await entityManager
+      .createQueryBuilder(DashboardTenant, 'dt')
+      .select('dt.tenantId', 'tenantId')
+      .addSelect('ARRAY_AGG(dt.dashboardId)', 'dashboardIds')
+      .where('dt.tenantId IN (:...tenantIds)', { tenantIds })
+      .groupBy('dt.tenantId')
+      .getRawMany<{ tenantId: string; dashboardIds: string[] }>();
+
+    return results;
   }
 
   async assignDashboardsToTenant(

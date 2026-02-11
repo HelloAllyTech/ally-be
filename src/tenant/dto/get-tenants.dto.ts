@@ -48,6 +48,32 @@ export class TenantWithUserCountDto {
     example: 25,
   })
   userCount!: number;
+
+  @ApiProperty({
+    description: 'List of enabled dashboard IDs for the tenant',
+    type: [String],
+    required: false,
+    example: ['d1e5a76d-4b3c-44b5-8af0-4a9b6e593b09'],
+  })
+  enabledDashboardIds!: string[];
+
+  @ApiProperty({
+    description: 'Whether rank is hidden in leaderboard',
+    example: false,
+  })
+  hideRankInLeaderboard!: boolean;
+
+  @ApiProperty({
+    description: 'Whether audio upload is enabled',
+    example: true,
+  })
+  enableAudioUpload!: boolean;
+
+  @ApiProperty({
+    description: 'Whether microphone mode is enabled',
+    example: true,
+  })
+  enableMicrophoneMode!: boolean;
 }
 
 export class GetAllTenantsResponseDto {

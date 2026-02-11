@@ -22,6 +22,7 @@ import { TenantDashboardSharedService } from '../tenant-dashboard-shared';
 import { SettingsService } from 'src/settings/service/settings.service';
 import { ChatTypes } from 'src/common/constants/chat.constants';
 import { TenantResponseDto } from 'src/tenant/dto/tenant-response.dto';
+import { PreferenceService } from 'src/settings/service/preference.service';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -119,12 +120,18 @@ describe('TenantService', () => {
     const mockTenantDashboardSharedService = {
       assignDashboardsToTenant: jest.fn().mockResolvedValue(undefined),
       validateDashboardIds: jest.fn().mockResolvedValue(undefined),
-      getEnabledDashboardIdsForTenant: jest.fn().mockResolvedValue([]),
+      getEnabledDashboardIdsForTenants: jest
+        .fn()
+        .mockResolvedValue([{ tenantId: 'test-tenant-id', dashboardIds: [] }]),
     };
 
     const mockSettingsService = {
       updateChatTypes: jest.fn().mockResolvedValue(undefined),
       getHiddenChatTypesForEntity: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockPreferenceService = {
+      getHiddenChatTypesForTenants: jest.fn().mockResolvedValue([]),
     };
 
     const mockDashboardTenantRepository = {
@@ -187,6 +194,10 @@ describe('TenantService', () => {
         {
           provide: SettingsService,
           useValue: mockSettingsService,
+        },
+        {
+          provide: PreferenceService,
+          useValue: mockPreferenceService,
         },
         {
           provide: DataSource,
