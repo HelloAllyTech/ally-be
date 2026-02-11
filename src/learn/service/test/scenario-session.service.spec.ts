@@ -703,7 +703,7 @@ describe('ScenarioSessionService', () => {
       const previewDto = { scenarioId: mockScenarioId };
       const mockStateInstructions = [
         {
-          stateId: 1,
+          stateId: '1',
           instruction: 'Express mild doubt about if talking is helping',
           dialogues: [
             'I highly doubt if this is helping',
@@ -711,7 +711,7 @@ describe('ScenarioSessionService', () => {
           ],
         },
         {
-          stateId: 2,
+          stateId: '2',
           instruction: 'Show more engagement',
           dialogues: ['Tell me more', 'I understand'],
         },
@@ -719,7 +719,7 @@ describe('ScenarioSessionService', () => {
       // Expected formatted stateInstructions with score ranges from stateConfig
       const expectedFormattedStateInstructions = [
         {
-          stateId: 1,
+          stateId: '1',
           instruction: 'Express mild doubt about if talking is helping',
           dialogues: [
             'I highly doubt if this is helping',
@@ -729,7 +729,7 @@ describe('ScenarioSessionService', () => {
           scoreLower: undefined,
         },
         {
-          stateId: 2,
+          stateId: '2',
           instruction: 'Show more engagement',
           dialogues: ['Tell me more', 'I understand'],
           scoreUpper: 20,
@@ -1089,7 +1089,7 @@ describe('ScenarioSessionService', () => {
       };
       const mockStateInstructions = [
         {
-          stateId: 1,
+          stateId: '1',
           instruction: 'Express mild doubt about if talking is helping',
           dialogues: [
             'I highly doubt if this is helping',
@@ -1097,7 +1097,7 @@ describe('ScenarioSessionService', () => {
           ],
         },
         {
-          stateId: 2,
+          stateId: '2',
           instruction: 'Show more engagement',
           dialogues: ['Tell me more', 'I understand'],
         },
@@ -1105,7 +1105,7 @@ describe('ScenarioSessionService', () => {
       // Expected formatted stateInstructions with score ranges from stateConfig
       const expectedFormattedStateInstructions = [
         {
-          stateId: 1,
+          stateId: '1',
           instruction: 'Express mild doubt about if talking is helping',
           dialogues: [
             'I highly doubt if this is helping',
@@ -1115,7 +1115,7 @@ describe('ScenarioSessionService', () => {
           scoreLower: undefined,
         },
         {
-          stateId: 2,
+          stateId: '2',
           instruction: 'Show more engagement',
           dialogues: ['Tell me more', 'I understand'],
           scoreUpper: 20,
