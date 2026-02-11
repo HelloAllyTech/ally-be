@@ -83,7 +83,7 @@ describe('Scenario Util', () => {
           maxTimeValue: '1:30:00',
           stateInstructions: [
             {
-              stateId: 2,
+              stateId: '2',
               instruction: 'Context',
               dialogues: [],
             },

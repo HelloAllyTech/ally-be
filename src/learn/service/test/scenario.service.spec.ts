@@ -2263,7 +2263,7 @@ describe('ScenarioService', () => {
     it('should update scenario successfully', async () => {
       const mockStateInstructions = [
         {
-          stateId: 1,
+          stateId: '1',
           instruction: 'Express mild doubt about if talking is helping',
           dialogues: [
             'I highly doubt if this is helping',
@@ -2271,7 +2271,7 @@ describe('ScenarioService', () => {
           ],
         },
         {
-          stateId: 2,
+          stateId: '2',
           instruction: 'Show more engagement',
           dialogues: ['Tell me more', 'I understand'],
         },

@@ -1,14 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { IsArray, IsNotEmpty, IsString } from 'class-validator';
 
 export class StateInstructionsDto {
   @ApiProperty({
     description: 'State ID',
-    example: 1,
+    example: '1',
   })
   @IsNotEmpty()
-  @IsNumber()
-  stateId!: number;
+  @IsString()
+  stateId!: string;
 
   @ApiProperty({
     description: 'State Instruction',
