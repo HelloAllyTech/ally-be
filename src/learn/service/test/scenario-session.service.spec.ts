@@ -39,6 +39,8 @@ import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.r
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ReviewSharedService } from 'src/review/service/review-shared.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { CaseSharedService } from 'src/case/service/case-shared.service';
+import { CaseSessionService } from 'src/case/service/case-session.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -258,6 +260,16 @@ describe('ScenarioSessionService', () => {
       emit: jest.fn(),
     };
 
+    const mockCaseSharedService = {
+      getCaseItemsByIds: jest.fn(),
+      getCaseSessionItemsForUser: jest.fn(),
+    };
+
+    const mockCaseSessionService = {
+      getCaseSessionById: jest.fn(),
+      updateCaseSessionItemStatus: jest.fn(),
+    };
+
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -345,6 +357,14 @@ describe('ScenarioSessionService', () => {
         {
           provide: EventEmitter2,
           useValue: mockEventEmitter,
+        },
+        {
+          provide: CaseSharedService,
+          useValue: mockCaseSharedService,
+        },
+        {
+          provide: CaseSessionService,
+          useValue: mockCaseSessionService,
         },
       ],
     }).compile();

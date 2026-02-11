@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ScenarioPathStatus } from '../type/scenario-paths.type';
-import { SessionItemStatus } from '../type/scenario-path-session-items.type';
+import { SessionItemStatus } from 'src/common/type/common.type';
 
 export class GetScenarioPathItemDto {
   @ApiProperty({ description: 'ID of the scenario path item' })

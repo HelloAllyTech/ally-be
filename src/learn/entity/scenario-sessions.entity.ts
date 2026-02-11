@@ -46,4 +46,7 @@ export class ScenarioSessions extends BaseEntity {
 
   @Column({ type: 'uuid', nullable: true })
   scenarioPathSessionItemId?: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  caseSessionItemId?: string;
 }

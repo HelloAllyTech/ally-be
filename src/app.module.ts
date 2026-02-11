@@ -37,6 +37,7 @@ import { BadgeModule } from './badge/badge.module';
 import { CommunityModule } from './community/community.module';
 import { ScenarioCharacterModule } from './scenario-character/scenario-character.module';
 import { PromptModule } from './prompt/prompt.module';
+import { CaseModule } from './case/case.module';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { PromptModule } from './prompt/prompt.module';
     AuthorizationModule,
     PlaceModule,
     ScenarioPathModule,
+    CaseModule,
     LanguageModule,
     ReviewModule,
     BadgeModule,

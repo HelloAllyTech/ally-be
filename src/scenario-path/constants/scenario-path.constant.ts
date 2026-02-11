@@ -1,4 +1,4 @@
-import { SessionItemStatus } from '../type/scenario-path-session-items.type';
+import { SessionItemStatus } from 'src/common/type/common.type';
 
 export const SCENARIO_PATH_REQUIRED_FIELDS = [
   'title',
