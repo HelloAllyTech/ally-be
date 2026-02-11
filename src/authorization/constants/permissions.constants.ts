@@ -162,6 +162,17 @@ const PERMISSIONS = {
   EDIT_SCENARIO_PATH_TENANT: 'edit:scenario-path-tenant',
   DELETE_SCENARIO_PATH_TENANT: 'delete:scenario-path-tenant',
 
+  // === CASES ===
+  VIEW_ADMIN_CASES: 'view:admin:cases',
+  VIEW_ADMIN_CASE: 'view:admin:case',
+  EDIT_ADMIN_CASE: 'edit:admin:case',
+  DELETE_ADMIN_CASE: 'delete:admin:case',
+  EDIT_CASE_TENANT: 'edit:case-tenant',
+  VIEW_CASES: 'view:cases',
+  VIEW_CASE: 'view:case',
+  EDIT_CASE: 'edit:case',
+  DELETE_CASE_TENANT: 'delete:case-tenant',
+
   // === REVIEW ===
   VIEW_REVIEW: 'view:review',
   EDIT_REVIEW: 'edit:review',

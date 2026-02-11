@@ -22,7 +22,7 @@ import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioPathSessionRepository } from '../repository/scenario-path-session.repository';
 import { ScenarioPathSessionItemRepository } from '../repository/scenario-path-session-item.repository';
-import { SessionItemStatus } from '../type/scenario-path-session-items.type';
+import { SessionItemStatus } from 'src/common/type/common.type';
 
 @Injectable()
 export class ScenarioPathSharedService {

@@ -36,6 +36,7 @@ import { ChatTypes } from 'src/common/constants/chat.constants';
 import { TenantResponseDto } from '../dto/tenant-response.dto';
 import { PreferenceRelatedEntity } from 'src/common/constants/user.constants';
 import { PreferenceService } from 'src/settings/service/preference.service';
+import { TenantCaseSharedService } from './tenant-case-shared';
 
 @Injectable()
 export class TenantService {
@@ -56,6 +57,7 @@ export class TenantService {
     private s3Service: S3Service,
     private readonly settingsService: SettingsService,
     private readonly preferenceService: PreferenceService,
+    private readonly tenantCaseSharedService: TenantCaseSharedService,
   ) {}
 
   async findAll(): Promise<Tenant[]> {
@@ -120,6 +122,11 @@ export class TenantService {
           );
 
           await this.tenantScenarioPathSharedService.assignGlobalScenarioPathsToTenant(
+            savedTenant.id,
+            entityManager,
+          );
+
+          await this.tenantCaseSharedService.assignGlobalCasesToTenant(
             savedTenant.id,
             entityManager,
           );

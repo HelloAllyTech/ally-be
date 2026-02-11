@@ -1,6 +1,6 @@
 // TODO: Handle correctly - util created to resolve circular dependency
 
-import { In } from 'typeorm';
+import { In, Not, IsNull } from 'typeorm';
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenariosRepository } from '../repository/scenario.repository';
@@ -13,6 +13,7 @@ import { ScenarioTranslationsRepository } from '../repository/scenario-translati
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
 import { ScenarioSessionMessages } from '../entity/scenario-session-messages.entity';
+import { ScenarioSessionDetailsRepository } from '../repository/scenario-session-details.repository';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -24,6 +25,7 @@ export class ScenarioSharedService {
     private scenarioSessionRepository: ScenarioSessionRepository,
     private scenarioTranslationsRepository: ScenarioTranslationsRepository,
     private scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
+    private scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
   ) {}
 
   async getScenarioByIds(
@@ -89,6 +91,22 @@ export class ScenarioSharedService {
   ): Promise<ScenarioSessionMessages[]> {
     return this.scenarioSessionMessagesRepository.find({
       where: { id: In(messageIds) },
+    });
+  }
+  async getPreviousScenarioSessionByCaseSessionItemId(
+    caseSessionItemId: string,
+  ) {
+    return this.scenarioSessionRepository.findOne({
+      where: { caseSessionItemId, score: Not(IsNull()) },
+      order: { score: 'DESC' },
+    });
+  }
+
+  async getScenarioSessionDetailsByScenarioSessionId(
+    scenarioSessionId: string,
+  ) {
+    return this.scenarioSessionDetailsRepository.findOne({
+      where: { scenarioSessionId },
     });
   }
 }
