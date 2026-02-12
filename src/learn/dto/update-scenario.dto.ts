@@ -283,6 +283,8 @@ export class UpdateScenarioDto {
     example: ExperienceMode.FEEDBACK,
     required: false,
   })
+  @IsOptional()
+  @ValidateIf((o) => o.experienceMode !== undefined)
   @IsEnum(ExperienceMode)
   experienceMode?: ExperienceMode;
 
