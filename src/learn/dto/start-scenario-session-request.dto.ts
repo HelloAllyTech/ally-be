@@ -19,6 +19,14 @@ export class StartScenarioSessionRequestDto {
   scenarioPathSessionItemId?: string;
 
   @ApiProperty({
+    description: 'Case Session Item ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsString()
+  @IsOptional()
+  caseSessionItemId?: string;
+
+  @ApiProperty({
     description: 'TTL in seconds',
     example: DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
   })

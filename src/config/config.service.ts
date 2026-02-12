@@ -263,7 +263,13 @@ export class AppConfigService {
         ),
     };
   }
-
+  get cases() {
+    return {
+      caseItemMinDurationForCompletion: this.configService.get<number>(
+        'CASE_ITEM_MIN_DURATION_FOR_COMPLETION',
+      ),
+    };
+  }
   get featureFlag() {
     return {
       stateBasedScenarioInstructions:

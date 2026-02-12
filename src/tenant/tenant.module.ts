@@ -11,6 +11,7 @@ import { AwsModule } from 'src/aws/aws.module';
 import { BadgeTenantSharedService } from 'src/badge/service/badge-tenant-shared.service';
 import { TenantDashboardSharedService } from './service/tenant-dashboard-shared';
 import { SettingsModule } from 'src/settings/settings.module';
+import { TenantCaseSharedService } from './service/tenant-case-shared';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     TenantScenarioPathSharedService,
     BadgeTenantSharedService,
     TenantDashboardSharedService,
+    TenantCaseSharedService,
   ],
   controllers: [TenantController],
   exports: [TenantService, TenantsRepository],

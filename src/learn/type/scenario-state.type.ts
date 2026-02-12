@@ -1,7 +1,7 @@
 import { ScenarioDifficultyLevel } from './scenario.type';
 
 export interface ScenarioStateInstruction {
-  stateId: number;
+  stateId: string;
   instruction: string;
   dialogues: string[];
 }
@@ -12,7 +12,7 @@ export interface ScoreRange {
 }
 
 export interface ScenarioStateConfig {
-  stateId: number;
+  stateId: string;
   scoreRange: ScoreRange;
   label: string;
 }

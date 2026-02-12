@@ -9,6 +9,7 @@ import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { Scenarios } from '../entity/scenarios.entity';
 import { ExperienceMode, ChecklistType } from '../type/scenario.type';
 import { StateInstructionsDto } from '../dto/state-instructions.dto';
+import { ScenarioStateInstruction } from '../type/scenario-state.type';
 
 export const mapCreateScenarioRequestToEntity = (
   scenario: CreateScenarioDto,
@@ -66,12 +67,12 @@ export const mapCreateScenarioRequestToEntity = (
 const getFormattedScenarioInstructions = (
   scenarioInstructions: StateInstructionsDto[] | undefined,
   { context, agentDialogues }: { context?: string; agentDialogues?: string[] },
-) => {
+): ScenarioStateInstruction[] | undefined => {
   if (scenarioInstructions) return scenarioInstructions;
   if (context || agentDialogues)
     return [
       {
-        stateId: 2,
+        stateId: '2',
         instruction: context || '',
         dialogues: agentDialogues || [],
       },
