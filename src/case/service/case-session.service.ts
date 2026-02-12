@@ -30,7 +30,7 @@ export class CaseSessionService {
     private readonly configService: AppConfigService,
   ) {}
 
-  async getUserCaseSessions(
+  async getUserCases(
     filters?: CaseSessionFilterOptions,
   ): Promise<CaseSessionsResponseDto> {
     const userId = ExecutionManager.getUserId();

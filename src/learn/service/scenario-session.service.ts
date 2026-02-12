@@ -17,7 +17,7 @@ import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Not, Repository } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
@@ -1163,6 +1163,15 @@ export class ScenarioSessionService {
     return this.scenarioSessionRepository.findOne({
       where: { scenarioPathSessionItemId },
       order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getTopScoredScenarioSessionByCaseSessionItemId(
+    caseSessionItemId: string,
+  ) {
+    return this.scenarioSessionRepository.findOne({
+      where: { caseSessionItemId, score: Not(IsNull()) },
+      order: { score: 'DESC' },
     });
   }
 
