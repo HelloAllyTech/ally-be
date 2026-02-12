@@ -720,6 +720,22 @@ export class LearnController {
     );
   }
 
+  @ApiOperation({ description: 'Get case session from case item id' })
+  @ApiResponse({
+    description: 'Case session retrieved successfully',
+    type: ScenarioSessions,
+    example: SCENARIO_SESSION_EXAMPLE,
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_CASE])
+  @Get('scenario-session/case-session-item/:caseSessionItemId')
+  async getLatestScenarioSessionByCaseSessionItemId(
+    @Param('caseSessionItemId', ParseUUIDPipe) caseSessionItemId: string,
+  ): Promise<ScenarioSessions | null> {
+    return this.scenarioSessionService.getTopScoredScenarioSessionByCaseSessionItemId(
+      caseSessionItemId,
+    );
+  }
+
   @ApiOperation({ summary: 'Create a trigger warning' })
   @ApiResponse({
     description: 'Trigger warning created successfully',

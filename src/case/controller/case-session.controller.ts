@@ -62,15 +62,15 @@ export class CaseSessionController {
     description: 'Sort order',
   })
   @AuthPermissions([PERMISSIONS.VIEW_CASES])
-  @Get('/case-sessions')
-  async getUserCaseSessions(
+  @Get('/cases')
+  async getUserCases(
     @Query('offset') offset?: number,
     @Query('limit') limit?: number,
     @Query('sortBy')
     sortBy: CaseSessionSortBy = CaseSessionSortBy.UPDATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<CaseSessionsResponseDto> {
-    return this.caseSessionService.getUserCaseSessions({
+    return this.caseSessionService.getUserCases({
       offset,
       limit,
       sortBy,
