@@ -37,6 +37,7 @@ import { BadgeModule } from './badge/badge.module';
 import { CommunityModule } from './community/community.module';
 import { ScenarioCharacterModule } from './scenario-character/scenario-character.module';
 import { PromptModule } from './prompt/prompt.module';
+import { ConversationalGuardrailsModule } from './conversational-guardrails/conversational-guardrails.module';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { PromptModule } from './prompt/prompt.module';
     CommunityModule,
     ScenarioCharacterModule,
     PromptModule,
+    ConversationalGuardrailsModule,
   ],
   controllers: [],
   providers: [

@@ -73,7 +73,7 @@ import {
   ScenarioSessionLeaderboardEvent,
   ScenarioSessionLeaderboardEndedEventParams,
 } from '../type/scenario-session-leaderboard-event.type';
-import { ConversationalGuardrailsService } from './conversational-guardrails.service';
+import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 
 @Injectable()
 export class ScenarioSessionService {

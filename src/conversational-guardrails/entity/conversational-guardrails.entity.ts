@@ -7,6 +7,9 @@ export class ConversationalGuardrails extends BaseWithoutTenantEntity {
   id!: string;
 
   @Column()
+  name!: string;
+
+  @Column()
   helperDialogue!: string;
 
   @Column()

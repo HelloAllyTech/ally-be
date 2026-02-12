@@ -8,6 +8,7 @@ export enum ConversationalGuardrailsSortBy {
   CREATED_AT = 'createdAt',
   UPDATED_AT = 'updatedAt',
   HELPER_DIALOGUE = 'helperDialogue',
+  NAME = 'name',
 }
 
 @Injectable()
@@ -27,7 +28,7 @@ export class ConversationalGuardrailsRepository extends Repository<Conversationa
     if (search) {
       const searchTerm = `%${search.trim()}%`;
       query.where(
-        'guardrail.helperDialogue ILIKE :search OR guardrail.actorDialogue ILIKE :search',
+        'guardrail.name ILIKE :search OR guardrail.helperDialogue ILIKE :search OR guardrail.actorDialogue ILIKE :search',
         { search: searchTerm },
       );
     }
@@ -60,7 +61,7 @@ export class ConversationalGuardrailsRepository extends Repository<Conversationa
     if (search) {
       const searchTerm = `%${search.trim()}%`;
       query.where(
-        'guardrail.helperDialogue ILIKE :search OR guardrail.actorDialogue ILIKE :search',
+        'guardrail.name ILIKE :search OR guardrail.helperDialogue ILIKE :search OR guardrail.actorDialogue ILIKE :search',
         { search: searchTerm },
       );
     }
@@ -94,7 +95,7 @@ export class ConversationalGuardrailsRepository extends Repository<Conversationa
     query: SelectQueryBuilder<ConversationalGuardrails>,
     options: Pagination,
   ) {
-    if (options.offset) {
+    if (options.offset !== undefined) {
       query.offset(options.offset);
     }
     if (options.limit) {

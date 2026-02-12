@@ -3,6 +3,8 @@ import { NotFoundException } from '@nestjs/common';
 import { ConversationalGuardrailsController } from '../conversational-guardrails.controller';
 import { ConversationalGuardrailsService } from '../../service/conversational-guardrails.service';
 import { ConversationalGuardrails } from '../../entity/conversational-guardrails.entity';
+import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 
 describe('ConversationalGuardrailsController', () => {
   let controller: ConversationalGuardrailsController;
@@ -10,6 +12,7 @@ describe('ConversationalGuardrailsController', () => {
 
   const mockGuardrail: ConversationalGuardrails = {
     id: 'guardrail-uuid-1',
+    name: 'Guardrail 1',
     helperDialogue: 'rude',
     actorDialogue: 'Please be respectful',
     active: true,
@@ -21,6 +24,7 @@ describe('ConversationalGuardrailsController', () => {
     mockGuardrail,
     {
       id: 'guardrail-uuid-2',
+      name: 'Guardrail 2',
       helperDialogue: 'interrupting',
       actorDialogue: 'Please let me finish',
       active: true,
@@ -50,7 +54,12 @@ describe('ConversationalGuardrailsController', () => {
           useValue: mockService,
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<ConversationalGuardrailsController>(
       ConversationalGuardrailsController,
@@ -122,6 +131,7 @@ describe('ConversationalGuardrailsController', () => {
   describe('createGuardrail', () => {
     it('should create a new guardrail', async () => {
       const createDto = {
+        name: 'new guardrail',
         helperDialogue: 'new helper',
         actorDialogue: 'new response',
         active: true,
@@ -130,6 +140,7 @@ describe('ConversationalGuardrailsController', () => {
 
       const result = await controller.createGuardrail(createDto);
 
+      expect(result.name).toBe('new guardrail');
       expect(result.helperDialogue).toBe('new helper');
       expect(service.createGuardrail).toHaveBeenCalledWith(createDto);
     });

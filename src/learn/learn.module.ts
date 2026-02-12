@@ -44,13 +44,7 @@ import { ScenarioTranslationsRepository } from './repository/scenario-translatio
 import { SessionEventTranslationsRepository } from 'src/session-event/repository/session-event-translation.repository';
 import { ScenarioEventsTranslationsRepository } from './repository/scenario-events-translations.repository';
 import { ReviewModule } from 'src/review/review.module';
-import { ConversationalGuardrails } from './entity/conversational-guardrails.entity';
-import { ConversationalGuardrailsTranslations } from './entity/conversational-guardrails-translations.entity';
-import { ConversationalGuardrailsController } from './controller/conversational-guardrails.controller';
-import { ConversationalGuardrailsService } from './service/conversational-guardrails.service';
-import { ConversationalGuardrailsRepository } from './repository/conversational-guardrails.repository';
-import { ConversationalGuardrailsTranslationsRepository } from './repository/conversational-guardrails-translations.repository';
-import { ConversationalGuardrailsTranslationService } from './service/conversational-guardrails-translation.service';
+import { ConversationalGuardrailsModule } from 'src/conversational-guardrails/conversational-guardrails.module';
 
 @Module({
   imports: [
@@ -65,8 +59,6 @@ import { ConversationalGuardrailsTranslationService } from './service/conversati
       SimulationCredits,
       TriggerWarnings,
       ScenarioTriggerWarnings,
-      ConversationalGuardrails,
-      ConversationalGuardrailsTranslations,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -77,8 +69,9 @@ import { ConversationalGuardrailsTranslationService } from './service/conversati
     forwardRef(() => ScenarioPathModule),
     LanguageModule,
     forwardRef(() => ReviewModule),
+    forwardRef(() => ConversationalGuardrailsModule),
   ],
-  controllers: [LearnController, SimulationCreditsController, ConversationalGuardrailsController],
+  controllers: [LearnController, SimulationCreditsController],
   providers: [
     ScenarioService,
     ScenarioSessionService,
@@ -104,10 +97,6 @@ import { ConversationalGuardrailsTranslationService } from './service/conversati
     ScenarioTranslationsRepository,
     SessionEventTranslationsRepository,
     ScenarioEventsTranslationsRepository,
-    ConversationalGuardrailsService,
-    ConversationalGuardrailsRepository,
-    ConversationalGuardrailsTranslationsRepository,
-    ConversationalGuardrailsTranslationService,
   ],
   exports: [
     LearnMessageProcessor,
@@ -117,8 +106,6 @@ import { ConversationalGuardrailsTranslationService } from './service/conversati
     ScenarioSharedService,
     ScenarioService,
     ScenarioTenantService,
-    ConversationalGuardrailsService,
-    ConversationalGuardrailsTranslationService,
   ],
 })
 export class LearnModule {}

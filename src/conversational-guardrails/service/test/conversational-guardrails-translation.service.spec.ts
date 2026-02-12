@@ -16,6 +16,7 @@ describe('ConversationalGuardrailsTranslationService', () => {
 
   const mockGuardrail: ConversationalGuardrails = {
     id: 'guardrail-uuid-1',
+    name: 'Guardrail 1',
     helperDialogue: 'rude behavior',
     actorDialogue: 'Please be respectful',
     active: true,

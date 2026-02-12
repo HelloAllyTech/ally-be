@@ -11,6 +11,7 @@ describe('ConversationalGuardrailsRepository', () => {
 
   const mockGuardrail: ConversationalGuardrails = {
     id: 'guardrail-uuid-1',
+    name: 'Guardrail 1',
     helperDialogue: 'rude',
     actorDialogue: 'Please be respectful',
     active: true,
@@ -22,6 +23,7 @@ describe('ConversationalGuardrailsRepository', () => {
     mockGuardrail,
     {
       id: 'guardrail-uuid-2',
+      name: 'Guardrail 2',
       helperDialogue: 'interrupting',
       actorDialogue: 'Please let me finish',
       active: true,
@@ -90,7 +92,7 @@ describe('ConversationalGuardrailsRepository', () => {
       await repository.getGuardrails('rude');
 
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'guardrail.helperDialogue ILIKE :search OR guardrail.actorDialogue ILIKE :search',
+        'guardrail.name ILIKE :search OR guardrail.helperDialogue ILIKE :search OR guardrail.actorDialogue ILIKE :search',
         { search: '%rude%' },
       );
     });
@@ -146,7 +148,7 @@ describe('ConversationalGuardrailsRepository', () => {
       await repository.countGuardrails('rude');
 
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'guardrail.helperDialogue ILIKE :search OR guardrail.actorDialogue ILIKE :search',
+        'guardrail.name ILIKE :search OR guardrail.helperDialogue ILIKE :search OR guardrail.actorDialogue ILIKE :search',
         { search: '%rude%' },
       );
     });

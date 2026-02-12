@@ -14,6 +14,7 @@ describe('ConversationalGuardrailsService', () => {
 
   const mockGuardrail: ConversationalGuardrails = {
     id: 'guardrail-uuid-1',
+    name: 'Guardrail 1',
     helperDialogue: 'rude',
     actorDialogue: 'Please be respectful',
     active: true,
@@ -25,6 +26,7 @@ describe('ConversationalGuardrailsService', () => {
     mockGuardrail,
     {
       id: 'guardrail-uuid-2',
+      name: 'Guardrail 2',
       helperDialogue: 'interrupting',
       actorDialogue: 'Please let me finish',
       active: true,
@@ -159,6 +161,7 @@ describe('ConversationalGuardrailsService', () => {
   describe('createGuardrail', () => {
     it('should create a new guardrail', async () => {
       const createDto = {
+        name: 'New Guardrail',
         helperDialogue: 'New helper',
         actorDialogue: 'New actor response',
         active: true,
@@ -174,6 +177,7 @@ describe('ConversationalGuardrailsService', () => {
 
       const result = await service.createGuardrail(createDto);
 
+      expect(result.name).toBe('New Guardrail');
       expect(result.helperDialogue).toBe('New helper');
       expect(guardrailsRepository.create).toHaveBeenCalledWith(createDto);
       expect(guardrailsRepository.save).toHaveBeenCalled();

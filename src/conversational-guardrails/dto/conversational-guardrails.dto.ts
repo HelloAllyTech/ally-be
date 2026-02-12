@@ -3,6 +3,13 @@ import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateConversationalGuardrailDto {
   @ApiProperty({
+    description: 'Name of the guardrail',
+    example: 'Rude Behavior',
+  })
+  @IsNotEmpty()
+  @IsString()
+  name!: string;
+  @ApiProperty({
     description: 'Classification of helper dialogue',
     example: 'rude',
   })
@@ -28,6 +35,13 @@ export class CreateConversationalGuardrailDto {
 }
 
 export class UpdateConversationalGuardrailDto {
+  @ApiPropertyOptional({
+    description: 'Name of the guardrail',
+    example: 'Rude Behavior',
+  })
+  @IsOptional()
+  @IsString()
+  name?: string;
   @ApiPropertyOptional({
     description: 'Classification of helper dialogue',
     example: 'rude',
