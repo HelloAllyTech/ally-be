@@ -23,6 +23,7 @@ import { SettingsService } from 'src/settings/service/settings.service';
 import { ChatTypes } from 'src/common/constants/chat.constants';
 import { TenantResponseDto } from 'src/tenant/dto/tenant-response.dto';
 import { PreferenceService } from 'src/settings/service/preference.service';
+import { TenantCaseSharedService } from '../tenant-case-shared';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -160,6 +161,10 @@ describe('TenantService', () => {
       deleteObject: jest.fn(),
     };
 
+    const mockTenantCaseSharedService = {
+      assignGlobalCasesToTenant: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
@@ -210,6 +215,10 @@ describe('TenantService', () => {
         {
           provide: S3Service,
           useValue: mockS3Service,
+        },
+        {
+          provide: TenantCaseSharedService,
+          useValue: mockTenantCaseSharedService,
         },
       ],
     }).compile();

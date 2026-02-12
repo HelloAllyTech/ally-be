@@ -10,6 +10,7 @@ import { ScenarioStatus } from '../../type/scenario.type';
 import { ScenarioFilters } from 'src/learn/type/scenario-filter.type';
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 import { ScenarioSessionMessagesRepository } from '../../repository/scenario-session-messages.repository';
+import { ScenarioSessionDetailsRepository } from '../../repository/scenario-session-details.repository';
 
 describe('ScenarioSharedService', () => {
   let service: ScenarioSharedService;
@@ -55,6 +56,10 @@ describe('ScenarioSharedService', () => {
       getMessagesByScenarioSessionId: jest.fn(),
     };
 
+    const mockScenarioSessionDetailsRepository = {
+      findOne: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSharedService,
@@ -77,6 +82,10 @@ describe('ScenarioSharedService', () => {
         {
           provide: ScenarioSessionMessagesRepository,
           useValue: mockScenarioSessionMessagesRepository,
+        },
+        {
+          provide: ScenarioSessionDetailsRepository,
+          useValue: mockScenarioSessionDetailsRepository,
         },
       ],
     }).compile();

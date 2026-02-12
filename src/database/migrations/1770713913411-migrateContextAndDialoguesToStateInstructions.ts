@@ -14,7 +14,7 @@ export class MigrateContextAndDialoguesToStateInstructions1770713913411 implemen
         '{stateInstructions}',
         jsonb_build_array(
           jsonb_build_object(
-            'stateId', 2,
+            'stateId', '2',
             'instruction', COALESCE("metadata"->>'context', ''),
             'dialogues', COALESCE("metadata"->'agentDialogues', '[]'::jsonb)
           )

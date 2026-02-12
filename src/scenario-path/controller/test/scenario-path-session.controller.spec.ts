@@ -5,7 +5,7 @@ import { ScenarioPathSessionsResponseDto } from '../../dto/scenario-path-session
 import { ScenarioPathSharedService } from '../../service/scenario-path-shared.service';
 import { ScenarioPathSessionItem } from '../../entity/scenario-path-session-item.entity';
 import { ScenarioPathItem } from '../../entity/scenario-path-item.entity';
-import { SessionItemStatus } from '../../type/scenario-path-session-items.type';
+import { SessionItemStatus } from 'src/common/type/common.type';
 import { ScenarioPathSessionSortBy } from '../../type/scenario-path-session-items.type';
 import { SortOrder } from '../../type/scenario-paths.type';
 

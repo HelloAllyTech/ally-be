@@ -44,6 +44,8 @@ import { ScenarioTranslationsRepository } from './repository/scenario-translatio
 import { SessionEventTranslationsRepository } from 'src/session-event/repository/session-event-translation.repository';
 import { ScenarioEventsTranslationsRepository } from './repository/scenario-events-translations.repository';
 import { ReviewModule } from 'src/review/review.module';
+import { CaseModule } from 'src/case/case.module';
+import { ScenarioSessionDetailsRepository } from './repository/scenario-session-details.repository';
 
 @Module({
   imports: [
@@ -68,6 +70,7 @@ import { ReviewModule } from 'src/review/review.module';
     forwardRef(() => ScenarioPathModule),
     LanguageModule,
     forwardRef(() => ReviewModule),
+    forwardRef(() => CaseModule),
   ],
   controllers: [LearnController, SimulationCreditsController],
   providers: [
@@ -95,6 +98,7 @@ import { ReviewModule } from 'src/review/review.module';
     ScenarioTranslationsRepository,
     SessionEventTranslationsRepository,
     ScenarioEventsTranslationsRepository,
+    ScenarioSessionDetailsRepository,
   ],
   exports: [
     LearnMessageProcessor,

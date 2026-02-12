@@ -7,10 +7,7 @@ import {
 import { DataSource, EntityManager } from 'typeorm';
 import { ScenarioPathSessionRepository } from '../repository/scenario-path-session.repository';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
-import {
-  ScenarioPathSessionFilterOptions,
-  SessionItemStatus,
-} from '../type/scenario-path-session-items.type';
+import { ScenarioPathSessionFilterOptions } from '../type/scenario-path-session-items.type';
 import {
   ScenarioPathSortBy,
   ScenarioPathStatus,
@@ -23,6 +20,7 @@ import { ScenarioPathSessionItem } from '../entity/scenario-path-session-item.en
 import { AppConfigService } from 'src/config/config.service';
 import { GetUpcomingScenarioPathItemResponseDto } from '../dto/get-scenario-path.dto';
 import { LoggerService } from 'src/logger/logger.service';
+import { SessionItemStatus } from 'src/common/type/common.type';
 
 @Injectable()
 export class ScenarioPathSessionService {
@@ -450,7 +448,7 @@ export class ScenarioPathSessionService {
           });
 
         // If no entry created for next scenario path item, create one
-        // Wouldnt reach ideally
+        // Wouldn't reach ideally
         if (!nextScenarioPathSessionItem?.id) {
           // No entry created for next scenario
           const nextSessionItemEntity = scenarioPathSessionItemRepo.create({

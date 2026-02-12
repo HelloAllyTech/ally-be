@@ -136,6 +136,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       tenantId: ExecutionManager.getTenantId(),
       scenarioPathSessionItemId:
         createScenarioSessionDto.scenarioPathSessionItemId,
+      caseSessionItemId: createScenarioSessionDto.caseSessionItemId,
       metadata: {
         sessionName: `SS-${sessionId}-${date}`,
         languageId: createScenarioSessionDto?.languageId,
