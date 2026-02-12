@@ -270,6 +270,7 @@ export class CreateScenarioDto {
   @Type(() => CustomFieldsDto)
   customFields?: CustomFieldsDto[];
 
+  @IsOptional()
   @ApiProperty({
     description: 'Experience mode for the scenario',
     enum: ExperienceMode,
@@ -277,6 +278,7 @@ export class CreateScenarioDto {
     required: false,
   })
   @IsEnum(ExperienceMode)
+  @ValidateIf((o) => o.experienceMode !== undefined)
   experienceMode?: ExperienceMode;
 
   @ApiProperty({
