@@ -213,6 +213,11 @@ export class CaseSessionService {
       );
       return null;
     }
+    const sessionGlimpse =
+      await this.caseSharedService.getSessionGlimpseByScenarioSessionId(
+        scenarioSessionId,
+      );
+
     const userId = ExecutionManager.getUserId();
     if (!userId) {
       throw new UnauthorizedException('Unauthorized access');
@@ -256,6 +261,7 @@ export class CaseSessionService {
       transitionMessageContent: currentCaseItem?.messageContent,
       isCaseSessionCompleted: !!currentCaseSession?.completedAt,
       eventStatus: currentScenarioSession?.eventStatus,
+      sessionGlimpse,
     };
     if (
       currentCaseSessionItem?.status !== SessionItemStatus.COMPLETED ||

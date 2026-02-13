@@ -1,7 +1,7 @@
 // TODO: Handle correctly - util created to resolve circular dependency
 
 import { In, Not, IsNull } from 'typeorm';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenariosRepository } from '../repository/scenario.repository';
 import { Scenarios } from '../entity/scenarios.entity';
@@ -108,5 +108,18 @@ export class ScenarioSharedService {
     return this.scenarioSessionDetailsRepository.findOne({
       where: { scenarioSessionId },
     });
+  }
+
+  async getSessionGlimpseByScenarioSessionId(
+    scenarioSessionId: string,
+  ): Promise<string | null> {
+    const scenarioSessionDetails =
+      await this.scenarioSessionDetailsRepository.findOne({
+        where: { scenarioSessionId },
+      });
+    if (!scenarioSessionDetails) {
+      throw new NotFoundException('Scenario session details not found');
+    }
+    return scenarioSessionDetails.summary?.feedback?.sessionGlimpse;
   }
 }
