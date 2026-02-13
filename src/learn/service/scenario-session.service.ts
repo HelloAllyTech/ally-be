@@ -292,7 +292,7 @@ export class ScenarioSessionService {
       }
 
       // Fetch previous case memory if this is part of a case sequence
-      let previousMemory: Record<string, any> | null = null;
+      let previousMemory: string | null = null;
       if (startScenarioSessionDto.caseSessionItemId) {
         previousMemory = await this.caseSharedService.getPreviousCaseMemory(
           startScenarioSessionDto.caseSessionItemId,
@@ -763,7 +763,7 @@ export class ScenarioSessionService {
       callDuration = endedAt.getTime() - startedAt.getTime() || 0;
     }
     const caseSessionItemId = scenarioSession.caseSessionItemId;
-    let previousMemory: Record<string, any> | null = null;
+    let previousMemory: string | null = null;
     let needMemory: boolean = false;
     if (caseSessionItemId) {
       needMemory = true;
@@ -817,7 +817,7 @@ export class ScenarioSessionService {
     scenarioSessionId: string,
     needMemory: boolean,
     callDuration?: number,
-    previousMemory?: Record<string, any> | null,
+    previousMemory?: string | null,
   ) {
     try {
       // Fetch previous case memory if this is part of a case sequence

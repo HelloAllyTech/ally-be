@@ -87,7 +87,9 @@ export const validationSchema = Joi.object({
 
   ASSETS_S3_BUCKET: Joi.string().required(),
 
-  SCENARIO_PATH_ITEM_MIN_DURATION_FOR_COMPLETION: Joi.string().required(),
+  SCENARIO_PATH_ITEM_MIN_DURATION_FOR_COMPLETION: Joi.string().optional(),
+
+  CASE_ITEM_MIN_DURATION_FOR_COMPLETION: Joi.number().optional(),
 
   GOOGLE_APPLICATION_CREDENTIALS: Joi.string()
     .required()

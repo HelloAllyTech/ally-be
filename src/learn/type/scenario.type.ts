@@ -56,5 +56,5 @@ export interface CreateRoomMetadataOptions {
   scenario: GetAdminScenarioDto;
   sessionEvents: SessionEvents[];
   languageDetails?: Languages | null;
-  previousMemory?: Record<string, any> | null;
+  previousMemory?: string | null;
 }
