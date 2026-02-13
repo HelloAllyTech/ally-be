@@ -38,6 +38,7 @@ import { CommunityModule } from './community/community.module';
 import { ScenarioCharacterModule } from './scenario-character/scenario-character.module';
 import { PromptModule } from './prompt/prompt.module';
 import { CaseModule } from './case/case.module';
+import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { CaseModule } from './case/case.module';
     CommunityModule,
     ScenarioCharacterModule,
     PromptModule,
+    ScenarioCoverImageLibraryModule,
   ],
   controllers: [],
   providers: [
