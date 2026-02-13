@@ -9,6 +9,12 @@ import {
   CODE_MIXING_PRESERVE_WORDS,
 } from '../constants/translation.constants';
 import { LanguageConfig } from '../type/openai-translation.type';
+import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import {
+  DEFAULT_OPENAI_TRANSLATION_SYSTEM_PROMPT_TEMPLATE,
+  DEFAULT_OPENAI_TRANSLATION_USER_PROMPT_TEMPLATE,
+} from 'src/common/constants/openai-translations.constants';
+import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 
 @Injectable()
 export class OpenAITranslationsService {
@@ -19,18 +25,37 @@ export class OpenAITranslationsService {
   private readonly client: OpenAI;
   private readonly model: string;
 
-  constructor(private readonly configService: AppConfigService) {
+  constructor(
+    private readonly configService: AppConfigService,
+    private readonly promptSharedService: PromptSharedService,
+  ) {
     this.client = new OpenAI({ apiKey: this.configService.openai.apiKey });
     this.model = this.configService.openai.translationModel;
+  }
+
+  // Prompt codes for dynamic templates
+  private readonly SYSTEM_PROMPT_CODE =
+    PromptCode.OPENAI_TRANSLATION_SYSTEM_PROMPT_CODE;
+  private readonly USER_PROMPT_CODE =
+    PromptCode.OPENAI_TRANSLATION_USER_PROMPT_CODE;
+
+  private renderTemplate(
+    template: string,
+    variables: Record<string, string>,
+  ): string {
+    return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => {
+      return variables[key] ?? '';
+    });
   }
 
   /* ------------------------------------------------------------------
    * Build system prompt for natural code-mixed language generation
    * ------------------------------------------------------------------ */
-  private buildSystemPrompt(
+  private async buildSystemPrompt(
     targetLanguageCode: string,
     scenarioContext?: any,
-  ): string {
+    overrideTemplate?: string,
+  ): Promise<string> {
     const normalizedCode = this.resolveBaseLanguageCode(targetLanguageCode);
     const languageName =
       LANGUAGE_NAME_MAP[normalizedCode] ?? targetLanguageCode;
@@ -100,106 +125,76 @@ IMPORTANT:
       }
     }
 
-    return `
-You are a native ${languageName} speaker helping create REALISTIC counselor-training content.
+    const dbTemplate =
+      overrideTemplate ??
+      (await this.promptSharedService.getPromptByCode(this.SYSTEM_PROMPT_CODE));
 
-Your task is NOT to translate text.
-Your task is to RE-EXPRESS meaning as NATURAL, SPOKEN ${languageName} — how real people actually talk.
+    if (dbTemplate) {
+      const preserveWordsString =
+        preserveWords.length > 0
+          ? preserveWords.join(', ')
+          : 'technical terms, app names, proper nouns';
 
-${fullContext}
+      const filled = this.renderTemplate(dbTemplate, {
+        languageName,
+        fullContext,
+        toneGuidance,
+        preserveWords: preserveWordsString,
+      });
+      return filled;
+    }
 
-════════════════════════════════════════════════════
-🧠 INTERNAL PROCESS (DO NOT OUTPUT)
-════════════════════════════════════════════════════
-1. Understand the intent and emotion of the English text.
-2. Imagine a real person saying this out loud in a counseling session.
-3. Re-say it naturally in ${languageName} as spoken speech — not written text.
+    // Fallback to static prompt if DB template not found — use constants
+    const preserveWordsString =
+      preserveWords.length > 0
+        ? preserveWords.join(', ')
+        : 'technical terms, app names, proper nouns';
 
-════════════════════════════════════════════════════
-⚠️ CRITICAL RULE — NATIVE SCRIPT FIRST
-════════════════════════════════════════════════════
-- PRIMARY language MUST be ${languageName} native script
-- English ONLY for technical terms, app names, proper nouns, or untranslatable concepts
-- 80–90% native script, 10–20% English MAX
-- English should never dominate the sentence
-
-════════════════════════════════════════════════════
-🗣️ VOICE & STYLE
-════════════════════════════════════════════════════
-- Write like a REAL PERSON speaking to a counselor
-- Sound human, vulnerable, imperfect
-- NEVER use textbook, academic, or diagnostic language
-- Incomplete sentences are OK
-- Hesitations are OK, but use sparingly (max 1–2)
-
-❌ NEVER USE:
-- "कृपया", "अतः", "तथा"
-- "मैं अनुभव कर रहा हूँ", "मुझे सहायता की आवश्यकता है"
-- Polished or formal sentence structures
-
-${toneGuidance}
-
-════════════════════════════════════════════════════
-🧾 OUTPUT & SAFETY RULES
-════════════════════════════════════════════════════
-1. Preserve ALL HTML tags exactly
-2. Do NOT translate text inside <span class="notranslate">...</span>
-3. Keep placeholders unchanged (<field_name>, <user_name>)
-4. Do NOT add/remove JSON keys or array items
-5. Empty strings must remain empty
-6. If unsure, simplify — NEVER formalize
-7. Return ONLY valid JSON:
-   {"translations": ["...", "..."]}
-
-════════════════════════════════════════════════════
-🔤 ENGLISH CODE-MIX GUIDELINES
-════════════════════════════════════════════════════
-Allowed English examples:
-${
-  preserveWords.length > 0
-    ? preserveWords.join(', ')
-    : 'technical terms, app names, proper nouns'
-}
-
-════════════════════════════════════════════════════
-🧠 FINAL CHECK BEFORE RESPONDING
-════════════════════════════════════════════════════
-Would this sound NORMAL if spoken out loud by a real person?
-If not — rewrite.
-
-Remember:
-Native script first.
-Spoken, not written.
-Human, not formal.
-`;
+    return this.renderTemplate(
+      DEFAULT_OPENAI_TRANSLATION_SYSTEM_PROMPT_TEMPLATE,
+      {
+        languageName,
+        fullContext,
+        toneGuidance,
+        preserveWords: preserveWordsString,
+      },
+    );
   }
 
   /* ------------------------------------------------------------------
    * Build user prompt for JSON speech re-expression
    * ------------------------------------------------------------------ */
-  private buildUserPrompt(
+  private async buildUserPrompt(
     sourceObject: any,
     targetLanguageCode: string,
-  ): string {
+    overrideTemplate?: string,
+  ): Promise<string> {
     const normalizedCode = this.resolveBaseLanguageCode(targetLanguageCode);
     const languageName =
       LANGUAGE_NAME_MAP[normalizedCode] ?? targetLanguageCode;
 
-    return `
-Rewrite the following JSON so it sounds like NATURAL, CASUAL spoken ${languageName}.
+    const dbTemplate =
+      overrideTemplate ??
+      (await this.promptSharedService.getPromptByCode(this.USER_PROMPT_CODE));
 
-IMPORTANT:
-- Keep the JSON structure exactly the same
-- Only rewrite string VALUES, not keys
-- Do NOT translate word-for-word
-- Rewrite how a native speaker would SAY this out loud
-- Keep meaning, not sentence structure
-- Return ONLY valid JSON
-- Do NOT add markdown or extra text
+    const inputJson = JSON.stringify(sourceObject, null, 2);
 
-Input JSON:
-${JSON.stringify(sourceObject, null, 2)}
-`;
+    if (dbTemplate) {
+      const filled = this.renderTemplate(dbTemplate, {
+        languageName,
+        inputJson,
+      });
+      return filled;
+    }
+
+    // Fallback to static prompt if DB template not found — use constants
+    return this.renderTemplate(
+      DEFAULT_OPENAI_TRANSLATION_USER_PROMPT_TEMPLATE,
+      {
+        languageName,
+        inputJson,
+      },
+    );
   }
 
   /* ------------------------------------------------------------------
@@ -314,14 +309,28 @@ ${JSON.stringify(sourceObject, null, 2)}
     const translatedResult: Record<string, any> = {};
 
     // Loop through each language and translate
+    // Fetch templates once to avoid repeated DB calls
+    const systemTemplate = await this.promptSharedService.getPromptByCode(
+      this.SYSTEM_PROMPT_CODE,
+    );
+
+    const userTemplate = await this.promptSharedService.getPromptByCode(
+      this.USER_PROMPT_CODE,
+    );
+
     for (const language of targetLanguages) {
       try {
-        const systemPrompt = this.buildSystemPrompt(
+        const systemPrompt = await this.buildSystemPrompt(
           language,
           translationConsiderableData,
+          systemTemplate ?? undefined,
         );
 
-        const userPrompt = this.buildUserPrompt(sourceObject, language);
+        const userPrompt = await this.buildUserPrompt(
+          sourceObject,
+          language,
+          userTemplate ?? undefined,
+        );
 
         const translations = await this.fetchTranslations(
           [JSON.stringify(sourceObject)],
