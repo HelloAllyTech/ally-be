@@ -31,6 +31,11 @@ import { UserRole } from 'src/common/constants/user.constants';
 import { AuthProvider, GoogleTokenPayload } from '../type/auth.types';
 import { GoogleSignInDto } from '../dto/google-token.dto';
 
+import { AuthAttempt } from '../entity/auth-attempt.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import * as crypto from 'crypto';
+import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
+
 @Injectable()
 export class AuthService {
   private readonly logger = LoggerService.getInstance(AuthService.name);
@@ -46,9 +51,9 @@ export class AuthService {
     private eventEmitter: EventEmitter2,
     private readonly cache: RedisService,
     private readonly groupService: GroupService,
+    @InjectRepository(AuthAttempt)
+    private authAttemptRepository: Repository<AuthAttempt>,
   ) {
-    this.userRepository = this.dataSource.getRepository(User);
-    this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
     this.OTP_TTL = +this.configService.otp.ttl;
@@ -258,12 +263,29 @@ export class AuthService {
       return { success: true, expiresIn: this.OTP_TTL };
     }
 
+    // Delete existing unused attempts
+    await this.authAttemptRepository.delete({ email, used: false });
+
     const otp = AuthUtil.generateOtp();
+    const magicToken = crypto.randomBytes(32).toString('hex');
+    const otpHash = this.hashSecret(otp);
+    const magicTokenHash = this.hashSecret(magicToken);
+    const expiresAt = new Date(Date.now() + this.OTP_TTL * 1000);
+
+    const attempt = this.authAttemptRepository.create({
+      email,
+      otpHash,
+      magicTokenHash,
+      expiresAt,
+      used: false,
+    });
+    await this.authAttemptRepository.save(attempt);
     await this.cache.set(this.getOtpKey(email), otp, this.OTP_TTL);
 
     this.eventEmitter.emit('otp.generated', {
       email,
       otp,
+      magicLinkToken: magicToken,
     });
     return {
       success: true,
@@ -293,13 +315,45 @@ export class AuthService {
     if (!email) {
       throw new BadRequestException('Email is required');
     }
+
+    const attempt = await this.authAttemptRepository.findOne({
+      where: { email, used: false },
+    });
+
+    if (!attempt) {
+      this.logVerificationError(
+        email,
+        'Invalid or expired OTP',
+        AuthProvider.EMAIL_OTP,
+      );
+      throw new UnauthorizedException('Invalid or expired OTP');
+    }
+
+    if (attempt.expiresAt < new Date()) {
+      this.logVerificationError(email, 'Expired OTP', AuthProvider.EMAIL_OTP);
+      throw new UnauthorizedException('Expired OTP');
+    }
+
     const cachedOtp = await this.cache.get(this.getOtpKey(email));
-    if (cachedOtp !== otp) {
+
+    if (cachedOtp && cachedOtp !== otp) {
       this.logger.error(`Invalid OTP for email ${email}`);
       this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
       throw new UnauthorizedException('Invalid OTP');
     }
-    await this.cache.del(this.getOtpKey(email));
+
+    if (this.hashSecret(otp) !== attempt.otpHash) {
+      this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
+      throw new UnauthorizedException('Invalid OTP');
+    }
+
+    attempt.used = true;
+    attempt.usedAt = new Date();
+    await this.authAttemptRepository.save(attempt);
+
+    if (cachedOtp) {
+      await this.cache.del(this.getOtpKey(email));
+    }
 
     return await this.validateUserAndIssueTokens(
       allowedRoles,
@@ -433,6 +487,59 @@ export class AuthService {
       user: {
         id: user!.id,
         username: user!.username,
+      },
+      ...tokens,
+      tokenType: 'bearer',
+    };
+  }
+
+  private hashSecret(secret: string): string {
+    return crypto.createHash('sha256').update(secret).digest('hex');
+  }
+
+  async verifyMagicLink(
+    dto: MagicLinkVerifyDto,
+  ): Promise<AuthenticationResponseDto> {
+    const { token } = dto;
+    const hash = this.hashSecret(token);
+    const attempt = await this.authAttemptRepository.findOne({
+      where: { magicTokenHash: hash, used: false },
+    });
+
+    if (!attempt || attempt.expiresAt < new Date()) {
+      throw new UnauthorizedException('Invalid or expired magic link');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { email: attempt.email },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User no longer exists');
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      throw new UserSuspendedException();
+    }
+
+    attempt.used = true;
+    attempt.usedAt = new Date();
+    await this.authAttemptRepository.save(attempt);
+
+    const tokens = await this.generateTokens(user);
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.USER_LOGIN_SUCCESS,
+      tenantId: user.tenantId,
+      userId: user.id,
+      details: {
+        email: user.email,
+        medium: 'magic-link',
+      },
+    });
+    return {
+      user: {
+        id: user.id,
+        username: user.username,
       },
       ...tokens,
       tokenType: 'bearer',
