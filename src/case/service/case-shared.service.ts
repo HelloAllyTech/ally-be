@@ -215,7 +215,7 @@ export class CaseSharedService {
 
   async getPreviousCaseMemory(
     caseSessionItemId: string,
-  ): Promise<Record<string, any> | null> {
+  ): Promise<string | null> {
     // Get the current case session item
     const currentCaseSessionItem = await this.caseSessionItemRepository.findOne(
       {

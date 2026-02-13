@@ -275,14 +275,14 @@ export class AiService {
   async getScenarioSessionSummary(
     messages: MessageRequest[],
     needMemory: boolean,
-    previousMemory?: Record<string, any> | null,
+    previousMemory?: string | null,
   ) {
     try {
       const response = await this.makeRequest<
         any,
         {
           chat_history: MessageRequest[];
-          previous_memory?: Record<string, any> | null;
+          previous_memory?: string | null;
           need_memory: boolean;
         }
       >(
