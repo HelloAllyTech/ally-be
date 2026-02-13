@@ -277,7 +277,7 @@ export class CaseSharedService {
     }
 
     const cumulativeMemory =
-      scenarioSessionDetails.summary?.feedback?.cumulative_memory ?? null;
+      scenarioSessionDetails.summary?.feedback?.cumulativeMemory ?? null;
 
     if (!cumulativeMemory) {
       this.logger.warn(
@@ -285,5 +285,13 @@ export class CaseSharedService {
       );
     }
     return cumulativeMemory;
+  }
+
+  async getSessionGlimpseByScenarioSessionId(
+    scenarioSessionId: string,
+  ): Promise<string | null> {
+    return this.scenarioSharedService.getSessionGlimpseByScenarioSessionId(
+      scenarioSessionId,
+    );
   }
 }

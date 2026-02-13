@@ -77,6 +77,7 @@ import { getScenarioStateConfigByDifficultyLevel } from '../util/scenario-state.
 import { ScenarioStateInstruction } from '../type/scenario-state.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
+import { CommonUtil } from 'src/common/util/common.util';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -850,12 +851,12 @@ export class ScenarioSessionService {
             end_time: message.endSeconds,
           }));
 
-          const aiSummary = await this.aiService.getScenarioSessionSummary(
+          let aiSummary = await this.aiService.getScenarioSessionSummary(
             messages,
             needMemory,
             previousMemory,
           );
-
+          aiSummary = CommonUtil.convertToCamelCase(aiSummary);
           summary = { feedback: aiSummary };
         }
 
