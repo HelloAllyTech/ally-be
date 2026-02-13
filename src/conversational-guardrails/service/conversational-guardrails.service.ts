@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 
 import { ConversationalGuardrailsRepository } from '../repository/conversational-guardrails.repository';
 import { ConversationalGuardrailsTranslationsRepository } from '../repository/conversational-guardrails-translations.repository';
@@ -45,12 +45,6 @@ export class ConversationalGuardrailsService {
     return saved;
   }
 
-  async createGuardrails(createDtos: CreateConversationalGuardrailDto[]) {
-    const guardrails = this.guardrailsRepository.create(createDtos);
-    const saved = await this.guardrailsRepository.save(guardrails);
-    await this.translationService.createUpdateGuardrailTranslations(saved);
-    return saved;
-  }
 
   async updateGuardrail(id: string, updateDto: UpdateConversationalGuardrailDto) {
     const guardrail = await this.getGuardrailById(id);
@@ -67,11 +61,6 @@ export class ConversationalGuardrailsService {
     return { success: true };
   }
 
-  async deleteGuardrails(ids: string[]) {
-    await this.translationsRepository.delete({ guardrailId: In(ids) });
-    await this.guardrailsRepository.delete(ids);
-    return { success: true };
-  }
 
   async countGuardrails(search?: string) {
     return this.guardrailsRepository.countGuardrails(search);

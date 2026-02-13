@@ -82,15 +82,6 @@ export class ConversationalGuardrailsController {
     return this.guardrailsService.createGuardrail(createDto);
   }
 
-  @Post('bulk')
-  @AuthPermissions([PERMISSIONS.EDIT_GUARDRAILS])
-  @ApiOperation({ summary: 'Create multiple guardrails' })
-  async createGuardrails(
-    @Body() createDtos: CreateConversationalGuardrailDto[],
-  ) {
-    return this.guardrailsService.createGuardrails(createDtos);
-  }
-
   @Put(':id')
   @AuthPermissions([PERMISSIONS.EDIT_GUARDRAILS])
   @ApiOperation({ summary: 'Update a guardrail' })
@@ -106,12 +97,5 @@ export class ConversationalGuardrailsController {
   @ApiOperation({ summary: 'Delete a guardrail' })
   async deleteGuardrail(@Param('id') id: string) {
     return this.guardrailsService.deleteGuardrail(id);
-  }
-
-  @Delete()
-  @AuthPermissions([PERMISSIONS.EDIT_GUARDRAILS])
-  @ApiOperation({ summary: 'Delete multiple guardrails' })
-  async deleteGuardrails(@Body() body: { ids: string[] }) {
-    return this.guardrailsService.deleteGuardrails(body.ids);
   }
 }
