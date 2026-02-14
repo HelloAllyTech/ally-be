@@ -236,9 +236,7 @@ export class ConversationalGuardrailsTranslationService {
         languageId,
       );
 
-    const translationMap = new Map(
-      translations.map((t) => [t.guardrailId, t]),
-    );
+    const translationMap = new Map(translations.map((t) => [t.guardrailId, t]));
 
     return guardrails.map((guardrail) => {
       const translation = translationMap.get(guardrail.id);

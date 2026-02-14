@@ -39,6 +39,7 @@ import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.r
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ReviewSharedService } from 'src/review/service/review-shared.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -75,6 +76,7 @@ describe('ScenarioSessionService', () => {
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let mockConfigService: any;
   let scenarioVoicesRepository: jest.Mocked<ScenarioVoicesRepository>;
+  let conversationalGuardrailsService: jest.Mocked<ConversationalGuardrailsService>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -257,6 +259,9 @@ describe('ScenarioSessionService', () => {
     const mockEventEmitter = {
       emit: jest.fn(),
     };
+    const mockConversationalGuardrailsService = {
+      getRandomGuardrailsForSession: jest.fn().mockResolvedValue([]),
+    };
 
     mockConfigService = {
       simulationCredits: {
@@ -346,6 +351,10 @@ describe('ScenarioSessionService', () => {
           provide: EventEmitter2,
           useValue: mockEventEmitter,
         },
+        {
+          provide: ConversationalGuardrailsService,
+          useValue: mockConversationalGuardrailsService,
+        },
       ],
     }).compile();
 
@@ -371,6 +380,9 @@ describe('ScenarioSessionService', () => {
     sessionEventTranslationService = module.get(SessionEventTranslationService);
     scenarioVoicesRepository = module.get(ScenarioVoicesRepository);
     reviewSharedService = module.get(ReviewSharedService);
+    conversationalGuardrailsService = module.get(
+      ConversationalGuardrailsService,
+    );
   });
 
   afterEach(() => {

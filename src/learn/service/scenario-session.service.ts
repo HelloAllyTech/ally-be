@@ -381,23 +381,6 @@ export class ScenarioSessionService {
       scenario.id,
     );
 
-    // Apply guardrails if opted in
-    if (metadata?.optGuardrails) {
-      const languageId = metadata?.languageId ?? metadata?.defaultLanguageId;
-      const guardrails = await this.conversationalGuardrailsService.getRandomGuardrailsForSession(
-        languageId,
-      );
-      const guardrailsPrompt = this.conversationalGuardrailsService.formatGuardrailsForPrompt(
-        guardrails,
-      );
-      if (guardrailsPrompt) {
-        // Append to roleInstruction or add as separate field if supported.
-        // Appending to roleInstruction ensures it is part of the system prompt.
-        promptData.roleInstruction = `${promptData.roleInstruction || ''}\n\n${guardrailsPrompt}`;
-        promptData.guardrails = guardrailsPrompt; // Also keep as separate field just in case
-      }
-    }
-
     const languageCode = metadata?.language as LanguageCode;
 
     const scenarioData = {

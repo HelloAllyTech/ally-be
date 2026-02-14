@@ -84,7 +84,9 @@ describe('ConversationalGuardrailsTranslationService', () => {
     service = module.get<ConversationalGuardrailsTranslationService>(
       ConversationalGuardrailsTranslationService,
     );
-    translationsRepository = module.get(ConversationalGuardrailsTranslationsRepository);
+    translationsRepository = module.get(
+      ConversationalGuardrailsTranslationsRepository,
+    );
     googleTranslationService = module.get(GoogleTranslationsService);
     sharedLanguageService = module.get(SharedLanguageService);
     scenarioSharedService = module.get(ScenarioSharedService);
@@ -109,17 +111,26 @@ describe('ConversationalGuardrailsTranslationService', () => {
 
   describe('createUpdateGuardrailTranslations', () => {
     it('should skip when no valid language codes exist', async () => {
-      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue([]);
+      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [],
+      );
 
       await service.createUpdateGuardrailTranslations([mockGuardrail]);
 
-      expect(googleTranslationService.translateObjectToLanguages).not.toHaveBeenCalled();
+      expect(
+        googleTranslationService.translateObjectToLanguages,
+      ).not.toHaveBeenCalled();
       expect(translationsRepository.save).not.toHaveBeenCalled();
     });
 
     it('should translate and persist guardrail translations for valid languages', async () => {
-      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue([2, 3]);
-      sharedLanguageService.getValidLanguages.mockResolvedValue({ languages: mockLanguages as any, languagesMap: {} as any });
+      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [2, 3],
+      );
+      sharedLanguageService.getValidLanguages.mockResolvedValue({
+        languages: mockLanguages as any,
+        languagesMap: {} as any,
+      });
       googleTranslationService.translateObjectToLanguages.mockResolvedValue({
         es: {
           helperDialogue: 'comportamiento grosero',
@@ -135,9 +146,15 @@ describe('ConversationalGuardrailsTranslationService', () => {
 
       await service.createUpdateGuardrailTranslations([mockGuardrail]);
 
-      expect(scenarioSharedService.getUniqueLanguagesFromScenarioTranslations).toHaveBeenCalled();
-      expect(sharedLanguageService.getValidLanguages).toHaveBeenCalledWith([2, 3]);
-      expect(googleTranslationService.translateObjectToLanguages).toHaveBeenCalledWith(
+      expect(
+        scenarioSharedService.getUniqueLanguagesFromScenarioTranslations,
+      ).toHaveBeenCalled();
+      expect(sharedLanguageService.getValidLanguages).toHaveBeenCalledWith([
+        2, 3,
+      ]);
+      expect(
+        googleTranslationService.translateObjectToLanguages,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           helperDialogue: 'rude behavior',
           actorDialogue: 'Please be respectful',
@@ -148,7 +165,9 @@ describe('ConversationalGuardrailsTranslationService', () => {
     });
 
     it('should update existing translations instead of creating new ones', async () => {
-      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue([2]);
+      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [2],
+      );
       sharedLanguageService.getValidLanguages.mockResolvedValue({
         languages: [mockLanguages[0]] as any,
         languagesMap: {} as any,
@@ -159,7 +178,9 @@ describe('ConversationalGuardrailsTranslationService', () => {
           actorDialogue: 'Por favor sea respetuoso actualizado',
         },
       });
-      translationsRepository.getTranslationsByGuardrailId.mockResolvedValue([mockTranslation]);
+      translationsRepository.getTranslationsByGuardrailId.mockResolvedValue([
+        mockTranslation,
+      ]);
 
       await service.createUpdateGuardrailTranslations([mockGuardrail]);
 
@@ -178,7 +199,9 @@ describe('ConversationalGuardrailsTranslationService', () => {
         helperDialogue: '',
         actorDialogue: '',
       };
-      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue([2]);
+      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [2],
+      );
       sharedLanguageService.getValidLanguages.mockResolvedValue({
         languages: [mockLanguages[0]] as any,
         languagesMap: {} as any,
@@ -186,11 +209,15 @@ describe('ConversationalGuardrailsTranslationService', () => {
 
       await service.createUpdateGuardrailTranslations([emptyGuardrail]);
 
-      expect(googleTranslationService.translateObjectToLanguages).not.toHaveBeenCalled();
+      expect(
+        googleTranslationService.translateObjectToLanguages,
+      ).not.toHaveBeenCalled();
     });
 
     it('should handle translation API errors gracefully', async () => {
-      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue([2]);
+      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [2],
+      );
       sharedLanguageService.getValidLanguages.mockResolvedValue({
         languages: [mockLanguages[0]] as any,
         languagesMap: {} as any,
@@ -209,29 +236,41 @@ describe('ConversationalGuardrailsTranslationService', () => {
 
   describe('getGuardrailsWithTranslations', () => {
     it('should return guardrails without translations when languageId is not provided', async () => {
-      const result = await service.getGuardrailsWithTranslations([mockGuardrail], 0);
+      const result = await service.getGuardrailsWithTranslations(
+        [mockGuardrail],
+        0,
+      );
 
       expect(result).toEqual([mockGuardrail]);
-      expect(translationsRepository.getTranslationsForGuardrails).not.toHaveBeenCalled();
+      expect(
+        translationsRepository.getTranslationsForGuardrails,
+      ).not.toHaveBeenCalled();
     });
 
     it('should return guardrails with translated content when languageId is provided', async () => {
-      translationsRepository.getTranslationsForGuardrails.mockResolvedValue([mockTranslation]);
+      translationsRepository.getTranslationsForGuardrails.mockResolvedValue([
+        mockTranslation,
+      ]);
 
-      const result = await service.getGuardrailsWithTranslations([mockGuardrail], 2);
+      const result = await service.getGuardrailsWithTranslations(
+        [mockGuardrail],
+        2,
+      );
 
       expect(result[0].helperDialogue).toBe('comportamiento grosero');
       expect(result[0].actorDialogue).toBe('Por favor sea respetuoso');
-      expect(translationsRepository.getTranslationsForGuardrails).toHaveBeenCalledWith(
-        ['guardrail-uuid-1'],
-        2,
-      );
+      expect(
+        translationsRepository.getTranslationsForGuardrails,
+      ).toHaveBeenCalledWith(['guardrail-uuid-1'], 2);
     });
 
     it('should return original guardrail when no translation exists for the language', async () => {
       translationsRepository.getTranslationsForGuardrails.mockResolvedValue([]);
 
-      const result = await service.getGuardrailsWithTranslations([mockGuardrail], 99);
+      const result = await service.getGuardrailsWithTranslations(
+        [mockGuardrail],
+        99,
+      );
 
       expect(result[0].helperDialogue).toBe('rude behavior');
       expect(result[0].actorDialogue).toBe('Please be respectful');
@@ -241,7 +280,9 @@ describe('ConversationalGuardrailsTranslationService', () => {
       const result = await service.getGuardrailsWithTranslations([], 2);
 
       expect(result).toEqual([]);
-      expect(translationsRepository.getTranslationsForGuardrails).not.toHaveBeenCalled();
+      expect(
+        translationsRepository.getTranslationsForGuardrails,
+      ).not.toHaveBeenCalled();
     });
   });
 

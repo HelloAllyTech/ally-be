@@ -3,7 +3,6 @@ import {
   Get,
   Post,
   Put,
-  Delete,
   Body,
   Param,
   Query,
@@ -56,23 +55,8 @@ export class ConversationalGuardrailsController {
       sortBy,
       order,
     });
-    const total = await this.guardrailsService.countGuardrails(search);
-    return { data, total };
-  }
 
-  @Get('random')
-  @AuthPermissions([PERMISSIONS.VIEW_GUARDRAILS])
-  @ApiOperation({ summary: 'Get random guardrails for a session (max 25)' })
-  @ApiQuery({ name: 'languageId', required: false })
-  async getRandomGuardrails(@Query('languageId') languageId?: number) {
-    return this.guardrailsService.getRandomGuardrailsForSession(languageId);
-  }
-
-  @Get(':id')
-  @AuthPermissions([PERMISSIONS.VIEW_GUARDRAILS])
-  @ApiOperation({ summary: 'Get guardrail by ID' })
-  async getGuardrailById(@Param('id') id: string) {
-    return this.guardrailsService.getGuardrailById(id);
+    return data;
   }
 
   @Post()
@@ -90,12 +74,5 @@ export class ConversationalGuardrailsController {
     @Body() updateDto: UpdateConversationalGuardrailDto,
   ) {
     return this.guardrailsService.updateGuardrail(id, updateDto);
-  }
-
-  @Delete(':id')
-  @AuthPermissions([PERMISSIONS.EDIT_GUARDRAILS])
-  @ApiOperation({ summary: 'Delete a guardrail' })
-  async deleteGuardrail(@Param('id') id: string) {
-    return this.guardrailsService.deleteGuardrail(id);
   }
 }

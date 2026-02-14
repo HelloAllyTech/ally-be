@@ -1,6 +1,4 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 
 import { ConversationalGuardrailsRepository } from '../repository/conversational-guardrails.repository';
 import { ConversationalGuardrailsTranslationsRepository } from '../repository/conversational-guardrails-translations.repository';
@@ -12,9 +10,7 @@ import {
   UpdateConversationalGuardrailTranslationDto,
 } from '../dto/conversational-guardrails.dto';
 import { Pagination } from 'src/common/type/common.type';
-import { ConversationalGuardrails } from '../entity/conversational-guardrails.entity';
-
-const MAX_GUARDRAILS_PER_SESSION = 25;
+import { MAX_GUARDRAILS_PER_SESSION } from '../constants/guardrails.constants';
 
 @Injectable()
 export class ConversationalGuardrailsService {
@@ -45,8 +41,10 @@ export class ConversationalGuardrailsService {
     return saved;
   }
 
-
-  async updateGuardrail(id: string, updateDto: UpdateConversationalGuardrailDto) {
+  async updateGuardrail(
+    id: string,
+    updateDto: UpdateConversationalGuardrailDto,
+  ) {
     const guardrail = await this.getGuardrailById(id);
     Object.assign(guardrail, updateDto);
     const saved = await this.guardrailsRepository.save(guardrail);
@@ -54,22 +52,13 @@ export class ConversationalGuardrailsService {
     return saved;
   }
 
-  async deleteGuardrail(id: string) {
-    const guardrail = await this.getGuardrailById(id);
-    await this.translationsRepository.delete({ guardrailId: id });
-    await this.guardrailsRepository.remove(guardrail);
-    return { success: true };
-  }
-
-
-  async countGuardrails(search?: string) {
-    return this.guardrailsRepository.countGuardrails(search);
-  }
-
   async getRandomGuardrailsForSession(languageId?: number) {
-    const guardrails = await this.guardrailsRepository.getRandomGuardrails(
-      MAX_GUARDRAILS_PER_SESSION,
+    const guardrails = await this.guardrailsRepository.getGuardrails(
+      undefined,
+      { limit: MAX_GUARDRAILS_PER_SESSION },
     );
+
+    let guardrailsResponse = [];
 
     if (languageId) {
       const guardrailIds = guardrails.map((g) => g.id);
@@ -79,27 +68,20 @@ export class ConversationalGuardrailsService {
           languageId,
         );
 
-      const translationMap = new Map(
-        translations.map((t) => [t.guardrailId, t]),
-      );
-
-      return guardrails.map((guardrail) => {
-        const translation = translationMap.get(guardrail.id);
-        if (translation) {
-          return {
-            ...guardrail,
-            helperDialogue: translation.helperDialogue,
-            actorDialogue: translation.actorDialogue,
-          };
-        }
-        return guardrail;
-      });
+      guardrailsResponse = translations;
+    } else {
+      guardrailsResponse = guardrails.map((g) => ({
+        helperDialogue: g.helperDialogue,
+        actorDialogue: g.actorDialogue,
+      }));
     }
 
-    return guardrails;
+    return this.formatGuardrailsForPrompt(guardrailsResponse);
   }
 
-  formatGuardrailsForPrompt(guardrails: ConversationalGuardrails[]): string {
+  formatGuardrailsForPrompt(
+    guardrails: { helperDialogue: string; actorDialogue: string }[],
+  ): string {
     if (guardrails.length === 0) {
       return '';
     }
@@ -112,7 +94,9 @@ export class ConversationalGuardrailsService {
     return `Consider the following guardrails:\n${guardrailLines.join('\n')}`;
   }
 
-  async createTranslation(createDto: CreateConversationalGuardrailTranslationDto) {
+  async createTranslation(
+    createDto: CreateConversationalGuardrailTranslationDto,
+  ) {
     await this.getGuardrailById(createDto.guardrailId);
     const translation = this.translationsRepository.create(createDto);
     return this.translationsRepository.save(translation);
@@ -132,18 +116,9 @@ export class ConversationalGuardrailsService {
     return this.translationsRepository.save(translation);
   }
 
-  async deleteTranslation(id: string) {
-    const translation = await this.translationsRepository.findOne({
-      where: { id },
-    });
-    if (!translation) {
-      throw new NotFoundException(`Translation with id ${id} not found`);
-    }
-    await this.translationsRepository.remove(translation);
-    return { success: true };
-  }
-
   async getTranslationsByGuardrailId(guardrailId: string) {
-    return this.translationsRepository.getTranslationsByGuardrailId(guardrailId);
+    return this.translationsRepository.getTranslationsByGuardrailId(
+      guardrailId,
+    );
   }
 }

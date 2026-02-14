@@ -10,7 +10,6 @@ describe('ConversationalGuardrailsService', () => {
   let service: ConversationalGuardrailsService;
   let guardrailsRepository: jest.Mocked<ConversationalGuardrailsRepository>;
   let translationsRepository: jest.Mocked<ConversationalGuardrailsTranslationsRepository>;
-  let translationService: jest.Mocked<ConversationalGuardrailsTranslationService>;
 
   const mockGuardrail: ConversationalGuardrails = {
     id: 'guardrail-uuid-1',
@@ -98,7 +97,6 @@ describe('ConversationalGuardrailsService', () => {
     translationsRepository = module.get(
       ConversationalGuardrailsTranslationsRepository,
     );
-    translationService = module.get(ConversationalGuardrailsTranslationService);
   });
 
   afterEach(() => {
@@ -127,10 +125,13 @@ describe('ConversationalGuardrailsService', () => {
       });
 
       expect(result).toEqual(mockResult);
-      expect(guardrailsRepository.getGuardrails).toHaveBeenCalledWith('search', {
-        limit: 10,
-        offset: 0,
-      });
+      expect(guardrailsRepository.getGuardrails).toHaveBeenCalledWith(
+        'search',
+        {
+          limit: 10,
+          offset: 0,
+        },
+      );
     });
 
     it('should return empty array when no guardrails exist', async () => {
@@ -154,7 +155,9 @@ describe('ConversationalGuardrailsService', () => {
     it('should throw NotFoundException when guardrail not found', async () => {
       guardrailsRepository.findOne.mockResolvedValue(null);
 
-      await expect(service.getGuardrailById('non-existent-id')).rejects.toThrow();
+      await expect(
+        service.getGuardrailById('non-existent-id'),
+      ).rejects.toThrow();
     });
   });
 
@@ -195,62 +198,13 @@ describe('ConversationalGuardrailsService', () => {
         ...updateDto,
       });
 
-      const result = await service.updateGuardrail('guardrail-uuid-1', updateDto);
+      const result = await service.updateGuardrail(
+        'guardrail-uuid-1',
+        updateDto,
+      );
 
       expect(result.helperDialogue).toBe('Updated helper');
       expect(guardrailsRepository.save).toHaveBeenCalled();
-    });
-  });
-
-  describe('deleteGuardrail', () => {
-    it('should delete a guardrail', async () => {
-      guardrailsRepository.findOne.mockResolvedValue(mockGuardrail);
-      guardrailsRepository.remove.mockResolvedValue(mockGuardrail);
-
-      const result = await service.deleteGuardrail('guardrail-uuid-1');
-
-      expect(result).toEqual({ success: true });
-      expect(guardrailsRepository.remove).toHaveBeenCalledWith(mockGuardrail);
-    });
-  });
-
-  describe('getRandomGuardrailsForSession', () => {
-    it('should return random active guardrails up to 25', async () => {
-      const activeGuardrails = Array(30)
-        .fill(null)
-        .map((_, i) => ({
-          ...mockGuardrail,
-          id: `guardrail-${i}`,
-        }));
-      guardrailsRepository.getRandomGuardrails.mockResolvedValue(
-        activeGuardrails.slice(0, 25),
-      );
-
-      const result = await service.getRandomGuardrailsForSession();
-
-      expect(result.length).toBeLessThanOrEqual(25);
-      expect(guardrailsRepository.getRandomGuardrails).toHaveBeenCalledWith(25);
-    });
-
-    it('should return translated guardrails when languageId is provided', async () => {
-      // Mock guardrail
-      const guardrail = { ...mockGuardrail };
-      guardrailsRepository.getRandomGuardrails.mockResolvedValue([guardrail]);
-      
-      // Mock translation
-      const translation = { 
-        ...mockTranslation, 
-        guardrailId: guardrail.id,
-        helperDialogue: 'grosero',
-        actorDialogue: 'Por favor sea respetuoso'
-      };
-      
-      translationsRepository.getTranslationsForGuardrails.mockResolvedValue([translation]);
-
-      const result = await service.getRandomGuardrailsForSession(2);
-
-      expect(result[0].helperDialogue).toBe('grosero');
-      expect(translationsRepository.getTranslationsForGuardrails).toHaveBeenCalled();
     });
   });
 
@@ -261,14 +215,13 @@ describe('ConversationalGuardrailsService', () => {
           mockTranslation,
         ]);
 
-        const result = await service.getTranslationsByGuardrailId(
-          'guardrail-uuid-1',
-        );
+        const result =
+          await service.getTranslationsByGuardrailId('guardrail-uuid-1');
 
         expect(result).toEqual([mockTranslation]);
-        expect(translationsRepository.getTranslationsByGuardrailId).toHaveBeenCalledWith(
-          'guardrail-uuid-1',
-        );
+        expect(
+          translationsRepository.getTranslationsByGuardrailId,
+        ).toHaveBeenCalledWith('guardrail-uuid-1');
       });
     });
 
@@ -280,10 +233,10 @@ describe('ConversationalGuardrailsService', () => {
           helperDialogue: 'grosero',
           actorDialogue: 'Por favor sea respetuoso',
         };
-        
+
         // Mock getGuardrailById check
         guardrailsRepository.findOne.mockResolvedValue(mockGuardrail);
-        
+
         translationsRepository.create.mockReturnValue(mockTranslation);
         translationsRepository.save.mockResolvedValue(mockTranslation);
 

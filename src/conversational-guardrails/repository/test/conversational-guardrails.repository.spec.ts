@@ -1,12 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, SelectQueryBuilder } from 'typeorm';
 import { ConversationalGuardrailsRepository } from '../conversational-guardrails.repository';
 import { ConversationalGuardrails } from '../../entity/conversational-guardrails.entity';
 
 describe('ConversationalGuardrailsRepository', () => {
   let repository: ConversationalGuardrailsRepository;
-  let mockQueryBuilder: jest.Mocked<SelectQueryBuilder<ConversationalGuardrails>>;
+  let mockQueryBuilder: jest.Mocked<
+    SelectQueryBuilder<ConversationalGuardrails>
+  >;
   let mockDataSource: any;
 
   const mockGuardrail: ConversationalGuardrails = {
@@ -65,9 +66,11 @@ describe('ConversationalGuardrailsRepository', () => {
     repository = module.get<ConversationalGuardrailsRepository>(
       ConversationalGuardrailsRepository,
     );
-    
+
     // Mock createQueryBuilder on the repository instance
-    jest.spyOn(repository, 'createQueryBuilder').mockReturnValue(mockQueryBuilder as any);
+    jest
+      .spyOn(repository, 'createQueryBuilder')
+      .mockReturnValue(mockQueryBuilder as any);
   });
 
   afterEach(() => {
@@ -105,51 +108,14 @@ describe('ConversationalGuardrailsRepository', () => {
     });
 
     it('should apply sorting', async () => {
-      await repository.getGuardrails(undefined, { sortBy: 'helperDialogue', order: 'DESC' });
+      await repository.getGuardrails(undefined, {
+        sortBy: 'helperDialogue',
+        order: 'DESC',
+      });
 
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('guardrail.helperDialogue', 'DESC');
-    });
-  });
-
-  describe('getActiveGuardrails', () => {
-    it('should return only active guardrails', async () => {
-      await repository.getActiveGuardrails();
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'guardrail.active = :active',
-        { active: true },
-      );
-      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
-    });
-  });
-
-  describe('getRandomGuardrails', () => {
-    it('should return random active guardrails', async () => {
-      await repository.getRandomGuardrails(25);
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'guardrail.active = :active',
-        { active: true },
-      );
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('RANDOM()');
-      expect(mockQueryBuilder.limit).toHaveBeenCalledWith(25);
-    });
-  });
-
-  describe('countGuardrails', () => {
-    it('should count total guardrails', async () => {
-      const count = await repository.countGuardrails();
-
-      expect(count).toBe(2);
-      expect(mockQueryBuilder.getCount).toHaveBeenCalled();
-    });
-
-    it('should count with search filter', async () => {
-      await repository.countGuardrails('rude');
-
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'guardrail.name ILIKE :search OR guardrail.helperDialogue ILIKE :search OR guardrail.actorDialogue ILIKE :search',
-        { search: '%rude%' },
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'guardrail.helperDialogue',
+        'DESC',
       );
     });
   });

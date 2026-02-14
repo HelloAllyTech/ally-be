@@ -10,11 +10,15 @@ export class ConversationalGuardrailsTranslationsRepository extends Repository<C
   );
 
   constructor(private dataSource: DataSource) {
-    super(ConversationalGuardrailsTranslations, dataSource.createEntityManager());
+    super(
+      ConversationalGuardrailsTranslations,
+      dataSource.createEntityManager(),
+    );
   }
 
   async getTranslationsByGuardrailId(guardrailId: string) {
     return this.createQueryBuilder('translation')
+      .select(['translation.helperDialogue', 'translation.actorDialogue'])
       .where('translation.guardrailId = :guardrailId', { guardrailId })
       .getMany();
   }
@@ -32,11 +36,15 @@ export class ConversationalGuardrailsTranslationsRepository extends Repository<C
       .getOne();
   }
 
-  async getTranslationsForGuardrails(guardrailIds: string[], languageId: number) {
+  async getTranslationsForGuardrails(
+    guardrailIds: string[],
+    languageId: number,
+  ) {
     if (guardrailIds.length === 0) {
       return [];
     }
     return this.createQueryBuilder('translation')
+      .select(['translation.helperDialogue', 'translation.actorDialogue'])
       .where('translation.guardrailId IN (:...guardrailIds)', { guardrailIds })
       .andWhere('translation.languageId = :languageId', { languageId })
       .getMany();

@@ -3,6 +3,7 @@ import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { ConversationalGuardrails } from '../entity/conversational-guardrails.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { LoggerService } from 'src/logger/logger.service';
+import { MAX_GUARDRAILS_PER_SESSION } from '../constants/guardrails.constants';
 
 export enum ConversationalGuardrailsSortBy {
   CREATED_AT = 'createdAt',
@@ -23,14 +24,19 @@ export class ConversationalGuardrailsRepository extends Repository<Conversationa
 
   async getGuardrails(search?: string, options?: Pagination) {
     const query = this.createQueryBuilder('guardrail');
-    this.logger.info(`Getting guardrails with search: ${search}`);
 
     if (search) {
       const searchTerm = `%${search.trim()}%`;
+      this.logger.info(`Getting guardrails with search: ${searchTerm}`);
       query.where(
         'guardrail.name ILIKE :search OR guardrail.helperDialogue ILIKE :search OR guardrail.actorDialogue ILIKE :search',
         { search: searchTerm },
       );
+    }
+
+    if (options && options.limit == MAX_GUARDRAILS_PER_SESSION) {
+      query.where('guardrail.active = :active', { active: true });
+      query.orderBy('RANDOM()');
     }
 
     if (options) {
@@ -39,34 +45,6 @@ export class ConversationalGuardrailsRepository extends Repository<Conversationa
     }
 
     return query.getMany();
-  }
-
-  async getActiveGuardrails() {
-    return this.createQueryBuilder('guardrail')
-      .where('guardrail.active = :active', { active: true })
-      .getMany();
-  }
-
-  async getRandomGuardrails(limit: number = 25) {
-    return this.createQueryBuilder('guardrail')
-      .where('guardrail.active = :active', { active: true })
-      .orderBy('RANDOM()')
-      .limit(limit)
-      .getMany();
-  }
-
-  async countGuardrails(search?: string) {
-    const query = this.createQueryBuilder('guardrail');
-
-    if (search) {
-      const searchTerm = `%${search.trim()}%`;
-      query.where(
-        'guardrail.name ILIKE :search OR guardrail.helperDialogue ILIKE :search OR guardrail.actorDialogue ILIKE :search',
-        { search: searchTerm },
-      );
-    }
-
-    return query.getCount();
   }
 
   private applySorting(
