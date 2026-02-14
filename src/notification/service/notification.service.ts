@@ -18,8 +18,8 @@ export class NotificationService {
     this.slackService.sendMessage(slackMessage, channel);
   }
 
-  async sendEmailOTP(to: string, otp: string, magicLinkToken?: string) {
-    await this.emailService.sendEmailOTP({ to, otp, magicLinkToken });
+  async sendEmailOTP(to: string, otp: string) {
+    await this.emailService.sendEmailOTP({ to, otp });
   }
 
   async sendEmailSummaryNotification({
