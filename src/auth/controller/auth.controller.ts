@@ -26,8 +26,6 @@ import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { GoogleSignInDto } from '../dto/google-token.dto';
-import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
-import { Query } from '@nestjs/common';
 
 @Controller({
   path: 'auth',
@@ -118,10 +116,5 @@ export class AuthController {
       payload,
       googleSignInDto.allowedRoles,
     );
-  }
-
-  @Get('magic/verify')
-  async verifyMagicLink(@Query() dto: MagicLinkVerifyDto) {
-    return this.authService.verifyMagicLink(dto);
   }
 }

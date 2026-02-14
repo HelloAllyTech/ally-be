@@ -14,11 +14,7 @@ export class EmailService {
     private readonly sesService: SESService,
   ) {}
 
-  async sendEmailOTP(params: {
-    to: string;
-    otp: string;
-    magicLinkToken?: string;
-  }): Promise<boolean> {
+  async sendEmailOTP(params: { to: string; otp: string }): Promise<boolean> {
     if (this.config.isDevelopment) {
       // TODO: Remove this once email otp is verified in dev
       this.eventEmitter.emit('exception', {
@@ -32,15 +28,10 @@ export class EmailService {
     }
     const minutes = Math.floor(this.config.otp.ttl / 60);
 
-    const magicLink = params.magicLinkToken
-      ? `${this.config.app.baseUrl}/magic-verify?token=${params.magicLinkToken}`
-      : undefined;
-
     const subject = 'Your Ally Verification Code';
     const body = `Your Ally Verification Code is:
 ${params.otp}
 
-${magicLink ? `Or click the link below to login instantly:\n${magicLink}\n` : ''}
 ⏱️ This security code is valid for the next ${minutes} minutes.
 🚫 Do not share this code with anyone.
 ❌ If you did not request this code, you can safely ignore this email.
