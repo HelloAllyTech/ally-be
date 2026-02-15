@@ -23,12 +23,6 @@ export class ConversationalGuardrailsTranslationsRepository extends Repository<C
       .getMany();
   }
 
-  async getTranslationsByLanguageId(languageId: number) {
-    return this.createQueryBuilder('translation')
-      .where('translation.languageId = :languageId', { languageId })
-      .getMany();
-  }
-
   async getTranslation(guardrailId: string, languageId: number) {
     return this.createQueryBuilder('translation')
       .where('translation.guardrailId = :guardrailId', { guardrailId })

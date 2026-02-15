@@ -5,18 +5,10 @@ import { SharedLanguageService } from 'src/language/service/shared-language.serv
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ConversationalGuardrailsTranslationsRepository } from '../repository/conversational-guardrails-translations.repository';
 import { ConversationalGuardrails } from '../entity/conversational-guardrails.entity';
-
-interface GuardrailMetadata {
-  helperDialogue: string;
-  actorDialogue: string;
-}
-
-interface CreateGuardrailTranslation {
-  guardrailId: string;
-  languageId: number;
-  helperDialogue: string;
-  actorDialogue: string;
-}
+import {
+  CreateGuardrailTranslation,
+  GuardrailMetadata,
+} from '../types/guardrail-translation.types';
 
 @Injectable()
 export class ConversationalGuardrailsTranslationService {

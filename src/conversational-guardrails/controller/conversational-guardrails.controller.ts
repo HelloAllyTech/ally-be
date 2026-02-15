@@ -18,10 +18,8 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ConversationalGuardrailsService } from '../service/conversational-guardrails.service';
-import {
-  CreateConversationalGuardrailDto,
-  UpdateConversationalGuardrailDto,
-} from '../dto/conversational-guardrails.dto';
+import { CreateConversationalGuardrailDto } from '../dto/create-conversational-guardrails.dto';
+import { UpdateConversationalGuardrailDto } from '../dto/update-conversational-guardrails.dto';
 
 @ApiTags('Conversational Guardrails')
 @ApiBearerAuth()

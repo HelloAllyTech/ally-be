@@ -3,14 +3,15 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConversationalGuardrailsRepository } from '../repository/conversational-guardrails.repository';
 import { ConversationalGuardrailsTranslationsRepository } from '../repository/conversational-guardrails-translations.repository';
 import { ConversationalGuardrailsTranslationService } from './conversational-guardrails-translation.service';
-import {
-  CreateConversationalGuardrailDto,
-  UpdateConversationalGuardrailDto,
-  CreateConversationalGuardrailTranslationDto,
-  UpdateConversationalGuardrailTranslationDto,
-} from '../dto/conversational-guardrails.dto';
+import { CreateConversationalGuardrailDto } from '../dto/create-conversational-guardrails.dto';
 import { Pagination } from 'src/common/type/common.type';
 import { MAX_GUARDRAILS_PER_SESSION } from '../constants/guardrails.constants';
+import {
+  CreateConversationalGuardrailTranslation,
+  GuardrailMetadata,
+  UpdateConversationalGuardrailTranslation,
+} from '../types/guardrail-translation.types';
+import { UpdateConversationalGuardrailDto } from '../dto/update-conversational-guardrails.dto';
 
 @Injectable()
 export class ConversationalGuardrailsService {
@@ -79,9 +80,7 @@ export class ConversationalGuardrailsService {
     return this.formatGuardrailsForPrompt(guardrailsResponse);
   }
 
-  formatGuardrailsForPrompt(
-    guardrails: { helperDialogue: string; actorDialogue: string }[],
-  ): string {
+  formatGuardrailsForPrompt(guardrails: GuardrailMetadata[]): string {
     if (guardrails.length === 0) {
       return '';
     }
@@ -94,9 +93,7 @@ export class ConversationalGuardrailsService {
     return `Consider the following guardrails:\n${guardrailLines.join('\n')}`;
   }
 
-  async createTranslation(
-    createDto: CreateConversationalGuardrailTranslationDto,
-  ) {
+  async createTranslation(createDto: CreateConversationalGuardrailTranslation) {
     await this.getGuardrailById(createDto.guardrailId);
     const translation = this.translationsRepository.create(createDto);
     return this.translationsRepository.save(translation);
@@ -104,7 +101,7 @@ export class ConversationalGuardrailsService {
 
   async updateTranslation(
     id: string,
-    updateDto: UpdateConversationalGuardrailTranslationDto,
+    updateDto: UpdateConversationalGuardrailTranslation,
   ) {
     const translation = await this.translationsRepository.findOne({
       where: { id },
