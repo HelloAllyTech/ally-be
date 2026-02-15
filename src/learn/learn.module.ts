@@ -45,6 +45,8 @@ import { SessionEventTranslationsRepository } from 'src/session-event/repository
 import { ScenarioEventsTranslationsRepository } from './repository/scenario-events-translations.repository';
 import { ReviewModule } from 'src/review/review.module';
 import { ConversationalGuardrailsModule } from 'src/conversational-guardrails/conversational-guardrails.module';
+import { CaseModule } from 'src/case/case.module';
+import { ScenarioSessionDetailsRepository } from './repository/scenario-session-details.repository';
 
 @Module({
   imports: [
@@ -70,6 +72,7 @@ import { ConversationalGuardrailsModule } from 'src/conversational-guardrails/co
     LanguageModule,
     forwardRef(() => ReviewModule),
     forwardRef(() => ConversationalGuardrailsModule),
+    forwardRef(() => CaseModule),
   ],
   controllers: [LearnController, SimulationCreditsController],
   providers: [
@@ -97,6 +100,7 @@ import { ConversationalGuardrailsModule } from 'src/conversational-guardrails/co
     ScenarioTranslationsRepository,
     SessionEventTranslationsRepository,
     ScenarioEventsTranslationsRepository,
+    ScenarioSessionDetailsRepository,
   ],
   exports: [
     LearnMessageProcessor,

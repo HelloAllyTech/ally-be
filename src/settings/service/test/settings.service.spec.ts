@@ -894,10 +894,12 @@ describe('SettingsService', () => {
         PreferenceName.HIDDEN_CHAT_TYPES,
         mockTenantId,
         PreferenceRelatedEntity.ORGANIZATION,
+        undefined,
       );
       expect(preferenceService.updatePreference).toHaveBeenCalledWith(
         mockPreferenceId,
         validChatTypes,
+        undefined,
       );
       expect(result).toEqual(mockChatTypesPreference);
     });
@@ -910,13 +912,16 @@ describe('SettingsService', () => {
 
       const result = await service.updateChatTypes(updateDto);
 
-      expect(preferenceService.createPreference).toHaveBeenCalledWith({
-        name: PreferenceName.HIDDEN_CHAT_TYPES,
-        relatedId: mockTenantId,
-        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
-        value: validChatTypes,
-        tenantId: mockTenantId,
-      });
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        {
+          name: PreferenceName.HIDDEN_CHAT_TYPES,
+          relatedId: mockTenantId,
+          relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+          value: validChatTypes,
+          tenantId: mockTenantId,
+        },
+        undefined,
+      );
       expect(result).toEqual(mockChatTypesPreference);
     });
 
@@ -950,6 +955,7 @@ describe('SettingsService', () => {
         PreferenceName.HIDDEN_CHAT_TYPES,
         undefined,
         PreferenceRelatedEntity.ORGANIZATION,
+        undefined,
       );
       expect(result).toEqual(mockChatTypesPreference);
     });
@@ -966,13 +972,16 @@ describe('SettingsService', () => {
 
       const result = await service.updateChatTypes(emptyDto);
 
-      expect(preferenceService.createPreference).toHaveBeenCalledWith({
-        name: PreferenceName.HIDDEN_CHAT_TYPES,
-        relatedId: mockTenantId,
-        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
-        value: [],
-        tenantId: mockTenantId,
-      });
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        {
+          name: PreferenceName.HIDDEN_CHAT_TYPES,
+          relatedId: mockTenantId,
+          relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+          value: [],
+          tenantId: mockTenantId,
+        },
+        undefined,
+      );
       expect(result).toEqual(mockChatTypesPreference);
     });
   });

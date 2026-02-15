@@ -1,7 +1,7 @@
 // TODO: Handle correctly - util created to resolve circular dependency
 
-import { In } from 'typeorm';
-import { Injectable } from '@nestjs/common';
+import { In, Not, IsNull } from 'typeorm';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenariosRepository } from '../repository/scenario.repository';
 import { Scenarios } from '../entity/scenarios.entity';
@@ -13,6 +13,7 @@ import { ScenarioTranslationsRepository } from '../repository/scenario-translati
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
 import { ScenarioSessionMessages } from '../entity/scenario-session-messages.entity';
+import { ScenarioSessionDetailsRepository } from '../repository/scenario-session-details.repository';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -24,6 +25,7 @@ export class ScenarioSharedService {
     private scenarioSessionRepository: ScenarioSessionRepository,
     private scenarioTranslationsRepository: ScenarioTranslationsRepository,
     private scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
+    private scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
   ) {}
 
   async getScenarioByIds(
@@ -90,5 +92,34 @@ export class ScenarioSharedService {
     return this.scenarioSessionMessagesRepository.find({
       where: { id: In(messageIds) },
     });
+  }
+  async getPreviousScenarioSessionByCaseSessionItemId(
+    caseSessionItemId: string,
+  ) {
+    return this.scenarioSessionRepository.findOne({
+      where: { caseSessionItemId, score: Not(IsNull()) },
+      order: { score: 'DESC' },
+    });
+  }
+
+  async getScenarioSessionDetailsByScenarioSessionId(
+    scenarioSessionId: string,
+  ) {
+    return this.scenarioSessionDetailsRepository.findOne({
+      where: { scenarioSessionId },
+    });
+  }
+
+  async getSessionGlimpseByScenarioSessionId(
+    scenarioSessionId: string,
+  ): Promise<string | null> {
+    const scenarioSessionDetails =
+      await this.scenarioSessionDetailsRepository.findOne({
+        where: { scenarioSessionId },
+      });
+    if (!scenarioSessionDetails) {
+      throw new NotFoundException('Scenario session details not found');
+    }
+    return scenarioSessionDetails.summary?.feedback?.sessionGlimpse;
   }
 }

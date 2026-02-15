@@ -47,3 +47,14 @@ export interface ChecklistItem {
   name: string;
   message?: string;
 }
+
+import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
+import { SessionEvents } from 'src/session-event/entity/session-events.entity';
+import { Languages } from 'src/language/entity/languages.entity';
+
+export interface CreateRoomMetadataOptions {
+  scenario: GetAdminScenarioDto;
+  sessionEvents: SessionEvents[];
+  languageDetails?: Languages | null;
+  previousMemory?: string | null;
+}

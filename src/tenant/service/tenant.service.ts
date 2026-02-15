@@ -30,6 +30,13 @@ import {
 import { DeleteLogoDto } from '../dto/delete-organization-logo.dto';
 import { LogoUploadContentType } from '../enum/tenant.enum';
 import { TenantDashboardSharedService } from './tenant-dashboard-shared';
+import { CreateTenantDto } from '../dto/create-tenant.dto';
+import { SettingsService } from 'src/settings/service/settings.service';
+import { ChatTypes } from 'src/common/constants/chat.constants';
+import { TenantResponseDto } from '../dto/tenant-response.dto';
+import { PreferenceRelatedEntity } from 'src/common/constants/user.constants';
+import { PreferenceService } from 'src/settings/service/preference.service';
+import { TenantCaseSharedService } from './tenant-case-shared';
 
 @Injectable()
 export class TenantService {
@@ -48,6 +55,9 @@ export class TenantService {
     private readonly dataSource: DataSource,
     private configService: AppConfigService,
     private s3Service: S3Service,
+    private readonly settingsService: SettingsService,
+    private readonly preferenceService: PreferenceService,
+    private readonly tenantCaseSharedService: TenantCaseSharedService,
   ) {}
 
   async findAll(): Promise<Tenant[]> {
@@ -55,7 +65,8 @@ export class TenantService {
   }
 
   async create(
-    tenantData: Partial<Tenant & { enabledDashboardIds?: string[] }>,
+    tenantData: CreateTenantDto,
+    status: TenantStatus,
   ): Promise<Tenant> {
     const existingTenant = await this.tenantRepository.findOne({
       where: [{ name: tenantData.name }, { code: tenantData.code }],
@@ -81,6 +92,11 @@ export class TenantService {
       );
     }
 
+    tenantData.settings = {
+      ...(tenantData.settings ?? {}),
+      hideRankInLeaderboard: tenantData.hideRankInLeaderboard ?? false,
+    };
+
     const userIdStr = ExecutionManager.getUserId();
     const userId = userIdStr ? Number(userIdStr) : undefined;
 
@@ -94,7 +110,10 @@ export class TenantService {
     try {
       const result = await this.dataSource.transaction(
         async (entityManager) => {
-          const tenant = entityManager.create(Tenant, tenantData);
+          const tenant = entityManager.create(Tenant, {
+            ...tenantData,
+            status,
+          });
           const savedTenant = await entityManager.save(Tenant, tenant);
 
           await this.tenantScenarioSharedService.assignGlobalScenariosToTenant(
@@ -103,6 +122,11 @@ export class TenantService {
           );
 
           await this.tenantScenarioPathSharedService.assignGlobalScenarioPathsToTenant(
+            savedTenant.id,
+            entityManager,
+          );
+
+          await this.tenantCaseSharedService.assignGlobalCasesToTenant(
             savedTenant.id,
             entityManager,
           );
@@ -123,6 +147,21 @@ export class TenantService {
             );
           }
 
+          // Pass the hidden chat types to the settings service
+          const hiddenChatTypes = <ChatTypes[]>[];
+          if (!(tenantData.enableAudioUpload ?? false)) {
+            hiddenChatTypes.push(ChatTypes.AUDIO_UPLOAD);
+          }
+          if (!(tenantData.enableMicrophoneMode ?? false)) {
+            hiddenChatTypes.push(ChatTypes.MICROPHONE_CHAT);
+          }
+          if (hiddenChatTypes.length > 0) {
+            await this.settingsService.updateChatTypes(
+              { tenantId: savedTenant.id, hiddenChatTypes },
+              entityManager,
+            );
+          }
+
           return savedTenant;
         },
       );
@@ -138,12 +177,45 @@ export class TenantService {
     }
   }
 
-  async findById(id: string): Promise<Tenant | null> {
+  async findById(id: string): Promise<TenantResponseDto | null> {
+    const tenant = await this.findTenantEntityById(id);
+    if (!tenant) return null;
+    return this.buildTenantResponse(tenant);
+  }
+
+  async findByCode(code: string): Promise<TenantResponseDto | null> {
+    const tenant = await this.tenantRepository.findOne({ where: { code } });
+    if (!tenant) return null;
+    return this.buildTenantResponse(tenant);
+  }
+
+  private async findTenantEntityById(id: string): Promise<Tenant | null> {
     return this.tenantRepository.findOne({ where: { id } });
   }
 
-  async findByCode(code: string): Promise<Tenant | null> {
-    return this.tenantRepository.findOne({ where: { code } });
+  private async buildTenantResponse(
+    tenant: Tenant,
+  ): Promise<TenantResponseDto> {
+    const [dashboardIdsList, hiddenChatTypes] = await Promise.all([
+      this.tenantDashboardSharedService.getEnabledDashboardIdsForTenants(
+        [tenant.id],
+        this.dataSource.manager,
+      ),
+      this.settingsService.getHiddenChatTypesForEntity(
+        tenant.id,
+        PreferenceRelatedEntity.ORGANIZATION,
+      ),
+    ]);
+
+    return {
+      ...tenant,
+      enabledDashboardIds: dashboardIdsList[0]?.dashboardIds ?? [],
+      hideRankInLeaderboard: tenant.settings?.hideRankInLeaderboard ?? false,
+      enableAudioUpload: !hiddenChatTypes.includes(ChatTypes.AUDIO_UPLOAD),
+      enableMicrophoneMode: !hiddenChatTypes.includes(
+        ChatTypes.MICROPHONE_CHAT,
+      ),
+    };
   }
 
   async updateStatus(id: string, status: TenantStatus): Promise<Tenant | null> {
@@ -155,7 +227,7 @@ export class TenantService {
     settings: Record<string, any>,
   ): Promise<Tenant | null> {
     await this.tenantRepository.update(id, { settings });
-    return this.findById(id);
+    return this.findTenantEntityById(id);
   }
 
   async updateMetadata(
@@ -163,11 +235,11 @@ export class TenantService {
     metadata: Record<string, any>,
   ): Promise<Tenant | null> {
     await this.tenantRepository.update(id, { metadata });
-    return this.findById(id);
+    return this.findTenantEntityById(id);
   }
 
   async validateTenant(tenantId: string): Promise<boolean> {
-    const tenant = await this.findById(tenantId);
+    const tenant = await this.findTenantEntityById(tenantId);
     return tenant !== null && tenant.status === TenantStatus.ACTIVE;
   }
 
@@ -185,20 +257,41 @@ export class TenantService {
 
     const tenantIds = tenants.map((t) => t.id);
 
-    const userCount =
-      await this.userRepository.getUserCountByTenantIds(tenantIds);
+    const [userCount, dashboardIdsPerTenant, hiddenChatTypesPerTenant] =
+      await Promise.all([
+        this.userRepository.getUserCountByTenantIds(tenantIds),
+        this.tenantDashboardSharedService.getEnabledDashboardIdsForTenants(
+          tenantIds,
+          this.dataSource.manager,
+        ),
+        this.preferenceService.getHiddenChatTypesForTenants(tenantIds),
+      ]);
 
     const userCountMap = new Map(
       userCount.map((uc) => [uc.tenantId, parseInt(uc.userCount)]),
     );
 
-    const tenantsWithUserCount = tenants.map((tenant) => ({
-      ...tenant,
-      userCount: userCountMap.get(tenant.id) || 0,
-    }));
+    const tenantsWithDetails = tenants.map((tenant) => {
+      const hiddenChatTypes =
+        hiddenChatTypesPerTenant.find((entry) => entry.tenantId === tenant.id)
+          ?.hiddenChatTypes ?? [];
+      const enabledDashboardIds =
+        dashboardIdsPerTenant.find((entry) => entry.tenantId === tenant.id)
+          ?.dashboardIds ?? [];
+      return {
+        ...tenant,
+        userCount: userCountMap.get(tenant.id) || 0,
+        enabledDashboardIds,
+        hideRankInLeaderboard: tenant.settings?.hideRankInLeaderboard ?? false,
+        enableAudioUpload: !hiddenChatTypes.includes(ChatTypes.AUDIO_UPLOAD),
+        enableMicrophoneMode: !hiddenChatTypes.includes(
+          ChatTypes.MICROPHONE_CHAT,
+        ),
+      };
+    });
 
     return {
-      data: tenantsWithUserCount,
+      data: tenantsWithDetails,
       count,
     };
   }
@@ -206,8 +299,8 @@ export class TenantService {
   async updateTenant(
     id: string,
     updateTenantDto: UpdateTenantDto,
-  ): Promise<Tenant | null> {
-    const tenant = await this.findById(id);
+  ): Promise<TenantResponseDto | null> {
+    const tenant = await this.findTenantEntityById(id);
     if (!tenant) {
       throw new NotFoundException(`Tenant with ID ${id} not found`);
     }
@@ -232,17 +325,94 @@ export class TenantService {
         );
       }
     }
+
+    // Separate non-entity fields from the update data
+    const {
+      enabledDashboardIds,
+      enableMicrophoneMode,
+      enableAudioUpload,
+      hideRankInLeaderboard,
+      ...tenantUpdateData
+    } = updateTenantDto;
+
+    if (enabledDashboardIds && enabledDashboardIds.length > 0) {
+      await this.tenantDashboardSharedService.validateDashboardIds(
+        enabledDashboardIds,
+        this.dataSource.manager,
+      );
+    }
+
+    // Handle hideRankInLeaderboard - merge into current settings if true
+    let settingsUpdate: Record<string, any> | undefined;
+    if (hideRankInLeaderboard !== undefined) {
+      const currentSettings = tenant.settings ?? {};
+      settingsUpdate = {
+        ...currentSettings,
+        hideRankInLeaderboard: hideRankInLeaderboard,
+      };
+    }
+
     const userIdStr = ExecutionManager.getUserId();
     const userId = userIdStr ? Number(userIdStr) : undefined;
+
     const updatedTenantData = {
-      ...updateTenantDto,
+      ...tenantUpdateData,
+      ...(settingsUpdate ? { settings: settingsUpdate } : {}),
       ...(userId ? { updatedBy: userId } : {}),
     };
-    await this.tenantRepository.update(
-      id,
-      updatedTenantData as Partial<Tenant>,
-    );
-    return this.findById(id);
+
+    try {
+      await this.dataSource.transaction(async (entityManager) => {
+        await entityManager.update(
+          Tenant,
+          id,
+          updatedTenantData as Partial<Tenant>,
+        );
+
+        // Handle chat types if explicitly provided
+        if (
+          enableAudioUpload !== undefined ||
+          enableMicrophoneMode !== undefined
+        ) {
+          const hiddenChatTypes = <ChatTypes[]>[];
+          if (
+            enableAudioUpload !== undefined &&
+            !(enableAudioUpload ?? false)
+          ) {
+            hiddenChatTypes.push(ChatTypes.AUDIO_UPLOAD);
+          }
+          if (
+            enableMicrophoneMode !== undefined &&
+            !(enableMicrophoneMode ?? false)
+          ) {
+            hiddenChatTypes.push(ChatTypes.MICROPHONE_CHAT);
+          }
+
+          await this.settingsService.updateChatTypes(
+            { tenantId: id, hiddenChatTypes },
+            entityManager,
+          );
+        }
+
+        // Handle dashboard assignments
+        if (enabledDashboardIds) {
+          await this.tenantDashboardSharedService.assignDashboardsToTenant(
+            id,
+            enabledDashboardIds,
+            entityManager,
+          );
+        }
+      });
+      return this.findById(id);
+    } catch (error) {
+      this.logger.error(
+        `Failed to update tenant: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Failed to update tenant: ${error.message}`,
+      );
+    }
   }
 
   async getPresignedUrlForOrganizationLogo(

@@ -38,6 +38,8 @@ import { CommunityModule } from './community/community.module';
 import { ScenarioCharacterModule } from './scenario-character/scenario-character.module';
 import { PromptModule } from './prompt/prompt.module';
 import { ConversationalGuardrailsModule } from './conversational-guardrails/conversational-guardrails.module';
+import { CaseModule } from './case/case.module';
+import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
 
 @Module({
   imports: [
@@ -72,6 +74,7 @@ import { ConversationalGuardrailsModule } from './conversational-guardrails/conv
     AuthorizationModule,
     PlaceModule,
     ScenarioPathModule,
+    CaseModule,
     LanguageModule,
     ReviewModule,
     BadgeModule,
@@ -79,6 +82,7 @@ import { ConversationalGuardrailsModule } from './conversational-guardrails/conv
     ScenarioCharacterModule,
     PromptModule,
     ConversationalGuardrailsModule,
+    ScenarioCoverImageLibraryModule,
   ],
   controllers: [],
   providers: [

@@ -83,6 +83,13 @@ describe('Scenario Util', () => {
           timerMode: true,
           maxTimeValue: '1:30:00',
           optGuardrails: scenario.optGuardrails,
+          stateInstructions: [
+            {
+              stateId: '2',
+              instruction: 'Context',
+              dialogues: [],
+            },
+          ],
         },
       });
     });

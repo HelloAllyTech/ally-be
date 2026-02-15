@@ -1,0 +1,149 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { ScenarioCoverImageLibraryService } from '../scenario-cover-image-library.service';
+import { ScenarioCoverImageLibraryRepository } from '../../repository/scenario-cover-image-library.repository';
+import { ScenarioCoverImageLibrary } from '../../entity/scenario-cover-image-library.entity';
+import { S3Service } from '../../../aws/service/s3.service';
+import { AppConfigService } from '../../../config/config.service';
+import { ExecutionManager } from '../../../common/execution/execution-manager';
+import { LoggerService } from '../../../logger/logger.service';
+import { ScenarioCoverImageUploadContentType } from '../../enum/scenario-cover-image-upload-content-type.enum';
+
+jest.mock('../../../common/execution/execution-manager');
+jest.mock('../../../logger/logger.service');
+
+describe('ScenarioCoverImageLibraryService', () => {
+  let service: ScenarioCoverImageLibraryService;
+
+  const now = new Date();
+  const mockCoverImage = {
+    id: 'img-uuid-1',
+    imageUrl:
+      'https://bucket.s3.region.amazonaws.com/scenario-cover-image-library/1.jpg',
+    createdBy: 100,
+    createdAt: now,
+    updatedAt: now,
+  } as ScenarioCoverImageLibrary;
+
+  const mockRepo = {
+    create: jest.fn(),
+    save: jest.fn(),
+    findOne: jest.fn(),
+    delete: jest.fn(),
+    getCoverImages: jest.fn(),
+  };
+
+  const mockS3Service = {
+    getPresignedUrlForImageUpload: jest.fn(),
+    deleteS3Image: jest.fn(),
+  };
+
+  const mockConfigService: { s3: { assetsBucket: string | undefined } } = {
+    s3: { assetsBucket: 'test-assets-bucket' },
+  };
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+    (LoggerService.getInstance as jest.Mock).mockReturnValue({
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+    });
+    mockConfigService.s3.assetsBucket = 'test-assets-bucket';
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ScenarioCoverImageLibraryService,
+        { provide: ScenarioCoverImageLibraryRepository, useValue: mockRepo },
+        { provide: S3Service, useValue: mockS3Service },
+        { provide: AppConfigService, useValue: mockConfigService },
+      ],
+    }).compile();
+
+    service = module.get<ScenarioCoverImageLibraryService>(
+      ScenarioCoverImageLibraryService,
+    );
+  });
+
+  describe('getUploadUrl', () => {
+    const uploadDto = {
+      fileName: 'cover.jpg',
+      fileSize: 1024000,
+      contentType: ScenarioCoverImageUploadContentType.JPEG,
+    };
+
+    it('creates and saves entity with imageUrl and createdBy', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(42);
+      mockS3Service.getPresignedUrlForImageUpload.mockResolvedValue({
+        presignedUrl: 'https://presigned.url',
+        imageUrl:
+          'https://bucket.s3.region.amazonaws.com/scenario-cover-image-library/cover.jpg',
+      });
+      const saved = { ...mockCoverImage, id: 'saved-id' };
+      mockRepo.create.mockReturnValue(saved);
+      mockRepo.save.mockResolvedValue(saved);
+
+      const res = await service.createCoverImageUploadUrl(uploadDto);
+
+      expect(mockRepo.create).toHaveBeenCalledWith({
+        imageUrl:
+          'https://bucket.s3.region.amazonaws.com/scenario-cover-image-library/cover.jpg',
+        createdBy: 42,
+      });
+      expect(mockRepo.save).toHaveBeenCalled();
+      expect(res).toEqual({
+        presignedUrl: 'https://presigned.url',
+        imageUrl:
+          'https://bucket.s3.region.amazonaws.com/scenario-cover-image-library/cover.jpg',
+        id: 'saved-id',
+      });
+    });
+  });
+
+  describe('getCoverImages', () => {
+    it('returns coverImages and count from repository', async () => {
+      const result = { coverImages: [mockCoverImage], count: 1 };
+      mockRepo.getCoverImages.mockResolvedValue(result);
+
+      const res = await service.getCoverImages({ limit: 10, offset: 5 });
+
+      expect(res).toEqual(result);
+      expect(mockRepo.getCoverImages).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 10, offset: 5 }),
+      );
+    });
+  });
+
+  describe('getById', () => {
+    it('returns cover image when found', async () => {
+      mockRepo.findOne.mockResolvedValue(mockCoverImage);
+
+      const res = await service.getById('img-uuid-1');
+
+      expect(mockRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'img-uuid-1' },
+      });
+      expect(res).toEqual(mockCoverImage);
+    });
+  });
+
+  describe('delete', () => {
+    it('deletes S3 image and repository record then returns success', async () => {
+      mockRepo.findOne.mockResolvedValue(mockCoverImage);
+      mockS3Service.deleteS3Image.mockResolvedValue({ success: true });
+      mockRepo.delete.mockResolvedValue({ affected: 1 });
+
+      const res = await service.delete('img-uuid-1');
+
+      expect(mockRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'img-uuid-1' },
+      });
+      expect(mockS3Service.deleteS3Image).toHaveBeenCalledWith(
+        'test-assets-bucket',
+        mockCoverImage.imageUrl,
+      );
+      expect(mockRepo.delete).toHaveBeenCalledWith('img-uuid-1');
+      expect(res).toEqual({ success: true });
+    });
+  });
+});

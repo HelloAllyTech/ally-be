@@ -12,9 +12,10 @@ import { ScenarioPathSession } from '../../entity/scenario-path-session.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioPathSessionItemRepository } from '../../repository/scenario-path-session-item.repository';
 import { ScenarioPathSessionItem } from '../../entity/scenario-path-session-item.entity';
-import { SessionItemStatus } from '../../type/scenario-path-session-items.type';
+
 import { ScenarioPathStatus } from '../../type/scenario-paths.type';
 import { AppConfigService } from 'src/config/config.service';
+import { SessionItemStatus } from 'src/common/type/common.type';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {

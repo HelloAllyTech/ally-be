@@ -16,8 +16,9 @@ import { ScenarioPathItem } from '../../entity/scenario-path-item.entity';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ScenarioPathTenantService } from '../scenario-path-tenant.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
-import { SessionItemStatus } from '../../type/scenario-path-session-items.type';
+
 import { In } from 'typeorm';
+import { SessionItemStatus } from 'src/common/type/common.type';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {

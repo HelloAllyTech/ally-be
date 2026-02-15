@@ -263,9 +263,21 @@ export class AppConfigService {
         ),
     };
   }
-
+  get cases() {
+    return {
+      caseItemMinDurationForCompletion: this.configService.get<number>(
+        'CASE_ITEM_MIN_DURATION_FOR_COMPLETION',
+      ),
+    };
+  }
   get featureFlag() {
-    return {};
+    return {
+      stateBasedScenarioInstructions:
+        this.configService.get<string>(
+          'FEATURE_SCENARIO_STATE_INSTRUCTIONS',
+          'false',
+        ) === 'true',
+    };
   }
 
   get googleCloudTranslationConfig() {

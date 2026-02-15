@@ -44,6 +44,8 @@ import { BadgeImageUploadRequestDto } from '../dto/badge-image-upload-request.dt
 import { BadgeImageUploadResponseDto } from '../dto/badge-image-upload-response.dto';
 import { BadgeImageUploadContentType } from '../enum/badge-image-upload-content-type.enum';
 import { DeleteBadgeImageDto } from '../dto/delete-badge-image.dto';
+import { BadgeFilterDto } from '../dto/badge-filter.dto';
+import { Pagination } from 'src/common/type/common.type';
 
 @Injectable()
 export class BadgeService {
@@ -428,13 +430,29 @@ export class BadgeService {
     };
   }
 
-  async getAllBadges(): Promise<{ data: Badge[]; count: number }> {
-    const [data, count] = await this.badgeRepository.findAndCount({
-      order: {
-        createdAt: 'DESC',
-      },
-    });
-    return { data, count };
+  async getAllBadges(
+    pagination: Pagination,
+    filter?: BadgeFilterDto,
+  ): Promise<{ data: (Badge & { roles: string[] })[]; count: number }> {
+    const [data, count] = await this.badgeRepository.getAllBadges(
+      pagination,
+      filter,
+    );
+
+    if (data.length === 0) {
+      return { data: [], count };
+    }
+
+    const badgeIds = data.map((b) => b.id);
+    const badgeIdToRoles =
+      await this.badgeGroupRepository.getGroupNamesByBadgeIds(badgeIds);
+
+    const badgeWithRoles = data.map((badge) => ({
+      ...badge,
+      roles: badgeIdToRoles.get(badge.id) ?? [],
+    }));
+
+    return { data: badgeWithRoles, count };
   }
 
   async updateBadge(

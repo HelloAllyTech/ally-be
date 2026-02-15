@@ -165,6 +165,17 @@ const PERMISSIONS = {
   EDIT_SCENARIO_PATH_TENANT: 'edit:scenario-path-tenant',
   DELETE_SCENARIO_PATH_TENANT: 'delete:scenario-path-tenant',
 
+  // === CASES ===
+  VIEW_ADMIN_CASES: 'view:admin:cases',
+  VIEW_ADMIN_CASE: 'view:admin:case',
+  EDIT_ADMIN_CASE: 'edit:admin:case',
+  DELETE_ADMIN_CASE: 'delete:admin:case',
+  EDIT_CASE_TENANT: 'edit:case-tenant',
+  VIEW_CASES: 'view:cases',
+  VIEW_CASE: 'view:case',
+  EDIT_CASE: 'edit:case',
+  DELETE_CASE_TENANT: 'delete:case-tenant',
+
   // === REVIEW ===
   VIEW_REVIEW: 'view:review',
   EDIT_REVIEW: 'edit:review',
@@ -183,6 +194,11 @@ const PERMISSIONS = {
   // === COMMUNITY ===
   VIEW_COMMUNITY_LEADERBOARD: 'view:community:leaderboard',
   VIEW_USER_RANK: 'view:user:rank',
+
+  // === COVER IMAGE LIBRARY ===
+  VIEW_SCENARIO_COVER_IMAGE_LIBRARY: 'view:scenario-cover-image-library',
+  EDIT_SCENARIO_COVER_IMAGE_LIBRARY: 'edit:scenario-cover-image-library',
+  DELETE_SCENARIO_COVER_IMAGE_LIBRARY: 'delete:scenario-cover-image-library',
 };
 
 const SUPER_ADMIN_PERMISSIONS = [
@@ -251,6 +267,9 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_PROMPT,
   PERMISSIONS.VIEW_GUARDRAILS,
   PERMISSIONS.EDIT_GUARDRAILS,
+  PERMISSIONS.VIEW_SCENARIO_COVER_IMAGE_LIBRARY,
+  PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY,
+  PERMISSIONS.DELETE_SCENARIO_COVER_IMAGE_LIBRARY,
 ];
 
 const COUNSELOR_PERMISSIONS = [

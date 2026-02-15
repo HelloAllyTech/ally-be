@@ -29,6 +29,7 @@ import {
   MAX_TERMINATION_EVENT_COUNT,
 } from '../constants/scenario.constants';
 import { TerminationEventsDto } from './termination-events.dto';
+import { StateInstructionsDto } from './state-instructions.dto';
 
 export class CreateScenarioDto {
   @ApiProperty({
@@ -191,6 +192,7 @@ export class CreateScenarioDto {
   @IsOptional()
   responseLength?: ScenarioResponseLength;
 
+  // FEATURE_CLEANUP(FEATURE_SCENARIO_STATE_INSTRUCTIONS): remove agentDialogues, context
   @ApiProperty({
     description: 'Your dialogues',
     example: ['Absolutely', 'Probably'],
@@ -268,6 +270,7 @@ export class CreateScenarioDto {
   @Type(() => CustomFieldsDto)
   customFields?: CustomFieldsDto[];
 
+  @IsOptional()
   @ApiProperty({
     description: 'Experience mode for the scenario',
     enum: ExperienceMode,
@@ -275,6 +278,7 @@ export class CreateScenarioDto {
     required: false,
   })
   @IsEnum(ExperienceMode)
+  @ValidateIf((o) => o.experienceMode !== undefined)
   experienceMode?: ExperienceMode;
 
   @ApiProperty({
@@ -317,4 +321,14 @@ export class CreateScenarioDto {
   @IsOptional()
   @IsBoolean()
   optGuardrails?: boolean;
+
+  @ApiProperty({
+    description: 'State instructions',
+    type: [StateInstructionsDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => StateInstructionsDto)
+  stateInstructions?: StateInstructionsDto[];
 }

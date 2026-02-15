@@ -17,7 +17,7 @@ import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Not, Repository } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
@@ -46,16 +46,17 @@ import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
 import {
   ChecklistItem,
+  CreateRoomMetadataOptions,
   ExperienceMode,
+  ScenarioDifficultyLevel,
   ScenarioStatus,
 } from '../type/scenario.type';
 import { ScenarioTenantService } from './scenario-tenant.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
-import { SessionItemStatus } from 'src/scenario-path/type/scenario-path-session-items.type';
+import { SessionItemStatus } from 'src/common/type/common.type';
 import { extractEventIds } from 'src/session-event/util/session-event.util';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { MAX_COMBINATION_EVENT_DEPTH } from 'src/session-event/constants/event.constant';
-import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import {
   ExecutionContextPropagation,
@@ -67,13 +68,17 @@ import { LanguageCode } from '../type/scenario-language-voice.type';
 import { getActiveScenarioMandatoryFields } from '../util/scenario.util';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
-import { Languages } from 'src/language/entity/languages.entity';
 import { ReviewSharedService } from 'src/review/service/review-shared.service';
 import {
   ScenarioSessionLeaderboardEvent,
   ScenarioSessionLeaderboardEndedEventParams,
 } from '../type/scenario-session-leaderboard-event.type';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
+import { getScenarioStateConfigByDifficultyLevel } from '../util/scenario-state.util';
+import { ScenarioStateInstruction } from '../type/scenario-state.type';
+import { CaseSharedService } from 'src/case/service/case-shared.service';
+import { CaseSessionService } from 'src/case/service/case-session.service';
+import { CommonUtil } from 'src/common/util/common.util';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -101,6 +106,8 @@ export class ScenarioSessionService {
     private reviewSharedService: ReviewSharedService,
     private eventEmitter: EventEmitter2,
     private conversationalGuardrailsService: ConversationalGuardrailsService,
+    private caseSharedService: CaseSharedService,
+    private caseSessionService: CaseSessionService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -195,7 +202,7 @@ export class ScenarioSessionService {
     await this.validateStartScenarioSession(
       counselorId,
       scenario.id,
-      startScenarioSessionDto.scenarioPathSessionItemId,
+      startScenarioSessionDto,
     );
 
     const languageId = startScenarioSessionDto?.languageId;
@@ -287,12 +294,21 @@ export class ScenarioSessionService {
         scenario.metadata.defaultLanguageId = enLanguageDetails?.id;
       }
 
+      // Fetch previous case memory if this is part of a case sequence
+      let previousMemory: string | null = null;
+      if (startScenarioSessionDto.caseSessionItemId) {
+        previousMemory = await this.caseSharedService.getPreviousCaseMemory(
+          startScenarioSessionDto.caseSessionItemId,
+        );
+      }
+
       // Prepare room metadata with events and dependencies
-      const roomMetadata = await this.createRoomMetadata(
+      const roomMetadata = await this.createRoomMetadata({
         scenario,
         sessionEvents,
         languageDetails,
-      );
+        previousMemory,
+      });
 
       // Preparing checklist events for simulation room, only if CHECKLIST mode is enabled for scenario
       let checklistEvents: ChecklistItem[] = [];
@@ -353,6 +369,16 @@ export class ScenarioSessionService {
     }
   }
 
+  async updateScenarioSession(
+    scenarioSessionId: string,
+    updateScenarioSessionDto: Partial<ScenarioSessions>,
+  ) {
+    return this.scenarioSessionRepository.update(scenarioSessionId, {
+      ...updateScenarioSessionDto,
+      updatedAt: new Date(),
+    });
+  }
+
   private async getFallbackVoiceForLanguageGender(
     languageId: number,
     gender: string,
@@ -364,11 +390,9 @@ export class ScenarioSessionService {
     return voiceDetails;
   }
 
-  private async createRoomMetadata(
-    scenario: GetAdminScenarioDto,
-    sessionEvents: SessionEvents[],
-    languageDetails?: Languages | null,
-  ) {
+  private async createRoomMetadata(options: CreateRoomMetadataOptions) {
+    const { scenario, sessionEvents, languageDetails, previousMemory } =
+      options;
     const { metadata, terminationEvents, ...scenarioDataWithoutMetadata } =
       scenario;
 
@@ -382,6 +406,10 @@ export class ScenarioSessionService {
     );
 
     const languageCode = metadata?.language as LanguageCode;
+
+    if (previousMemory) {
+      promptData.previousMemory = previousMemory;
+    }
 
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
@@ -491,6 +519,25 @@ export class ScenarioSessionService {
       };
     });
 
+    const stateConfig = getScenarioStateConfigByDifficultyLevel(
+      scenario.difficultyLevel as ScenarioDifficultyLevel,
+    );
+
+    const formattedStateInstructions = metadata?.stateInstructions?.map(
+      (stateItem: ScenarioStateInstruction) => {
+        const stateConfigInfo = stateConfig.find(
+          (state) => state.stateId === stateItem.stateId,
+        );
+        return {
+          stateId: stateItem.stateId,
+          instruction: stateItem.instruction,
+          dialogues: stateItem.dialogues,
+          scoreUpper: stateConfigInfo?.scoreRange?.max,
+          scoreLower: stateConfigInfo?.scoreRange?.min,
+        };
+      },
+    );
+
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
@@ -512,6 +559,7 @@ export class ScenarioSessionService {
         events: allEvents,
         triggerEvents: Array.from(triggerEvents),
         autoTerminationEvents,
+        stateInstructions: formattedStateInstructions,
       },
     };
   }
@@ -519,16 +567,16 @@ export class ScenarioSessionService {
   private async validateStartScenarioSession(
     counselorId: number,
     scenarioId: number,
-    scenarioPathSessionItemId?: string,
+    startScenarioSessionDto: StartScenarioSessionRequestDto,
   ) {
     const tenantId = ExecutionManager.getTenantId();
     if (!tenantId) {
       throw new NotFoundException('TenantId not found');
     }
-    if (scenarioPathSessionItemId) {
+    if (startScenarioSessionDto.scenarioPathSessionItemId) {
       const scenarioPathSessionItem =
         await this.scenarioPathSharedService.getPermittedPathSessionItemBySessionItemId(
-          scenarioPathSessionItemId,
+          startScenarioSessionDto.scenarioPathSessionItemId,
         );
       if (!scenarioPathSessionItem) {
         throw new BadRequestException('Scenario path session item not found');
@@ -552,6 +600,33 @@ export class ScenarioSessionService {
         if (!scenarioPathTenant) {
           throw new BadRequestException(
             'Scenario is not available for your organization',
+          );
+        }
+      }
+    } else if (startScenarioSessionDto.caseSessionItemId) {
+      const caseSessionItem =
+        await this.caseSharedService.getPermittedCaseSessionItemBySessionItemId(
+          startScenarioSessionDto.caseSessionItemId,
+        );
+
+      if (!caseSessionItem) {
+        throw new BadRequestException('Case session item not found');
+      }
+      if (caseSessionItem.status === SessionItemStatus.LOCKED) {
+        throw new BadRequestException('Case session item is locked');
+      }
+      const caseSessionId = caseSessionItem.caseSessionId;
+      const caseSession =
+        await this.caseSharedService.getCaseSessionById(caseSessionId);
+      const caseId = caseSession?.caseId;
+      if (caseId) {
+        const caseTenant = await this.caseSharedService.getCaseTenant(
+          tenantId,
+          caseId,
+        );
+        if (!caseTenant) {
+          throw new BadRequestException(
+            'Case is not available for your organization',
           );
         }
       }
@@ -613,10 +688,10 @@ export class ScenarioSessionService {
     const score = event.event_data.totalScore;
 
     let callDuration = 0;
+    const startedAt = scenarioSession.startedAt ?? new Date();
     const endedAt = scenarioSession.endedAt ?? new Date();
-    if (scenarioSession.startedAt && endedAt) {
-      callDuration =
-        endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
+    if (startedAt && endedAt) {
+      callDuration = endedAt.getTime() - startedAt.getTime() || 0;
     }
     if (scenarioSession.scenarioPathSessionItemId)
       await this.scenarioPathSessionService.handleEndScenarioPathSession({
@@ -624,9 +699,17 @@ export class ScenarioSessionService {
         score,
         callDuration,
       });
+    else if (scenarioSession.caseSessionItemId) {
+      await this.caseSessionService.handleEndCaseSession({
+        caseSessionItemId: scenarioSession.caseSessionItemId,
+        score,
+        callDuration,
+      });
+    }
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
+      startedAt,
       endedAt,
       score,
       eventStatus: ScenarioSessionEventStatus.COMPLETED,
@@ -668,24 +751,34 @@ export class ScenarioSessionService {
       );
     }
 
+    const startedAt = scenarioSession.startedAt ?? new Date();
     const endedAt = scenarioSession.endedAt ?? new Date();
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
       endedAt,
+      startedAt,
     });
     this.logger.info(`Updated scenario ${scenarioSessionId} status to ENDED`);
 
     let callDuration = 0;
-    if (scenarioSession.startedAt && endedAt) {
-      callDuration =
-        endedAt.getTime() - scenarioSession.startedAt.getTime() || 0;
+    if (startedAt && endedAt) {
+      callDuration = endedAt.getTime() - startedAt.getTime() || 0;
+    }
+    const caseSessionItemId = scenarioSession.caseSessionItemId;
+    let previousMemory: string | null = null;
+    let needMemory: boolean = false;
+    if (caseSessionItemId) {
+      needMemory = true;
+      previousMemory =
+        await this.caseSharedService.getPreviousCaseMemory(caseSessionItemId);
     }
     try {
       this.getScenarioSessionSummaryFromAI(
         scenarioSessionId,
-        scenarioSession.scenarioId,
+        needMemory,
         callDuration,
+        previousMemory,
       );
 
       await this.livekitService.deleteRoom(scenarioSession.roomId);
@@ -725,10 +818,13 @@ export class ScenarioSessionService {
 
   private async getScenarioSessionSummaryFromAI(
     scenarioSessionId: string,
-    scenarioId: number,
+    needMemory: boolean,
     callDuration?: number,
+    previousMemory?: string | null,
   ) {
     try {
+      // Fetch previous case memory if this is part of a case sequence
+
       await this.dataSource.transaction(async (entityManager) => {
         const scenarioSessionMessagesRepo = entityManager.getRepository(
           ScenarioSessionMessages,
@@ -757,9 +853,12 @@ export class ScenarioSessionService {
             end_time: message.endSeconds,
           }));
 
-          const aiSummary =
-            await this.aiService.getScenarioSessionSummary(messages);
-
+          let aiSummary = await this.aiService.getScenarioSessionSummary(
+            messages,
+            needMemory,
+            previousMemory,
+          );
+          aiSummary = CommonUtil.convertToCamelCase(aiSummary);
           summary = { feedback: aiSummary };
         }
 
@@ -991,11 +1090,11 @@ export class ScenarioSessionService {
       scenario.metadata.defaultLanguageId = enLanguageDetails?.id;
     }
 
-    const roomMetadata = await this.createRoomMetadata(
+    const roomMetadata = await this.createRoomMetadata({
       scenario,
       sessionEvents,
       languageDetails,
-    );
+    });
     const roomName = `preview-${scenarioId}-${v4()}`;
 
     // Preparing checklist events for simulation room, only if CHECKLIST mode is enabled for scenario
@@ -1043,7 +1142,9 @@ export class ScenarioSessionService {
       ...(metadata ?? {}),
     };
 
-    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields();
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
+      this.configService.featureFlag.stateBasedScenarioInstructions,
+    );
     const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
       (field) => !flatScenario[field as keyof typeof flatScenario],
     );
@@ -1065,6 +1166,15 @@ export class ScenarioSessionService {
     return this.scenarioSessionRepository.findOne({
       where: { scenarioPathSessionItemId },
       order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getTopScoredScenarioSessionByCaseSessionItemId(
+    caseSessionItemId: string,
+  ) {
+    return this.scenarioSessionRepository.findOne({
+      where: { caseSessionItemId, score: Not(IsNull()) },
+      order: { score: 'DESC' },
     });
   }
 

@@ -8,16 +8,21 @@ import {
   Max,
   MaxLength,
   IsEnum,
+  MinLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import {
   ScenarioCharacterSortBy,
   ScenarioCharacterSortOrder,
 } from '../enum/scenario-character.enum';
+import { TrimStringTransform } from 'src/common/util/string-transform.util';
 
 export class ScenarioCharacterRequestDto {
   @ApiProperty({ description: 'Scenario character name' })
+  @Transform(TrimStringTransform)
   @IsNotEmpty()
   @IsString()
+  @MinLength(1)
   @MaxLength(200)
   name!: string;
 
@@ -29,8 +34,10 @@ export class ScenarioCharacterRequestDto {
   age!: number;
 
   @ApiProperty({ description: 'Scenario character gender' })
+  @Transform(TrimStringTransform)
   @IsNotEmpty()
   @IsString()
+  @MinLength(1)
   @MaxLength(100)
   gender!: string;
 
@@ -39,25 +46,32 @@ export class ScenarioCharacterRequestDto {
     required: false,
   })
   @IsOptional()
+  @Transform(TrimStringTransform)
   @IsString()
   @MaxLength(200)
   profession?: string;
 
   @ApiProperty({ description: 'Scenario character current location' })
+  @Transform(TrimStringTransform)
   @IsNotEmpty()
   @IsString()
+  @MinLength(1)
   @MaxLength(300)
   currentLocation!: string;
 
   @ApiProperty({ description: 'Scenario character gender identity' })
+  @Transform(TrimStringTransform)
   @IsNotEmpty()
   @IsString()
+  @MinLength(1)
   @MaxLength(100)
   genderIdentity!: string;
 
   @ApiProperty({ description: 'Scenario character sexual orientation' })
+  @Transform(TrimStringTransform)
   @IsNotEmpty()
   @IsString()
+  @MinLength(1)
   @MaxLength(100)
   sexualOrientation!: string;
 }

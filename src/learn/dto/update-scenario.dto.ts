@@ -26,6 +26,7 @@ import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
 import { MAX_CUSTOM_FIELDS_COUNT } from '../constants/scenario.constants';
 import { TerminationEventsDto } from './termination-events.dto';
+import { StateInstructionsDto } from './state-instructions.dto';
 
 export class UpdateScenarioDto {
   @ApiProperty({
@@ -188,6 +189,7 @@ export class UpdateScenarioDto {
   @IsOptional()
   responseLength?: ScenarioResponseLength;
 
+  // FEATURE_CLEANUP(FEATURE_SCENARIO_STATE_INSTRUCTIONS): remove agentDialogues, context
   @ApiProperty({
     description: 'Your dialogues',
     example: ['Absolutely', 'Probably'],
@@ -281,6 +283,8 @@ export class UpdateScenarioDto {
     example: ExperienceMode.FEEDBACK,
     required: false,
   })
+  @IsOptional()
+  @ValidateIf((o) => o.experienceMode !== undefined)
   @IsEnum(ExperienceMode)
   experienceMode?: ExperienceMode;
 
@@ -324,4 +328,14 @@ export class UpdateScenarioDto {
   @IsOptional()
   @IsBoolean()
   optGuardrails?: boolean;
+
+  @ApiProperty({
+    description: 'State instructions',
+    type: [StateInstructionsDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => StateInstructionsDto)
+  stateInstructions?: StateInstructionsDto[];
 }

@@ -272,15 +272,25 @@ export class AiService {
     return response;
   }
 
-  async getScenarioSessionSummary(messages: MessageRequest[]) {
+  async getScenarioSessionSummary(
+    messages: MessageRequest[],
+    needMemory: boolean,
+    previousMemory?: string | null,
+  ) {
     try {
       const response = await this.makeRequest<
         any,
-        { chat_history: MessageRequest[] }
+        {
+          chat_history: MessageRequest[];
+          previous_memory?: string | null;
+          need_memory: boolean;
+        }
       >(
         'api/v1/summary/scenario/feedback',
         {
           chat_history: messages,
+          need_memory: needMemory,
+          previous_memory: previousMemory,
         },
         true,
         'post',

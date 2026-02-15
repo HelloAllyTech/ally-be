@@ -1,40 +1,50 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
 import { PreferenceName } from '../../common/constants/user.constants';
 import { Preference } from '../entity/preference.entity';
 import { PreferenceValue } from '../../common/type/common.type';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { PreferenceRepository } from '../repository/preference.repository';
 
 @Injectable()
 export class PreferenceService {
   private readonly auditLogger = AuditLoggerService.getInstance();
 
   constructor(
-    @InjectRepository(Preference)
-    private readonly preferenceRepository: Repository<Preference>,
     private readonly preferenceCache: RedisService,
+    private readonly preferenceRepository: PreferenceRepository,
   ) {}
 
   private readonly logger = LoggerService.getInstance(PreferenceService.name);
 
-  async createPreference(preference: Partial<Preference>): Promise<Preference> {
-    return this.preferenceRepository.save(preference);
+  private getRepo(entityManager?: EntityManager): Repository<Preference> {
+    return entityManager
+      ? entityManager.getRepository(Preference)
+      : this.preferenceRepository;
+  }
+
+  async createPreference(
+    preference: Partial<Preference>,
+    entityManager?: EntityManager,
+  ): Promise<Preference> {
+    return this.getRepo(entityManager).save(preference);
   }
 
   async getPreference(
     name: PreferenceName,
     relatedId: string,
     relatedEntity: string,
+    entityManager?: EntityManager,
   ): Promise<Preference | null> {
     const cacheKey = `preference:${name}:${relatedId}:${relatedEntity}`;
     const cachedPreference = await this.preferenceCache.get(cacheKey);
     if (cachedPreference) {
       return JSON.parse(cachedPreference);
     }
-    const preference = await this.preferenceRepository.findOne({
+    const repo = this.getRepo(entityManager);
+    const preference = await repo.findOne({
       where: { name, relatedId, relatedEntity },
     });
     if (preference) {
@@ -43,14 +53,22 @@ export class PreferenceService {
     return preference;
   }
 
+  async getHiddenChatTypesForTenants(
+    tenantIds: string[],
+  ): Promise<{ tenantId: string; hiddenChatTypes: string[] }[]> {
+    return this.preferenceRepository.getHiddenChatTypesForTenants(tenantIds);
+  }
+
   async updatePreference(
     id: string,
     value: PreferenceValue,
+    entityManager?: EntityManager,
   ): Promise<Preference | null> {
-    await this.preferenceRepository.update(id, {
+    const repo = this.getRepo(entityManager);
+    await repo.update(id, {
       value,
     });
-    const updatePreference = await this.preferenceRepository.findOne({
+    const updatePreference = await repo.findOne({
       where: { id },
     });
     if (updatePreference) {
