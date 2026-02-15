@@ -76,7 +76,6 @@ describe('ScenarioSessionService', () => {
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let mockConfigService: any;
   let scenarioVoicesRepository: jest.Mocked<ScenarioVoicesRepository>;
-  let conversationalGuardrailsService: jest.Mocked<ConversationalGuardrailsService>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -380,9 +379,6 @@ describe('ScenarioSessionService', () => {
     sessionEventTranslationService = module.get(SessionEventTranslationService);
     scenarioVoicesRepository = module.get(ScenarioVoicesRepository);
     reviewSharedService = module.get(ReviewSharedService);
-    conversationalGuardrailsService = module.get(
-      ConversationalGuardrailsService,
-    );
   });
 
   afterEach(() => {

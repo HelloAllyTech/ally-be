@@ -77,10 +77,12 @@ describe('Scenario Util', () => {
           agentDialogues: scenario.agentDialogues,
           responseLength: scenario.responseLength,
           customFields: scenario.customFields,
+          languageVoices: scenario.languageVoices,
           experienceMode: ExperienceMode.CHECKLIST,
           checklistType: ChecklistType.GUIDED,
           timerMode: true,
           maxTimeValue: '1:30:00',
+          optGuardrails: scenario.optGuardrails,
         },
       });
     });
