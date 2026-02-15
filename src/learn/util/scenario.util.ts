@@ -50,6 +50,7 @@ export const mapCreateScenarioRequestToEntity = (
       ...(scenario.timerMode === true && {
         maxTimeValue: scenario.maxTimeValue,
       }),
+      optGuardrails: scenario.optGuardrails,
     },
   };
 };
@@ -138,6 +139,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'checklistType',
     'timerMode',
     'maxTimeValue',
+    'optGuardrails',
   ];
 
   // Handle metadata fields - merge with existing metadata

@@ -315,4 +315,13 @@ export class UpdateScenarioDto {
   @IsNotEmpty()
   @IsString()
   maxTimeValue?: string;
+
+  @ApiProperty({
+    description: 'Enable conversational guardrails for the scenario',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  optGuardrails?: boolean;
 }
