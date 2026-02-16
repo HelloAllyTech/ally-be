@@ -47,6 +47,7 @@ import { ReviewModule } from 'src/review/review.module';
 import { ConversationalGuardrailsModule } from 'src/conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from 'src/case/case.module';
 import { ScenarioSessionDetailsRepository } from './repository/scenario-session-details.repository';
+import { ScenarioReportModule } from 'src/scenario-report/scenario-report.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { ScenarioSessionDetailsRepository } from './repository/scenario-session-
     forwardRef(() => ReviewModule),
     forwardRef(() => ConversationalGuardrailsModule),
     forwardRef(() => CaseModule),
+    ScenarioReportModule,
   ],
   controllers: [LearnController, SimulationCreditsController],
   providers: [

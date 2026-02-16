@@ -17,6 +17,7 @@ import {
   GetReferenceDocumentRequest,
   IdentifySpeakersRequest,
   MessageRequest,
+  ScenarioReportGenerateRequest,
   SearchReferenceDocumentsRequest,
   TagPositivityRatingsRequest,
   TranscribeAudioRequest,
@@ -197,6 +198,18 @@ export class AiService {
       TranscribeAudioRequest
     >(ENDPOINTS.TRANSCRIBE_AND_SUMMARIZE, request);
     return response;
+  }
+
+  @RetryOnFail(3, 1000)
+  async triggerScenarioReportGenerate(
+    request: ScenarioReportGenerateRequest,
+  ): Promise<void> {
+    await this.makeRequest<unknown, ScenarioReportGenerateRequest>(
+      ENDPOINTS.SCENARIO_REPORT_GENERATE,
+      request,
+      true,
+      'post',
+    );
   }
 
   private async makeRequest<R, T>(

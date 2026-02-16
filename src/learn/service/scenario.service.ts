@@ -87,6 +87,7 @@ import {
   unwrapFieldPlaceholders,
 } from 'src/session-event/util/session-event.util';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { ScenarioReportService } from 'src/scenario-report/service/scenario-report.service';
 
 @Injectable()
 export class ScenarioService {
@@ -109,6 +110,7 @@ export class ScenarioService {
     private sharedLanguageService: SharedLanguageService,
     private scenarioSharedService: ScenarioSharedService,
     private scenarioEventTranslationsRepository: ScenarioEventsTranslationsRepository,
+    private scenarioReportService: ScenarioReportService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -684,12 +686,22 @@ export class ScenarioService {
     }
   }
 
+  private async checkForInProgressScenarioReports(
+    scenarioId: number,
+  ): Promise<void> {
+    await this.scenarioReportService.checkForInProgressScenarioReports(
+      scenarioId,
+      'Cannot update scenario while a report is in progress',
+    );
+  }
+
   async updateScenario(
     id: number,
     updateScenarioDto: UpdateScenarioDto,
     userId: number,
   ): Promise<boolean> {
     const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
+    await this.checkForInProgressScenarioReports(scenario.id);
 
     try {
       return await this.dataSource.transaction(async (entityManager) => {
@@ -984,6 +996,7 @@ export class ScenarioService {
     const { scenarioId, events } = createScenarioEventsDto;
 
     await this.validateMapEventsToScenario(scenarioId, events);
+    await this.checkForInProgressScenarioReports(scenarioId);
 
     try {
       return await this.dataSource.transaction(async (entityManager) => {
@@ -1135,6 +1148,7 @@ export class ScenarioService {
     }
 
     await this.getScenario(scenarioId);
+    await this.checkForInProgressScenarioReports(scenarioId);
 
     const result = await this.scenarioEventsRepository.delete({
       eventId: In(eventIds),

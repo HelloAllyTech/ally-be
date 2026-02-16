@@ -40,6 +40,7 @@ import { PromptModule } from './prompt/prompt.module';
 import { ConversationalGuardrailsModule } from './conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from './case/case.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
+import { ScenarioReportModule } from './scenario-report/scenario-report.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/
     PromptModule,
     ConversationalGuardrailsModule,
     ScenarioCoverImageLibraryModule,
+    ScenarioReportModule,
   ],
   controllers: [],
   providers: [
