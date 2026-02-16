@@ -1,0 +1,19 @@
+export enum ScenarioReportStatus {
+  STARTED = 'STARTED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+  FAILED = 'FAILED',
+}
+
+export enum ScenarioReportEvents {
+  CONNECTED = 'CONNECTED',
+  JOIN_USER_REPORTS_ROOM = 'JOIN_USER_REPORTS_ROOM',
+  JOIN_SCENARIO_REPORT_ROOM = 'JOIN_SCENARIO_REPORT_ROOM',
+  REPORTS_UPDATED = 'REPORTS_UPDATED',
+}
+
+export enum ScenarioReportRoomTypes {
+  USER = 'USER',
+  REPORT = 'REPORT',
+}

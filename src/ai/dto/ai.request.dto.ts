@@ -68,3 +68,11 @@ export interface TranscribeAudioRequest {
   chat_id: number;
   sample_rate: number;
 }
+
+export interface ScenarioReportGenerateRequest {
+  prompt: string;
+  turns: number;
+  language: string;
+  scenario_id: number;
+  report_id: string;
+}

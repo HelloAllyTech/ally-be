@@ -10,4 +10,5 @@ export const ENDPOINTS = {
   GET_REFERENCE_DOCUMENT: 'api/v1/reference-documents',
   DELETE_REFERENCE_DOCUMENT: 'api/v1/reference-documents',
   TRANSCRIBE_AND_SUMMARIZE: 'api/v1/transcription/transcribe-and-summarize',
+  SCENARIO_REPORT_GENERATE: 'api/v1/scenario-report/generate',
 } as const;

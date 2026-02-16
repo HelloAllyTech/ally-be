@@ -31,6 +31,7 @@ import { ScenarioEventsTranslationsRepository } from 'src/learn/repository/scena
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 import { ScenarioSharedService } from '../scenario-shared.service';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { ScenarioReportService } from 'src/scenario-report/service/scenario-report.service';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -314,6 +315,14 @@ describe('ScenarioService', () => {
         {
           provide: OpenAITranslationsService,
           useValue: mockOpenAITranslationsService,
+        },
+        {
+          provide: ScenarioReportService,
+          useValue: {
+            checkForInProgressScenarioReports: jest
+              .fn()
+              .mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();
