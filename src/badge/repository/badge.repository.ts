@@ -34,7 +34,6 @@ export class BadgeRepository extends Repository<Badge> {
       )
       .select([
         'badge.id AS "id"',
-        'badge.code AS "code"',
         'badge.name AS "name"',
         'badge.description AS "description"',
         'badge.imageUrl AS "imageUrl"',
@@ -78,7 +77,6 @@ export class BadgeRepository extends Repository<Badge> {
         'badgeUser.viewedStatus AS "viewedStatus"',
         'badgeUser.createdAt AS "createdAt"',
         'badge.id AS "badge_id"',
-        'badge.code AS "code"',
         'badge.name AS "name"',
         'badge.description AS "description"',
         'badge.imageUrl AS "imageUrl"',
@@ -121,7 +119,6 @@ export class BadgeRepository extends Repository<Badge> {
         'badgeUser.viewedStatus AS "viewedStatus"',
         'badgeUser.createdAt AS "createdAt"',
         'badge.id AS "badge_id"',
-        'badge.code AS "code"',
         'badge.name AS "name"',
         'badge.description AS "description"',
         'badge.imageUrl AS "imageUrl"',
@@ -172,7 +169,7 @@ export class BadgeRepository extends Repository<Badge> {
 
     if (filter?.search?.trim()) {
       const term = `%${filter.search.trim()}%`;
-      query.andWhere('(badge.name ILIKE :term OR badge.code ILIKE :term)', {
+      query.andWhere('(badge.name ILIKE :term)', {
         term,
       });
     }

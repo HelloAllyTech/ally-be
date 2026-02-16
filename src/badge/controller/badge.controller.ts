@@ -190,7 +190,7 @@ export class BadgeController {
     name: 'search',
     type: String,
     required: false,
-    description: 'Search by name or code (case-insensitive)',
+    description: 'Search by name (case-insensitive)',
   })
   @ApiQuery({
     name: 'category',

@@ -28,7 +28,6 @@ export enum BadgeLockStatus {
 }
 
 export const BADGE_MANDATORY_FIELDS: (keyof CreateBadgeDto)[] = [
-  'code',
   'name',
   'description',
   'imageUrl',

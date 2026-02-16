@@ -31,14 +31,6 @@ export class BadgeAchievementParamsDto {
 
 export class CreateBadgeDto {
   @ApiProperty({
-    description: 'Unique code identifier for the badge',
-    example: 'first-simulation',
-  })
-  @IsString()
-  @IsNotEmpty()
-  code!: string;
-
-  @ApiProperty({
     description: 'Display name of the badge',
     example: 'First Simulation',
   })
@@ -142,15 +134,6 @@ export class UpdateBadgeDto {
   @IsString()
   @IsOptional()
   name?: string;
-
-  @ApiProperty({
-    description: 'Code of the badge',
-    example: 'first-simulation',
-    required: false,
-  })
-  @IsString()
-  @IsOptional()
-  code?: string;
 
   @ApiProperty({
     description: 'Detailed description of the badge',

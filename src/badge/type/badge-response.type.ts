@@ -11,7 +11,6 @@ export interface UserBadgeWithDetails {
   userId: number;
   viewedStatus: BadgeViewedStatus;
   createdAt: Date;
-  code: string;
   name: string;
   description?: string;
   imageUrl?: string;
@@ -25,7 +24,6 @@ export interface UserBadgeResponse {
 
 export interface TenantBadgeResponse {
   id: string;
-  code: string;
   name: string;
   description?: string;
   imageUrl?: string;
