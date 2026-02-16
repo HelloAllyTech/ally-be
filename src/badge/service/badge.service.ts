@@ -31,9 +31,7 @@ import {
   UserAvailableBadge,
   UserBadgeResponse,
 } from '../type/badge-response.type';
-import isDuplicateKeyException, {
-  NotFoundException,
-} from 'src/exception/custom.exception';
+import { NotFoundException } from 'src/exception/custom.exception';
 import { BadgeUserRepository } from '../repository/badge-user.repository';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { BadgeGroupRepository } from '../repository/badge-group.repository';
@@ -83,15 +81,7 @@ export class BadgeService {
         updatedBy: userId,
       });
 
-      let savedBadge: Badge;
-      try {
-        savedBadge = await badgeRepo.save(badge);
-      } catch (error) {
-        if (isDuplicateKeyException(error)) {
-          throw new BadRequestException('Badge with this code already exists');
-        }
-        throw error;
-      }
+      const savedBadge = await badgeRepo.save(badge);
 
       if (createBadgeDto.groupIds && createBadgeDto.groupIds.length > 0) {
         const badgeGroups = createBadgeDto.groupIds.map((groupId) =>
@@ -147,17 +137,7 @@ export class BadgeService {
             updatedBy: userId,
           }),
         );
-        let inserted: Badge[];
-        try {
-          inserted = await badgeRepo.save(badgeEntities);
-        } catch (error) {
-          if (isDuplicateKeyException(error)) {
-            throw new BadRequestException(
-              'One or more badge codes already exists',
-            );
-          }
-          throw error;
-        }
+        const inserted = await badgeRepo.save(badgeEntities);
 
         // Bulk insert badge-group mappings
         const allBadgeGroups: BadgeGroup[] = [];
@@ -198,15 +178,6 @@ export class BadgeService {
   }
 
   private async validateBadgesBatch(badges: CreateBadgeDto[]): Promise<void> {
-    // Check for duplicate codes within the batch
-    const codes = badges.map((b) => b.code);
-    const duplicateCodes = codes.filter((c, i) => codes.indexOf(c) !== i);
-    if (duplicateCodes.length > 0) {
-      throw new BadRequestException(
-        `Duplicate badge codes in batch: ${[...new Set(duplicateCodes)].join(', ')}`,
-      );
-    }
-
     // Validate mandatory fields for each badge
     for (const badge of badges) {
       this.validateMandatoryFieldsForActiveStatus(
@@ -480,16 +451,7 @@ export class BadgeService {
       const updateData = this.buildBadgeUpdateData(updateBadgeDto, userId);
 
       if (Object.keys(updateData).length > 0) {
-        try {
-          await badgeRepo.update(badgeId, updateData);
-        } catch (error) {
-          if (isDuplicateKeyException(error)) {
-            throw new BadRequestException(
-              'Badge with this code already exists',
-            );
-          }
-          throw error;
-        }
+        await badgeRepo.update(badgeId, updateData);
       }
 
       // 2. Handle group updates if provided
@@ -617,8 +579,6 @@ export class BadgeService {
     userId: number,
   ): Partial<Badge> {
     const updateData: Partial<Badge> = {};
-    if (updateBadgeDto.code !== undefined)
-      updateData.code = updateBadgeDto.code;
     if (updateBadgeDto.name !== undefined)
       updateData.name = updateBadgeDto.name;
     if (updateBadgeDto.description !== undefined)

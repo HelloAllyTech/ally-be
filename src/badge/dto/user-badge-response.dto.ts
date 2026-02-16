@@ -32,9 +32,6 @@ export class UserBadgeWithDetailsDto {
   @ApiProperty({ description: 'Date when the badge was awarded' })
   createdAt!: Date;
 
-  @ApiProperty({ description: 'Unique badge code' })
-  code!: string;
-
   @ApiProperty({ description: 'Badge name' })
   name!: string;
 
@@ -74,9 +71,6 @@ export class UserBadgeCountResponseDto {
 export class UserAvailableBadgeDto {
   @ApiProperty({ description: 'Badge ID' })
   id!: string;
-
-  @ApiProperty({ description: 'Unique badge code' })
-  code!: string;
 
   @ApiProperty({ description: 'Badge name' })
   name!: string;
@@ -138,9 +132,6 @@ import { BadgeStatus, BadgeVisibilityType } from '../constants/badge.constants';
 export class AdminBadgeDto {
   @ApiProperty({ description: 'Badge ID' })
   id!: string;
-
-  @ApiProperty({ description: 'Unique badge code' })
-  code!: string;
 
   @ApiProperty({ description: 'Badge name' })
   name!: string;

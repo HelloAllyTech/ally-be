@@ -28,7 +28,6 @@ const USER_IDS = [3, 5];
 const ADMIN_USER_ID = 1;
 
 interface BadgeData {
-  code: string;
   name: string;
   description: string;
   imageUrl: string;
@@ -44,7 +43,6 @@ const badgesData: BadgeData[] = [
   // SIMULATION_MINUTES badges
   // ============================================
   {
-    code: 'sim-starter',
     name: 'Simulation Starter',
     description: 'Complete your first 10 minutes of simulation practice.',
     imageUrl: 'https://placehold.co/200x200/4CAF50/white?text=10min',
@@ -54,7 +52,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 10 },
   },
   {
-    code: 'sim-enthusiast',
     name: 'Simulation Enthusiast',
     description:
       'Reach 30 minutes of simulation time. You are building momentum!',
@@ -65,7 +62,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 30 },
   },
   {
-    code: 'sim-dedicated',
     name: 'Dedicated Practitioner',
     description:
       'Complete 60 minutes of simulation. Your commitment to learning is showing!',
@@ -76,7 +72,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 60 },
   },
   {
-    code: 'sim-veteran',
     name: 'Simulation Veteran',
     description:
       'Achieve 120 minutes of simulation practice. You are becoming a seasoned counselor!',
@@ -87,7 +82,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 120 },
   },
   {
-    code: 'sim-master',
     name: 'Simulation Master',
     description:
       'Complete 300 minutes of simulation. You have demonstrated exceptional dedication!',
@@ -102,7 +96,6 @@ const badgesData: BadgeData[] = [
   // ACTIVE_DAY_STREAK badges
   // ============================================
   {
-    code: 'streak-first-step',
     name: 'First Step',
     description:
       'Log in for 2 consecutive days. Every journey starts with consistency!',
@@ -113,7 +106,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 2 },
   },
   {
-    code: 'streak-week-warrior',
     name: 'Week Warrior',
     description: 'Maintain a 7-day active streak. A full week of dedication!',
     imageUrl: 'https://placehold.co/200x200/00BCD4/white?text=7+Days',
@@ -123,7 +115,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 7 },
   },
   {
-    code: 'streak-fortnight-focus',
     name: 'Fortnight Focus',
     description:
       'Keep your streak going for 14 days. Your persistence is inspiring!',
@@ -134,7 +125,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 14 },
   },
   {
-    code: 'streak-monthly-milestone',
     name: 'Monthly Milestone',
     description:
       'Achieve a 30-day streak. A full month of consistent learning!',
@@ -145,7 +135,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 30 },
   },
   {
-    code: 'streak-unstoppable',
     name: 'Unstoppable',
     description:
       'Maintain a 60-day streak. Your commitment to growth is extraordinary!',
@@ -160,7 +149,6 @@ const badgesData: BadgeData[] = [
   // COMMENTS_REACTIONS_GIVEN badges
   // ============================================
   {
-    code: 'engage-first-voice',
     name: 'First Voice',
     description:
       'Give your first comment or reaction. Your engagement matters!',
@@ -171,7 +159,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 1 },
   },
   {
-    code: 'engage-conversation-starter',
     name: 'Conversation Starter',
     description:
       'Give 10 comments or reactions. You are actively contributing to the community!',
@@ -182,7 +169,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 10 },
   },
   {
-    code: 'engage-active-contributor',
     name: 'Active Contributor',
     description:
       'Give 25 comments or reactions. Your participation enriches our community!',
@@ -193,7 +179,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 25 },
   },
   {
-    code: 'engage-community-pillar',
     name: 'Community Pillar',
     description:
       'Give 50 comments or reactions. You are a cornerstone of our learning community!',
@@ -204,7 +189,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 50 },
   },
   {
-    code: 'engage-engagement-champion',
     name: 'Engagement Champion',
     description:
       'Give 100 comments or reactions. Your dedication to helping others is remarkable!',
@@ -219,7 +203,6 @@ const badgesData: BadgeData[] = [
   // COMMENTS_REACTIONS_RECEIVED badges
   // ============================================
   {
-    code: 'receive-noticed',
     name: 'Getting Noticed',
     description:
       'Receive your first comment or reaction. Your contributions are being seen!',
@@ -230,7 +213,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 1 },
   },
   {
-    code: 'receive-rising-star',
     name: 'Rising Star',
     description:
       'Receive 10 comments or reactions. Others are appreciating your work!',
@@ -241,7 +223,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 10 },
   },
   {
-    code: 'receive-crowd-favorite',
     name: 'Crowd Favorite',
     description:
       'Receive 25 comments or reactions. Your insights resonate with the community!',
@@ -252,7 +233,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 25 },
   },
   {
-    code: 'receive-influential',
     name: 'Influential Voice',
     description:
       'Receive 50 comments or reactions. You are making a real impact!',
@@ -263,7 +243,6 @@ const badgesData: BadgeData[] = [
     achievementParams: { count: 50 },
   },
   {
-    code: 'receive-community-star',
     name: 'Community Star',
     description:
       'Receive 100 comments or reactions. You are a true inspiration to others!',
@@ -314,12 +293,12 @@ async function seedBadges() {
     for (const badgeData of badgesData) {
       // Check if badge already exists
       const existingBadge = await badgeRepository.findOne({
-        where: { code: badgeData.code },
+        where: { name: badgeData.name },
       });
 
       if (existingBadge) {
         logStep(
-          `[badges] Badge "${badgeData.code}" already exists, skipping...`,
+          `[badges] Badge "${badgeData.name}" already exists, skipping...`,
         );
         createdBadgeIds.push(existingBadge.id);
         skippedCount++;

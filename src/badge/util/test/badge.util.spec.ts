@@ -12,7 +12,6 @@ describe('Badge Util', () => {
       overrides: Partial<UserAvailableBadge> = {},
     ): UserAvailableBadge => ({
       id: 'badge-1',
-      code: 'TEST_BADGE',
       name: 'Test Badge',
       description: 'Test Description',
       imageUrl: 'https://example.com/badge.png',

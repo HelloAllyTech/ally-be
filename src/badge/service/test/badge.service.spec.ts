@@ -115,7 +115,6 @@ describe('BadgeService', () => {
   describe('validateMandatoryFieldsForActiveStatus', () => {
     it('should throw BadRequestException when mandatory fields are missing for ACTIVE status', () => {
       const badgeData = {
-        code: 'TEST',
         name: 'Test Badge',
         // missing: description, imageUrl, category, achievementParams, groupIds
       };
@@ -130,7 +129,7 @@ describe('BadgeService', () => {
 
     it('should not validate mandatory fields for DRAFT status', () => {
       const badgeData = {
-        code: 'TEST',
+        name: 'Test Badge',
         // missing most fields
       };
 
@@ -184,7 +183,6 @@ describe('BadgeService', () => {
       const badge = {
         id: 'badge-1',
         status: BadgeStatus.ACTIVE,
-        code: 'TEST',
         name: 'Test',
         description: 'Desc',
         imageUrl: 'url',
@@ -247,9 +245,7 @@ describe('BadgeService', () => {
         sortBy: 'createdAt',
         order: 'DESC' as const,
       };
-      const badges = [
-        { id: 'badge-1', name: 'Badge 1', code: 'B1' },
-      ] as Badge[];
+      const badges = [{ id: 'badge-1', name: 'Badge 1' }] as Badge[];
       mockBadgeRepository.getAllBadges.mockResolvedValue([badges, 1]);
       mockBadgeGroupRepository.getGroupNamesByBadgeIds.mockResolvedValue(
         new Map(),
@@ -261,7 +257,6 @@ describe('BadgeService', () => {
       expect(result.data[0]).toMatchObject({
         id: 'badge-1',
         name: 'Badge 1',
-        code: 'B1',
       });
       expect(result.data[0].roles).toEqual([]);
       expect(result.count).toBe(1);
@@ -280,9 +275,7 @@ describe('BadgeService', () => {
     });
 
     it('should attach group names as roles to each badge', async () => {
-      const badges = [
-        { id: 'badge-1', name: 'Badge 1', code: 'B1' },
-      ] as Badge[];
+      const badges = [{ id: 'badge-1', name: 'Badge 1' }] as Badge[];
       mockBadgeRepository.getAllBadges.mockResolvedValue([badges, 1]);
       mockBadgeGroupRepository.getGroupNamesByBadgeIds.mockResolvedValue(
         new Map([['badge-1', ['Admin', 'Manager']]]),
@@ -415,7 +408,6 @@ describe('BadgeService', () => {
   describe('buildBadgeUpdateData', () => {
     it('should only include defined fields in update data', () => {
       const updateDto = {
-        code: 'NEW_CODE',
         name: 'New Name',
         // other fields undefined
       };
@@ -423,7 +415,6 @@ describe('BadgeService', () => {
       const result = (service as any).buildBadgeUpdateData(updateDto);
 
       expect(result).toEqual({
-        code: 'NEW_CODE',
         name: 'New Name',
       });
       expect(result).not.toHaveProperty('description');
@@ -453,9 +444,8 @@ describe('BadgeService', () => {
   });
 
   describe('createBadgesBatch', () => {
-    const createMockBadgeDto = (code: string) => ({
-      code,
-      name: `Badge ${code}`,
+    const createMockBadgeDto = (name: string) => ({
+      name,
       description: 'Test description',
       imageUrl: 'https://example.com/badge.png',
       category: 'SIMULATION_MINUTES',
@@ -464,21 +454,10 @@ describe('BadgeService', () => {
       tenantIds: [],
     });
 
-    it('should throw BadRequestException when duplicate codes in batch', async () => {
-      const batchDto = {
-        badges: [createMockBadgeDto('TEST-1'), createMockBadgeDto('TEST-1')],
-      };
-
-      await expect(service.createBadgesBatch(batchDto as any)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
     it('should validate all badges have mandatory fields for ACTIVE status', async () => {
       const batchDto = {
         badges: [
           {
-            code: 'TEST-1',
             name: 'Test Badge',
             // missing mandatory fields for ACTIVE status
           },
@@ -494,8 +473,8 @@ describe('BadgeService', () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
       const batchDto = {
         badges: [
-          { ...createMockBadgeDto('TEST-1'), groupIds: [1, 2] },
-          { ...createMockBadgeDto('TEST-2'), groupIds: [2, 3] },
+          { ...createMockBadgeDto('Test Badge 1'), groupIds: [1, 2] },
+          { ...createMockBadgeDto('Test Badge 2'), groupIds: [2, 3] },
         ],
       };
 
@@ -516,13 +495,16 @@ describe('BadgeService', () => {
     it('should create all badges in a single transaction', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
       const batchDto = {
-        badges: [createMockBadgeDto('TEST-1'), createMockBadgeDto('TEST-2')],
+        badges: [
+          createMockBadgeDto('Test Badge 1'),
+          createMockBadgeDto('Test Badge 2'),
+        ],
       };
 
       mockGroupRepository.getAll.mockResolvedValue([{ id: 1 }] as any);
 
       const mockBadgeRepo = {
-        create: jest.fn((dto) => ({ ...dto, id: `id-${dto.code}` })),
+        create: jest.fn((dto) => ({ ...dto, id: `id-${dto.name}` })),
         save: jest.fn((entities) =>
           entities.map((e: any) => ({ ...e, status: BadgeStatus.DRAFT })),
         ),
