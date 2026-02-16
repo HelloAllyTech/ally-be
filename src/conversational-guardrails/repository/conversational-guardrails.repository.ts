@@ -4,13 +4,7 @@ import { ConversationalGuardrails } from '../entity/conversational-guardrails.en
 import { Pagination } from 'src/common/type/common.type';
 import { LoggerService } from 'src/logger/logger.service';
 import { MAX_GUARDRAILS_PER_SESSION } from '../constants/guardrails.constants';
-
-export enum ConversationalGuardrailsSortBy {
-  CREATED_AT = 'createdAt',
-  UPDATED_AT = 'updatedAt',
-  HELPER_DIALOGUE = 'helperDialogue',
-  NAME = 'name',
-}
+import { ConversationalGuardrailsSortBy } from '../enum/conversational-guardrails-sort-by.enum';
 
 @Injectable()
 export class ConversationalGuardrailsRepository extends Repository<ConversationalGuardrails> {
