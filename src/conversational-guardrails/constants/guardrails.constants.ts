@@ -1,0 +1,1 @@
+export const MAX_GUARDRAILS_PER_SESSION = 25;

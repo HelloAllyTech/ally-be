@@ -1908,6 +1908,7 @@ describe('ScenarioService', () => {
         currentLocation: 'NY',
         context: 'Context',
         openingStatements: ['Hi'],
+        optGuardrails: true,
       };
       scenarioVoiceRepository.findOne.mockResolvedValue({
         id: 'voice-1',
@@ -1925,6 +1926,7 @@ describe('ScenarioService', () => {
         status: ScenarioStatus.DRAFT,
         prompt: 'Prompt',
         isGlobal: false,
+        optGuardrails: true,
         voiceId: 'invalid-voice',
         name: 'Test',
         age: 30,

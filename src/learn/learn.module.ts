@@ -44,6 +44,7 @@ import { ScenarioTranslationsRepository } from './repository/scenario-translatio
 import { SessionEventTranslationsRepository } from 'src/session-event/repository/session-event-translation.repository';
 import { ScenarioEventsTranslationsRepository } from './repository/scenario-events-translations.repository';
 import { ReviewModule } from 'src/review/review.module';
+import { ConversationalGuardrailsModule } from 'src/conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from 'src/case/case.module';
 import { ScenarioSessionDetailsRepository } from './repository/scenario-session-details.repository';
 
@@ -70,6 +71,7 @@ import { ScenarioSessionDetailsRepository } from './repository/scenario-session-
     forwardRef(() => ScenarioPathModule),
     LanguageModule,
     forwardRef(() => ReviewModule),
+    forwardRef(() => ConversationalGuardrailsModule),
     forwardRef(() => CaseModule),
   ],
   controllers: [LearnController, SimulationCreditsController],

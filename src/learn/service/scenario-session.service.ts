@@ -73,6 +73,7 @@ import {
   ScenarioSessionLeaderboardEvent,
   ScenarioSessionLeaderboardEndedEventParams,
 } from '../type/scenario-session-leaderboard-event.type';
+import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { getScenarioStateConfigByDifficultyLevel } from '../util/scenario-state.util';
 import { ScenarioStateInstruction } from '../type/scenario-state.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
@@ -104,6 +105,7 @@ export class ScenarioSessionService {
     private scenarioVoicesRepository: ScenarioVoicesRepository,
     private reviewSharedService: ReviewSharedService,
     private eventEmitter: EventEmitter2,
+    private conversationalGuardrailsService: ConversationalGuardrailsService,
     private caseSharedService: CaseSharedService,
     private caseSessionService: CaseSessionService,
   ) {

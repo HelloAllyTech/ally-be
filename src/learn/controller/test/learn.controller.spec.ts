@@ -111,6 +111,7 @@ describe('LearnController', () => {
         tone: 'Professional',
         openingStatements: ['Hello', 'Welcome'],
         isGlobal: false,
+        optGuardrails: true,
       },
     ],
   };
