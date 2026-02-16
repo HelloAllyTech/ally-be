@@ -44,6 +44,7 @@ describe('Scenario Util', () => {
         checklistType: ChecklistType.GUIDED,
         timerMode: true,
         maxTimeValue: '1:30:00',
+        optGuardrails: true,
       };
 
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
@@ -81,6 +82,7 @@ describe('Scenario Util', () => {
           checklistType: ChecklistType.GUIDED,
           timerMode: true,
           maxTimeValue: '1:30:00',
+          optGuardrails: scenario.optGuardrails,
           stateInstructions: [
             {
               stateId: '2',

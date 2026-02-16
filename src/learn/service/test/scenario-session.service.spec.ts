@@ -39,6 +39,7 @@ import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.r
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ReviewSharedService } from 'src/review/service/review-shared.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
 
@@ -259,6 +260,9 @@ describe('ScenarioSessionService', () => {
     const mockEventEmitter = {
       emit: jest.fn(),
     };
+    const mockConversationalGuardrailsService = {
+      getRandomGuardrailsForSession: jest.fn().mockResolvedValue([]),
+    };
 
     const mockCaseSharedService = {
       getCaseItemsByIds: jest.fn(),
@@ -357,6 +361,10 @@ describe('ScenarioSessionService', () => {
         {
           provide: EventEmitter2,
           useValue: mockEventEmitter,
+        },
+        {
+          provide: ConversationalGuardrailsService,
+          useValue: mockConversationalGuardrailsService,
         },
         {
           provide: CaseSharedService,

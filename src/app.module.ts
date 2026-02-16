@@ -37,6 +37,7 @@ import { BadgeModule } from './badge/badge.module';
 import { CommunityModule } from './community/community.module';
 import { ScenarioCharacterModule } from './scenario-character/scenario-character.module';
 import { PromptModule } from './prompt/prompt.module';
+import { ConversationalGuardrailsModule } from './conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from './case/case.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
 
@@ -80,6 +81,7 @@ import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/
     CommunityModule,
     ScenarioCharacterModule,
     PromptModule,
+    ConversationalGuardrailsModule,
     ScenarioCoverImageLibraryModule,
   ],
   controllers: [],
