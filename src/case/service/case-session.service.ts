@@ -237,7 +237,7 @@ export class CaseSessionService {
       currentCaseSessionItem.caseItemId,
     );
     let currentScenarioData;
-    if (currentCaseItem?.caseId) {
+    if (currentCaseItem?.scenarioId) {
       currentScenarioData = await this.caseSharedService.getScenarioDataById(
         currentCaseItem?.scenarioId,
       );
