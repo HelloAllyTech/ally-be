@@ -17,16 +17,29 @@ import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
-import { DataSource, IsNull, Not, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  In,
+  IsNull,
+  Not,
+  Repository,
+} from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SessionEventService } from 'src/session-event/service/session-event.service';
-import { ScenarioSessionMessages } from '../entity/scenario-session-messages.entity';
 import { ScenarioSessionMessageType } from '../enum/scenario-session-message.type.enum';
+import { ScenarioSessionTagCategory } from '../enum/scenario-session-tag-category.enum';
 import { AiService } from 'src/ai/service/ai.service';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
-import { MessageRequest } from 'src/ai/dto/ai.request.dto';
+import { ScenarioSessionMessageTags } from '../entity/scenario-session-message-tags.entity';
+import { ScenarioSessionTags } from '../entity/scenario-session-tags.entity';
+import {
+  MessageRequest,
+  ScenarioEvaluationChatMessage,
+} from 'src/ai/dto/ai.request.dto';
+import { ScenarioEvaluationMessageTag } from 'src/ai/dto/ai.response.dto';
 import { LearnEventData } from '../interface/learn-message.interface';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
@@ -823,45 +836,81 @@ export class ScenarioSessionService {
     previousMemory?: string | null,
   ) {
     try {
-      // Fetch previous case memory if this is part of a case sequence
-
-      await this.dataSource.transaction(async (entityManager) => {
-        const scenarioSessionMessagesRepo = entityManager.getRepository(
-          ScenarioSessionMessages,
+      const tenantId = ExecutionManager.getTenantId();
+      if (!tenantId) {
+        this.logger.error(
+          'getScenarioSessionSummaryFromAI: tenantId not found in execution context',
         );
-        const scenarioSessionMessages = await scenarioSessionMessagesRepo.find({
+        return;
+      }
+
+      const scenarioSessionMessages =
+        await this.scenarioSessionMessagesRepository.find({
           where: {
             scenarioSessionId,
             messageType: ScenarioSessionMessageType.TEXT,
             tenantId: ExecutionManager.getTenantId(),
           },
         });
-
-        let summary;
-        if (scenarioSessionMessages.length === 0) {
-          this.logger.warn(
-            `No scenario session messages found for scenario session ${scenarioSessionId}`,
-          );
-          summary = {
-            errorMessage: 'Session was too short. No summary generated.',
-          };
-        } else {
-          const messages = scenarioSessionMessages.map((message) => ({
-            role: message.senderId > 0 ? 'COUNSELLOR' : 'CLIENT',
+      let summary;
+      if (scenarioSessionMessages.length === 0) {
+        this.logger.warn(
+          `No scenario session messages found for scenario session ${scenarioSessionId}`,
+        );
+        summary = {
+          errorMessage: 'Session was too short. No summary generated.',
+        };
+      } else {
+        const useEvaluation =
+          this.configService.featureFlag.useScenarioSessionEvaluation;
+        const messages: MessageRequest[] | ScenarioEvaluationChatMessage[] =
+          scenarioSessionMessages.map((message) => ({
+            role: message.senderId > 0 ? 'COUNSELOR' : 'CLIENT',
             content: message.content,
             start_time: message.startSeconds,
             end_time: message.endSeconds,
+            ...(useEvaluation ? { id: message.id.toString() } : {}),
           }));
 
-          let aiSummary = await this.aiService.getScenarioSessionSummary(
-            messages,
-            needMemory,
-            previousMemory,
+        const aiResult = useEvaluation
+          ? await this.aiService.getScenarioSessionEvaluation(
+              messages as ScenarioEvaluationChatMessage[],
+              needMemory,
+              previousMemory,
+            )
+          : await this.aiService.getScenarioSessionSummary(
+              messages as MessageRequest[],
+              needMemory,
+              previousMemory,
+            );
+
+        if (useEvaluation && aiResult && 'emotional_movement' in aiResult) {
+          const messageStartSecondsByMessageId = new Map(
+            scenarioSessionMessages.map((m) => [m.id, m.startSeconds ?? 0]),
           );
-          aiSummary = CommonUtil.convertToCamelCase(aiSummary);
-          summary = { feedback: aiSummary };
+          for (const item of aiResult.emotional_movement) {
+            const messageId = parseInt(item.message_id, 10);
+            item.start_time = messageStartSecondsByMessageId.get(messageId);
+          }
         }
 
+        if (useEvaluation && aiResult && 'message_tags' in aiResult) {
+          await this.dataSource.transaction(async (entityManager) => {
+            await this.persistMessageTags(
+              entityManager,
+              scenarioSessionId,
+              tenantId,
+              scenarioSessionMessages.map((m) => m.id),
+              aiResult.message_tags,
+            );
+          });
+        }
+
+        const aiSummary = CommonUtil.convertToCamelCase(aiResult);
+        summary = { feedback: aiSummary };
+      }
+
+      await this.dataSource.transaction(async (entityManager) => {
         const scenarioSessionDetailsRepo = entityManager.getRepository(
           ScenarioSessionDetails,
         );
@@ -869,7 +918,7 @@ export class ScenarioSessionService {
           scenarioSessionId,
           callDuration,
           summary,
-          tenantId: ExecutionManager.getTenantId(),
+          tenantId,
         });
         await scenarioSessionDetailsRepo.save(scenarioSessionDetails);
       });
@@ -877,6 +926,109 @@ export class ScenarioSessionService {
       this.logger.error(
         `Failed to get scenario session summary from AI: ${JSON.stringify(error.message)}`,
       );
+    }
+  }
+
+  private async persistMessageTags(
+    entityManager: EntityManager,
+    scenarioSessionId: string,
+    tenantId: string,
+    validMessageIds: number[],
+    messageTags: ScenarioEvaluationMessageTag[],
+  ) {
+    const messageIdsSet = new Set(validMessageIds);
+    const tagsRepo = entityManager.getRepository(ScenarioSessionTags);
+    const messageTagsRepo = entityManager.getRepository(
+      ScenarioSessionMessageTags,
+    );
+
+    const uniqueLabels = new Set<string>();
+    const desiredMappings: Array<{
+      messageId: number;
+      label: string;
+      category: ScenarioSessionTagCategory;
+    }> = [];
+
+    for (const msgTag of messageTags) {
+      const messageId = parseInt(msgTag.id, 10);
+      if (Number.isNaN(messageId) || !messageIdsSet.has(messageId)) {
+        continue;
+      }
+      const tags = msgTag.tags ?? [];
+      for (const tag of tags) {
+        const category = tag.category as ScenarioSessionTagCategory;
+        if (
+          !tag?.label ||
+          !category ||
+          !Object.values(ScenarioSessionTagCategory).includes(category)
+        ) {
+          continue;
+        }
+        uniqueLabels.add(tag.label);
+        desiredMappings.push({ messageId, label: tag.label, category });
+      }
+    }
+
+    if (uniqueLabels.size === 0) {
+      return;
+    }
+
+    const existingTags = await tagsRepo.find({
+      where: { label: In(Array.from(uniqueLabels)) },
+    });
+    const labelToTag = new Map<string, ScenarioSessionTags>();
+    for (const t of existingTags) {
+      labelToTag.set(t.label, t);
+    }
+
+    const missingLabels = Array.from(uniqueLabels).filter(
+      (label) => !labelToTag.has(label),
+    );
+    if (missingLabels.length > 0) {
+      const newTags = missingLabels.map((label) => tagsRepo.create({ label }));
+      const saved = await tagsRepo.save(newTags);
+      for (const t of saved) {
+        labelToTag.set(t.label, t);
+      }
+    }
+
+    const existingMappings = await messageTagsRepo.find({
+      where: {
+        scenarioSessionId,
+        messageId: In(validMessageIds),
+      },
+      select: ['messageId', 'tagId'],
+    });
+    const existingKeySet = new Set(
+      existingMappings.map((m) => `${m.messageId}-${m.tagId}`),
+    );
+
+    const tagsToInsert: Array<{
+      scenarioSessionId: string;
+      messageId: number;
+      tagId: string;
+      category: ScenarioSessionTagCategory;
+      tenantId: string;
+    }> = [];
+    for (const m of desiredMappings) {
+      const tagId = labelToTag.get(m.label)?.id;
+      if (!tagId) continue;
+      const key = `${m.messageId}-${tagId}`;
+      if (!existingKeySet.has(key)) {
+        existingKeySet.add(key);
+        tagsToInsert.push({
+          scenarioSessionId,
+          messageId: m.messageId,
+          tagId,
+          category: m.category,
+          tenantId,
+        });
+      }
+    }
+
+    if (tagsToInsert.length > 0) {
+      const entities = messageTagsRepo.create(tagsToInsert);
+      await messageTagsRepo.save(entities);
     }
   }
 

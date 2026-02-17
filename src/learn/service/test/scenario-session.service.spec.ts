@@ -12,6 +12,8 @@ import { AddFeedbackToScenarioSessionRequestDto } from 'src/learn/dto/add-feedba
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { ScenarioSessionDetails } from 'src/learn/entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from 'src/learn/entity/scenario-session-events.entity';
+import { ScenarioSessionMessages } from 'src/learn/entity/scenario-session-messages.entity';
+import { ScenarioSessionMessageType } from 'src/learn/enum/scenario-session-message.type.enum';
 import { ScenarioSessionFeedbacks } from 'src/learn/entity/scenario-session-feedbacks.entity';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.enum';
@@ -180,6 +182,7 @@ describe('ScenarioSessionService', () => {
 
     const mockAiService = {
       getScenarioSessionSummary: jest.fn(),
+      getScenarioSessionEvaluation: jest.fn(),
     };
 
     const mockPermissionsService = {
@@ -267,6 +270,7 @@ describe('ScenarioSessionService', () => {
     const mockCaseSharedService = {
       getCaseItemsByIds: jest.fn(),
       getCaseSessionItemsForUser: jest.fn(),
+      getPreviousCaseMemory: jest.fn().mockResolvedValue(null),
     };
 
     const mockCaseSessionService = {
@@ -280,6 +284,7 @@ describe('ScenarioSessionService', () => {
       },
       featureFlag: {
         scenarioCustomFields: true,
+        useScenarioSessionEvaluation: false,
       },
     };
 
@@ -674,6 +679,127 @@ describe('ScenarioSessionService', () => {
       );
 
       global.Date = originalDate;
+    });
+
+    it('should call getScenarioSessionEvaluation when useScenarioSessionEvaluation is true', async () => {
+      const mockSummaryResponse = {
+        improvements: ['Improve exploration'],
+        positives: ['Good empathy'],
+        sessionGlimpse: 'Client discussed work stress.',
+        cumulativeMemory: '',
+        messageTags: [] as string[],
+        emotionalMovement: [] as string[],
+      };
+      const mockMessages = [
+        {
+          id: 1,
+          scenarioSessionId: mockScenarioSessionId,
+          senderId: 1,
+          messageType: ScenarioSessionMessageType.TEXT,
+          content: 'Hello',
+          startSeconds: 0,
+          endSeconds: 2,
+          tenantId: mockTenantId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+      const mockDetailsSave = jest.fn().mockResolvedValue(undefined);
+      const mockDetailsRepo = {
+        create: jest.fn().mockImplementation((dto) => dto),
+        save: mockDetailsSave,
+      };
+      const mockEntityManager = {
+        getRepository: jest.fn(() => mockDetailsRepo),
+      };
+
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = true;
+      scenarioSessionMessagesRepository.find.mockResolvedValue(
+        mockMessages as ScenarioSessionMessages[],
+      );
+      aiService.getScenarioSessionEvaluation.mockResolvedValue(
+        mockSummaryResponse as any,
+      );
+      dataSource.transaction.mockImplementation(async (cb: any) =>
+        cb(mockEntityManager),
+      );
+
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(0);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await new Promise((r) => setImmediate(r));
+
+      expect(aiService.getScenarioSessionEvaluation).toHaveBeenCalled();
+      expect(aiService.getScenarioSessionSummary).not.toHaveBeenCalled();
+      expect(mockDetailsSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          summary: { feedback: mockSummaryResponse },
+        }),
+      );
+
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
+    });
+
+    it('should call getScenarioSessionSummary when useScenarioSessionEvaluation is false', async () => {
+      const mockFeedbackResponse = { feedback: 'Summary feedback' };
+      const mockMessages = [
+        {
+          id: 1,
+          scenarioSessionId: mockScenarioSessionId,
+          senderId: 0,
+          messageType: ScenarioSessionMessageType.TEXT,
+          content: 'Client said hi',
+          startSeconds: 0,
+          endSeconds: 1,
+          tenantId: mockTenantId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+      const mockDetailsSave = jest.fn().mockResolvedValue(undefined);
+      const mockDetailsRepo = {
+        create: jest.fn().mockImplementation((dto) => dto),
+        save: mockDetailsSave,
+      };
+      const mockEntityManager = {
+        getRepository: jest.fn(() => mockDetailsRepo),
+      };
+
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
+      scenarioSessionMessagesRepository.find.mockResolvedValue(
+        mockMessages as ScenarioSessionMessages[],
+      );
+      aiService.getScenarioSessionSummary.mockResolvedValue(
+        mockFeedbackResponse as any,
+      );
+      dataSource.transaction.mockImplementation(async (cb: any) =>
+        cb(mockEntityManager),
+      );
+
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(0);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await new Promise((r) => setImmediate(r));
+
+      expect(aiService.getScenarioSessionSummary).toHaveBeenCalled();
+      expect(aiService.getScenarioSessionEvaluation).not.toHaveBeenCalled();
+      expect(mockDetailsSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          summary: { feedback: mockFeedbackResponse },
+        }),
+      );
     });
   });
 

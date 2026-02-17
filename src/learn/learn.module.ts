@@ -48,6 +48,10 @@ import { ConversationalGuardrailsModule } from 'src/conversational-guardrails/co
 import { CaseModule } from 'src/case/case.module';
 import { ScenarioSessionDetailsRepository } from './repository/scenario-session-details.repository';
 import { ScenarioReportModule } from 'src/scenario-report/scenario-report.module';
+import { ScenarioSessionTags } from './entity/scenario-session-tags.entity';
+import { ScenarioSessionMessageTags } from './entity/scenario-session-message-tags.entity';
+import { ScenarioSessionTagsRepository } from './repository/scenario-session-tags.repository';
+import { ScenarioSessionMessageTagsRepository } from './repository/scenario-session-message-tags.repository';
 
 @Module({
   imports: [
@@ -62,6 +66,8 @@ import { ScenarioReportModule } from 'src/scenario-report/scenario-report.module
       SimulationCredits,
       TriggerWarnings,
       ScenarioTriggerWarnings,
+      ScenarioSessionTags,
+      ScenarioSessionMessageTags,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -103,6 +109,8 @@ import { ScenarioReportModule } from 'src/scenario-report/scenario-report.module
     SessionEventTranslationsRepository,
     ScenarioEventsTranslationsRepository,
     ScenarioSessionDetailsRepository,
+    ScenarioSessionTagsRepository,
+    ScenarioSessionMessageTagsRepository,
   ],
   exports: [
     LearnMessageProcessor,

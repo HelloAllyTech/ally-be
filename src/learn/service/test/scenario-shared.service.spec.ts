@@ -11,12 +11,16 @@ import { ScenarioFilters } from 'src/learn/type/scenario-filter.type';
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 import { ScenarioSessionMessagesRepository } from '../../repository/scenario-session-messages.repository';
 import { ScenarioSessionDetailsRepository } from '../../repository/scenario-session-details.repository';
+import { ScenarioSessionMessageTagsRepository } from '../../repository/scenario-session-message-tags.repository';
+import { ScenarioSessionTagCategory } from '../../enum/scenario-session-tag-category.enum';
 
 describe('ScenarioSharedService', () => {
   let service: ScenarioSharedService;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
   let scenarioSessionRepository: jest.Mocked<ScenarioSessionRepository>;
   let scenarioTranslationsRepository: jest.Mocked<ScenarioTranslationsRepository>;
+  let scenarioSessionMessagesRepository: jest.Mocked<ScenarioSessionMessagesRepository>;
+  let scenarioSessionMessageTagsRepository: jest.Mocked<ScenarioSessionMessageTagsRepository>;
 
   const mockScenarios: Scenarios[] = [
     { id: 1, title: 'Scenario 1', status: ScenarioStatus.ACTIVE } as Scenarios,
@@ -60,6 +64,10 @@ describe('ScenarioSharedService', () => {
       findOne: jest.fn(),
     };
 
+    const mockScenarioSessionMessageTagsRepository = {
+      getTagsByMessageIds: jest.fn().mockResolvedValue(new Map()),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSharedService,
@@ -87,6 +95,10 @@ describe('ScenarioSharedService', () => {
           provide: ScenarioSessionDetailsRepository,
           useValue: mockScenarioSessionDetailsRepository,
         },
+        {
+          provide: ScenarioSessionMessageTagsRepository,
+          useValue: mockScenarioSessionMessageTagsRepository,
+        },
       ],
     }).compile();
 
@@ -94,6 +106,12 @@ describe('ScenarioSharedService', () => {
     scenariosRepository = module.get(ScenariosRepository);
     scenarioSessionRepository = module.get(ScenarioSessionRepository);
     scenarioTranslationsRepository = module.get(ScenarioTranslationsRepository);
+    scenarioSessionMessagesRepository = module.get(
+      ScenarioSessionMessagesRepository,
+    );
+    scenarioSessionMessageTagsRepository = module.get(
+      ScenarioSessionMessageTagsRepository,
+    );
 
     jest.clearAllMocks();
   });
@@ -205,6 +223,79 @@ describe('ScenarioSharedService', () => {
       expect(scenariosRepository.findOne).toHaveBeenCalledWith({
         where: { id: 999 },
       });
+    });
+  });
+
+  describe('getMessagesByScenarioSessionId', () => {
+    const sessionId = 'session-123';
+    const pagination = { limit: 10, offset: 0 };
+    const mockMessages = [
+      { id: 1, content: 'msg1', scenarioSessionId: sessionId } as any,
+      { id: 2, content: 'msg2', scenarioSessionId: sessionId } as any,
+    ];
+    const mockTagsMap = new Map<
+      number,
+      { tagId: string; label: string; category: ScenarioSessionTagCategory }[]
+    >([
+      [
+        1,
+        [
+          {
+            tagId: 'tag-1',
+            label: 'reflection',
+            category: ScenarioSessionTagCategory.POSITIVE,
+          },
+        ],
+      ],
+      [2, []],
+    ]);
+
+    it('should fetch and attach tags when includeTags is true', async () => {
+      scenarioSessionMessagesRepository.getMessagesByScenarioSessionId.mockResolvedValue(
+        [mockMessages, 2],
+      );
+      scenarioSessionMessageTagsRepository.getTagsByMessageIds.mockResolvedValue(
+        mockTagsMap,
+      );
+
+      const result = await service.getMessagesByScenarioSessionId(
+        sessionId,
+        pagination,
+        { includeTags: true },
+      );
+
+      expect(
+        scenarioSessionMessageTagsRepository.getTagsByMessageIds,
+      ).toHaveBeenCalledWith(sessionId, [1, 2]);
+      expect(result.count).toBe(2);
+      expect(result.messages).toHaveLength(2);
+      expect(result.messages[0].tags).toEqual([
+        {
+          tagId: 'tag-1',
+          label: 'reflection',
+          category: ScenarioSessionTagCategory.POSITIVE,
+        },
+      ]);
+      expect(result.messages[1].tags).toEqual([]);
+    });
+
+    it('should not call getTagsByMessageIds when includeTags is false', async () => {
+      scenarioSessionMessagesRepository.getMessagesByScenarioSessionId.mockResolvedValue(
+        [mockMessages, 2],
+      );
+
+      const result = await service.getMessagesByScenarioSessionId(
+        sessionId,
+        pagination,
+        { includeTags: false },
+      );
+
+      expect(
+        scenarioSessionMessageTagsRepository.getTagsByMessageIds,
+      ).not.toHaveBeenCalled();
+      expect(result.messages).toHaveLength(2);
+      expect(result.messages[0]).not.toHaveProperty('tags');
+      expect(result.messages[1]).not.toHaveProperty('tags');
     });
   });
 
