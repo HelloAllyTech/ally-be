@@ -34,6 +34,7 @@ import {
   CreateBadgeResponseDto,
   CreateBadgesBatchDto,
   CreateBadgesBatchResponseDto,
+  DeleteBadgesBatchDto,
   UpdateBadgeDto,
 } from '../dto/badge.dto';
 import {
@@ -297,6 +298,20 @@ export class BadgeController {
     @Body() updateBadgeDto: UpdateBadgeDto,
   ): Promise<boolean> {
     return this.badgeService.updateBadge(badgeId, updateBadgeDto);
+  }
+
+  @ApiOperation({ summary: 'Delete badges in batch' })
+  @ApiResponse({
+    status: 200,
+    description: 'Badges deleted successfully',
+    type: Boolean,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @Delete('batch')
+  async deleteBadgesBatch(
+    @Body() deleteBadgesBatchDto: DeleteBadgesBatchDto,
+  ): Promise<boolean> {
+    return this.badgeService.deleteBadgesBatch(deleteBadgesBatchDto.badgeIds);
   }
 
   @ApiOperation({ summary: 'Delete a badge' })

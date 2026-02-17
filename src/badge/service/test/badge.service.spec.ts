@@ -37,6 +37,7 @@ describe('BadgeService', () => {
 
   beforeEach(async () => {
     mockBadgeRepository = {
+      find: jest.fn(),
       findOne: jest.fn(),
       findAndCount: jest.fn(),
       getAllBadges: jest.fn().mockResolvedValue([[], 0]),
@@ -440,6 +441,81 @@ describe('BadgeService', () => {
       await expect(service.deleteBadge('badge-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('should soft-delete badge and related records in a transaction', async () => {
+      const badge = { id: 'badge-1', name: 'Test Badge' } as Badge;
+      mockBadgeRepository.findOne.mockResolvedValue(badge);
+      (mockDataSource.transaction as jest.Mock).mockImplementation(
+        async (cb: (entityManager: any) => Promise<boolean>) => cb({
+          getRepository: jest.fn().mockReturnValue({
+            softDelete: jest.fn().mockResolvedValue(undefined),
+          }),
+        }),
+      );
+
+      const result = await service.deleteBadge('badge-1');
+
+      expect(result).toBe(true);
+      expect(mockDataSource.transaction).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('deleteBadgesBatch', () => {
+    it('should throw BadRequestException when badgeIds is empty', async () => {
+      await expect(service.deleteBadgesBatch([])).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.deleteBadgesBatch([])).rejects.toThrow(
+        'No badge IDs provided',
+      );
+    });
+
+    it('should throw NotFoundException when one or more badges do not exist', async () => {
+      mockBadgeRepository.find.mockResolvedValue([
+        { id: '30303d05-19ef-45e5-b52c-7fdc6e4df26c' },
+      ] as Badge[]);
+
+      await expect(
+        service.deleteBadgesBatch([
+          '30303d05-19ef-45e5-b52c-7fdc6e4df26c',
+          '3976395a-cf59-417d-8e2d-0beee7a7687e',
+        ]),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.deleteBadgesBatch([
+          '30303d05-19ef-45e5-b52c-7fdc6e4df26c',
+          '3976395a-cf59-417d-8e2d-0beee7a7687e',
+        ]),
+      ).rejects.toThrow('One or more badges not found');
+    });
+
+    it('should soft-delete all badges and related records in a transaction', async () => {
+      const badgeIds = [
+        '30303d05-19ef-45e5-b52c-7fdc6e4df26c',
+        '3976395a-cf59-417d-8e2d-0beee7a7687e',
+      ];
+      mockBadgeRepository.find.mockResolvedValue(
+        badgeIds.map((id) => ({ id })) as Badge[],
+      );
+      const mockSoftDelete = jest.fn().mockResolvedValue(undefined);
+      (mockDataSource.transaction as jest.Mock).mockImplementation(
+        async (cb: (entityManager: any) => Promise<boolean>) =>
+          cb({
+            getRepository: jest.fn().mockReturnValue({
+              softDelete: mockSoftDelete,
+            }),
+          }),
+      );
+
+      const result = await service.deleteBadgesBatch(badgeIds);
+
+      expect(result).toBe(true);
+      expect(mockBadgeRepository.find).toHaveBeenCalledWith({
+        where: { id: expect.anything() },
+      });
+      expect(mockDataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(mockSoftDelete).toHaveBeenCalledTimes(4); // BadgeTenant, BadgeUser, BadgeGroup, Badge
     });
   });
 
