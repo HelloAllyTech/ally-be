@@ -48,6 +48,7 @@ jest.mock('src/common/execution/execution-manager', () => ({
 describe('TenantService', () => {
   let service: TenantService;
   let tenantRepository: jest.Mocked<Repository<Tenant>>;
+  let userRepository: jest.Mocked<UserRepository>;
   let tenantScenarioSharedService: jest.Mocked<TenantScenarioSharedService>;
   let tenantScenarioPathSharedService: jest.Mocked<TenantScenarioPathSharedService>;
   let dataSource: jest.Mocked<DataSource>;
@@ -225,6 +226,7 @@ describe('TenantService', () => {
 
     service = module.get<TenantService>(TenantService);
     tenantRepository = module.get(getRepositoryToken(Tenant));
+    userRepository = module.get(UserRepository);
     tenantScenarioSharedService = module.get(TenantScenarioSharedService);
     tenantScenarioPathSharedService = module.get(
       TenantScenarioPathSharedService,
@@ -409,6 +411,33 @@ describe('TenantService', () => {
       expect(result).toHaveProperty('hideRankInLeaderboard');
       expect(result).toHaveProperty('enableAudioUpload');
       expect(result).toHaveProperty('enableMicrophoneMode');
+      expect(userRepository.getUserCountByTenantIds).not.toHaveBeenCalled();
+    });
+
+    it('should include userCount when includeUserCount is true', async () => {
+      tenantRepository.findOne.mockResolvedValue(mockTenant);
+      userRepository.getUserCountByTenantIds.mockResolvedValue([
+        { tenantId: 'test-tenant-id', userCount: '42' },
+      ]);
+
+      const result = await service.findById('test-tenant-id', {
+        includeUserCount: true,
+      });
+
+      expect(userRepository.getUserCountByTenantIds).toHaveBeenCalledWith([
+        'test-tenant-id',
+      ]);
+      expect(result).toHaveProperty('userCount', 42);
+      expect(result).toEqual(expect.objectContaining({ userCount: 42 }));
+    });
+
+    it('should not include userCount when includeUserCount is false', async () => {
+      tenantRepository.findOne.mockResolvedValue(mockTenant);
+
+      const result = await service.findById('test-tenant-id');
+
+      expect(userRepository.getUserCountByTenantIds).not.toHaveBeenCalled();
+      expect(result).not.toHaveProperty('userCount');
     });
 
     it('should return null when tenant not found by ID', async () => {

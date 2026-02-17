@@ -51,10 +51,22 @@ export class TenantController {
     return this.tenantService.create(createTenantDto, TenantStatus.ACTIVE);
   }
 
+  @ApiQuery({
+    name: 'includeUserCount',
+    required: false,
+    type: Boolean,
+    description: 'Include user count for this tenant',
+    default: false,
+  })
   @AuthPermissions([PERMISSIONS.VIEW_TENANT])
   @Get(':id')
-  async findById(@Param('id') id: string): Promise<TenantResponseDto | null> {
-    return this.tenantService.findById(id);
+  async findById(
+    @Param('id') id: string,
+    @Query('includeUserCount') includeUserCount?: boolean,
+  ): Promise<TenantResponseDto | null> {
+    return this.tenantService.findById(id, {
+      includeUserCount,
+    });
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_TENANT])
