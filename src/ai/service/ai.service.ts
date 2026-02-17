@@ -18,6 +18,8 @@ import {
   IdentifySpeakersRequest,
   MessageRequest,
   ScenarioReportGenerateRequest,
+  ScenarioEvaluationChatMessage,
+  ScenarioEvaluationRequest,
   SearchReferenceDocumentsRequest,
   TagPositivityRatingsRequest,
   TranscribeAudioRequest,
@@ -30,6 +32,7 @@ import {
   GenerateSummaryResponse,
   GetReferenceDocumentResponse,
   IdentifySpeakersResponse,
+  ScenarioEvaluationResponse,
   SearchReferenceDocumentsResponse,
   TagPositivityRatingsResponse,
   TranscribeAudioResponse,
@@ -315,6 +318,34 @@ export class AiService {
     } catch (error) {
       this.logger.error(`AI Service Error: ${error.message}`);
       throw new Error('AI scenario session summary request failed');
+    }
+  }
+
+  async getScenarioSessionEvaluation(
+    messages: ScenarioEvaluationChatMessage[],
+    needMemory: boolean,
+    previousMemory?: string | null,
+    memoryPrompt?: string | null,
+  ): Promise<ScenarioEvaluationResponse> {
+    try {
+      const request: ScenarioEvaluationRequest = {
+        chat_history: messages,
+        need_memory: needMemory,
+        previous_memory: previousMemory ?? null,
+        memory_prompt: memoryPrompt ?? null,
+      };
+
+      const response = await this.makeRequest<
+        ScenarioEvaluationResponse,
+        ScenarioEvaluationRequest
+      >(ENDPOINTS.SCENARIO_EVALUATION, request, true, 'post');
+      this.logger.debug(
+        `Scenario session evaluation received: ${JSON.stringify(response)}`,
+      );
+      return response;
+    } catch (error) {
+      this.logger.error(`AI Service Error: ${error.message}`);
+      throw new Error('AI scenario session evaluation request failed');
     }
   }
 }

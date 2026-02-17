@@ -66,3 +66,29 @@ export interface DeleteReferenceDocumentResponse {
 }
 
 export type TranscribeAudioResponse = boolean;
+
+export interface ScenarioEvaluationMessageTag {
+  id: string;
+  tags: Array<{ label: string; category: string }>;
+}
+
+export interface ScenarioEvaluationSkillCoverageItem {
+  category: 'Learning' | 'Support' | 'Standards';
+  percentage: number;
+}
+
+export interface ScenarioEvaluationEmotionalMovementItem {
+  message_id: string;
+  level: number;
+  start_time?: number;
+}
+
+export interface ScenarioEvaluationResponse {
+  improvements: string[];
+  positives: string[];
+  session_glimpse: string | null;
+  cumulative_memory: string | null;
+  message_tags: ScenarioEvaluationMessageTag[];
+  skill_coverage?: ScenarioEvaluationSkillCoverageItem[];
+  emotional_movement: ScenarioEvaluationEmotionalMovementItem[];
+}

@@ -35,6 +35,7 @@ describe('LearnController', () => {
   let scenarioService: jest.Mocked<ScenarioService>;
   let scenarioSessionService: jest.Mocked<ScenarioSessionService>;
   let scenarioTenantService: jest.Mocked<ScenarioTenantService>;
+  let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
 
   const mockTokenUser: TokenUser = {
     id: 123,
@@ -239,6 +240,7 @@ describe('LearnController', () => {
       getScenarioById: jest.fn(),
       getScenarioSessionById: jest.fn(),
       getUniqueLanguagesFromScenarioTranslations: jest.fn(),
+      getMessagesByScenarioSessionId: jest.fn(),
     };
 
     const mockUserService = {
@@ -297,6 +299,7 @@ describe('LearnController', () => {
     scenarioService = module.get(ScenarioService);
     scenarioSessionService = module.get(ScenarioSessionService);
     scenarioTenantService = module.get(ScenarioTenantService);
+    scenarioSharedService = module.get(ScenarioSharedService);
   });
 
   afterEach(() => {
@@ -608,6 +611,63 @@ describe('LearnController', () => {
       );
 
       expect(result).toEqual(mockSession);
+    });
+  });
+
+  describe('getMessagesByScenarioSessionId', () => {
+    it('should call shared service with pagination and includeTags when includeTags is true', async () => {
+      const scenarioSessionId = 'session-123';
+      const mockResponse = { messages: [], count: 0 };
+      scenarioSharedService.getMessagesByScenarioSessionId.mockResolvedValue(
+        mockResponse as any,
+      );
+
+      await controller.getMessagesByScenarioSessionId(
+        scenarioSessionId,
+        10,
+        0,
+        'createdAt',
+        SortOrder.ASC,
+        true,
+      );
+
+      expect(
+        scenarioSharedService.getMessagesByScenarioSessionId,
+      ).toHaveBeenCalledWith(
+        scenarioSessionId,
+        { limit: 10, offset: 0, sortBy: 'createdAt', order: SortOrder.ASC },
+        { includeTags: true },
+      );
+    });
+
+    it('should call shared service with includeTags false when includeTags is not "true"', async () => {
+      const scenarioSessionId = 'session-456';
+      scenarioSharedService.getMessagesByScenarioSessionId.mockResolvedValue({
+        messages: [],
+        count: 0,
+      } as any);
+
+      await controller.getMessagesByScenarioSessionId(
+        scenarioSessionId,
+        undefined,
+        undefined,
+        undefined,
+        SortOrder.ASC,
+        false,
+      );
+
+      expect(
+        scenarioSharedService.getMessagesByScenarioSessionId,
+      ).toHaveBeenCalledWith(
+        scenarioSessionId,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: undefined,
+          order: SortOrder.ASC,
+        },
+        { includeTags: false },
+      );
     });
   });
 

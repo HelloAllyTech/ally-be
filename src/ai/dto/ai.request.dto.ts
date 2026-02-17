@@ -76,3 +76,17 @@ export interface ScenarioReportGenerateRequest {
   scenario_id: number;
   report_id: string;
 }
+export type ScenarioEvaluationChatMessage = {
+  id: string;
+  role: string;
+  content: string;
+  start_time?: number | null;
+  end_time?: number | null;
+};
+
+export type ScenarioEvaluationRequest = {
+  chat_history: ScenarioEvaluationChatMessage[];
+  need_memory: boolean;
+  previous_memory: string | null;
+  memory_prompt: string | null;
+};

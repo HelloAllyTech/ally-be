@@ -14,6 +14,8 @@ import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
 import { ScenarioSessionMessages } from '../entity/scenario-session-messages.entity';
 import { ScenarioSessionDetailsRepository } from '../repository/scenario-session-details.repository';
+import { ScenarioSessionMessageTagsRepository } from '../repository/scenario-session-message-tags.repository';
+import { MessageTagMapping } from '../type/scenario-message-tag.type';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -26,6 +28,7 @@ export class ScenarioSharedService {
     private scenarioTranslationsRepository: ScenarioTranslationsRepository,
     private scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
     private scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
+    private scenarioSessionMessageTagsRepository: ScenarioSessionMessageTagsRepository,
   ) {}
 
   async getScenarioByIds(
@@ -76,14 +79,34 @@ export class ScenarioSharedService {
   async getMessagesByScenarioSessionId(
     scenarioSessionId: string,
     pagination: Pagination,
-  ) {
+    options?: { includeTags?: boolean },
+  ): Promise<{
+    messages: (ScenarioSessionMessages & { tags?: MessageTagMapping[] })[];
+    count: number;
+  }> {
     const [messages, count] =
       await this.scenarioSessionMessagesRepository.getMessagesByScenarioSessionId(
         scenarioSessionId,
         pagination,
       );
 
-    return { messages, count };
+    if (!options?.includeTags) {
+      return { messages, count };
+    }
+
+    const messageIds = messages.map((m) => m.id);
+    const tagsByMessageId =
+      await this.scenarioSessionMessageTagsRepository.getTagsByMessageIds(
+        scenarioSessionId,
+        messageIds,
+      );
+
+    const messagesWithTags = messages.map((m) => ({
+      ...m,
+      tags: tagsByMessageId.get(m.id) ?? [],
+    }));
+
+    return { messages: messagesWithTags, count };
   }
 
   async getMessagesByIds(

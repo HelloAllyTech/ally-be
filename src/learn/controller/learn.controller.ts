@@ -556,6 +556,12 @@ export class LearnController {
     enum: SortOrder,
     description: 'Sort order (default: DESC)',
   })
+  @ApiQuery({
+    name: 'includeTags',
+    required: false,
+    type: Boolean,
+    description: 'When true, include message tags in the response',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_SESSION_SCENARIO_MESSAGES])
   @Get('scenario-session/:scenarioSessionId/messages')
   async getMessagesByScenarioSessionId(
@@ -564,6 +570,7 @@ export class LearnController {
     @Query('offset') offset?: number,
     @Query('sortBy') sortBy?: string,
     @Query('order') order: SortOrder = SortOrder.ASC,
+    @Query('includeTags') includeTags?: boolean,
   ) {
     return this.scenarioSharedService.getMessagesByScenarioSessionId(
       scenarioSessionId,
@@ -573,6 +580,7 @@ export class LearnController {
         sortBy,
         order,
       },
+      { includeTags: !!includeTags },
     );
   }
 
