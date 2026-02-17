@@ -6,7 +6,7 @@ export class ConversationalGuardrails extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column()
+  @Column({ default: '' })
   name!: string;
 
   @Column()
