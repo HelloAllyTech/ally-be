@@ -238,3 +238,13 @@ export class CreateBadgesBatchResponseDto {
   })
   ids!: string[];
 }
+
+export class DeleteBadgesBatchDto {
+  @ApiProperty({
+    description: 'Array of badge IDs to delete',
+    type: [String],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  badgeIds!: string[];
+}

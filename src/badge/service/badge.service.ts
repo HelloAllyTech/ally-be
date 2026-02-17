@@ -574,6 +574,27 @@ export class BadgeService {
     });
   }
 
+  async deleteBadgesBatch(badgeIds: string[]): Promise<boolean> {
+    if (badgeIds.length === 0) {
+      throw new BadRequestException('No badge IDs provided');
+    }
+
+    const badges = await this.badgeRepository.find({
+      where: { id: In(badgeIds) },
+    });
+    if (badges.length !== badgeIds.length) {
+      throw new NotFoundException('One or more badges not found');
+    }
+
+    return await this.dataSource.transaction(async (entityManager) => {
+      await entityManager.getRepository(BadgeTenant).softDelete({ badgeId: In(badgeIds) });
+      await entityManager.getRepository(BadgeUser).softDelete({ badgeId: In(badgeIds) });
+      await entityManager.getRepository(BadgeGroup).softDelete({ badgeId: In(badgeIds) });
+      await entityManager.getRepository(Badge).softDelete({ id: In(badgeIds) });
+      return true;
+    });
+  }
+
   private buildBadgeUpdateData(
     updateBadgeDto: UpdateBadgeDto,
     userId: number,
