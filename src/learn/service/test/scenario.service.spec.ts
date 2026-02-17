@@ -33,6 +33,7 @@ import { ScenarioSharedService } from '../scenario-shared.service';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { ScenarioReportService } from 'src/scenario-report/service/scenario-report.service';
 import { ScenarioBehaviorInstructionService } from '../scenario-behavior-instruction.service';
+import { CaseSharedService } from 'src/case/service/case-shared.service';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -188,6 +189,10 @@ describe('ScenarioService', () => {
       getScenarioPathWithScenarios: jest.fn(),
     };
 
+    const mockCaseSharedService = {
+      getCaseItemByScenarioId: jest.fn(),
+    };
+
     const mockTriggerWarningsService = {
       getTriggerWarnings: jest.fn(),
       getTriggerWarningsByIds: jest
@@ -298,6 +303,10 @@ describe('ScenarioService', () => {
         {
           provide: ScenarioPathSharedService,
           useValue: mockScenarioPathSharedService,
+        },
+        {
+          provide: CaseSharedService,
+          useValue: mockCaseSharedService,
         },
         {
           provide: TriggerWarningsService,

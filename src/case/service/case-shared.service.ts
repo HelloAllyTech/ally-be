@@ -116,6 +116,10 @@ export class CaseSharedService {
     });
   }
 
+  async getCaseItemByScenarioId(scenarioId: number) {
+    return this.caseItemRepository.findOne({ where: { scenarioId } });
+  }
+
   async getCaseItems(caseId: string): Promise<CaseItem[]> {
     return this.caseItemRepository.find({
       where: { caseId },
