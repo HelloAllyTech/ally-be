@@ -32,6 +32,7 @@ import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-tr
 import { ScenarioSharedService } from '../scenario-shared.service';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { ScenarioReportService } from 'src/scenario-report/service/scenario-report.service';
+import { ScenarioBehaviorInstructionService } from '../scenario-behavior-instruction.service';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -240,6 +241,15 @@ describe('ScenarioService', () => {
       getLanguageConfig: jest.fn(),
     };
 
+    const mockScenarioBehaviorInstructionService = {
+      validateBehaviorInstructions: jest.fn().mockResolvedValue(undefined),
+      createBehaviorInstructions: jest.fn().mockResolvedValue(undefined),
+      updateBehaviorInstructions: jest.fn().mockResolvedValue(undefined),
+      getBehaviorInstructionsByScenarioId: jest
+        .fn()
+        .mockResolvedValue(undefined),
+    };
+
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -324,6 +334,10 @@ describe('ScenarioService', () => {
               .fn()
               .mockResolvedValue(undefined),
           },
+        },
+        {
+          provide: ScenarioBehaviorInstructionService,
+          useValue: mockScenarioBehaviorInstructionService,
         },
       ],
     }).compile();

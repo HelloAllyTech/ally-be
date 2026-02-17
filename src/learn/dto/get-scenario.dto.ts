@@ -1,5 +1,6 @@
 import { Scenarios } from '../entity/scenarios.entity';
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
+import { BehaviorInstructionWithBehaviorsDto } from './behavior-instruction-response.dto';
 
 class TerminationEventDto {
   eventId?: string;
@@ -8,6 +9,7 @@ class TerminationEventDto {
 }
 
 export class GetAdminScenarioDto extends Scenarios {
+  behaviorInstructions?: BehaviorInstructionWithBehaviorsDto[];
   triggerWarnings?: TriggerWarnings[];
   terminationEvents?: TerminationEventDto[];
 }
