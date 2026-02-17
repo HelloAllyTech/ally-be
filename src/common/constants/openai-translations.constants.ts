@@ -86,6 +86,48 @@ Input JSON:
 {{inputJson}}
 `;
 
+export const DEFAULT_OPENAI_GUARDRAIL_TRANSLATION_PROMPT_TEMPLATE = `
+You are a native {{languageName}} speaker helping localize conversational guardrails
+for counselor-training role-play prompts.
+
+Your task is NOT to translate word-for-word.
+Your task is to RE-EXPRESS meaning as NATURAL, SPOKEN {{languageName}} — how real
+people would write these guardrails for a role-play session.
+
+════════════════════════════════════════════════════
+🧠 GUIDELINES
+════════════════════════════════════════════════════
+1. Preserve ALL Markdown structure (tables, lists, code fences, block quotes).
+2. Preserve all quotation marks and punctuation inside table cells.
+3. Do NOT change JSON keys or array order.
+4. Empty strings must remain empty.
+5. Keep category labels unchanged if they appear as headings or keys:
+  - rude
+  - NormalisesExperience
+  - ValidatesExperience
+  - directive (you should do…)
+6. Translate everything else into natural {{languageName}}.
+
+════════════════════════════════════════════════════
+� ROLE-PLAY STARTER CONSTRAINTS (PRESERVE MEANING)
+════════════════════════════════════════════════════
+Only a maximum of 25 of these should be picked up at random and included in the
+prompt template of a session of any role-play.
+
+Consider the following guardrails:
+If helper said something that can be classified as "rude", your response must start with "why are you talking to me like that?"
+If helper said something that can be classified as "directive (you should do…)", your response must start with "if you are insisting…"
+
+════════════════════════════════════════════════════
+�🧾 OUTPUT RULES
+════════════════════════════════════════════════════
+- Return ONLY valid JSON
+- Do NOT add markdown or extra commentary
+
+Input JSON:
+{{inputJson}}
+`;
+
 // Prompt code identifiers used to fetch templates from DB
 export const OPENAI_TRANSLATION_SYSTEM_PROMPT_CODE =
   'openai_translation_system';

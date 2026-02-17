@@ -18,9 +18,14 @@ function createService(
   promptShared: Partial<PromptSharedService>,
   cfg?: Partial<AppConfigService>,
 ) {
+  const promptSharedWithDefaults: Partial<PromptSharedService> = {
+    getPromptByCode: jest.fn().mockResolvedValue(null),
+    ...promptShared,
+  };
+
   return new OpenAITranslationsService(
     (cfg ?? baseConfig) as AppConfigService,
-    promptShared as PromptSharedService,
+    promptSharedWithDefaults as PromptSharedService,
   );
 }
 
@@ -144,10 +149,10 @@ describe('OpenAITranslationsService', () => {
     });
   });
 
-  describe('translateObjectToLanguages', () => {
+  describe('translateScenarioData', () => {
     it('returns empty object for empty languages', async () => {
       const service = createService({});
-      const result = await service.translateObjectToLanguages(
+      const result = await service.translateScenarioData(
         sourceObject,
         [],
         null,
@@ -163,7 +168,7 @@ describe('OpenAITranslationsService', () => {
       const spy = jest
         .spyOn(service as any, 'fetchTranslations')
         .mockResolvedValue([JSON.stringify({ title: 'ok' })]);
-      const result = await service.translateObjectToLanguages(
+      const result = await service.translateScenarioData(
         sourceObject,
         ['hi', 'pa'],
         scenarioContext,
@@ -180,10 +185,107 @@ describe('OpenAITranslationsService', () => {
       jest
         .spyOn(service as any, 'fetchTranslations')
         .mockResolvedValue(['not-json']);
-      const result = await service.translateObjectToLanguages(
+      const result = await service.translateScenarioData(
         sourceObject,
         ['hi'],
         scenarioContext,
+      );
+      expect(result.hi.title).toBe('Hello');
+    });
+  });
+
+  describe('translateObjectToLanguages', () => {
+    it('returns empty object for empty languages', async () => {
+      const service = createService({});
+      const result = await service.translateObjectToLanguages(
+        sourceObject,
+        [],
+        'sys',
+      );
+      expect(result).toEqual({});
+    });
+
+    it('translates object to multiple languages', async () => {
+      const createMock = jest.fn().mockResolvedValue({
+        choices: [
+          { message: { content: JSON.stringify({ title: 'नमस्ते' }) } },
+        ],
+      });
+      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
+        () => ({ chat: { completions: { create: createMock } } }) as any,
+      );
+      // Mock prompt retrieval to return a template
+      const getPromptByCode = jest
+        .fn()
+        .mockResolvedValue('SYS {{languageName}} {{inputJson}}');
+      const service = createService({ getPromptByCode });
+
+      const result = await service.translateObjectToLanguages(
+        sourceObject,
+        ['hi', 'pa'],
+        'sys',
+      );
+      expect(result.hi.title).toBe('नमस्ते');
+      expect(result.pa.title).toBe('नमस्ते');
+    });
+
+    it('falls back to original object on parse error', async () => {
+      const createMock = jest.fn().mockResolvedValue({
+        choices: [{ message: { content: 'not-json' } }],
+      });
+      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
+        () => ({ chat: { completions: { create: createMock } } }) as any,
+      );
+      // Mock prompt retrieval
+      const getPromptByCode = jest
+        .fn()
+        .mockResolvedValue('SYS {{languageName}} {{inputJson}}');
+      const service = createService({ getPromptByCode });
+
+      const result = await service.translateObjectToLanguages(
+        sourceObject,
+        ['hi'],
+        'sys',
+      );
+      expect(result.hi.title).toBe('Hello');
+    });
+
+    it('returns original object when API fails', async () => {
+      const createMock = jest.fn().mockRejectedValue(new Error('API error'));
+      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
+        () => ({ chat: { completions: { create: createMock } } }) as any,
+      );
+      // Mock prompt retrieval
+      const getPromptByCode = jest
+        .fn()
+        .mockResolvedValue('SYS {{languageName}} {{inputJson}}');
+      const service = createService({ getPromptByCode });
+
+      const result = await service.translateObjectToLanguages(
+        sourceObject,
+        ['hi'],
+        'sys',
+      );
+      expect(result.hi.title).toBe('Hello');
+    });
+
+    it('returns original object when API returns empty content', async () => {
+      const createMock = jest.fn().mockResolvedValue({
+        choices: [{ message: { content: '' } }],
+      });
+      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
+        () => ({ chat: { completions: { create: createMock } } }) as any,
+      );
+      // Mock prompt retrieval
+      const getPromptByCode = jest
+        .fn()
+        .mockResolvedValue('SYS {{languageName}} {{inputJson}}');
+      const service = createService({ getPromptByCode });
+
+      const result = await service.translateObjectToLanguages(
+        sourceObject,
+        ['hi'],
+        'sys',
       );
       expect(result.hi.title).toBe('Hello');
     });

@@ -235,6 +235,7 @@ describe('ScenarioService', () => {
 
     const mockOpenAITranslationsService = {
       translateObjectToLanguages: jest.fn().mockResolvedValue({}),
+      translateScenarioData: jest.fn().mockResolvedValue({}),
       isConfigured: jest.fn().mockReturnValue(true),
       getLanguageConfig: jest.fn(),
     };
@@ -4089,6 +4090,7 @@ describe('ScenarioService', () => {
 
   describe('buildTranslatedMetadataForLanguageCodes', () => {
     let mockGoogleTranslationsService: any;
+    let mockOpenAITranslationsService: any;
     let mockLogger: any;
     let buildTranslatedMetadataForLanguageCodes: (
       metadata: Record<string, any>,
@@ -4099,6 +4101,9 @@ describe('ScenarioService', () => {
       mockGoogleTranslationsService = {
         translateObjectToLanguages: jest.fn(),
       };
+      mockOpenAITranslationsService = {
+        translateScenarioData: jest.fn(),
+      };
       mockLogger = {
         debug: jest.fn(),
         error: jest.fn(),
@@ -4106,6 +4111,8 @@ describe('ScenarioService', () => {
 
       (service as any).googleTranslationsService =
         mockGoogleTranslationsService;
+      (service as any).openaiTranslationsService =
+        mockOpenAITranslationsService;
       (service as any).logger = mockLogger;
 
       // Get reference to the private method
@@ -4142,12 +4149,10 @@ describe('ScenarioService', () => {
       const metadata = { title: 'Test Title', description: 'Test Description' };
       const languageCodes = ['en', 'es'];
 
-      mockGoogleTranslationsService.translateObjectToLanguages.mockResolvedValue(
-        {
-          en: { ...metadata, translated: true },
-          es: { ...metadata, translated: true },
-        },
-      );
+      mockOpenAITranslationsService.translateScenarioData.mockResolvedValue({
+        en: { ...metadata, translated: true },
+        es: { ...metadata, translated: true },
+      });
 
       const result = await buildTranslatedMetadataForLanguageCodes(
         metadata,
@@ -4155,8 +4160,8 @@ describe('ScenarioService', () => {
       );
 
       expect(
-        mockGoogleTranslationsService.translateObjectToLanguages,
-      ).toHaveBeenCalledWith(metadata, ['en', 'es'], { mimeType: 'text/html' });
+        mockOpenAITranslationsService.translateScenarioData,
+      ).toHaveBeenCalledWith(metadata, ['en', 'es'], undefined);
       expect(result).toEqual({
         en: { ...metadata, translated: true },
         es: { ...metadata, translated: true },
@@ -4167,7 +4172,7 @@ describe('ScenarioService', () => {
       const metadata = { title: 'Test' };
       const error = new Error('Translation failed');
 
-      mockGoogleTranslationsService.translateObjectToLanguages.mockRejectedValue(
+      mockOpenAITranslationsService.translateScenarioData.mockRejectedValue(
         error,
       );
 
@@ -4189,12 +4194,10 @@ describe('ScenarioService', () => {
       const metadata = { title: 'Test' };
       const languageCodes = [' en ', '  ', 'es', 123, null, undefined];
 
-      mockGoogleTranslationsService.translateObjectToLanguages.mockResolvedValue(
-        {
-          en: { ...metadata, translated: true },
-          es: { ...metadata, translated: true },
-        },
-      );
+      mockOpenAITranslationsService.translateScenarioData.mockResolvedValue({
+        en: { ...metadata, translated: true },
+        es: { ...metadata, translated: true },
+      });
 
       await buildTranslatedMetadataForLanguageCodes(
         metadata,
@@ -4202,17 +4205,14 @@ describe('ScenarioService', () => {
       );
 
       expect(
-        mockGoogleTranslationsService.translateObjectToLanguages,
-      ).toHaveBeenCalledWith(
-        metadata,
-        ['en', 'es'], // Only valid, trimmed codes should be passed
-        { mimeType: 'text/html' },
-      );
+        mockOpenAITranslationsService.translateScenarioData,
+      ).toHaveBeenCalledWith(metadata, ['en', 'es'], undefined);
     });
 
     it('should handle empty response from translation service', async () => {
       const metadata = { title: 'Test' };
 
+      mockOpenAITranslationsService.translateScenarioData.mockResolvedValue({});
       mockGoogleTranslationsService.translateObjectToLanguages.mockResolvedValue(
         null,
       );
@@ -4221,6 +4221,9 @@ describe('ScenarioService', () => {
         'en',
       ]);
 
+      expect(
+        mockGoogleTranslationsService.translateObjectToLanguages,
+      ).toHaveBeenCalledWith(metadata, ['en'], { mimeType: 'text/html' });
       expect(result).toEqual({});
     });
   });
