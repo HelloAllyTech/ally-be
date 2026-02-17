@@ -177,10 +177,13 @@ export class TenantService {
     }
   }
 
-  async findById(id: string): Promise<TenantResponseDto | null> {
+  async findById(
+    id: string,
+    options?: { includeUserCount?: boolean },
+  ): Promise<TenantResponseDto | null> {
     const tenant = await this.findTenantEntityById(id);
     if (!tenant) return null;
-    return this.buildTenantResponse(tenant);
+    return this.buildTenantResponse(tenant, options);
   }
 
   async findByCode(code: string): Promise<TenantResponseDto | null> {
@@ -195,8 +198,13 @@ export class TenantService {
 
   private async buildTenantResponse(
     tenant: Tenant,
+    options?: { includeUserCount?: boolean },
   ): Promise<TenantResponseDto> {
-    const [dashboardIdsList, hiddenChatTypes] = await Promise.all([
+    const promises: [
+      Promise<{ tenantId: string; dashboardIds: string[] }[]>,
+      Promise<string[]>,
+      Promise<{ tenantId: string; userCount: string }[]>,
+    ] = [
       this.tenantDashboardSharedService.getEnabledDashboardIdsForTenants(
         [tenant.id],
         this.dataSource.manager,
@@ -205,7 +213,13 @@ export class TenantService {
         tenant.id,
         PreferenceRelatedEntity.ORGANIZATION,
       ),
-    ]);
+      options?.includeUserCount
+        ? this.userRepository.getUserCountByTenantIds([tenant.id])
+        : Promise.resolve([{ tenantId: tenant.id, userCount: '0' }]),
+    ];
+
+    const [dashboardIdsList, hiddenChatTypes, userCountResult] =
+      await Promise.all(promises);
 
     return {
       ...tenant,
@@ -215,6 +229,9 @@ export class TenantService {
       enableMicrophoneMode: !hiddenChatTypes.includes(
         ChatTypes.MICROPHONE_CHAT,
       ),
+      ...(options?.includeUserCount
+        ? { userCount: parseInt(userCountResult?.[0]?.userCount ?? '0', 10) }
+        : {}),
     };
   }
 

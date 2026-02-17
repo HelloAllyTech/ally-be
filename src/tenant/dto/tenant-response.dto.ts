@@ -74,4 +74,12 @@ export class TenantResponseDto {
 
   @ApiProperty({ required: false })
   updatedBy?: number;
+
+  @ApiProperty({
+    description:
+      'Number of users associated with this tenant (when includeUserCount=true)',
+    example: 25,
+    required: false,
+  })
+  userCount?: number;
 }

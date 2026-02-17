@@ -119,8 +119,21 @@ describe('TenantController', () => {
       tenantService.findById.mockResolvedValue(mockTenantResponse);
       const result = await controller.findById('test-tenant-id');
 
-      expect(tenantService.findById).toHaveBeenCalledWith('test-tenant-id');
+      expect(tenantService.findById).toHaveBeenCalledWith('test-tenant-id', {
+        includeUserCount: undefined,
+      });
       expect(result).toEqual(mockTenantResponse);
+    });
+
+    it('should call service with includeUserCount when query param is true', async () => {
+      tenantService.findById.mockResolvedValue(mockTenantWithUserCount);
+      const result = await controller.findById('test-tenant-id', true);
+
+      expect(tenantService.findById).toHaveBeenCalledWith('test-tenant-id', {
+        includeUserCount: true,
+      });
+      expect(result).toEqual(mockTenantWithUserCount);
+      expect(result).toHaveProperty('userCount', 5);
     });
 
     it('should return null when not found', async () => {
