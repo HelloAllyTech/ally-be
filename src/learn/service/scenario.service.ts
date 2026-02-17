@@ -88,6 +88,8 @@ import {
 } from 'src/session-event/util/session-event.util';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { ScenarioReportService } from 'src/scenario-report/service/scenario-report.service';
+import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
+import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 
 @Injectable()
 export class ScenarioService {
@@ -111,6 +113,7 @@ export class ScenarioService {
     private scenarioSharedService: ScenarioSharedService,
     private scenarioEventTranslationsRepository: ScenarioEventsTranslationsRepository,
     private scenarioReportService: ScenarioReportService,
+    private scenarioBehaviorInstructionService: ScenarioBehaviorInstructionService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -262,6 +265,14 @@ export class ScenarioService {
 
     if (!result) {
       throw new NotFoundException('Scenario not found');
+    }
+
+    const behaviorInstructions =
+      await this.scenarioBehaviorInstructionService.getBehaviorInstructionsByScenarioId(
+        id,
+      );
+    if (behaviorInstructions) {
+      result.behaviorInstructions = behaviorInstructions;
     }
 
     if (result?.terminationEvents && result?.terminationEvents?.length > 0) {
@@ -470,6 +481,27 @@ export class ScenarioService {
           await scenarioTriggerWarningsRepo.save(scenarioTriggerWarnings);
         }
 
+        // Create behavior instructions for each scenario
+        const scenarioBehaviorInstructionList: ScenarioBehaviorInstructionRequest[] =
+          createScenariosDto.scenarios
+            ?.map((scenario, index) => ({
+              scenarioId: savedScenarios[index].id,
+              behaviorInstructions: scenario.behaviorInstructions ?? [],
+            }))
+            ?.filter(
+              (item): item is ScenarioBehaviorInstructionRequest =>
+                item.behaviorInstructions.length > 0,
+            ) ?? [];
+
+        if (
+          scenarioBehaviorInstructionList &&
+          scenarioBehaviorInstructionList?.length > 0
+        )
+          await this.scenarioBehaviorInstructionService.createBehaviorInstructions(
+            scenarioBehaviorInstructionList,
+            entityManager,
+          );
+
         // Persist translations for active scenarios
         const activeScenarios = savedScenarios.filter(
           (scenario) => scenario.status == ScenarioStatus.ACTIVE,
@@ -538,6 +570,11 @@ export class ScenarioService {
       createScenarioDto.terminationEvents.length > 0
     ) {
       await this.validateTerminationEvents(createScenarioDto.terminationEvents);
+    }
+    if (createScenarioDto.behaviorInstructions) {
+      await this.scenarioBehaviorInstructionService.validateBehaviorInstructions(
+        createScenarioDto.behaviorInstructions,
+      );
     }
   }
 
@@ -747,6 +784,21 @@ export class ScenarioService {
           updateScenarioDto?.terminationEvents || [],
           entityManager,
         );
+
+        // Update behavior instructions
+        if (
+          updateScenarioDto.behaviorInstructions &&
+          updateScenarioDto.behaviorInstructions?.length > 0
+        ) {
+          await this.scenarioBehaviorInstructionService.updateBehaviorInstructions(
+            {
+              scenarioId: id,
+              behaviorInstructions: updateScenarioDto.behaviorInstructions,
+            },
+            entityManager,
+          );
+        }
+
         if (updated.affected === 0) return false;
 
         const updatedScenario = await scenarioRepository.findOne({
@@ -965,6 +1017,12 @@ export class ScenarioService {
       updateScenarioDto?.terminationEvents?.length > 0
     ) {
       await this.validateTerminationEvents(updateScenarioDto.terminationEvents);
+    }
+
+    if (updateScenarioDto.behaviorInstructions) {
+      await this.scenarioBehaviorInstructionService.validateBehaviorInstructions(
+        updateScenarioDto.behaviorInstructions,
+      );
     }
 
     return scenario;

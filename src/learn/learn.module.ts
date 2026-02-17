@@ -52,6 +52,15 @@ import { ScenarioSessionTags } from './entity/scenario-session-tags.entity';
 import { ScenarioSessionMessageTags } from './entity/scenario-session-message-tags.entity';
 import { ScenarioSessionTagsRepository } from './repository/scenario-session-tags.repository';
 import { ScenarioSessionMessageTagsRepository } from './repository/scenario-session-message-tags.repository';
+import { Behavior } from './entity/behavior.entity';
+import { ScenarioBehaviorInstruction } from './entity/scenario-behavior-instruction.entity';
+import { ScenarioBehaviorInstructionBehavior } from './entity/scenario-behavior-instruction-behavior.entity';
+import { BehaviorController } from './controller/behavior.controller';
+import { BehaviorService } from './service/behavior.service';
+import { BehaviorRepository } from './repository/behavior.repository';
+import { ScenarioBehaviorInstructionService } from './service/scenario-behavior-instruction.service';
+import { ScenarioBehaviorInstructionRepository } from './repository/scenario-behavior-instruction.repository';
+import { ScenarioBehaviorInstructionBehaviorRepository } from './repository/scenario-behavior-instruction-behavior.repository';
 
 @Module({
   imports: [
@@ -68,6 +77,9 @@ import { ScenarioSessionMessageTagsRepository } from './repository/scenario-sess
       ScenarioTriggerWarnings,
       ScenarioSessionTags,
       ScenarioSessionMessageTags,
+      Behavior,
+      ScenarioBehaviorInstruction,
+      ScenarioBehaviorInstructionBehavior,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -82,7 +94,11 @@ import { ScenarioSessionMessageTagsRepository } from './repository/scenario-sess
     forwardRef(() => CaseModule),
     ScenarioReportModule,
   ],
-  controllers: [LearnController, SimulationCreditsController],
+  controllers: [
+    LearnController,
+    SimulationCreditsController,
+    BehaviorController,
+  ],
   providers: [
     ScenarioService,
     ScenarioSessionService,
@@ -111,6 +127,11 @@ import { ScenarioSessionMessageTagsRepository } from './repository/scenario-sess
     ScenarioSessionDetailsRepository,
     ScenarioSessionTagsRepository,
     ScenarioSessionMessageTagsRepository,
+    BehaviorService,
+    BehaviorRepository,
+    ScenarioBehaviorInstructionService,
+    ScenarioBehaviorInstructionRepository,
+    ScenarioBehaviorInstructionBehaviorRepository,
   ],
   exports: [
     LearnMessageProcessor,

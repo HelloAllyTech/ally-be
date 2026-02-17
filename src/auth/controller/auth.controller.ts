@@ -48,11 +48,11 @@ export class AuthController {
   @Post('generate-otp')
   @Version('2')
   @HttpCode(HttpStatus.OK)
-  @RateLimit({
-    name: 'otp',
-    key: 'ip',
-    errorMessage: 'Too many OTP requests. Please try again later.',
-  })
+  // @RateLimit({
+  //   name: 'otp',
+  //   key: 'ip',
+  //   errorMessage: 'Too many OTP requests. Please try again later.',
+  // })
   async generateOtpV2(
     @Body() generateOtpDto: GenerateOtpV2Dto,
   ): Promise<GenerateOtpV2ResponseDto> {

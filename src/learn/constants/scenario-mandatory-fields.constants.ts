@@ -17,6 +17,7 @@ export const SCENARIO_MANDATORY_FIELDS: (keyof CreateScenarioDto)[] = [
   'agentDialogues',
   'experienceMode',
   'stateInstructions',
+  'behaviorInstructions',
 ];
 
 // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove this constant
