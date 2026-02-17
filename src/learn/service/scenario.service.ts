@@ -90,6 +90,7 @@ import { OpenAITranslationsService } from 'src/common/service/openai-translation
 import { ScenarioReportService } from 'src/scenario-report/service/scenario-report.service';
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
+import { CaseSharedService } from 'src/case/service/case-shared.service';
 
 @Injectable()
 export class ScenarioService {
@@ -105,6 +106,7 @@ export class ScenarioService {
     private configService: AppConfigService,
     private dataSource: DataSource,
     private scenarioPathSharedService: ScenarioPathSharedService,
+    private caseSharedService: CaseSharedService,
     private triggerWarningsService: TriggerWarningsService,
     private scenarioTranslationsRepository: ScenarioTranslationsRepository,
     private googleTranslationsService: GoogleTranslationsService,
@@ -987,6 +989,13 @@ export class ScenarioService {
           'This simulation is part of a Simulation Pathway and can’t be moved to draft. Please publish the changes.',
         );
       }
+
+      const caseItem = await this.caseSharedService.getCaseItemByScenarioId(id);
+      if (caseItem) {
+        throw new BadRequestException(
+          'This simulation is part of a Case and can’t be moved to draft. Please publish the changes.',
+        );
+      }
     }
 
     if (updateScenarioDto.status) {
@@ -1037,6 +1046,13 @@ export class ScenarioService {
     if (scenarioPathItem) {
       throw new BadRequestException(
         'This simulation cannot be deleted as it is part of a Simulation Pathway',
+      );
+    }
+
+    const caseItem = await this.caseSharedService.getCaseItemByScenarioId(id);
+    if (caseItem) {
+      throw new BadRequestException(
+        'This simulation cannot be deleted as it is part of a Case',
       );
     }
     await this.dataSource.transaction(async (em) => {
