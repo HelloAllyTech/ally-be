@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import OpenAI from 'openai';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import {
@@ -13,6 +14,7 @@ import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
   DEFAULT_OPENAI_TRANSLATION_SYSTEM_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_TRANSLATION_USER_PROMPT_TEMPLATE,
+  DEFAULT_OPENAI_GUARDRAIL_TRANSLATION_PROMPT_TEMPLATE,
 } from 'src/common/constants/openai-translations.constants';
 import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 
@@ -248,19 +250,23 @@ IMPORTANT:
     const temperature = this.getTemperatureForLanguage(targetLanguageCode);
 
     try {
+      const messages = [
+        {
+          role: 'system',
+          content: systemPrompt,
+        },
+      ];
+
+      if (userPrompt && userPrompt.trim() !== '') {
+        messages.push({
+          role: 'user',
+          content: userPrompt,
+        });
+      }
       const response = await this.client.chat.completions.create({
         model: this.model,
         temperature,
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt,
-          },
-          {
-            role: 'user',
-            content: userPrompt,
-          },
-        ],
+        messages: messages as unknown as ChatCompletionMessageParam[],
       });
 
       const content = response.choices?.[0]?.message?.content ?? '';
@@ -297,8 +303,8 @@ IMPORTANT:
    * PUBLIC API
    * Translate any object's string fields into multiple languages
    * ------------------------------------------------------------------ */
-  async translateObjectToLanguages(
-    sourceObject: any,
+  async translateScenarioData(
+    sourceObject: Record<string, any>,
     targetLanguages: string[],
     translationConsiderableData: any,
   ): Promise<Record<string, any>> {
@@ -380,5 +386,70 @@ IMPORTANT:
       toneGuideline: LANGUAGE_TONE_GUIDELINES[normalized] || '',
       commonPreserveWords: CODE_MIXING_PRESERVE_WORDS[normalized] || [],
     };
+  }
+
+  async translateObjectToLanguages(
+    sourceObject: Record<string, any>,
+    targetLanguages: string[],
+    promptCode: string,
+  ) {
+    if (!targetLanguages || targetLanguages.length === 0) {
+      return {};
+    }
+
+    const translatedResult: Record<string, any> = {};
+
+    const promptFromDb =
+      await this.promptSharedService.getPromptByCode(promptCode);
+
+    const fallbackPrompt =
+      promptCode === PromptCode.OPENAI_GUARDRAIL_TRANSLATION_PROMPT_CODE
+        ? DEFAULT_OPENAI_GUARDRAIL_TRANSLATION_PROMPT_TEMPLATE
+        : undefined;
+
+    const promptTemplate = promptFromDb ?? fallbackPrompt;
+
+    if (!promptTemplate) {
+      this.logger.warn(
+        `[OpenAITranslationsService] Missing prompt for code ${promptCode}, translations may be suboptimal`,
+      );
+
+      return {};
+    }
+
+    for (const language of targetLanguages) {
+      try {
+        const normalizedCode = this.resolveBaseLanguageCode(language);
+        const languageName =
+          LANGUAGE_NAME_MAP[normalizedCode] ?? language.trim();
+
+        const inputJson = JSON.stringify(sourceObject, null, 2);
+        const filledPrompt = this.renderTemplate(promptTemplate, {
+          languageName,
+          inputJson,
+        });
+
+        const translations = await this.fetchTranslations(
+          [JSON.stringify(sourceObject)],
+          language,
+          filledPrompt,
+          '',
+        );
+
+        // Parse the translated JSON string back to object
+        translatedResult[language] = JSON.parse(
+          translations[0] || JSON.stringify(sourceObject),
+        );
+      } catch (err) {
+        this.logger.error(
+          `Translation failed for language ${language}`,
+          err as any,
+        );
+        // Return original object as fallback
+        translatedResult[language] = JSON.parse(JSON.stringify(sourceObject));
+      }
+    }
+
+    return translatedResult;
   }
 }

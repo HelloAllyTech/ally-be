@@ -1,16 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConversationalGuardrailsTranslationService } from '../conversational-guardrails-translation.service';
 import { ConversationalGuardrailsTranslationsRepository } from '../../repository/conversational-guardrails-translations.repository';
-import { GoogleTranslationsService } from 'src/common/service/google-translation.service';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ConversationalGuardrails } from '../../entity/conversational-guardrails.entity';
 import { ConversationalGuardrailsTranslations } from '../../entity/conversational-guardrails-translations.entity';
+import { OPENAI_GUARDRAIL_TRANSLATION_PROMPT_CODE } from '../../constants/guardrails.constants';
 
 describe('ConversationalGuardrailsTranslationService', () => {
   let service: ConversationalGuardrailsTranslationService;
   let translationsRepository: jest.Mocked<ConversationalGuardrailsTranslationsRepository>;
-  let googleTranslationService: jest.Mocked<GoogleTranslationsService>;
+  let openAITranslationService: jest.Mocked<OpenAITranslationsService>;
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
 
@@ -47,7 +48,7 @@ describe('ConversationalGuardrailsTranslationService', () => {
       update: jest.fn(),
     };
 
-    const mockGoogleTranslationService = {
+    const mockOpenAITranslationService = {
       translateObjectToLanguages: jest.fn(),
     };
 
@@ -67,8 +68,8 @@ describe('ConversationalGuardrailsTranslationService', () => {
           useValue: mockTranslationsRepository,
         },
         {
-          provide: GoogleTranslationsService,
-          useValue: mockGoogleTranslationService,
+          provide: OpenAITranslationsService,
+          useValue: mockOpenAITranslationService,
         },
         {
           provide: SharedLanguageService,
@@ -87,7 +88,7 @@ describe('ConversationalGuardrailsTranslationService', () => {
     translationsRepository = module.get(
       ConversationalGuardrailsTranslationsRepository,
     );
-    googleTranslationService = module.get(GoogleTranslationsService);
+    openAITranslationService = module.get(OpenAITranslationsService);
     sharedLanguageService = module.get(SharedLanguageService);
     scenarioSharedService = module.get(ScenarioSharedService);
   });
@@ -103,7 +104,7 @@ describe('ConversationalGuardrailsTranslationService', () => {
 
     it('should have all dependencies injected', () => {
       expect(translationsRepository).toBeDefined();
-      expect(googleTranslationService).toBeDefined();
+      expect(openAITranslationService).toBeDefined();
       expect(sharedLanguageService).toBeDefined();
       expect(scenarioSharedService).toBeDefined();
     });
@@ -118,7 +119,7 @@ describe('ConversationalGuardrailsTranslationService', () => {
       await service.createUpdateGuardrailTranslations([mockGuardrail]);
 
       expect(
-        googleTranslationService.translateObjectToLanguages,
+        openAITranslationService.translateObjectToLanguages,
       ).not.toHaveBeenCalled();
       expect(translationsRepository.save).not.toHaveBeenCalled();
     });
@@ -131,7 +132,7 @@ describe('ConversationalGuardrailsTranslationService', () => {
         languages: mockLanguages as any,
         languagesMap: {} as any,
       });
-      googleTranslationService.translateObjectToLanguages.mockResolvedValue({
+      openAITranslationService.translateObjectToLanguages.mockResolvedValue({
         es: {
           helperDialogue: 'comportamiento grosero',
           actorDialogue: 'Por favor sea respetuoso',
@@ -153,13 +154,14 @@ describe('ConversationalGuardrailsTranslationService', () => {
         2, 3,
       ]);
       expect(
-        googleTranslationService.translateObjectToLanguages,
+        openAITranslationService.translateObjectToLanguages,
       ).toHaveBeenCalledWith(
         expect.objectContaining({
           helperDialogue: 'rude behavior',
           actorDialogue: 'Please be respectful',
         }),
         ['es', 'fr'],
+        OPENAI_GUARDRAIL_TRANSLATION_PROMPT_CODE,
       );
       expect(translationsRepository.save).toHaveBeenCalled();
     });
@@ -172,7 +174,7 @@ describe('ConversationalGuardrailsTranslationService', () => {
         languages: [mockLanguages[0]] as any,
         languagesMap: {} as any,
       });
-      googleTranslationService.translateObjectToLanguages.mockResolvedValue({
+      openAITranslationService.translateObjectToLanguages.mockResolvedValue({
         es: {
           helperDialogue: 'comportamiento grosero actualizado',
           actorDialogue: 'Por favor sea respetuoso actualizado',
@@ -210,7 +212,7 @@ describe('ConversationalGuardrailsTranslationService', () => {
       await service.createUpdateGuardrailTranslations([emptyGuardrail]);
 
       expect(
-        googleTranslationService.translateObjectToLanguages,
+        openAITranslationService.translateObjectToLanguages,
       ).not.toHaveBeenCalled();
     });
 
@@ -222,7 +224,7 @@ describe('ConversationalGuardrailsTranslationService', () => {
         languages: [mockLanguages[0]] as any,
         languagesMap: {} as any,
       });
-      googleTranslationService.translateObjectToLanguages.mockRejectedValue(
+      openAITranslationService.translateObjectToLanguages.mockRejectedValue(
         new Error('Translation API failed'),
       );
 
@@ -293,7 +295,7 @@ describe('ConversationalGuardrailsTranslationService', () => {
         actorDialogue: g.actorDialogue,
       });
 
-      googleTranslationService.translateObjectToLanguages.mockResolvedValue({
+      openAITranslationService.translateObjectToLanguages.mockResolvedValue({
         es: {
           helperDialogue: 'comportamiento grosero',
           actorDialogue: 'Por favor sea respetuoso',
@@ -336,7 +338,7 @@ describe('ConversationalGuardrailsTranslationService', () => {
         actorDialogue: g.actorDialogue,
       });
 
-      googleTranslationService.translateObjectToLanguages.mockResolvedValue({
+      openAITranslationService.translateObjectToLanguages.mockResolvedValue({
         es: {
           helperDialogue: 'translated helper',
           actorDialogue: 'translated actor',

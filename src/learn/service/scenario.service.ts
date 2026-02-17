@@ -1297,7 +1297,7 @@ export class ScenarioService {
     // Expect translateObjectToLanguages to accept a sanitized metadata object and array of codes.
     try {
       const openaiTranslatedVersion =
-        await this.openaiTranslationsService.translateObjectToLanguages(
+        await this.openaiTranslationsService.translateScenarioData(
           metadataObj,
           codes,
           translationConsiderableData,

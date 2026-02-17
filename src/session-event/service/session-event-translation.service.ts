@@ -15,6 +15,7 @@ import {
   wrapFieldPlaceholders,
   unwrapFieldPlaceholders,
 } from '../util/session-event.util';
+import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from 'src/learn/constants/scenario-session.constants';
 
 @Injectable()
 export class SessionEventTranslationService {
@@ -132,7 +133,11 @@ export class SessionEventTranslationService {
         }
 
         const languagesFiltered = (languages ?? []).filter(
-          (l: any) => l && l.translationCode && l.translationCode.trim() !== '',
+          (l: any) =>
+            l &&
+            l.translationCode &&
+            l.translationCode.trim() !== '' &&
+            !l.value.includes(DEFAULT_LANGUAGE_TRANSLATION_CODE),
         );
 
         if (!languagesFiltered.length) {

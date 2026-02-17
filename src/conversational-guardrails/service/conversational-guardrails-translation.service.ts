@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { GoogleTranslationsService } from 'src/common/service/google-translation.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
@@ -9,6 +8,9 @@ import {
   CreateGuardrailTranslation,
   GuardrailMetadata,
 } from '../types/guardrail-translation.types';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { OPENAI_GUARDRAIL_TRANSLATION_PROMPT_CODE } from '../constants/guardrails.constants';
+import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from 'src/learn/constants/scenario-session.constants';
 
 @Injectable()
 export class ConversationalGuardrailsTranslationService {
@@ -18,7 +20,7 @@ export class ConversationalGuardrailsTranslationService {
 
   constructor(
     private readonly sharedLanguageService: SharedLanguageService,
-    private readonly googleTranslationService: GoogleTranslationsService,
+    private readonly openAITranslationService: OpenAITranslationsService,
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly translationsRepository: ConversationalGuardrailsTranslationsRepository,
   ) {}
@@ -73,9 +75,10 @@ export class ConversationalGuardrailsTranslationService {
 
     try {
       const translated =
-        await this.googleTranslationService.translateObjectToLanguages(
+        await this.openAITranslationService.translateObjectToLanguages(
           metadataObj,
           codes,
+          OPENAI_GUARDRAIL_TRANSLATION_PROMPT_CODE,
         );
       return translated ?? {};
     } catch (err) {
@@ -106,7 +109,11 @@ export class ConversationalGuardrailsTranslationService {
         }
 
         const languagesFiltered = (languages ?? []).filter(
-          (l: any) => l && l.translationCode && l.translationCode.trim() !== '',
+          (l: any) =>
+            l &&
+            l.translationCode &&
+            l.translationCode.trim() !== '' &&
+            l.translationCode !== DEFAULT_LANGUAGE_TRANSLATION_CODE,
         );
 
         if (!languagesFiltered.length) {
