@@ -29,6 +29,7 @@ import { TerminationEventsDto } from './termination-events.dto';
 import { StateInstructionsDto } from './state-instructions.dto';
 import { BehaviorInstructionDto } from './behavior-instruction.dto';
 import { MAX_BEHAVIOR_INSTRUCTIONS_COUNT } from '../constants/scenario-behavior-instuctions.constants';
+import { MAX_SCENARIO_STATE_INSTRUCTIONS } from '../constants/scenario-state-instructions.constants';
 
 export class UpdateScenarioDto {
   @ApiProperty({
@@ -338,6 +339,7 @@ export class UpdateScenarioDto {
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
+  @ArrayMaxSize(MAX_SCENARIO_STATE_INSTRUCTIONS)
   @Type(() => StateInstructionsDto)
   stateInstructions?: StateInstructionsDto[];
 

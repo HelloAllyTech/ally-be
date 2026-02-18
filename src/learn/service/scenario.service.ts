@@ -91,6 +91,11 @@ import { SessionEventSharedService } from 'src/session-event/service/session-eve
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
+import { StateInstructionsDto } from '../dto/state-instructions.dto';
+import {
+  MAX_SCENARIO_STATE_INSTRUCTIONS,
+  supportedStateInstructionStateIds,
+} from '../constants/scenario-state-instructions.constants';
 
 @Injectable()
 export class ScenarioService {
@@ -617,6 +622,40 @@ export class ScenarioService {
           `The following required fields are missing for ACTIVE scenario: ${missingFields.join(', ')}`,
         );
       }
+
+      this.validateStateInstructions(data?.stateInstructions);
+    }
+  }
+
+  private async validateStateInstructions(
+    stateInstructions: StateInstructionsDto[] | undefined,
+  ) {
+    if (!stateInstructions) {
+      throw new BadRequestException('State instructions are required');
+    }
+    const validStateInstructions = stateInstructions.filter(
+      (instruction) =>
+        instruction.stateId &&
+        instruction.instruction &&
+        instruction.dialogues &&
+        instruction.dialogues.length > 0 &&
+        instruction.dialogues.every((dialogue) => dialogue.trim()?.length > 0),
+    );
+    if (validStateInstructions.length !== stateInstructions.length) {
+      throw new BadRequestException('State instructions are required');
+    }
+    if (validStateInstructions.length !== MAX_SCENARIO_STATE_INSTRUCTIONS) {
+      throw new BadRequestException(
+        `State instructions must be ${MAX_SCENARIO_STATE_INSTRUCTIONS}`,
+      );
+    }
+    if (
+      validStateInstructions.some(
+        (instruction) =>
+          !supportedStateInstructionStateIds.includes(instruction.stateId),
+      )
+    ) {
+      throw new BadRequestException('Invalid state instruction state ID');
     }
   }
 

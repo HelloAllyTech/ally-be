@@ -253,12 +253,13 @@ export class ScenarioSharedService {
   async createRoomMetadata(options: CreateRoomMetadataOptions) {
     const { scenario, sessionEvents, languageDetails, previousMemory } =
       options;
-    const { metadata, terminationEvents, ...scenarioDataWithoutMetadata } =
-      scenario;
+    const {
+      metadata,
+      terminationEvents,
+      behaviorInstructions,
+      ...scenarioDataWithoutMetadata
+    } = scenario;
 
-    const behaviorInstructions = await this.getBehaviorInstructionsByScenarioId(
-      scenario.id,
-    );
     const formattedBehaviorInstructionForMetadata =
       formatBehaviorInstructionsForLivekitMetadata(behaviorInstructions ?? []);
 
@@ -394,12 +395,12 @@ export class ScenarioSharedService {
     const formattedStateInstructions = metadata?.stateInstructions?.map(
       (stateItem: ScenarioStateInstruction) => {
         const stateConfigInfo = stateConfig.find(
-          (state) => state.stateId === stateItem.stateId,
+          (state) => state?.stateId === stateItem.stateId,
         );
         return {
           stateId: stateItem.stateId,
-          instruction: stateItem.instruction,
-          dialogues: stateItem.dialogues,
+          instruction: stateItem?.instruction,
+          dialogues: stateItem?.dialogues,
           scoreUpper: stateConfigInfo?.scoreRange?.max,
           scoreLower: stateConfigInfo?.scoreRange?.min,
         };
