@@ -17,3 +17,8 @@ export type PromptDetailResponse = {
   updatedAt: Date;
   prompt?: string;
 };
+
+export type PromptsWithPromptCode = {
+  prompt: string;
+  promptCode: string;
+};
