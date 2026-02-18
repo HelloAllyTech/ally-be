@@ -64,8 +64,8 @@ import {
   AvailableLanguage,
   ScenarioVoiceLanguage,
 } from '../type/scenario-language-voice.type';
-import { ScenarioSharedService } from '../service/scenario-shared.service';
 import { TriggerWarningsSortBy } from '../enum/trigger-warnings-sort-by.enum';
+import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -80,7 +80,6 @@ export class LearnController {
     private readonly scenarioSessionService: ScenarioSessionService,
     private readonly scenarioTenantService: ScenarioTenantService,
     private readonly triggerWarningService: TriggerWarningsService,
-    private readonly scenarioSharedService: ScenarioSharedService,
   ) {}
 
   @Public()
@@ -572,7 +571,7 @@ export class LearnController {
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('includeTags') includeTags?: boolean,
   ) {
-    return this.scenarioSharedService.getMessagesByScenarioSessionId(
+    return this.scenarioSessionService.getMessagesByScenarioSessionId(
       scenarioSessionId,
       {
         limit,
@@ -581,6 +580,25 @@ export class LearnController {
         order,
       },
       { includeTags: !!includeTags },
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Get skills and emotional movements for a scenario session',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Skills and emotional movements from scenario session details',
+    type: ScenarioSessionSkillsResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SESSION_SCENARIO_SUMMARY])
+  @Get('scenario-session/:scenarioSessionId/skills')
+  async getScenarioSessionSkills(
+    @Param('scenarioSessionId', ParseUUIDPipe)
+    scenarioSessionId: string,
+  ): Promise<ScenarioSessionSkillsResponseDto> {
+    return this.scenarioSessionService.getScenarioSessionSkills(
+      scenarioSessionId,
     );
   }
 

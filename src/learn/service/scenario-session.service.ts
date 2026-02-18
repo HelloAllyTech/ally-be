@@ -82,6 +82,7 @@ import { CaseSessionService } from 'src/case/service/case-session.service';
 import { CommonUtil } from 'src/common/util/common.util';
 import { ScenarioSharedService } from './scenario-shared.service';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
+import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -90,6 +91,7 @@ export class ScenarioSessionService {
     private scenarioSessionRepository: ScenarioSessionRepository,
     private scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
     private scenarioService: ScenarioService,
+    private scenarioSharedService: ScenarioSharedService,
     private livekitService: LiveKitService,
     private sessionEventSharedService: SessionEventSharedService,
     @InjectRepository(ScenarioSessionFeedbacks)
@@ -107,9 +109,28 @@ export class ScenarioSessionService {
     private eventEmitter: EventEmitter2,
     private caseSharedService: CaseSharedService,
     private caseSessionService: CaseSessionService,
-    private scenarioSharedService: ScenarioSharedService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
+  }
+
+  async getMessagesByScenarioSessionId(
+    scenarioSessionId: string,
+    pagination: Pagination,
+    options?: { includeTags?: boolean },
+  ) {
+    return this.scenarioSharedService.getMessagesByScenarioSessionId(
+      scenarioSessionId,
+      pagination,
+      options,
+    );
+  }
+
+  async getScenarioSessionSkills(
+    scenarioSessionId: string,
+  ): Promise<ScenarioSessionSkillsResponseDto> {
+    return this.scenarioSharedService.getScenarioSessionSkills(
+      scenarioSessionId,
+    );
   }
 
   async getScenarioSessions(

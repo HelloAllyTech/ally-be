@@ -35,7 +35,6 @@ describe('LearnController', () => {
   let scenarioService: jest.Mocked<ScenarioService>;
   let scenarioSessionService: jest.Mocked<ScenarioSessionService>;
   let scenarioTenantService: jest.Mocked<ScenarioTenantService>;
-  let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
 
   const mockTokenUser: TokenUser = {
     id: 123,
@@ -216,6 +215,7 @@ describe('LearnController', () => {
       endScenarioSession: jest.fn(),
       addFeedbackToScenarioSession: jest.fn(),
       getMessagesByScenarioSessionId: jest.fn(),
+      getScenarioSessionSkills: jest.fn(),
       getLatestScenarioSessionByScenarioPathSessionItemId: jest.fn(),
     };
 
@@ -299,7 +299,6 @@ describe('LearnController', () => {
     scenarioService = module.get(ScenarioService);
     scenarioSessionService = module.get(ScenarioSessionService);
     scenarioTenantService = module.get(ScenarioTenantService);
-    scenarioSharedService = module.get(ScenarioSharedService);
   });
 
   afterEach(() => {
@@ -615,10 +614,10 @@ describe('LearnController', () => {
   });
 
   describe('getMessagesByScenarioSessionId', () => {
-    it('should call shared service with pagination and includeTags when includeTags is true', async () => {
+    it('should call scenario session service with pagination and includeTags when includeTags is true', async () => {
       const scenarioSessionId = 'session-123';
       const mockResponse = { messages: [], count: 0 };
-      scenarioSharedService.getMessagesByScenarioSessionId.mockResolvedValue(
+      scenarioSessionService.getMessagesByScenarioSessionId.mockResolvedValue(
         mockResponse as any,
       );
 
@@ -632,7 +631,7 @@ describe('LearnController', () => {
       );
 
       expect(
-        scenarioSharedService.getMessagesByScenarioSessionId,
+        scenarioSessionService.getMessagesByScenarioSessionId,
       ).toHaveBeenCalledWith(
         scenarioSessionId,
         { limit: 10, offset: 0, sortBy: 'createdAt', order: SortOrder.ASC },
@@ -640,9 +639,9 @@ describe('LearnController', () => {
       );
     });
 
-    it('should call shared service with includeTags false when includeTags is not "true"', async () => {
+    it('should call scenario session service with includeTags false when includeTags is not "true"', async () => {
       const scenarioSessionId = 'session-456';
-      scenarioSharedService.getMessagesByScenarioSessionId.mockResolvedValue({
+      scenarioSessionService.getMessagesByScenarioSessionId.mockResolvedValue({
         messages: [],
         count: 0,
       } as any);
@@ -657,7 +656,7 @@ describe('LearnController', () => {
       );
 
       expect(
-        scenarioSharedService.getMessagesByScenarioSessionId,
+        scenarioSessionService.getMessagesByScenarioSessionId,
       ).toHaveBeenCalledWith(
         scenarioSessionId,
         {

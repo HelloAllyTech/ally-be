@@ -45,6 +45,8 @@ import { BehaviorInstructionWithBehaviorsDto } from '../dto/behavior-instruction
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { isEnglishLanguage } from '../util/scenario.util';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
+import { ScenarioEvaluationEmotionalMovementItem } from 'src/ai/dto/ai.response.dto';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -633,5 +635,29 @@ export class ScenarioSharedService {
       acc[prompt.promptCode] = prompt.prompt;
       return acc;
     }, {});
+  }
+
+  async getScenarioSessionSkills(
+    scenarioSessionId: string,
+  ): Promise<ScenarioSessionSkillsResponseDto> {
+    const scenarioSessionDetails =
+      await this.scenarioSessionDetailsRepository.findOne({
+        where: { scenarioSessionId },
+      });
+    if (!scenarioSessionDetails) {
+      throw new NotFoundException('Scenario session details not found');
+    }
+    const feedback = scenarioSessionDetails.summary?.feedback;
+    const skillCoverage = feedback?.skillCoverage ?? [];
+    const emotionalMovement = Array.isArray(feedback?.emotionalMovement)
+      ? feedback?.emotionalMovement.map(
+          (item: ScenarioEvaluationEmotionalMovementItem) => ({
+            messageId: item.message_id,
+            level: item.level,
+            startTime: item.start_time,
+          }),
+        )
+      : [];
+    return { skillCoverage, emotionalMovement };
   }
 }
