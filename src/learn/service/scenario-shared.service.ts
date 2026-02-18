@@ -47,6 +47,7 @@ import { isEnglishLanguage } from '../util/scenario.util';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 import { ScenarioEvaluationEmotionalMovementItem } from 'src/ai/dto/ai.response.dto';
+import { formatBehaviorInstructionsForLivekitMetadata } from '../util/scenario-behavior-instructions.util';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -255,6 +256,12 @@ export class ScenarioSharedService {
     const { metadata, terminationEvents, ...scenarioDataWithoutMetadata } =
       scenario;
 
+    const behaviorInstructions = await this.getBehaviorInstructionsByScenarioId(
+      scenario.id,
+    );
+    const formattedBehaviorInstructionForMetadata =
+      formatBehaviorInstructionsForLivekitMetadata(behaviorInstructions ?? []);
+
     const { voiceId, promptData, langIsEnglish } =
       await this.getScenarioTranslationData(
         {
@@ -321,7 +328,7 @@ export class ScenarioSharedService {
       const idsToFetch = Array.from(idsToProcess);
       idsToProcess.clear();
 
-      //todo: use shared session event service
+      //TODO: use shared session event service
       const fetchedEvents =
         await this.sessionEventSharedService.findByIds(idsToFetch);
 
@@ -429,7 +436,8 @@ export class ScenarioSharedService {
         triggerEvents: Array.from(triggerEvents),
         autoTerminationEvents,
         stateInstructions: formattedStateInstructions,
-        guardrails,
+        guardrails: guardrails,
+        behaviorInstructions: formattedBehaviorInstructionForMetadata,
       },
     };
   }

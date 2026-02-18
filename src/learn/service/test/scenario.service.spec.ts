@@ -34,6 +34,7 @@ import { OpenAITranslationsService } from 'src/common/service/openai-translation
 import { ScenarioReportService } from 'src/scenario-report/service/scenario-report.service';
 import { ScenarioBehaviorInstructionService } from '../scenario-behavior-instruction.service';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
+import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -1486,6 +1487,77 @@ describe('ScenarioService', () => {
 
       await expect(service.getAdminScenario(999)).rejects.toThrow(
         NotFoundException,
+      );
+    });
+
+    it('should return scenario with behavior instructions when they exist', async () => {
+      const scenarioId = 1;
+
+      const mockBehaviorInstructions = [
+        {
+          id: 'instruction-1',
+          category: BehaviorInstructionCategory.SHOULD_DO,
+          instructions: ['Listen actively', 'Show empathy'],
+          behaviors: [
+            {
+              id: 'behavior-1',
+              name: 'Active Listening',
+            },
+            {
+              id: 'behavior-2',
+              name: 'Empathy',
+            },
+          ],
+        },
+        {
+          id: 'instruction-2',
+          category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+          instructions: ['Interrupt the client'],
+          behaviors: [
+            {
+              id: 'behavior-3',
+              name: 'Patience',
+            },
+          ],
+        },
+      ];
+
+      const mockScenarioData = {
+        ...mockScenario,
+        id: scenarioId,
+        behaviorInstructions: mockBehaviorInstructions,
+      };
+
+      scenarioSharedService.getAdminScenario.mockResolvedValue(
+        mockScenarioData,
+      );
+
+      const result = await service.getAdminScenario(scenarioId);
+
+      expect(result.id).toBe(scenarioId);
+      expect(result.behaviorInstructions).toEqual(mockBehaviorInstructions);
+      expect(scenarioSharedService.getAdminScenario).toHaveBeenCalledWith(
+        scenarioId,
+      );
+    });
+
+    it('should return scenario without behavior instructions when they do not exist', async () => {
+      const scenarioId = 1;
+      const mockScenarioData = {
+        ...mockScenario,
+        id: scenarioId,
+      };
+
+      scenarioSharedService.getAdminScenario.mockResolvedValue(
+        mockScenarioData,
+      );
+
+      const result = await service.getAdminScenario(scenarioId);
+
+      expect(result.id).toBe(scenarioId);
+      expect(result.behaviorInstructions).toBeUndefined();
+      expect(scenarioSharedService.getAdminScenario).toHaveBeenCalledWith(
+        scenarioId,
       );
     });
   });

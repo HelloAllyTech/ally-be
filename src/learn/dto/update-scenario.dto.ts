@@ -28,7 +28,7 @@ import { MAX_CUSTOM_FIELDS_COUNT } from '../constants/scenario.constants';
 import { TerminationEventsDto } from './termination-events.dto';
 import { StateInstructionsDto } from './state-instructions.dto';
 import { BehaviorInstructionDto } from './behavior-instruction.dto';
-import { MAX_BEHAVIOR_INSTRUCTIONS_COUNT } from '../constants/scenario.constants';
+import { MAX_BEHAVIOR_INSTRUCTIONS_COUNT } from '../constants/scenario-behavior-instuctions.constants';
 
 export class UpdateScenarioDto {
   @ApiProperty({
