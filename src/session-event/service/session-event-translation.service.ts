@@ -16,6 +16,7 @@ import {
   unwrapFieldPlaceholders,
 } from '../util/session-event.util';
 import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from 'src/learn/constants/scenario-session.constants';
+import { SessionEventSharedService } from './session-event-shared.service';
 
 @Injectable()
 export class SessionEventTranslationService {
@@ -28,6 +29,7 @@ export class SessionEventTranslationService {
     private readonly googleTranslationService: GoogleTranslationsService,
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly sessionEventTranslationsRepository: SessionEventTranslationsRepository,
+    private readonly sessionEventSharedService: SessionEventSharedService,
   ) {}
 
   async createUpdateSessionEventTranslations(events: any[]): Promise<void> {
@@ -332,43 +334,9 @@ export class SessionEventTranslationService {
     scenarioId: number,
     languageId: number,
   ): Promise<SessionEvents[]> {
-    const events =
-      await this.sessionEventTranslationsRepository.getSessionEventTranslationsByForMetaData(
-        scenarioId,
-        languageId,
-      );
-
-    return events
-      .filter((event) => !event.autoTerminationStatus) // Filter out auto termination events to get correct feedback messages
-      .map((event) => ({
-        id: event.sessionEvents_id,
-        name: event.sessionEvents_name,
-        description: event.sessionEvents_description,
-        score: event.scenarioEvents_score ?? event.sessionEvents_score,
-        emoji:
-          (event.scenarioEvents_feedbackStatus ?? true)
-            ? event.scenarioEvents_emoji
-            : event.sessionEvents_emoji,
-        message:
-          (event.scenarioEvents_feedbackStatus ?? true)
-            ? event.scenarioEvents_message
-            : event.sessionEvents_message,
-        branchInstruction:
-          (event.scenarioEvents_branchingStatus ?? true)
-            ? (event.scenarioEvents_branchInstruction ??
-              event.sessionEvents_branchInstruction)
-            : null,
-        detectionType: event.sessionEvents_detectionType,
-        data: event.sessionEvents_detectionData,
-        visibilityType: event.sessionEvents_visibilityType,
-        feedbackStatus: event.scenarioEvents_feedbackStatus,
-        speaker: event.sessionEvents_speaker,
-        createdAt: event.sessionEvents_createdAt,
-        updatedAt: event.sessionEvents_updatedAt,
-        eventCode: event.sessionEvents_eventCode,
-        detectionConfig: event.scenarioEvents_detectionConfig,
-        checklistVisibilityStatus:
-          event.scenarioEvents_checklistVisibilityStatus,
-      }));
+    return this.sessionEventSharedService.getSessionEventsTranslationsByScenarioId(
+      scenarioId,
+      languageId,
+    );
   }
 }

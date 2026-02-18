@@ -36,12 +36,14 @@ import {
 } from '../constants/event.constant';
 
 import { SessionEventTranslationService } from './session-event-translation.service';
+import { SessionEventSharedService } from './session-event-shared.service';
 @Injectable()
 export class SessionEventService {
   constructor(
     private readonly sessionEventRepository: SessionEventRepository,
     private readonly dataSource: DataSource,
     private readonly sessionEventTranslationService: SessionEventTranslationService,
+    private readonly sessionEventSharedService: SessionEventSharedService,
   ) {}
 
   async createSessionEvents(
@@ -141,40 +143,9 @@ export class SessionEventService {
   async getSessionEventsByScenarioId(
     scenarioId: number,
   ): Promise<SessionEvents[]> {
-    const events =
-      await this.sessionEventRepository.getSessionEventsByScenarioId(
-        scenarioId,
-      );
-
-    return events.map((event) => ({
-      id: event.sessionEvents_id,
-      name: event.sessionEvents_name,
-      description: event.sessionEvents_description,
-      score: event.scenarioEvents_score ?? event.sessionEvents_score,
-      emoji:
-        (event.scenarioEvents_feedbackStatus ?? true)
-          ? event.scenarioEvents_emoji
-          : event.sessionEvents_emoji,
-      message:
-        (event.scenarioEvents_feedbackStatus ?? true)
-          ? event.scenarioEvents_message
-          : event.sessionEvents_message,
-      branchInstruction:
-        (event.scenarioEvents_branchingStatus ?? true)
-          ? (event.scenarioEvents_branchInstruction ??
-            event.sessionEvents_branchInstruction)
-          : null,
-      detectionType: event.sessionEvents_detectionType,
-      data: event.sessionEvents_detectionData,
-      visibilityType: event.sessionEvents_visibilityType,
-      feedbackStatus: event.scenarioEvents_feedbackStatus,
-      speaker: event.sessionEvents_speaker,
-      createdAt: event.sessionEvents_createdAt,
-      updatedAt: event.sessionEvents_updatedAt,
-      eventCode: event.sessionEvents_eventCode,
-      checklistVisibilityStatus: event.scenarioEvents_checklistVisibilityStatus,
-      detectionConfig: event.scenarioEvents_detectionConfig,
-    }));
+    return this.sessionEventSharedService.getSessionEventsByScenarioId(
+      scenarioId,
+    );
   }
 
   async updateSessionEvent(
@@ -218,17 +189,11 @@ export class SessionEventService {
   }
 
   async findByIds(ids: string[]): Promise<SessionEvents[]> {
-    if (!ids || ids.length === 0) {
-      return [];
-    }
-
-    return this.sessionEventRepository.find({
-      where: { id: In(ids) },
-    });
+    return this.sessionEventSharedService.findByIds(ids);
   }
 
   async findSessionEventById(id: string): Promise<SessionEvents | null> {
-    return this.sessionEventRepository.findOne({ where: { id } });
+    return this.sessionEventSharedService.findSessionEventById(id);
   }
 
   async getAllSessionEvents(

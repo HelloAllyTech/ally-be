@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { SessionEventService } from 'src/session-event/service/session-event.service';
+import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Repository, DataSource } from 'typeorm';
@@ -49,7 +49,7 @@ describe('ScenarioService', () => {
   let repository: jest.Mocked<Repository<Scenarios>>;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
   let scenarioEventsRepository: jest.Mocked<ScenarioEventsRepository>;
-  let sessionEventService: jest.Mocked<SessionEventService>;
+  let sessionEventSharedService: jest.Mocked<SessionEventSharedService>;
   let scenarioVoiceRepository: jest.Mocked<ScenarioVoicesRepository>;
   let tenantService: jest.Mocked<TenantService>;
   let dataSource: jest.Mocked<DataSource>;
@@ -118,7 +118,7 @@ describe('ScenarioService', () => {
       softDelete: jest.fn(),
     };
 
-    const mockSessionEventService = {
+    const mockSessionEventSharedService = {
       findByIds: jest.fn(),
       findSessionEventById: jest.fn(),
     };
@@ -229,6 +229,8 @@ describe('ScenarioService', () => {
       getScenarioByIds: jest.fn(),
       getScenarioSessionById: jest.fn(),
       getUniqueLanguagesFromScenarioTranslations: jest.fn(),
+      getScenarioVoice: jest.fn(),
+      getAdminScenario: jest.fn(),
     };
 
     const mockScenarioEventsTranslationsRepository = {
@@ -277,8 +279,8 @@ describe('ScenarioService', () => {
           useValue: mockScenarioVoiceRepository,
         },
         {
-          provide: SessionEventService,
-          useValue: mockSessionEventService,
+          provide: SessionEventSharedService,
+          useValue: mockSessionEventSharedService,
         },
         {
           provide: TenantService,
@@ -355,7 +357,7 @@ describe('ScenarioService', () => {
     repository = module.get(getRepositoryToken(Scenarios));
     scenariosRepository = module.get(ScenariosRepository);
     scenarioEventsRepository = module.get(ScenarioEventsRepository);
-    sessionEventService = module.get(SessionEventService);
+    sessionEventSharedService = module.get(SessionEventSharedService);
     scenarioVoiceRepository = module.get(ScenarioVoicesRepository);
     tenantService = module.get(TenantService);
     dataSource = module.get(DataSource);
@@ -379,7 +381,7 @@ describe('ScenarioService', () => {
       expect(repository).toBeDefined();
       expect(scenariosRepository).toBeDefined();
       expect(scenarioEventsRepository).toBeDefined();
-      expect(sessionEventService).toBeDefined();
+      expect(sessionEventSharedService).toBeDefined();
       expect(scenarioVoiceRepository).toBeDefined();
       expect(tenantService).toBeDefined();
       expect(scenarioPathSharedService).toBeDefined();
@@ -475,7 +477,7 @@ describe('ScenarioService', () => {
       const scenarioId = 1;
       const mockScenarioData = { scenario_id: 1 };
 
-      scenariosRepository.getAdminScenarioById.mockResolvedValue(
+      scenarioSharedService.getAdminScenario.mockResolvedValue(
         mockScenarioData as any,
       );
       scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
@@ -495,7 +497,7 @@ describe('ScenarioService', () => {
       const scenarioId = 1;
       const mockScenarioData = { scenario_id: 1 };
 
-      scenariosRepository.getAdminScenarioById.mockResolvedValue(
+      scenarioSharedService.getAdminScenario.mockResolvedValue(
         mockScenarioData as any,
       );
       scenarioPathSharedService.getScenarioPathItemByScenarioId.mockResolvedValue(
@@ -1478,7 +1480,9 @@ describe('ScenarioService', () => {
 
   describe('getAdminScenario', () => {
     it('should throw NotFoundException when scenario not found', async () => {
-      scenariosRepository.getAdminScenarioById.mockResolvedValue(null);
+      scenarioSharedService.getAdminScenario.mockRejectedValue(
+        new NotFoundException('Scenario not found'),
+      );
 
       await expect(service.getAdminScenario(999)).rejects.toThrow(
         NotFoundException,
@@ -1571,15 +1575,22 @@ describe('ScenarioService', () => {
   describe('getScenarioVoice', () => {
     it('should return scenario voice when found', async () => {
       const mockVoice = { id: 'voice-1', name: 'Test Voice' };
-      scenarioVoiceRepository.findOne.mockResolvedValue(mockVoice as any);
+      scenarioSharedService.getScenarioVoice.mockResolvedValue(
+        mockVoice as any,
+      );
 
       const result = await service.getScenarioVoice('voice-1');
 
       expect(result).toEqual(mockVoice);
+      expect(scenarioSharedService.getScenarioVoice).toHaveBeenCalledWith(
+        'voice-1',
+      );
     });
 
     it('should throw NotFoundException when voice not found', async () => {
-      scenarioVoiceRepository.findOne.mockResolvedValue(null);
+      scenarioSharedService.getScenarioVoice.mockRejectedValue(
+        new NotFoundException('Scenario voice not found'),
+      );
 
       await expect(service.getScenarioVoice('invalid')).rejects.toThrow(
         NotFoundException,
@@ -1699,7 +1710,7 @@ describe('ScenarioService', () => {
         ],
       };
       scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
-      sessionEventService.findByIds.mockResolvedValue([
+      sessionEventSharedService.findByIds.mockResolvedValue([
         { id: 'event-1' },
       ] as any);
       const mockEntityManager = {
@@ -1734,7 +1745,7 @@ describe('ScenarioService', () => {
         events: [{ id: 'invalid-event' }],
       };
       scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
-      sessionEventService.findByIds.mockResolvedValue([]);
+      sessionEventSharedService.findByIds.mockResolvedValue([]);
 
       await expect(
         service.mapEventsToScenario(createDto as any),
@@ -1757,7 +1768,7 @@ describe('ScenarioService', () => {
         ],
       };
       scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
-      sessionEventService.findByIds.mockResolvedValue([
+      sessionEventSharedService.findByIds.mockResolvedValue([
         { id: 'event-1' },
       ] as any);
 
@@ -1783,7 +1794,7 @@ describe('ScenarioService', () => {
         ],
       };
       scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
-      sessionEventService.findByIds.mockResolvedValue([
+      sessionEventSharedService.findByIds.mockResolvedValue([
         { id: 'event-1' },
       ] as any);
 
@@ -1808,7 +1819,7 @@ describe('ScenarioService', () => {
         ],
       };
       scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
-      sessionEventService.findByIds.mockResolvedValue([
+      sessionEventSharedService.findByIds.mockResolvedValue([
         { id: 'event-1' },
       ] as any);
 
@@ -1833,7 +1844,7 @@ describe('ScenarioService', () => {
         ],
       };
       scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
-      sessionEventService.findByIds.mockResolvedValue([
+      sessionEventSharedService.findByIds.mockResolvedValue([
         { id: 'event-1' },
       ] as any);
 
@@ -1859,7 +1870,7 @@ describe('ScenarioService', () => {
         ],
       };
       scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
-      sessionEventService.findByIds.mockResolvedValue([
+      sessionEventSharedService.findByIds.mockResolvedValue([
         { id: 'event-1' },
       ] as any);
 
@@ -1898,7 +1909,7 @@ describe('ScenarioService', () => {
         ],
       };
       scenariosRepository.getScenarioById.mockResolvedValue(mockScenario);
-      sessionEventService.findByIds.mockResolvedValue([
+      sessionEventSharedService.findByIds.mockResolvedValue([
         { id: 'event-1' },
       ] as any);
       const existingScenarioEvent = {
@@ -1943,7 +1954,7 @@ describe('ScenarioService', () => {
         openingStatements: ['Hi'],
         optGuardrails: true,
       };
-      scenarioVoiceRepository.findOne.mockResolvedValue({
+      scenarioSharedService.getScenarioVoice.mockResolvedValue({
         id: 'voice-1',
       } as any);
 
@@ -1968,7 +1979,9 @@ describe('ScenarioService', () => {
         context: 'Context',
         openingStatements: ['Hi'],
       };
-      scenarioVoiceRepository.findOne.mockResolvedValue(null);
+      scenarioSharedService.getScenarioVoice.mockRejectedValue(
+        new NotFoundException('Scenario voice not found'),
+      );
 
       await expect(service.validateCreateScenario(createDto)).rejects.toThrow(
         NotFoundException,
@@ -2021,8 +2034,8 @@ describe('ScenarioService', () => {
         id: 'voice-1',
       } as any);
 
-      // Mock sessionEventService.findByIds to validate termination events
-      sessionEventService.findByIds.mockResolvedValue([
+      // Mock sessionEventSharedService.findByIds to validate termination events
+      sessionEventSharedService.findByIds.mockResolvedValue([
         { id: 'event-1' },
         { id: 'event-2' },
         { id: 'event-3' },
@@ -3151,8 +3164,8 @@ describe('ScenarioService', () => {
         // Mock scenariosRepository.findOne for validateUpdateScenario
         scenariosRepository.findOne.mockResolvedValue(mockScenario as any);
 
-        // Mock sessionEventService.findByIds to validate termination events
-        sessionEventService.findByIds.mockResolvedValue([
+        // Mock sessionEventSharedService.findByIds to validate termination events
+        sessionEventSharedService.findByIds.mockResolvedValue([
           { id: 'event-a' },
           { id: 'event-b' },
           { id: 'event-c' },

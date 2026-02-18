@@ -93,6 +93,7 @@ import { ScenarioBehaviorInstructionBehaviorRepository } from './repository/scen
     forwardRef(() => ConversationalGuardrailsModule),
     forwardRef(() => CaseModule),
     ScenarioReportModule,
+    forwardRef(() => ConversationalGuardrailsModule),
   ],
   controllers: [
     LearnController,

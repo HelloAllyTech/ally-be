@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ScenarioReportController } from './controller/scenario-report.controller';
 import { ScenarioReportService } from './service/scenario-report.service';
 import { ScenarioReport } from './entity/scenario-report.entity';
@@ -11,6 +11,7 @@ import { ScenarioReportRepository } from './repository/scenario-report.repositor
 import { AiModule } from '../ai/ai.module';
 import { LanguageModule } from '../language/language.module';
 import { ScenarioReportWebhookController } from './controller/scenario-report-webhook.controller';
+import { LearnModule } from 'src/learn/learn.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ScenarioReportWebhookController } from './controller/scenario-report-we
     TypeOrmModule.forFeature([ScenarioReportTranscript]),
     AiModule,
     LanguageModule,
+    forwardRef(() => LearnModule),
   ],
   controllers: [ScenarioReportController, ScenarioReportWebhookController],
   providers: [
