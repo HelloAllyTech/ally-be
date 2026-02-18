@@ -3,7 +3,7 @@ import { Column, Entity, PrimaryGeneratedColumn, Index } from 'typeorm';
 
 @Entity('scenario_behavior_instruction_behaviors')
 @Index(
-  'uq_scenario_behavior_instruction_behaviors_instruction_id_behavior_id_idx',
+  'uq_sbi_behaviors_instruction_behavior_idx',
   ['scenarioBehaviorInstructionId', 'behaviorId'],
   {
     unique: true,
