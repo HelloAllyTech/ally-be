@@ -30,6 +30,7 @@
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
     "migration:show": "npm run typeorm -- migration:show -d src/database/data-source.ts",
+    "migration:permissions": "ts-node -r tsconfig-paths/register scripts/generate-permission-migration.ts",
     "seed": "ts-node -r tsconfig-paths/register",
     "seed:orchestrate": "ts-node -r tsconfig-paths/register src/database/seeds/index.ts",
     "seed:admin": "npm run seed -- src/database/seeds/admin-user.ts",
