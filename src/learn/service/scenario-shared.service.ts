@@ -1,5 +1,3 @@
-// TODO: Handle correctly - util created to resolve circular dependency
-
 import { In, Not, IsNull } from 'typeorm';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
@@ -17,6 +15,7 @@ import { ScenarioSessionDetailsRepository } from '../repository/scenario-session
 import { ScenarioSessionMessageTagsRepository } from '../repository/scenario-session-message-tags.repository';
 import { MessageTagMapping } from '../type/scenario-message-tag.type';
 import {
+  SCENARIO_SESSION_PROMPTS,
   SCENARIO_SESSION_TRANSLATABLE_FIELDS,
   STT_LLM_PROVIDER_CONFIG,
 } from '../constants/scenario-session.constants';
@@ -45,6 +44,7 @@ import { BehaviorRepository } from '../repository/behavior.repository';
 import { BehaviorInstructionWithBehaviorsDto } from '../dto/behavior-instruction-response.dto';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { isEnglishLanguage } from '../util/scenario.util';
+import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -65,6 +65,7 @@ export class ScenarioSharedService {
     private scenarioBehaviorInstructionBehaviorRepository: ScenarioBehaviorInstructionBehaviorRepository,
     private behaviorRepository: BehaviorRepository,
     private conversationalGuardrailsService: ConversationalGuardrailsService,
+    private promptSharedService: PromptSharedService,
   ) {}
 
   async getScenarioByIds(
@@ -401,6 +402,9 @@ export class ScenarioSharedService {
         langIsEnglish ? undefined : languageDetails?.id,
       );
 
+    const prompts = await this.getPromptsForScenarioSession();
+    scenarioData.promptData.prompts = prompts;
+
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
@@ -614,5 +618,20 @@ export class ScenarioSharedService {
 
   async getBehaviorsByIds(ids: string[]): Promise<Behavior[]> {
     return this.behaviorRepository.getBehaviorsByIds(ids);
+  }
+
+  private async getPromptsForScenarioSession() {
+    const prompts = await this.promptSharedService.getPromptsByCodes(
+      SCENARIO_SESSION_PROMPTS,
+    );
+
+    if (prompts?.length == 0) {
+      return {};
+    }
+
+    return prompts.reduce<Record<string, string>>((acc, prompt) => {
+      acc[prompt.promptCode] = prompt.prompt;
+      return acc;
+    }, {});
   }
 }
