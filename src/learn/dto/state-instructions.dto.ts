@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsNotEmpty, IsString } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class StateInstructionsDto {
   @ApiProperty({
@@ -14,9 +14,9 @@ export class StateInstructionsDto {
     description: 'State Instruction',
     example: 'Express mild doubt about if talking is helping',
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  instruction!: string;
+  instruction?: string;
 
   @ApiProperty({
     description: 'State dialogues',
@@ -25,8 +25,8 @@ export class StateInstructionsDto {
       'I think we should stop talking',
     ],
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  dialogues!: string[];
+  dialogues?: string[];
 }
