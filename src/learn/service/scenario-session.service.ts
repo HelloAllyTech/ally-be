@@ -27,7 +27,6 @@ import {
 } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { SessionEventService } from 'src/session-event/service/session-event.service';
 import { ScenarioSessionMessageType } from '../enum/scenario-session-message.type.enum';
 import { ScenarioSessionTagCategory } from '../enum/scenario-session-tag-category.enum';
 import { AiService } from 'src/ai/service/ai.service';
@@ -52,34 +51,26 @@ import { v4 } from 'uuid';
 import {
   DEFAULT_LANGUAGE_CODE,
   DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
-  SCENARIO_SESSION_TRANSLATABLE_FIELDS,
-  STT_LLM_PROVIDER_CONFIG,
 } from '../constants/scenario-session.constants';
 import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
 import {
   ChecklistItem,
-  CreateRoomMetadataOptions,
   ExperienceMode,
-  ScenarioDifficultyLevel,
   ScenarioStatus,
 } from '../type/scenario.type';
 import { ScenarioTenantService } from './scenario-tenant.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { SessionItemStatus } from 'src/common/type/common.type';
-import { extractEventIds } from 'src/session-event/util/session-event.util';
-import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
-import { MAX_COMBINATION_EVENT_DEPTH } from 'src/session-event/constants/event.constant';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,
 } from 'src/common/decorator/execution.context.decorator';
-import { ScenarioTranslationsRepository } from '../repository/scenario-translations.repository';
-import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
-import { LanguageCode } from '../type/scenario-language-voice.type';
-import { getActiveScenarioMandatoryFields } from '../util/scenario.util';
-import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import {
+  getActiveScenarioMandatoryFields,
+  isEnglishLanguage,
+} from '../util/scenario.util';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { ReviewSharedService } from 'src/review/service/review-shared.service';
 import {
@@ -87,11 +78,11 @@ import {
   ScenarioSessionLeaderboardEndedEventParams,
 } from '../type/scenario-session-leaderboard-event.type';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
-import { getScenarioStateConfigByDifficultyLevel } from '../util/scenario-state.util';
-import { ScenarioStateInstruction } from '../type/scenario-state.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
 import { CommonUtil } from 'src/common/util/common.util';
+import { ScenarioSharedService } from './scenario-shared.service';
+import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -101,7 +92,7 @@ export class ScenarioSessionService {
     private scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
     private scenarioService: ScenarioService,
     private livekitService: LiveKitService,
-    private sessionEventService: SessionEventService,
+    private sessionEventSharedService: SessionEventSharedService,
     @InjectRepository(ScenarioSessionFeedbacks)
     private scenarioSessionFeedbacksRepository: Repository<ScenarioSessionFeedbacks>,
     private dataSource: DataSource,
@@ -112,15 +103,13 @@ export class ScenarioSessionService {
     private simulationCreditsService: SimulationCreditsService,
     private configService: AppConfigService,
     private scenarioPathSharedService: ScenarioPathSharedService,
-    private scenarioTranslationRepository: ScenarioTranslationsRepository,
-    private sessionEventTranslationService: SessionEventTranslationService,
-    private sharedLanguageService: SharedLanguageService,
     private scenarioVoicesRepository: ScenarioVoicesRepository,
     private reviewSharedService: ReviewSharedService,
     private eventEmitter: EventEmitter2,
     private conversationalGuardrailsService: ConversationalGuardrailsService,
     private caseSharedService: CaseSharedService,
     private caseSessionService: CaseSessionService,
+    private scenarioSharedService: ScenarioSharedService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -230,7 +219,7 @@ export class ScenarioSessionService {
     const isOtherLanguage =
       languageId &&
       languageDetails &&
-      !this.isEnglishLanguage(
+      !isEnglishLanguage(
         languageId,
         languageDetails.value,
         enLanguageDetails?.id,
@@ -238,11 +227,11 @@ export class ScenarioSessionService {
 
     // If language is not English, get translated session events
     sessionEvents = isOtherLanguage
-      ? await this.sessionEventTranslationService.getSessionEventsTranslationsByScenarioId(
+      ? await this.sessionEventSharedService.getSessionEventsTranslationsByScenarioId(
           startScenarioSessionDto.scenarioId,
           languageId,
         )
-      : await this.sessionEventService.getSessionEventsByScenarioId(
+      : await this.sessionEventSharedService.getSessionEventsByScenarioId(
           startScenarioSessionDto.scenarioId,
         );
 
@@ -322,7 +311,7 @@ export class ScenarioSessionService {
       }
 
       // Prepare room metadata with events and dependencies
-      const roomMetadata = await this.createRoomMetadata({
+      const roomMetadata = await this.scenarioSharedService.createRoomMetadata({
         scenario,
         sessionEvents,
         languageDetails,
@@ -407,187 +396,6 @@ export class ScenarioSessionService {
       gender,
     );
     return voiceDetails;
-  }
-
-  private async createRoomMetadata(options: CreateRoomMetadataOptions) {
-    const { scenario, sessionEvents, languageDetails, previousMemory } =
-      options;
-    const { metadata, terminationEvents, ...scenarioDataWithoutMetadata } =
-      scenario;
-
-    const { voiceId, promptData, langIsEnglish } =
-      await this.getScenarioTranslationData(
-        {
-          ...metadata,
-          title: scenario.title,
-          description: scenario.description,
-        },
-        scenario.id,
-      );
-
-    const languageCode = metadata?.language as LanguageCode;
-
-    if (previousMemory) {
-      promptData.previousMemory = previousMemory;
-    }
-
-    const scenarioData = {
-      ...scenarioDataWithoutMetadata,
-      // Ensure we have values even if not translated
-      title: promptData?.title || scenario.title,
-      description: promptData?.description || scenario.description,
-      promptData: promptData,
-    };
-    const scenarioVoice = await this.scenarioService.getScenarioVoice(voiceId);
-
-    const triggerEvents = new Set<string>();
-    const eventMap = new Map<string, SessionEvents>();
-
-    // Add initial session events to the map
-    sessionEvents.forEach((event) => {
-      triggerEvents.add(event.id);
-      eventMap.set(event.id, event);
-    });
-
-    // Add termination event ID to be fetched if needed
-    const idsToProcess = new Set<string>();
-    if (terminationEvents && terminationEvents?.length > 0) {
-      terminationEvents.forEach((termEvent) => {
-        if (termEvent?.eventId && !eventMap.has(termEvent.eventId)) {
-          idsToProcess.add(termEvent.eventId);
-        }
-      });
-    }
-
-    // Extract all event IDs referenced in combination events (initial pass)
-    sessionEvents.forEach((event) => {
-      if (event.detectionType === SessionEventDetectionType.COMBINATION) {
-        const detectionData = (event as any).data || event.detectionData;
-        const dependentIds = extractEventIds(detectionData?.expression);
-        dependentIds.forEach((id) => {
-          if (!eventMap.has(id)) {
-            idsToProcess.add(id);
-          }
-        });
-      }
-    });
-
-    // Recursively fetch nested combination events with depth limiting
-    let currentDepth = 0;
-    while (
-      idsToProcess.size > 0 &&
-      currentDepth < MAX_COMBINATION_EVENT_DEPTH
-    ) {
-      const idsToFetch = Array.from(idsToProcess);
-      idsToProcess.clear();
-
-      const fetchedEvents =
-        await this.sessionEventService.findByIds(idsToFetch);
-
-      for (const event of fetchedEvents) {
-        eventMap.set(event.id, event);
-
-        // If the fetched event is also a combination, extract its dependencies
-        if (event.detectionType === SessionEventDetectionType.COMBINATION) {
-          const detectionData = event.detectionData;
-          const childIds = extractEventIds(detectionData?.expression);
-          childIds.forEach((id) => {
-            if (!eventMap.has(id)) {
-              idsToProcess.add(id);
-            }
-          });
-        }
-      }
-
-      currentDepth++;
-    }
-
-    if (idsToProcess.size > 0 && currentDepth >= MAX_COMBINATION_EVENT_DEPTH) {
-      this.logger.warn(
-        `Maximum combination event depth (${MAX_COMBINATION_EVENT_DEPTH}) exceeded while resolving events`,
-      );
-    }
-
-    // Enhance all events with dependentEvents for combination events
-    const allEvents = Array.from(eventMap.values()).map((event) => {
-      const detectionData = (event as any).data || event.detectionData;
-      if (event.detectionType === SessionEventDetectionType.COMBINATION) {
-        const detectionData = (event as any).data || event.detectionData;
-        const dependentEvents = extractEventIds(detectionData?.expression);
-
-        return {
-          ...event,
-          data: {
-            ...detectionData,
-            dependentEvents,
-          },
-          detectionData: undefined,
-        };
-      }
-
-      return {
-        ...event,
-        detectionData: undefined,
-        data: { ...detectionData },
-      };
-    });
-
-    const autoTerminationEvents = terminationEvents?.map((termEvent) => {
-      return {
-        id: termEvent?.eventId,
-        terminationMessage: termEvent?.message,
-      };
-    });
-
-    const stateConfig = getScenarioStateConfigByDifficultyLevel(
-      scenario.difficultyLevel as ScenarioDifficultyLevel,
-    );
-
-    const formattedStateInstructions = metadata?.stateInstructions?.map(
-      (stateItem: ScenarioStateInstruction) => {
-        const stateConfigInfo = stateConfig.find(
-          (state) => state.stateId === stateItem.stateId,
-        );
-        return {
-          stateId: stateItem.stateId,
-          instruction: stateItem.instruction,
-          dialogues: stateItem.dialogues,
-          scoreUpper: stateConfigInfo?.scoreRange?.max,
-          scoreLower: stateConfigInfo?.scoreRange?.min,
-        };
-      },
-    );
-
-    const guardrails =
-      await this.conversationalGuardrailsService.getRandomGuardrailsForSession(
-        langIsEnglish ? undefined : languageDetails?.id,
-      );
-
-    return {
-      version: '1.0',
-      tenantId: ExecutionManager.getTenantId(),
-      scenario: {
-        ...scenarioData,
-        voice: scenarioVoice,
-        ...(metadata?.language && {
-          languageCode: languageCode,
-        }),
-        // Use database provider configs if available and not empty
-        ...(languageDetails?.sttProviderConfig &&
-        Object.keys(languageDetails.sttProviderConfig).length > 0
-          ? { stt: languageDetails.sttProviderConfig }
-          : STT_LLM_PROVIDER_CONFIG),
-        ...(languageDetails?.llmProviderConfig &&
-        Object.keys(languageDetails.llmProviderConfig).length > 0
-          ? { llm: languageDetails.llmProviderConfig }
-          : STT_LLM_PROVIDER_CONFIG),
-        events: allEvents,
-        triggerEvents: Array.from(triggerEvents),
-        autoTerminationEvents,
-        stateInstructions: formattedStateInstructions,
-        guardrails: guardrails,
-      },
-    };
   }
 
   private async validateStartScenarioSession(
@@ -1195,7 +1003,7 @@ export class ScenarioSessionService {
     const isOtherLanguage =
       languageId &&
       languageDetails &&
-      !this.isEnglishLanguage(
+      !isEnglishLanguage(
         languageId,
         languageDetails.value,
         enLanguageDetails?.id,
@@ -1203,11 +1011,13 @@ export class ScenarioSessionService {
 
     // If language is not English, get translated session events
     const sessionEvents = isOtherLanguage
-      ? await this.sessionEventTranslationService.getSessionEventsTranslationsByScenarioId(
+      ? await this.sessionEventSharedService.getSessionEventsTranslationsByScenarioId(
           scenarioId,
           languageId,
         )
-      : await this.sessionEventService.getSessionEventsByScenarioId(scenarioId);
+      : await this.sessionEventSharedService.getSessionEventsByScenarioId(
+          scenarioId,
+        );
 
     // Update termination (Translated Version) event if language is not English
     if (
@@ -1261,7 +1071,7 @@ export class ScenarioSessionService {
       scenario.metadata.defaultLanguageId = enLanguageDetails?.id;
     }
 
-    const roomMetadata = await this.createRoomMetadata({
+    const roomMetadata = await this.scenarioSharedService.createRoomMetadata({
       scenario,
       sessionEvents,
       languageDetails,
@@ -1349,122 +1159,11 @@ export class ScenarioSessionService {
     });
   }
 
-  private async getScenarioTranslationData(metadata: any, scenarioId: number) {
-    const { voiceId, languageId, language, defaultLanguageId, ...promptData } =
-      metadata ?? {};
-
-    // If language is English (by languageId), return original data
-    const langIsEnglish = this.isEnglishLanguage(
-      languageId,
-      language,
-      defaultLanguageId,
-    );
-
-    if (langIsEnglish) {
-      return {
-        langIsEnglish,
-        voiceId,
-        promptData: {
-          ...promptData,
-          languageId,
-          language,
-        },
-      };
-    }
-
-    // Fetch translation for non-English language
-    const translations = await this.scenarioTranslationRepository.findOne({
-      select: ['id', 'metadata'],
-      where: { scenarioId, languageId },
-    });
-
-    if (!translations?.metadata) {
-      return { voiceId, promptData };
-    }
-
-    // Accept either object or JSON-string metadata
-    let translationMetadata: Record<string, any> = {};
-    if (typeof translations.metadata === 'string') {
-      try {
-        translationMetadata = JSON.parse(translations.metadata);
-      } catch {
-        // malformed JSON — skip applying translation (or log if desired)
-        translationMetadata = {};
-      }
-    } else if (typeof translations.metadata === 'object') {
-      translationMetadata = translations.metadata;
-    }
-
-    // Apply only the translatable fields if present
-    for (const field of SCENARIO_SESSION_TRANSLATABLE_FIELDS) {
-      if (
-        Object.prototype.hasOwnProperty.call(translationMetadata, field) &&
-        translationMetadata[field] != null &&
-        translationMetadata[field] !== ''
-      ) {
-        promptData[field] = translationMetadata[field];
-      }
-    }
-
-    return {
-      langIsEnglish,
-      voiceId,
-      promptData: {
-        ...promptData,
-        languageId,
-        language,
-      },
-    };
-  }
-
   private async getLanguageDetailsForScenarioSession(
     languageId: number | undefined,
   ) {
-    const enLanguageDetails =
-      await this.sharedLanguageService.getLanguageByLanguageCode(
-        DEFAULT_LANGUAGE_CODE,
-      );
-
-    if (!languageId) {
-      return {
-        enLanguageDetails: enLanguageDetails,
-        languageDetails: null,
-      };
-    }
-
-    const languageDetails = await this.sharedLanguageService.getLanguagesByIds([
+    return this.scenarioSharedService.getLanguageDetailsForScenarioSession(
       languageId,
-    ]);
-
-    return {
-      enLanguageDetails: enLanguageDetails,
-      languageDetails:
-        languageDetails && languageDetails.length > 0
-          ? languageDetails[0]
-          : null,
-    };
-  }
-
-  private isEnglishLanguage(
-    languageId?: number,
-    languageValue?: string,
-    defaultLanguageId?: number,
-  ): boolean {
-    if (!languageId) {
-      return true;
-    }
-
-    if (defaultLanguageId && languageId === defaultLanguageId) {
-      return true;
-    }
-
-    if (
-      languageValue?.toLowerCase() === 'en' ||
-      languageValue?.toLowerCase().startsWith('en-')
-    ) {
-      return true;
-    }
-
-    return false;
+    );
   }
 }

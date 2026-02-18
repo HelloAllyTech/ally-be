@@ -47,10 +47,6 @@ export class BehaviorService {
     };
   }
 
-  async getBehaviorsByIds(ids: string[]): Promise<Behavior[]> {
-    return this.behaviorRepository.getBehaviorsByIds(ids);
-  }
-
   async validateBehaviorIds(ids: string[]): Promise<void> {
     if (ids.length === 0) {
       return;

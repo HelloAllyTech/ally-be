@@ -4,6 +4,7 @@ import { GoogleTranslationsService } from 'src/common/service/google-translation
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { SessionEventTranslationsRepository } from '../../repository/session-event-translation.repository';
+import { SessionEventSharedService } from '../session-event-shared.service';
 import { SessionEvents } from '../../entity/session-events.entity';
 
 describe('SessionEventTranslationService', () => {
@@ -12,6 +13,7 @@ describe('SessionEventTranslationService', () => {
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let sessionEventTranslationsRepository: jest.Mocked<SessionEventTranslationsRepository>;
+  let sessionEventSharedService: jest.Mocked<SessionEventSharedService>;
 
   const mockSessionEvent: SessionEvents = {
     id: 'test-event-1',
@@ -50,6 +52,12 @@ describe('SessionEventTranslationService', () => {
             getSessionEventTranslationsByForMetaData: jest.fn(),
           },
         },
+        {
+          provide: SessionEventSharedService,
+          useValue: {
+            getSessionEventsTranslationsByScenarioId: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -62,6 +70,7 @@ describe('SessionEventTranslationService', () => {
     sessionEventTranslationsRepository = module.get(
       SessionEventTranslationsRepository,
     );
+    sessionEventSharedService = module.get(SessionEventSharedService);
   });
 
   describe('createUpdateSessionEventTranslations', () => {
@@ -157,32 +166,14 @@ describe('SessionEventTranslationService', () => {
     it('should return session events with translations for the given scenario and language', async () => {
       const mockResult = [
         {
-          sessionEvents_id: 'test-event-1',
-          sessionEvents_name: 'Test Event',
-          sessionEvents_description: 'Test Description',
-          sessionEvents_score: 100,
-          scenarioEvents_score: null,
-          scenarioEvents_feedbackStatus: true,
-          scenarioEvents_emoji: '😊',
-          sessionEvents_emoji: '😐',
-          scenarioEvents_message: 'Scenario Message',
-          sessionEvents_message: 'Session Message',
-          scenarioEvents_branchingStatus: true,
-          scenarioEvents_branchInstruction: 'Scenario Branch',
-          sessionEvents_branchInstruction: 'Session Branch',
-          sessionEvents_detectionType: 'TYPE',
-          sessionEvents_detectionData: { key: 'value' },
-          sessionEvents_visibilityType: 'VISIBLE',
-          sessionEvents_speaker: 'SYSTEM',
-          sessionEvents_createdAt: new Date(),
-          sessionEvents_updatedAt: new Date(),
-          sessionEvents_eventCode: 'TEST_EVENT',
-          scenarioEvents_detectionConfig: {},
-          scenarioEvents_checklistVisibilityStatus: true,
-        },
+          id: 'test-event-1',
+          name: 'Test Event',
+          description: 'Test Description',
+          score: 100,
+        } as SessionEvents,
       ];
 
-      sessionEventTranslationsRepository.getSessionEventTranslationsByForMetaData.mockResolvedValue(
+      sessionEventSharedService.getSessionEventsTranslationsByScenarioId.mockResolvedValue(
         mockResult,
       );
 
@@ -194,7 +185,7 @@ describe('SessionEventTranslationService', () => {
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('test-event-1');
       expect(
-        sessionEventTranslationsRepository.getSessionEventTranslationsByForMetaData,
+        sessionEventSharedService.getSessionEventsTranslationsByScenarioId,
       ).toHaveBeenCalledWith(1, 1);
     });
   });

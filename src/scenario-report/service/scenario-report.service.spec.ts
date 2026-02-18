@@ -11,6 +11,7 @@ import { ScenarioReportNotificationService } from './scenario-report-notificatio
 import { ScenarioReportTranscriptService } from './scenario-report-transcript.service';
 import { AiService } from '../../ai/service/ai.service';
 import { SharedLanguageService } from '../../language/service/shared-language.service';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ScenarioReport } from '../entity/scenario-report.entity';
 import { ScenarioReportStatus } from '../enum/scenario-report.enum';
 import { SCENARIO_REPORT_END_STATUSES } from '../constants/scenario-report.constant';
@@ -33,6 +34,7 @@ describe('ScenarioReportService', () => {
   let scenarioReportTranscriptService: jest.Mocked<ScenarioReportTranscriptService>;
   let aiService: jest.Mocked<AiService>;
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
+  let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
 
   const userId = 1;
   const scenarioId = 10;
@@ -76,6 +78,12 @@ describe('ScenarioReportService', () => {
       getLanguagesByIds: jest.fn().mockResolvedValue([{ id: 1, value: 'en' }]),
     };
 
+    const mockScenarioSharedService = {
+      createMetadataForScenario: jest
+        .fn()
+        .mockResolvedValue({ events: [], scenario: {} }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioReportService,
@@ -99,6 +107,10 @@ describe('ScenarioReportService', () => {
           provide: SharedLanguageService,
           useValue: mockSharedLanguageService,
         },
+        {
+          provide: ScenarioSharedService,
+          useValue: mockScenarioSharedService,
+        },
       ],
     }).compile();
 
@@ -112,6 +124,7 @@ describe('ScenarioReportService', () => {
     );
     aiService = module.get(AiService);
     sharedLanguageService = module.get(SharedLanguageService);
+    scenarioSharedService = module.get(ScenarioSharedService);
   });
 
   afterEach(() => {
@@ -477,12 +490,16 @@ describe('ScenarioReportService', () => {
       expect(
         scenarioReportNotificationService.notifyUpdate,
       ).toHaveBeenCalledWith(userId, reportId);
+      expect(
+        scenarioSharedService.createMetadataForScenario,
+      ).toHaveBeenCalledWith(scenarioId, 1);
       expect(aiService.triggerScenarioReportGenerate).toHaveBeenCalledWith({
         prompt: 'helper prompt',
         turns: 5,
         language: 'en',
         scenario_id: scenarioId,
         report_id: reportId,
+        metadata: { events: [], scenario: {} },
       });
     });
   });

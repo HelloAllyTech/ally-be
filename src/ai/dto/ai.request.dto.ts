@@ -75,7 +75,9 @@ export interface ScenarioReportGenerateRequest {
   language: string;
   scenario_id: number;
   report_id: string;
+  metadata: Record<string, any>;
 }
+
 export type ScenarioEvaluationChatMessage = {
   id: string;
   role: string;

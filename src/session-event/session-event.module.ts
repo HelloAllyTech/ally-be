@@ -9,6 +9,7 @@ import { CommonModule } from 'src/common/common.module';
 import { LanguageModule } from 'src/language/language.module';
 import { SessionEventTranslationsRepository } from './repository/session-event-translation.repository';
 import { SessionEventTranslationService } from './service/session-event-translation.service';
+import { SessionEventSharedService } from './service/session-event-shared.service';
 
 @Module({
   imports: [
@@ -23,7 +24,12 @@ import { SessionEventTranslationService } from './service/session-event-translat
     SessionEventRepository,
     SessionEventTranslationsRepository,
     SessionEventTranslationService,
+    SessionEventSharedService,
   ],
-  exports: [SessionEventService, SessionEventTranslationService],
+  exports: [
+    SessionEventService,
+    SessionEventTranslationService,
+    SessionEventSharedService,
+  ],
 })
 export class SessionEventModule {}

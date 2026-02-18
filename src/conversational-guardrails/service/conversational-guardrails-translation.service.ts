@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
@@ -21,6 +21,7 @@ export class ConversationalGuardrailsTranslationService {
   constructor(
     private readonly sharedLanguageService: SharedLanguageService,
     private readonly openAITranslationService: OpenAITranslationsService,
+    @Inject(forwardRef(() => ScenarioSharedService))
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly translationsRepository: ConversationalGuardrailsTranslationsRepository,
   ) {}

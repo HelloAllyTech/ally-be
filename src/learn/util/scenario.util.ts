@@ -209,3 +209,26 @@ export const mapUpdateScenarioRequestToEntity = (
   }
   return updateData;
 };
+
+export const isEnglishLanguage = (
+  languageId?: number,
+  languageValue?: string,
+  defaultLanguageId?: number,
+): boolean => {
+  if (!languageId) {
+    return true;
+  }
+
+  if (defaultLanguageId && languageId === defaultLanguageId) {
+    return true;
+  }
+
+  if (
+    languageValue?.toLowerCase() === 'en' ||
+    languageValue?.toLowerCase().startsWith('en-')
+  ) {
+    return true;
+  }
+
+  return false;
+};

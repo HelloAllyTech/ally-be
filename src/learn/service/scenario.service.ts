@@ -19,7 +19,6 @@ import {
 } from '../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
-import { SessionEventService } from 'src/session-event/service/session-event.service';
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
@@ -88,6 +87,7 @@ import {
 } from 'src/session-event/util/session-event.util';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { ScenarioReportService } from 'src/scenario-report/service/scenario-report.service';
+import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
@@ -99,7 +99,7 @@ export class ScenarioService {
   constructor(
     private scenariosRepository: ScenariosRepository,
     private scenarioEventsRepository: ScenarioEventsRepository,
-    private sessionEventService: SessionEventService,
+    private sessionEventSharedService: SessionEventSharedService,
     private tenantService: TenantService,
     private scenarioVoiceRepository: ScenarioVoicesRepository,
     private s3Service: S3Service,
@@ -263,37 +263,7 @@ export class ScenarioService {
   }
 
   async getAdminScenario(id: number): Promise<GetAdminScenarioDto> {
-    const result = await this.scenariosRepository.getAdminScenarioById(id);
-
-    if (!result) {
-      throw new NotFoundException('Scenario not found');
-    }
-
-    const behaviorInstructions =
-      await this.scenarioBehaviorInstructionService.getBehaviorInstructionsByScenarioId(
-        id,
-      );
-    if (behaviorInstructions) {
-      result.behaviorInstructions = behaviorInstructions;
-    }
-
-    if (result?.terminationEvents && result?.terminationEvents?.length > 0) {
-      const terminationEvents = await Promise.all(
-        result.terminationEvents.map(async (event) => {
-          if (event.eventId) {
-            const eventDetails =
-              await this.sessionEventService.findSessionEventById(
-                event.eventId,
-              );
-            return { ...event, name: eventDetails?.name };
-          }
-          return event;
-        }),
-      );
-      result.terminationEvents = terminationEvents;
-    }
-
-    return result;
+    return this.scenarioSharedService.getAdminScenario(id);
   }
 
   async getPresignedUrlForScenarioCoverImage(
@@ -607,7 +577,7 @@ export class ScenarioService {
     if (isTerminationEventMessageInvalid) {
       throw new BadRequestException('Termination event message is required');
     }
-    const validEvents = await this.sessionEventService.findByIds(
+    const validEvents = await this.sessionEventSharedService.findByIds(
       uniqueTerminationEventIds,
     );
     if (validEvents.length !== uniqueTerminationEventIds.length) {
@@ -1165,7 +1135,8 @@ export class ScenarioService {
 
     await this.getScenario(scenarioId);
     // Validate events exist
-    const validEvents = await this.sessionEventService.findByIds(eventIds);
+    const validEvents =
+      await this.sessionEventSharedService.findByIds(eventIds);
     const validIdsSet = new Set(validEvents.map((e) => e.id));
     const invalidEventIds = eventIds.filter((id) => !validIdsSet.has(id));
     if (invalidEventIds.length > 0) {
@@ -1251,15 +1222,7 @@ export class ScenarioService {
   }
 
   async getScenarioVoice(id: string): Promise<ScenarioVoices> {
-    const scenarioVoice = await this.scenarioVoiceRepository.findOne({
-      where: { id },
-    });
-
-    if (!scenarioVoice) {
-      throw new NotFoundException('Scenario voice not found');
-    }
-
-    return scenarioVoice;
+    return this.scenarioSharedService.getScenarioVoice(id);
   }
 
   async createScenarioVoices(

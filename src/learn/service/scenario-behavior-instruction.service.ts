@@ -9,8 +9,6 @@ import { ScenarioBehaviorInstructionBehavior } from '../entity/scenario-behavior
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
-import { BehaviorInstructionWithBehaviorsDto } from '../dto/behavior-instruction-response.dto';
-import { formattedScenarioBehaviorInstructionsResponse } from '../util/scenario-behavior-instructions.util';
 
 @Injectable()
 export class ScenarioBehaviorInstructionService {
@@ -398,51 +396,5 @@ export class ScenarioBehaviorInstructionService {
     this.logger.info(
       `Successfully updated behavior instructions for scenario ${scenarioId}`,
     );
-  }
-
-  /**
-   * Retrieves all behavior instructions for a scenario along with their associated behaviors.
-   * This method fetches instructions, their behavior mappings, and the full behavior details.
-   *
-   * @param scenarioId - The scenario ID to get behavior instructions for
-   * @returns Response containing behavior instructions with their associated behaviors
-   */
-  async getBehaviorInstructionsByScenarioId(
-    scenarioId: number,
-  ): Promise<BehaviorInstructionWithBehaviorsDto[] | undefined> {
-    const instructions =
-      await this.scenarioBehaviorInstructionRepository.getByScenarioId(
-        scenarioId,
-      );
-
-    if (instructions.length === 0) {
-      return;
-    }
-
-    // Get all instruction IDs to fetch behavior mappings
-    const instructionIds = instructions.map((inst) => inst.id);
-
-    // Get all behavior mappings for these instructions
-    const behaviorMappings =
-      await this.scenarioBehaviorInstructionBehaviorRepository.getByInstructionIds(
-        instructionIds,
-      );
-
-    // Collect all unique behavior IDs
-    const behaviorIds = [
-      ...new Set(behaviorMappings.map((mapping) => mapping.behaviorId)),
-    ];
-
-    // Fetch all behavior entities
-    const behaviors = await this.behaviorService.getBehaviorsByIds(behaviorIds);
-
-    const scenarioInstructionsMap =
-      formattedScenarioBehaviorInstructionsResponse({
-        behaviorInstructions: instructions,
-        behaviorMappings: behaviorMappings,
-        behaviors: behaviors,
-      });
-
-    return scenarioInstructionsMap;
   }
 }

@@ -17,11 +17,13 @@ import {
   CombinationExpressionType,
 } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventTranslationService } from '../session-event-translation.service';
+import { SessionEventSharedService } from '../session-event-shared.service';
 
 describe('SessionEventService', () => {
   let service: SessionEventService;
   let repository: jest.Mocked<SessionEventRepository>;
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
+  let sessionEventSharedService: jest.Mocked<SessionEventSharedService>;
 
   const mockSessionEvent: SessionEvents = {
     id: 'event-1',
@@ -100,6 +102,12 @@ describe('SessionEventService', () => {
         .mockResolvedValue(undefined), // Add this line
     };
 
+    const mockSessionEventSharedService = {
+      getSessionEventsByScenarioId: jest.fn(),
+      findByIds: jest.fn(),
+      findSessionEventById: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SessionEventService,
@@ -115,12 +123,17 @@ describe('SessionEventService', () => {
           provide: SessionEventTranslationService,
           useValue: mockSessionEventTranslationService,
         },
+        {
+          provide: SessionEventSharedService,
+          useValue: mockSessionEventSharedService,
+        },
       ],
     }).compile();
 
     service = module.get<SessionEventService>(SessionEventService);
     repository = module.get(SessionEventRepository);
     sessionEventTranslationService = module.get(SessionEventTranslationService);
+    sessionEventSharedService = module.get(SessionEventSharedService);
   });
 
   afterEach(() => {
@@ -668,25 +681,27 @@ describe('SessionEventService', () => {
   describe('findSessionEventById', () => {
     it('should find session event by ID', async () => {
       const eventId = 'event-1';
-      repository.findOne.mockResolvedValue(mockSessionEvent);
+      sessionEventSharedService.findSessionEventById.mockResolvedValue(
+        mockSessionEvent,
+      );
 
       const result = await service.findSessionEventById(eventId);
 
-      expect(repository.findOne).toHaveBeenCalledWith({
-        where: { id: eventId },
-      });
+      expect(
+        sessionEventSharedService.findSessionEventById,
+      ).toHaveBeenCalledWith(eventId);
       expect(result).toEqual(mockSessionEvent);
     });
 
     it('should return null when event not found', async () => {
       const eventId = 'non-existent-event';
-      repository.findOne.mockResolvedValue(null);
+      sessionEventSharedService.findSessionEventById.mockResolvedValue(null);
 
       const result = await service.findSessionEventById(eventId);
 
-      expect(repository.findOne).toHaveBeenCalledWith({
-        where: { id: eventId },
-      });
+      expect(
+        sessionEventSharedService.findSessionEventById,
+      ).toHaveBeenCalledWith(eventId);
       expect(result).toBeNull();
     });
   });
@@ -699,36 +714,43 @@ describe('SessionEventService', () => {
         { ...mockSessionEvent, id: 'event-2', name: 'Second Event' },
       ];
 
-      repository.find.mockResolvedValue(expectedEvents);
+      sessionEventSharedService.findByIds.mockResolvedValue(expectedEvents);
 
       const result = await service.findByIds(ids);
 
-      expect(repository.find).toHaveBeenCalledWith({
-        where: { id: expect.objectContaining({ _type: 'in', _value: ids }) },
-      });
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledWith(ids);
       expect(result).toEqual(expectedEvents);
     });
 
     it('should return empty array when no IDs provided', async () => {
       const ids: string[] = [];
+      sessionEventSharedService.findByIds.mockResolvedValue([]);
 
       const result = await service.findByIds(ids);
 
-      expect(repository.find).not.toHaveBeenCalled();
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledWith(ids);
       expect(result).toEqual([]);
     });
 
     it('should return empty array when IDs array is null', async () => {
+      sessionEventSharedService.findByIds.mockResolvedValue([]);
+
       const result = await service.findByIds(null as any);
 
-      expect(repository.find).not.toHaveBeenCalled();
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledWith(
+        null as any,
+      );
       expect(result).toEqual([]);
     });
 
     it('should return empty array when IDs array is undefined', async () => {
+      sessionEventSharedService.findByIds.mockResolvedValue([]);
+
       const result = await service.findByIds(undefined as any);
 
-      expect(repository.find).not.toHaveBeenCalled();
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledWith(
+        undefined as any,
+      );
       expect(result).toEqual([]);
     });
 
@@ -736,13 +758,11 @@ describe('SessionEventService', () => {
       const ids = ['event-1'];
       const expectedEvents = [mockSessionEvent];
 
-      repository.find.mockResolvedValue(expectedEvents);
+      sessionEventSharedService.findByIds.mockResolvedValue(expectedEvents);
 
       const result = await service.findByIds(ids);
 
-      expect(repository.find).toHaveBeenCalledWith({
-        where: { id: expect.objectContaining({ _type: 'in', _value: ids }) },
-      });
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledWith(ids);
       expect(result).toEqual(expectedEvents);
     });
 
@@ -753,13 +773,11 @@ describe('SessionEventService', () => {
         { ...mockSessionEvent, id: 'event-2', name: 'Second Event' },
       ];
 
-      repository.find.mockResolvedValue(expectedEvents);
+      sessionEventSharedService.findByIds.mockResolvedValue(expectedEvents);
 
       const result = await service.findByIds(ids);
 
-      expect(repository.find).toHaveBeenCalledWith({
-        where: { id: expect.objectContaining({ _type: 'in', _value: ids }) },
-      });
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledWith(ids);
       expect(result).toEqual(expectedEvents);
     });
 
@@ -767,13 +785,11 @@ describe('SessionEventService', () => {
       const ids = ['non-existent-1', 'non-existent-2'];
       const expectedEvents: SessionEvents[] = [];
 
-      repository.find.mockResolvedValue(expectedEvents);
+      sessionEventSharedService.findByIds.mockResolvedValue(expectedEvents);
 
       const result = await service.findByIds(ids);
 
-      expect(repository.find).toHaveBeenCalledWith({
-        where: { id: expect.objectContaining({ _type: 'in', _value: ids }) },
-      });
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledWith(ids);
       expect(result).toEqual(expectedEvents);
     });
 
@@ -781,13 +797,11 @@ describe('SessionEventService', () => {
       const ids = ['event-1', 'non-existent'];
       const expectedEvents = [mockSessionEvent]; // Only event-1 found
 
-      repository.find.mockResolvedValue(expectedEvents);
+      sessionEventSharedService.findByIds.mockResolvedValue(expectedEvents);
 
       const result = await service.findByIds(ids);
 
-      expect(repository.find).toHaveBeenCalledWith({
-        where: { id: expect.objectContaining({ _type: 'in', _value: ids }) },
-      });
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledWith(ids);
       expect(result).toEqual(expectedEvents);
     });
 
@@ -795,14 +809,12 @@ describe('SessionEventService', () => {
       const ids = ['event-1', 'event-2'];
       const error = new Error('Database query failed');
 
-      repository.find.mockRejectedValue(error);
+      sessionEventSharedService.findByIds.mockRejectedValue(error);
 
       await expect(service.findByIds(ids)).rejects.toThrow(
         'Database query failed',
       );
-      expect(repository.find).toHaveBeenCalledWith({
-        where: { id: expect.objectContaining({ _type: 'in', _value: ids }) },
-      });
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledWith(ids);
     });
 
     it('should handle large array of IDs', async () => {
@@ -813,13 +825,11 @@ describe('SessionEventService', () => {
         name: `Event ${index + 1}`,
       }));
 
-      repository.find.mockResolvedValue(expectedEvents);
+      sessionEventSharedService.findByIds.mockResolvedValue(expectedEvents);
 
       const result = await service.findByIds(ids);
 
-      expect(repository.find).toHaveBeenCalledWith({
-        where: { id: expect.objectContaining({ _type: 'in', _value: ids }) },
-      });
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledWith(ids);
       expect(result).toEqual(expectedEvents);
     });
   });
@@ -1636,50 +1646,7 @@ describe('SessionEventService', () => {
     const mockScenarioId = 1;
 
     it('should return session events for a scenario with feedbackStatus true', async () => {
-      const mockRawEvents = [
-        {
-          sessionEvents_id: 'event-1',
-          sessionEvents_eventCode: 'SS1',
-          sessionEvents_name: 'Event 1',
-          sessionEvents_description: 'Description 1',
-          sessionEvents_score: 80,
-          sessionEvents_emoji: '🎯',
-          sessionEvents_message: 'Default message',
-          sessionEvents_branchInstruction: 'Default branch',
-          sessionEvents_detectionType:
-            SessionEventDetectionType.SENTENCE_SIMILARITY,
-          sessionEvents_visibilityType: SessionEventVisibilityType.ACTIVE,
-          sessionEvents_detectionData: {
-            sentences: ['Sentence 1', 'Sentence 2'],
-          },
-          sessionEvents_speaker: SessionEventSpeaker.CARE_GIVER,
-          sessionEvents_createdAt: new Date('2024-01-01T10:00:00Z'),
-          sessionEvents_updatedAt: new Date('2024-01-01T10:00:00Z'),
-          scenarioEvents_feedbackStatus: true,
-          scenarioEvents_score: 90,
-          scenarioEvents_emoji: '🎉',
-          scenarioEvents_message: 'Custom message',
-          scenarioEvents_branchingStatus: true,
-          scenarioEvents_branchInstruction: 'Custom branch',
-          scenarioEvents_checklistVisibilityStatus: true,
-          scenarioEvents_detectionConfig: {
-            startTime: 10,
-            endTime: 100,
-            minGapTime: 5,
-            maxOccurrences: 3,
-            minScore: 50,
-            maxScore: 100,
-          },
-        },
-      ];
-
-      repository.getSessionEventsByScenarioId.mockResolvedValue(
-        mockRawEvents as any,
-      );
-
-      const result = await service.getSessionEventsByScenarioId(mockScenarioId);
-
-      expect(result).toEqual([
+      const expectedResult = [
         {
           id: 'event-1',
           name: 'Event 1',
@@ -1708,66 +1675,31 @@ describe('SessionEventService', () => {
             maxScore: 100,
           },
         },
-      ]);
-      expect(repository.getSessionEventsByScenarioId).toHaveBeenCalledWith(
-        mockScenarioId,
-      );
-    });
-
-    it('should return session events with default values when feedbackStatus false', async () => {
-      const mockRawEvents = [
-        {
-          sessionEvents_id: 'event-2',
-          sessionEvents_name: 'Event 2',
-          sessionEvents_eventCode: 'SS2',
-          sessionEvents_description: 'Description 2',
-          sessionEvents_score: 75,
-          sessionEvents_emoji: '✅',
-          sessionEvents_message: 'Default message 2',
-          sessionEvents_branchInstruction: 'Default branch 2',
-          sessionEvents_detectionType:
-            SessionEventDetectionType.SENTENCE_SIMILARITY,
-          sessionEvents_visibilityType: SessionEventVisibilityType.PASSIVE,
-          sessionEvents_detectionData: {
-            sentences: ['Sentence A', 'Sentence B'],
-          },
-          sessionEvents_speaker: SessionEventSpeaker.CARE_GIVER,
-          sessionEvents_createdAt: new Date('2024-01-02T10:00:00Z'),
-          sessionEvents_updatedAt: new Date('2024-01-02T10:00:00Z'),
-          scenarioEvents_feedbackStatus: false,
-          scenarioEvents_score: 85,
-          scenarioEvents_emoji: '🚀',
-          scenarioEvents_message: 'Custom message 2',
-          scenarioEvents_branchingStatus: false,
-          scenarioEvents_branchInstruction: 'Custom branch 2',
-          scenarioEvents_checklistVisibilityStatus: true,
-          scenarioEvents_detectionConfig: {
-            startTime: 10,
-            endTime: 100,
-            minGapTime: 5,
-            maxOccurrences: 3,
-            minScore: 50,
-            maxScore: 100,
-          },
-        },
       ];
 
-      repository.getSessionEventsByScenarioId.mockResolvedValue(
-        mockRawEvents as any,
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        expectedResult as any,
       );
 
       const result = await service.getSessionEventsByScenarioId(mockScenarioId);
 
-      expect(result).toEqual([
+      expect(result).toEqual(expectedResult);
+      expect(
+        sessionEventSharedService.getSessionEventsByScenarioId,
+      ).toHaveBeenCalledWith(mockScenarioId);
+    });
+
+    it('should return session events with default values when feedbackStatus false', async () => {
+      const expectedResult = [
         {
           id: 'event-2',
           name: 'Event 2',
           eventCode: 'SS2',
           description: 'Description 2',
-          score: 85, // Uses scenarioEvents_score via ?? operator
+          score: 85,
           emoji: '✅',
           message: 'Default message 2',
-          branchInstruction: null, // null when scenarioEvents_branchingStatus is false
+          branchInstruction: null,
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.PASSIVE,
           feedbackStatus: false,
@@ -1787,86 +1719,52 @@ describe('SessionEventService', () => {
             maxScore: 100,
           },
         },
-      ]);
+      ];
+
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        expectedResult as any,
+      );
+
+      const result = await service.getSessionEventsByScenarioId(mockScenarioId);
+
+      expect(result).toEqual(expectedResult);
     });
 
     it('should return empty array when no events found', async () => {
-      repository.getSessionEventsByScenarioId.mockResolvedValue([]);
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        [],
+      );
 
       const result = await service.getSessionEventsByScenarioId(mockScenarioId);
 
       expect(result).toEqual([]);
-      expect(repository.getSessionEventsByScenarioId).toHaveBeenCalledWith(
-        mockScenarioId,
-      );
+      expect(
+        sessionEventSharedService.getSessionEventsByScenarioId,
+      ).toHaveBeenCalledWith(mockScenarioId);
     });
 
     it('should handle multiple events with mixed feedbackStatus', async () => {
-      const mockRawEvents = [
-        {
-          sessionEvents_id: 'event-1',
-          sessionEvents_name: 'Event 1',
-          sessionEvents_description: 'Description 1',
-          sessionEvents_score: 80,
-          sessionEvents_emoji: '🎯',
-          sessionEvents_message: 'Default 1',
-          sessionEvents_branchInstruction: 'Default branch 1',
-          scenarioEvents_feedbackStatus: true,
-          scenarioEvents_score: 90,
-          scenarioEvents_emoji: '🎉',
-          scenarioEvents_message: 'Custom 1',
-          scenarioEvents_branchingStatus: true,
-          scenarioEvents_branchInstruction: 'Custom branch 1',
-          scenarioEvents_checklistVisibilityStatus: true,
-          scenarioEvents_detectionConfig: {
-            startTime: 10,
-            endTime: 100,
-            minGapTime: 5,
-            maxOccurrences: 3,
-            minScore: 50,
-            maxScore: 100,
-          },
-        },
-        {
-          sessionEvents_id: 'event-2',
-          sessionEvents_name: 'Event 2',
-          sessionEvents_description: 'Description 2',
-          sessionEvents_score: 70,
-          sessionEvents_emoji: '✅',
-          sessionEvents_message: 'Default 2',
-          sessionEvents_branchInstruction: 'Default branch 2',
-          scenarioEvents_feedbackStatus: false,
-          scenarioEvents_score: null,
-          scenarioEvents_emoji: null,
-          scenarioEvents_message: null,
-          scenarioEvents_branchingStatus: false,
-          scenarioEvents_branchInstruction: null,
-          scenarioEvents_checklistVisibilityStatus: true,
-          scenarioEvents_detectionConfig: {
-            startTime: 10,
-            endTime: 100,
-            minGapTime: 5,
-            maxOccurrences: 3,
-            minScore: 50,
-            maxScore: 100,
-          },
-        },
+      const expectedResult = [
+        { id: 'event-1', score: 90 } as any,
+        { id: 'event-2', score: 70 } as any,
       ];
 
-      repository.getSessionEventsByScenarioId.mockResolvedValue(
-        mockRawEvents as any,
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        expectedResult,
       );
 
       const result = await service.getSessionEventsByScenarioId(mockScenarioId);
 
       expect(result).toHaveLength(2);
-      expect(result[0].score).toBe(90); // Custom score
-      expect(result[1].score).toBe(70); // Default score
+      expect(result[0].score).toBe(90);
+      expect(result[1].score).toBe(70);
     });
 
     it('should handle repository errors', async () => {
       const error = new Error('Repository error');
-      repository.getSessionEventsByScenarioId.mockRejectedValue(error);
+      sessionEventSharedService.getSessionEventsByScenarioId.mockRejectedValue(
+        error,
+      );
 
       await expect(
         service.getSessionEventsByScenarioId(mockScenarioId),
@@ -1874,37 +1772,7 @@ describe('SessionEventService', () => {
     });
 
     it('should handle null/undefined values in raw events', async () => {
-      const mockRawEvents = [
-        {
-          sessionEvents_id: 'event-3',
-          sessionEvents_name: null,
-          sessionEvents_description: null,
-          sessionEvents_score: null,
-          sessionEvents_emoji: null,
-          sessionEvents_message: null,
-          sessionEvents_branchInstruction: null,
-          sessionEvents_detectionType: undefined,
-          sessionEvents_visibilityType: undefined,
-          sessionEvents_sentences: undefined,
-          sessionEvents_speaker: undefined,
-          sessionEvents_createdAt: undefined,
-          sessionEvents_updatedAt: undefined,
-          scenarioEvents_feedbackStatus: false,
-          scenarioEvents_score: null,
-          scenarioEvents_emoji: null,
-          scenarioEvents_message: null,
-          scenarioEvents_branchingStatus: false,
-          scenarioEvents_branchInstruction: null,
-        },
-      ];
-
-      repository.getSessionEventsByScenarioId.mockResolvedValue(
-        mockRawEvents as any,
-      );
-
-      const result = await service.getSessionEventsByScenarioId(mockScenarioId);
-
-      expect(result).toEqual([
+      const expectedResult = [
         {
           id: 'event-3',
           name: null,
@@ -1916,59 +1784,24 @@ describe('SessionEventService', () => {
           detectionType: undefined,
           visibilityType: undefined,
           feedbackStatus: false,
-          sentences: undefined,
+          data: undefined,
           speaker: undefined,
           createdAt: undefined,
           updatedAt: undefined,
         },
-      ]);
-    });
-
-    it('should use fallback branchInstruction when scenarioEvents_branchInstruction is null', async () => {
-      const mockRawEvents = [
-        {
-          sessionEvents_id: 'event-4',
-          sessionEvents_name: 'Event 4',
-          sessionEvents_eventCode: 'SS4',
-          sessionEvents_description: 'Description 4',
-          sessionEvents_score: 70,
-          sessionEvents_emoji: '✨',
-          sessionEvents_message: 'Default message 4',
-          sessionEvents_branchInstruction: 'Fallback branch instruction',
-          sessionEvents_detectionType:
-            SessionEventDetectionType.SENTENCE_SIMILARITY,
-          sessionEvents_visibilityType: SessionEventVisibilityType.ACTIVE,
-          sessionEvents_detectionData: {
-            sentences: ['Test sentence'],
-          },
-          sessionEvents_speaker: SessionEventSpeaker.CARE_GIVER,
-          sessionEvents_createdAt: new Date('2024-01-03T10:00:00Z'),
-          sessionEvents_updatedAt: new Date('2024-01-03T10:00:00Z'),
-          scenarioEvents_feedbackStatus: true,
-          scenarioEvents_score: 80,
-          scenarioEvents_emoji: '💡',
-          scenarioEvents_message: 'Custom message 4',
-          scenarioEvents_branchingStatus: true,
-          scenarioEvents_branchInstruction: null, // null, so should use fallback
-          scenarioEvents_checklistVisibilityStatus: true,
-          scenarioEvents_detectionConfig: {
-            startTime: 10,
-            endTime: 100,
-            minGapTime: 5,
-            maxOccurrences: 3,
-            minScore: 50,
-            maxScore: 100,
-          },
-        },
       ];
 
-      repository.getSessionEventsByScenarioId.mockResolvedValue(
-        mockRawEvents as any,
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        expectedResult as any,
       );
 
       const result = await service.getSessionEventsByScenarioId(mockScenarioId);
 
-      expect(result).toEqual([
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('should use fallback branchInstruction when scenarioEvents_branchInstruction is null', async () => {
+      const expectedResult = [
         {
           id: 'event-4',
           name: 'Event 4',
@@ -1977,7 +1810,7 @@ describe('SessionEventService', () => {
           score: 80,
           emoji: '💡',
           message: 'Custom message 4',
-          branchInstruction: 'Fallback branch instruction', // Uses fallback via ?? operator
+          branchInstruction: 'Fallback branch instruction',
           detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           feedbackStatus: true,
@@ -1997,10 +1830,18 @@ describe('SessionEventService', () => {
             maxScore: 100,
           },
         },
-      ]);
-      expect(repository.getSessionEventsByScenarioId).toHaveBeenCalledWith(
-        mockScenarioId,
+      ];
+
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        expectedResult as any,
       );
+
+      const result = await service.getSessionEventsByScenarioId(mockScenarioId);
+
+      expect(result).toEqual(expectedResult);
+      expect(
+        sessionEventSharedService.getSessionEventsByScenarioId,
+      ).toHaveBeenCalledWith(mockScenarioId);
     });
   });
 

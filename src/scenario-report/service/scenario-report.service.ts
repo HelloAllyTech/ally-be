@@ -23,6 +23,7 @@ import { SharedLanguageService } from '../../language/service/shared-language.se
 import { LoggerService } from '../../logger/logger.service';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { ScenarioReportTranscriptResponseDto } from '../dto/scenario-report-transcript.dto';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 
 @Injectable()
 export class ScenarioReportService {
@@ -36,6 +37,7 @@ export class ScenarioReportService {
     private readonly scenarioReportTranscriptService: ScenarioReportTranscriptService,
     private readonly aiService: AiService,
     private readonly sharedLanguageService: SharedLanguageService,
+    private readonly scenarioSharedService: ScenarioSharedService,
   ) {}
 
   async createScenarioReport(
@@ -96,12 +98,19 @@ export class ScenarioReportService {
     languageCode: string,
   ): Promise<void> {
     try {
+      const metadata =
+        await this.scenarioSharedService.createMetadataForScenario(
+          report.scenarioId,
+          report.config.languageId,
+        );
+
       await this.aiService.triggerScenarioReportGenerate({
         prompt: report.config.helperAgentPrompt,
         turns: report.config.turns,
         language: languageCode,
         scenario_id: report.scenarioId,
         report_id: report.id,
+        metadata: metadata,
       });
 
       const currentReport = await this.scenarioReportRepository.findOne({
