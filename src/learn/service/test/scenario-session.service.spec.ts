@@ -171,6 +171,11 @@ describe('ScenarioSessionService', () => {
       getAdminScenario: jest.fn(),
     };
 
+    const mockScenarioSharedService = {
+      getMessagesByScenarioSessionId: jest.fn(),
+      getScenarioSessionSkills: jest.fn(),
+    };
+
     const mockLivekitService = {
       createRoom: jest.fn(),
       deleteRoom: jest.fn(),
@@ -307,6 +312,10 @@ describe('ScenarioSessionService', () => {
           useValue: mockScenarioSessionMessagesRepo,
         },
         { provide: ScenarioService, useValue: mockScenarioService },
+        {
+          provide: ScenarioSharedService,
+          useValue: mockScenarioSharedService,
+        },
         { provide: LiveKitService, useValue: mockLivekitService },
         {
           provide: SessionEventSharedService,

@@ -943,4 +943,39 @@ describe('ScenarioSharedService', () => {
       });
     });
   });
+
+  describe('getScenarioSessionSkills', () => {
+    const scenarioSessionId = 'session-uuid-123';
+
+    it('should return skillCoverage and emotionalMovement when details exist with full feedback', async () => {
+      const skillCoverage = [
+        { category: 'Learning', percentage: 75 },
+        { category: 'Support', percentage: 80 },
+      ];
+      const emotionalMovement = [
+        { message_id: '1', level: 3, start_time: 0 },
+        { message_id: '2', level: 4, start_time: 5.2 },
+      ];
+      scenarioSessionDetailsRepository.findOne.mockResolvedValue({
+        scenarioSessionId,
+        summary: {
+          feedback: {
+            skillCoverage,
+            emotionalMovement,
+          },
+        },
+      } as any);
+
+      const result = await service.getScenarioSessionSkills(scenarioSessionId);
+
+      expect(scenarioSessionDetailsRepository.findOne).toHaveBeenCalledWith({
+        where: { scenarioSessionId },
+      });
+      expect(result.skillCoverage).toEqual(skillCoverage);
+      expect(result.emotionalMovement).toEqual([
+        { messageId: '1', level: 3, startTime: 0 },
+        { messageId: '2', level: 4, startTime: 5.2 },
+      ]);
+    });
+  });
 });
