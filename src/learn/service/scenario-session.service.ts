@@ -77,7 +77,6 @@ import {
   ScenarioSessionLeaderboardEvent,
   ScenarioSessionLeaderboardEndedEventParams,
 } from '../type/scenario-session-leaderboard-event.type';
-import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
 import { CommonUtil } from 'src/common/util/common.util';
@@ -106,7 +105,6 @@ export class ScenarioSessionService {
     private scenarioVoicesRepository: ScenarioVoicesRepository,
     private reviewSharedService: ReviewSharedService,
     private eventEmitter: EventEmitter2,
-    private conversationalGuardrailsService: ConversationalGuardrailsService,
     private caseSharedService: CaseSharedService,
     private caseSessionService: CaseSessionService,
     private scenarioSharedService: ScenarioSharedService,

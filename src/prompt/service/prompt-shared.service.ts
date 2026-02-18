@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PromptsRepository } from '../repository/prompt.repository';
+import { PromptsWithPromptCode } from '../type/prompt-response.type';
 
 @Injectable()
 export class PromptSharedService {
@@ -22,5 +23,20 @@ export class PromptSharedService {
       .getRawOne()) as { prompt?: string } | undefined;
 
     return row?.prompt ?? null;
+  }
+
+  async getPromptsByCodes(
+    promptCodes: string[],
+  ): Promise<Array<PromptsWithPromptCode>> {
+    return this.promptsRepository
+      .createQueryBuilder('prompt')
+      .leftJoin(
+        'prompts_versions',
+        'pv',
+        '"prompt"."id" = "pv"."promptId" AND "pv"."version" = "prompt"."currentVersion"',
+      )
+      .select(['pv.prompt AS prompt', 'prompt.promptCode AS "promptCode"'])
+      .where('prompt.promptCode IN (:...promptCodes)', { promptCodes })
+      .getRawMany<PromptsWithPromptCode>();
   }
 }

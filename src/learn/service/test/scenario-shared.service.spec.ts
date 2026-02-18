@@ -21,6 +21,8 @@ import { ScenarioBehaviorInstructionRepository } from '../../repository/scenario
 import { ScenarioBehaviorInstructionBehaviorRepository } from '../../repository/scenario-behavior-instruction-behavior.repository';
 import { BehaviorRepository } from '../../repository/behavior.repository';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
+import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { SCENARIO_SESSION_PROMPTS } from '../../constants/scenario-session.constants';
 
 describe('ScenarioSharedService', () => {
   let service: ScenarioSharedService;
@@ -36,6 +38,7 @@ describe('ScenarioSharedService', () => {
   let scenarioBehaviorInstructionRepository: jest.Mocked<ScenarioBehaviorInstructionRepository>;
   let scenarioBehaviorInstructionBehaviorRepository: jest.Mocked<ScenarioBehaviorInstructionBehaviorRepository>;
   let behaviorRepository: jest.Mocked<BehaviorRepository>;
+  let promptSharedService: jest.Mocked<PromptSharedService>;
 
   const mockScenarios: Scenarios[] = [
     { id: 1, title: 'Scenario 1', status: ScenarioStatus.ACTIVE } as Scenarios,
@@ -74,6 +77,10 @@ describe('ScenarioSharedService', () => {
 
     const mockConversationalGuardrailsService = {
       getGuardrailsByScenarioId: jest.fn(),
+    };
+
+    const mockPromptSharedService = {
+      getPromptsByCodes: jest.fn().mockResolvedValue([]),
     };
 
     const mockScenarioTranslationsRepository = {
@@ -169,6 +176,10 @@ describe('ScenarioSharedService', () => {
           provide: ConversationalGuardrailsService,
           useValue: mockConversationalGuardrailsService,
         },
+        {
+          provide: PromptSharedService,
+          useValue: mockPromptSharedService,
+        },
       ],
     }).compile();
 
@@ -195,6 +206,7 @@ describe('ScenarioSharedService', () => {
       ScenarioBehaviorInstructionBehaviorRepository,
     );
     behaviorRepository = module.get(BehaviorRepository);
+    promptSharedService = module.get(PromptSharedService);
 
     jest.clearAllMocks();
   });
@@ -876,6 +888,59 @@ describe('ScenarioSharedService', () => {
 
       expect(result).toEqual(behaviors);
       expect(behaviorRepository.getBehaviorsByIds).toHaveBeenCalledWith(ids);
+    });
+  });
+
+  describe('getPromptsForScenarioSession', () => {
+    it('should return an empty object when no prompts are found', async () => {
+      promptSharedService.getPromptsByCodes.mockResolvedValue([]);
+
+      const result = await (service as any).getPromptsForScenarioSession();
+
+      expect(promptSharedService.getPromptsByCodes).toHaveBeenCalledWith(
+        SCENARIO_SESSION_PROMPTS,
+      );
+      expect(result).toEqual({});
+    });
+
+    it('should return a map of promptCode -> prompt when prompts are found', async () => {
+      const mockPrompts = [
+        { promptCode: 'ally_ai_learn_default', prompt: 'Default prompt text' },
+        {
+          promptCode: 'ally_ai_learn_client_persona_template',
+          prompt: 'Persona template text',
+        },
+        {
+          promptCode: 'ally_ai_learn_prosody_generation',
+          prompt: 'Prosody generation text',
+        },
+      ];
+      promptSharedService.getPromptsByCodes.mockResolvedValue(mockPrompts);
+
+      const result = await (service as any).getPromptsForScenarioSession();
+
+      expect(promptSharedService.getPromptsByCodes).toHaveBeenCalledWith(
+        SCENARIO_SESSION_PROMPTS,
+      );
+      expect(result).toEqual({
+        ally_ai_learn_default: 'Default prompt text',
+        ally_ai_learn_client_persona_template: 'Persona template text',
+        ally_ai_learn_prosody_generation: 'Prosody generation text',
+      });
+    });
+
+    it('should correctly overwrite duplicate promptCodes with the last value', async () => {
+      const mockPrompts = [
+        { promptCode: 'ally_ai_learn_default', prompt: 'First value' },
+        { promptCode: 'ally_ai_learn_default', prompt: 'Second value' },
+      ];
+      promptSharedService.getPromptsByCodes.mockResolvedValue(mockPrompts);
+
+      const result = await (service as any).getPromptsForScenarioSession();
+
+      expect(result).toEqual({
+        ally_ai_learn_default: 'Second value',
+      });
     });
   });
 });
