@@ -38,7 +38,7 @@ export class ConversationalGuardrailsService {
   async createGuardrail(createDto: CreateConversationalGuardrailDto) {
     const guardrail = this.guardrailsRepository.create(createDto);
     const saved = await this.guardrailsRepository.save(guardrail);
-    await this.translationService.createUpdateGuardrailTranslations([saved]);
+    this.translationService.createUpdateGuardrailTranslations([saved]);
     return saved;
   }
 
@@ -49,7 +49,7 @@ export class ConversationalGuardrailsService {
     const guardrail = await this.getGuardrailById(id);
     Object.assign(guardrail, updateDto);
     const saved = await this.guardrailsRepository.save(guardrail);
-    await this.translationService.createUpdateGuardrailTranslations([saved]);
+    this.translationService.createUpdateGuardrailTranslations([saved]);
     return saved;
   }
 

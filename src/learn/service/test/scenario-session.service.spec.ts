@@ -1120,8 +1120,13 @@ describe('ScenarioSessionService', () => {
         1,
       );
       expect(result).toEqual({
+        langIsEnglish: true,
         voiceId: 'test-voice',
-        promptData: { title: 'Test' },
+        promptData: {
+          title: 'Test',
+          language: undefined,
+          languageId: undefined,
+        },
       });
     });
 
@@ -1166,6 +1171,7 @@ describe('ScenarioSessionService', () => {
         );
 
         expect(result).toEqual({
+          langIsEnglish: false,
           voiceId: 'test-voice',
           promptData: {
             title: 'Prueba',
@@ -1474,6 +1480,38 @@ describe('ScenarioSessionService', () => {
         service as any
       ).getFallbackVoiceForLanguageGender(1, 'female');
       expect(fallbackVoice).toBeDefined();
+    });
+  });
+  describe('isEnglishLanguage', () => {
+    // isEnglishLanguage(languageId, languageValue, defaultLanguageId)
+
+    it('should return true when languageId is missing (undefined/null)', () => {
+      expect((service as any).isEnglishLanguage(undefined, 'fr', 1)).toBe(true);
+      expect((service as any).isEnglishLanguage(null, 'fr', 1)).toBe(true);
+    });
+
+    it('should return true when languageId equals defaultLanguageId', () => {
+      expect((service as any).isEnglishLanguage(1, 'fr', 1)).toBe(true);
+      expect((service as any).isEnglishLanguage(5, 'custom', 5)).toBe(true);
+    });
+
+    it('should return true when languageValue starts with "en-" (case insensitive)', () => {
+      // Even if ID mismatch
+      expect((service as any).isEnglishLanguage(2, 'en', 1)).toBe(true);
+      expect((service as any).isEnglishLanguage(2, 'en-US', 1)).toBe(true);
+      expect((service as any).isEnglishLanguage(2, 'EN-GLOBAL', 1)).toBe(true);
+      expect((service as any).isEnglishLanguage(2, 'eN-uk', 1)).toBe(true);
+    });
+
+    it('should return false for non-English language codes when IDs do not match', () => {
+      expect((service as any).isEnglishLanguage(2, 'fr', 1)).toBe(false);
+      expect((service as any).isEnglishLanguage(2, 'es-ES', 1)).toBe(false);
+      expect((service as any).isEnglishLanguage(2, 'de', 1)).toBe(false);
+    });
+
+    it('should return false when languageValue is empty/invalid and IDs do not match', () => {
+      expect((service as any).isEnglishLanguage(2, '', 1)).toBe(false);
+      expect((service as any).isEnglishLanguage(2, undefined, 1)).toBe(false);
     });
   });
 });
