@@ -44,6 +44,8 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
+import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { SCENARIO_SESSION_PROMPTS } from 'src/learn/constants/scenario-session.constants';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -80,6 +82,7 @@ describe('ScenarioSessionService', () => {
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let mockConfigService: any;
   let scenarioVoicesRepository: jest.Mocked<ScenarioVoicesRepository>;
+  let promptSharedService: jest.Mocked<PromptSharedService>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -278,6 +281,10 @@ describe('ScenarioSessionService', () => {
       updateCaseSessionItemStatus: jest.fn(),
     };
 
+    const mockPromptSharedService = {
+      getPromptsByCodes: jest.fn().mockResolvedValue([]),
+    };
+
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -379,6 +386,10 @@ describe('ScenarioSessionService', () => {
           provide: CaseSessionService,
           useValue: mockCaseSessionService,
         },
+        {
+          provide: PromptSharedService,
+          useValue: mockPromptSharedService,
+        },
       ],
     }).compile();
 
@@ -404,6 +415,7 @@ describe('ScenarioSessionService', () => {
     sessionEventTranslationService = module.get(SessionEventTranslationService);
     scenarioVoicesRepository = module.get(ScenarioVoicesRepository);
     reviewSharedService = module.get(ReviewSharedService);
+    promptSharedService = module.get(PromptSharedService);
   });
 
   afterEach(() => {
@@ -1512,6 +1524,59 @@ describe('ScenarioSessionService', () => {
     it('should return false when languageValue is empty/invalid and IDs do not match', () => {
       expect((service as any).isEnglishLanguage(2, '', 1)).toBe(false);
       expect((service as any).isEnglishLanguage(2, undefined, 1)).toBe(false);
+    });
+  });
+
+  describe('getPromptsForScenarioSession', () => {
+    it('should return an empty object when no prompts are found', async () => {
+      promptSharedService.getPromptsByCodes.mockResolvedValue([]);
+
+      const result = await (service as any).getPromptsForScenarioSession();
+
+      expect(promptSharedService.getPromptsByCodes).toHaveBeenCalledWith(
+        SCENARIO_SESSION_PROMPTS,
+      );
+      expect(result).toEqual({});
+    });
+
+    it('should return a map of promptCode -> prompt when prompts are found', async () => {
+      const mockPrompts = [
+        { promptCode: 'ally_ai_learn_default', prompt: 'Default prompt text' },
+        {
+          promptCode: 'ally_ai_learn_client_persona_template',
+          prompt: 'Persona template text',
+        },
+        {
+          promptCode: 'ally_ai_learn_prosody_generation',
+          prompt: 'Prosody generation text',
+        },
+      ];
+      promptSharedService.getPromptsByCodes.mockResolvedValue(mockPrompts);
+
+      const result = await (service as any).getPromptsForScenarioSession();
+
+      expect(promptSharedService.getPromptsByCodes).toHaveBeenCalledWith(
+        SCENARIO_SESSION_PROMPTS,
+      );
+      expect(result).toEqual({
+        ally_ai_learn_default: 'Default prompt text',
+        ally_ai_learn_client_persona_template: 'Persona template text',
+        ally_ai_learn_prosody_generation: 'Prosody generation text',
+      });
+    });
+
+    it('should correctly overwrite duplicate promptCodes with the last value', async () => {
+      const mockPrompts = [
+        { promptCode: 'ally_ai_learn_default', prompt: 'First value' },
+        { promptCode: 'ally_ai_learn_default', prompt: 'Second value' },
+      ];
+      promptSharedService.getPromptsByCodes.mockResolvedValue(mockPrompts);
+
+      const result = await (service as any).getPromptsForScenarioSession();
+
+      expect(result).toEqual({
+        ally_ai_learn_default: 'Second value',
+      });
     });
   });
 });

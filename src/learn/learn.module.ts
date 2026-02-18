@@ -61,6 +61,7 @@ import { BehaviorRepository } from './repository/behavior.repository';
 import { ScenarioBehaviorInstructionService } from './service/scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRepository } from './repository/scenario-behavior-instruction.repository';
 import { ScenarioBehaviorInstructionBehaviorRepository } from './repository/scenario-behavior-instruction-behavior.repository';
+import { PromptModule } from 'src/prompt/prompt.module';
 
 @Module({
   imports: [
@@ -92,6 +93,7 @@ import { ScenarioBehaviorInstructionBehaviorRepository } from './repository/scen
     forwardRef(() => ReviewModule),
     forwardRef(() => ConversationalGuardrailsModule),
     forwardRef(() => CaseModule),
+    forwardRef(() => PromptModule),
     ScenarioReportModule,
   ],
   controllers: [

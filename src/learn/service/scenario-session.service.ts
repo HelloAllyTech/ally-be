@@ -52,6 +52,7 @@ import { v4 } from 'uuid';
 import {
   DEFAULT_LANGUAGE_CODE,
   DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
+  SCENARIO_SESSION_PROMPTS,
   SCENARIO_SESSION_TRANSLATABLE_FIELDS,
   STT_LLM_PROVIDER_CONFIG,
 } from '../constants/scenario-session.constants';
@@ -92,6 +93,7 @@ import { ScenarioStateInstruction } from '../type/scenario-state.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
 import { CommonUtil } from 'src/common/util/common.util';
+import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -121,6 +123,7 @@ export class ScenarioSessionService {
     private conversationalGuardrailsService: ConversationalGuardrailsService,
     private caseSharedService: CaseSharedService,
     private caseSessionService: CaseSessionService,
+    private promptSharedService: PromptSharedService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -563,6 +566,8 @@ export class ScenarioSessionService {
         langIsEnglish ? undefined : languageDetails?.id,
       );
 
+    const prompts = await this.getPromptsForScenarioSession();
+    scenarioData.promptData.prompts = prompts;
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
@@ -1466,5 +1471,20 @@ export class ScenarioSessionService {
     }
 
     return false;
+  }
+
+  private async getPromptsForScenarioSession() {
+    const prompts = await this.promptSharedService.getPromptsByCodes(
+      SCENARIO_SESSION_PROMPTS,
+    );
+
+    if (prompts?.length == 0) {
+      return {};
+    }
+
+    return prompts.reduce<Record<string, string>>((acc, prompt) => {
+      acc[prompt.promptCode] = prompt.prompt;
+      return acc;
+    }, {});
   }
 }
