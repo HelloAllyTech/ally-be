@@ -587,9 +587,15 @@ export class BadgeService {
     }
 
     return await this.dataSource.transaction(async (entityManager) => {
-      await entityManager.getRepository(BadgeTenant).softDelete({ badgeId: In(badgeIds) });
-      await entityManager.getRepository(BadgeUser).softDelete({ badgeId: In(badgeIds) });
-      await entityManager.getRepository(BadgeGroup).softDelete({ badgeId: In(badgeIds) });
+      await entityManager
+        .getRepository(BadgeTenant)
+        .softDelete({ badgeId: In(badgeIds) });
+      await entityManager
+        .getRepository(BadgeUser)
+        .softDelete({ badgeId: In(badgeIds) });
+      await entityManager
+        .getRepository(BadgeGroup)
+        .softDelete({ badgeId: In(badgeIds) });
       await entityManager.getRepository(Badge).softDelete({ id: In(badgeIds) });
       return true;
     });

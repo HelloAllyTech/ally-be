@@ -447,11 +447,12 @@ describe('BadgeService', () => {
       const badge = { id: 'badge-1', name: 'Test Badge' } as Badge;
       mockBadgeRepository.findOne.mockResolvedValue(badge);
       (mockDataSource.transaction as jest.Mock).mockImplementation(
-        async (cb: (entityManager: any) => Promise<boolean>) => cb({
-          getRepository: jest.fn().mockReturnValue({
-            softDelete: jest.fn().mockResolvedValue(undefined),
+        async (cb: (entityManager: any) => Promise<boolean>) =>
+          cb({
+            getRepository: jest.fn().mockReturnValue({
+              softDelete: jest.fn().mockResolvedValue(undefined),
+            }),
           }),
-        }),
       );
 
       const result = await service.deleteBadge('badge-1');

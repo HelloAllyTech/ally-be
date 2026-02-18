@@ -228,7 +228,13 @@ export class ScenarioSessionService {
 
     // Check if language is not English
     const isOtherLanguage =
-      languageId && enLanguageDetails && languageId !== enLanguageDetails.id;
+      languageId &&
+      languageDetails &&
+      !this.isEnglishLanguage(
+        languageId,
+        languageDetails.value,
+        enLanguageDetails?.id,
+      );
 
     // If language is not English, get translated session events
     sessionEvents = isOtherLanguage
@@ -409,14 +415,15 @@ export class ScenarioSessionService {
     const { metadata, terminationEvents, ...scenarioDataWithoutMetadata } =
       scenario;
 
-    const { voiceId, promptData } = await this.getScenarioTranslationData(
-      {
-        ...metadata,
-        title: scenario.title,
-        description: scenario.description,
-      },
-      scenario.id,
-    );
+    const { voiceId, promptData, langIsEnglish } =
+      await this.getScenarioTranslationData(
+        {
+          ...metadata,
+          title: scenario.title,
+          description: scenario.description,
+        },
+        scenario.id,
+      );
 
     const languageCode = metadata?.language as LanguageCode;
 
@@ -551,6 +558,11 @@ export class ScenarioSessionService {
       },
     );
 
+    const guardrails =
+      await this.conversationalGuardrailsService.getRandomGuardrailsForSession(
+        langIsEnglish ? undefined : languageDetails?.id,
+      );
+
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
@@ -573,6 +585,7 @@ export class ScenarioSessionService {
         triggerEvents: Array.from(triggerEvents),
         autoTerminationEvents,
         stateInstructions: formattedStateInstructions,
+        guardrails: guardrails,
       },
     };
   }
@@ -1180,7 +1193,13 @@ export class ScenarioSessionService {
 
     // Check if language is not English
     const isOtherLanguage =
-      languageId && enLanguageDetails && languageId !== enLanguageDetails.id;
+      languageId &&
+      languageDetails &&
+      !this.isEnglishLanguage(
+        languageId,
+        languageDetails.value,
+        enLanguageDetails?.id,
+      );
 
     // If language is not English, get translated session events
     const sessionEvents = isOtherLanguage
@@ -1335,10 +1354,15 @@ export class ScenarioSessionService {
       metadata ?? {};
 
     // If language is English (by languageId), return original data
-    const langIsEnglish = languageId === defaultLanguageId;
+    const langIsEnglish = this.isEnglishLanguage(
+      languageId,
+      language,
+      defaultLanguageId,
+    );
 
     if (langIsEnglish) {
       return {
+        langIsEnglish,
         voiceId,
         promptData: {
           ...promptData,
@@ -1383,6 +1407,7 @@ export class ScenarioSessionService {
     }
 
     return {
+      langIsEnglish,
       voiceId,
       promptData: {
         ...promptData,
@@ -1418,5 +1443,28 @@ export class ScenarioSessionService {
           ? languageDetails[0]
           : null,
     };
+  }
+
+  private isEnglishLanguage(
+    languageId?: number,
+    languageValue?: string,
+    defaultLanguageId?: number,
+  ): boolean {
+    if (!languageId) {
+      return true;
+    }
+
+    if (defaultLanguageId && languageId === defaultLanguageId) {
+      return true;
+    }
+
+    if (
+      languageValue?.toLowerCase() === 'en' ||
+      languageValue?.toLowerCase().startsWith('en-')
+    ) {
+      return true;
+    }
+
+    return false;
   }
 }
