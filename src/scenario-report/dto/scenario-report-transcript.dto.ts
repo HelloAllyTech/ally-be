@@ -14,21 +14,14 @@ export class UpdateScenarioReportTranscriptDto {
     example: 0,
   })
   @IsNumber()
-  startSeconds!: number;
+  start_time!: number;
 
   @ApiProperty({
-    description: 'End time of the transcript in seconds',
-    example: 5.5,
-  })
-  @IsNumber()
-  endSeconds!: number;
-
-  @ApiProperty({
-    description: 'Sender of the transcript',
-    example: 'ai-client',
+    description: 'Role of the transcript owner',
+    example: 'CLIENT',
   })
   @IsString()
-  sender!: string;
+  role!: string;
 }
 
 export class ScenarioReportTranscriptDto {
@@ -45,10 +38,10 @@ export class ScenarioReportTranscriptDto {
   scenarioReportId!: string;
 
   @ApiProperty({
-    description: 'Sender of the transcript',
-    example: 'ai-client',
+    description: 'Role of the transcript owner',
+    example: 'CLIENT',
   })
-  sender!: string;
+  role!: string;
 
   @ApiProperty({
     description: 'Content of the transcript',
@@ -62,13 +55,6 @@ export class ScenarioReportTranscriptDto {
     nullable: true,
   })
   startSeconds?: number;
-
-  @ApiProperty({
-    description: 'End time of the transcript',
-    example: 5.5,
-    nullable: true,
-  })
-  endSeconds?: number;
 
   @ApiProperty({
     description: 'Date when the transcript was created',

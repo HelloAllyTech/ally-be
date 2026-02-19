@@ -22,9 +22,8 @@ export class ScenarioReportTranscriptService {
       this.scenarioReportTranscriptRepository.create({
         scenarioReportId: reportId,
         content: t.content,
-        startSeconds: t.startSeconds,
-        endSeconds: t.endSeconds,
-        sender: t.sender,
+        startSeconds: t.start_time,
+        role: t.role,
       }),
     );
     await this.scenarioReportTranscriptRepository.save(transcriptEntities);

@@ -12,15 +12,13 @@ describe('ScenarioReportTranscriptService', () => {
   const mockTranscripts = [
     {
       content: 'Hello',
-      startSeconds: 0,
-      endSeconds: 1.5,
-      sender: 'user',
+      start_time: 0,
+      role: 'user',
     },
     {
       content: 'Hi there',
-      startSeconds: 1.5,
-      endSeconds: 3,
-      sender: 'ai-client',
+      start_time: 1.5,
+      role: 'ai-client',
     },
   ];
 
@@ -67,15 +65,13 @@ describe('ScenarioReportTranscriptService', () => {
         scenarioReportId: reportId,
         content: 'Hello',
         startSeconds: 0,
-        endSeconds: 1.5,
-        sender: 'user',
+        role: 'user',
       });
       expect(repository.create).toHaveBeenNthCalledWith(2, {
         scenarioReportId: reportId,
         content: 'Hi there',
         startSeconds: 1.5,
-        endSeconds: 3,
-        sender: 'ai-client',
+        role: 'ai-client',
       });
       expect(repository.save).toHaveBeenCalledTimes(1);
     });
@@ -88,9 +84,8 @@ describe('ScenarioReportTranscriptService', () => {
           id: 't1',
           scenarioReportId: reportId,
           content: 'Hello',
-          sender: 'user',
+          role: 'user',
           startSeconds: 0,
-          endSeconds: 1,
           createdAt: new Date(),
           updatedAt: new Date(),
         },

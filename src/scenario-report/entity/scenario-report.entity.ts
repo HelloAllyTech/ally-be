@@ -23,9 +23,6 @@ export class ScenarioReport extends BaseWithoutTenantEntity {
   @Column({ enum: ScenarioReportStatus, default: ScenarioReportStatus.STARTED })
   status!: ScenarioReportStatus;
 
-  @Column({ type: 'int', nullable: true })
-  score?: number;
-
   @Column({ type: 'jsonb' })
   config!: ScenarioReportConfig;
 
