@@ -39,6 +39,7 @@ export class BadgeRepository extends Repository<Badge> {
         'badge.imageUrl AS "imageUrl"',
         'badge.category AS "category"',
         'badge.achievementParams AS "achievementParams"',
+        'badge.visibilityType AS "visibilityType"',
       ])
       .where('badgeTenant.tenantId = :tenantId', { tenantId })
       .andWhere('badge.deletedAt IS NULL')

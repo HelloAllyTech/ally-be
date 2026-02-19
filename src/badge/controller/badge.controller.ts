@@ -43,6 +43,7 @@ import {
   GroupedUserAvailableBadgesDto,
   MarkBadgeViewedResponseDto,
   AdminBadgeListResponseDto,
+  TenantBadgeResponseDto,
 } from '../dto/user-badge-response.dto';
 import { BadgeTenantService } from '../service/badge-tenant.service';
 import { AddBadgeToTenantsRequestDto } from '../dto/badge-tenant.dto';
@@ -258,6 +259,25 @@ export class BadgeController {
     return {
       message: 'Badge added to tenants successfully',
     };
+  }
+
+  @ApiOperation({ summary: 'Get badges assigned to a specific tenant' })
+  @ApiParam({
+    name: 'tenantId',
+    type: String,
+    description: 'The ID of the tenant',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns all badges assigned to the tenant',
+    type: [TenantBadgeResponseDto],
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_BADGES])
+  @Get('/tenants/:tenantId')
+  async getBadgesForTenant(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+  ): Promise<TenantBadgeResponseDto[]> {
+    return this.badgeService.getBadgesForTenant(tenantId);
   }
 
   @ApiOperation({ summary: 'Get presigned URL for badge image' })
