@@ -41,6 +41,7 @@ import { ConversationalGuardrailsModule } from './conversational-guardrails/conv
 import { CaseModule } from './case/case.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
 import { ScenarioReportModule } from './scenario-report/scenario-report.module';
+import { AppVersionModule } from './app-version/app-version.module';
 
 @Module({
   imports: [
@@ -85,6 +86,7 @@ import { ScenarioReportModule } from './scenario-report/scenario-report.module';
     ConversationalGuardrailsModule,
     ScenarioCoverImageLibraryModule,
     ScenarioReportModule,
+    AppVersionModule,
   ],
   controllers: [],
   providers: [
