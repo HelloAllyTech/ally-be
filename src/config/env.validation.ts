@@ -112,4 +112,8 @@ export const validationSchema = Joi.object({
   AI_CHAT_MAX_TOKENS: Joi.number().default(1500),
   AI_CHAT_TEMPERATURE: Joi.number().min(0).max(2).default(0.7),
   AI_CHAT_MAX_CONTEXT_TOKENS: Joi.number().default(100000),
+
+  // App version (force update) - minimum supported version per platform
+  APP_MIN_SUPPORTED_VERSION_ANDROID: Joi.string().optional(),
+  APP_MIN_SUPPORTED_VERSION_IOS: Joi.string().optional(),
 });
