@@ -4,6 +4,7 @@ import { TranscribeResultProcessor } from '../transcribe-result.processor';
 import { UnknownEventProcessor } from '../unknown-event.processor';
 import { LearnMessageProcessor } from '../../../learn/processor/learn-message.processor';
 import { LearnEventProcessor } from '../../../learn/processor/learn-event.processor';
+import { BehaviorInstructionProcessor } from '../../../learn/processor/behavior-instruction.processor';
 import { LoggerService } from '../../../logger/logger.service';
 import { IEventProcessor } from '../base-processor.interface';
 
@@ -12,6 +13,7 @@ describe('ProcessorRegistry', () => {
   let transcribeResultProcessor: jest.Mocked<TranscribeResultProcessor>;
   let learnMessageProcessor: jest.Mocked<LearnMessageProcessor>;
   let learnEventProcessor: jest.Mocked<LearnEventProcessor>;
+  let behaviorInstructionProcessor: jest.Mocked<BehaviorInstructionProcessor>;
   let unknownEventProcessor: jest.Mocked<UnknownEventProcessor>;
   let mockLogger: jest.Mocked<LoggerService>;
 
@@ -48,6 +50,12 @@ describe('ProcessorRegistry', () => {
       process: jest.fn().mockResolvedValue(undefined),
     };
 
+    const mockBehaviorInstructionProcessor = {
+      ...mockProcessorBase,
+      getEventType: jest.fn().mockReturnValue('behavior_instruction'),
+      process: jest.fn().mockResolvedValue(undefined),
+    };
+
     const mockUnknownEventProcessor = {
       ...mockProcessorBase,
       getEventType: jest.fn().mockReturnValue('unknown'),
@@ -70,6 +78,10 @@ describe('ProcessorRegistry', () => {
           useValue: mockLearnEventProcessor,
         },
         {
+          provide: BehaviorInstructionProcessor,
+          useValue: mockBehaviorInstructionProcessor,
+        },
+        {
           provide: UnknownEventProcessor,
           useValue: mockUnknownEventProcessor,
         },
@@ -80,6 +92,7 @@ describe('ProcessorRegistry', () => {
     transcribeResultProcessor = module.get(TranscribeResultProcessor);
     learnMessageProcessor = module.get(LearnMessageProcessor);
     learnEventProcessor = module.get(LearnEventProcessor);
+    behaviorInstructionProcessor = module.get(BehaviorInstructionProcessor);
     unknownEventProcessor = module.get(UnknownEventProcessor);
   });
 
@@ -100,7 +113,7 @@ describe('ProcessorRegistry', () => {
 
     it('should register all processors during initialization', () => {
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Registered 3 event processors',
+        'Registered 4 event processors',
       );
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Registered processor for: transcribe_result',
@@ -110,6 +123,9 @@ describe('ProcessorRegistry', () => {
       );
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Registered processor for: learn_event',
+      );
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Registered processor for: behavior_instruction',
       );
     });
   });
@@ -128,6 +144,11 @@ describe('ProcessorRegistry', () => {
     it('should return correct processor for learn_event event', () => {
       const processor = registry.getProcessor('learn_event');
       expect(processor).toBe(learnEventProcessor);
+    });
+
+    it('should return correct processor for behavior_instruction event', () => {
+      const processor = registry.getProcessor('behavior_instruction');
+      expect(processor).toBe(behaviorInstructionProcessor);
     });
 
     it('should return undefined for unknown event type', () => {
@@ -242,10 +263,11 @@ describe('ProcessorRegistry', () => {
     it('should return all registered event types', () => {
       const eventTypes = registry.getRegisteredEventTypes();
 
-      expect(eventTypes).toHaveLength(3);
+      expect(eventTypes).toHaveLength(4);
       expect(eventTypes).toContain('transcribe_result');
       expect(eventTypes).toContain('learn_message');
       expect(eventTypes).toContain('learn_event');
+      expect(eventTypes).toContain('behavior_instruction');
     });
 
     it('should return array in consistent order', () => {
@@ -264,6 +286,7 @@ describe('ProcessorRegistry', () => {
         transcribe_result: true,
         learn_message: true,
         learn_event: true,
+        behavior_instruction: true,
       });
     });
 
@@ -303,7 +326,7 @@ describe('ProcessorRegistry', () => {
 
       const eventTypes = registry.getRegisteredEventTypes();
       expect(eventTypes).toContain('custom_event');
-      expect(eventTypes).toHaveLength(4);
+      expect(eventTypes).toHaveLength(5);
     });
 
     it('should update processor health after custom registration', () => {
@@ -363,7 +386,7 @@ describe('ProcessorRegistry', () => {
 
       expect(registry.getProcessor('custom_event_1')).toBe(customProcessor1);
       expect(registry.getProcessor('custom_event_2')).toBe(customProcessor2);
-      expect(registry.getRegisteredEventTypes()).toHaveLength(5);
+      expect(registry.getRegisteredEventTypes()).toHaveLength(6);
     });
   });
 

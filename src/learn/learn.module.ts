@@ -70,6 +70,8 @@ import { ScenarioSessionChatMessageRepository } from './repository/scenario-sess
 import { ScenarioSessionContextProvider } from './service/scenario-session-context.provider';
 import { ScenarioSessionChatService } from './service/scenario-session-chat.service';
 import { ScenarioSessionChatController } from './controller/scenario-session-chat.controller';
+import { BehaviorInstructionProcessor } from './processor/behavior-instruction.processor';
+import { ScenarioSessionBehaviorInstructions } from './entity/scenario-session-behavior-instructions.entity';
 
 @Module({
   imports: [
@@ -91,6 +93,7 @@ import { ScenarioSessionChatController } from './controller/scenario-session-cha
       ScenarioBehaviorInstructionBehavior,
       ScenarioSessionChat,
       ScenarioSessionChatMessage,
+      ScenarioSessionBehaviorInstructions,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -123,6 +126,7 @@ import { ScenarioSessionChatController } from './controller/scenario-session-cha
     LearnMessageAndEventConsumer,
     LearnMessageProcessor,
     LearnEventProcessor,
+    BehaviorInstructionProcessor,
     ScenarioVoicesRepository,
     SimulationCreditsService,
     SimulationCreditsRepository,
@@ -155,6 +159,7 @@ import { ScenarioSessionChatController } from './controller/scenario-session-cha
   exports: [
     LearnMessageProcessor,
     LearnEventProcessor,
+    BehaviorInstructionProcessor,
     ScenarioSessionService,
     SimulationCreditsService,
     ScenarioSharedService,

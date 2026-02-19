@@ -39,7 +39,11 @@ import {
   ScenarioEvaluationChatMessage,
 } from 'src/ai/dto/ai.request.dto';
 import { ScenarioEvaluationMessageTag } from 'src/ai/dto/ai.response.dto';
-import { LearnEventData } from '../interface/learn-message.interface';
+import {
+  LearnBehaviorInstructionData,
+  LearnEventData,
+} from '../interface/learn-message.interface';
+import { ScenarioSessionBehaviorInstructions } from '../entity/scenario-session-behavior-instructions.entity';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
 import { Scenarios } from '../entity/scenarios.entity';
@@ -109,6 +113,8 @@ export class ScenarioSessionService {
     private eventEmitter: EventEmitter2,
     private caseSharedService: CaseSharedService,
     private caseSessionService: CaseSessionService,
+    @InjectRepository(ScenarioSessionBehaviorInstructions)
+    private scenarioSessionBehaviorInstructionsRepository: Repository<ScenarioSessionBehaviorInstructions>,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -928,6 +934,14 @@ export class ScenarioSessionService {
     );
   }
 
+  async getScenarioSessionByRoomIdOrNull(
+    roomId: string,
+  ): Promise<ScenarioSessions | null> {
+    return this.scenarioSessionRepository.findOne({
+      where: { roomId },
+    });
+  }
+
   async getScenarioSessionByRoomId(roomId: string) {
     const scenarioSession = await this.scenarioSessionRepository.findOne({
       where: { roomId },
@@ -1003,6 +1017,19 @@ export class ScenarioSessionService {
         scenarioSession.counselorId,
       );
     }
+  }
+
+  async addScenarioSessionBehaviorInstruction(
+    scenarioSession: ScenarioSessions,
+    behaviorInstruction: LearnBehaviorInstructionData,
+  ) {
+    const record = this.scenarioSessionBehaviorInstructionsRepository.create({
+      scenarioSessionId: scenarioSession.id,
+      scenarioBehaviorInstructionId:
+        behaviorInstruction.behavior_instruction_data.behaviorInstructionId,
+      occurredAt: behaviorInstruction.timestamp,
+    });
+    await this.scenarioSessionBehaviorInstructionsRepository.save(record);
   }
 
   async previewScenario(
