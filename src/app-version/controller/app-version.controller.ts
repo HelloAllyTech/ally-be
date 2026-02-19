@@ -1,17 +1,10 @@
 import { Controller, Get } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiSecurity,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AppConfigService } from '../../config/config.service';
 import { MinimumVersionResponseDto } from '../dto/minimum-version-response.dto';
 import { Public } from 'src/auth/decorators/auth.metadata';
 
 @ApiTags('App Version')
-@ApiBearerAuth()
-@ApiSecurity('access-token')
 @Controller({
   path: 'app-version',
   version: '1',
