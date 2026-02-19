@@ -4,6 +4,7 @@ import { LoggerService } from '../../logger/logger.service';
 import { TranscribeAndSummarizeResponseMessage } from '../dto/transcribe-and-summarize-response.model';
 import { AppConfigService } from 'src/config/config.service';
 import { ChatTranscriptService } from '../../chat/service/chat-transcript.service';
+import { PROCESSOR_EVENT_TYPES } from '../constants/processor.constants';
 
 @Injectable()
 export class TranscribeResultProcessor extends BaseEventProcessor {
@@ -19,7 +20,7 @@ export class TranscribeResultProcessor extends BaseEventProcessor {
   }
 
   getEventType(): string {
-    return 'transcribe_and_summarize_response';
+    return PROCESSOR_EVENT_TYPES.TRANSCRIBE_AND_SUMMARIZE_RESPONSE;
   }
 
   async process(data: TranscribeAndSummarizeResponseMessage): Promise<void> {

@@ -625,10 +625,12 @@ export class BadgeService {
   }
 
   /**
-   * Get badges that are available to the user (via tenant + group access)
-   * but have NOT yet been awarded.
-   * Optionally filter by badge category.
+   * Get badges that are available to a tenant
    */
+  async getBadgesForTenant(tenantId: string): Promise<TenantBadgeResponse[]> {
+    return this.badgeRepository.getBadgesForTenant(tenantId);
+  }
+
   async getAvailableUnawardedBadges(
     userId: number,
     category?: BadgeCategory,
