@@ -10,14 +10,14 @@ export const SCENARIO_MANDATORY_FIELDS: (keyof CreateScenarioDto)[] = [
   'gender',
   'currentLocation',
   'prompt',
-  'context',
   'openingStatements',
   'voiceId',
   'languageVoices',
-  'agentDialogues',
   'experienceMode',
   'stateInstructions',
   'behaviorInstructions',
+  'characterProfileText',
+  'showScoreMeter',
 ];
 
 // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove this constant

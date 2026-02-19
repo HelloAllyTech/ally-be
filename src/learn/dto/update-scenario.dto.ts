@@ -12,6 +12,7 @@ import {
   ArrayMaxSize,
   ValidateIf,
   IsNotEmpty,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -353,4 +354,24 @@ export class UpdateScenarioDto {
   @ValidateNested({ each: true })
   @Type(() => BehaviorInstructionDto)
   behaviorInstructions?: BehaviorInstructionDto[];
+
+  @ApiProperty({
+    description: 'Character profile text',
+    example: 'A detailed character profile...',
+    required: false,
+    maxLength: 2500,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2500)
+  characterProfileText?: string;
+
+  @ApiProperty({
+    description: 'Show score meter',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  showScoreMeter?: boolean;
 }

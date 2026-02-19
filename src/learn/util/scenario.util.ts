@@ -56,6 +56,8 @@ export const mapCreateScenarioRequestToEntity = (
         maxTimeValue: scenario.maxTimeValue,
       }),
       optGuardrails: scenario.optGuardrails,
+      characterProfileText: scenario.characterProfileText,
+      showScoreMeter: scenario.showScoreMeter,
       // FEATURE_CLEANUP(FEATURE_SCENARIO_STATE_INSTRUCTIONS): remove the input from context and dialogues and keep it only stateInstructions
       stateInstructions: getFormattedScenarioInstructions(
         scenario.stateInstructions,
@@ -170,6 +172,8 @@ export const mapUpdateScenarioRequestToEntity = (
     'timerMode',
     'maxTimeValue',
     'optGuardrails',
+    'characterProfileText',
+    'showScoreMeter',
     'stateInstructions',
   ];
 
