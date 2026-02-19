@@ -105,4 +105,11 @@ export const validationSchema = Joi.object({
   // OpenAI
   OPENAI_API_KEY: Joi.string().optional(),
   OPENAI_TRANSLATION_MODEL: Joi.string().default('gpt-4o-mini'),
+
+  // AI Chat
+  AI_CHAT_DEFAULT_PROVIDER: Joi.string().valid('openai').default('openai'),
+  AI_CHAT_OPENAI_MODEL: Joi.string().default('gpt-4o-mini'),
+  AI_CHAT_MAX_TOKENS: Joi.number().default(1500),
+  AI_CHAT_TEMPERATURE: Joi.number().min(0).max(2).default(0.7),
+  AI_CHAT_MAX_CONTEXT_TOKENS: Joi.number().default(100000),
 });
