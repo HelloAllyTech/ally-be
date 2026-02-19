@@ -62,6 +62,14 @@ import { ScenarioBehaviorInstructionService } from './service/scenario-behavior-
 import { ScenarioBehaviorInstructionRepository } from './repository/scenario-behavior-instruction.repository';
 import { ScenarioBehaviorInstructionBehaviorRepository } from './repository/scenario-behavior-instruction-behavior.repository';
 import { PromptModule } from 'src/prompt/prompt.module';
+import { AiChatModule } from 'src/ai-chat/ai-chat.module';
+import { ScenarioSessionChat } from './entity/scenario-session-chat.entity';
+import { ScenarioSessionChatMessage } from './entity/scenario-session-chat-message.entity';
+import { ScenarioSessionChatRepository } from './repository/scenario-session-chat.repository';
+import { ScenarioSessionChatMessageRepository } from './repository/scenario-session-chat-message.repository';
+import { ScenarioSessionContextProvider } from './service/scenario-session-context.provider';
+import { ScenarioSessionChatService } from './service/scenario-session-chat.service';
+import { ScenarioSessionChatController } from './controller/scenario-session-chat.controller';
 
 @Module({
   imports: [
@@ -81,6 +89,8 @@ import { PromptModule } from 'src/prompt/prompt.module';
       Behavior,
       ScenarioBehaviorInstruction,
       ScenarioBehaviorInstructionBehavior,
+      ScenarioSessionChat,
+      ScenarioSessionChatMessage,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -96,11 +106,13 @@ import { PromptModule } from 'src/prompt/prompt.module';
     forwardRef(() => PromptModule),
     ScenarioReportModule,
     forwardRef(() => ConversationalGuardrailsModule),
+    AiChatModule,
   ],
   controllers: [
     LearnController,
     SimulationCreditsController,
     BehaviorController,
+    ScenarioSessionChatController,
   ],
   providers: [
     ScenarioService,
@@ -135,6 +147,10 @@ import { PromptModule } from 'src/prompt/prompt.module';
     ScenarioBehaviorInstructionService,
     ScenarioBehaviorInstructionRepository,
     ScenarioBehaviorInstructionBehaviorRepository,
+    ScenarioSessionChatRepository,
+    ScenarioSessionChatMessageRepository,
+    ScenarioSessionContextProvider,
+    ScenarioSessionChatService,
   ],
   exports: [
     LearnMessageProcessor,
