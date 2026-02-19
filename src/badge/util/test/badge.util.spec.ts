@@ -4,6 +4,7 @@ import {
   BadgeCategory,
   BadgeLockStatus,
   BadgeViewedStatus,
+  BadgeVisibilityType,
 } from '../../constants/badge.constants';
 
 describe('Badge Util', () => {
@@ -16,6 +17,7 @@ describe('Badge Util', () => {
       description: 'Test Description',
       imageUrl: 'https://example.com/badge.png',
       category: BadgeCategory.SIMULATION_MINUTES,
+      visibilityType: BadgeVisibilityType.PUBLIC,
       achievementParams: { count: 10 },
       viewedStatus: BadgeViewedStatus.UNVIEWED,
       lockStatus: BadgeLockStatus.LOCKED,
