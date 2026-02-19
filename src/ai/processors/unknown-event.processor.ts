@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { BaseEventProcessor } from './base-processor.interface';
 import { LoggerService } from '../../logger/logger.service';
+import { PROCESSOR_EVENT_TYPES } from '../constants/processor.constants';
 
 @Injectable()
 export class UnknownEventProcessor extends BaseEventProcessor {
@@ -9,7 +10,7 @@ export class UnknownEventProcessor extends BaseEventProcessor {
   );
 
   getEventType(): string {
-    return 'UNKNOWN_EVENT';
+    return PROCESSOR_EVENT_TYPES.UNKNOWN_EVENT;
   }
 
   async process(data: any): Promise<void> {

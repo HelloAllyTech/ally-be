@@ -11,6 +11,16 @@ export interface LearnMessageAndEventMessage {
 export interface LearnData {
   chat_message?: MessageRequest;
   event?: LearnEventData;
+  behavior_instruction?: LearnBehaviorInstructionData;
+}
+
+export interface LearnBehaviorInstructionData {
+  timestamp: Date;
+  behavior_instruction_data: LearnBehaviorInstruction;
+}
+
+export interface LearnBehaviorInstruction {
+  behaviorInstructionId: string;
 }
 
 export interface LearnEventData {
