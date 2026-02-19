@@ -627,8 +627,8 @@ export class ScenarioService {
     }
   }
 
-  private async validateStateInstructions(
-    stateInstructions: StateInstructionsDto[] | undefined,
+  private validateStateInstructions(
+    stateInstructions: StateInstructionsDto[] = [],
   ) {
     if (!stateInstructions) {
       throw new BadRequestException('State instructions are required');
