@@ -3,6 +3,7 @@ import { BaseEventProcessor } from 'src/ai/processors/base-processor.interface';
 import { LoggerService } from 'src/logger/logger.service';
 import { LearnMessageAndEventMessage } from '../interface/learn-message.interface';
 import { ScenarioSessionService } from '../service/scenario-session.service';
+import { PROCESSOR_EVENT_TYPES } from 'src/ai/constants/processor.constants';
 
 @Injectable()
 export class LearnMessageProcessor extends BaseEventProcessor {
@@ -15,7 +16,7 @@ export class LearnMessageProcessor extends BaseEventProcessor {
   }
 
   getEventType(): string {
-    return 'message';
+    return PROCESSOR_EVENT_TYPES.MESSAGE;
   }
 
   async process(data: LearnMessageAndEventMessage): Promise<void> {
@@ -31,7 +32,9 @@ export class LearnMessageProcessor extends BaseEventProcessor {
 
     try {
       const scenarioSession =
-        await this.scenarioSessionService.getScenarioSessionByRoomId(room_id);
+        await this.scenarioSessionService.getScenarioSessionByRoomIdOrNull(
+          room_id,
+        );
 
       if (!scenarioSession) {
         this.logger.warn(`Scenario session not found: ${room_id}`);

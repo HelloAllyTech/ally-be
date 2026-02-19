@@ -2,6 +2,7 @@ import {
   BadgeCategory,
   BadgeLockStatus,
   BadgeViewedStatus,
+  BadgeVisibilityType,
 } from '../constants/badge.constants';
 import { BadgeAchievementParams } from './badge.type';
 
@@ -28,6 +29,7 @@ export interface TenantBadgeResponse {
   description?: string;
   imageUrl?: string;
   category: BadgeCategory;
+  visibilityType: BadgeVisibilityType;
   achievementParams?: BadgeAchievementParams;
 }
 

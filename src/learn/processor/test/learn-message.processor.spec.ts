@@ -62,7 +62,7 @@ describe('LearnMessageProcessor', () => {
 
   beforeEach(async () => {
     const mockScenarioSessionService = {
-      getScenarioSessionByRoomId: jest.fn(),
+      getScenarioSessionByRoomIdOrNull: jest.fn(),
       addScenarioSessionMessage: jest.fn(),
     };
 
@@ -102,7 +102,7 @@ describe('LearnMessageProcessor', () => {
 
   describe('process', () => {
     it('should successfully process message data', async () => {
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         mockScenarioSession,
       );
       scenarioSessionService.addScenarioSessionMessage.mockResolvedValue(
@@ -115,7 +115,7 @@ describe('LearnMessageProcessor', () => {
         `Processing learn message: ${JSON.stringify(mockMessageData)}`,
       );
       expect(
-        scenarioSessionService.getScenarioSessionByRoomId,
+        scenarioSessionService.getScenarioSessionByRoomIdOrNull,
       ).toHaveBeenCalledWith(mockRoomId);
       expect(
         scenarioSessionService.addScenarioSessionMessage,
@@ -142,7 +142,7 @@ describe('LearnMessageProcessor', () => {
         `Processing learn message: ${JSON.stringify(previewMessageData)}`,
       );
       expect(
-        scenarioSessionService.getScenarioSessionByRoomId,
+        scenarioSessionService.getScenarioSessionByRoomIdOrNull,
       ).not.toHaveBeenCalled();
       expect(
         scenarioSessionService.addScenarioSessionMessage,
@@ -150,7 +150,7 @@ describe('LearnMessageProcessor', () => {
     });
 
     it('should handle scenario session not found', async () => {
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         null as any,
       );
 
@@ -160,7 +160,7 @@ describe('LearnMessageProcessor', () => {
         `Processing learn message: ${JSON.stringify(mockMessageData)}`,
       );
       expect(
-        scenarioSessionService.getScenarioSessionByRoomId,
+        scenarioSessionService.getScenarioSessionByRoomIdOrNull,
       ).toHaveBeenCalledWith(mockRoomId);
       expect(mockLogger.warn).toHaveBeenCalledWith(
         `Scenario session not found: ${mockRoomId}`,
@@ -171,7 +171,7 @@ describe('LearnMessageProcessor', () => {
     });
 
     it('should handle undefined scenario session', async () => {
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         undefined as any,
       );
 
@@ -193,7 +193,7 @@ describe('LearnMessageProcessor', () => {
         data: {},
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         mockScenarioSession,
       );
 
@@ -203,7 +203,7 @@ describe('LearnMessageProcessor', () => {
         `Processing learn message: ${JSON.stringify(messageDataWithoutChatMessage)}`,
       );
       expect(
-        scenarioSessionService.getScenarioSessionByRoomId,
+        scenarioSessionService.getScenarioSessionByRoomIdOrNull,
       ).toHaveBeenCalledWith(mockRoomId);
       expect(mockLogger.warn).toHaveBeenCalledWith(
         `Chat message not found: ${mockRoomId}`,
@@ -223,7 +223,7 @@ describe('LearnMessageProcessor', () => {
         },
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         mockScenarioSession,
       );
 
@@ -247,7 +247,7 @@ describe('LearnMessageProcessor', () => {
         },
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         mockScenarioSession,
       );
 
@@ -261,9 +261,9 @@ describe('LearnMessageProcessor', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('should handle getScenarioSessionByRoomId error', async () => {
+    it('should handle getScenarioSessionByRoomIdOrNull error', async () => {
       const error = new Error('Database connection failed');
-      scenarioSessionService.getScenarioSessionByRoomId.mockRejectedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockRejectedValue(
         error,
       );
 
@@ -284,7 +284,7 @@ describe('LearnMessageProcessor', () => {
 
     it('should handle addScenarioSessionMessage error', async () => {
       const error = new Error('Failed to add message');
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         mockScenarioSession,
       );
       scenarioSessionService.addScenarioSessionMessage.mockRejectedValue(error);
@@ -297,7 +297,7 @@ describe('LearnMessageProcessor', () => {
         `Processing learn message: ${JSON.stringify(mockMessageData)}`,
       );
       expect(
-        scenarioSessionService.getScenarioSessionByRoomId,
+        scenarioSessionService.getScenarioSessionByRoomIdOrNull,
       ).toHaveBeenCalledWith(mockRoomId);
       expect(
         scenarioSessionService.addScenarioSessionMessage,
@@ -317,7 +317,7 @@ describe('LearnMessageProcessor', () => {
         code: 'ERROR_CODE',
         details: 'Some details',
       };
-      scenarioSessionService.getScenarioSessionByRoomId.mockRejectedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockRejectedValue(
         errorWithoutMessage,
       );
 
@@ -337,14 +337,14 @@ describe('LearnMessageProcessor', () => {
         room_id: differentRoomId,
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         null as any,
       );
 
       await processor.process(messageDataWithDifferentRoom);
 
       expect(
-        scenarioSessionService.getScenarioSessionByRoomId,
+        scenarioSessionService.getScenarioSessionByRoomIdOrNull,
       ).toHaveBeenCalledWith(differentRoomId);
       expect(mockLogger.warn).toHaveBeenCalledWith(
         `Scenario session not found: ${differentRoomId}`,
@@ -366,7 +366,7 @@ describe('LearnMessageProcessor', () => {
         },
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         mockScenarioSession,
       );
       scenarioSessionService.addScenarioSessionMessage.mockResolvedValue(
@@ -398,7 +398,7 @@ describe('LearnMessageProcessor', () => {
         },
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         mockScenarioSession,
       );
       scenarioSessionService.addScenarioSessionMessage.mockResolvedValue(
@@ -434,7 +434,7 @@ describe('LearnMessageProcessor', () => {
         },
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         mockScenarioSession,
       );
       scenarioSessionService.addScenarioSessionMessage.mockResolvedValue(
@@ -463,7 +463,7 @@ describe('LearnMessageProcessor', () => {
         tenantId: differentTenantId,
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         sessionWithDifferentTenant,
       );
       scenarioSessionService.addScenarioSessionMessage.mockResolvedValue(
@@ -489,7 +489,7 @@ describe('LearnMessageProcessor', () => {
         counselorId: differentCounselorId,
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         sessionWithDifferentCounselor,
       );
       scenarioSessionService.addScenarioSessionMessage.mockResolvedValue(
@@ -523,7 +523,7 @@ describe('LearnMessageProcessor', () => {
         },
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue(
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
         mockScenarioSession,
       );
       scenarioSessionService.addScenarioSessionMessage.mockResolvedValue(

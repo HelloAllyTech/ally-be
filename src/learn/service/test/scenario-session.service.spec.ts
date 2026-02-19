@@ -12,6 +12,7 @@ import { AddFeedbackToScenarioSessionRequestDto } from 'src/learn/dto/add-feedba
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { ScenarioSessionDetails } from 'src/learn/entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from 'src/learn/entity/scenario-session-events.entity';
+import { ScenarioSessionBehaviorInstructions } from 'src/learn/entity/scenario-session-behavior-instructions.entity';
 import { ScenarioSessionMessages } from 'src/learn/entity/scenario-session-messages.entity';
 import { ScenarioSessionMessageType } from 'src/learn/enum/scenario-session-message.type.enum';
 import { ScenarioSessionFeedbacks } from 'src/learn/entity/scenario-session-feedbacks.entity';
@@ -35,7 +36,6 @@ import { SimulationCreditsService } from '../simulation-credits.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
-import { SCENARIO_SESSION_TRANSLATABLE_FIELDS } from 'src/learn/constants/scenario-session.constants';
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
@@ -78,7 +78,6 @@ describe('ScenarioSessionService', () => {
   let scenarioPathSessionService: jest.Mocked<ScenarioPathSessionService>;
   let scenarioPathSharedService: jest.Mocked<ScenarioPathSharedService>;
   let reviewSharedService: jest.Mocked<ReviewSharedService>;
-  let scenarioTranslationRepository: jest.Mocked<ScenarioTranslationsRepository>;
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let mockConfigService: any;
   let scenarioVoicesRepository: jest.Mocked<ScenarioVoicesRepository>;
@@ -218,6 +217,11 @@ describe('ScenarioSessionService', () => {
       save: jest.fn(),
     };
 
+    const mockScenarioSessionBehaviorInstructionsRepo = {
+      create: jest.fn(),
+      save: jest.fn(),
+    };
+
     const mockDataSource = {
       transaction: jest.fn(),
     };
@@ -353,6 +357,10 @@ describe('ScenarioSessionService', () => {
           provide: getRepositoryToken(ScenarioSessionDetails),
           useValue: mockScenarioSessionDetailsRepo,
         },
+        {
+          provide: getRepositoryToken(ScenarioSessionBehaviorInstructions),
+          useValue: mockScenarioSessionBehaviorInstructionsRepo,
+        },
         { provide: DataSource, useValue: mockDataSource },
         {
           provide: PermissionValidator,
@@ -429,7 +437,6 @@ describe('ScenarioSessionService', () => {
     scenarioTenantService = module.get(ScenarioTenantService);
     scenarioPathSessionService = module.get(ScenarioPathSessionService);
     scenarioPathSharedService = module.get(ScenarioPathSharedService);
-    scenarioTranslationRepository = module.get(ScenarioTranslationsRepository);
     sessionEventTranslationService = module.get(SessionEventTranslationService);
     scenarioVoicesRepository = module.get(ScenarioVoicesRepository);
     reviewSharedService = module.get(ReviewSharedService);
@@ -1145,88 +1152,6 @@ describe('ScenarioSessionService', () => {
           scenarioPathSessionItemId,
         ),
       ).rejects.toThrow('Database error');
-    });
-  });
-
-  describe.skip('getScenarioTranslationData', () => {
-    it('should return original data when no language is specified', async () => {
-      const metadata = { voiceId: 'test-voice', title: 'Test' };
-      const result = await (service as any).getScenarioTranslationData(
-        metadata,
-        1,
-      );
-      expect(result).toEqual({
-        langIsEnglish: true,
-        voiceId: 'test-voice',
-        promptData: {
-          title: 'Test',
-          language: undefined,
-          languageId: undefined,
-        },
-      });
-    });
-
-    it('should return translated data when language is not English', async () => {
-      // Mock the repository to return our translation
-      const mockTranslation = {
-        id: 1,
-        metadata: {
-          title: 'Prueba',
-          description: 'Descripción de prueba',
-          instructions: 'Instrucciones de prueba',
-        },
-      };
-      scenarioTranslationRepository.findOne.mockResolvedValue(
-        mockTranslation as any,
-      );
-
-      // Create test data with language that's not English
-      const metadata = {
-        voiceId: 'test-voice',
-        title: 'Test',
-        language: 'es-ES',
-        description: 'Test description',
-        instructions: 'Test instructions',
-        languageId: 2,
-        defaultLanguageId: 1,
-      };
-
-      // Save the original fields and replace with our test fields
-      const originalFields = [...SCENARIO_SESSION_TRANSLATABLE_FIELDS];
-      SCENARIO_SESSION_TRANSLATABLE_FIELDS.length = 0;
-      SCENARIO_SESSION_TRANSLATABLE_FIELDS.push(
-        'title',
-        'description',
-        'instructions',
-      );
-
-      try {
-        const result = await (service as any).getScenarioTranslationData(
-          metadata,
-          1,
-        );
-
-        expect(result).toEqual({
-          langIsEnglish: false,
-          voiceId: 'test-voice',
-          promptData: {
-            title: 'Prueba',
-            description: 'Descripción de prueba',
-            instructions: 'Instrucciones de prueba',
-            language: 'es-ES',
-            languageId: 2,
-          },
-        });
-
-        expect(scenarioTranslationRepository.findOne).toHaveBeenCalledWith({
-          select: ['id', 'metadata'],
-          where: { scenarioId: 1, languageId: 2 },
-        });
-      } finally {
-        // Restore the original fields
-        SCENARIO_SESSION_TRANSLATABLE_FIELDS.length = 0;
-        SCENARIO_SESSION_TRANSLATABLE_FIELDS.push(...originalFields);
-      }
     });
   });
 

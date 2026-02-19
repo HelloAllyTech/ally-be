@@ -397,4 +397,14 @@ export class ScenarioBehaviorInstructionService {
       `Successfully updated behavior instructions for scenario ${scenarioId}`,
     );
   }
+
+  async getScenarioBehaviorInstructionById(
+    id: string,
+  ): Promise<ScenarioBehaviorInstruction | null> {
+    return this.scenarioBehaviorInstructionRepository.findOne({
+      where: {
+        id,
+      },
+    });
+  }
 }

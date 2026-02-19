@@ -188,3 +188,33 @@ export class AdminBadgeListResponseDto {
   })
   count!: number;
 }
+
+export class TenantBadgeResponseDto {
+  @ApiProperty({ description: 'Badge ID' })
+  id!: string;
+
+  @ApiProperty({ description: 'Badge name' })
+  name!: string;
+
+  @ApiProperty({ description: 'Badge description', required: false })
+  description?: string;
+
+  @ApiProperty({ description: 'Badge image URL', required: false })
+  imageUrl?: string;
+
+  @ApiProperty({ enum: BadgeCategory, description: 'Badge category' })
+  category!: BadgeCategory;
+
+  @ApiProperty({
+    type: BadgeAchievementParamsDto,
+    description: 'Achievement parameters',
+    required: false,
+  })
+  achievementParams?: BadgeAchievementParamsDto;
+
+  @ApiProperty({
+    enum: BadgeVisibilityType,
+    description: 'Badge visibility type',
+  })
+  visibilityType!: BadgeVisibilityType;
+}
