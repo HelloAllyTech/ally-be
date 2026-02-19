@@ -35,6 +35,7 @@ import { ScenarioReportService } from 'src/scenario-report/service/scenario-repo
 import { ScenarioBehaviorInstructionService } from '../scenario-behavior-instruction.service';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
+import { CompetencyService } from '../competency.service';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -258,6 +259,13 @@ describe('ScenarioService', () => {
         .mockResolvedValue(undefined),
     };
 
+    const mockCompetencyService = {
+      validateCompetencyId: jest.fn().mockResolvedValue(undefined),
+      getCompetency: jest.fn(),
+      getCompetencies: jest.fn(),
+      createCompetency: jest.fn(),
+    };
+
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -350,6 +358,10 @@ describe('ScenarioService', () => {
         {
           provide: ScenarioBehaviorInstructionService,
           useValue: mockScenarioBehaviorInstructionService,
+        },
+        {
+          provide: CompetencyService,
+          useValue: mockCompetencyService,
         },
       ],
     }).compile();

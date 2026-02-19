@@ -48,6 +48,7 @@ import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 import { ScenarioEvaluationEmotionalMovementItem } from 'src/ai/dto/ai.response.dto';
 import { formatBehaviorInstructionsForLivekitMetadata } from '../util/scenario-behavior-instructions.util';
+import { CompetencyService } from './competency.service';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -69,6 +70,7 @@ export class ScenarioSharedService {
     private behaviorRepository: BehaviorRepository,
     private conversationalGuardrailsService: ConversationalGuardrailsService,
     private promptSharedService: PromptSharedService,
+    private competencyService: CompetencyService,
   ) {}
 
   async getScenarioByIds(
@@ -554,6 +556,13 @@ export class ScenarioSharedService {
 
     if (!result) {
       throw new NotFoundException('Scenario not found');
+    }
+
+    if (result?.competencyId) {
+      const competency = await this.competencyService.getCompetency(
+        result.competencyId,
+      );
+      result.competency = competency;
     }
 
     const behaviorInstructions =

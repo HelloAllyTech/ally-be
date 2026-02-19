@@ -28,6 +28,7 @@ export const mapCreateScenarioRequestToEntity = (
     prompt: scenario.prompt,
     isGlobal: scenario.isGlobal,
     difficultyLevel: scenario.difficultyLevel,
+    competencyId: scenario.competencyId,
     metadata: {
       voiceId: scenario.voiceId,
       name: scenario.name,
@@ -141,6 +142,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'prompt',
     'isGlobal',
     'difficultyLevel',
+    'competencyId',
   ];
 
   for (const field of updateScenarioObjectFields) {

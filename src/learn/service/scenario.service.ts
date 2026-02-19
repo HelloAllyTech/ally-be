@@ -96,6 +96,7 @@ import {
   MAX_SCENARIO_STATE_INSTRUCTIONS,
   supportedStateInstructionStateIds,
 } from '../constants/scenario-state-instructions.constants';
+import { CompetencyService } from './competency.service';
 
 @Injectable()
 export class ScenarioService {
@@ -121,6 +122,7 @@ export class ScenarioService {
     private scenarioEventTranslationsRepository: ScenarioEventsTranslationsRepository,
     private scenarioReportService: ScenarioReportService,
     private scenarioBehaviorInstructionService: ScenarioBehaviorInstructionService,
+    private competencyService: CompetencyService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -551,6 +553,11 @@ export class ScenarioService {
     if (createScenarioDto.behaviorInstructions) {
       await this.scenarioBehaviorInstructionService.validateBehaviorInstructions(
         createScenarioDto.behaviorInstructions,
+      );
+    }
+    if (createScenarioDto.competencyId) {
+      await this.competencyService.validateCompetencyId(
+        createScenarioDto.competencyId,
       );
     }
   }
@@ -1040,6 +1047,11 @@ export class ScenarioService {
     if (updateScenarioDto.behaviorInstructions) {
       await this.scenarioBehaviorInstructionService.validateBehaviorInstructions(
         updateScenarioDto.behaviorInstructions,
+      );
+    }
+    if (updateScenarioDto.competencyId) {
+      await this.competencyService.validateCompetencyId(
+        updateScenarioDto.competencyId,
       );
     }
 

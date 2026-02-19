@@ -23,6 +23,7 @@ import { BehaviorRepository } from '../../repository/behavior.repository';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { SCENARIO_SESSION_PROMPTS } from '../../constants/scenario-session.constants';
+import { CompetencyService } from '../competency.service';
 
 describe('ScenarioSharedService', () => {
   let service: ScenarioSharedService;
@@ -81,6 +82,13 @@ describe('ScenarioSharedService', () => {
 
     const mockPromptSharedService = {
       getPromptsByCodes: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockCompetencyService = {
+      validateCompetencyId: jest.fn(),
+      getCompetency: jest.fn(),
+      getCompetencies: jest.fn(),
+      createCompetency: jest.fn(),
     };
 
     const mockScenarioTranslationsRepository = {
@@ -179,6 +187,10 @@ describe('ScenarioSharedService', () => {
         {
           provide: PromptSharedService,
           useValue: mockPromptSharedService,
+        },
+        {
+          provide: CompetencyService,
+          useValue: mockCompetencyService,
         },
       ],
     }).compile();

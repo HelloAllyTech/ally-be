@@ -57,4 +57,7 @@ export class Scenarios extends BaseWithoutTenantEntity {
 
   @Column({ default: false })
   isPublic!: boolean;
+
+  @Column({ type: 'uuid', nullable: true })
+  competencyId?: string;
 }
