@@ -44,7 +44,9 @@ export class ScenarioBehaviorInstructionService {
     // Collect all behavior IDs from all instructions
     const allBehaviorIds: string[] = [];
     behaviorInstructions.forEach((instruction) => {
-      allBehaviorIds.push(...instruction.behaviors);
+      if (instruction.behaviors) {
+        allBehaviorIds.push(...instruction.behaviors);
+      }
     });
 
     // Remove duplicates to avoid redundant validation calls
@@ -134,26 +136,39 @@ export class ScenarioBehaviorInstructionService {
 
     // Create behavior mappings: link each behavior to its instruction
     // The index mapping ensures each instruction's behaviors are correctly associated
-    const formattedInstructionBehaviors = formattedBehaviorInstructions.flatMap(
-      (item, index) =>
-        item.behaviors.map((id) => ({
+    const formattedInstructionBehaviors = formattedBehaviorInstructions
+      .flatMap((item, index) =>
+        item?.behaviors?.map((id) => ({
           behaviorId: id,
           scenarioBehaviorInstructionId: savedInstructions[index].id,
         })),
-    );
+      )
+      .filter(
+        (
+          item,
+        ): item is {
+          behaviorId: string;
+          scenarioBehaviorInstructionId: string;
+        } => item !== undefined,
+      );
 
     this.logger.debug(
       `Creating ${formattedInstructionBehaviors.length} behavior mapping(s)`,
     );
 
-    const instructionBehaviorEntities = behaviorMappingRepo.create(
-      formattedInstructionBehaviors,
-    );
+    if (
+      formattedInstructionBehaviors &&
+      formattedInstructionBehaviors?.length > 0
+    ) {
+      const instructionBehaviorEntities = behaviorMappingRepo.create(
+        formattedInstructionBehaviors,
+      );
 
-    await behaviorMappingRepo.save(instructionBehaviorEntities);
-    this.logger.info(
-      `Successfully created behavior instructions and mappings for ${req.length} scenario(s)`,
-    );
+      await behaviorMappingRepo.save(instructionBehaviorEntities);
+      this.logger.info(
+        `Successfully created behavior instructions and mappings for ${req.length} scenario(s)`,
+      );
+    }
   }
 
   /**
@@ -311,10 +326,10 @@ export class ScenarioBehaviorInstructionService {
     // 1. Mappings for newly created instructions
     const behaviorsToCreate = createdInstructions.flatMap(
       (instruction, index) =>
-        instructionsToCreate[index].behaviors.map((behaviorId) => ({
+        instructionsToCreate?.[index]?.behaviors?.map((behaviorId) => ({
           scenarioBehaviorInstructionId: instruction.id,
           behaviorId,
-        })),
+        })) ?? [],
     );
 
     // Collect behavior mappings to delete:
@@ -342,7 +357,7 @@ export class ScenarioBehaviorInstructionService {
       const instructionsBehaviorsToDelete = existingBehaviorsWithInstructionId
         .filter(
           (instructionBehavior) =>
-            !instruction.behaviors.includes(instructionBehavior.behaviorId),
+            !instruction?.behaviors?.includes(instructionBehavior.behaviorId),
         )
         .map((instructionBehavior) => ({
           id: instructionBehavior.id,
@@ -352,9 +367,9 @@ export class ScenarioBehaviorInstructionService {
       }
 
       // Find behaviors to add: exist in request but not in DB
-      const instructionsBehaviorsToAdd = instruction.behaviors
-        .filter(
-          (behaviorId) =>
+      const instructionsBehaviorsToAdd = instruction?.behaviors
+        ?.filter(
+          (behaviorId: string) =>
             !existingBehaviorsWithInstructionId.some(
               (instructionBehavior) =>
                 instructionBehavior.behaviorId === behaviorId,
@@ -364,7 +379,10 @@ export class ScenarioBehaviorInstructionService {
           behaviorId,
           scenarioBehaviorInstructionId: instruction.id!,
         }));
-      if (instructionsBehaviorsToAdd.length > 0) {
+      if (
+        instructionsBehaviorsToAdd &&
+        instructionsBehaviorsToAdd?.length > 0
+      ) {
         behaviorsToCreate.push(...instructionsBehaviorsToAdd);
       }
     }

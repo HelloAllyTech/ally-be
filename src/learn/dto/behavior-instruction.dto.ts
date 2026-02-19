@@ -6,7 +6,6 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  ArrayMinSize,
 } from 'class-validator';
 import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 
@@ -36,8 +35,8 @@ export class BehaviorInstructionDto {
   })
   @IsArray()
   @IsUUID('4', { each: true })
-  @ArrayMinSize(0)
-  behaviors!: string[];
+  @IsOptional()
+  behaviors?: string[];
 
   @ApiProperty({
     description: 'Array of instruction strings',
@@ -46,6 +45,6 @@ export class BehaviorInstructionDto {
   })
   @IsArray()
   @IsString({ each: true })
-  @ArrayMinSize(1)
-  instructions!: string[];
+  @IsOptional()
+  instructions?: string[];
 }
