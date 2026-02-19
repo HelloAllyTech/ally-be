@@ -112,7 +112,7 @@ import { ScenarioSessionChatController } from './controller/scenario-session-cha
     LearnController,
     SimulationCreditsController,
     BehaviorController,
-    ScenarioSessionChatController
+    ScenarioSessionChatController,
   ],
   providers: [
     ScenarioService,

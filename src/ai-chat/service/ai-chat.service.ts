@@ -117,10 +117,7 @@ export class AiChatService {
     const pruned = [systemPrompt, ...history, userMessage];
 
     const estimateTokens = (text: string) => Math.ceil(text.length / 4);
-    let total = pruned.reduce(
-      (sum, m) => sum + estimateTokens(m.content),
-      0,
-    );
+    let total = pruned.reduce((sum, m) => sum + estimateTokens(m.content), 0);
 
     while (total > maxTokens && pruned.length > 2) {
       const removed = pruned.splice(1, 1)[0];
