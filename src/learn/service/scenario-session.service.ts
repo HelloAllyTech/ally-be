@@ -388,6 +388,7 @@ export class ScenarioSessionService {
         timerMode: scenario?.metadata?.timerMode,
         maxTimeValue: scenario?.metadata?.maxTimeValue,
         checklistEvents,
+        showScoreMeter: scenario?.metadata?.showScoreMeter,
         metadata: {
           name: scenario?.metadata?.name,
           title: scenario?.metadata?.title,

@@ -18,6 +18,7 @@ export const SCENARIO_MANDATORY_FIELDS: (keyof CreateScenarioDto)[] = [
   'behaviorInstructions',
   'characterProfileText',
   'showScoreMeter',
+  'competencyId',
 ];
 
 // FEATURE_CLEANUP(FEATURE_SCENARIO_CUSTOM_FIELDS): Remove this constant
