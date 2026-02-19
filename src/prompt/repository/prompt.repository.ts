@@ -46,7 +46,7 @@ export class PromptsRepository extends Repository<Prompt> {
     if (searchName) {
       query
         .andWhere(
-          '(prompt.name ILIKE :searchName OR prompt.description ILIKE :searchName)',
+          '(prompt.promptCode ILIKE :searchName OR prompt.name ILIKE :searchName OR prompt.description ILIKE :searchName) OR (pv.prompt ILIKE :searchName)',
         )
         .setParameters({
           searchName: `%${searchName}%`,
