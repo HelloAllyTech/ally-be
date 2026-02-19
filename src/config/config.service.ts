@@ -313,4 +313,23 @@ export class AppConfigService {
       ),
     };
   }
+
+  get aiChat() {
+    return {
+      defaultProvider: this.configService.get<string>(
+        'AI_CHAT_DEFAULT_PROVIDER',
+        'openai',
+      ),
+      model: this.configService.get<string>(
+        'AI_CHAT_OPENAI_MODEL',
+        'gpt-4o-mini',
+      ),
+      maxTokens: this.configService.get<number>('AI_CHAT_MAX_TOKENS', 1500),
+      temperature: this.configService.get<number>('AI_CHAT_TEMPERATURE', 0.7),
+      maxContextTokens: this.configService.get<number>(
+        'AI_CHAT_MAX_CONTEXT_TOKENS',
+        100000,
+      ),
+    };
+  }
 }
