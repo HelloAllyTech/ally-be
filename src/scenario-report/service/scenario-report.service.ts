@@ -247,7 +247,6 @@ export class ScenarioReportService {
     }
 
     const updatePayload: Partial<ScenarioReport> = {};
-    if (dto.score !== undefined) updatePayload.score = dto.score;
     if (dto.metrics !== undefined) updatePayload.metrics = dto.metrics;
     if (dto.status !== undefined) {
       updatePayload.status = dto.status;

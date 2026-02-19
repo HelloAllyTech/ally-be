@@ -87,7 +87,6 @@ export class ScenarioReportController {
     status: 200,
     description: 'Scenario reports',
     type: ScenarioReportResponseDto,
-    isArray: true,
   })
   @ApiQuery({
     name: 'statuses',
@@ -103,13 +102,12 @@ export class ScenarioReportController {
     return this.scenarioReportService.getScenarioReports(scenarioId, statuses);
   }
 
-  @Get('/reports/:reportId/cancel')
+  @Post('/reports/:reportId/cancel')
   @ApiOperation({ summary: 'Cancel a scenario report' })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_REPORTS])
   @ApiResponse({
     status: 200,
     description: 'Scenario report cancelled',
-    type: Boolean,
   })
   async cancelScenarioReport(
     @Param('reportId') reportId: string,

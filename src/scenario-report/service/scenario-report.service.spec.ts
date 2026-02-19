@@ -322,10 +322,10 @@ describe('ScenarioReportService', () => {
         } as ScenarioReport);
 
         await expect(
-          service.updateScenarioReport(reportId, { score: 80 }),
+          service.updateScenarioReport(reportId, { metrics: { accuracy: 80 } }),
         ).rejects.toThrow(BadRequestException);
         await expect(
-          service.updateScenarioReport(reportId, { score: 80 }),
+          service.updateScenarioReport(reportId, { metrics: { accuracy: 80 } }),
         ).rejects.toThrow(
           'Cannot update scenario report that is already completed, cancelled, or failed',
         );
@@ -333,23 +333,24 @@ describe('ScenarioReportService', () => {
     });
 
     it('should update only provided fields and set endedAt when status is end status', async () => {
+      const metrics = { accuracy: 85 };
       scenarioReportRepository.findOne
         .mockResolvedValueOnce(mockReport as ScenarioReport)
         .mockResolvedValueOnce({
           ...mockReport,
-          score: 85,
+          metrics,
           status: ScenarioReportStatus.COMPLETED,
         } as ScenarioReport);
 
       await service.updateScenarioReport(reportId, {
-        score: 85,
+        metrics,
         status: ScenarioReportStatus.COMPLETED,
       });
 
       expect(scenarioReportRepository.update).toHaveBeenCalledWith(
         reportId,
         expect.objectContaining({
-          score: 85,
+          metrics,
           status: ScenarioReportStatus.COMPLETED,
           endedAt: expect.any(Date),
         }),
@@ -360,9 +361,7 @@ describe('ScenarioReportService', () => {
     });
 
     it('should call addTranscripts when transcripts are provided', async () => {
-      const transcripts = [
-        { content: 'Hi', startSeconds: 0, endSeconds: 1, sender: 'user' },
-      ];
+      const transcripts = [{ content: 'Hi', start_time: 0, role: 'user' }];
       scenarioReportRepository.findOne
         .mockResolvedValueOnce(mockReport as ScenarioReport)
         .mockResolvedValueOnce(mockReport as ScenarioReport);

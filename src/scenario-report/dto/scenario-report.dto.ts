@@ -43,15 +43,6 @@ export class CreateScenarioReportResponseDto {
 
 export class UpdateScenarioReportDto {
   @ApiProperty({
-    description: 'Score of the scenario report',
-    required: false,
-    example: 85,
-  })
-  @IsOptional()
-  @IsNumber()
-  score?: number;
-
-  @ApiProperty({
     description: 'Metrics of the scenario report',
     required: false,
     example: { accuracy: 85, precision: 85 },
@@ -94,9 +85,6 @@ export class ScenarioReportDto {
   })
   scenarioId!: number;
 
-  @ApiProperty({ description: 'Score of the scenario report', example: 85 })
-  score?: number;
-
   @ApiProperty({
     description: 'Config of the scenario report',
     example: {
@@ -109,7 +97,14 @@ export class ScenarioReportDto {
 
   @ApiProperty({
     description: 'Metrics of the scenario report',
-    example: { accuracy: 85, precision: 85, recall: 85, f1Score: 85 },
+    example: {
+      gradual_disclosure: 85,
+      difficulty_level: 85,
+      consistency: 85,
+      colloquialism: 85,
+      context_appropriateness: 85,
+      resistance: 85,
+    },
   })
   metrics?: Record<string, number>;
 

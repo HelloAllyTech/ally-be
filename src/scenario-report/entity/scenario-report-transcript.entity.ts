@@ -24,13 +24,10 @@ export class ScenarioReportTranscript extends BaseWithoutTenantEntity {
   content!: string;
 
   @Column({ type: 'float', nullable: true })
-  endSeconds?: number;
-
-  @Column({ type: 'float', nullable: true })
   startSeconds?: number;
 
   @Column()
-  sender!: string;
+  role!: string;
 
   @DeleteDateColumn()
   deletedAt?: Date;
