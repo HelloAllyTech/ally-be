@@ -74,7 +74,6 @@ describe('BehaviorInstructionTranslationService', () => {
 
     it('should return empty object when metadata is null', async () => {
       const result = await service.buildTranslatedMetadataForLanguageCodes(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         null as unknown as Record<string, any>,
         ['es'],
       );

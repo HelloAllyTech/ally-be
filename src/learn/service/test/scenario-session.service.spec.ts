@@ -48,6 +48,7 @@ import { ScenarioSharedService } from '../scenario-shared.service';
 import { isEnglishLanguage } from '../../util/scenario.util';
 import { BehaviorTranslationRepository } from 'src/learn/repository/behavior-translation.repository';
 import { ScenarioBehaviorInstructionTranslationRepository } from 'src/learn/repository/scenario-behavior-instruction-translation.repository';
+import { ScenarioEventsRepository } from 'src/learn/repository/scenario-events.repository';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -84,6 +85,7 @@ describe('ScenarioSessionService', () => {
   let mockConfigService: any;
   let scenarioVoicesRepository: jest.Mocked<ScenarioVoicesRepository>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
+  let scenarioEventsRepository: jest.Mocked<ScenarioEventsRepository>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -300,6 +302,10 @@ describe('ScenarioSessionService', () => {
       getTranslationsForInstructions: jest.fn().mockResolvedValue([]),
     };
 
+    const mockScenarioEventsRepository = {
+      getEventChecklist: jest.fn(),
+    };
+
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -434,6 +440,10 @@ describe('ScenarioSessionService', () => {
           provide: ScenarioBehaviorInstructionTranslationRepository,
           useValue: mockScenarioBehaviorInstructionTranslationRepository,
         },
+        {
+          provide: ScenarioEventsRepository,
+          useValue: mockScenarioEventsRepository,
+        },
       ],
     }).compile();
 
@@ -459,6 +469,7 @@ describe('ScenarioSessionService', () => {
     scenarioVoicesRepository = module.get(ScenarioVoicesRepository);
     reviewSharedService = module.get(ReviewSharedService);
     scenarioSharedService = module.get(ScenarioSharedService);
+    scenarioEventsRepository = module.get(ScenarioEventsRepository);
   });
 
   afterEach(() => {
@@ -1473,6 +1484,169 @@ describe('ScenarioSessionService', () => {
       expect(fallbackVoice).toBeDefined();
     });
   });
+  describe('getScenarioSessionEventChecklist', () => {
+    const setupSessionAndScenarioMocks = (experienceMode: ExperienceMode) => {
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        mockScenarioSession as any,
+      );
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+      reviewSharedService.getReviewByScenarioSessionId.mockResolvedValue(
+        null as any,
+      );
+      scenarioService.getScenario.mockResolvedValue({
+        id: mockScenarioId,
+        metadata: { experienceMode },
+      } as any);
+    };
+
+    it('should return empty checklist when experience mode is not CHECKLIST', async () => {
+      setupSessionAndScenarioMocks(ExperienceMode.FEEDBACK);
+
+      const result = await service.getScenarioSessionEventChecklist(
+        mockScenarioSessionId,
+        mockCounselorId,
+        {},
+      );
+
+      expect(result).toEqual({ eventChecklist: [] });
+      expect(scenarioEventsRepository.getEventChecklist).not.toHaveBeenCalled();
+    });
+
+    it('should return checklist with hasOccurred=true for events that occurred in the session', async () => {
+      setupSessionAndScenarioMocks(ExperienceMode.CHECKLIST);
+      scenarioEventsRepository.getEventChecklist.mockResolvedValue([
+        {
+          eventId: 'event-1',
+          checklistVisibilityStatus: true,
+          events: { id: 'event-1', name: 'Empathy Check' },
+          scenarioSessionEvent: [
+            {
+              id: 'sse-1',
+              eventId: 'event-1',
+              scenarioSessionId: mockScenarioSessionId,
+            },
+          ],
+        },
+      ] as any);
+
+      const result = await service.getScenarioSessionEventChecklist(
+        mockScenarioSessionId,
+        mockCounselorId,
+        {},
+      );
+
+      expect(result.eventChecklist).toHaveLength(1);
+      expect(result.eventChecklist[0]).toEqual({
+        id: 'event-1',
+        name: 'Empathy Check',
+        hasOccurred: true,
+      });
+    });
+
+    it('should return checklist with hasOccurred=false for events that did not occur', async () => {
+      setupSessionAndScenarioMocks(ExperienceMode.CHECKLIST);
+      scenarioEventsRepository.getEventChecklist.mockResolvedValue([
+        {
+          eventId: 'event-2',
+          checklistVisibilityStatus: true,
+          events: { id: 'event-2', name: 'Greeting' },
+          scenarioSessionEvent: [],
+        },
+      ] as any);
+
+      const result = await service.getScenarioSessionEventChecklist(
+        mockScenarioSessionId,
+        mockCounselorId,
+        {},
+      );
+
+      expect(result.eventChecklist).toHaveLength(1);
+      expect(result.eventChecklist[0]).toEqual({
+        id: 'event-2',
+        name: 'Greeting',
+        hasOccurred: false,
+      });
+    });
+
+    it('should return mixed checklist with both occurred and non-occurred events', async () => {
+      setupSessionAndScenarioMocks(ExperienceMode.CHECKLIST);
+      scenarioEventsRepository.getEventChecklist.mockResolvedValue([
+        {
+          eventId: 'event-1',
+          checklistVisibilityStatus: true,
+          events: { id: 'event-1', name: 'Empathy Check' },
+          scenarioSessionEvent: [
+            {
+              id: 'sse-1',
+              eventId: 'event-1',
+              scenarioSessionId: mockScenarioSessionId,
+            },
+          ],
+        },
+        {
+          eventId: 'event-2',
+          checklistVisibilityStatus: true,
+          events: { id: 'event-2', name: 'Greeting' },
+          scenarioSessionEvent: [],
+        },
+        {
+          eventId: 'event-3',
+          checklistVisibilityStatus: false,
+          events: { id: 'event-3', name: 'Unexpected Event' },
+          scenarioSessionEvent: [
+            {
+              id: 'sse-2',
+              eventId: 'event-3',
+              scenarioSessionId: mockScenarioSessionId,
+            },
+          ],
+        },
+      ] as any);
+
+      const result = await service.getScenarioSessionEventChecklist(
+        mockScenarioSessionId,
+        mockCounselorId,
+        {},
+      );
+
+      expect(result.eventChecklist).toHaveLength(3);
+      expect(result.eventChecklist[0]).toEqual({
+        id: 'event-1',
+        name: 'Empathy Check',
+        hasOccurred: true,
+      });
+      expect(result.eventChecklist[1]).toEqual({
+        id: 'event-2',
+        name: 'Greeting',
+        hasOccurred: false,
+      });
+      expect(result.eventChecklist[2]).toEqual({
+        id: 'event-3',
+        name: 'Unexpected Event',
+        hasOccurred: true,
+      });
+    });
+
+    it('should return empty checklist when no events match the filter criteria', async () => {
+      setupSessionAndScenarioMocks(ExperienceMode.CHECKLIST);
+      scenarioEventsRepository.getEventChecklist.mockResolvedValue([]);
+
+      const result = await service.getScenarioSessionEventChecklist(
+        mockScenarioSessionId,
+        mockCounselorId,
+        {},
+      );
+
+      expect(result).toEqual({ eventChecklist: [] });
+      expect(scenarioEventsRepository.getEventChecklist).toHaveBeenCalledWith(
+        mockScenarioSessionId,
+        mockScenarioId,
+        {},
+      );
+    });
+  });
+
   describe('isEnglishLanguage', () => {
     // isEnglishLanguage(languageId, languageValue, defaultLanguageId) from scenario.util
     it('should return true when languageId is missing (undefined/null)', () => {

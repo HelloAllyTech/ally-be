@@ -89,6 +89,8 @@ import { SessionEventSharedService } from 'src/session-event/service/session-eve
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 import { BehaviorTranslationRepository } from '../repository/behavior-translation.repository';
 import { ScenarioBehaviorInstructionTranslationRepository } from '../repository/scenario-behavior-instruction-translation.repository';
+import { ScenarioSessionEventChecklistResponseDto } from '../dto/scenario-session-event-checklist-response.dto';
+import { ScenarioEventsRepository } from '../repository/scenario-events.repository';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -119,6 +121,7 @@ export class ScenarioSessionService {
     private scenarioSessionBehaviorInstructionsRepository: Repository<ScenarioSessionBehaviorInstructions>,
     private behaviorTranslationRepository: BehaviorTranslationRepository,
     private scenarioBehaviorInstructionTranslationRepository: ScenarioBehaviorInstructionTranslationRepository,
+    private scenarioEventsRepository: ScenarioEventsRepository,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -1276,5 +1279,46 @@ export class ScenarioSessionService {
         })),
       }),
     );
+  }
+
+  async getScenarioSessionEventChecklist(
+    scenarioSessionId: string,
+    counselorId: number,
+    options: Pagination,
+  ): Promise<ScenarioSessionEventChecklistResponseDto> {
+    const scenarioSession = await this.getScenarioSession(
+      scenarioSessionId,
+      counselorId,
+    );
+
+    const scenario = await this.scenarioService.getScenario(
+      scenarioSession.scenarioId,
+      {
+        select: ['id', 'metadata'],
+      },
+    );
+
+    const experienceMode = scenario.metadata?.experienceMode;
+
+    if (experienceMode !== ExperienceMode.CHECKLIST) {
+      return { eventChecklist: [] };
+    }
+
+    const eventChecklist =
+      await this.scenarioEventsRepository.getEventChecklist(
+        scenarioSession.id,
+        scenario.id,
+        options,
+      );
+
+    const eventChecklistDto = eventChecklist.map((event) => ({
+      id: event.eventId,
+      name: event?.events?.name,
+      hasOccurred:
+        Array.isArray(event.scenarioSessionEvent) &&
+        event.scenarioSessionEvent.length > 0,
+    }));
+
+    return { eventChecklist: eventChecklistDto };
   }
 }
