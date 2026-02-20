@@ -19,4 +19,7 @@ export class ScenarioSessionChat extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   summary?: string;
+
+  @Column({ type: 'int', default: 0 })
+  summarizedMessageCount!: number;
 }

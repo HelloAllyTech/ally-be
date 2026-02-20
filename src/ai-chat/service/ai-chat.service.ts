@@ -101,6 +101,44 @@ export class AiChatService {
     subject.complete();
   }
 
+  /**
+   * Produces an incremental summary by folding new messages into an existing summary.
+   * Used by the batch summarization strategy to keep chat history bounded.
+   */
+  async summarizeMessages(params: {
+    existingSummary: string | null;
+    messages: LlmMessage[];
+    llmConfig: LlmProviderConfig;
+    providerType?: string;
+  }): Promise<string> {
+    const systemContent = [
+      'You are a conversation summarizer.',
+      'Given the existing summary (if any) and new messages, produce a concise updated summary.',
+      'Capture all key topics, questions asked, decisions made, advice given, and important details.',
+      'Preserve anything from the existing summary that remains relevant.',
+      'Write in third person (e.g. "The user asked about…", "The assistant suggested…").',
+      'Keep the summary under 300 words.',
+    ].join(' ');
+
+    const parts: string[] = [];
+    if (params.existingSummary) {
+      parts.push(`Existing summary:\n${params.existingSummary}\n`);
+    }
+    parts.push('New messages:');
+    for (const m of params.messages) {
+      parts.push(`${m.role}: ${m.content}`);
+    }
+
+    const provider = this.llmProviderFactory.getProvider(params.providerType);
+    return provider.getCompletion(
+      [
+        { role: 'system', content: systemContent },
+        { role: 'user', content: parts.join('\n') },
+      ],
+      { model: params.llmConfig.model, temperature: 0.3, maxTokens: 500 },
+    );
+  }
+
   private pruneMessages(
     messages: LlmMessage[],
     maxTokens: number,

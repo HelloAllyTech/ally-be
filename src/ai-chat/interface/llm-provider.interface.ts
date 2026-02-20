@@ -19,4 +19,9 @@ export interface LlmProvider {
     messages: LlmMessage[],
     config: LlmProviderConfig,
   ): AsyncIterable<LlmStreamChunk>;
+
+  getCompletion(
+    messages: LlmMessage[],
+    config: LlmProviderConfig,
+  ): Promise<string>;
 }
