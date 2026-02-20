@@ -76,6 +76,13 @@ import { Competency } from './entity/competency.entity';
 import { CompetencyRepository } from './repository/competency.repository';
 import { CompetencyService } from './service/competency.service';
 import { CompetencyController } from './controller/competency.controller';
+import { BehaviorTranslation } from './entity/behavior-translation.entity';
+import { ScenarioBehaviorInstructionTranslation } from './entity/scenario-behavior-instruction-translation.entity';
+import { BehaviorTranslationRepository } from './repository/behavior-translation.repository';
+import { ScenarioBehaviorInstructionTranslationRepository } from './repository/scenario-behavior-instruction-translation.repository';
+import { BehaviorTranslationService } from './service/behavior-translation.service';
+import { ScenarioBehaviorInstructionTranslationService } from './service/scenario-behavior-instruction-translation.service';
+import { BehaviorInstructionTranslationService } from './service/behavior-instruction-translation.service';
 
 @Module({
   imports: [
@@ -99,6 +106,8 @@ import { CompetencyController } from './controller/competency.controller';
       ScenarioSessionChatMessage,
       ScenarioSessionBehaviorInstructions,
       Competency,
+      BehaviorTranslation,
+      ScenarioBehaviorInstructionTranslation,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -163,6 +172,11 @@ import { CompetencyController } from './controller/competency.controller';
     ScenarioSessionChatService,
     CompetencyService,
     CompetencyRepository,
+    BehaviorTranslationRepository,
+    ScenarioBehaviorInstructionTranslationRepository,
+    BehaviorInstructionTranslationService,
+    BehaviorTranslationService,
+    ScenarioBehaviorInstructionTranslationService,
   ],
   exports: [
     LearnMessageProcessor,

@@ -46,6 +46,8 @@ import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
 import { ScenarioSharedService } from '../scenario-shared.service';
 import { isEnglishLanguage } from '../../util/scenario.util';
+import { BehaviorTranslationRepository } from 'src/learn/repository/behavior-translation.repository';
+import { ScenarioBehaviorInstructionTranslationRepository } from 'src/learn/repository/scenario-behavior-instruction-translation.repository';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -290,6 +292,14 @@ describe('ScenarioSessionService', () => {
       updateCaseSessionItemStatus: jest.fn(),
     };
 
+    const mockBehaviorTranslationRepository = {
+      getTranslationsForBehaviors: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockScenarioBehaviorInstructionTranslationRepository = {
+      getTranslationsForInstructions: jest.fn().mockResolvedValue([]),
+    };
+
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -415,6 +425,14 @@ describe('ScenarioSessionService', () => {
         {
           provide: CaseSessionService,
           useValue: mockCaseSessionService,
+        },
+        {
+          provide: BehaviorTranslationRepository,
+          useValue: mockBehaviorTranslationRepository,
+        },
+        {
+          provide: ScenarioBehaviorInstructionTranslationRepository,
+          useValue: mockScenarioBehaviorInstructionTranslationRepository,
         },
       ],
     }).compile();

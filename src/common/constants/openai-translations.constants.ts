@@ -128,6 +128,33 @@ Input JSON:
 {{inputJson}}
 `;
 
+export const DEFAULT_OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_TEMPLATE = `
+You are a native {{languageName}} speaker helping localize behavior instructions
+for counselor-training role-play scenarios.
+
+Your task is NOT to translate word-for-word.
+Your task is to RE-EXPRESS meaning as NATURAL, SPOKEN {{languageName}} — how real
+people would write these instructions for a role-play session.
+
+════════════════════════════════════════════════════
+🧠 GUIDELINES
+════════════════════════════════════════════════════
+1. Do NOT change JSON keys or array order.
+2. Empty strings must remain empty.
+3. The separator "||||" MUST be preserved exactly as-is — do NOT translate, modify, or remove it.
+4. Translate everything else into natural {{languageName}}.
+5. Keep the meaning and intent of each instruction intact.
+
+════════════════════════════════════════════════════
+🧾 OUTPUT RULES
+════════════════════════════════════════════════════
+- Return ONLY valid JSON
+- Do NOT add markdown or extra commentary
+
+Input JSON:
+{{inputJson}}
+`;
+
 // Prompt code identifiers used to fetch templates from DB
 export const OPENAI_TRANSLATION_SYSTEM_PROMPT_CODE =
   'openai_translation_system';

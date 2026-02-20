@@ -9,6 +9,8 @@ import { ScenarioBehaviorInstructionBehavior } from '../entity/scenario-behavior
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
+import { ScenarioBehaviorInstructionTranslationService } from './scenario-behavior-instruction-translation.service';
+import { ScenarioBehaviorInstructionTranslationRepository } from '../repository/scenario-behavior-instruction-translation.repository';
 
 @Injectable()
 export class ScenarioBehaviorInstructionService {
@@ -20,6 +22,8 @@ export class ScenarioBehaviorInstructionService {
     private readonly scenarioBehaviorInstructionRepository: ScenarioBehaviorInstructionRepository,
     private readonly scenarioBehaviorInstructionBehaviorRepository: ScenarioBehaviorInstructionBehaviorRepository,
     private readonly behaviorService: BehaviorService,
+    private readonly scenarioBehaviorInstructionTranslationService: ScenarioBehaviorInstructionTranslationService,
+    private readonly scenarioBehaviorInstructionTranslationRepository: ScenarioBehaviorInstructionTranslationRepository,
   ) {}
 
   /**
@@ -168,6 +172,9 @@ export class ScenarioBehaviorInstructionService {
       this.logger.info(
         `Successfully created behavior instructions and mappings for ${req.length} scenario(s)`,
       );
+      this.scenarioBehaviorInstructionTranslationService.createUpdateInstructionTranslations(
+        savedInstructions,
+      );
     }
   }
 
@@ -192,7 +199,6 @@ export class ScenarioBehaviorInstructionService {
     this.logger.info(
       `Updating behavior instructions for scenario ${scenarioId} with ${behaviorInstructions.length} instruction(s)`,
     );
-
     const userId = ExecutionManager.getUserId();
     if (!userId) {
       this.logger.error('Unauthorized: User ID not found in execution context');
@@ -305,8 +311,11 @@ export class ScenarioBehaviorInstructionService {
       await instructionRepo.softDelete({
         id: In(instructionIdsToRemove),
       });
+      await this.scenarioBehaviorInstructionTranslationRepository.deleteByInstructionIds(
+        instructionIdsToRemove,
+      );
       this.logger.info(
-        `Soft deleted ${instructionIdsToRemove.length} behavior instruction(s)`,
+        `Soft deleted ${instructionIdsToRemove.length} behavior instruction(s) and deleted translations`,
       );
     }
 
@@ -413,6 +422,13 @@ export class ScenarioBehaviorInstructionService {
 
     this.logger.info(
       `Successfully updated behavior instructions for scenario ${scenarioId}`,
+    );
+
+    const allActiveInstructions = await instructionRepo.find({
+      where: { scenarioId },
+    });
+    this.scenarioBehaviorInstructionTranslationService.createUpdateInstructionTranslations(
+      allActiveInstructions,
     );
   }
 
