@@ -91,6 +91,14 @@ import { BehaviorTranslationRepository } from '../repository/behavior-translatio
 import { ScenarioBehaviorInstructionTranslationRepository } from '../repository/scenario-behavior-instruction-translation.repository';
 import { ScenarioSessionEventChecklistResponseDto } from '../dto/scenario-session-event-checklist-response.dto';
 import { ScenarioEventsRepository } from '../repository/scenario-events.repository';
+import {
+  ReflectionPromptItemDto,
+  ScenarioSessionReflectionPromptsResponseDto,
+} from '../dto/scenario-session-reflection-prompts-response.dto';
+import { UpdateReflectionPromptResponseDto } from '../dto/reflection-prompts-request.dto';
+import { ScenarioSessionReflectionPromptResponse } from '../entity/scenario-session-reflection-prompt-response.entity';
+import { SCENARIO_SESSION_REFLECTION_PROMPTS } from '../constants/scenario-session-reflection-prompt.constants';
+import { ScenariosRepository } from '../repository/scenario.repository';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -104,6 +112,8 @@ export class ScenarioSessionService {
     private sessionEventSharedService: SessionEventSharedService,
     @InjectRepository(ScenarioSessionFeedbacks)
     private scenarioSessionFeedbacksRepository: Repository<ScenarioSessionFeedbacks>,
+    @InjectRepository(ScenarioSessionReflectionPromptResponse)
+    private scenarioSessionReflectionPromptResponseRepository: Repository<ScenarioSessionReflectionPromptResponse>,
     private dataSource: DataSource,
     private aiService: AiService,
     private scenarioTenantService: ScenarioTenantService,
@@ -122,6 +132,7 @@ export class ScenarioSessionService {
     private behaviorTranslationRepository: BehaviorTranslationRepository,
     private scenarioBehaviorInstructionTranslationRepository: ScenarioBehaviorInstructionTranslationRepository,
     private scenarioEventsRepository: ScenarioEventsRepository,
+    private scenariosRepository: ScenariosRepository,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -143,6 +154,106 @@ export class ScenarioSessionService {
   ): Promise<ScenarioSessionSkillsResponseDto> {
     return this.scenarioSharedService.getScenarioSessionSkills(
       scenarioSessionId,
+    );
+  }
+
+  async getReflectionPrompts(
+    scenarioSessionId: string,
+  ): Promise<ScenarioSessionReflectionPromptsResponseDto> {
+    const tenantId = ExecutionManager.getTenantId();
+    const scenarioSession = await this.scenarioSessionRepository.findOne({
+      where: {
+        id: scenarioSessionId,
+        tenantId,
+      },
+    });
+
+    if (!scenarioSession) {
+      throw new NotFoundException('Scenario session not found');
+    }
+
+    const reflectionPromptResult =
+      await this.scenarioSessionReflectionPromptResponseRepository.find({
+        where: { scenarioSessionId },
+      });
+
+    const reflectionPrompts: ReflectionPromptItemDto[] =
+      reflectionPromptResult.map((reflectionPrompt) => ({
+        id: reflectionPrompt.id,
+        promptId: reflectionPrompt.promptId,
+        prompt:
+          SCENARIO_SESSION_REFLECTION_PROMPTS.get(reflectionPrompt.promptId) ??
+          '',
+        response: reflectionPrompt.response,
+      }));
+
+    return { reflectionPrompts };
+  }
+
+  async createReflectionPromptRecordsForSession(
+    scenarioSessionId: string,
+    tenantId: string,
+  ): Promise<void> {
+    const randomPrompts = this.pickRandomUniquePrompts(2);
+    const toCreate = randomPrompts.map((prompt) =>
+      this.scenarioSessionReflectionPromptResponseRepository.create({
+        scenarioSessionId,
+        promptId: prompt.promptId,
+        response: undefined,
+        tenantId,
+      }),
+    );
+    await this.scenarioSessionReflectionPromptResponseRepository.save(toCreate);
+  }
+
+  private pickRandomUniquePrompts(count: number) {
+    const prompts = Array.from(
+      SCENARIO_SESSION_REFLECTION_PROMPTS.entries(),
+    ).map(([promptId, prompt]) => ({ promptId, prompt }));
+    const selected: { promptId: string; prompt: string }[] = [];
+    const maxCount = Math.min(count, prompts.length);
+    while (selected.length < maxCount) {
+      const index = Math.floor(Math.random() * prompts.length);
+      const [picked] = prompts.splice(index, 1);
+      selected.push(picked);
+    }
+    return selected;
+  }
+
+  async updateReflectionPromptResponse(
+    scenarioSessionId: string,
+    reflectionPromptId: string,
+    updateReflectionPrompt: UpdateReflectionPromptResponseDto,
+  ): Promise<ScenarioSessionReflectionPromptResponse> {
+    const tenantId = ExecutionManager.getTenantId();
+    const scenarioSession = await this.scenarioSessionRepository.findOne({
+      where: {
+        id: scenarioSessionId,
+        tenantId,
+      },
+    });
+
+    if (!scenarioSession) {
+      throw new NotFoundException('Scenario session not found');
+    }
+
+    const reflectionPrompt =
+      await this.scenarioSessionReflectionPromptResponseRepository.findOne({
+        where: {
+          id: reflectionPromptId,
+          scenarioSessionId,
+        },
+      });
+
+    if (!reflectionPrompt) {
+      throw new NotFoundException(
+        `No response found for prompt ${reflectionPromptId}`,
+      );
+    }
+
+    reflectionPrompt.response = updateReflectionPrompt.response;
+    return this.scenarioSessionReflectionPromptResponseRepository.save(
+      reflectionPrompt,
     );
   }
 
@@ -631,6 +742,11 @@ export class ScenarioSessionService {
       startedAt,
     });
     this.logger.info(`Updated scenario ${scenarioSessionId} status to ENDED`);
+
+    await this.createReflectionPromptRecordsForSession(
+      scenarioSessionId,
+      scenarioSession.tenantId,
+    );
 
     let callDuration = 0;
     if (startedAt && endedAt) {
@@ -1286,17 +1402,20 @@ export class ScenarioSessionService {
     counselorId: number,
     options: Pagination,
   ): Promise<ScenarioSessionEventChecklistResponseDto> {
-    const scenarioSession = await this.getScenarioSession(
-      scenarioSessionId,
-      counselorId,
-    );
+    const scenarioSession = await this.scenarioSessionRepository.findOne({
+      where: { id: scenarioSessionId },
+    });
 
-    const scenario = await this.scenarioService.getScenario(
-      scenarioSession.scenarioId,
-      {
-        select: ['id', 'metadata'],
-      },
-    );
+    if (!scenarioSession) {
+      throw new NotFoundException('Scenario session not found');
+    }
+
+    const scenario = await this.scenariosRepository.findOne({
+      where: { id: scenarioSession.scenarioId },
+    });
+    if (!scenario) {
+      throw new NotFoundException('Scenario not found');
+    }
 
     const experienceMode = scenario.metadata?.experienceMode;
 

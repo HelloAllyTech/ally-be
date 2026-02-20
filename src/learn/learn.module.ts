@@ -52,6 +52,7 @@ import { ScenarioSessionTags } from './entity/scenario-session-tags.entity';
 import { ScenarioSessionMessageTags } from './entity/scenario-session-message-tags.entity';
 import { ScenarioSessionTagsRepository } from './repository/scenario-session-tags.repository';
 import { ScenarioSessionMessageTagsRepository } from './repository/scenario-session-message-tags.repository';
+import { ScenarioSessionReflectionPromptResponse } from './entity/scenario-session-reflection-prompt-response.entity';
 import { Behavior } from './entity/behavior.entity';
 import { ScenarioBehaviorInstruction } from './entity/scenario-behavior-instruction.entity';
 import { ScenarioBehaviorInstructionBehavior } from './entity/scenario-behavior-instruction-behavior.entity';
@@ -99,6 +100,7 @@ import { BehaviorInstructionTranslationService } from './service/behavior-instru
       ScenarioTriggerWarnings,
       ScenarioSessionTags,
       ScenarioSessionMessageTags,
+      ScenarioSessionReflectionPromptResponse,
       Behavior,
       ScenarioBehaviorInstruction,
       ScenarioBehaviorInstructionBehavior,
