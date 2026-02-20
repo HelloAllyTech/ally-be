@@ -9,6 +9,7 @@ import {
   Delete,
   ParseUUIDPipe,
   Version,
+  Patch,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -67,6 +68,8 @@ import {
 import { TriggerWarningsSortBy } from '../enum/trigger-warnings-sort-by.enum';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 import { ScenarioSessionEventChecklistResponseDto } from '../dto/scenario-session-event-checklist-response.dto';
+import { ScenarioSessionReflectionPromptsResponseDto } from '../dto/scenario-session-reflection-prompts-response.dto';
+import { UpdateReflectionPromptResponseDto } from '../dto/reflection-prompts-request.dto';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -652,6 +655,46 @@ export class LearnController {
         sortBy,
         order,
       },
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      'Get reflection prompts and saved responses for a scenario session',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Reflection prompts with optional saved responses',
+    type: ScenarioSessionReflectionPromptsResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_SESSION_DETAILS])
+  @Get('scenario-session/:scenarioSessionId/reflection-prompts')
+  async getReflectionPrompts(
+    @Param('scenarioSessionId', ParseUUIDPipe) scenarioSessionId: string,
+  ): Promise<ScenarioSessionReflectionPromptsResponseDto> {
+    return this.scenarioSessionService.getReflectionPrompts(scenarioSessionId);
+  }
+
+  @ApiOperation({
+    summary: 'Update a single reflection prompt response',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Updated reflection prompt response',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_SESSION])
+  @Patch(
+    'scenario-session/:scenarioSessionId/reflection-prompts/:reflectionPromptId',
+  )
+  async updateReflectionPromptResponse(
+    @Param('scenarioSessionId', ParseUUIDPipe) scenarioSessionId: string,
+    @Param('reflectionPromptId', ParseUUIDPipe) reflectionPromptId: string,
+    @Body() updateReflectionPrompt: UpdateReflectionPromptResponseDto,
+  ) {
+    return this.scenarioSessionService.updateReflectionPromptResponse(
+      scenarioSessionId,
+      reflectionPromptId,
+      updateReflectionPrompt,
     );
   }
 

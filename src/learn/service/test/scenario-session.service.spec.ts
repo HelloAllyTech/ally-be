@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { AiService } from 'src/ai/service/ai.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -16,6 +16,7 @@ import { ScenarioSessionBehaviorInstructions } from 'src/learn/entity/scenario-s
 import { ScenarioSessionMessages } from 'src/learn/entity/scenario-session-messages.entity';
 import { ScenarioSessionMessageType } from 'src/learn/enum/scenario-session-message.type.enum';
 import { ScenarioSessionFeedbacks } from 'src/learn/entity/scenario-session-feedbacks.entity';
+import { ScenarioSessionReflectionPromptResponse } from 'src/learn/entity/scenario-session-reflection-prompt-response.entity';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.enum';
 import {
@@ -49,6 +50,7 @@ import { isEnglishLanguage } from '../../util/scenario.util';
 import { BehaviorTranslationRepository } from 'src/learn/repository/behavior-translation.repository';
 import { ScenarioBehaviorInstructionTranslationRepository } from 'src/learn/repository/scenario-behavior-instruction-translation.repository';
 import { ScenarioEventsRepository } from 'src/learn/repository/scenario-events.repository';
+import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -74,6 +76,9 @@ describe('ScenarioSessionService', () => {
   let scenarioSessionFeedbacksRepository: jest.Mocked<
     Repository<ScenarioSessionFeedbacks>
   >;
+  let scenarioSessionReflectionPromptResponseRepository: jest.Mocked<
+    Repository<ScenarioSessionReflectionPromptResponse>
+  >;
   let dataSource: jest.Mocked<DataSource>;
   let permissionValidatorService: jest.Mocked<PermissionValidator>;
   let simulationCreditsService: jest.Mocked<SimulationCreditsService>;
@@ -86,6 +91,7 @@ describe('ScenarioSessionService', () => {
   let scenarioVoicesRepository: jest.Mocked<ScenarioVoicesRepository>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let scenarioEventsRepository: jest.Mocked<ScenarioEventsRepository>;
+  let scenariosRepository: jest.Mocked<ScenariosRepository>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -206,6 +212,13 @@ describe('ScenarioSessionService', () => {
       save: jest.fn(),
     };
 
+    const mockScenarioSessionReflectionPromptResponseRepo = {
+      find: jest.fn(),
+      findOne: jest.fn(),
+      create: jest.fn(),
+      save: jest.fn(),
+    };
+
     const mockSessionEventsRepo = {
       create: jest.fn(),
       save: jest.fn(),
@@ -306,6 +319,10 @@ describe('ScenarioSessionService', () => {
       getEventChecklist: jest.fn(),
     };
 
+    const mockScenariosRepository = {
+      findOne: jest.fn(),
+    };
+
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -344,6 +361,7 @@ describe('ScenarioSessionService', () => {
         {
           provide: ScenarioSharedService,
           useValue: {
+            ...mockScenarioSharedService,
             createMetadataForScenario: jest.fn(),
             createRoomMetadata: jest.fn(),
             getScenarioById: jest.fn(),
@@ -360,6 +378,10 @@ describe('ScenarioSessionService', () => {
         {
           provide: getRepositoryToken(ScenarioSessionFeedbacks),
           useValue: mockFeedbackRepo,
+        },
+        {
+          provide: getRepositoryToken(ScenarioSessionReflectionPromptResponse),
+          useValue: mockScenarioSessionReflectionPromptResponseRepo,
         },
         {
           provide: getRepositoryToken(ScenarioSessionEvents),
@@ -444,6 +466,10 @@ describe('ScenarioSessionService', () => {
           provide: ScenarioEventsRepository,
           useValue: mockScenarioEventsRepository,
         },
+        {
+          provide: ScenariosRepository,
+          useValue: mockScenariosRepository,
+        },
       ],
     }).compile();
 
@@ -459,6 +485,9 @@ describe('ScenarioSessionService', () => {
     scenarioSessionFeedbacksRepository = module.get(
       getRepositoryToken(ScenarioSessionFeedbacks),
     );
+    scenarioSessionReflectionPromptResponseRepository = module.get(
+      getRepositoryToken(ScenarioSessionReflectionPromptResponse),
+    );
     dataSource = module.get(DataSource);
     permissionValidatorService = module.get(PermissionValidator);
     simulationCreditsService = module.get(SimulationCreditsService);
@@ -470,6 +499,7 @@ describe('ScenarioSessionService', () => {
     reviewSharedService = module.get(ReviewSharedService);
     scenarioSharedService = module.get(ScenarioSharedService);
     scenarioEventsRepository = module.get(ScenarioEventsRepository);
+    scenariosRepository = module.get(ScenariosRepository) as any;
   });
 
   afterEach(() => {
@@ -915,6 +945,190 @@ describe('ScenarioSessionService', () => {
         feedback: mockFeedbackDto.feedback,
         tenantId: mockTenantId,
       });
+    });
+  });
+
+  describe('getReflectionPrompts', () => {
+    it('should return reflection prompts for the session', async () => {
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      const promptId = '0ee957a5-36d3-49be-886f-a8c72242388e';
+      const mockRows = [
+        {
+          id: 'response-row-1',
+          promptId,
+          response: 'My reflection answer',
+        },
+      ];
+      scenarioSessionReflectionPromptResponseRepository.find.mockResolvedValue(
+        mockRows as ScenarioSessionReflectionPromptResponse[],
+      );
+
+      const result = await service.getReflectionPrompts(mockScenarioSessionId);
+
+      expect(scenarioSessionRepository.findOne).toHaveBeenCalledWith({
+        where: { id: mockScenarioSessionId, tenantId: mockTenantId },
+      });
+      expect(
+        scenarioSessionReflectionPromptResponseRepository.find,
+      ).toHaveBeenCalledWith({
+        where: { scenarioSessionId: mockScenarioSessionId },
+      });
+      expect(result.reflectionPrompts).toHaveLength(1);
+      expect(result.reflectionPrompts[0].id).toBe('response-row-1');
+      expect(result.reflectionPrompts[0].promptId).toBe(promptId);
+      expect(result.reflectionPrompts[0].response).toBe('My reflection answer');
+      expect(result.reflectionPrompts[0].prompt).toBe(
+        'What do you think the client needed most in the moment you shifted to problem-solving?',
+      );
+    });
+
+    it('should throw NotFoundException when scenario session not found', async () => {
+      scenarioSessionRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.getReflectionPrompts(mockScenarioSessionId),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(
+        scenarioSessionReflectionPromptResponseRepository.find,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should return empty array when no reflection prompt records exist', async () => {
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionReflectionPromptResponseRepository.find.mockResolvedValue(
+        [],
+      );
+
+      const result = await service.getReflectionPrompts(mockScenarioSessionId);
+
+      expect(result.reflectionPrompts).toEqual([]);
+    });
+
+    it('should use empty string for prompt when promptId not in constants', async () => {
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      const unknownPromptId = '00000000-0000-0000-0000-000000000000';
+      const mockRows = [
+        {
+          id: 'response-row-1',
+          promptId: unknownPromptId,
+          response: 'Some answer',
+        },
+      ];
+      scenarioSessionReflectionPromptResponseRepository.find.mockResolvedValue(
+        mockRows as ScenarioSessionReflectionPromptResponse[],
+      );
+
+      const result = await service.getReflectionPrompts(mockScenarioSessionId);
+
+      expect(result.reflectionPrompts[0].prompt).toBe('');
+      expect(result.reflectionPrompts[0].promptId).toBe(unknownPromptId);
+    });
+  });
+
+  describe('createReflectionPromptRecordsForSession', () => {
+    it('should create 2 reflection prompt records for the session', async () => {
+      scenarioSessionReflectionPromptResponseRepository.create.mockImplementation(
+        (entity: any) => entity as any,
+      );
+      scenarioSessionReflectionPromptResponseRepository.save.mockResolvedValue(
+        [] as any,
+      );
+
+      await service.createReflectionPromptRecordsForSession(
+        mockScenarioSessionId,
+        mockTenantId,
+      );
+
+      expect(
+        scenarioSessionReflectionPromptResponseRepository.create,
+      ).toHaveBeenCalledTimes(2);
+      expect(
+        scenarioSessionReflectionPromptResponseRepository.save,
+      ).toHaveBeenCalledTimes(1);
+
+      const saveArg = scenarioSessionReflectionPromptResponseRepository.save
+        .mock.calls[0][0] as any[];
+      expect(saveArg).toHaveLength(2);
+      saveArg.forEach((item: any) => {
+        expect(item).toMatchObject({
+          scenarioSessionId: mockScenarioSessionId,
+          tenantId: mockTenantId,
+          response: undefined,
+        });
+        expect(item.promptId).toBeDefined();
+        expect(typeof item.promptId).toBe('string');
+      });
+    });
+  });
+
+  describe('updateReflectionPromptResponse', () => {
+    const reflectionPromptId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+    const dto = { response: 'Updated response text' };
+
+    it('should update and return the reflection prompt response', async () => {
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      const existingRow = {
+        id: reflectionPromptId,
+        promptId: '0ee957a5-36d3-49be-886f-a8c72242388e',
+        scenarioSessionId: mockScenarioSessionId,
+        response: 'old',
+      };
+      const savedRow = { ...existingRow, response: dto.response };
+      scenarioSessionReflectionPromptResponseRepository.findOne.mockResolvedValue(
+        existingRow as ScenarioSessionReflectionPromptResponse,
+      );
+      scenarioSessionReflectionPromptResponseRepository.save.mockResolvedValue(
+        savedRow as ScenarioSessionReflectionPromptResponse,
+      );
+
+      const result = await service.updateReflectionPromptResponse(
+        mockScenarioSessionId,
+        reflectionPromptId,
+        dto,
+      );
+
+      expect(result.response).toBe(dto.response);
+      expect(
+        scenarioSessionReflectionPromptResponseRepository.save,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({ response: dto.response }),
+      );
+    });
+
+    it('should throw NotFoundException when scenario session not found', async () => {
+      scenarioSessionRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.updateReflectionPromptResponse(
+          mockScenarioSessionId,
+          reflectionPromptId,
+          dto,
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(
+        scenarioSessionReflectionPromptResponseRepository.findOne,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when reflection prompt not found', async () => {
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionReflectionPromptResponseRepository.findOne.mockResolvedValue(
+        null,
+      );
+
+      await expect(
+        service.updateReflectionPromptResponse(
+          mockScenarioSessionId,
+          reflectionPromptId,
+          dto,
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(
+        scenarioSessionReflectionPromptResponseRepository.save,
+      ).not.toHaveBeenCalled();
     });
   });
 
@@ -1487,14 +1701,14 @@ describe('ScenarioSessionService', () => {
   describe('getScenarioSessionEventChecklist', () => {
     const setupSessionAndScenarioMocks = (experienceMode: ExperienceMode) => {
       permissionValidatorService.validatePermissions.mockResolvedValue(false);
-      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+      scenarioSessionRepository.findOne.mockResolvedValue(
         mockScenarioSession as any,
       );
       scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
       reviewSharedService.getReviewByScenarioSessionId.mockResolvedValue(
         null as any,
       );
-      scenarioService.getScenario.mockResolvedValue({
+      scenariosRepository.findOne.mockResolvedValue({
         id: mockScenarioId,
         metadata: { experienceMode },
       } as any);
