@@ -258,10 +258,13 @@ export class ScenarioSharedService {
     const {
       metadata,
       terminationEvents,
-      behaviorInstructions,
+      behaviorInstructions: scenarioBehaviorInstructions,
       ...scenarioDataWithoutMetadata
     } = scenario;
 
+    const behaviorInstructions =
+      scenarioBehaviorInstructions ??
+      (await this.getBehaviorInstructionsByScenarioId(scenario.id));
     const formattedBehaviorInstructionForMetadata =
       formatBehaviorInstructionsForLivekitMetadata(behaviorInstructions ?? []);
 

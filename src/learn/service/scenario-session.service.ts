@@ -87,6 +87,8 @@ import { CommonUtil } from 'src/common/util/common.util';
 import { ScenarioSharedService } from './scenario-shared.service';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
+import { BehaviorTranslationRepository } from '../repository/behavior-translation.repository';
+import { ScenarioBehaviorInstructionTranslationRepository } from '../repository/scenario-behavior-instruction-translation.repository';
 
 @Injectable()
 export class ScenarioSessionService {
@@ -115,6 +117,8 @@ export class ScenarioSessionService {
     private caseSessionService: CaseSessionService,
     @InjectRepository(ScenarioSessionBehaviorInstructions)
     private scenarioSessionBehaviorInstructionsRepository: Repository<ScenarioSessionBehaviorInstructions>,
+    private behaviorTranslationRepository: BehaviorTranslationRepository,
+    private scenarioBehaviorInstructionTranslationRepository: ScenarioBehaviorInstructionTranslationRepository,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -259,6 +263,10 @@ export class ScenarioSessionService {
       : await this.sessionEventSharedService.getSessionEventsByScenarioId(
           startScenarioSessionDto.scenarioId,
         );
+
+    if (isOtherLanguage) {
+      await this.overlayBehaviorInstructionTranslations(scenario, languageId);
+    }
 
     // Update termination (Translated Version) event if language is not English
     if (
@@ -1066,6 +1074,10 @@ export class ScenarioSessionService {
           scenarioId,
         );
 
+    if (isOtherLanguage) {
+      await this.overlayBehaviorInstructionTranslations(scenario, languageId);
+    }
+
     // Update termination (Translated Version) event if language is not English
     if (
       isOtherLanguage &&
@@ -1211,6 +1223,58 @@ export class ScenarioSessionService {
   ) {
     return this.scenarioSharedService.getLanguageDetailsForScenarioSession(
       languageId,
+    );
+  }
+
+  private async overlayBehaviorInstructionTranslations(
+    scenario: any,
+    languageId: number,
+  ): Promise<void> {
+    if (!scenario.behaviorInstructions?.length) return;
+
+    const instructionIds = scenario.behaviorInstructions.map(
+      (instruction: any) => instruction.id,
+    );
+    const instructionTranslations =
+      await this.scenarioBehaviorInstructionTranslationRepository.getTranslationsForInstructions(
+        instructionIds,
+        languageId,
+      );
+
+    const behaviorIds = scenario.behaviorInstructions.flatMap(
+      (instruction: any) =>
+        instruction.behaviors.map((behavior: any) => behavior.id),
+    );
+    const behaviorTranslations =
+      await this.behaviorTranslationRepository.getTranslationsForBehaviors(
+        behaviorIds,
+        languageId,
+      );
+
+    const instructionTranslationMap = new Map(
+      instructionTranslations.map((translation) => [
+        translation.scenarioBehaviorInstructionId,
+        translation,
+      ]),
+    );
+    const behaviorTranslationMap = new Map(
+      behaviorTranslations.map((translation) => [
+        translation.behaviorId,
+        translation,
+      ]),
+    );
+
+    scenario.behaviorInstructions = scenario.behaviorInstructions.map(
+      (instruction: any) => ({
+        ...instruction,
+        instructions:
+          instructionTranslationMap.get(instruction.id)?.instructions ??
+          instruction.instructions,
+        behaviors: instruction.behaviors.map((behavior: any) => ({
+          ...behavior,
+          name: behaviorTranslationMap.get(behavior.id)?.name ?? behavior.name,
+        })),
+      }),
     );
   }
 }

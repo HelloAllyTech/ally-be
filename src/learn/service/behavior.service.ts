@@ -10,10 +10,14 @@ import {
 } from '../dto/behavior-response.dto';
 import { Pagination } from 'src/common/type/common.type';
 import { Behavior } from '../entity/behavior.entity';
+import { BehaviorTranslationService } from './behavior-translation.service';
 
 @Injectable()
 export class BehaviorService {
-  constructor(private readonly behaviorRepository: BehaviorRepository) {}
+  constructor(
+    private readonly behaviorRepository: BehaviorRepository,
+    private readonly behaviorTranslationService: BehaviorTranslationService,
+  ) {}
 
   async createBehavior(
     createBehaviorDto: CreateBehaviorDto,
@@ -24,6 +28,7 @@ export class BehaviorService {
       createdBy,
     });
     const saved = await this.behaviorRepository.save(behavior);
+    this.behaviorTranslationService.createBehaviorTranslations([saved]);
     return {
       id: saved.id,
       name: saved.name,

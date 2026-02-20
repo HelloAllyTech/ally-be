@@ -15,6 +15,7 @@ import {
   DEFAULT_OPENAI_TRANSLATION_SYSTEM_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_TRANSLATION_USER_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_GUARDRAIL_TRANSLATION_PROMPT_TEMPLATE,
+  DEFAULT_OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_TEMPLATE,
 } from 'src/common/constants/openai-translations.constants';
 import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 
@@ -402,10 +403,13 @@ IMPORTANT:
     const promptFromDb =
       await this.promptSharedService.getPromptByCode(promptCode);
 
-    const fallbackPrompt =
-      promptCode === PromptCode.OPENAI_GUARDRAIL_TRANSLATION_PROMPT_CODE
-        ? DEFAULT_OPENAI_GUARDRAIL_TRANSLATION_PROMPT_TEMPLATE
-        : undefined;
+    const fallbackPromptMap: Record<string, string> = {
+      [PromptCode.OPENAI_GUARDRAIL_TRANSLATION_PROMPT_CODE]:
+        DEFAULT_OPENAI_GUARDRAIL_TRANSLATION_PROMPT_TEMPLATE,
+      [PromptCode.OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_CODE]:
+        DEFAULT_OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_TEMPLATE,
+    };
+    const fallbackPrompt = fallbackPromptMap[promptCode];
 
     const promptTemplate = promptFromDb ?? fallbackPrompt;
 
