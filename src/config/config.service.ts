@@ -311,6 +311,10 @@ export class AppConfigService {
         'OPENAI_TRANSLATION_MODEL',
         'gpt-4o-mini',
       ),
+      autofillModel: this.configService.get<string>(
+        'OPENAI_AUTOFILL_MODEL',
+        'gpt-5-mini',
+      ),
     };
   }
 

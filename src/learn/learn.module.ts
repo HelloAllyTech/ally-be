@@ -84,6 +84,7 @@ import { ScenarioBehaviorInstructionTranslationRepository } from './repository/s
 import { BehaviorTranslationService } from './service/behavior-translation.service';
 import { ScenarioBehaviorInstructionTranslationService } from './service/scenario-behavior-instruction-translation.service';
 import { BehaviorInstructionTranslationService } from './service/behavior-instruction-translation.service';
+import { OpenAIAutofillService } from './service/openai-autofil-service';
 
 @Module({
   imports: [
@@ -179,6 +180,7 @@ import { BehaviorInstructionTranslationService } from './service/behavior-instru
     BehaviorInstructionTranslationService,
     BehaviorTranslationService,
     ScenarioBehaviorInstructionTranslationService,
+    OpenAIAutofillService,
   ],
   exports: [
     LearnMessageProcessor,

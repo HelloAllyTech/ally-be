@@ -51,6 +51,7 @@ import {
   mapCreateScenarioRequestToEntity,
   mapUpdateScenarioRequestToEntity,
   formatAutoTerminationEventsList,
+  getPromptCodeForScenarioField,
 } from '../util/scenario.util';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
@@ -92,6 +93,9 @@ import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruct
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { StateInstructionsDto } from '../dto/state-instructions.dto';
+import { OpenAIAutofillService } from './openai-autofil-service';
+import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
+import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
 import {
   MAX_SCENARIO_STATE_INSTRUCTIONS,
   supportedStateInstructionStateIds,
@@ -101,6 +105,7 @@ import { CompetencyService } from './competency.service';
 @Injectable()
 export class ScenarioService {
   private readonly logger = LoggerService.getInstance(ScenarioService.name);
+  static REQUIRED_CONTEXT_FIELDS: any;
 
   constructor(
     private scenariosRepository: ScenariosRepository,
@@ -123,6 +128,7 @@ export class ScenarioService {
     private scenarioReportService: ScenarioReportService,
     private scenarioBehaviorInstructionService: ScenarioBehaviorInstructionService,
     private competencyService: CompetencyService,
+    private openAIAutofillService: OpenAIAutofillService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -1706,5 +1712,27 @@ export class ScenarioService {
       }
     }
     return dynamicBranchShortcuts;
+  }
+
+  async generateField(
+    generateScenarioFieldDto: GenerateScenarioFieldDto,
+  ): Promise<GenerateScenarioFieldResponseDto> {
+    const { fieldName, scenarioContext } = generateScenarioFieldDto;
+
+    const promptCode = getPromptCodeForScenarioField(fieldName);
+
+    if (!promptCode) {
+      throw new BadRequestException(
+        `Field "${fieldName}" is not supported for auto-generation`,
+      );
+    }
+
+    const content = await this.openAIAutofillService.generateFieldContent(
+      fieldName,
+      promptCode,
+      scenarioContext,
+    );
+
+    return { fieldName, content };
   }
 }

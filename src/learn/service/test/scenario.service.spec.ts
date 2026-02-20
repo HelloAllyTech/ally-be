@@ -36,6 +36,8 @@ import { ScenarioBehaviorInstructionService } from '../scenario-behavior-instruc
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
 import { CompetencyService } from '../competency.service';
+import { OpenAIAutofillService } from '../openai-autofil-service';
+import { GeneratableField } from 'src/learn/enum/generatable-field.enum';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -62,6 +64,7 @@ describe('ScenarioService', () => {
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let triggerWarningsService: jest.Mocked<TriggerWarningsService>;
+  let openAIAutofillService: jest.Mocked<OpenAIAutofillService>;
 
   const mockTenantId = 'tenant-123';
 
@@ -266,6 +269,10 @@ describe('ScenarioService', () => {
       createCompetency: jest.fn(),
     };
 
+    const mockOpenAIAutofillService = {
+      generateFieldContent: jest.fn(),
+    };
+
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -363,6 +370,10 @@ describe('ScenarioService', () => {
           provide: CompetencyService,
           useValue: mockCompetencyService,
         },
+        {
+          provide: OpenAIAutofillService,
+          useValue: mockOpenAIAutofillService,
+        },
       ],
     }).compile();
 
@@ -379,6 +390,7 @@ describe('ScenarioService', () => {
     sharedLanguageService = module.get(SharedLanguageService);
     scenarioSharedService = module.get(ScenarioSharedService);
     triggerWarningsService = module.get(TriggerWarningsService);
+    openAIAutofillService = module.get(OpenAIAutofillService);
   });
 
   afterEach(() => {
@@ -4436,6 +4448,143 @@ describe('ScenarioService', () => {
       await expect(
         service.getBranchingInstructionDynamicShortcuts(scenarioId),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('generateField', () => {
+    const scenarioContext = {
+      title: 'Anxiety Counseling',
+      name: 'John',
+      age: 30,
+      gender: 'Male',
+    };
+
+    it('should return generated string content for CHARACTER_PROFILE_TEXT', async () => {
+      const dto = {
+        fieldName: GeneratableField.CHARACTER_PROFILE_TEXT,
+        scenarioContext,
+      };
+      const generatedContent = 'A 30-year-old male named John...';
+
+      openAIAutofillService.generateFieldContent.mockResolvedValue(
+        generatedContent,
+      );
+
+      const result = await service.generateField(dto);
+
+      expect(result).toEqual({
+        fieldName: GeneratableField.CHARACTER_PROFILE_TEXT,
+        content: generatedContent,
+      });
+      expect(openAIAutofillService.generateFieldContent).toHaveBeenCalledWith(
+        GeneratableField.CHARACTER_PROFILE_TEXT,
+        expect.any(String),
+        scenarioContext,
+      );
+    });
+
+    it('should return generated string content for DESCRIPTION', async () => {
+      const dto = {
+        fieldName: GeneratableField.DESCRIPTION,
+        scenarioContext,
+      };
+      const generatedContent = 'This scenario covers anxiety counseling...';
+
+      openAIAutofillService.generateFieldContent.mockResolvedValue(
+        generatedContent,
+      );
+
+      const result = await service.generateField(dto);
+
+      expect(result).toEqual({
+        fieldName: GeneratableField.DESCRIPTION,
+        content: generatedContent,
+      });
+    });
+
+    it('should return generated array content for OPENING_STATEMENTS', async () => {
+      const dto = {
+        fieldName: GeneratableField.OPENING_STATEMENTS,
+        scenarioContext,
+      };
+      const generatedContent = [
+        'Hello, I have been feeling anxious lately.',
+        'Hi, I need help with my anxiety.',
+      ];
+
+      openAIAutofillService.generateFieldContent.mockResolvedValue(
+        generatedContent,
+      );
+
+      const result = await service.generateField(dto);
+
+      expect(result).toEqual({
+        fieldName: GeneratableField.OPENING_STATEMENTS,
+        content: generatedContent,
+      });
+    });
+
+    it('should return generated object content for STATE_INSTRUCTIONS', async () => {
+      const dto = {
+        fieldName: GeneratableField.STATE_INSTRUCTIONS,
+        scenarioContext,
+      };
+      const generatedContent = {
+        state_1: {
+          instruction: 'Start calm',
+          dialogues: ['I feel okay right now.'],
+        },
+        state_2: {
+          instruction: 'Show mild anxiety',
+          dialogues: ['I am a bit nervous.'],
+        },
+        state_3: {
+          instruction: 'Escalate anxiety',
+          dialogues: ['I cannot control my thoughts.'],
+        },
+        state_4: {
+          instruction: 'Crisis mode',
+          dialogues: ['I feel like I cannot breathe.'],
+        },
+      };
+
+      openAIAutofillService.generateFieldContent.mockResolvedValue(
+        generatedContent,
+      );
+
+      const result = await service.generateField(dto);
+
+      expect(result).toEqual({
+        fieldName: GeneratableField.STATE_INSTRUCTIONS,
+        content: generatedContent,
+      });
+    });
+
+    it('should throw BadRequestException for unsupported field name', async () => {
+      const dto = {
+        fieldName: 'unsupportedField' as GeneratableField,
+        scenarioContext,
+      };
+
+      await expect(service.generateField(dto)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(openAIAutofillService.generateFieldContent).not.toHaveBeenCalled();
+    });
+
+    it('should propagate errors from OpenAIAutofillService', async () => {
+      const dto = {
+        fieldName: GeneratableField.CHARACTER_PROFILE_TEXT,
+        scenarioContext,
+      };
+
+      openAIAutofillService.generateFieldContent.mockRejectedValue(
+        new Error('OpenAI API error'),
+      );
+
+      await expect(service.generateField(dto)).rejects.toThrow(
+        'OpenAI API error',
+      );
     });
   });
 });
