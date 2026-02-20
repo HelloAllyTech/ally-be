@@ -284,6 +284,10 @@ export class ScenarioSharedService {
       promptData.previousMemory = previousMemory;
     }
 
+    if (scenario?.competency?.name) {
+      promptData.competency = scenario.competency?.name;
+    }
+
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
       // Ensure we have values even if not translated
