@@ -13,3 +13,19 @@ export interface FormattedBehaviorInstructionForLivekit {
   actorsResponses: string[];
   behaviorInstructionId: string;
 }
+
+export interface MergedBehaviorInstructions {
+  behaviors: string[] | undefined;
+  id: string;
+  scenarioId: number;
+  category: BehaviorInstructionCategory;
+  instructions: string[];
+}
+
+export interface BehaviorMappingRequestType {
+  scenarioId: number;
+  existingInstructionIds: string[];
+  createdInstructions: MergedBehaviorInstructions[];
+  updatedInstructions: BehaviorInstructionDto[];
+  removedInstructionIds: string[];
+}

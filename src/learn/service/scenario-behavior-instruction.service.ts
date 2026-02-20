@@ -1,12 +1,16 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { EntityManager, In, IsNull } from 'typeorm';
+import { EntityManager, In } from 'typeorm';
 import { ScenarioBehaviorInstructionRepository } from '../repository/scenario-behavior-instruction.repository';
 import { ScenarioBehaviorInstructionBehaviorRepository } from '../repository/scenario-behavior-instruction-behavior.repository';
 import { BehaviorService } from './behavior.service';
 import { BehaviorInstructionDto } from '../dto/behavior-instruction.dto';
 import { ScenarioBehaviorInstruction } from '../entity/scenario-behavior-instruction.entity';
 import { ScenarioBehaviorInstructionBehavior } from '../entity/scenario-behavior-instruction-behavior.entity';
-import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
+import {
+  BehaviorMappingRequestType,
+  MergedBehaviorInstructions,
+  ScenarioBehaviorInstructionRequest,
+} from '../type/scenario-behavior-instructions.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioBehaviorInstructionTranslationService } from './scenario-behavior-instruction-translation.service';
@@ -160,10 +164,7 @@ export class ScenarioBehaviorInstructionService {
       `Creating ${formattedInstructionBehaviors.length} behavior mapping(s)`,
     );
 
-    if (
-      formattedInstructionBehaviors &&
-      formattedInstructionBehaviors?.length > 0
-    ) {
+    if (formattedInstructionBehaviors?.length > 0) {
       const instructionBehaviorEntities = behaviorMappingRepo.create(
         formattedInstructionBehaviors,
       );
@@ -210,20 +211,15 @@ export class ScenarioBehaviorInstructionService {
     // Validate all behavior IDs exist before proceeding
     await this.validateBehaviorInstructions(behaviorInstructions);
 
-    // TODO: Split the update behavior instructions into multiple steps to make it easier to debug and test.
     // Use transaction repository if provided, otherwise use default repository
     const instructionRepo = em
       ? em.getRepository(ScenarioBehaviorInstruction)
       : this.scenarioBehaviorInstructionRepository;
-    const behaviorMappingRepo = em
-      ? em.getRepository(ScenarioBehaviorInstructionBehavior)
-      : this.scenarioBehaviorInstructionBehaviorRepository;
 
     // Get all existing (non-deleted) instructions for this scenario
     const existingInstructions = await instructionRepo.find({
       where: {
         scenarioId,
-        deletedAt: IsNull(),
       },
     });
     this.logger.debug(
@@ -262,7 +258,7 @@ export class ScenarioBehaviorInstructionService {
       `Instruction changes: ${instructionsToCreate.length} to create, ${instructionsToUpdate.length} to update, ${instructionIdsToRemove.length} to remove`,
     );
 
-    // Step 1: Create new instructions
+    // Create new instructions
     let createdInstructions: ScenarioBehaviorInstruction[] = [];
     if (instructionsToCreate && instructionsToCreate.length > 0) {
       this.logger.debug(
@@ -284,7 +280,7 @@ export class ScenarioBehaviorInstructionService {
       );
     }
 
-    // Step 2: Update existing instructions
+    // Update existing instructions
     if (instructionsToUpdate && instructionsToUpdate.length > 0) {
       this.logger.debug(
         `Updating ${instructionsToUpdate.length} existing instruction(s)`,
@@ -303,7 +299,7 @@ export class ScenarioBehaviorInstructionService {
       );
     }
 
-    // Step 3: Soft delete instructions that are no longer in the request
+    // Soft delete instructions that are no longer in the request
     if (instructionIdsToRemove && instructionIdsToRemove.length > 0) {
       this.logger.debug(
         `Soft deleting ${instructionIdsToRemove.length} instruction(s)`,
@@ -319,12 +315,60 @@ export class ScenarioBehaviorInstructionService {
       );
     }
 
+    const mergedCreatedInstructions = this.getMergedCreatedBehaviorInstructions(
+      createdInstructions,
+      instructionsToCreate,
+    );
+
+    await this.handleBehaviorMapping(
+      {
+        createdInstructions: mergedCreatedInstructions,
+        scenarioId,
+        updatedInstructions: instructionsToUpdate,
+        removedInstructionIds: instructionIdsToRemove,
+        existingInstructionIds: Array.from(existingInstructionIds),
+      },
+      em,
+    );
+
+    const allActiveInstructions = await instructionRepo.find({
+      where: { scenarioId },
+    });
+    this.scenarioBehaviorInstructionTranslationService.createUpdateInstructionTranslations(
+      allActiveInstructions,
+    );
+  }
+
+  private getMergedCreatedBehaviorInstructions(
+    newlyCreatedInstructions: ScenarioBehaviorInstruction[],
+    instructionToCreateInput: BehaviorInstructionDto[],
+  ): MergedBehaviorInstructions[] {
+    return newlyCreatedInstructions.map((item, index) => ({
+      ...item,
+      behaviors: instructionToCreateInput[index]?.behaviors,
+    }));
+  }
+
+  private async handleBehaviorMapping(
+    request: BehaviorMappingRequestType,
+    em?: EntityManager,
+  ) {
+    const {
+      scenarioId,
+      existingInstructionIds,
+      createdInstructions,
+      updatedInstructions,
+      removedInstructionIds,
+    } = request;
+    const behaviorMappingRepo = em
+      ? em.getRepository(ScenarioBehaviorInstructionBehavior)
+      : this.scenarioBehaviorInstructionBehaviorRepository;
     // Step 4: Sync behavior mappings
     // Fetch all existing behavior mappings for all instructions (existing + newly created)
     // This is needed to compare against the incoming data and determine what to add/remove
     const existingBehaviors = await behaviorMappingRepo.find({
       where: {
-        scenarioBehaviorInstructionId: In(Array.from(existingInstructionIds)),
+        scenarioBehaviorInstructionId: In(existingInstructionIds),
       },
     });
     this.logger.debug(
@@ -334,8 +378,8 @@ export class ScenarioBehaviorInstructionService {
     // Collect behavior mappings to create:
     // 1. Mappings for newly created instructions
     const behaviorsToCreate = createdInstructions.flatMap(
-      (instruction, index) =>
-        instructionsToCreate?.[index]?.behaviors?.map((behaviorId) => ({
+      (instruction) =>
+        instruction?.behaviors?.map((behaviorId) => ({
           scenarioBehaviorInstructionId: instruction.id,
           behaviorId,
         })) ?? [],
@@ -345,7 +389,7 @@ export class ScenarioBehaviorInstructionService {
     // 1. Mappings for instructions that are being removed
     const behaviorsToDelete = existingBehaviors
       .filter((instructionBehavior) =>
-        instructionIdsToRemove.find(
+        removedInstructionIds.find(
           (id) => id === instructionBehavior.scenarioBehaviorInstructionId,
         ),
       )
@@ -354,7 +398,7 @@ export class ScenarioBehaviorInstructionService {
       }));
 
     // 2. For each updated instruction, find behavior mappings that need to be added/removed
-    for (const instruction of instructionsToUpdate) {
+    for (const instruction of updatedInstructions) {
       // Get existing behaviors for this specific instruction
       const existingBehaviorsWithInstructionId = existingBehaviors.filter(
         (instructionBehavior) =>
@@ -397,7 +441,7 @@ export class ScenarioBehaviorInstructionService {
     }
 
     // Delete behavior mappings that are no longer needed
-    if (behaviorsToDelete && behaviorsToDelete.length > 0) {
+    if (behaviorsToDelete.length > 0) {
       this.logger.debug(
         `Deleting ${behaviorsToDelete.length} behavior mapping(s)`,
       );
@@ -408,7 +452,7 @@ export class ScenarioBehaviorInstructionService {
     }
 
     // Create new behavior mappings
-    if (behaviorsToCreate && behaviorsToCreate.length > 0) {
+    if (behaviorsToCreate.length > 0) {
       this.logger.debug(
         `Creating ${behaviorsToCreate.length} behavior mapping(s)`,
       );
@@ -422,13 +466,6 @@ export class ScenarioBehaviorInstructionService {
 
     this.logger.info(
       `Successfully updated behavior instructions for scenario ${scenarioId}`,
-    );
-
-    const allActiveInstructions = await instructionRepo.find({
-      where: { scenarioId },
-    });
-    this.scenarioBehaviorInstructionTranslationService.createUpdateInstructionTranslations(
-      allActiveInstructions,
     );
   }
 
