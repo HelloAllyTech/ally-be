@@ -52,8 +52,11 @@ describe('ScenarioEventsRepository', () => {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       leftJoinAndMapOne: jest.fn().mockReturnThis(),
+      leftJoinAndMapMany: jest.fn().mockReturnThis(),
+      setParameters: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       getManyAndCount: jest.fn(),
+      getMany: jest.fn(),
       limit: jest.fn().mockReturnThis(),
       offset: jest.fn().mockReturnThis(),
     } as any;
@@ -501,6 +504,93 @@ describe('ScenarioEventsRepository', () => {
         'scenarioEvent.eventId',
         'DESC',
       );
+    });
+  });
+
+  describe('getEventChecklist', () => {
+    const scenarioSessionId = 'session-uuid-123';
+    const scenarioId = 1;
+
+    it('should build query with correct joins and filters', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+
+      await repository.getEventChecklist(scenarioSessionId, scenarioId);
+
+      expect(mockQueryBuilder.leftJoinAndMapMany).toHaveBeenCalledWith(
+        'scenarioEvent.scenarioSessionEvent',
+        expect.anything(),
+        'scenarioSessionEvent',
+        'scenarioSessionEvent.eventId = scenarioEvent.eventId AND scenarioSessionEvent.scenarioSessionId = :scenarioSessionId',
+      );
+      expect(mockQueryBuilder.leftJoinAndMapOne).toHaveBeenCalledWith(
+        'scenarioEvent.events',
+        expect.anything(),
+        'events',
+        'events.id = scenarioEvent.eventId',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'scenarioEvent.scenarioId = :scenarioId',
+        { scenarioId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        '(scenarioEvent.checklistVisibilityStatus = :checklistVisible OR scenarioSessionEvent.id IS NOT NULL)',
+        { checklistVisible: true },
+      );
+      expect(mockQueryBuilder.setParameters).toHaveBeenCalledWith({
+        scenarioSessionId,
+      });
+    });
+
+    it('should return events with mapped session events and event details', async () => {
+      const mockChecklistData = [
+        {
+          id: 'se-1',
+          eventId: 'event-1',
+          scenarioId: 1,
+          checklistVisibilityStatus: true,
+          events: { id: 'event-1', name: 'Empathy Check' },
+          scenarioSessionEvent: [
+            {
+              id: 'sse-1',
+              eventId: 'event-1',
+              scenarioSessionId: scenarioSessionId,
+            },
+          ],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: 'se-2',
+          eventId: 'event-2',
+          scenarioId: 1,
+          checklistVisibilityStatus: true,
+          events: { id: 'event-2', name: 'Greeting' },
+          scenarioSessionEvent: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      mockQueryBuilder.getMany.mockResolvedValue(mockChecklistData);
+
+      const result = await repository.getEventChecklist(
+        scenarioSessionId,
+        scenarioId,
+      );
+
+      expect(result).toEqual(mockChecklistData);
+      expect(result).toHaveLength(2);
+    });
+
+    it('should return empty array when no matching events exist', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+
+      const result = await repository.getEventChecklist(
+        scenarioSessionId,
+        scenarioId,
+      );
+
+      expect(result).toEqual([]);
     });
   });
 });

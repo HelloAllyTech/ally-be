@@ -66,6 +66,7 @@ import {
 } from '../type/scenario-language-voice.type';
 import { TriggerWarningsSortBy } from '../enum/trigger-warnings-sort-by.enum';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
+import { ScenarioSessionEventChecklistResponseDto } from '../dto/scenario-session-event-checklist-response.dto';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -599,6 +600,58 @@ export class LearnController {
   ): Promise<ScenarioSessionSkillsResponseDto> {
     return this.scenarioSessionService.getScenarioSessionSkills(
       scenarioSessionId,
+    );
+  }
+
+  @ApiOperation({ summary: 'Get event checklist for a scenario session' })
+  @ApiResponse({
+    status: 200,
+    description: 'Event checklist for a scenario session',
+    type: ScenarioSessionEventChecklistResponseDto,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SESSION_SCENARIO_SUMMARY])
+  @Get('scenario-session/:scenarioSessionId/event-checklist')
+  async getScenarioSessionEventChecklist(
+    @Param('scenarioSessionId', ParseUUIDPipe) scenarioSessionId: string,
+    @CurrentUser() tokenUser: TokenUser,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order?: SortOrder,
+  ): Promise<ScenarioSessionEventChecklistResponseDto> {
+    return this.scenarioSessionService.getScenarioSessionEventChecklist(
+      scenarioSessionId,
+      tokenUser.id,
+      {
+        limit,
+        offset,
+        sortBy,
+        order,
+      },
     );
   }
 

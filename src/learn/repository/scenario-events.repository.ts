@@ -5,6 +5,7 @@ import { Pagination } from 'src/common/type/common.type';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SortOrder } from 'src/user/enum/user.enum';
 import { ScenarioEventsSortBy } from '../enum/scenario-events-sort-by-enum';
+import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 
 @Injectable()
 export class ScenarioEventsRepository extends Repository<ScenarioEvents> {
@@ -80,5 +81,49 @@ export class ScenarioEventsRepository extends Repository<ScenarioEvents> {
         );
       }
     }
+  }
+
+  async getEventChecklist(
+    scenarioSessionId: string,
+    scenarioId: number,
+    options?: Pagination,
+  ): Promise<
+    (ScenarioEvents & {
+      events: SessionEvents;
+      scenarioSessionEvent: ScenarioSessionEvents[];
+    })[]
+  > {
+    const query = this.createQueryBuilder('scenarioEvent')
+      .leftJoinAndMapMany(
+        'scenarioEvent.scenarioSessionEvent',
+        ScenarioSessionEvents,
+        'scenarioSessionEvent',
+        'scenarioSessionEvent.eventId = scenarioEvent.eventId AND scenarioSessionEvent.scenarioSessionId = :scenarioSessionId',
+      )
+      .leftJoinAndMapOne(
+        'scenarioEvent.events',
+        SessionEvents,
+        'events',
+        'events.id = scenarioEvent.eventId',
+      )
+      .where('scenarioEvent.scenarioId = :scenarioId', {
+        scenarioId,
+      })
+      .andWhere(
+        '(scenarioEvent.checklistVisibilityStatus = :checklistVisible OR scenarioSessionEvent.id IS NOT NULL)',
+        { checklistVisible: true },
+      )
+      .setParameters({
+        scenarioSessionId: scenarioSessionId,
+      });
+
+    this.applyPagination(query, options);
+    this.applySort(query, options);
+    const data = await query.getMany();
+
+    return data as (ScenarioEvents & {
+      events: SessionEvents;
+      scenarioSessionEvent: ScenarioSessionEvents[];
+    })[];
   }
 }
