@@ -150,15 +150,15 @@ describe('OpenAIAutofillService', () => {
       expect(result).toEqual(statements);
     });
 
-    it('should parse and return object for STATE_INSTRUCTIONS', async () => {
-      const stateInstructions = {
+    it('should parse and return array of state instruction items for STATE_INSTRUCTIONS', async () => {
+      const rawResponse = {
         state_1: { instruction: 'Be calm', dialogues: ['I am fine.'] },
         state_2: { instruction: 'Show worry', dialogues: ['I am worried.'] },
         state_3: { instruction: 'Escalate', dialogues: ['I cannot cope.'] },
         state_4: { instruction: 'Crisis', dialogues: ['Help me.'] },
       };
       mockCreate.mockResolvedValue({
-        choices: [{ message: { content: JSON.stringify(stateInstructions) } }],
+        choices: [{ message: { content: JSON.stringify(rawResponse) } }],
       });
 
       const result = await service.generateFieldContent(
@@ -167,7 +167,20 @@ describe('OpenAIAutofillService', () => {
         scenarioContext,
       );
 
-      expect(result).toEqual(stateInstructions);
+      expect(result).toEqual([
+        { stateId: '1', instruction: 'Be calm', dialogues: ['I am fine.'] },
+        {
+          stateId: '2',
+          instruction: 'Show worry',
+          dialogues: ['I am worried.'],
+        },
+        {
+          stateId: '3',
+          instruction: 'Escalate',
+          dialogues: ['I cannot cope.'],
+        },
+        { stateId: '4', instruction: 'Crisis', dialogues: ['Help me.'] },
+      ]);
     });
 
     it('should throw when OPENING_STATEMENTS response is not valid JSON', async () => {

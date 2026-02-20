@@ -1,7 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { GeneratableField } from '../enum/generatable-field.enum';
 
-export class StateInstructionContent {
+export class StateInstructionItem {
+  @ApiProperty({ description: 'State identifier (1-4)' })
+  stateId!: string;
+
   @ApiProperty({ description: 'Behavioral directive for the state' })
   instruction!: string;
 
@@ -10,20 +13,6 @@ export class StateInstructionContent {
     type: [String],
   })
   dialogues!: string[];
-}
-
-export class StateInstructionsContent {
-  @ApiProperty({ type: StateInstructionContent })
-  state_1!: StateInstructionContent;
-
-  @ApiProperty({ type: StateInstructionContent })
-  state_2!: StateInstructionContent;
-
-  @ApiProperty({ type: StateInstructionContent })
-  state_3!: StateInstructionContent;
-
-  @ApiProperty({ type: StateInstructionContent })
-  state_4!: StateInstructionContent;
 }
 
 export class GenerateScenarioFieldResponseDto {
@@ -35,7 +24,7 @@ export class GenerateScenarioFieldResponseDto {
 
   @ApiProperty({
     description:
-      'Generated content. String for characterProfileText/description, string[] for openingStatements, StateInstructionsContent object for stateInstructions.',
+      'Generated content. String for characterProfileText/description, string[] for openingStatements, StateInstructionItem[] for stateInstructions.',
   })
-  content!: string | string[] | StateInstructionsContent;
+  content!: string | string[] | StateInstructionItem[];
 }

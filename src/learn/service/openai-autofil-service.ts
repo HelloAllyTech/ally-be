@@ -10,10 +10,10 @@ import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { ScenarioFieldContextDto } from '../dto/generate-scenario-field.dto';
 import { GeneratableField } from '../enum/generatable-field.enum';
-import { StateInstructionsContent } from '../dto/generate-scenario-field-response.dto';
+import { StateInstructionItem } from '../dto/generate-scenario-field-response.dto';
 import { STRUCTURED_OUTPUT_SCHEMAS } from '../constants/autofill-structured-output.constants';
 
-type GeneratedContent = string | string[] | StateInstructionsContent;
+type GeneratedContent = string | string[] | StateInstructionItem[];
 
 @Injectable()
 export class OpenAIAutofillService {
@@ -69,7 +69,12 @@ export class OpenAIAutofillService {
       }
 
       case GeneratableField.STATE_INSTRUCTIONS: {
-        return JSON.parse(raw) as StateInstructionsContent;
+        const parsed = JSON.parse(raw);
+        return Object.entries(parsed).map(([key, value]: [string, any]) => ({
+          stateId: key.replace('state_', ''),
+          instruction: value.instruction,
+          dialogues: value.dialogues,
+        })) as StateInstructionItem[];
       }
     }
   }
