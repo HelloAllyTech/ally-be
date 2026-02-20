@@ -10,6 +10,8 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { ExperienceMode, ChecklistType } from '../type/scenario.type';
 import { StateInstructionsDto } from '../dto/state-instructions.dto';
 import { ScenarioStateInstruction } from '../type/scenario-state.type';
+import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { GeneratableField } from '../enum/generatable-field.enum';
 
 export const mapCreateScenarioRequestToEntity = (
   scenario: CreateScenarioDto,
@@ -237,4 +239,17 @@ export const isEnglishLanguage = (
   }
 
   return false;
+};
+
+export const getPromptCodeForScenarioField = (scenarioField: string) => {
+  switch (scenarioField) {
+    case GeneratableField.STATE_INSTRUCTIONS:
+      return PromptCode.OPENAI_SIMULATION_STATES_INSTRUCTIONS_PROMPT_CODE;
+    case GeneratableField.OPENING_STATEMENTS:
+      return PromptCode.OPENAI_SIMULATION_OPENING_DIALOGUES_PROMPT_CODE;
+    case GeneratableField.DESCRIPTION:
+      return PromptCode.OPENAI_SIMULATION_CHALLENGE_DESCRIPTION_PROMPT_CODE;
+    case GeneratableField.CHARACTER_PROFILE_TEXT:
+      return PromptCode.OPENAI_SIMULATION_CHARACTER_PROFILE_TEXT_PROMPT_CODE;
+  }
 };

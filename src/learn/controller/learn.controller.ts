@@ -70,6 +70,8 @@ import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills
 import { ScenarioSessionEventChecklistResponseDto } from '../dto/scenario-session-event-checklist-response.dto';
 import { ScenarioSessionReflectionPromptsResponseDto } from '../dto/scenario-session-reflection-prompts-response.dto';
 import { UpdateReflectionPromptResponseDto } from '../dto/reflection-prompts-request.dto';
+import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
+import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -253,6 +255,22 @@ export class LearnController {
   @Delete('cover-video')
   async deleteCoverVideo(@Body() deleteCoverVideoDto: DeleteCoverVideoDto) {
     return this.scenarioService.deleteCoverVideo(deleteCoverVideoDto);
+  }
+
+  @ApiOperation({
+    summary: 'Auto-generate content for a scenario field using AI',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Generated field content',
+    type: GenerateScenarioFieldResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('scenarios/generate-field')
+  async generateScenarioField(
+    @Body() generateScenarioFieldDto: GenerateScenarioFieldDto,
+  ): Promise<GenerateScenarioFieldResponseDto> {
+    return this.scenarioService.generateField(generateScenarioFieldDto);
   }
 
   @ApiOperation({ summary: 'Create multiple scenarios' })
