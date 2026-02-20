@@ -4529,24 +4529,28 @@ describe('ScenarioService', () => {
         fieldName: GeneratableField.STATE_INSTRUCTIONS,
         scenarioContext,
       };
-      const generatedContent = {
-        state_1: {
+      const generatedContent = [
+        {
+          stateId: '1',
           instruction: 'Start calm',
           dialogues: ['I feel okay right now.'],
         },
-        state_2: {
+        {
+          stateId: '2',
           instruction: 'Show mild anxiety',
           dialogues: ['I am a bit nervous.'],
         },
-        state_3: {
+        {
+          stateId: '3',
           instruction: 'Escalate anxiety',
           dialogues: ['I cannot control my thoughts.'],
         },
-        state_4: {
+        {
+          stateId: '4',
           instruction: 'Crisis mode',
           dialogues: ['I feel like I cannot breathe.'],
         },
-      };
+      ];
 
       openAIAutofillService.generateFieldContent.mockResolvedValue(
         generatedContent,
