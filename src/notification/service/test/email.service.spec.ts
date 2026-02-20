@@ -93,6 +93,7 @@ describe('EmailService', () => {
         body: `Your Ally Verification Code is:
 123456
 
+
 ⏱️ This security code is valid for the next 5 minutes.
 🚫 Do not share this code with anyone.
 ❌ If you did not request this code, you can safely ignore this email.
@@ -123,6 +124,7 @@ describe('EmailService', () => {
         subject: 'Your Ally Verification Code',
         body: `Your Ally Verification Code is:
 123456
+
 
 ⏱️ This security code is valid for the next 5 minutes.
 🚫 Do not share this code with anyone.
