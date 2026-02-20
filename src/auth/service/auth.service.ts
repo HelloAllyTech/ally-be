@@ -260,7 +260,6 @@ export class AuthService {
 
     const otp = AuthUtil.generateOtp();
     await this.cache.set(this.getOtpKey(email), otp, this.OTP_TTL);
-    this.logger.info(`OTP for email ${email} generated is ${otp} `);
 
     this.eventEmitter.emit('otp.generated', {
       email,
