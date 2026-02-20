@@ -10,7 +10,12 @@ import { ScenarioSessionChatRepository } from '../repository/scenario-session-ch
 import { ScenarioSessionChatMessageRepository } from '../repository/scenario-session-chat-message.repository';
 import { ScenarioSessionContextProvider } from './scenario-session-context.provider';
 import { ScenarioSessionChat } from '../entity/scenario-session-chat.entity';
+import { ScenarioSessionChatMessage } from '../entity/scenario-session-chat-message.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import {
+  CHAT_HISTORY_WINDOW_SIZE,
+  CHAT_SUMMARIZATION_BATCH_THRESHOLD,
+} from '../constants/scenario-session-chat.constants';
 
 @Injectable()
 export class ScenarioSessionChatService {
@@ -45,15 +50,15 @@ export class ScenarioSessionChatService {
       tenantId,
     });
 
-    const history = await this.chatMessageRepo.find({
+    const allMessages = await this.chatMessageRepo.find({
       where: { chatId: chat.id },
       order: { createdAt: 'ASC' },
     });
 
-    const chatHistory: LlmMessage[] = history.map((m) => ({
-      role: (m.senderId === -1 ? 'assistant' : 'user') as LlmMessage['role'],
-      content: m.content,
-    }));
+    const chatHistory = await this.buildChatHistoryWithSummarization(
+      chat,
+      allMessages,
+    );
 
     const context = await this.contextProvider.buildContext(scenarioSessionId);
 
@@ -75,6 +80,66 @@ export class ScenarioSessionChatService {
         });
       },
     });
+  }
+
+  /**
+   * Splits messages into three zones (summarized / overflow / window),
+   * triggers batch summarization when overflow exceeds the threshold,
+   * and returns a bounded chat history for the LLM.
+   */
+  private async buildChatHistoryWithSummarization(
+    chat: ScenarioSessionChat,
+    allMessages: ScenarioSessionChatMessage[],
+  ): Promise<LlmMessage[]> {
+    const total = allMessages.length;
+    const windowStart = Math.max(0, total - CHAT_HISTORY_WINDOW_SIZE);
+    const overflowStart = chat.summarizedMessageCount;
+    const overflowEnd = windowStart;
+
+    let overflowMessages = allMessages.slice(overflowStart, overflowEnd);
+    const windowMessages = allMessages.slice(windowStart);
+
+    if (overflowMessages.length >= CHAT_SUMMARIZATION_BATCH_THRESHOLD) {
+      const overflowAsLlm = this.toLlmMessages(overflowMessages);
+
+      const newSummary = await this.aiChatService.summarizeMessages({
+        existingSummary: chat.summary ?? null,
+        messages: overflowAsLlm,
+        llmConfig: { model: this.configService.aiChat.model },
+      });
+
+      chat.summary = newSummary;
+      chat.summarizedMessageCount = overflowEnd;
+      await this.chatRepo.update(chat.id, {
+        summary: newSummary,
+        summarizedMessageCount: overflowEnd,
+      });
+
+      overflowMessages = [];
+    }
+
+    const chatHistory: LlmMessage[] = [];
+
+    if (chat.summary) {
+      chatHistory.push({
+        role: 'system',
+        content: `Summary of earlier conversation:\n${chat.summary}`,
+      });
+    }
+
+    chatHistory.push(...this.toLlmMessages(overflowMessages));
+    chatHistory.push(...this.toLlmMessages(windowMessages));
+
+    return chatHistory;
+  }
+
+  private toLlmMessages(messages: ScenarioSessionChatMessage[]): LlmMessage[] {
+    return messages.map((message) => ({
+      role: (message.senderId === -1
+        ? 'assistant'
+        : 'user') as LlmMessage['role'],
+      content: message.content,
+    }));
   }
 
   async getChatHistory(scenarioSessionId: string, userId: number) {

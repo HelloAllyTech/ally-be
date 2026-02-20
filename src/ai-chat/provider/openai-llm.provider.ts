@@ -38,4 +38,18 @@ export class OpenAiLlmProvider implements LlmProvider {
       }
     }
   }
+
+  async getCompletion(
+    messages: LlmMessage[],
+    config: LlmProviderConfig,
+  ): Promise<string> {
+    const response = await this.client.chat.completions.create({
+      model: config.model,
+      messages,
+      temperature: config.temperature ?? 0.7,
+      max_tokens: config.maxTokens ?? 1500,
+    });
+
+    return response.choices[0]?.message?.content ?? '';
+  }
 }
