@@ -27,6 +27,7 @@ export class PromptsService {
         promptCode: standardizePromptCode(promptDto.promptCode),
         name: promptDto.name,
         description: promptDto.description || '',
+        useCase: promptDto.useCase,
       }),
     );
 
@@ -76,6 +77,10 @@ export class PromptsService {
 
     if (updatePromptDto.promptCode) {
       updateData.promptCode = updatePromptDto.promptCode;
+    }
+
+    if (updatePromptDto.useCase) {
+      updateData.useCase = updatePromptDto.useCase;
     }
 
     if (updatePromptDto.name) {

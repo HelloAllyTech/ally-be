@@ -303,10 +303,4 @@ export const SCENARIO_SESSION_TRANSLATABLE_FIELDS: string[] = [
   'stateInstructions',
 ];
 
-export const SCENARIO_SESSION_PROMPTS: string[] = [
-  'ally_ai_learn_default',
-  'ally_ai_learn_client_persona_template',
-  'ally_ai_learn_prosody_generation',
-  'ally_ai_learn_prosody_unified',
-  'ally_ai_learn_prosody_parameters_only',
-];
+export const SCENARIO_SESSION_PROMPTS_USE_CASE: string = 'SCENARIO_SESSION';

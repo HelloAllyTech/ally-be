@@ -18,5 +18,8 @@ export class Prompt extends BaseWithoutTenantEntity {
   description!: string;
 
   @Column({ nullable: true })
+  useCase!: string;
+
+  @Column({ nullable: true })
   currentVersion?: number;
 }

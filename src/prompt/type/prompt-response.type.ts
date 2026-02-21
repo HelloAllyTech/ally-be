@@ -22,3 +22,11 @@ export type PromptsWithPromptCode = {
   prompt: string;
   promptCode: string;
 };
+
+export type PromptSearchOptions = {
+  name?: string;
+  description?: string;
+  prompt?: string;
+  promptCode?: string[];
+  useCase?: string[];
+};

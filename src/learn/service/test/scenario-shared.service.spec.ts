@@ -22,7 +22,7 @@ import { ScenarioBehaviorInstructionBehaviorRepository } from '../../repository/
 import { BehaviorRepository } from '../../repository/behavior.repository';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { SCENARIO_SESSION_PROMPTS } from '../../constants/scenario-session.constants';
+import { SCENARIO_SESSION_PROMPTS_USE_CASE } from '../../constants/scenario-session.constants';
 import { CompetencyService } from '../competency.service';
 
 describe('ScenarioSharedService', () => {
@@ -81,7 +81,7 @@ describe('ScenarioSharedService', () => {
     };
 
     const mockPromptSharedService = {
-      getPromptsByCodes: jest.fn().mockResolvedValue([]),
+      getPromptsByOptions: jest.fn().mockResolvedValue([]),
     };
 
     const mockCompetencyService = {
@@ -905,13 +905,13 @@ describe('ScenarioSharedService', () => {
 
   describe('getPromptsForScenarioSession', () => {
     it('should return an empty object when no prompts are found', async () => {
-      promptSharedService.getPromptsByCodes.mockResolvedValue([]);
+      promptSharedService.getPromptsByOptions.mockResolvedValue([]);
 
       const result = await (service as any).getPromptsForScenarioSession();
 
-      expect(promptSharedService.getPromptsByCodes).toHaveBeenCalledWith(
-        SCENARIO_SESSION_PROMPTS,
-      );
+      expect(promptSharedService.getPromptsByOptions).toHaveBeenCalledWith({
+        useCase: [SCENARIO_SESSION_PROMPTS_USE_CASE],
+      });
       expect(result).toEqual({});
     });
 
@@ -927,13 +927,13 @@ describe('ScenarioSharedService', () => {
           prompt: 'Prosody generation text',
         },
       ];
-      promptSharedService.getPromptsByCodes.mockResolvedValue(mockPrompts);
+      promptSharedService.getPromptsByOptions.mockResolvedValue(mockPrompts);
 
       const result = await (service as any).getPromptsForScenarioSession();
 
-      expect(promptSharedService.getPromptsByCodes).toHaveBeenCalledWith(
-        SCENARIO_SESSION_PROMPTS,
-      );
+      expect(promptSharedService.getPromptsByOptions).toHaveBeenCalledWith({
+        useCase: [SCENARIO_SESSION_PROMPTS_USE_CASE],
+      });
       expect(result).toEqual({
         ally_ai_learn_default: 'Default prompt text',
         ally_ai_learn_client_persona_template: 'Persona template text',
@@ -946,7 +946,7 @@ describe('ScenarioSharedService', () => {
         { promptCode: 'ally_ai_learn_default', prompt: 'First value' },
         { promptCode: 'ally_ai_learn_default', prompt: 'Second value' },
       ];
-      promptSharedService.getPromptsByCodes.mockResolvedValue(mockPrompts);
+      promptSharedService.getPromptsByOptions.mockResolvedValue(mockPrompts);
 
       const result = await (service as any).getPromptsForScenarioSession();
 
