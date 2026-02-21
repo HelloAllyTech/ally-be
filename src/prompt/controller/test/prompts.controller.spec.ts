@@ -35,6 +35,7 @@ describe('PromptsController', () => {
     name: 'AI Learning Prompt',
     description: 'A prompt for AI learning',
     currentVersion: 1,
+    useCase: 'SCENARIO_SESSION',
     createdAt: new Date('2026-02-09'),
     updatedAt: new Date('2026-02-09'),
   };

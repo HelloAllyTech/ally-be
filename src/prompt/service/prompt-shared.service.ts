@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { PromptsRepository } from '../repository/prompt.repository';
-import { PromptsWithPromptCode } from '../type/prompt-response.type';
+import {
+  PromptSearchOptions,
+  PromptsWithPromptCode,
+} from '../type/prompt-response.type';
 
 @Injectable()
 export class PromptSharedService {
@@ -25,18 +28,39 @@ export class PromptSharedService {
     return row?.prompt ?? null;
   }
 
-  async getPromptsByCodes(
-    promptCodes: string[],
+  /**
+   * Get prompts by options.
+   * Returns an array of prompts with prompt code.
+   *
+   * @param options - The options to filter prompts by.
+   * example options: { useCase: ['scenario_session']}
+   * example options: { promptCode: ['ally_ai_learn_default']}
+   * @returns An array of prompts with prompt code.
+   */
+  async getPromptsByOptions(
+    options: PromptSearchOptions,
   ): Promise<Array<PromptsWithPromptCode>> {
-    return this.promptsRepository
+    const query = this.promptsRepository
       .createQueryBuilder('prompt')
       .leftJoin(
         'prompts_versions',
         'pv',
         '"prompt"."id" = "pv"."promptId" AND "pv"."version" = "prompt"."currentVersion"',
       )
-      .select(['pv.prompt AS prompt', 'prompt.promptCode AS "promptCode"'])
-      .where('prompt.promptCode IN (:...promptCodes)', { promptCodes })
-      .getRawMany<PromptsWithPromptCode>();
+      .select(['pv.prompt AS prompt', 'prompt.promptCode AS "promptCode"']);
+
+    if (options.useCase && options.useCase.length > 0) {
+      query.andWhere('prompt.useCase IN (:...useCases)', {
+        useCases: options.useCase,
+      });
+    }
+
+    if (options.promptCode && options.promptCode.length > 0) {
+      query.andWhere('prompt.promptCode IN (:...promptCodes)', {
+        promptCodes: options.promptCode,
+      });
+    }
+
+    return query.getRawMany<PromptsWithPromptCode>();
   }
 }

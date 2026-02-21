@@ -41,12 +41,13 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.name', 'name')
       .addSelect('prompt.description', 'description')
       .addSelect('prompt.createdAt', 'createdAt')
-      .addSelect('pv.prompt', 'prompt');
+      .addSelect('pv.prompt', 'prompt')
+      .addSelect('prompt.useCase', 'useCase');
 
     if (searchName) {
       query
         .andWhere(
-          '(prompt.promptCode ILIKE :searchName OR prompt.name ILIKE :searchName OR prompt.description ILIKE :searchName) OR (pv.prompt ILIKE :searchName)',
+          '(prompt.promptCode ILIKE :searchName OR prompt.name ILIKE :searchName OR prompt.description ILIKE :searchName) OR (pv.prompt ILIKE :searchName) OR (prompt.useCase ILIKE :searchName)',
         )
         .setParameters({
           searchName: `%${searchName}%`,

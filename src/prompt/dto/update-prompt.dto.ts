@@ -21,4 +21,9 @@ export class UpdatePromptDto {
   @IsOptional()
   @IsString()
   prompt?: string;
+
+  @ApiProperty({ description: 'Prompt use case', required: false })
+  @IsOptional()
+  @IsString()
+  useCase?: string;
 }

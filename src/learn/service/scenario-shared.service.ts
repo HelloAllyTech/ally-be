@@ -15,7 +15,7 @@ import { ScenarioSessionDetailsRepository } from '../repository/scenario-session
 import { ScenarioSessionMessageTagsRepository } from '../repository/scenario-session-message-tags.repository';
 import { MessageTagMapping } from '../type/scenario-message-tag.type';
 import {
-  SCENARIO_SESSION_PROMPTS,
+  SCENARIO_SESSION_PROMPTS_USE_CASE,
   SCENARIO_SESSION_TRANSLATABLE_FIELDS,
   STT_LLM_PROVIDER_CONFIG,
 } from '../constants/scenario-session.constants';
@@ -648,9 +648,9 @@ export class ScenarioSharedService {
   }
 
   private async getPromptsForScenarioSession() {
-    const prompts = await this.promptSharedService.getPromptsByCodes(
-      SCENARIO_SESSION_PROMPTS,
-    );
+    const prompts = await this.promptSharedService.getPromptsByOptions({
+      useCase: [SCENARIO_SESSION_PROMPTS_USE_CASE],
+    });
 
     if (prompts?.length == 0) {
       return {};
