@@ -25,6 +25,7 @@
     "test:docker:watch": "./test-docker.sh watch",
     "test:docker:clean": "./test-docker.sh clean",
     "typeorm": "typeorm-ts-node-commonjs",
+    "migration:permissions": "ts-node -r tsconfig-paths/register src/database/scripts/generate-permission-migration.ts",
     "migration:generate": "npm run typeorm -- migration:generate src/database/migrations/$npm_config_name -d src/database/data-source.ts",
     "migration:create": "npm run typeorm -- migration:create src/database/migrations/$npm_config_name",
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",
