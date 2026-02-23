@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SessionEventTranslationService } from '../session-event-translation.service';
 import { GoogleTranslationsService } from 'src/common/service/google-translation.service';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { SessionEventTranslationsRepository } from '../../repository/session-event-translation.repository';
@@ -27,6 +28,12 @@ describe('SessionEventTranslationService', () => {
         SessionEventTranslationService,
         {
           provide: GoogleTranslationsService,
+          useValue: {
+            translateObjectToLanguages: jest.fn(),
+          },
+        },
+        {
+          provide: OpenAITranslationsService,
           useValue: {
             translateObjectToLanguages: jest.fn(),
           },

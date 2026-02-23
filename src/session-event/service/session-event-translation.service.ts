@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { GoogleTranslationsService } from 'src/common/service/google-translation.service';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
@@ -17,6 +18,7 @@ import {
 } from '../util/session-event.util';
 import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from 'src/learn/constants/scenario-session.constants';
 import { SessionEventSharedService } from './session-event-shared.service';
+import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 
 @Injectable()
 export class SessionEventTranslationService {
@@ -27,6 +29,7 @@ export class SessionEventTranslationService {
   constructor(
     private readonly sharedLanguageService: SharedLanguageService,
     private readonly googleTranslationService: GoogleTranslationsService,
+    private readonly openAITranslationService: OpenAITranslationsService,
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly sessionEventTranslationsRepository: SessionEventTranslationsRepository,
     private readonly sessionEventSharedService: SessionEventSharedService,
@@ -81,6 +84,30 @@ export class SessionEventTranslationService {
     }
 
     try {
+      const openaiTranslatedVersion =
+        await this.openAITranslationService.translateObjectToLanguages(
+          metadataObj,
+          codes,
+          PromptCode.OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE,
+        );
+
+      if (
+        openaiTranslatedVersion &&
+        Object.keys(openaiTranslatedVersion).length > 0
+      ) {
+        this.logger?.debug?.(
+          '[buildTranslatedSessionEventMetadataForLanguageCodes] successfully translated using OpenAI',
+        );
+        return openaiTranslatedVersion as Record<
+          string,
+          Partial<SessionEventMetadata>
+        >;
+      }
+
+      this.logger?.debug?.(
+        '[buildTranslatedSessionEventMetadataForLanguageCodes] OpenAI translation returned empty, falling back to Google Translate',
+      );
+
       const translated =
         await this.googleTranslationService.translateObjectToLanguages(
           metadataObj,
