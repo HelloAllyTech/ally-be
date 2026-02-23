@@ -227,7 +227,7 @@ describe('ScenariosRepository', () => {
         'scenario',
         'user.name',
       ]);
-      expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(2); // usage + triggerWarnings
+      expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(3);
       expect(mockQueryBuilder.groupBy).toHaveBeenCalledWith('scenario.id');
     });
 
