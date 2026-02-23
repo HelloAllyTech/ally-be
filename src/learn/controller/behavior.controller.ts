@@ -13,12 +13,14 @@ import { BehaviorService } from '../service/behavior.service';
 import {
   CreateBehaviorDto,
   CreateBehaviorResponseDto,
+  CreateBehaviorsDto,
 } from '../dto/create-behavior.dto';
 import { GetBehaviorsResponseDto } from '../dto/behavior-response.dto';
 import { BehaviorSortBy } from '../enum/behavior.enum';
 import { SortOrder } from 'src/common/type/common.type';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
+import { Behavior } from '../entity/behavior.entity';
 
 @ApiTags('Behaviors')
 @ApiBearerAuth()
@@ -96,5 +98,14 @@ export class BehaviorController {
     @Body() createBehaviorDto: CreateBehaviorDto,
   ): Promise<CreateBehaviorResponseDto> {
     return this.behaviorService.createBehavior(createBehaviorDto, tokenUser.id);
+  }
+
+  @ApiOperation({ summary: 'Bulk insertion of behaviors' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('bulk-insertions')
+  async createBehaviors(
+    @Body() createBehaviorsDto: CreateBehaviorsDto,
+  ): Promise<{ behaviors: Behavior[] }> {
+    return this.behaviorService.createBehaviors(createBehaviorsDto);
   }
 }
