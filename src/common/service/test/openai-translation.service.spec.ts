@@ -1,6 +1,7 @@
 import { OpenAITranslationsService } from '../openai-translation.service';
 import { AppConfigService } from 'src/config/config.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 import OpenAI from 'openai';
 
 // Mock OpenAI SDK to avoid real network calls
@@ -395,6 +396,16 @@ describe('OpenAITranslationsService', () => {
       const out = await (service as any).buildSystemPrompt('hi-IN', scenario);
       expect(getPromptByCode).toHaveBeenCalledTimes(1);
       expect(out).toContain('Hindi');
+    });
+  });
+
+  describe('getFallbackPromptTemplate', () => {
+    it('returns fallback prompt template', () => {
+      const service = createService({});
+      const out = (service as any).getFallbackPromptTemplate(
+        PromptCode.OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE,
+      );
+      expect(out).toContain('{{languageName}}');
     });
   });
 });
