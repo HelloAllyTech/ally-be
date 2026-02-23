@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsNotEmpty, IsString, ValidateNested } from 'class-validator';
 
 export class CreateBehaviorDto {
   @ApiProperty({
@@ -9,6 +10,18 @@ export class CreateBehaviorDto {
   @IsNotEmpty()
   @IsString()
   name!: string;
+}
+
+export class CreateBehaviorsDto {
+  @ApiProperty({
+    description: 'List of behaviors to create',
+    example: [{ name: 'Active Listening' }, { name: 'Active Listening' }],
+  })
+  @IsNotEmpty()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateBehaviorDto)
+  behaviors!: CreateBehaviorDto[];
 }
 
 export class CreateBehaviorResponseDto {

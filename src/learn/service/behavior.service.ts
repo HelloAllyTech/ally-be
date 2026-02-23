@@ -3,6 +3,7 @@ import { BehaviorRepository } from '../repository/behavior.repository';
 import {
   CreateBehaviorDto,
   CreateBehaviorResponseDto,
+  CreateBehaviorsDto,
 } from '../dto/create-behavior.dto';
 import {
   GetBehaviorsResponseDto,
@@ -11,6 +12,7 @@ import {
 import { Pagination } from 'src/common/type/common.type';
 import { Behavior } from '../entity/behavior.entity';
 import { BehaviorTranslationService } from './behavior-translation.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 @Injectable()
 export class BehaviorService {
@@ -36,6 +38,23 @@ export class BehaviorService {
       createdAt: saved.createdAt,
       updatedAt: saved.updatedAt,
     };
+  }
+
+  async createBehaviors(
+    createBehaviorsDto: CreateBehaviorsDto,
+  ): Promise<{ behaviors: Behavior[] }> {
+    const createdBy = ExecutionManager.getUserId();
+    const behaviorsToCreate = createBehaviorsDto.behaviors.map((behavior) => ({
+      ...behavior,
+      createdBy,
+    }));
+    const behaviors = this.behaviorRepository.create(
+      behaviorsToCreate as Behavior[],
+    );
+    const savedBehaviors = await this.behaviorRepository.save(behaviors);
+    this.behaviorTranslationService.createBehaviorTranslations(savedBehaviors);
+
+    return { behaviors: savedBehaviors };
   }
 
   async getBehaviors(
