@@ -15,6 +15,7 @@ import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { GetScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioStatus, ScenarioSortBy } from '../type/scenario.type';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
+import { ScenarioBehaviorInstruction } from '../entity/scenario-behavior-instruction.entity';
 import { GetScenarioResponse } from '../interface/session.interface';
 
 @Injectable()
@@ -139,6 +140,14 @@ export class ScenariosRepository extends Repository<Scenarios> {
           .from(ScenarioSessions, 'scenarioSessions')
           .where('scenarioSessions.scenarioId = scenario.id');
       }, 'usage')
+      .addSelect((subQuery) => {
+        return subQuery
+          .select(
+            `COALESCE(json_agg(json_build_object('id', scenarioBehaviorInstruction.id, 'category', scenarioBehaviorInstruction.category, 'instructions', scenarioBehaviorInstruction.instructions)), '[]')`,
+          )
+          .from(ScenarioBehaviorInstruction, 'scenarioBehaviorInstruction')
+          .where('scenarioBehaviorInstruction.scenarioId = scenario.id');
+      }, 'behaviorInstructions')
       .groupBy('scenario.id')
       .addGroupBy('user.name');
 
