@@ -927,6 +927,10 @@ export class ScenarioService {
     const triggerWarnings =
       await this.triggerWarningsService.getTriggerWarningsByScenarioId(id);
 
+    // Get behavior instructions from the original scenario
+    const originalBehaviorInstructions =
+      await this.scenarioSharedService.getBehaviorInstructionsByScenarioId(id);
+
     const newScenario = {
       title: `Copy of ${scenario.title}`,
       description: scenario.description,
@@ -938,6 +942,7 @@ export class ScenarioService {
       metadata: scenario.metadata,
       isGlobal: scenario.isGlobal,
       scenario: scenario.scenario,
+      competencyId: scenario.competencyId, // Copy competency from original scenario
       createdBy: Number(ExecutionManager.getUserId()),
       updatedBy: Number(ExecutionManager.getUserId()),
     };
@@ -990,6 +995,31 @@ export class ScenarioService {
         );
         await scenarioTenantRepo.save(scenarioTenants);
       }
+
+      // Copy behavior instructions from the original scenario
+      if (
+        originalBehaviorInstructions &&
+        originalBehaviorInstructions.length > 0
+      ) {
+        const behaviorInstructionsToCreate = originalBehaviorInstructions.map(
+          (instruction) => ({
+            category: instruction.category,
+            instructions: instruction.instructions,
+            behaviors: instruction.behaviors.map((behavior) => behavior.id),
+          }),
+        );
+
+        await this.scenarioBehaviorInstructionService.createBehaviorInstructions(
+          [
+            {
+              scenarioId: newScenarioData.id,
+              behaviorInstructions: behaviorInstructionsToCreate,
+            },
+          ],
+          manager,
+        );
+      }
+
       this.logger.info(`Scenario ${id} duplicated successfully`);
       return newScenarioData;
     });

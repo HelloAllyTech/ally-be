@@ -65,6 +65,7 @@ describe('ScenarioService', () => {
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let triggerWarningsService: jest.Mocked<TriggerWarningsService>;
   let openAIAutofillService: jest.Mocked<OpenAIAutofillService>;
+  let scenarioBehaviorInstructionService: jest.Mocked<ScenarioBehaviorInstructionService>;
 
   const mockTenantId = 'tenant-123';
 
@@ -236,6 +237,7 @@ describe('ScenarioService', () => {
       getUniqueLanguagesFromScenarioTranslations: jest.fn(),
       getScenarioVoice: jest.fn(),
       getAdminScenario: jest.fn(),
+      getBehaviorInstructionsByScenarioId: jest.fn(),
     };
 
     const mockScenarioEventsTranslationsRepository = {
@@ -391,6 +393,9 @@ describe('ScenarioService', () => {
     scenarioSharedService = module.get(ScenarioSharedService);
     triggerWarningsService = module.get(TriggerWarningsService);
     openAIAutofillService = module.get(OpenAIAutofillService);
+    scenarioBehaviorInstructionService = module.get(
+      ScenarioBehaviorInstructionService,
+    );
   });
 
   afterEach(() => {
@@ -3366,6 +3371,24 @@ describe('ScenarioService', () => {
           { id: 'tenant-2', name: 'Tenant 2' },
         ];
 
+        const mockBehaviorInstructions = [
+          {
+            id: 'instruction-1',
+            category: BehaviorInstructionCategory.SHOULD_DO,
+            instructions: ['Listen actively', 'Show empathy'],
+            behaviors: [
+              { id: 'behavior-1', name: 'Active Listening' },
+              { id: 'behavior-2', name: 'Empathy' },
+            ],
+          },
+          {
+            id: 'instruction-2',
+            category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+            instructions: ['Do not interrupt', 'Avoid judgmental language'],
+            behaviors: [{ id: 'behavior-3', name: 'Non-judgmental' }],
+          },
+        ];
+
         const mockNewScenario = {
           id: 2,
           title: 'Copy of Test Scenario',
@@ -3390,6 +3413,9 @@ describe('ScenarioService', () => {
         );
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           mockTriggerWarnings as any,
+        );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          mockBehaviorInstructions as any,
         );
         tenantService.findAll.mockResolvedValue(mockTenants as any);
 
@@ -3439,6 +3465,9 @@ describe('ScenarioService', () => {
         expect(
           triggerWarningsService.getTriggerWarningsByScenarioId,
         ).toHaveBeenCalledWith(scenarioId);
+        expect(
+          scenarioSharedService.getBehaviorInstructionsByScenarioId,
+        ).toHaveBeenCalledWith(scenarioId);
 
         expect(mockScenarioRepo.save).toHaveBeenCalledWith({
           title: 'Copy of Test Scenario',
@@ -3450,6 +3479,7 @@ describe('ScenarioService', () => {
           metadata: mockScenario.metadata,
           isGlobal: true,
           scenario: mockScenario.scenario,
+          competencyId: mockScenario.competencyId,
           createdBy: mockUserId,
           updatedBy: mockUserId,
         });
@@ -3506,6 +3536,32 @@ describe('ScenarioService', () => {
             }),
           ]),
         );
+
+        expect(
+          scenarioBehaviorInstructionService.createBehaviorInstructions,
+        ).toHaveBeenCalledWith(
+          [
+            {
+              scenarioId: 2,
+              behaviorInstructions: [
+                {
+                  category: BehaviorInstructionCategory.SHOULD_DO,
+                  instructions: ['Listen actively', 'Show empathy'],
+                  behaviors: ['behavior-1', 'behavior-2'],
+                },
+                {
+                  category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+                  instructions: [
+                    'Do not interrupt',
+                    'Avoid judgmental language',
+                  ],
+                  behaviors: ['behavior-3'],
+                },
+              ],
+            },
+          ],
+          mockEntityManager,
+        );
       });
 
       it('should throw NotFoundException when scenario does not exist', async () => {
@@ -3535,6 +3591,9 @@ describe('ScenarioService', () => {
         scenarioEventsRepository.find.mockResolvedValue([]);
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
+        );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
         );
 
         const mockScenarioRepo = {
@@ -3585,6 +3644,9 @@ describe('ScenarioService', () => {
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
         );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
+        );
 
         const mockScenarioRepo = {
           save: jest.fn().mockResolvedValue(mockNewScenario),
@@ -3629,6 +3691,9 @@ describe('ScenarioService', () => {
         scenarioEventsRepository.find.mockResolvedValue([]);
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
+        );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
         );
 
         const mockScenarioRepo = {
@@ -3677,6 +3742,9 @@ describe('ScenarioService', () => {
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
         );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
+        );
 
         const mockScenarioRepo = {
           save: jest.fn().mockResolvedValue(mockNewScenario),
@@ -3718,6 +3786,9 @@ describe('ScenarioService', () => {
         scenarioEventsRepository.find.mockResolvedValue([]);
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
+        );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
         );
 
         const mockScenarioRepo = {
@@ -3761,6 +3832,9 @@ describe('ScenarioService', () => {
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
         );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
+        );
 
         const mockScenarioRepo = {
           save: jest.fn().mockResolvedValue(mockNewScenario),
@@ -3792,6 +3866,9 @@ describe('ScenarioService', () => {
         scenarioEventsRepository.find.mockResolvedValue([]);
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
+        );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
         );
 
         const mockError = new Error('Database error');
