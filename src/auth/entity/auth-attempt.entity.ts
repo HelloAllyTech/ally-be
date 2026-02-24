@@ -8,7 +8,7 @@ import {
 } from 'typeorm';
 
 @Entity('auth_attempts')
-@Index('uniq_active_auth_attempt', ['email'], {
+@Index('uq_auth_attempts_email_idx', ['email'], {
   where: 'used = false',
   unique: true,
 })
@@ -19,21 +19,21 @@ export class AuthAttempt extends BaseEntity {
   @Column()
   email!: string;
 
-  @Column({ name: 'otp_hash' })
+  @Column()
   otpHash!: string;
 
-  @Column({ name: 'magic_token_hash' })
+  @Column()
   magicTokenHash!: string;
 
-  @Column({ name: 'expires_at' })
+  @Column()
   expiresAt!: Date;
 
   @Column({ default: false })
   used!: boolean;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn()
   createdAt!: Date;
 
-  @Column({ name: 'used_at', nullable: true })
+  @Column({ nullable: true })
   usedAt?: Date;
 }

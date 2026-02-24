@@ -134,6 +134,28 @@ describe('EmailService', () => {
       });
       expect(result).toBe(true);
     });
+
+    it('should include magic link with /auth/verify path when magicLinkToken is provided', async () => {
+      const params = {
+        to: 'test@example.com',
+        otp: '123456',
+        magicLinkToken: 'test-magic-token',
+      };
+      mockSESService.sendEmail.mockResolvedValue(true);
+
+      const result = await service.sendEmailOTP(params);
+
+      expect(mockSESService.sendEmail).toHaveBeenCalledWith({
+        from: 'test@example.com',
+        to: 'test@example.com',
+        subject: 'Your Ally Verification Code',
+        body: expect.stringContaining(
+          'https://test.example.com/auth/verify?token=test-magic-token',
+        ),
+        isHtml: false,
+      });
+      expect(result).toBe(true);
+    });
   });
 
   describe('sendSummaryNotification', () => {

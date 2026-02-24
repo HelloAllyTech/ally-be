@@ -12,7 +12,7 @@ export class EmailService {
     private readonly config: AppConfigService,
     private readonly eventEmitter: EventEmitter2,
     private readonly sesService: SESService,
-  ) {}
+  ) { }
 
   async sendEmailOTP(params: {
     to: string;
@@ -33,7 +33,7 @@ export class EmailService {
     const minutes = Math.floor(this.config.otp.ttl / 60);
 
     const magicLink = params.magicLinkToken
-      ? `${this.config.app.baseUrl}/magic-verify?token=${params.magicLinkToken}`
+      ? `${this.config.app.baseUrl}/auth/verify?token=${params.magicLinkToken}`
       : undefined;
 
     const subject = 'Your Ally Verification Code';
