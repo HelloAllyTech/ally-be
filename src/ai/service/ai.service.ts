@@ -212,6 +212,8 @@ export class AiService {
       request,
       true,
       'post',
+      undefined,
+      true,
     );
   }
 
@@ -221,12 +223,16 @@ export class AiService {
     throwError = false,
     method: 'get' | 'post' | 'put' | 'delete' = 'post',
     headers?: Record<string, string>,
+    isLearnService = false,
   ): Promise<R> {
     const execId = uuidv4();
     let timeoutId: NodeJS.Timeout | undefined;
     const startTime = new Date().toISOString();
     try {
-      const url = `${this.config.ai.apiUrl}/${endpoint}`;
+      const apiUrl = isLearnService
+        ? this.config.ai.learnApiUrl
+        : this.config.ai.apiUrl;
+      const url = `${apiUrl}/${endpoint}`;
       this.logger.debug(
         `Making request to ${endpoint} | ${execId} | ${JSON.stringify(data)}`,
       );
@@ -243,7 +249,9 @@ export class AiService {
       const response = await axios({
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': this.config.ai.outboundApiKey,
+          'x-api-key': isLearnService
+            ? this.config.ai.learnOutboundApiKey
+            : this.config.ai.outboundApiKey,
           ...(headers || {}),
         },
         timeout: this.maxTimeout,

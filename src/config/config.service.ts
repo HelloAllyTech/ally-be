@@ -40,6 +40,7 @@ export class AppConfigService {
   get ai() {
     return {
       apiUrl: this.configService.get<string>('AI_SERVICE_API_URL'),
+      learnApiUrl: this.configService.get<string>('AI_LEARN_SERVICE_API_URL'),
       sentenceCompletionRequired:
         this.configService.get<string>('SENTENCE_COMPLETION_REQUIRED') ===
         'true',
@@ -48,6 +49,9 @@ export class AppConfigService {
       // outbound key (BE -> AI) for x-api-key header
       outboundApiKey: this.configService.get<string>(
         'AI_SERVICE_OUTBOUND_API_KEY',
+      ),
+      learnOutboundApiKey: this.configService.get<string>(
+        'AI_LEARN_SERVICE_OUTBOUND_API_KEY',
       ),
     };
   }
