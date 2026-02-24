@@ -15,6 +15,7 @@ import {
   BehaviorInstructionItem,
 } from '../dto/generate-scenario-field-response.dto';
 import { STRUCTURED_OUTPUT_SCHEMAS } from '../constants/autofill-structured-output.constants';
+import { MAX_BEHAVIOR_INSTRUCTIONS_COUNT } from '../constants/scenario-behavior-instuctions.constants';
 import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 import { BehaviorResponseDto } from '../dto/behavior-response.dto';
 import {
@@ -105,7 +106,7 @@ export class OpenAIAutofillService {
           category: string;
           helper_behavior_ids: number[];
           actor_response: string;
-        }> = parsed.instructions;
+        }> = parsed.instructions.slice(0, MAX_BEHAVIOR_INSTRUCTIONS_COUNT);
 
         return items.map((item) => {
           const behaviors = item.helper_behavior_ids
