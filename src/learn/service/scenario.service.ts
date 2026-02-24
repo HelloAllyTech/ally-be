@@ -101,6 +101,8 @@ import {
   supportedStateInstructionStateIds,
 } from '../constants/scenario-state-instructions.constants';
 import { CompetencyService } from './competency.service';
+import { BehaviorService } from './behavior.service';
+import { GeneratableField } from '../enum/generatable-field.enum';
 
 @Injectable()
 export class ScenarioService {
@@ -129,6 +131,7 @@ export class ScenarioService {
     private scenarioBehaviorInstructionService: ScenarioBehaviorInstructionService,
     private competencyService: CompetencyService,
     private openAIAutofillService: OpenAIAutofillService,
+    private behaviorService: BehaviorService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -1765,10 +1768,20 @@ export class ScenarioService {
       );
     }
 
+    let behaviorIdMapping;
+    if (fieldName === GeneratableField.BEHAVIOR_INSTRUCTIONS) {
+      const { data: behaviors } = await this.behaviorService.getBehaviors();
+      const result =
+        this.openAIAutofillService.buildBehaviorIdMapping(behaviors);
+      behaviorIdMapping = result.mapping;
+      scenarioContext.allowedHelperBehaviorsList = result.formattedList;
+    }
+
     const content = await this.openAIAutofillService.generateFieldContent(
       fieldName,
       promptCode,
       scenarioContext,
+      behaviorIdMapping,
     );
 
     return { fieldName, content };

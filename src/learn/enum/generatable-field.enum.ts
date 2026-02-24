@@ -3,4 +3,5 @@ export enum GeneratableField {
   OPENING_STATEMENTS = 'openingStatements',
   DESCRIPTION = 'description',
   CHARACTER_PROFILE_TEXT = 'characterProfileText',
+  BEHAVIOR_INSTRUCTIONS = 'behaviorInstructions',
 }

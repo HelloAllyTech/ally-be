@@ -37,6 +37,7 @@ import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
 import { CompetencyService } from '../competency.service';
 import { OpenAIAutofillService } from '../openai-autofil-service';
+import { BehaviorService } from '../behavior.service';
 import { GeneratableField } from 'src/learn/enum/generatable-field.enum';
 
 // Mock static classes
@@ -273,6 +274,11 @@ describe('ScenarioService', () => {
 
     const mockOpenAIAutofillService = {
       generateFieldContent: jest.fn(),
+      buildBehaviorIdMapping: jest.fn(),
+    };
+
+    const mockBehaviorService = {
+      getBehaviors: jest.fn().mockResolvedValue({ data: [], count: 0 }),
     };
 
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
@@ -375,6 +381,10 @@ describe('ScenarioService', () => {
         {
           provide: OpenAIAutofillService,
           useValue: mockOpenAIAutofillService,
+        },
+        {
+          provide: BehaviorService,
+          useValue: mockBehaviorService,
         },
       ],
     }).compile();
@@ -4557,6 +4567,7 @@ describe('ScenarioService', () => {
         GeneratableField.CHARACTER_PROFILE_TEXT,
         expect.any(String),
         scenarioContext,
+        undefined,
       );
     });
 

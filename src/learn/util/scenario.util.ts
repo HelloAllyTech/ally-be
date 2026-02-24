@@ -251,5 +251,7 @@ export const getPromptCodeForScenarioField = (scenarioField: string) => {
       return PromptCode.OPENAI_SIMULATION_CHALLENGE_DESCRIPTION_PROMPT_CODE;
     case GeneratableField.CHARACTER_PROFILE_TEXT:
       return PromptCode.OPENAI_SIMULATION_CHARACTER_PROFILE_TEXT_PROMPT_CODE;
+    case GeneratableField.BEHAVIOR_INSTRUCTIONS:
+      return PromptCode.OPENAI_SIMULATION_BEHAVIOR_INSTRUCTIONS_PROMPT_CODE;
   }
 };

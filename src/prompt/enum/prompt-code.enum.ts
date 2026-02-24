@@ -8,6 +8,7 @@ export enum PromptCode {
   OPENAI_SIMULATION_CHALLENGE_DESCRIPTION_PROMPT_CODE = 'openai_simulation_challenge_description',
   OPENAI_SIMULATION_STATES_INSTRUCTIONS_PROMPT_CODE = 'openai_simulation_states_instructions',
   OPENAI_SIMULATION_OPENING_DIALOGUES_PROMPT_CODE = 'openai_simulation_opening_dialogues',
+  OPENAI_SIMULATION_BEHAVIOR_INSTRUCTIONS_PROMPT_CODE = 'openai_simulation_behavior_instructions',
   ALLY_AI_LEARN_DEFAULT = 'ally_ai_learn_default',
   ALLY_AI_LEARN_CLIENT_PERSONA_TEMPLATE = 'ally_ai_learn_client_persona_template',
   ALLY_AI_LEARN_PROSODY_GENERATION = 'ally_ai_learn_prosody_generation',

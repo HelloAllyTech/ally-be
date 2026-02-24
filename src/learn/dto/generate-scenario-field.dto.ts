@@ -101,6 +101,15 @@ export class ScenarioFieldContextDto {
   @IsString()
   @IsOptional()
   challengeDescription?: string;
+
+  @ApiProperty({
+    description:
+      'Formatted list of allowed helper behaviors for behavior instruction generation',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  allowedHelperBehaviorsList?: string;
 }
 
 export class GenerateScenarioFieldDto {

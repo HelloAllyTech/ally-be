@@ -43,9 +43,41 @@ const STATE_INSTRUCTIONS_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
   },
 };
 
+const BEHAVIOR_INSTRUCTIONS_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
+  name: 'behavior_instructions',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      instructions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            category: {
+              type: 'string',
+              enum: ['SHOULD_DO', 'SHOULD_NOT_DO'],
+            },
+            helper_behavior_ids: {
+              type: 'array',
+              items: { type: 'number' },
+            },
+            actor_response: { type: 'string' },
+          },
+          required: ['category', 'helper_behavior_ids', 'actor_response'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['instructions'],
+    additionalProperties: false,
+  },
+};
+
 export const STRUCTURED_OUTPUT_SCHEMAS: Partial<
   Record<GeneratableField, ResponseFormatJSONSchema.JSONSchema>
 > = {
   [GeneratableField.OPENING_STATEMENTS]: OPENING_STATEMENTS_SCHEMA,
   [GeneratableField.STATE_INSTRUCTIONS]: STATE_INSTRUCTIONS_SCHEMA,
+  [GeneratableField.BEHAVIOR_INSTRUCTIONS]: BEHAVIOR_INSTRUCTIONS_SCHEMA,
 };

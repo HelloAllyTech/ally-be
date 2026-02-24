@@ -10,10 +10,17 @@ import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { ScenarioFieldContextDto } from '../dto/generate-scenario-field.dto';
 import { GeneratableField } from '../enum/generatable-field.enum';
-import { StateInstructionItem } from '../dto/generate-scenario-field-response.dto';
+import {
+  StateInstructionItem,
+  BehaviorInstructionItem,
+} from '../dto/generate-scenario-field-response.dto';
 import { STRUCTURED_OUTPUT_SCHEMAS } from '../constants/autofill-structured-output.constants';
-
-type GeneratedContent = string | string[] | StateInstructionItem[];
+import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
+import { BehaviorResponseDto } from '../dto/behavior-response.dto';
+import {
+  BehaviorIdMapping,
+  GeneratedContent,
+} from '../type/generatable-fields.type';
 
 @Injectable()
 export class OpenAIAutofillService {
@@ -54,9 +61,24 @@ export class OpenAIAutofillService {
     return variables;
   }
 
+  buildBehaviorIdMapping(behaviors: BehaviorResponseDto[]): {
+    mapping: BehaviorIdMapping;
+    formattedList: string;
+  } {
+    const mapping: BehaviorIdMapping = new Map();
+    const lines = behaviors.map((behavior, index) => {
+      const seqId = index + 1;
+      mapping.set(seqId, { id: behavior.id, name: behavior.name });
+      return `${seqId}. ${behavior.name}`;
+    });
+
+    return { mapping, formattedList: lines.join('\n') };
+  }
+
   private extractContent(
     fieldName: GeneratableField,
     raw: string,
+    behaviorIdMapping?: BehaviorIdMapping,
   ): GeneratedContent {
     switch (fieldName) {
       case GeneratableField.CHARACTER_PROFILE_TEXT:
@@ -76,6 +98,30 @@ export class OpenAIAutofillService {
           dialogues: value.dialogues,
         })) as StateInstructionItem[];
       }
+
+      case GeneratableField.BEHAVIOR_INSTRUCTIONS: {
+        const parsed = JSON.parse(raw);
+        const items: Array<{
+          category: string;
+          helper_behavior_ids: number[];
+          actor_response: string;
+        }> = parsed.instructions;
+
+        return items.map((item) => {
+          const behaviors = item.helper_behavior_ids
+            .map((seqId) => behaviorIdMapping?.get(seqId))
+            .filter(
+              (behavior): behavior is BehaviorResponseDto =>
+                behavior !== undefined,
+            );
+
+          return {
+            category: item.category as BehaviorInstructionCategory,
+            behaviors,
+            instructions: [item.actor_response],
+          };
+        }) as BehaviorInstructionItem[];
+      }
     }
   }
 
@@ -83,6 +129,7 @@ export class OpenAIAutofillService {
     fieldName: GeneratableField,
     promptCode: string,
     scenarioContext: ScenarioFieldContextDto,
+    behaviorIdMapping?: BehaviorIdMapping,
   ): Promise<GeneratedContent> {
     const promptTemplate =
       await this.promptSharedService.getPromptByCode(promptCode);
@@ -126,7 +173,7 @@ export class OpenAIAutofillService {
         );
       }
 
-      return this.extractContent(fieldName, content.trim());
+      return this.extractContent(fieldName, content.trim(), behaviorIdMapping);
     } catch (error) {
       this.logger.error(
         `Error generating content for prompt code: ${promptCode}`,
