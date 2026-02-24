@@ -194,6 +194,10 @@ export class S3Service {
     }
   }
 
+  getS3Url(bucket: string, region: string, path: string): string {
+    return `https://${bucket}.s3.${region}.amazonaws.com/${path}`;
+  }
+
   sanitizeFileName(fileName: string, maxLength: number = 128): string {
     // Remove any path traversal attempts and dangerous characters
     return fileName

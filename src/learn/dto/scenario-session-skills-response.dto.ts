@@ -9,6 +9,14 @@ export class ScenarioSessionSkillCoverageItemDto {
 
   @ApiProperty({ description: 'Coverage percentage (0-100)' })
   percentage!: number;
+
+  @ApiProperty({
+    description:
+      'URL of the skill icon in the assets S3 bucket (skill-icons folder)',
+    example:
+      'https://assets-bucket.s3.us-east-1.amazonaws.com/skill-icons/Learning.svg',
+  })
+  iconUrl?: string;
 }
 
 export class ScenarioSessionEmotionalMovementItemDto {

@@ -24,6 +24,8 @@ import { ConversationalGuardrailsService } from 'src/conversational-guardrails/s
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { SCENARIO_SESSION_PROMPTS_USE_CASE } from '../../constants/scenario-session.constants';
 import { CompetencyService } from '../competency.service';
+import { AppConfigService } from 'src/config/config.service';
+import { S3Service } from 'src/aws/service/s3.service';
 
 describe('ScenarioSharedService', () => {
   let service: ScenarioSharedService;
@@ -89,6 +91,18 @@ describe('ScenarioSharedService', () => {
       getCompetency: jest.fn(),
       getCompetencies: jest.fn(),
       createCompetency: jest.fn(),
+    };
+
+    const mockAppConfigService = {
+      s3: { assetsBucket: 'test-assets-bucket' },
+      aws: { region: 'us-east-1' },
+    };
+
+    const mockS3Service = {
+      getS3Url: jest.fn((bucket: string, region: string, path: string) => {
+        const key = path.replace(/^\//, '');
+        return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+      }),
     };
 
     const mockScenarioTranslationsRepository = {
@@ -191,6 +205,14 @@ describe('ScenarioSharedService', () => {
         {
           provide: CompetencyService,
           useValue: mockCompetencyService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: mockAppConfigService,
+        },
+        {
+          provide: S3Service,
+          useValue: mockS3Service,
         },
       ],
     }).compile();
@@ -983,7 +1005,20 @@ describe('ScenarioSharedService', () => {
       expect(scenarioSessionDetailsRepository.findOne).toHaveBeenCalledWith({
         where: { scenarioSessionId },
       });
-      expect(result.skillCoverage).toEqual(skillCoverage);
+      expect(result.skillCoverage).toEqual([
+        {
+          category: 'Learning',
+          percentage: 75,
+          iconUrl:
+            'https://test-assets-bucket.s3.us-east-1.amazonaws.com/skill-icons/Learning.svg',
+        },
+        {
+          category: 'Support',
+          percentage: 80,
+          iconUrl:
+            'https://test-assets-bucket.s3.us-east-1.amazonaws.com/skill-icons/Support.svg',
+        },
+      ]);
       expect(result.emotionalMovement).toEqual([
         { messageId: '1', level: 3, startTime: 0 },
         { messageId: '2', level: 4, startTime: 5.2 },

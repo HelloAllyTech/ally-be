@@ -304,3 +304,5 @@ export const SCENARIO_SESSION_TRANSLATABLE_FIELDS: string[] = [
 ];
 
 export const SCENARIO_SESSION_PROMPTS_USE_CASE: string = 'SCENARIO_SESSION';
+
+export const SKILL_ICONS_S3_PREFIX = 'skill-icons/';
