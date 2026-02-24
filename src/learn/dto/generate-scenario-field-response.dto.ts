@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { GeneratableField } from '../enum/generatable-field.enum';
+import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
+import { BehaviorResponseDto } from './behavior-response.dto';
 
 export class StateInstructionItem {
   @ApiProperty({ description: 'State identifier (1-4)' })
@@ -15,6 +17,28 @@ export class StateInstructionItem {
   dialogues!: string[];
 }
 
+export class BehaviorInstructionItem {
+  @ApiProperty({
+    description: 'Category of the behavior instruction',
+    enum: BehaviorInstructionCategory,
+    example: BehaviorInstructionCategory.SHOULD_DO,
+  })
+  category!: BehaviorInstructionCategory;
+
+  @ApiProperty({
+    description: 'Array of instruction strings (actor responses)',
+    example: ['I feel heard and understood right now.'],
+    type: [String],
+  })
+  instructions!: string[];
+
+  @ApiProperty({
+    description: 'Array of behaviors associated with this instruction',
+    type: [BehaviorResponseDto],
+  })
+  behaviors!: BehaviorResponseDto[];
+}
+
 export class GenerateScenarioFieldResponseDto {
   @ApiProperty({
     description: 'The field that was generated',
@@ -24,7 +48,11 @@ export class GenerateScenarioFieldResponseDto {
 
   @ApiProperty({
     description:
-      'Generated content. String for characterProfileText/description, string[] for openingStatements, StateInstructionItem[] for stateInstructions.',
+      'Generated content. String for characterProfileText/description, string[] for openingStatements, StateInstructionItem[] for stateInstructions, BehaviorInstructionItem[] for behaviorInstructions.',
   })
-  content!: string | string[] | StateInstructionItem[];
+  content!:
+    | string
+    | string[]
+    | StateInstructionItem[]
+    | BehaviorInstructionItem[];
 }
