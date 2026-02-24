@@ -26,8 +26,10 @@ export const validationSchema = Joi.object({
 
   // AI
   AI_SERVICE_API_URL: Joi.string().required(),
+  AI_LEARN_SERVICE_API_URL: Joi.string().required(),
   AI_SERVICE_API_KEY: Joi.string().required(), // inbound (AI -> BE)
   AI_SERVICE_OUTBOUND_API_KEY: Joi.string().required(), // outbound (BE -> AI)
+  AI_LEARN_SERVICE_OUTBOUND_API_KEY: Joi.string().required(), // outbound (BE -> AI Learn Service)
 
   // AWS
   AWS_REGION: Joi.string().default('us-east-1'),
