@@ -18,7 +18,9 @@ import {
   SCENARIO_SESSION_PROMPTS_USE_CASE,
   SCENARIO_SESSION_TRANSLATABLE_FIELDS,
   STT_LLM_PROVIDER_CONFIG,
+  SKILL_ICONS_S3_PREFIX,
 } from '../constants/scenario-session.constants';
+import { AppConfigService } from 'src/config/config.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioStateInstruction } from '../type/scenario-state.type';
 import { getScenarioStateConfigByDifficultyLevel } from '../util/scenario-state.util';
@@ -46,9 +48,13 @@ import { ConversationalGuardrailsService } from 'src/conversational-guardrails/s
 import { isEnglishLanguage } from '../util/scenario.util';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
-import { ScenarioEvaluationEmotionalMovementItem } from 'src/ai/dto/ai.response.dto';
+import {
+  ScenarioEvaluationEmotionalMovementItem,
+  ScenarioEvaluationSkillCoverageItem,
+} from 'src/ai/dto/ai.response.dto';
 import { formatBehaviorInstructionsForLivekitMetadata } from '../util/scenario-behavior-instructions.util';
 import { CompetencyService } from './competency.service';
+import { S3Service } from 'src/aws/service/s3.service';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -71,6 +77,8 @@ export class ScenarioSharedService {
     private conversationalGuardrailsService: ConversationalGuardrailsService,
     private promptSharedService: PromptSharedService,
     private competencyService: CompetencyService,
+    private configService: AppConfigService,
+    private s3Service: S3Service,
   ) {}
 
   async getScenarioByIds(
@@ -673,7 +681,25 @@ export class ScenarioSharedService {
       throw new NotFoundException('Scenario session details not found');
     }
     const feedback = scenarioSessionDetails.summary?.feedback;
-    const skillCoverage = feedback?.skillCoverage ?? [];
+    const bucket = this.configService.s3.assetsBucket;
+    const region = this.configService.aws.region;
+    const skillCoverage = (feedback?.skillCoverage ?? []).map(
+      (item: ScenarioEvaluationSkillCoverageItem) => {
+        const iconUrl =
+          bucket && region
+            ? this.s3Service.getS3Url(
+                bucket,
+                region,
+                `${SKILL_ICONS_S3_PREFIX}${item.category}.svg`,
+              )
+            : '';
+        return {
+          category: item.category,
+          percentage: item.percentage,
+          iconUrl,
+        };
+      },
+    );
     const emotionalMovement = Array.isArray(feedback?.emotionalMovement)
       ? feedback?.emotionalMovement.map(
           (item: ScenarioEvaluationEmotionalMovementItem) => ({
