@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { In } from 'typeorm';
+import { EntityManager, In } from 'typeorm';
 import { BadgeUserRepository } from '../repository/badge-user.repository';
 import { Badge } from '../entity/badge.entity';
 import { BadgeCategory } from '../constants/badge.constants';
@@ -7,6 +7,7 @@ import { ReviewSharedService } from 'src/review/service/review-shared.service';
 import { CommunitySharedService } from 'src/community/service/community-shared.service';
 import { UserValueCount } from '../type/badge.type';
 import { SaveBadgeUsersRequest } from '../type/badge-response.type';
+import { BadgeUser } from '../entity/badge-user.entity';
 
 @Injectable()
 export class BadgeUserService {
@@ -235,6 +236,7 @@ export class BadgeUserService {
   async removeBadgeUsersForTenants(
     badgeId: string,
     tenantIds: string[],
+    entityManager?: EntityManager,
   ): Promise<void> {
     if (tenantIds.length === 0) {
       return;
@@ -247,7 +249,9 @@ export class BadgeUserService {
       );
 
     if (badgeUserIds.length > 0) {
-      await this.badgeUserRepository.softDelete(badgeUserIds);
+      const badgeUserRepository =
+        entityManager?.getRepository(BadgeUser) ?? this.badgeUserRepository;
+      await badgeUserRepository.softDelete(badgeUserIds);
       this.logger.log(
         `Removed ${badgeUserIds.length} badge_user records for badge ${badgeId} from tenants: ${tenantIds.join(', ')}`,
       );

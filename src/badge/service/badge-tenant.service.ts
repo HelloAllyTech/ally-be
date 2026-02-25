@@ -1,4 +1,4 @@
-import { In, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import {
   BadRequestException,
   Injectable,
@@ -114,11 +114,14 @@ export class BadgeTenantService {
   async removeBadgeFromTenants(
     badgeId: string,
     tenantIds: string[],
+    entityManager?: EntityManager,
   ): Promise<void> {
     if (tenantIds.length === 0) {
       return;
     }
-    await this.badgeTenantRepository.softDelete({
+    const badgeTenantRepository =
+      entityManager?.getRepository(BadgeTenant) ?? this.badgeTenantRepository;
+    await badgeTenantRepository.softDelete({
       badgeId,
       tenantId: In(tenantIds),
     });
@@ -130,13 +133,15 @@ export class BadgeTenantService {
   async updateBadgeTenants(
     badgeId: string,
     tenantIds: string[],
+    entityManager?: EntityManager,
   ): Promise<string[]> {
     if (tenantIds.length === 0) {
       return [];
     }
-
+    const badgeTenantRepository =
+      entityManager?.getRepository(BadgeTenant) ?? this.badgeTenantRepository;
     // Check which tenants already have this badge
-    const existingMappings = await this.badgeTenantRepository.find({
+    const existingMappings = await badgeTenantRepository.find({
       where: { badgeId, tenantId: In(tenantIds) },
     });
 
@@ -145,12 +150,12 @@ export class BadgeTenantService {
 
     if (newTenantIds.length > 0) {
       const badgeTenants = newTenantIds.map((tenantId) =>
-        this.badgeTenantRepository.create({
+        badgeTenantRepository.create({
           badgeId,
           tenantId,
         }),
       );
-      await this.badgeTenantRepository.save(badgeTenants);
+      await badgeTenantRepository.save(badgeTenants);
       this.logger.log(
         `Badge ${badgeId} added to new tenants: ${newTenantIds.join(', ')}`,
       );
