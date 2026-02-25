@@ -218,3 +218,11 @@ export class TenantBadgeResponseDto {
   })
   visibilityType!: BadgeVisibilityType;
 }
+
+export class TenantBadgeListResponseDto {
+  @ApiProperty({
+    type: [TenantBadgeResponseDto],
+    description: 'List of badges assigned to the tenant',
+  })
+  data!: TenantBadgeResponseDto[];
+}

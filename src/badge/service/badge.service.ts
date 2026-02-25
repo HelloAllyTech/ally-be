@@ -632,6 +632,17 @@ export class BadgeService {
     return updateData;
   }
 
+  async getPaginatedBadgesForTenant(
+    tenantId: string,
+    pagination?: Pagination & { search?: string },
+  ): Promise<{ data: TenantBadgeResponse[] }> {
+    const [data] = await this.badgeRepository.getPaginatedBadgesForTenant(
+      tenantId,
+      pagination,
+    );
+    return { data };
+  }
+
   /**
    * Get badges that are available to a tenant
    */
