@@ -98,8 +98,10 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
 
     if (active !== undefined) {
       query.where('la.active = :active', { active });
+      query.andWhere('sv.active = :active', { active });
     } else {
       query.where('la.active = true');
+      query.andWhere('sv.active = true');
     }
 
     const rows = await query.getRawMany();
