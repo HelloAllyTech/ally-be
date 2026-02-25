@@ -38,7 +38,7 @@ describe('TenantController', () => {
   const mockTenantResponse: TenantResponseDto = {
     ...mockTenant,
     enabledDashboardIds: [],
-    hideRankInLeaderboard: false,
+    hideRankInCommunity: false,
     enableAudioUpload: true,
     enableMicrophoneMode: true,
   };
@@ -47,7 +47,7 @@ describe('TenantController', () => {
     ...mockTenant,
     userCount: 5,
     enabledDashboardIds: [],
-    hideRankInLeaderboard: false,
+    hideRankInCommunity: false,
     enableAudioUpload: true,
     enableMicrophoneMode: true,
   };

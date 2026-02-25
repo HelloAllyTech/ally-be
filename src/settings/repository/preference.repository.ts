@@ -18,13 +18,12 @@ export class PreferenceRepository extends Repository<Preference> {
     const results = await this.dataSource
       .createQueryBuilder(Preference, 'p')
       .select('p.relatedId', 'tenantId')
-      .addSelect('ARRAY_AGG(p.value)', 'hiddenChatTypes')
+      .addSelect('p.value', 'hiddenChatTypes')
       .where('p.relatedEntity = :relatedEntity', {
         relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
       })
       .andWhere('p.name = :name', { name: PreferenceName.HIDDEN_CHAT_TYPES })
       .andWhere('p.relatedId IN (:...tenantIds)', { tenantIds })
-      .groupBy('p.relatedId')
       .getRawMany();
 
     return results.map((result) => ({

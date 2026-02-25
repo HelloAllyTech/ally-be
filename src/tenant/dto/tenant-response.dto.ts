@@ -46,7 +46,7 @@ export class TenantResponseDto {
     description: 'Whether rank is hidden in leaderboard',
     example: false,
   })
-  hideRankInLeaderboard!: boolean;
+  hideRankInCommunity!: boolean;
 
   @ApiProperty({
     description: 'Whether audio upload is enabled',
