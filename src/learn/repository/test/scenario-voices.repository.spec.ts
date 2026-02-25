@@ -242,6 +242,154 @@ describe('ScenarioVoicesRepository', () => {
     });
   });
 
+  describe('getLanguagesWithVoices', () => {
+    it('should return languages with voices correctly when no params are provided', async () => {
+      const mockRows = [
+        {
+          language_id: '1',
+          value: 'en',
+          label: 'English',
+          voices: JSON.stringify([
+            { id: 'v1', name: 'Voice 1', provider: 'openai', config: {} },
+          ]),
+        },
+      ];
+
+      queryBuilder.getRawMany.mockResolvedValue(mockRows as any);
+
+      const result = await repository.getLanguagesWithVoices();
+
+      expect(queryBuilder.select).toHaveBeenCalledWith('la.id', 'language_id');
+      expect(queryBuilder.addSelect).toHaveBeenCalledWith(
+        `'[]'::jsonb`,
+        'voices',
+      );
+      expect(queryBuilder.from).toHaveBeenCalledWith('languages', 'la');
+      expect(queryBuilder.innerJoin).toHaveBeenCalledWith(
+        'scenario_voices',
+        'sv',
+        'la.id = sv.languageId',
+      );
+      expect(queryBuilder.where).toHaveBeenCalledWith('la.active = true');
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith('sv.active = true');
+
+      expect(result).toEqual([
+        {
+          language_id: 1,
+          value: 'en',
+          label: 'English',
+          voices: [
+            { id: 'v1', name: 'Voice 1', provider: 'openai', config: {} },
+          ],
+        },
+      ]);
+    });
+
+    it('should return languages with voices and voices detail when voicesNeeded is true', async () => {
+      const mockRows = [
+        {
+          language_id: 1,
+          value: 'es',
+          label: 'Spanish',
+          voices: [{ id: 'v2' }],
+        },
+      ];
+
+      queryBuilder.getRawMany.mockResolvedValue(mockRows as any);
+
+      const result = await repository.getLanguagesWithVoices(false, true);
+
+      expect(queryBuilder.addSelect).toHaveBeenCalledWith(
+        `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider,'config',sv.config))`,
+        'voices',
+      );
+      expect(queryBuilder.where).toHaveBeenCalledWith('la.active = :active', {
+        active: false,
+      });
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'sv.active = :active',
+        { active: false },
+      );
+
+      expect(result).toEqual([
+        {
+          language_id: 1,
+          value: 'es',
+          label: 'Spanish',
+          voices: [{ id: 'v2' }],
+        },
+      ]);
+    });
+
+    it('should return empty array if no rows are found', async () => {
+      queryBuilder.getRawMany.mockResolvedValue(null as any);
+
+      const result = await repository.getLanguagesWithVoices();
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getLanguagesForScenario', () => {
+    it('should return languages for scenario with default active=true when no params are provided', async () => {
+      const mockRows = [
+        {
+          language_id: 1,
+          value: 'en',
+          label: 'English',
+          active: true,
+          translationCode: 'en-US',
+        },
+      ];
+      queryBuilder.getRawMany.mockResolvedValue(mockRows as any);
+
+      const result = await repository.getLanguagesForScenario();
+
+      expect(queryBuilder.select).toHaveBeenCalledWith(
+        'CAST(la.id AS INTEGER)',
+        'language_id',
+      );
+      expect(queryBuilder.from).toHaveBeenCalledWith('languages', 'la');
+      expect(queryBuilder.leftJoin).toHaveBeenCalledWith(
+        'scenario_voices',
+        'sv',
+        'sv.languageId = la.id',
+      );
+      expect(queryBuilder.groupBy).toHaveBeenCalledWith(
+        'la.id, la.value, la.label',
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith('la.active = true');
+      expect(result).toEqual(mockRows);
+    });
+
+    it('should apply active filter when active is provided', async () => {
+      const mockRows: any[] = [];
+      queryBuilder.getRawMany.mockResolvedValue(mockRows);
+
+      await repository.getLanguagesForScenario(false);
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'la.active = :active',
+        { active: false },
+      );
+    });
+
+    it('should apply hasVoices filter and having clause when hasVoices is true', async () => {
+      const mockRows: any[] = [];
+      queryBuilder.getRawMany.mockResolvedValue(mockRows);
+
+      await repository.getLanguagesForScenario(undefined, true);
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        `sv.config->>'gender' IN ('male', 'female')`,
+      );
+      expect(queryBuilder.having).toHaveBeenCalledWith(
+        `COUNT(DISTINCT LOWER(sv.config->>'gender')) = 2`,
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith('la.active = true');
+    });
+  });
+
   describe('getFallbackVoice', () => {
     it('should return fallback voice', async () => {
       const mockVoice = {
