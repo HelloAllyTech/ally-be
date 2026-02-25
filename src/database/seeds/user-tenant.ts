@@ -20,26 +20,29 @@ const tenantData = {
   description: 'Default tenant for seeding',
 };
 
+const dynamicUsers = Object.values(UserRole)
+  .filter((role) => role !== UserRole.SUPER_ADMIN && role !== UserRole.CLIENT)
+  .map((role) => {
+    const emailPrefix =
+      role === UserRole.ADMIN
+        ? 'org-admin'
+        : role.toLowerCase().replace(/_/g, '-');
+    const nameStr = role
+      .split('_')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+
+    return {
+      email: `${emailPrefix}@example.com`,
+      name: `Test ${nameStr}`,
+      roles: [role],
+      password: 'Password123!',
+    };
+  });
+
 // Users to create (tenantId will be set dynamically)
 const usersToCreate = [
-  {
-    email: 'counselor@example.com',
-    name: 'Test Counselor',
-    roles: [UserRole.COUNSELOR],
-    password: 'Password123!',
-  },
-  {
-    email: 'learner@example.com',
-    name: 'Test Learner',
-    roles: [UserRole.LEARNER],
-    password: 'Password123!',
-  },
-  {
-    email: 'org-admin@example.com',
-    name: 'Test Org Admin',
-    roles: [UserRole.ADMIN],
-    password: 'Password123!',
-  },
+  ...dynamicUsers,
   {
     email: 'user-cla@example.com',
     name: 'Test User CLA',

@@ -21,6 +21,7 @@ import { spawn } from 'child_process';
 import { logStep } from './seed-utils';
 import * as path from 'path';
 import * as fs from 'fs';
+import { UserRole } from '../../common/constants/user.constants';
 
 interface SeedTask {
   name: string;
@@ -198,16 +199,35 @@ async function main(): Promise<void> {
     logStep(
       '\n   TEST_ACCOUNTS={"email1@domain.com":"otp1","email2@domain.com":"otp2",...}',
     );
+
+    const accounts: Record<string, string> = {
+      'admin@example.com': '1234',
+    };
+    const otherRolesStr = Object.values(UserRole)
+      .filter((r) => r !== UserRole.SUPER_ADMIN && r !== UserRole.CLIENT)
+      .map((role) => {
+        const prefix =
+          role === UserRole.ADMIN
+            ? 'org-admin'
+            : role.toLowerCase().replace(/_/g, '-');
+        const email = `${prefix}@example.com`;
+        accounts[email] = '1234';
+        const name = role
+          .split('_')
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+        return `   • ${name}: ${email} / OTP: 1234`;
+      });
+    accounts['user-cla@example.com'] = '1234';
+
     logStep('\n   Example with seeded users:');
-    logStep(
-      '   TEST_ACCOUNTS={"admin@example.com":"1234","counselor@example.com":"1234","learner@example.com":"1234","org-admin@example.com":"1234","user-cla@example.com":"1234"}',
-    );
+    logStep(`   TEST_ACCOUNTS=${JSON.stringify(accounts)}`);
+
     logStep('\n✅ Test Users Available for OTP Login:');
-    logStep('   • Admin:     admin@example.com / OTP: 1234');
-    logStep('   • Counselor: counselor@example.com / OTP: 1234');
-    logStep('   • Learner:   learner@example.com / OTP: 1234');
-    logStep('   • Org Admin: org-admin@example.com / OTP: 1234');
+    logStep('   • Super Admin: admin@example.com / OTP: 1234');
+    otherRolesStr.forEach((str) => logStep(str));
     logStep('   • User CLA:  user-cla@example.com / OTP: 1234');
+
     logStep(
       '\n💡 All test users are pre-configured in .env with OTP codes for easy authentication.',
     );
