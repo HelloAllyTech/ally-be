@@ -21,6 +21,7 @@ describe('Badge Util', () => {
       achievementParams: { count: 10 },
       viewedStatus: BadgeViewedStatus.UNVIEWED,
       lockStatus: BadgeLockStatus.LOCKED,
+      enabled: true,
       ...overrides,
     });
 

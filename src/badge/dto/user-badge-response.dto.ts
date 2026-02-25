@@ -217,6 +217,12 @@ export class TenantBadgeResponseDto {
     description: 'Badge visibility type',
   })
   visibilityType!: BadgeVisibilityType;
+
+  @ApiProperty({
+    type: Boolean,
+    description: 'Whether the badge is enabled for the tenant',
+  })
+  enabled!: boolean;
 }
 
 export class TenantBadgeListResponseDto {
