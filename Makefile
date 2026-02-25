@@ -2,6 +2,8 @@ HEALTH_URL := http://localhost:8001/api/health
 MAX_RETRIES := 30
 SLEEP_SECONDS := 2
 
+.PHONY: health-check fix test format-check lint-check quality
+
 health-check:
 	@echo "⏳ Waiting for service to become healthy at $(HEALTH_URL) ..."
 	@healthy=false; \
@@ -19,9 +21,25 @@ health-check:
 		exit 1; \
 	fi
 
+
+# 🔧 Auto-fix (for local dev)
 fix:
 	npm run format
 	npm run lint:fix
 
+
+# 🧪 Tests
 test:
 	npm run test -- --forceExit --detectOpenHandles
+
+
+# 🔍 CI Checks (NO fixing, only fail)
+format-check:
+	npx prettier --check .
+
+lint-check:
+	npx eslint .
+
+
+# 🚀 Combined quality check (for CI)
+quality: format-check lint-check
