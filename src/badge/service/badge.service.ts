@@ -74,6 +74,7 @@ export class BadgeService {
 
     return await this.dataSource.transaction(async (entityManager) => {
       const badgeRepo = entityManager.getRepository(Badge);
+      const badgeGroupRepo = entityManager.getRepository(BadgeGroup);
 
       const badge = badgeRepo.create({
         ...createBadgeDto,
@@ -85,12 +86,12 @@ export class BadgeService {
 
       if (createBadgeDto.groupIds && createBadgeDto.groupIds.length > 0) {
         const badgeGroups = createBadgeDto.groupIds.map((groupId) =>
-          this.badgeGroupRepository.create({
+          badgeGroupRepo.create({
             badgeId: savedBadge.id,
             groupId,
           }),
         );
-        await this.badgeGroupRepository.save(badgeGroups);
+        await badgeGroupRepo.save(badgeGroups);
       }
 
       if (savedBadge.status === BadgeStatus.ACTIVE) {
@@ -446,6 +447,7 @@ export class BadgeService {
 
     return await this.dataSource.transaction(async (entityManager) => {
       const badgeRepo = entityManager.getRepository(Badge);
+      const badgeGroupRepo = entityManager.getRepository(BadgeGroup);
 
       // 1. Update badge fields
       const updateData = this.buildBadgeUpdateData(updateBadgeDto, userId);
@@ -456,30 +458,40 @@ export class BadgeService {
 
       // 2. Handle group updates if provided
       if (updateBadgeDto.groupIds !== undefined) {
-        // Remove existing group associations
-        await this.badgeGroupRepository.delete({ badgeId });
+        const existingGroups = await badgeGroupRepo.find({
+          where: { badgeId },
+        });
+        const currentGroupIds = existingGroups.map((g) => g.groupId);
 
-        // Add new group associations
-        if (updateBadgeDto.groupIds.length > 0) {
-          const badgeGroups = updateBadgeDto.groupIds.map((groupId) =>
-            this.badgeGroupRepository.create({
-              badgeId,
-              groupId,
-            }),
+        const currentSet = new Set(currentGroupIds);
+        const targetSet = new Set(updateBadgeDto.groupIds);
+
+        const groupIdsToRemove = currentGroupIds.filter(
+          (id) => !targetSet.has(id),
+        );
+        const groupIdsToAdd = updateBadgeDto.groupIds.filter(
+          (id) => !currentSet.has(id),
+        );
+
+        if (groupIdsToRemove.length > 0) {
+          await badgeGroupRepo.softDelete({
+            badgeId,
+            groupId: In(groupIdsToRemove),
+          });
+        }
+
+        if (groupIdsToAdd.length > 0) {
+          const badgeGroups = groupIdsToAdd.map((groupId) =>
+            badgeGroupRepo.create({ badgeId, groupId }),
           );
-          await this.badgeGroupRepository.save(badgeGroups);
+          await badgeGroupRepo.save(badgeGroups);
         }
       }
 
       // 3. If status is/becomes ACTIVE, handle tenant assignments and visibility changes
       const targetStatus = updateBadgeDto.status ?? badge.status;
       if (targetStatus === BadgeStatus.ACTIVE) {
-        const updatedBadge = await badgeRepo.findOne({
-          where: { id: badgeId },
-        });
-        if (!updatedBadge) {
-          return true;
-        }
+        const updatedBadge = Object.assign({}, badge, updateData) as Badge;
 
         // If badge was not active before, assign to tenants and award
         if (badge.status !== BadgeStatus.ACTIVE) {
@@ -493,22 +505,39 @@ export class BadgeService {
                 );
               }
             });
-        } else {
+        } else if (
+          updateBadgeDto.visibilityType !== undefined ||
+          updateBadgeDto.tenantIds !== undefined
+        ) {
           // Badge was already active, handle visibility changes and tenant updates
-          const newVisibility =
-            updateBadgeDto.visibilityType ?? badge.visibilityType;
+          const newVisibility = updateBadgeDto.visibilityType;
+          const currentVisibility = badge.visibilityType;
 
           const currentTenantIds =
             await this.badgeTenantService.getTenantIdsForBadge(badgeId);
 
           // Determine target tenants based on new visibility
           let targetTenantIds: string[];
-          if (newVisibility === BadgeVisibilityType.PUBLIC) {
+          if (
+            newVisibility !== undefined &&
+            currentVisibility !== newVisibility &&
+            newVisibility === BadgeVisibilityType.PUBLIC // Private -> Public
+          ) {
             targetTenantIds = (await this.tenantService.findAll()).map(
               (tenant) => tenant.id,
             );
-          } else if (updateBadgeDto.tenantIds) {
+          } else if (
+            (newVisibility ?? currentVisibility) ===
+              BadgeVisibilityType.PRIVATE &&
+            updateBadgeDto.tenantIds
+          ) {
             targetTenantIds = updateBadgeDto.tenantIds;
+          } else if (
+            newVisibility !== undefined &&
+            currentVisibility !== newVisibility &&
+            newVisibility === BadgeVisibilityType.PRIVATE // Public -> Private
+          ) {
+            targetTenantIds = []; // Remove from all tenants
           } else {
             targetTenantIds = currentTenantIds; // No change
           }
@@ -523,16 +552,24 @@ export class BadgeService {
             (id) => !currentTenantIds.includes(id),
           );
 
+          this.logger.log(
+            `Removing badge ${badgeId} from tenants: ${tenantIdsToRemove.join(', ')}`,
+          );
+
           // Apply removals
           if (tenantIdsToRemove.length > 0) {
-            await this.badgeTenantService.removeBadgeFromTenants(
-              badgeId,
-              tenantIdsToRemove,
-            );
-            await this.badgeUserService.removeBadgeUsersForTenants(
-              badgeId,
-              tenantIdsToRemove,
-            );
+            await Promise.all([
+              this.badgeTenantService.removeBadgeFromTenants(
+                badgeId,
+                tenantIdsToRemove,
+                entityManager,
+              ),
+              this.badgeUserService.removeBadgeUsersForTenants(
+                badgeId,
+                tenantIdsToRemove,
+                entityManager,
+              ),
+            ]);
           }
 
           // Apply additions
@@ -540,6 +577,7 @@ export class BadgeService {
             await this.badgeTenantService.updateBadgeTenants(
               badgeId,
               tenantIdsToAdd,
+              entityManager,
             );
             this.badgeUserService.awardBadgeToUsersByTenant(
               updatedBadge,
