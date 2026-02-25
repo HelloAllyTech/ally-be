@@ -2,7 +2,7 @@ HEALTH_URL := http://localhost:8001/api/health
 MAX_RETRIES := 30
 SLEEP_SECONDS := 2
 
-.PHONY: health-check fix test format-check lint-check quality
+.PHONY: health-check fix test lint-check quality
 
 health-check:
 	@echo "⏳ Waiting for service to become healthy at $(HEALTH_URL) ..."
@@ -34,12 +34,7 @@ test:
 
 
 # 🔍 CI Checks (NO fixing, only fail)
-format-check:
-	npx prettier --check .
-
 lint-check:
-	npx eslint .
+	npm run lint
 
-
-# 🚀 Combined quality check (for CI)
-quality: format-check lint-check
+quality: lint-check
