@@ -1,11 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { BadgeTenantService } from '../badge-tenant.service';
 import { BadgeTenant } from '../../entity/badge-tenant.entity';
 import { Badge } from '../../entity/badge.entity';
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
+import { BadgeUserService } from '../badge-user.service';
 import {
   BadgeStatus,
   BadgeVisibilityType,
@@ -16,6 +17,9 @@ describe('BadgeTenantService', () => {
   let mockBadgeTenantRepository: jest.Mocked<Repository<BadgeTenant>>;
   let mockBadgeRepository: jest.Mocked<Repository<Badge>>;
   let mockTenantsRepository: jest.Mocked<TenantsRepository>;
+  let mockBadgeUserService: jest.Mocked<
+    Pick<BadgeUserService, 'awardBadgeToUsersByTenant'>
+  >;
 
   beforeEach(async () => {
     mockBadgeTenantRepository = {
@@ -36,6 +40,10 @@ describe('BadgeTenantService', () => {
       findOne: jest.fn(),
     } as any;
 
+    mockBadgeUserService = {
+      awardBadgeToUsersByTenant: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BadgeTenantService,
@@ -50,6 +58,10 @@ describe('BadgeTenantService', () => {
         {
           provide: TenantsRepository,
           useValue: mockTenantsRepository,
+        },
+        {
+          provide: BadgeUserService,
+          useValue: mockBadgeUserService,
         },
       ],
     }).compile();
@@ -219,7 +231,7 @@ describe('BadgeTenantService', () => {
 
       expect(mockBadgeTenantRepository.softDelete).toHaveBeenCalledWith({
         badgeId: 'badge-1',
-        tenantId: expect.anything(),
+        tenantId: In(['tenant-1', 'tenant-2']),
       });
     });
   });

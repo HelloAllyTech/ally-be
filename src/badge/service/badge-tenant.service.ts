@@ -10,6 +10,7 @@ import { BadgeTenant } from '../entity/badge-tenant.entity';
 import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { Badge } from '../entity/badge.entity';
 import { BadgeStatus, BadgeVisibilityType } from '../constants/badge.constants';
+import { BadgeUserService } from './badge-user.service';
 
 @Injectable()
 export class BadgeTenantService {
@@ -21,6 +22,7 @@ export class BadgeTenantService {
     private readonly tenantsRepository: TenantsRepository,
     @InjectRepository(Badge)
     private readonly badgeRepository: Repository<Badge>,
+    private readonly badgeUserService: BadgeUserService,
   ) {}
 
   async addBadgeToTenants(
@@ -63,7 +65,7 @@ export class BadgeTenantService {
 
     if (badgeTenants.length > 0) {
       await this.badgeTenantRepository.save(badgeTenants);
-      // TODO: Call function to evaluate and award badge for each tenant users
+      this.badgeUserService.awardBadgeToUsersByTenant(badge, tenantIdsToAdd);
     }
 
     return true;
