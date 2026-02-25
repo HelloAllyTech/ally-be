@@ -1,5 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsObject, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsObject,
+  IsNumber,
+  IsBoolean,
+} from 'class-validator';
 
 export class UpdateScenarioVoiceDto {
   @ApiProperty({
@@ -36,4 +42,13 @@ export class UpdateScenarioVoiceDto {
   @IsNumber()
   @IsOptional()
   languageId?: number;
+
+  @ApiProperty({
+    description: 'Whether the scenario voice is active for calls',
+    example: true,
+    required: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  active?: boolean;
 }

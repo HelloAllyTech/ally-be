@@ -17,4 +17,7 @@ export class ScenarioVoices extends BaseWithoutTenantEntity {
 
   @Column()
   languageId!: number;
+
+  @Column({ default: true })
+  active!: boolean;
 }

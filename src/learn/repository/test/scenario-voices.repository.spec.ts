@@ -169,6 +169,7 @@ describe('ScenarioVoicesRepository', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           languageId: 1,
+          active: true,
         } as ScenarioVoices,
       ];
 

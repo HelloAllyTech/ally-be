@@ -16,6 +16,7 @@ export class CreateScenarioVoicesDto {
           model: 'gpt-4o-mini',
         },
         languageId: 1,
+        active: true,
       },
       {
         name: 'Scenario Voice 2',
@@ -24,6 +25,7 @@ export class CreateScenarioVoicesDto {
           voiceId: '456',
         },
         languageId: 2,
+        active: true,
       },
     ],
   })
