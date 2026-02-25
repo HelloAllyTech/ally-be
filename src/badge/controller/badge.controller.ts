@@ -43,7 +43,7 @@ import {
   GroupedUserAvailableBadgesDto,
   MarkBadgeViewedResponseDto,
   AdminBadgeListResponseDto,
-  TenantBadgeResponseDto,
+  TenantBadgeListResponseDto,
 } from '../dto/user-badge-response.dto';
 import { BadgeTenantService } from '../service/badge-tenant.service';
 import { AddBadgeToTenantsRequestDto } from '../dto/badge-tenant.dto';
@@ -267,17 +267,48 @@ export class BadgeController {
     type: String,
     description: 'The ID of the tenant',
   })
+  @ApiQuery({ name: 'limit', type: Number, required: false })
+  @ApiQuery({ name: 'offset', type: Number, required: false })
+  @ApiQuery({
+    name: 'search',
+    type: String,
+    required: false,
+    description: 'Search by name (case-insensitive)',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: BadgeSortBy,
+    description: 'Sort column',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: SortOrder,
+    description: 'Sort order (default: DESC)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Returns all badges assigned to the tenant',
-    type: [TenantBadgeResponseDto],
+    type: TenantBadgeListResponseDto,
   })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_BADGES])
   @Get('/tenants/:tenantId')
   async getBadgesForTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
-  ): Promise<TenantBadgeResponseDto[]> {
-    return this.badgeService.getBadgesForTenant(tenantId);
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('search') search?: string,
+    @Query('sortBy') sortBy: BadgeSortBy = BadgeSortBy.CREATED_AT,
+    @Query('order') order: SortOrder = SortOrder.DESC,
+  ): Promise<TenantBadgeListResponseDto> {
+    return this.badgeService.getPaginatedBadgesForTenant(tenantId, {
+      limit,
+      offset,
+      sortBy,
+      order,
+      search,
+    });
   }
 
   @ApiOperation({ summary: 'Remove badge from tenants' })
