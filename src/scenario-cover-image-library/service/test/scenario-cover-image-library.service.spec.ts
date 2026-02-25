@@ -34,6 +34,7 @@ describe('ScenarioCoverImageLibraryService', () => {
 
   const mockS3Service = {
     getPresignedUrlForImageUpload: jest.fn(),
+    getHeadObject: jest.fn(),
     deleteS3Image: jest.fn(),
   };
 
@@ -65,38 +66,75 @@ describe('ScenarioCoverImageLibraryService', () => {
     );
   });
 
-  describe('getUploadUrl', () => {
+  describe('createCoverImageUploadUrl', () => {
     const uploadDto = {
       fileName: 'cover.jpg',
       fileSize: 1024000,
       contentType: ScenarioCoverImageUploadContentType.JPEG,
     };
 
-    it('creates and saves entity with imageUrl and createdBy', async () => {
+    it('returns presignedUrl and imageUrl only', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue(42);
       mockS3Service.getPresignedUrlForImageUpload.mockResolvedValue({
         presignedUrl: 'https://presigned.url',
         imageUrl:
           'https://bucket.s3.region.amazonaws.com/scenario-cover-image-library/cover.jpg',
       });
-      const saved = { ...mockCoverImage, id: 'saved-id' };
-      mockRepo.create.mockReturnValue(saved);
-      mockRepo.save.mockResolvedValue(saved);
 
       const res = await service.createCoverImageUploadUrl(uploadDto);
 
-      expect(mockRepo.create).toHaveBeenCalledWith({
-        imageUrl:
-          'https://bucket.s3.region.amazonaws.com/scenario-cover-image-library/cover.jpg',
-        createdBy: 42,
-      });
-      expect(mockRepo.save).toHaveBeenCalled();
+      expect(mockRepo.create).not.toHaveBeenCalled();
+      expect(mockRepo.save).not.toHaveBeenCalled();
       expect(res).toEqual({
         presignedUrl: 'https://presigned.url',
         imageUrl:
           'https://bucket.s3.region.amazonaws.com/scenario-cover-image-library/cover.jpg',
-        id: 'saved-id',
       });
+      expect(res).not.toHaveProperty('id');
+    });
+  });
+
+  describe('addCoverImage', () => {
+    const validImageUrl =
+      'https://test-assets-bucket.s3.us-east-1.amazonaws.com/scenario-cover-image-library/1730000000000-cover.jpg';
+
+    it('creates and saves library entry when not already present', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(42);
+      mockRepo.findOne.mockResolvedValue(null);
+      const saved = {
+        ...mockCoverImage,
+        id: 'new-id',
+        imageUrl: validImageUrl,
+      };
+      mockRepo.create.mockReturnValue(saved);
+      mockRepo.save.mockResolvedValue(saved);
+
+      const res = await service.addCoverImage({ imageUrl: validImageUrl });
+
+      expect(mockRepo.findOne).toHaveBeenCalledWith({
+        where: { imageUrl: validImageUrl },
+      });
+      expect(mockRepo.create).toHaveBeenCalledWith({
+        imageUrl: validImageUrl,
+        createdBy: 42,
+      });
+      expect(mockRepo.save).toHaveBeenCalled();
+      expect(res).toEqual(saved);
+    });
+
+    it('returns existing record when imageUrl already registered (idempotency)', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(42);
+      const existing = { ...mockCoverImage, imageUrl: validImageUrl };
+      mockRepo.findOne.mockResolvedValue(existing);
+
+      const res = await service.addCoverImage({ imageUrl: validImageUrl });
+
+      expect(mockRepo.findOne).toHaveBeenCalledWith({
+        where: { imageUrl: validImageUrl },
+      });
+      expect(mockRepo.create).not.toHaveBeenCalled();
+      expect(mockRepo.save).not.toHaveBeenCalled();
+      expect(res).toEqual(existing);
     });
   });
 
