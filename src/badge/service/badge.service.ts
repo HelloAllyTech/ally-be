@@ -553,6 +553,14 @@ export class BadgeService {
     });
   }
 
+  async removeBadgeAndUsersFromTenants(
+    badgeId: string,
+    tenantIds: string[],
+  ): Promise<void> {
+    await this.badgeTenantService.removeBadgeFromTenants(badgeId, tenantIds);
+    await this.badgeUserService.removeBadgeUsersForTenants(badgeId, tenantIds);
+  }
+
   async deleteBadge(badgeId: string): Promise<boolean> {
     const badge = await this.badgeRepository.findOne({
       where: { id: badgeId },
