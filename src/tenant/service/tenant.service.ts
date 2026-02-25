@@ -94,7 +94,7 @@ export class TenantService {
 
     tenantData.settings = {
       ...(tenantData.settings ?? {}),
-      hideRankInLeaderboard: tenantData.hideRankInLeaderboard ?? false,
+      hideRankInCommunity: tenantData.hideRankInCommunity ?? false,
     };
 
     const userIdStr = ExecutionManager.getUserId();
@@ -224,7 +224,7 @@ export class TenantService {
     return {
       ...tenant,
       enabledDashboardIds: dashboardIdsList[0]?.dashboardIds ?? [],
-      hideRankInLeaderboard: tenant.settings?.hideRankInLeaderboard ?? false,
+      hideRankInCommunity: tenant.settings?.hideRankInCommunity ?? false,
       enableAudioUpload: !hiddenChatTypes.includes(ChatTypes.AUDIO_UPLOAD),
       enableMicrophoneMode: !hiddenChatTypes.includes(
         ChatTypes.MICROPHONE_CHAT,
@@ -299,7 +299,7 @@ export class TenantService {
         ...tenant,
         userCount: userCountMap.get(tenant.id) || 0,
         enabledDashboardIds,
-        hideRankInLeaderboard: tenant.settings?.hideRankInLeaderboard ?? false,
+        hideRankInCommunity: tenant.settings?.hideRankInCommunity ?? false,
         enableAudioUpload: !hiddenChatTypes.includes(ChatTypes.AUDIO_UPLOAD),
         enableMicrophoneMode: !hiddenChatTypes.includes(
           ChatTypes.MICROPHONE_CHAT,
@@ -348,7 +348,7 @@ export class TenantService {
       enabledDashboardIds,
       enableMicrophoneMode,
       enableAudioUpload,
-      hideRankInLeaderboard,
+      hideRankInCommunity,
       ...tenantUpdateData
     } = updateTenantDto;
 
@@ -359,13 +359,13 @@ export class TenantService {
       );
     }
 
-    // Handle hideRankInLeaderboard - merge into current settings if true
+    // Handle hideRankInCommunity - merge into current settings if true
     let settingsUpdate: Record<string, any> | undefined;
-    if (hideRankInLeaderboard !== undefined) {
+    if (hideRankInCommunity !== undefined) {
       const currentSettings = tenant.settings ?? {};
       settingsUpdate = {
         ...currentSettings,
-        hideRankInLeaderboard: hideRankInLeaderboard,
+        hideRankInCommunity: hideRankInCommunity,
       };
     }
 

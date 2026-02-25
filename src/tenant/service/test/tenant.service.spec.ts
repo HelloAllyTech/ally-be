@@ -76,7 +76,7 @@ describe('TenantService', () => {
   const mockTenantResponse: TenantResponseDto = {
     ...mockTenant,
     enabledDashboardIds: [],
-    hideRankInLeaderboard: false,
+    hideRankInCommunity: false,
     enableAudioUpload: true,
     enableMicrophoneMode: true,
   };
@@ -408,7 +408,7 @@ describe('TenantService', () => {
       });
       expect(result).toEqual(mockTenantResponse);
       expect(result).toHaveProperty('enabledDashboardIds');
-      expect(result).toHaveProperty('hideRankInLeaderboard');
+      expect(result).toHaveProperty('hideRankInCommunity');
       expect(result).toHaveProperty('enableAudioUpload');
       expect(result).toHaveProperty('enableMicrophoneMode');
       expect(userRepository.getUserCountByTenantIds).not.toHaveBeenCalled();
@@ -582,8 +582,8 @@ describe('TenantService', () => {
       ).rejects.toThrow('Failed to update tenant: Transaction failed');
     });
 
-    it('should merge hideRankInLeaderboard into current tenant settings when true', async () => {
-      const updateDto = { hideRankInLeaderboard: true };
+    it('should merge hideRankInCommunity into current tenant settings when true', async () => {
+      const updateDto = { hideRankInCommunity: true };
       const tenantWithSettings = {
         ...mockTenant,
         settings: { existingSetting: 'value' },
@@ -602,12 +602,12 @@ describe('TenantService', () => {
         Tenant,
         'test-tenant-id',
         expect.objectContaining({
-          settings: { existingSetting: 'value', hideRankInLeaderboard: true },
+          settings: { existingSetting: 'value', hideRankInCommunity: true },
         }),
       );
       expect(result).toEqual(
         expect.objectContaining({
-          hideRankInLeaderboard: false,
+          hideRankInCommunity: false,
         }),
       );
     });

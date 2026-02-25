@@ -70,5 +70,5 @@ export class UpdateTenantDto {
   })
   @IsBoolean()
   @IsOptional()
-  hideRankInLeaderboard?: boolean;
+  hideRankInCommunity?: boolean;
 }
