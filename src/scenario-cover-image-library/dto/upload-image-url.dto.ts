@@ -45,7 +45,4 @@ export class UploadImageUrlResponseDto {
 
   @ApiProperty({ description: 'S3 object URL for the uploaded image' })
   imageUrl!: string;
-
-  @ApiProperty({ description: 'ID of the created library image record' })
-  id!: string;
 }

@@ -9,7 +9,11 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioCoverImageLibraryRepository } from '../repository/scenario-cover-image-library.repository';
 import { ScenarioCoverImageLibrary } from '../entity/scenario-cover-image-library.entity';
-import { UploadImageUrlRequestDto } from '../dto/upload-image-url.dto';
+import {
+  UploadImageUrlRequestDto,
+  UploadImageUrlResponseDto,
+} from '../dto/upload-image-url.dto';
+import { AddScenarioCoverImageDto } from '../dto/add-scenario-cover-image.dto';
 import {
   GetScenarioCoverImageLibraryQueryDto,
   ScenarioCoverImageLibrarySortBy,
@@ -25,14 +29,14 @@ export class ScenarioCoverImageLibraryService {
   );
 
   constructor(
-    private readonly coverImageLibraryRepository: ScenarioCoverImageLibraryRepository,
+    private readonly scenarioCoverImageLibraryRepository: ScenarioCoverImageLibraryRepository,
     private readonly s3Service: S3Service,
     private readonly configService: AppConfigService,
   ) {}
 
   async createCoverImageUploadUrl(
     dto: UploadImageUrlRequestDto,
-  ): Promise<{ presignedUrl: string; imageUrl: string; id: string }> {
+  ): Promise<UploadImageUrlResponseDto> {
     const bucket = this.configService.s3.assetsBucket;
     if (!bucket) {
       throw new Error('S3 bucket name for assetsBucket is not defined');
@@ -60,19 +64,40 @@ export class ScenarioCoverImageLibraryService {
         dto.contentType,
       );
 
-    const libraryImage = this.coverImageLibraryRepository.create({
-      imageUrl,
+    return { presignedUrl, imageUrl };
+  }
+
+  async addCoverImage(
+    coverImage: AddScenarioCoverImageDto,
+  ): Promise<ScenarioCoverImageLibrary> {
+    const bucket = this.configService.s3.assetsBucket;
+    if (!bucket) {
+      throw new Error('S3 bucket name for assetsBucket is not defined');
+    }
+
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('unauthorized access');
+    }
+
+    const existing = await this.scenarioCoverImageLibraryRepository.findOne({
+      where: { imageUrl: coverImage.imageUrl },
+    });
+    if (existing) {
+      return existing;
+    }
+
+    const libraryImage = this.scenarioCoverImageLibraryRepository.create({
+      imageUrl: coverImage.imageUrl,
       createdBy: Number(userId),
     });
-    const saved = await this.coverImageLibraryRepository.save(libraryImage);
-
-    return { presignedUrl, imageUrl, id: saved.id };
+    return this.scenarioCoverImageLibraryRepository.save(libraryImage);
   }
 
   async getCoverImages(
     dto: GetScenarioCoverImageLibraryQueryDto,
   ): Promise<{ coverImages: ScenarioCoverImageLibrary[]; count: number }> {
-    return this.coverImageLibraryRepository.getCoverImages({
+    return this.scenarioCoverImageLibraryRepository.getCoverImages({
       limit: dto.limit ?? 20,
       offset: dto.offset ?? 0,
       sortBy: dto.sortBy ?? ScenarioCoverImageLibrarySortBy.CREATED_AT,
@@ -81,7 +106,7 @@ export class ScenarioCoverImageLibraryService {
   }
 
   async getById(id: string): Promise<ScenarioCoverImageLibrary> {
-    const image = await this.coverImageLibraryRepository.findOne({
+    const image = await this.scenarioCoverImageLibraryRepository.findOne({
       where: { id },
     });
     if (!image) {
@@ -97,7 +122,7 @@ export class ScenarioCoverImageLibraryService {
       throw new Error('S3 bucket name for assetsBucket is not defined');
     }
     await this.s3Service.deleteS3Image(bucket, image.imageUrl);
-    await this.coverImageLibraryRepository.delete(id);
+    await this.scenarioCoverImageLibraryRepository.delete(id);
     this.logger.info(`Library image deleted: ${id}`);
     return { success: true };
   }

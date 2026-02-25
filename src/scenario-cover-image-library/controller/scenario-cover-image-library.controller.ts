@@ -22,6 +22,7 @@ import {
   UploadImageUrlRequestDto,
   UploadImageUrlResponseDto,
 } from '../dto/upload-image-url.dto';
+import { AddScenarioCoverImageDto } from '../dto/add-scenario-cover-image.dto';
 import {
   GetScenarioCoverImageLibraryQueryDto,
   GetScenarioCoverImageLibraryResponseDto,
@@ -34,24 +35,47 @@ import { ScenarioCoverImageLibraryResponseDto } from '../dto/scenario-cover-imag
 @Controller('/v1/scenario-cover-image-library')
 export class ScenarioCoverImageLibraryController {
   constructor(
-    private readonly coverImageLibraryService: ScenarioCoverImageLibraryService,
+    private readonly scenarioCoverImageLibraryService: ScenarioCoverImageLibraryService,
   ) {}
 
   @Post('upload-url')
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY])
   @ApiOperation({
-    summary: 'Add image to library (get presigned S3 upload URL)',
+    summary: 'Create and return presigned URL for image upload',
+    description: 'Returns a presigned S3 URL to upload the image.',
   })
   @ApiResponse({
     status: 201,
-    description: 'Returns presigned URL and image record id',
+    description: 'Returns presigned URL and image URL',
     type: UploadImageUrlResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Invalid file type or size' })
   async createCoverImageUploadUrl(
     @Body() dto: UploadImageUrlRequestDto,
   ): Promise<UploadImageUrlResponseDto> {
-    return this.coverImageLibraryService.createCoverImageUploadUrl(dto);
+    return this.scenarioCoverImageLibraryService.createCoverImageUploadUrl(dto);
+  }
+
+  @Post()
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY])
+  @ApiOperation({
+    summary: 'Insert image into library',
+    description:
+      'Call after uploading the image to the presigned URL. Inserts the library entry.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the created library image record',
+    type: ScenarioCoverImageLibraryResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid URL or image not found in S3',
+  })
+  async addCoverImage(
+    @Body() coverImage: AddScenarioCoverImageDto,
+  ): Promise<ScenarioCoverImageLibraryResponseDto> {
+    return this.scenarioCoverImageLibraryService.addCoverImage(coverImage);
   }
 
   @Get()
@@ -65,7 +89,7 @@ export class ScenarioCoverImageLibraryController {
   async getCoverImages(
     @Query() query: GetScenarioCoverImageLibraryQueryDto,
   ): Promise<GetScenarioCoverImageLibraryResponseDto> {
-    return this.coverImageLibraryService.getCoverImages(query);
+    return this.scenarioCoverImageLibraryService.getCoverImages(query);
   }
 
   @Get(':id')
@@ -81,7 +105,7 @@ export class ScenarioCoverImageLibraryController {
   async getCoverImageById(
     @Param('id') id: string,
   ): Promise<ScenarioCoverImageLibraryResponseDto> {
-    return this.coverImageLibraryService.getById(id);
+    return this.scenarioCoverImageLibraryService.getById(id);
   }
 
   @Delete(':id')
@@ -97,6 +121,6 @@ export class ScenarioCoverImageLibraryController {
   async deleteCoverImage(
     @Param('id') id: string,
   ): Promise<{ success: boolean }> {
-    return this.coverImageLibraryService.delete(id);
+    return this.scenarioCoverImageLibraryService.delete(id);
   }
 }
