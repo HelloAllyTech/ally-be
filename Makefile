@@ -22,3 +22,6 @@ health-check:
 fix:
 	npm run format
 	npm run lint:fix
+
+test:
+	npm run test -- --forceExit --detectOpenHandles
