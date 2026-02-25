@@ -280,6 +280,26 @@ export class BadgeController {
     return this.badgeService.getBadgesForTenant(tenantId);
   }
 
+  @ApiOperation({ summary: 'Remove badge from tenants' })
+  @ApiBody({ type: AddBadgeToTenantsRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Badge removed from tenants successfully',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @Delete('/tenants')
+  async removeBadgeFromTenants(
+    @Body() removeBadgeFromTenantsDto: AddBadgeToTenantsRequestDto,
+  ) {
+    await this.badgeService.removeBadgeAndUsersFromTenants(
+      removeBadgeFromTenantsDto.badgeId,
+      removeBadgeFromTenantsDto.tenantIds,
+    );
+    return {
+      message: 'Badge removed from tenants successfully',
+    };
+  }
+
   @ApiOperation({ summary: 'Get presigned URL for badge image' })
   @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
   @Post('badge-image-url')
