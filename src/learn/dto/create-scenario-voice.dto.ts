@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsObject, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsObject,
+  IsNumber,
+  IsBoolean,
+  IsOptional,
+} from 'class-validator';
 
 export class CreateScenarioVoiceDto {
   @ApiProperty({
@@ -36,4 +43,13 @@ export class CreateScenarioVoiceDto {
   @IsNumber()
   @IsNotEmpty()
   languageId!: number;
+
+  @ApiProperty({
+    description: 'Whether the scenario voice is active for calls',
+    example: true,
+    required: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  active?: boolean;
 }
