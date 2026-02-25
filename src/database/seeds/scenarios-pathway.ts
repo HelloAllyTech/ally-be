@@ -84,6 +84,16 @@ const createScenariosData = async (
         'Everything feels like it is piling up.',
       ],
       agentDialogues: ['I hear you', 'Tell me more', 'That sounds tough'],
+      stateInstructions: [
+        { stateId: '1', instruction: 'Start', dialogues: ['I hear you'] },
+        { stateId: '2', instruction: 'Middle', dialogues: ['Tell me more'] },
+        {
+          stateId: '3',
+          instruction: 'Middle 2',
+          dialogues: ['That sounds tough'],
+        },
+        { stateId: '4', instruction: 'End', dialogues: ['I understand'] },
+      ],
       // Termination settings
       autoTerminationStatus: true,
       terminationEventId,
@@ -91,6 +101,7 @@ const createScenariosData = async (
       triggerWarningIds,
       experienceMode: ExperienceMode.FEEDBACK,
       timerMode: false,
+      showScoreMeter: false,
     },
     {
       isGlobal: true,
@@ -121,16 +132,31 @@ const createScenariosData = async (
         'I have been feeling on edge at work lately.',
         'Even small tasks are starting to feel stressful.',
       ],
-      agentDialogues: [
-        'That sounds overwhelming.',
-        'Can you tell me more about that?',
-        'I am listening.',
+      agentDialogues: ['I hear you', 'Tell me more', 'That sounds tough'],
+      stateInstructions: [
+        {
+          stateId: '1',
+          instruction: 'Start',
+          dialogues: ['That sounds overwhelming.'],
+        },
+        {
+          stateId: '2',
+          instruction: 'Middle',
+          dialogues: ['Can you tell me more about that?'],
+        },
+        {
+          stateId: '3',
+          instruction: 'Middle 2',
+          dialogues: ['I am listening.'],
+        },
+        { stateId: '4', instruction: 'End', dialogues: ['I see.'] },
       ],
       // Termination settings
       autoTerminationStatus: false,
       triggerWarningIds,
       experienceMode: ExperienceMode.FEEDBACK,
       timerMode: false,
+      showScoreMeter: false,
     },
   ];
 
@@ -170,6 +196,28 @@ async function login(
   } catch (error: any) {
     console.error(
       '[scenarios-pathway] Login failed:',
+      error.response?.data?.message || error.message,
+    );
+    throw error;
+  }
+}
+
+async function loginAsLearner(
+  client: AxiosInstance,
+): Promise<{ accessToken: string; refreshToken: string }> {
+  try {
+    const response = await client.post('/api/v1/auth/login', {
+      username: 'learner@example.com',
+      password: 'Password123!',
+    });
+    logStep('[scenarios-pathway] Learner Login successful');
+    return {
+      accessToken: response.data.accessToken,
+      refreshToken: response.data.refreshToken,
+    };
+  } catch (error: any) {
+    console.error(
+      '[scenarios-pathway] Learner Login failed:',
       error.response?.data?.message || error.message,
     );
     throw error;
@@ -265,6 +313,43 @@ async function createScenarioPath(
   }
 }
 
+async function createScenarioSessions(
+  client: AxiosInstance,
+  accessToken: string,
+  scenarioIds: number[],
+  voiceId: string,
+): Promise<void> {
+  logStep(`[scenarios-pathway] Creating scenario sessions for scenarios...`);
+  try {
+    for (const scenarioId of scenarioIds) {
+      const response = await client.post(
+        '/api/v1/learn/scenario-session-start',
+        {
+          scenarioId,
+          voiceId,
+          languageId: 1,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+      const sessionId =
+        response.data?.id || response.data?.scenarioSession?.id || 'unknown';
+      logStep(
+        `[scenarios-pathway]   ✓ Scenario session created for scenario ${scenarioId} (Session ID: ${sessionId})`,
+      );
+    }
+  } catch (error: any) {
+    console.error(
+      '[scenarios-pathway] Failed to create scenario session:',
+      error.response?.data?.message || error.message,
+    );
+    // Don't throw error here to allow path creation even if session creation fails
+  }
+}
+
 async function seedScenariosAndPath() {
   logStep(`[scenarios-pathway] Connecting to API at: ${API_BASE_URL}`);
 
@@ -286,7 +371,13 @@ async function seedScenariosAndPath() {
     // Create scenarios with the voice ID
     const scenarioIds = await createScenarios(client, accessToken, voiceId);
 
-    // Create scenario path
+    // Login as learner to create sessions (admin lacks EDIT_SCENARIO_SESSION)
+    const { accessToken: learnerToken } = await loginAsLearner(client);
+
+    // Create scenario sessions
+    await createScenarioSessions(client, learnerToken, scenarioIds, voiceId);
+
+    // Create scenario path using admin token
     await createScenarioPath(client, accessToken, scenarioIds);
 
     logStep('[scenarios-pathway] ✅ Scenario seeding completed successfully!');
