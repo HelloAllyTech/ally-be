@@ -24,6 +24,56 @@ export class BadgeRepository extends Repository<Badge> {
     super(Badge, dataSource.createEntityManager());
   }
 
+  async getPaginatedBadgesForTenant(
+    tenantId: string,
+    pagination?: Pagination & { search?: string },
+  ): Promise<[TenantBadgeResponse[]]> {
+    // Data query with pagination
+    const dataQuery = this.dataSource
+      .createQueryBuilder(Badge, 'badge')
+      .innerJoin(
+        BadgeTenant,
+        'badgeTenant',
+        'badgeTenant.badgeId = badge.id AND badgeTenant.deletedAt IS NULL',
+      )
+      .select([
+        'badge.id AS "id"',
+        'badge.name AS "name"',
+        'badge.description AS "description"',
+        'badge.imageUrl AS "imageUrl"',
+        'badge.category AS "category"',
+        'badge.achievementParams AS "achievementParams"',
+        'badge.visibilityType AS "visibilityType"',
+      ])
+      .where('badgeTenant.tenantId = :tenantId', { tenantId })
+      .andWhere('badge.deletedAt IS NULL')
+      .andWhere('badge.status = :status', { status: BadgeStatus.ACTIVE });
+
+    if (pagination?.search?.trim()) {
+      const term = `%${pagination.search.trim()}%`;
+      dataQuery.andWhere('badge.name ILIKE :term', { term });
+    }
+
+    if (pagination) {
+      const sortColumn = this.getValidatedSortColumn(
+        pagination.sortBy || BadgeSortBy.CREATED_AT,
+      );
+      if (sortColumn) {
+        dataQuery.orderBy(`badge.${sortColumn}`, pagination.order || 'DESC');
+      }
+      if (pagination.limit) {
+        dataQuery.limit(pagination.limit);
+      }
+      if (pagination.offset) {
+        dataQuery.offset(pagination.offset);
+      }
+    }
+
+    const data = await dataQuery.getRawMany();
+
+    return [data];
+  }
+
   async getBadgesForTenant(tenantId: string): Promise<TenantBadgeResponse[]> {
     return this.dataSource
       .createQueryBuilder(Badge, 'badge')

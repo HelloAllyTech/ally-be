@@ -44,6 +44,7 @@ describe('BadgeService', () => {
       getUserBadges: jest.fn(),
       getUserBadgeCount: jest.fn(),
       getBadgesForTenant: jest.fn(),
+      getPaginatedBadgesForTenant: jest.fn(),
       getBadgeIdsForUserGroups: jest.fn(),
     } as any;
 
