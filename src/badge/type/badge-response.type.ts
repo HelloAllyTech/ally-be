@@ -31,6 +31,7 @@ export interface TenantBadgeResponse {
   category: BadgeCategory;
   visibilityType: BadgeVisibilityType;
   achievementParams?: BadgeAchievementParams;
+  enabled: boolean;
 }
 
 export interface UserAvailableBadge extends TenantBadgeResponse {

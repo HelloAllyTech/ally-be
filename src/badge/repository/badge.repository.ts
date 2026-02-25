@@ -28,13 +28,14 @@ export class BadgeRepository extends Repository<Badge> {
     tenantId: string,
     pagination?: Pagination & { search?: string },
   ): Promise<[TenantBadgeResponse[]]> {
-    // Data query with pagination
+    // Data query with pagination - shows all active badges with enabled flag
     const dataQuery = this.dataSource
       .createQueryBuilder(Badge, 'badge')
-      .innerJoin(
+      .leftJoin(
         BadgeTenant,
         'badgeTenant',
-        'badgeTenant.badgeId = badge.id AND badgeTenant.deletedAt IS NULL',
+        'badgeTenant.badgeId = badge.id AND badgeTenant.tenantId = :tenantId AND badgeTenant.deletedAt IS NULL',
+        { tenantId },
       )
       .select([
         'badge.id AS "id"',
@@ -44,10 +45,12 @@ export class BadgeRepository extends Repository<Badge> {
         'badge.category AS "category"',
         'badge.achievementParams AS "achievementParams"',
         'badge.visibilityType AS "visibilityType"',
+        'CASE WHEN badgeTenant.id IS NOT NULL THEN true ELSE false END AS "enabled"',
       ])
-      .where('badgeTenant.tenantId = :tenantId', { tenantId })
-      .andWhere('badge.deletedAt IS NULL')
-      .andWhere('badge.status = :status', { status: BadgeStatus.ACTIVE });
+      .where('badge.deletedAt IS NULL')
+      .andWhere('badge.status = :status', { status: BadgeStatus.ACTIVE })
+      .setParameter('tenantId', tenantId)
+      .setParameter('status', BadgeStatus.ACTIVE);
 
     if (pagination?.search?.trim()) {
       const term = `%${pagination.search.trim()}%`;
