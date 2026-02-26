@@ -340,17 +340,4 @@ export class AppConfigService {
       ),
     };
   }
-
-  get appMinSupportedVersion() {
-    return {
-      android: this.configService.get<string>(
-        'APP_MIN_SUPPORTED_VERSION_ANDROID',
-        '1.0.0',
-      ),
-      ios: this.configService.get<string>(
-        'APP_MIN_SUPPORTED_VERSION_IOS',
-        '1.0.0',
-      ),
-    };
-  }
 }
