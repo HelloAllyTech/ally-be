@@ -8,7 +8,6 @@ import { PermissionsGuard } from './guards/permissions.guard';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { RefreshToken } from './entity/refresh-token.entity';
-import { AuthAttempt } from './entity/auth-attempt.entity';
 import { User } from '../user/entity/user.entity';
 import { WebSocketAuthMiddleware } from './middlewares/ws-auth.middleware';
 
@@ -16,7 +15,7 @@ import { WebSocketAuthMiddleware } from './middlewares/ws-auth.middleware';
 @Module({
   imports: [
     JwtModule.register({}), // Empty config since we're using different configs for access and refresh tokens
-    TypeOrmModule.forFeature([User, RefreshToken, AuthAttempt]),
+    TypeOrmModule.forFeature([User, RefreshToken]),
     ConfigModule,
   ],
   providers: [

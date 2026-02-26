@@ -12,7 +12,7 @@ export class EmailService {
     private readonly config: AppConfigService,
     private readonly eventEmitter: EventEmitter2,
     private readonly sesService: SESService,
-  ) { }
+  ) {}
 
   async sendEmailOTP(params: {
     to: string;
@@ -39,7 +39,6 @@ export class EmailService {
     const subject = 'Your Ally Verification Code';
     const body = `Your Ally Verification Code is:
 ${params.otp}
-
 ${magicLink ? `Or click the link below to login instantly:\n${magicLink}\n` : ''}
 ⏱️ This security code is valid for the next ${minutes} minutes.
 🚫 Do not share this code with anyone.
