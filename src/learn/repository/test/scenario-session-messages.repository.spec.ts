@@ -154,7 +154,7 @@ describe('ScenarioSessionMessagesRepository', () => {
 
       expect(result).toEqual([mockMessages, 1]);
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'message.createdAt',
+        'message.startSeconds',
         'DESC',
       );
     });
@@ -195,7 +195,7 @@ describe('ScenarioSessionMessagesRepository', () => {
 
       expect(result).toEqual([mockMessages, 1]);
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'message.createdAt',
+        'message.startSeconds',
         'ASC',
       );
     });

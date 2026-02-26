@@ -34,7 +34,7 @@ export class ScenarioSessionMessagesRepository extends Repository<ScenarioSessio
     pagination: Pagination,
   ) {
     const sortColumn = this.getValidatedSortColumn(
-      pagination.sortBy || 'createdAt',
+      pagination.sortBy || 'startSeconds',
     );
     if (sortColumn) {
       query.orderBy(`message.${sortColumn}`, pagination.order || 'ASC');
