@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -112,6 +113,30 @@ export class ReviewController {
       sortBy,
       sortOrder,
     });
+  }
+
+  @Get('/unread-count')
+  @AuthPermissions([PERMISSIONS.VIEW_REVIEWS])
+  @ApiOperation({ summary: 'Get unread review count' })
+  @ApiResponse({
+    status: 200,
+    description: 'Unread review count retrieved successfully',
+  })
+  async getUnreadReviewCount(): Promise<{ count: number }> {
+    return this.reviewService.getUnreadReviewCount();
+  }
+
+  @Patch('/:id/mark-read')
+  @AuthPermissions([PERMISSIONS.VIEW_REVIEW])
+  @ApiOperation({ summary: 'Mark review as read' })
+  @ApiResponse({
+    status: 200,
+    description: 'Review marked as read successfully',
+  })
+  async markReviewAsRead(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<SuccessResponse> {
+    return this.reviewService.markReviewAsRead(id);
   }
 
   @Get('/:id')

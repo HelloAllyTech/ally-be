@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ReviewRepository } from '../repository/review.repository';
+import { ReviewReadStatusRepository } from '../repository/review-read-status.repository';
 import {
   CreateReviewDto,
   CreateReviewResponseDto,
@@ -47,6 +48,7 @@ export class ReviewService {
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly userService: UserService,
     private readonly reviewAccessValidator: ReviewAccessValidator,
+    private readonly reviewReadStatusRepository: ReviewReadStatusRepository,
   ) {}
 
   async createReview(
@@ -85,6 +87,41 @@ export class ReviewService {
     const savedReview = await this.reviewRepository.save(review);
 
     return { id: savedReview.id };
+  }
+
+  async getUnreadReviewCount(): Promise<{ count: number }> {
+    const userId = Number(ExecutionManager.getUserId());
+    const tenantId = ExecutionManager.getTenantId();
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+    const count = await this.reviewReadStatusRepository.getUnreadCount(
+      userId,
+      tenantId,
+    );
+    return { count };
+  }
+
+  async markReviewAsRead(reviewId: string): Promise<SuccessResponse> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+    const review = await this.reviewRepository.findOne({
+      where: { id: reviewId, tenantId },
+    });
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+    await this.reviewReadStatusRepository.markAsRead(userId, reviewId);
+    return { success: true };
   }
 
   async updateReviewStatus(
