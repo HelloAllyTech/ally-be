@@ -81,7 +81,11 @@ import {
 import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from '../constants/scenario-session.constants';
 import { TerminationEventsDto } from '../dto/termination-events.dto';
 import isDuplicateKeyException from 'src/exception/custom.exception';
-import { BRANCHING_INSTRUCTION_DYNAMIC_SHORTCUTS } from '../constants/scenario.constants';
+import {
+  BRANCHING_INSTRUCTION_DYNAMIC_SHORTCUTS,
+  LOWER_MAX_TIMER_VALUE,
+  UPPER_MAX_TIMER_VALUE,
+} from '../constants/scenario.constants';
 import {
   wrapFieldPlaceholders,
   unwrapFieldPlaceholders,
@@ -103,6 +107,10 @@ import {
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
 import { GeneratableField } from '../enum/generatable-field.enum';
+import {
+  isValidTimeFormatHHMMSS,
+  parseTimeToSeconds,
+} from 'src/common/util/time.util';
 
 @Injectable()
 export class ScenarioService {
@@ -577,6 +585,12 @@ export class ScenarioService {
         createScenarioDto.competencyId,
       );
     }
+    if (
+      createScenarioDto.timerMode === true &&
+      createScenarioDto.maxTimeValue
+    ) {
+      this.validateMaxTimeValue(createScenarioDto.maxTimeValue);
+    }
   }
 
   private async validateTriggerWarnings(triggerWarningIds: string[]) {
@@ -680,6 +694,29 @@ export class ScenarioService {
       )
     ) {
       throw new BadRequestException('Invalid state instruction state ID');
+    }
+  }
+
+  private validateMaxTimeValue(maxTimeValue: string): void {
+    if (!maxTimeValue) {
+      return;
+    }
+
+    if (!isValidTimeFormatHHMMSS(maxTimeValue)) {
+      throw new BadRequestException(
+        'Time value must be in format HH:MM:SS (e.g., 01:30:00)',
+      );
+    }
+
+    // Parse time string to total seconds
+    const timeInSeconds = parseTimeToSeconds(maxTimeValue);
+    const minSeconds = parseTimeToSeconds(LOWER_MAX_TIMER_VALUE);
+    const maxSeconds = parseTimeToSeconds(UPPER_MAX_TIMER_VALUE);
+
+    if (timeInSeconds < minSeconds || timeInSeconds > maxSeconds) {
+      throw new BadRequestException(
+        `Time value must be between ${LOWER_MAX_TIMER_VALUE} and ${UPPER_MAX_TIMER_VALUE}`,
+      );
     }
   }
 
@@ -1100,6 +1137,12 @@ export class ScenarioService {
       await this.competencyService.validateCompetencyId(
         updateScenarioDto.competencyId,
       );
+    }
+    if (
+      updateScenarioDto.timerMode === true &&
+      updateScenarioDto.maxTimeValue
+    ) {
+      this.validateMaxTimeValue(updateScenarioDto.maxTimeValue);
     }
 
     return scenario;
