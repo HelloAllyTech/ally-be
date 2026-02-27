@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
 import {
   IsEnum,
   IsNotEmpty,
@@ -102,14 +102,15 @@ export class ScenarioFieldContextDto {
   @IsOptional()
   challengeDescription?: string;
 
-  @ApiProperty({
-    description:
-      'Formatted list of allowed helper behaviors for behavior instruction generation',
-    required: false,
-  })
+  @ApiHideProperty()
   @IsString()
   @IsOptional()
   allowedHelperBehaviorsList?: string;
+
+  @ApiHideProperty()
+  @IsString()
+  @IsOptional()
+  predefinedBehaviorInstructionsDoc?: string;
 }
 
 export class GenerateScenarioFieldDto {
