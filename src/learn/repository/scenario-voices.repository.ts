@@ -16,13 +16,8 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     languageIds: string | undefined,
     options: Pagination,
   ): Promise<ScenarioVoices[]> {
-    const query = this.createQueryBuilder('scenarioVoice').select([
-      'scenarioVoice.id',
-      'scenarioVoice.name',
-      'scenarioVoice.provider',
-      'scenarioVoice.languageId',
-      'scenarioVoice.active',
-    ]);
+    const query = this.createQueryBuilder('scenarioVoice');
+
     if (searchName) {
       query
         .andWhere(
@@ -92,7 +87,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       .addSelect('la.label', 'label')
       .addSelect(
         voicesNeeded
-          ? `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider,'config',sv.config))`
+          ? `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider))`
           : `'[]'::jsonb`,
         'voices',
       )
