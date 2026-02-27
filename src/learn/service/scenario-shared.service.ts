@@ -472,6 +472,23 @@ export class ScenarioSharedService {
     return scenarioVoice;
   }
 
+  async getVoiceWithLanguageCode(voiceId: string) {
+    const voice =
+      await this.scenarioVoiceRepository.getVoiceWithLanguageCode(voiceId);
+
+    if (!voice) {
+      throw new NotFoundException('Scenario voice not found');
+    }
+
+    return {
+      ...voice,
+      config:
+        typeof voice.config === 'string'
+          ? JSON.parse(voice.config)
+          : voice.config,
+    };
+  }
+
   private async getScenarioTranslationData(metadata: any, scenarioId: number) {
     const { voiceId, languageId, language, defaultLanguageId, ...promptData } =
       metadata ?? {};
