@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOperation,
   ApiParam,
   ApiResponse,
@@ -19,17 +20,18 @@ import { AuthPermissions } from '../../auth/decorators/auth-permissions.decorato
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 import { ScenarioCoverImageLibraryService } from '../service/scenario-cover-image-library.service';
 import {
-  UploadImageUrlRequestDto,
-  UploadImageUrlResponseDto,
-} from '../dto/upload-image-url.dto';
-import { AddScenarioCoverImageDto } from '../dto/add-scenario-cover-image.dto';
-import {
   GetScenarioCoverImageLibraryQueryDto,
   GetScenarioCoverImageLibraryResponseDto,
 } from '../dto/get-scenario-cover-image-library.dto';
 import { ScenarioCoverImageLibraryResponseDto } from '../dto/scenario-cover-image-library-response.dto';
+import {
+  UploadImageUrlRequestDto,
+  UploadImageUrlResponseDto,
+} from '../dto/upload-image-url.dto';
+import { AddScenarioCoverImageDto } from '../dto/add-scenario-cover-image.dto';
+import { ParseArrayBodyPipe } from '../pipes/parse-array-body.pipe';
 
-@ApiTags('Cover Image Library')
+@ApiTags('Scenario Cover Image Library')
 @ApiBearerAuth()
 @ApiSecurity('access-token')
 @Controller('/v1/scenario-cover-image-library')
@@ -41,41 +43,57 @@ export class ScenarioCoverImageLibraryController {
   @Post('upload-url')
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY])
   @ApiOperation({
-    summary: 'Create and return presigned URL for image upload',
-    description: 'Returns a presigned S3 URL to upload the image.',
+    summary: 'Create presigned URLs for image upload',
+    description:
+      'Accepts one or more images. Returns presigned S3 URLs and image URLs for each.',
+  })
+  @ApiBody({
+    type: UploadImageUrlRequestDto,
+    isArray: true,
+    description: 'Array of image upload requests. Body must be a JSON array.',
   })
   @ApiResponse({
     status: 201,
-    description: 'Returns presigned URL and image URL',
-    type: UploadImageUrlResponseDto,
+    description: 'Returns presigned URLs and image URLs for each item',
+    type: [UploadImageUrlResponseDto],
   })
   @ApiResponse({ status: 400, description: 'Invalid file type or size' })
   async createCoverImageUploadUrl(
-    @Body() dto: UploadImageUrlRequestDto,
-  ): Promise<UploadImageUrlResponseDto> {
-    return this.scenarioCoverImageLibraryService.createCoverImageUploadUrl(dto);
+    @Body(new ParseArrayBodyPipe(UploadImageUrlRequestDto))
+    coverImages: UploadImageUrlRequestDto[],
+  ): Promise<UploadImageUrlResponseDto[]> {
+    return this.scenarioCoverImageLibraryService.createCoverImageUploadUrls(
+      coverImages,
+    );
   }
 
   @Post()
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY])
   @ApiOperation({
-    summary: 'Insert image into library',
+    summary: 'Insert images into library',
     description:
-      'Call after uploading the image to the presigned URL. Inserts the library entry.',
+      'Accepts one or more image URLs (S3 URLs from presigned upload or any public image URL). Duplicate imageUrl values are skipped (existing record returned).',
+  })
+  @ApiBody({
+    type: AddScenarioCoverImageDto,
+    isArray: true,
+    description:
+      'Array of image URLs (S3 or public) to add to the library. Body must be a JSON array.',
   })
   @ApiResponse({
-    status: 200,
-    description: 'Returns the created library image record',
-    type: ScenarioCoverImageLibraryResponseDto,
+    status: 201,
+    description: 'Returns the created library image records',
+    type: [ScenarioCoverImageLibraryResponseDto],
   })
   @ApiResponse({
     status: 400,
-    description: 'Invalid URL or image not found in S3',
+    description: 'Invalid URL format',
   })
   async addCoverImage(
-    @Body() coverImage: AddScenarioCoverImageDto,
-  ): Promise<ScenarioCoverImageLibraryResponseDto> {
-    return this.scenarioCoverImageLibraryService.addCoverImage(coverImage);
+    @Body(new ParseArrayBodyPipe(AddScenarioCoverImageDto))
+    coverImages: AddScenarioCoverImageDto[],
+  ): Promise<ScenarioCoverImageLibraryResponseDto[]> {
+    return this.scenarioCoverImageLibraryService.addCoverImages(coverImages);
   }
 
   @Get()
