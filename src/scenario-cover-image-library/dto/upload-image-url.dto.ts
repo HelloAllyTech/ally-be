@@ -7,6 +7,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
+
 import { ScenarioCoverImageUploadContentType } from '../enum/scenario-cover-image-upload-content-type.enum';
 
 export class UploadImageUrlRequestDto {
