@@ -411,7 +411,7 @@ describe('ScenarioReportService', () => {
       });
       expect(
         scenarioReportTranscriptService.getScenarioReportTranscripts,
-      ).toHaveBeenCalledWith(reportId);
+      ).toHaveBeenCalledWith(reportId, undefined);
       expect(result).toEqual(transcriptResult);
     });
   });

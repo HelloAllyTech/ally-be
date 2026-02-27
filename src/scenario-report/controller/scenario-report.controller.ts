@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -74,10 +82,29 @@ export class ScenarioReportController {
     description: 'Scenario report transcript by id',
     type: ScenarioReportTranscriptResponseDto,
   })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description:
+      'Number of records to return. If omitted with offset, returns all.',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description:
+      'Number of records to skip. If omitted with limit, returns all.',
+  })
   async getScenarioReportTranscriptById(
     @Param('reportId') reportId: string,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
   ): Promise<ScenarioReportTranscriptResponseDto> {
-    return this.scenarioReportService.getScenarioReportTranscripts(reportId);
+    return this.scenarioReportService.getScenarioReportTranscripts(reportId, {
+      limit,
+      offset,
+    });
   }
 
   @Get('/:scenarioId/reports')
