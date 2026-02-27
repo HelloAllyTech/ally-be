@@ -6,6 +6,8 @@ RUN mkdir -p /tmp/audio_storage
 
 RUN mkdir -p /mnt/audio_storage
 
+RUN apk add --no-cache ffmpeg
+
 COPY package*.json ./
 
 RUN npm install

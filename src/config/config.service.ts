@@ -340,4 +340,13 @@ export class AppConfigService {
       ),
     };
   }
+
+  get voicePreview() {
+    return {
+      deepgramApiKey: this.configService.get<string>('DEEPGRAM_API_KEY'),
+      elevenlabsApiKey: this.configService.get<string>('ELEVENLABS_API_KEY'),
+      sarvamApiKey: this.configService.get<string>('SARVAM_API_KEY'),
+      humeApiKey: this.configService.get<string>('HUME_API_KEY'),
+    };
+  }
 }

@@ -42,6 +42,7 @@ import { CaseModule } from './case/case.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
 import { ScenarioReportModule } from './scenario-report/scenario-report.module';
 import { AppVersionModule } from './app-version/app-version.module';
+import { VoicePreviewModule } from './voice-preview/voice-preview.module';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { AppVersionModule } from './app-version/app-version.module';
     ScenarioCoverImageLibraryModule,
     ScenarioReportModule,
     AppVersionModule,
+    VoicePreviewModule,
   ],
   controllers: [],
   providers: [
