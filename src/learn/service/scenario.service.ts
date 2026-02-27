@@ -111,6 +111,8 @@ import {
   isValidTimeFormatHHMMSS,
   parseTimeToSeconds,
 } from 'src/common/util/time.util';
+import { COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS } from '../constants/competency-behavior-instruction-templates.constants';
+import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 
 @Injectable()
 export class ScenarioService {
@@ -1813,11 +1815,74 @@ export class ScenarioService {
 
     let behaviorIdMapping;
     if (fieldName === GeneratableField.BEHAVIOR_INSTRUCTIONS) {
+      if (!scenarioContext.competency) {
+        throw new BadRequestException(
+          'Competency is required for behavior instruction generation',
+        );
+      }
+
       const { data: behaviors } = await this.behaviorService.getBehaviors();
       const result =
         this.openAIAutofillService.buildBehaviorIdMapping(behaviors);
       behaviorIdMapping = result.mapping;
-      scenarioContext.allowedHelperBehaviorsList = result.formattedList;
+
+      this.logger.info(
+        `Loaded ${behaviors.length} behaviors, mapped ${result.mapping.size} IDs`,
+      );
+
+      let hasPredefined = false;
+
+      const predefinedBehaviors =
+        COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS[scenarioContext.competency];
+
+      if (predefinedBehaviors?.length) {
+        const nameToSeqId = new Map<string, number>();
+        for (const [seqId, behavior] of result.mapping.entries()) {
+          nameToSeqId.set(behavior.name, seqId);
+        }
+
+        const shouldDo: number[] = [];
+        const shouldNotDo: number[] = [];
+
+        for (const template of predefinedBehaviors) {
+          const seqId = nameToSeqId.get(template.behaviorName);
+          if (seqId === undefined) continue;
+          if (template.category === BehaviorInstructionCategory.SHOULD_DO) {
+            shouldDo.push(seqId);
+          } else {
+            shouldNotDo.push(seqId);
+          }
+        }
+
+        if (shouldDo.length > 0 || shouldNotDo.length > 0) {
+          hasPredefined = true;
+          const predefinedDoc: Record<string, number[]> = {};
+          if (shouldDo.length > 0) predefinedDoc.SHOULD_DO = shouldDo;
+          if (shouldNotDo.length > 0) predefinedDoc.SHOULD_NOT_DO = shouldNotDo;
+          scenarioContext.predefinedBehaviorInstructionsDoc =
+            JSON.stringify(predefinedDoc);
+
+          const usedSeqIds = new Set([...shouldDo, ...shouldNotDo]);
+          const relevantLines = [...usedSeqIds]
+            .map((seqId) => {
+              const b = result.mapping.get(seqId);
+              return b ? `${seqId}. ${b.name}` : null;
+            })
+            .filter(Boolean);
+          scenarioContext.allowedHelperBehaviorsList = relevantLines.join('\n');
+
+          this.logger.info(
+            `Using predefined presets: ${shouldDo.length} SHOULD_DO, ${shouldNotDo.length} SHOULD_NOT_DO behaviors`,
+          );
+        }
+      }
+
+      if (!hasPredefined) {
+        scenarioContext.allowedHelperBehaviorsList = result.formattedList;
+        this.logger.info(
+          `No presets found for "${scenarioContext.competency}", using full behavior list`,
+        );
+      }
     }
 
     const content = await this.openAIAutofillService.generateFieldContent(
@@ -1826,6 +1891,8 @@ export class ScenarioService {
       scenarioContext,
       behaviorIdMapping,
     );
+
+    this.logger.info(`Generation completed for ${fieldName}`);
 
     return { fieldName, content };
   }
