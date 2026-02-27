@@ -12,6 +12,7 @@ import { Type } from 'class-transformer';
 import { ScenarioReportConfig } from '../type/scenario-report-config.type';
 import { UpdateScenarioReportTranscriptDto } from './scenario-report-transcript.dto';
 import { ScenarioReportStatus } from '../enum/scenario-report.enum';
+import { Languages } from 'src/language/entity/languages.entity';
 
 export class CreateScenarioReportDto {
   @ApiProperty({ description: 'Language ID', required: true, example: 1 })
@@ -139,6 +140,12 @@ export class ScenarioReportDto {
     example: 1,
   })
   updatedBy!: number;
+
+  @ApiProperty({
+    description: 'Language of the scenario report',
+    example: { id: 1, value: 'en', label: 'English' },
+  })
+  language?: Languages;
 }
 
 export class ScenarioReportResponseDto {

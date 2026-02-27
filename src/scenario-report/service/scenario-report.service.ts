@@ -24,6 +24,7 @@ import { LoggerService } from '../../logger/logger.service';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { ScenarioReportTranscriptResponseDto } from '../dto/scenario-report-transcript.dto';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
+import { Languages } from 'src/language/entity/languages.entity';
 
 @Injectable()
 export class ScenarioReportService {
@@ -154,7 +155,13 @@ export class ScenarioReportService {
     if (!scenarioReport) {
       throw new NotFoundException('Scenario report not found');
     }
-    return scenarioReport;
+    const languages = await this.sharedLanguageService.getLanguagesByIds([
+      scenarioReport.config.languageId,
+    ]);
+    return {
+      ...scenarioReport,
+      language: languages[0],
+    };
   }
 
   async getScenarioReports(
@@ -182,10 +189,30 @@ export class ScenarioReportService {
           ...(statusList.length > 0 && { status: In(statusList) }),
         },
       });
+
+    const languagesMap = await this.getLanguagesMap(
+      scenarioReports.map((report) => report.config.languageId),
+    );
+
     return {
-      data: scenarioReports,
+      data: scenarioReports.map((report) => ({
+        ...report,
+        language: languagesMap[report.config.languageId],
+      })),
       count,
     };
+  }
+
+  private async getLanguagesMap(
+    languageIds: number[],
+  ): Promise<Record<number, Languages>> {
+    const languages = await this.sharedLanguageService.getLanguagesByIds([
+      ...new Set(languageIds),
+    ]);
+    return languages.reduce<Record<number, Languages>>((acc, language) => {
+      acc[language.id] = language;
+      return acc;
+    }, {});
   }
 
   async cancelScenarioReport(
@@ -223,14 +250,21 @@ export class ScenarioReportService {
     createdBy: number,
     lookbackMinutes?: number,
   ): Promise<ScenarioReportResponseDto> {
-    const data =
+    const reports =
       await this.scenarioReportRepository.findRecentReportsByCreatedBy(
         createdBy,
         lookbackMinutes,
       );
+
+    const languagesMap = await this.getLanguagesMap(
+      reports.map((report) => report.config.languageId),
+    );
     return {
-      data,
-      count: data.length,
+      data: reports.map((report) => ({
+        ...report,
+        language: languagesMap[report.config.languageId],
+      })),
+      count: reports.length,
     };
   }
 
