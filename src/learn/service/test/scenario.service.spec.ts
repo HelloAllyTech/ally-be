@@ -66,6 +66,7 @@ describe('ScenarioService', () => {
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let triggerWarningsService: jest.Mocked<TriggerWarningsService>;
   let openAIAutofillService: jest.Mocked<OpenAIAutofillService>;
+  let behaviorService: jest.Mocked<BehaviorService>;
   let scenarioBehaviorInstructionService: jest.Mocked<ScenarioBehaviorInstructionService>;
 
   const mockTenantId = 'tenant-123';
@@ -403,6 +404,7 @@ describe('ScenarioService', () => {
     scenarioSharedService = module.get(ScenarioSharedService);
     triggerWarningsService = module.get(TriggerWarningsService);
     openAIAutofillService = module.get(OpenAIAutofillService);
+    behaviorService = module.get(BehaviorService);
     scenarioBehaviorInstructionService = module.get(
       ScenarioBehaviorInstructionService,
     );
@@ -4650,6 +4652,157 @@ describe('ScenarioService', () => {
         fieldName: GeneratableField.STATE_INSTRUCTIONS,
         content: generatedContent,
       });
+    });
+
+    it('should set predefinedBehaviorInstructionsDoc and only relevant behaviors when competency has a predefined template', async () => {
+      const context = {
+        ...scenarioContext,
+        competency: 'Promote Realistic Hope',
+      };
+      const dto = {
+        fieldName: GeneratableField.BEHAVIOR_INSTRUCTIONS,
+        scenarioContext: context,
+      };
+
+      const mockBehaviors = [
+        { id: 'uuid-1', name: 'Gives unrealistic promises' },
+        { id: 'uuid-2', name: 'Provides no hope for change' },
+        { id: 'uuid-3', name: 'Shames client doubts' },
+        { id: 'uuid-4', name: 'Expresses pessimism about change' },
+        { id: 'uuid-5', name: 'Praises help-seeking behaviour' },
+        { id: 'uuid-6', name: 'Encourages realistic optimism' },
+        { id: 'uuid-7', name: 'Explores and addresses doubts' },
+        { id: 'uuid-8', name: 'Clarifies limits of treatment realistically' },
+        { id: 'uuid-9', name: 'Some unrelated behavior' },
+      ];
+
+      const mapping = new Map(
+        mockBehaviors.map((b, i) => [i + 1, { id: b.id, name: b.name }]),
+      );
+
+      behaviorService.getBehaviors.mockResolvedValue({
+        data: mockBehaviors as any,
+        count: mockBehaviors.length,
+      });
+      openAIAutofillService.buildBehaviorIdMapping.mockReturnValue({
+        mapping,
+        formattedList: mockBehaviors
+          .map((b, i) => `${i + 1}. ${b.name}`)
+          .join('\n'),
+      });
+      openAIAutofillService.generateFieldContent.mockResolvedValue([]);
+
+      await service.generateField(dto);
+
+      const passedContext =
+        openAIAutofillService.generateFieldContent.mock.calls[0][2];
+
+      const predefinedDoc = JSON.parse(
+        passedContext.predefinedBehaviorInstructionsDoc!,
+      );
+      expect(predefinedDoc.SHOULD_NOT_DO).toEqual([1, 2, 3, 4]);
+      expect(predefinedDoc.SHOULD_DO).toEqual([5, 6, 7, 8]);
+
+      expect(passedContext.allowedHelperBehaviorsList).not.toContain(
+        'Some unrelated behavior',
+      );
+      expect(passedContext.allowedHelperBehaviorsList).toContain(
+        'Gives unrealistic promises',
+      );
+    });
+
+    it('should use full behavior list when competency has no predefined template', async () => {
+      const context = {
+        ...scenarioContext,
+        competency: 'Unknown Competency',
+      };
+      const dto = {
+        fieldName: GeneratableField.BEHAVIOR_INSTRUCTIONS,
+        scenarioContext: context,
+      };
+
+      const mockBehaviors = [
+        { id: 'uuid-1', name: 'Behavior A' },
+        { id: 'uuid-2', name: 'Behavior B' },
+      ];
+
+      const fullList = '1. Behavior A\n2. Behavior B';
+      const mapping = new Map(
+        mockBehaviors.map((b, i) => [i + 1, { id: b.id, name: b.name }]),
+      );
+
+      behaviorService.getBehaviors.mockResolvedValue({
+        data: mockBehaviors as any,
+        count: mockBehaviors.length,
+      });
+      openAIAutofillService.buildBehaviorIdMapping.mockReturnValue({
+        mapping,
+        formattedList: fullList,
+      });
+      openAIAutofillService.generateFieldContent.mockResolvedValue([]);
+
+      await service.generateField(dto);
+
+      const passedContext =
+        openAIAutofillService.generateFieldContent.mock.calls[0][2];
+
+      expect(passedContext.predefinedBehaviorInstructionsDoc).toBeUndefined();
+      expect(passedContext.allowedHelperBehaviorsList).toBe(fullList);
+    });
+
+    it('should throw BadRequestException when no competency is provided for BEHAVIOR_INSTRUCTIONS', async () => {
+      const dto = {
+        fieldName: GeneratableField.BEHAVIOR_INSTRUCTIONS,
+        scenarioContext: { ...scenarioContext },
+      };
+
+      await expect(service.generateField(dto)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(behaviorService.getBehaviors).not.toHaveBeenCalled();
+    });
+
+    it('should skip unresolvable behavior names from predefined template', async () => {
+      const context = {
+        ...scenarioContext,
+        competency: 'Promote Realistic Hope',
+      };
+      const dto = {
+        fieldName: GeneratableField.BEHAVIOR_INSTRUCTIONS,
+        scenarioContext: context,
+      };
+
+      const mockBehaviors = [
+        { id: 'uuid-1', name: 'Gives unrealistic promises' },
+        { id: 'uuid-5', name: 'Praises help-seeking behaviour' },
+      ];
+
+      const mapping = new Map(
+        mockBehaviors.map((b, i) => [i + 1, { id: b.id, name: b.name }]),
+      );
+
+      behaviorService.getBehaviors.mockResolvedValue({
+        data: mockBehaviors as any,
+        count: mockBehaviors.length,
+      });
+      openAIAutofillService.buildBehaviorIdMapping.mockReturnValue({
+        mapping,
+        formattedList: mockBehaviors
+          .map((b, i) => `${i + 1}. ${b.name}`)
+          .join('\n'),
+      });
+      openAIAutofillService.generateFieldContent.mockResolvedValue([]);
+
+      await service.generateField(dto);
+
+      const passedContext =
+        openAIAutofillService.generateFieldContent.mock.calls[0][2];
+
+      const predefinedDoc = JSON.parse(
+        passedContext.predefinedBehaviorInstructionsDoc!,
+      );
+      expect(predefinedDoc.SHOULD_NOT_DO).toEqual([1]);
+      expect(predefinedDoc.SHOULD_DO).toEqual([2]);
     });
 
     it('should throw BadRequestException for unsupported field name', async () => {
