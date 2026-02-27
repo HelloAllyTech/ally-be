@@ -59,6 +59,9 @@ export class ScenarioCoverImageLibraryItemDto {
 
   @ApiProperty()
   createdAt!: Date;
+
+  @ApiProperty()
+  updatedAt!: Date;
 }
 
 export class GetScenarioCoverImageLibraryResponseDto {
