@@ -300,7 +300,7 @@ describe('ScenarioVoicesRepository', () => {
       const result = await repository.getLanguagesWithVoices(false, true);
 
       expect(queryBuilder.addSelect).toHaveBeenCalledWith(
-        `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider,'config',sv.config))`,
+        `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider))`,
         'voices',
       );
       expect(queryBuilder.where).toHaveBeenCalledWith('la.active = :active', {
