@@ -16,8 +16,13 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     languageIds: string | undefined,
     options: Pagination,
   ): Promise<ScenarioVoices[]> {
-    const query = this.createQueryBuilder('scenarioVoice');
-
+    const query = this.createQueryBuilder('scenarioVoice').select([
+      'scenarioVoice.id',
+      'scenarioVoice.name',
+      'scenarioVoice.provider',
+      'scenarioVoice.languageId',
+      'scenarioVoice.active',
+    ]);
     if (searchName) {
       query
         .andWhere(
@@ -147,6 +152,19 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     }
 
     return await query.getRawMany();
+  }
+
+  async getVoiceWithLanguageCode(voiceId: string) {
+    return this.createQueryBuilder('sv')
+      .select('sv.id', 'id')
+      .addSelect('sv.name', 'name')
+      .addSelect('sv.provider', 'provider')
+      .addSelect('sv.config', 'config')
+      .addSelect('sv.languageId', 'languageId')
+      .addSelect('la.value', 'languageCode')
+      .innerJoin('languages', 'la', 'la.id = sv.languageId')
+      .where('sv.id = :voiceId', { voiceId })
+      .getRawOne();
   }
 
   async getFallbackVoice(languageId: number, gender: string) {
