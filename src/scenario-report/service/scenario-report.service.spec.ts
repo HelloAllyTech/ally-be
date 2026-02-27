@@ -186,7 +186,10 @@ describe('ScenarioReportService', () => {
 
       const result = await service.getScenarioReportById(reportId);
 
-      expect(result).toEqual(mockReport);
+      expect(result).toEqual({
+        ...mockReport,
+        language: { id: 1, value: 'en' },
+      });
       expect(scenarioReportRepository.findOne).toHaveBeenCalledWith({
         where: { id: reportId },
       });
@@ -218,7 +221,10 @@ describe('ScenarioReportService', () => {
           status: In(['COMPLETED', 'CANCELLED']),
         },
       });
-      expect(result).toEqual({ data: reports, count: 1 });
+      expect(result).toEqual({
+        data: [{ ...mockReport, language: { id: 1, value: 'en' } }],
+        count: 1,
+      });
     });
 
     it('should not filter by status when statuses not provided', async () => {
@@ -297,7 +303,10 @@ describe('ScenarioReportService', () => {
       expect(
         scenarioReportRepository.findRecentReportsByCreatedBy,
       ).toHaveBeenCalledWith(userId, 60);
-      expect(result).toEqual({ data: reports, count: 1 });
+      expect(result).toEqual({
+        data: [{ ...mockReport, language: { id: 1, value: 'en' } }],
+        count: 1,
+      });
     });
 
     it('should pass undefined lookbackMinutes when not provided', async () => {
