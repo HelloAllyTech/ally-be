@@ -276,6 +276,7 @@ export class ScenarioReportService {
 
   async getScenarioReportTranscripts(
     reportId: string,
+    options?: { limit?: number; offset?: number },
   ): Promise<ScenarioReportTranscriptResponseDto> {
     const report = await this.getScenarioReportById(reportId);
     if (report.status !== ScenarioReportStatus.COMPLETED) {
@@ -286,6 +287,7 @@ export class ScenarioReportService {
 
     return this.scenarioReportTranscriptService.getScenarioReportTranscripts(
       reportId,
+      options,
     );
   }
 }
