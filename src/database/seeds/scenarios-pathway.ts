@@ -49,10 +49,10 @@ const createScenariosData = async (
   accessToken: string,
 ) => {
   const languageVoices = await mapLanguagesVoices(client, accessToken);
-  const { terminationEventId, terminationMessage } =
-    await getTerminationEventData(client, accessToken);
-
+  const terminationEvents = await getTerminationEventData(client, accessToken);
   const triggerWarningIds = await getTriggerWarnings(client, accessToken);
+  const competencyId = await getOrCreateCompetency(client, accessToken);
+  const behaviorIds = await getOrCreateBehaviors(client, accessToken);
 
   const scenarios = [
     {
@@ -95,13 +95,25 @@ const createScenariosData = async (
         { stateId: '4', instruction: 'End', dialogues: ['I understand'] },
       ],
       // Termination settings
-      autoTerminationStatus: true,
-      terminationEventId,
-      terminationMessage,
+      terminationEvents,
       triggerWarningIds,
       experienceMode: ExperienceMode.FEEDBACK,
       timerMode: false,
       showScoreMeter: false,
+      // Required fields for ACTIVE scenarios
+      competencyId,
+      characterProfileText:
+        'Alex is a 25-year-old software engineer from Kochi, India. He is struggling with work-life balance and stress management. He tends to be casual in communication and is open to discussing his challenges. Alex is looking for support in managing his workload and finding healthier ways to cope with stress.',
+      behaviorInstructions: [
+        {
+          category: 'SHOULD_DO',
+          behaviors: behaviorIds.slice(0, 2), // Use first 2 behaviors
+          instructions: [
+            'Listen actively to concerns about work-life balance',
+            'Show empathy for his stress and overwhelm',
+          ],
+        },
+      ],
     },
     {
       isGlobal: true,
@@ -151,12 +163,24 @@ const createScenariosData = async (
         },
         { stateId: '4', instruction: 'End', dialogues: ['I see.'] },
       ],
-      // Termination settings
-      autoTerminationStatus: false,
       triggerWarningIds,
       experienceMode: ExperienceMode.FEEDBACK,
       timerMode: false,
       showScoreMeter: false,
+      // Required fields for ACTIVE scenarios
+      competencyId,
+      characterProfileText:
+        'Priya is a 29-year-old product manager from Bengaluru, India. She is experiencing anxiety due to high expectations and fear of underperforming at work. She has a thoughtful communication style and is willing to explore her feelings about workplace stress. Priya seeks help in managing her anxiety and building confidence in her professional role.',
+      behaviorInstructions: [
+        {
+          category: 'SHOULD_DO',
+          behaviors: behaviorIds.slice(0, 2), // Use first 2 behaviors
+          instructions: [
+            'Acknowledge anxiety about work performance',
+            'Help her explore the sources of her workplace anxiety',
+          ],
+        },
+      ],
     },
   ];
 
@@ -428,7 +452,7 @@ async function mapLanguagesVoices(
 async function getTerminationEventData(
   client: AxiosInstance,
   accessToken: string,
-): Promise<{ terminationEventId: string; terminationMessage: string }> {
+): Promise<Array<{ id: string; message: string }>> {
   const headers = { Authorization: `Bearer ${accessToken}` };
 
   try {
@@ -452,10 +476,12 @@ async function getTerminationEventData(
       `[scenarios-pathway] Found termination event: ${terminationEvent.name}`,
     );
 
-    return {
-      terminationEventId: terminationEvent.id,
-      terminationMessage: 'Your problem is important to me.',
-    };
+    return [
+      {
+        id: terminationEvent.id,
+        message: 'Your problem is important to me.',
+      },
+    ];
   } catch (error: any) {
     console.error(
       '[scenarios-pathway] Failed to fetch termination events:',
@@ -496,6 +522,163 @@ async function getTriggerWarnings(
   } catch (error: any) {
     console.error(
       '[scenarios-pathway] Failed to fetch trigger warnings:',
+      error.response?.data?.message || error.message,
+    );
+    throw error;
+  }
+}
+
+async function getOrCreateCompetency(
+  client: AxiosInstance,
+  accessToken: string,
+  competencyName: string = 'Counseling Fundamentals',
+): Promise<string> {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  // Try to get existing competency first
+  try {
+    const response = await client.get(
+      `/api/v1/learn/competencies?name=${encodeURIComponent(competencyName)}&offset=0&limit=1`,
+      {
+        headers,
+      },
+    );
+
+    if (response.data.data.length > 0) {
+      const competency = response.data.data[0];
+      logStep(
+        `[scenarios-pathway] Using existing competency: ${competency.name} (${competency.id})`,
+      );
+      return competency.id;
+    }
+  } catch {
+    logStep(
+      '[scenarios-pathway] Error fetching competencies, will create new one',
+    );
+  }
+
+  // Create new competency if not found
+  try {
+    const response = await client.post(
+      '/api/v1/learn/competencies',
+      { name: competencyName },
+      {
+        headers,
+      },
+    );
+    logStep(
+      `[scenarios-pathway] Created new competency: ${response.data.name} (${response.data.id})`,
+    );
+    return response.data.id;
+  } catch (error: any) {
+    console.error(
+      '[scenarios-pathway] Failed to create competency:',
+      error.response?.data?.message || error.message,
+    );
+    throw error;
+  }
+}
+
+async function getOrCreateBehaviors(
+  client: AxiosInstance,
+  accessToken: string,
+  behaviorNames: string[] = [
+    'Active Listening',
+    'Empathy',
+    'Reflection',
+    'Open-ended Questions',
+  ],
+): Promise<string[]> {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+  const behaviorIds: string[] = [];
+
+  // Try to get existing behaviors first
+  try {
+    const response = await client.get(
+      '/api/v1/learn/scenario-behaviors?offset=0&limit=100',
+      {
+        headers,
+      },
+    );
+
+    const existingBehaviors = response.data.data || [];
+    const existingBehaviorMap = new Map(
+      existingBehaviors.map((b: any) => [b.name.toLowerCase(), b.id]),
+    );
+
+    // Find which behaviors exist and which need to be created
+    const behaviorsToCreate: string[] = [];
+    for (const name of behaviorNames) {
+      // Skip empty or invalid names
+      if (!name || typeof name !== 'string' || name.trim().length === 0) {
+        continue;
+      }
+
+      const existingId = existingBehaviorMap.get(name.toLowerCase().trim());
+      if (existingId && typeof existingId === 'string') {
+        behaviorIds.push(existingId);
+        logStep(
+          `[scenarios-pathway] Using existing behavior: ${name} (${existingId})`,
+        );
+      } else {
+        behaviorsToCreate.push(name.trim());
+      }
+    }
+
+    // Create missing behaviors
+    if (behaviorsToCreate.length > 0) {
+      // Filter out any empty strings and ensure all names are valid
+      const validBehaviorsToCreate = behaviorsToCreate
+        .filter(
+          (name) => name && typeof name === 'string' && name.trim().length > 0,
+        )
+        .map((name) => {
+          const trimmedName = name.trim();
+          if (!trimmedName) {
+            throw new Error(`Invalid behavior name: "${name}"`);
+          }
+          return { name: trimmedName };
+        });
+
+      if (validBehaviorsToCreate.length === 0) {
+        logStep(
+          '[scenarios-pathway] No valid behaviors to create after filtering',
+        );
+      } else {
+        logStep(
+          `[scenarios-pathway] Creating ${validBehaviorsToCreate.length} new behaviors: ${validBehaviorsToCreate.map((b) => b.name).join(', ')}`,
+        );
+        const createResponse = await client.post(
+          '/api/v1/learn/scenario-behaviors/bulk-insertions',
+          {
+            behaviors: validBehaviorsToCreate,
+          },
+          {
+            headers,
+          },
+        );
+
+        const createdBehaviors = createResponse.data.behaviors || [];
+        for (const behavior of createdBehaviors) {
+          behaviorIds.push(behavior.id);
+          logStep(
+            `[scenarios-pathway] Created new behavior: ${behavior.name} (${behavior.id})`,
+          );
+        }
+      }
+    }
+
+    if (behaviorIds.length === 0) {
+      throw new Error('No behaviors available after creation attempt');
+    }
+
+    logStep(
+      `[scenarios-pathway] Total behaviors available: ${behaviorIds.length}`,
+    );
+    return behaviorIds;
+  } catch (error: any) {
+    console.error(
+      '[scenarios-pathway] Failed to get or create behaviors:',
       error.response?.data?.message || error.message,
     );
     throw error;
