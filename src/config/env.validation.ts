@@ -114,4 +114,10 @@ export const validationSchema = Joi.object({
   AI_CHAT_MAX_TOKENS: Joi.number().default(1500),
   AI_CHAT_TEMPERATURE: Joi.number().min(0).max(2).default(0.7),
   AI_CHAT_MAX_CONTEXT_TOKENS: Joi.number().default(100000),
+
+  // Voice Preview (TTS provider API keys)
+  DEEPGRAM_API_KEY: Joi.string().optional(),
+  ELEVENLABS_API_KEY: Joi.string().optional(),
+  SARVAM_API_KEY: Joi.string().optional(),
+  HUME_API_KEY: Joi.string().optional(),
 });
