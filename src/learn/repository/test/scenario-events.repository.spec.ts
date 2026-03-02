@@ -533,7 +533,7 @@ describe('ScenarioEventsRepository', () => {
         { scenarioId },
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        '(scenarioEvent.checklistVisibilityStatus = :checklistVisible OR scenarioSessionEvent.id IS NOT NULL)',
+        '(scenarioEvent.checklistVisibilityStatus = :checklistVisible)',
         { checklistVisible: true },
       );
       expect(mockQueryBuilder.setParameters).toHaveBeenCalledWith({

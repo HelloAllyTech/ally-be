@@ -110,7 +110,7 @@ export class ScenarioEventsRepository extends Repository<ScenarioEvents> {
         scenarioId,
       })
       .andWhere(
-        '(scenarioEvent.checklistVisibilityStatus = :checklistVisible OR scenarioSessionEvent.id IS NOT NULL)',
+        '(scenarioEvent.checklistVisibilityStatus = :checklistVisible)',
         { checklistVisible: true },
       )
       .setParameters({
