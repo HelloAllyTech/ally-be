@@ -240,6 +240,7 @@ describe('ScenarioService', () => {
       getScenarioVoice: jest.fn(),
       getAdminScenario: jest.fn(),
       getBehaviorInstructionsByScenarioId: jest.fn(),
+      hasAllActiveScenarioMandatoryFields: jest.fn().mockReturnValue(true),
     };
 
     const mockScenarioEventsTranslationsRepository = {

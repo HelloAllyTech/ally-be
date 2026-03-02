@@ -75,13 +75,25 @@ describe('ScenarioReportService', () => {
     };
 
     const mockSharedLanguageService = {
-      getLanguagesByIds: jest.fn().mockResolvedValue([{ id: 1, value: 'en' }]),
+      getLanguagesByIds: jest
+        .fn()
+        .mockResolvedValue([{ id: 1, value: 'en', label: 'English' }]),
     };
 
     const mockScenarioSharedService = {
       createMetadataForScenario: jest
         .fn()
         .mockResolvedValue({ events: [], scenario: {} }),
+      getScenarioById: jest.fn().mockResolvedValue({
+        id: scenarioId,
+        title: 'Test Scenario',
+      }),
+      getScenarioByIds: jest
+        .fn()
+        .mockImplementation((ids: number[]) =>
+          Promise.resolve(ids.map((id) => ({ id, title: 'Test Scenario' }))),
+        ),
+      hasAllActiveScenarioMandatoryFields: jest.fn().mockReturnValue(true),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -188,7 +200,8 @@ describe('ScenarioReportService', () => {
 
       expect(result).toEqual({
         ...mockReport,
-        language: { id: 1, value: 'en' },
+        scenarioTitle: 'Test Scenario',
+        language: { id: 1, value: 'en', label: 'English' },
       });
       expect(scenarioReportRepository.findOne).toHaveBeenCalledWith({
         where: { id: reportId },
@@ -222,7 +235,13 @@ describe('ScenarioReportService', () => {
         },
       });
       expect(result).toEqual({
-        data: [{ ...mockReport, language: { id: 1, value: 'en' } }],
+        data: [
+          {
+            ...mockReport,
+            scenarioTitle: 'Test Scenario',
+            language: { id: 1, value: 'en', label: 'English' },
+          },
+        ],
         count: 1,
       });
     });
@@ -304,7 +323,13 @@ describe('ScenarioReportService', () => {
         scenarioReportRepository.findRecentReportsByCreatedBy,
       ).toHaveBeenCalledWith(userId, 60);
       expect(result).toEqual({
-        data: [{ ...mockReport, language: { id: 1, value: 'en' } }],
+        data: [
+          {
+            ...mockReport,
+            scenarioTitle: 'Test Scenario',
+            language: { id: 1, value: 'en', label: 'English' },
+          },
+        ],
         count: 1,
       });
     });
