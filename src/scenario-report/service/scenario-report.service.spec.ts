@@ -12,6 +12,7 @@ import { ScenarioReportTranscriptService } from './scenario-report-transcript.se
 import { AiService } from '../../ai/service/ai.service';
 import { SharedLanguageService } from '../../language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { ScenarioReport } from '../entity/scenario-report.entity';
 import { ScenarioReportStatus } from '../enum/scenario-report.enum';
 import { SCENARIO_REPORT_END_STATUSES } from '../constants/scenario-report.constant';
@@ -100,6 +101,12 @@ describe('ScenarioReportService', () => {
       hasAllActiveScenarioMandatoryFields: jest.fn().mockReturnValue(true),
     };
 
+    const mockOpenAITranslationsService = {
+      translateText: jest
+        .fn()
+        .mockImplementation((text: string) => Promise.resolve(text)),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioReportService,
@@ -126,6 +133,10 @@ describe('ScenarioReportService', () => {
         {
           provide: ScenarioSharedService,
           useValue: mockScenarioSharedService,
+        },
+        {
+          provide: OpenAITranslationsService,
+          useValue: mockOpenAITranslationsService,
         },
       ],
     }).compile();
@@ -511,6 +522,10 @@ describe('ScenarioReportService', () => {
         { languageId: 1, turns: 5, helperAgentPrompt: 'helper prompt' },
         userId,
       );
+
+      // Allow fire-and-forget triggerScenarioReportGeneration to complete
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(result).toEqual({
         id: reportId,

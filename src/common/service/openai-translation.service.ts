@@ -17,6 +17,7 @@ import {
   DEFAULT_OPENAI_GUARDRAIL_TRANSLATION_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_TEMPLATE,
+  DEFAULT_OPENAI_TEXT_TRANSLATION_PROMPT_TEMPLATE,
 } from 'src/common/constants/openai-translations.constants';
 import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 
@@ -398,8 +399,89 @@ IMPORTANT:
         DEFAULT_OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_TEMPLATE,
       [PromptCode.OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE]:
         DEFAULT_OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_TEMPLATE,
+      [PromptCode.OPENAI_TEXT_TRANSLATION_PROMPT_CODE]:
+        DEFAULT_OPENAI_TEXT_TRANSLATION_PROMPT_TEMPLATE,
     };
     return fallbackPromptMap[promptCode];
+  }
+
+  /* ------------------------------------------------------------------
+   * Fetch plain-text completion (no JSON parsing)
+   * ------------------------------------------------------------------ */
+  private async fetchTextCompletion(
+    userPrompt: string,
+    targetLanguageCode: string,
+  ): Promise<string> {
+    try {
+      const messages: ChatCompletionMessageParam[] = [
+        {
+          role: 'system',
+          content:
+            'You are a translator. Output only the translated text, nothing else.',
+        },
+        { role: 'user', content: userPrompt },
+      ];
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages,
+      });
+      return (response.choices?.[0]?.message?.content ?? '').trim();
+    } catch (error) {
+      this.logger.error(
+        `[OpenAITranslationsService] fetchTextCompletion failed for ${targetLanguageCode}`,
+        error as any,
+      );
+      return '';
+    }
+  }
+
+  /* ------------------------------------------------------------------
+   * PUBLIC API
+   * Translate a single string to the target language
+   * ------------------------------------------------------------------ */
+  async translateText(
+    text: string,
+    targetLanguageCode: string,
+  ): Promise<string> {
+    if (!text || !text.trim()) {
+      return text;
+    }
+    const normalizedCode = this.resolveBaseLanguageCode(targetLanguageCode);
+    const languageName =
+      LANGUAGE_NAME_MAP[normalizedCode] ?? targetLanguageCode;
+
+    const dbTemplate = await this.promptSharedService.getPromptByCode(
+      PromptCode.OPENAI_TEXT_TRANSLATION_PROMPT_CODE,
+    );
+    const fallbackTemplate = this.getFallbackPromptTemplate(
+      PromptCode.OPENAI_TEXT_TRANSLATION_PROMPT_CODE,
+    );
+    const promptTemplate = dbTemplate ?? fallbackTemplate;
+
+    if (!promptTemplate) {
+      this.logger.warn(
+        `[OpenAITranslationsService] Missing prompt for text translation, returning original`,
+      );
+      return text;
+    }
+
+    const filledPrompt = this.renderTemplate(promptTemplate, {
+      languageName,
+      text: text.trim(),
+    });
+
+    const result = await this.fetchTextCompletion(
+      filledPrompt,
+      targetLanguageCode,
+    );
+
+    if (!result) {
+      this.logger.warn(
+        `[OpenAITranslationsService] Empty translation for ${targetLanguageCode}, returning original`,
+      );
+      return text;
+    }
+    return result;
   }
 
   async translateObjectToLanguages(
