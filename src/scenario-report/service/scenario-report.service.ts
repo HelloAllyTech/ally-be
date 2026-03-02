@@ -51,7 +51,7 @@ export class ScenarioReportService {
     await this.checkForInProgressScenarioReports(scenarioId);
     //Check if the scenario has all the active mandatory fields
     const scenario =
-      await this.scenarioSharedService.getScenarioById(scenarioId);
+      await this.scenarioSharedService.getAdminScenario(scenarioId);
     if (!scenario) {
       throw new NotFoundException('Scenario not found');
     }
