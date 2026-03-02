@@ -317,38 +317,42 @@ export class ScenarioReportService {
     reportId: string,
     dto: UpdateScenarioReportDto,
   ): Promise<ScenarioReportDto> {
+    this.logger.info(
+      `Recieved webhook update for scenario report ${reportId} with status: ${dto.status}`,
+    );
+
     const report = await this.getScenarioReportById(reportId);
 
     if (SCENARIO_REPORT_END_STATUSES.includes(report.status)) {
-      throw new BadRequestException(
-        'Cannot update scenario report that is already completed, cancelled, or failed',
+      this.logger.warn(
+        `Cannot update scenario report ${reportId} that is already completed, cancelled, or failed`,
       );
-    }
-
-    const updatePayload: Partial<ScenarioReport> = {};
-    if (dto.metrics !== undefined) updatePayload.metrics = dto.metrics;
-    if (dto.status !== undefined) {
-      updatePayload.status = dto.status;
-      if (SCENARIO_REPORT_END_STATUSES.includes(dto.status)) {
-        updatePayload.endedAt = new Date();
+    } else {
+      const updatePayload: Partial<ScenarioReport> = {};
+      if (dto.metrics !== undefined) updatePayload.metrics = dto.metrics;
+      if (dto.status !== undefined) {
+        updatePayload.status = dto.status;
+        if (SCENARIO_REPORT_END_STATUSES.includes(dto.status)) {
+          updatePayload.endedAt = new Date();
+        }
       }
-    }
 
-    if (Object.keys(updatePayload).length > 0) {
-      await this.scenarioReportRepository.update(reportId, updatePayload);
-    }
+      if (Object.keys(updatePayload).length > 0) {
+        await this.scenarioReportRepository.update(reportId, updatePayload);
+      }
 
-    if (dto.transcripts && dto.transcripts.length > 0) {
-      await this.scenarioReportTranscriptService.addTranscripts(
+      if (dto.transcripts && dto.transcripts.length > 0) {
+        await this.scenarioReportTranscriptService.addTranscripts(
+          reportId,
+          dto.transcripts,
+        );
+      }
+
+      this.scenarioReportNotificationService.notifyUpdate(
+        report.createdBy,
         reportId,
-        dto.transcripts,
       );
     }
-
-    this.scenarioReportNotificationService.notifyUpdate(
-      report.createdBy,
-      reportId,
-    );
 
     return this.getScenarioReportById(reportId);
   }

@@ -129,6 +129,9 @@ export class ScenarioReportGateway
           lookbackMinutes,
         );
       client.emit(ScenarioReportEvents.REPORTS_UPDATED, reports);
+      this.logger.info(
+        `Initial user reports sent to client ${client.id} successfully`,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to send initial user reports to client ${client.id}: ${error.message}`,
@@ -162,6 +165,9 @@ export class ScenarioReportGateway
       const report =
         await this.scenarioReportService.getScenarioReportById(reportId);
       client.emit(ScenarioReportEvents.REPORTS_UPDATED, report);
+      this.logger.info(
+        `Initial report data sent to client ${client.id} successfully`,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to send initial report data to client ${client.id}: ${error.message}`,
@@ -190,6 +196,10 @@ export class ScenarioReportGateway
         this.server
           .to(userRoom(userId))
           .emit(ScenarioReportEvents.REPORTS_UPDATED, reports);
+
+        this.logger.info(
+          `Scenario reports updated and sent to user room ${userRoom(userId)} successfully`,
+        );
       }
     } catch (error) {
       this.logger.error(
@@ -211,6 +221,10 @@ export class ScenarioReportGateway
         this.server
           .to(reportRoom(reportId))
           .emit(ScenarioReportEvents.REPORTS_UPDATED, report);
+
+        this.logger.info(
+          `Scenario report updated and sent to report room ${reportRoom(reportId)} successfully`,
+        );
       }
     } catch (error) {
       this.logger.error(
