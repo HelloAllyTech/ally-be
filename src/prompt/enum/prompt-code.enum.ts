@@ -4,6 +4,7 @@ export enum PromptCode {
   OPENAI_GUARDRAIL_TRANSLATION_PROMPT_CODE = 'openai_translation_system_guardrail',
   OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_CODE = 'openai_translation_learn_behavior_instruction',
   OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE = 'openai_translation_session_event',
+  OPENAI_TEXT_TRANSLATION_PROMPT_CODE = 'openai_translation_text',
   OPENAI_SIMULATION_CHARACTER_PROFILE_TEXT_PROMPT_CODE = 'openai_simulation_character_profile_text',
   OPENAI_SIMULATION_CHALLENGE_DESCRIPTION_PROMPT_CODE = 'openai_simulation_challenge_description',
   OPENAI_SIMULATION_STATES_INSTRUCTIONS_PROMPT_CODE = 'openai_simulation_states_instructions',

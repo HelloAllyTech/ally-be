@@ -26,6 +26,7 @@ import { ScenarioReportTranscriptResponseDto } from '../dto/scenario-report-tran
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { Languages } from 'src/language/entity/languages.entity';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 
 @Injectable()
 export class ScenarioReportService {
@@ -40,6 +41,7 @@ export class ScenarioReportService {
     private readonly aiService: AiService,
     private readonly sharedLanguageService: SharedLanguageService,
     private readonly scenarioSharedService: ScenarioSharedService,
+    private readonly openAITranslationsService: OpenAITranslationsService,
   ) {}
 
   async createScenarioReport(
@@ -120,8 +122,14 @@ export class ScenarioReportService {
           report.config.languageId,
         );
 
+      const translatedPrompt =
+        await this.openAITranslationsService.translateText(
+          report.config.helperAgentPrompt,
+          languageCode,
+        );
+
       await this.aiService.triggerScenarioReportGenerate({
-        prompt: report.config.helperAgentPrompt,
+        prompt: translatedPrompt,
         turns: report.config.turns,
         language: languageCode,
         scenario_id: report.scenarioId,
