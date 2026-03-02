@@ -213,7 +213,7 @@ describe('ScenarioSessionService', () => {
     };
 
     const mockScenarioSessionReflectionPromptResponseRepo = {
-      find: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),

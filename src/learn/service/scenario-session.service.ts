@@ -194,16 +194,25 @@ export class ScenarioSessionService {
     scenarioSessionId: string,
     tenantId: string,
   ): Promise<void> {
-    const randomPrompts = this.pickRandomUniquePrompts(2);
-    const toCreate = randomPrompts.map((prompt) =>
-      this.scenarioSessionReflectionPromptResponseRepository.create({
-        scenarioSessionId,
-        promptId: prompt.promptId,
-        response: undefined,
-        tenantId,
-      }),
-    );
-    await this.scenarioSessionReflectionPromptResponseRepository.save(toCreate);
+    const existing =
+      await this.scenarioSessionReflectionPromptResponseRepository.find({
+        where: { scenarioSessionId },
+      });
+
+    if (!existing.length) {
+      const randomPrompts = this.pickRandomUniquePrompts(2);
+      const toCreate = randomPrompts.map((prompt) =>
+        this.scenarioSessionReflectionPromptResponseRepository.create({
+          scenarioSessionId,
+          promptId: prompt.promptId,
+          response: undefined,
+          tenantId,
+        }),
+      );
+      await this.scenarioSessionReflectionPromptResponseRepository.save(
+        toCreate,
+      );
+    }
   }
 
   private pickRandomUniquePrompts(count: number) {
