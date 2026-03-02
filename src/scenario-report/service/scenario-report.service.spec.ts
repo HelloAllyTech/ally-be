@@ -352,21 +352,19 @@ describe('ScenarioReportService', () => {
   });
 
   describe('updateScenarioReport', () => {
-    it('should throw BadRequestException when report is in end status', async () => {
+    it('should return report without updating when report is in end status', async () => {
       for (const status of SCENARIO_REPORT_END_STATUSES) {
         scenarioReportRepository.findOne.mockResolvedValue({
           ...mockReport,
           status,
         } as ScenarioReport);
 
-        await expect(
-          service.updateScenarioReport(reportId, { metrics: { accuracy: 80 } }),
-        ).rejects.toThrow(BadRequestException);
-        await expect(
-          service.updateScenarioReport(reportId, { metrics: { accuracy: 80 } }),
-        ).rejects.toThrow(
-          'Cannot update scenario report that is already completed, cancelled, or failed',
-        );
+        const result = await service.updateScenarioReport(reportId, {
+          metrics: { accuracy: 80 },
+        });
+
+        expect(result.status).toBe(status);
+        expect(scenarioReportRepository.update).not.toHaveBeenCalled();
       }
     });
 
