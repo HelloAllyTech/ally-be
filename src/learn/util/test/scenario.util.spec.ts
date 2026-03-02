@@ -62,6 +62,7 @@ describe('Scenario Util', () => {
         prompt: scenario.prompt,
         isGlobal: scenario.isGlobal,
         difficultyLevel: scenario.difficultyLevel,
+        competencyId: scenario.competencyId,
         metadata: {
           voiceId: scenario.voiceId,
           name: scenario.name,
@@ -78,6 +79,10 @@ describe('Scenario Util', () => {
           responseLength: scenario.responseLength,
           customFields: scenario.customFields,
           languageVoices: scenario.languageVoices,
+          linguisticStyleSamples: scenario.linguisticStyleSamples,
+          useLinguisticStyleSamples: true,
+          characterProfileText: scenario.characterProfileText,
+          showScoreMeter: scenario.showScoreMeter,
           experienceMode: ExperienceMode.CHECKLIST,
           checklistType: ChecklistType.GUIDED,
           timerMode: true,
