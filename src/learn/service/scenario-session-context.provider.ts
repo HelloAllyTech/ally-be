@@ -7,6 +7,7 @@ import { ScenarioSessionRepository } from '../repository/scenario-session.reposi
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
 import { ScenarioSessionDetailsRepository } from '../repository/scenario-session-details.repository';
 import { ScenariosRepository } from '../repository/scenario.repository';
+import { formatSecondsToMMSS } from 'src/common/util/time.util';
 
 @Injectable()
 export class ScenarioSessionContextProvider implements ContextProvider {
@@ -36,10 +37,12 @@ export class ScenarioSessionContextProvider implements ContextProvider {
     });
 
     const formattedTranscript = messages
-      .map(
-        (m) =>
-          `[${m.startSeconds ?? '?'}s - ${m.endSeconds ?? '?'}s] Sender ${m.senderId}: ${m.content}`,
-      )
+      .map((m) => {
+        const ts = formatSecondsToMMSS(m.startSeconds);
+        return ts
+          ? `[${ts}] Sender ${m.senderId}: ${m.content}`
+          : `Sender ${m.senderId}: ${m.content}`;
+      })
       .join('\n');
 
     const summaryStr = details?.summary
@@ -92,7 +95,8 @@ The transcript is the source of truth.
 All factual statements about the session must be grounded in the transcript or session summary below.
 
 When referencing transcript moments:
-Format timestamps exactly as they appear in the transcript.
+Format timestamps exactly as they appear in the transcript (MM:SS format).
+If a transcript line has no timestamp, reference it by quoting the content and identifying the speaker. Do not fabricate a timestamp.
 Quote exactly as written in the transcript.
 Do not paraphrase quoted material.
 Do not invent dialogue, timestamps, emotions, intentions, or events.
