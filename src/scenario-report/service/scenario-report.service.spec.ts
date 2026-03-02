@@ -84,6 +84,10 @@ describe('ScenarioReportService', () => {
       createMetadataForScenario: jest
         .fn()
         .mockResolvedValue({ events: [], scenario: {} }),
+      getAdminScenario: jest.fn().mockResolvedValue({
+        id: scenarioId,
+        title: 'Test Scenario',
+      }),
       getScenarioById: jest.fn().mockResolvedValue({
         id: scenarioId,
         title: 'Test Scenario',

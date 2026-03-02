@@ -109,30 +109,21 @@ export class ScenarioSharedService {
   }
 
   hasAllActiveScenarioMandatoryFields(item: any): boolean {
-    const metadata = item.scenario_metadata || {};
-
+    const metadata = item.scenario_metadata ?? item.metadata ?? {};
     const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
       this.configService.featureFlag.stateBasedScenarioInstructions,
     );
 
     const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter((field) => {
       if (field === 'behaviorInstructions') {
-        const instructions = item.behaviorInstructions;
+        const instructions =
+          item.behaviorInstructions ?? item.scenario_behaviorInstructions;
         return (
           !instructions ||
           (Array.isArray(instructions) && instructions.length === 0)
         );
       }
-      let value = undefined;
-
-      if (metadata.hasOwnProperty(field)) {
-        value = metadata[field];
-      } else {
-        const prefixedFieldName = `scenario_${field}`;
-        if (item.hasOwnProperty(prefixedFieldName)) {
-          value = item[prefixedFieldName];
-        }
-      }
+      const value = metadata[field] ?? item[`scenario_${field}`] ?? item[field];
 
       if (value === null || value === undefined) return true;
       if (typeof value === 'string' && value.trim() === '') return true;
@@ -140,6 +131,12 @@ export class ScenarioSharedService {
 
       return false;
     });
+
+    if (missingFields.length > 0) {
+      this.logger.warn(
+        `Missing mandatory fields for scenario ${item?.scenario_id ?? item?.id ?? 'unknown'}: ${missingFields.join(', ')}`,
+      );
+    }
 
     return missingFields.length === 0;
   }
