@@ -71,6 +71,14 @@ export class UpdateScenarioDto {
   linguisticStyleSamples?: Record<string, string[]>;
 
   @ApiProperty({
+    description:
+      'When true, use linguistic style samples for language instruction. When false, use default.',
+    example: true,
+  })
+  @IsOptional()
+  useLinguisticStyleSamples?: boolean;
+
+  @ApiProperty({
     description: 'Cover image URL of the scenario',
     example: 'https://example.com/cover-image.png',
   })
