@@ -171,6 +171,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'voiceId',
     'customFields',
     'languageVoices',
+    'linguisticStyleSamples',
     'experienceMode',
     'checklistType',
     'timerMode',
@@ -253,5 +254,7 @@ export const getPromptCodeForScenarioField = (scenarioField: string) => {
       return PromptCode.OPENAI_SIMULATION_CHARACTER_PROFILE_TEXT_PROMPT_CODE;
     case GeneratableField.BEHAVIOR_INSTRUCTIONS:
       return PromptCode.OPENAI_SIMULATION_BEHAVIOR_INSTRUCTIONS_PROMPT_CODE;
+    case GeneratableField.LINGUISTIC_STYLE_SAMPLES:
+      return PromptCode.OPENAI_SIMULATION_LINGUISTIC_STYLE_SAMPLES_PROMPT_CODE;
   }
 };

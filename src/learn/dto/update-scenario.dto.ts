@@ -60,6 +60,17 @@ export class UpdateScenarioDto {
   languageVoices?: Record<string, string>;
 
   @ApiProperty({
+    description:
+      'Mapping of language IDs to linguistic style samples (10 sample utterances per language)',
+    example: { '1': ['utterance 1', 'utterance 2'] },
+    type: 'object',
+    additionalProperties: { type: 'array', items: { type: 'string' } },
+  })
+  @IsObject()
+  @IsOptional()
+  linguisticStyleSamples?: Record<string, string[]>;
+
+  @ApiProperty({
     description: 'Cover image URL of the scenario',
     example: 'https://example.com/cover-image.png',
   })

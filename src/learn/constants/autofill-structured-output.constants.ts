@@ -43,6 +43,24 @@ const STATE_INSTRUCTIONS_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
   },
 };
 
+const LINGUISTIC_STYLE_SAMPLES_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
+  name: 'linguistic_style_samples',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      samples: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: 10,
+        maxItems: 10,
+      },
+    },
+    required: ['samples'],
+    additionalProperties: false,
+  },
+};
+
 const BEHAVIOR_INSTRUCTIONS_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
   name: 'behavior_instructions',
   strict: true,
@@ -80,4 +98,5 @@ export const STRUCTURED_OUTPUT_SCHEMAS: Partial<
   [GeneratableField.OPENING_STATEMENTS]: OPENING_STATEMENTS_SCHEMA,
   [GeneratableField.STATE_INSTRUCTIONS]: STATE_INSTRUCTIONS_SCHEMA,
   [GeneratableField.BEHAVIOR_INSTRUCTIONS]: BEHAVIOR_INSTRUCTIONS_SCHEMA,
+  [GeneratableField.LINGUISTIC_STYLE_SAMPLES]: LINGUISTIC_STYLE_SAMPLES_SCHEMA,
 };
