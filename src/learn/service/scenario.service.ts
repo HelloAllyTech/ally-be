@@ -185,7 +185,8 @@ export class ScenarioService {
       options,
     );
     const mappedData = scenarios.map((item) => {
-      const isPreviewEnabled = this.checkPreviewEnabled(item);
+      const isPreviewEnabled =
+        this.scenarioSharedService.hasAllActiveScenarioMandatoryFields(item);
 
       return {
         id: item.scenario_id,
@@ -206,42 +207,6 @@ export class ScenarioService {
     });
 
     return { data: mappedData };
-  }
-
-  private checkPreviewEnabled(item: any): boolean {
-    const metadata = item.scenario_metadata || {};
-
-    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
-      this.configService.featureFlag.stateBasedScenarioInstructions,
-    );
-
-    const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter((field) => {
-      if (field === 'behaviorInstructions') {
-        const instructions = item.behaviorInstructions;
-        return (
-          !instructions ||
-          (Array.isArray(instructions) && instructions.length === 0)
-        );
-      }
-      let value = undefined;
-
-      if (metadata.hasOwnProperty(field)) {
-        value = metadata[field];
-      } else {
-        const prefixedFieldName = `scenario_${field}`;
-        if (item.hasOwnProperty(prefixedFieldName)) {
-          value = item[prefixedFieldName];
-        }
-      }
-
-      if (value === null || value === undefined) return true;
-      if (typeof value === 'string' && value.trim() === '') return true;
-      if (Array.isArray(value) && value.length === 0) return true;
-
-      return false;
-    });
-
-    return missingFields.length === 0;
   }
 
   async getScenarioEvents(scenarioId: number, options?: Pagination) {

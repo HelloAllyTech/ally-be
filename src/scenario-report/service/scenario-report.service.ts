@@ -25,6 +25,7 @@ import { SuccessResponse } from 'src/common/type/common.type';
 import { ScenarioReportTranscriptResponseDto } from '../dto/scenario-report-transcript.dto';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { Languages } from 'src/language/entity/languages.entity';
+import { Scenarios } from 'src/learn/entity/scenarios.entity';
 
 @Injectable()
 export class ScenarioReportService {
@@ -48,6 +49,20 @@ export class ScenarioReportService {
   ): Promise<CreateScenarioReportResponseDto> {
     //Check if there are any scenario reports in progress for the same scenario
     await this.checkForInProgressScenarioReports(scenarioId);
+    //Check if the scenario has all the active mandatory fields
+    const scenario =
+      await this.scenarioSharedService.getScenarioById(scenarioId);
+    if (!scenario) {
+      throw new NotFoundException('Scenario not found');
+    }
+    if (
+      !this.scenarioSharedService.hasAllActiveScenarioMandatoryFields(scenario)
+    ) {
+      throw new BadRequestException(
+        'Required fields are missing for the scenario',
+      );
+    }
+
     const languages = await this.sharedLanguageService.getLanguagesByIds([
       createScenarioReportDto.languageId,
     ]);
@@ -155,12 +170,17 @@ export class ScenarioReportService {
     if (!scenarioReport) {
       throw new NotFoundException('Scenario report not found');
     }
-    const languages = await this.sharedLanguageService.getLanguagesByIds([
-      scenarioReport.config.languageId,
+    const [languages, scenario] = await Promise.all([
+      this.sharedLanguageService.getLanguagesByIds([
+        scenarioReport.config.languageId,
+      ]),
+      this.scenarioSharedService.getScenarioById(scenarioReport.scenarioId),
     ]);
+
     return {
       ...scenarioReport,
-      language: languages[0],
+      scenarioTitle: scenario?.title ?? '',
+      language: this.toReportLanguage(languages[0]),
     };
   }
 
@@ -190,14 +210,18 @@ export class ScenarioReportService {
         },
       });
 
-    const languagesMap = await this.getLanguagesMap(
-      scenarioReports.map((report) => report.config.languageId),
-    );
+    const [languagesMap, scenario] = await Promise.all([
+      this.getLanguagesMap(
+        scenarioReports.map((report) => report.config.languageId),
+      ),
+      this.scenarioSharedService.getScenarioById(scenarioId),
+    ]);
 
     return {
       data: scenarioReports.map((report) => ({
         ...report,
-        language: languagesMap[report.config.languageId],
+        scenarioTitle: scenario?.title ?? '',
+        language: this.toReportLanguage(languagesMap[report.config.languageId]),
       })),
       count,
     };
@@ -256,16 +280,37 @@ export class ScenarioReportService {
         lookbackMinutes,
       );
 
-    const languagesMap = await this.getLanguagesMap(
-      reports.map((report) => report.config.languageId),
+    const scenarioIds = [
+      ...new Set(reports.map((report) => report.scenarioId)),
+    ];
+    const [languagesMap, scenarios] = await Promise.all([
+      this.getLanguagesMap(reports.map((report) => report.config.languageId)),
+      this.scenarioSharedService.getScenarioByIds(scenarioIds),
+    ]);
+
+    const scenariosMap = scenarios.reduce<Record<number, Scenarios>>(
+      (acc, scenario) => {
+        acc[scenario.id] = scenario;
+        return acc;
+      },
+      {},
     );
+
     return {
       data: reports.map((report) => ({
         ...report,
-        language: languagesMap[report.config.languageId],
+        scenarioTitle: scenariosMap[report.scenarioId]?.title ?? '',
+        language: this.toReportLanguage(languagesMap[report.config.languageId]),
       })),
       count: reports.length,
     };
+  }
+
+  private toReportLanguage(
+    lang: Languages | undefined,
+  ): { id: number; value: string; label: string } | undefined {
+    if (!lang) return undefined;
+    return { id: lang.id, value: lang.value, label: lang.label };
   }
 
   async updateScenarioReport(

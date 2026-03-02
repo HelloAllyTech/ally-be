@@ -45,7 +45,10 @@ import { Behavior } from '../entity/behavior.entity';
 import { BehaviorRepository } from '../repository/behavior.repository';
 import { BehaviorInstructionWithBehaviorsDto } from '../dto/behavior-instruction-response.dto';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
-import { isEnglishLanguage } from '../util/scenario.util';
+import {
+  getActiveScenarioMandatoryFields,
+  isEnglishLanguage,
+} from '../util/scenario.util';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 import {
@@ -103,6 +106,42 @@ export class ScenarioSharedService {
     return this.scenariosRepository.findOne({
       where: { id: scenarioId },
     });
+  }
+
+  hasAllActiveScenarioMandatoryFields(item: any): boolean {
+    const metadata = item.scenario_metadata || {};
+
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
+      this.configService.featureFlag.stateBasedScenarioInstructions,
+    );
+
+    const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter((field) => {
+      if (field === 'behaviorInstructions') {
+        const instructions = item.behaviorInstructions;
+        return (
+          !instructions ||
+          (Array.isArray(instructions) && instructions.length === 0)
+        );
+      }
+      let value = undefined;
+
+      if (metadata.hasOwnProperty(field)) {
+        value = metadata[field];
+      } else {
+        const prefixedFieldName = `scenario_${field}`;
+        if (item.hasOwnProperty(prefixedFieldName)) {
+          value = item[prefixedFieldName];
+        }
+      }
+
+      if (value === null || value === undefined) return true;
+      if (typeof value === 'string' && value.trim() === '') return true;
+      if (Array.isArray(value) && value.length === 0) return true;
+
+      return false;
+    });
+
+    return missingFields.length === 0;
   }
 
   async getScenarioSessionById(
