@@ -4571,6 +4571,26 @@ describe('ScenarioService', () => {
         expect.any(String),
         scenarioContext,
         undefined,
+        undefined,
+      );
+    });
+
+    it('should pass model override to OpenAIAutofillService when provided', async () => {
+      const dto = {
+        fieldName: GeneratableField.CHARACTER_PROFILE_TEXT,
+        scenarioContext,
+        model: 'gpt-4o',
+      };
+      openAIAutofillService.generateFieldContent.mockResolvedValue('Generated');
+
+      await service.generateField(dto);
+
+      expect(openAIAutofillService.generateFieldContent).toHaveBeenCalledWith(
+        GeneratableField.CHARACTER_PROFILE_TEXT,
+        expect.any(String),
+        scenarioContext,
+        undefined,
+        'gpt-4o',
       );
     });
 

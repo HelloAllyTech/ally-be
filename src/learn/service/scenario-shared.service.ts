@@ -335,6 +335,14 @@ export class ScenarioSharedService {
       promptData.competency = scenario.competency?.name;
     }
 
+    if (metadata?.languageId) {
+      const samples =
+        metadata?.linguisticStyleSamples?.[String(metadata.languageId)];
+      if (samples && Array.isArray(samples)) {
+        promptData.languageDialogueSamples = samples;
+      }
+    }
+
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
       // Ensure we have values even if not translated

@@ -107,6 +107,7 @@ import {
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
 import { GeneratableField } from '../enum/generatable-field.enum';
+import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 import {
   isValidTimeFormatHHMMSS,
   parseTimeToSeconds,
@@ -1768,9 +1769,18 @@ export class ScenarioService {
   async generateField(
     generateScenarioFieldDto: GenerateScenarioFieldDto,
   ): Promise<GenerateScenarioFieldResponseDto> {
-    const { fieldName, scenarioContext } = generateScenarioFieldDto;
+    const { fieldName, scenarioContext, model } = generateScenarioFieldDto;
 
-    const promptCode = getPromptCodeForScenarioField(fieldName);
+    let promptCode = getPromptCodeForScenarioField(fieldName);
+
+    // Use English-specific prompt for linguistic style when language is English
+    if (
+      fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES &&
+      scenarioContext.languageCode?.toLowerCase().startsWith('en')
+    ) {
+      promptCode =
+        PromptCode.OPENAI_SIMULATION_LINGUISTIC_STYLE_SAMPLES_ENGLISH_PROMPT_CODE;
+    }
 
     if (!promptCode) {
       throw new BadRequestException(
@@ -1850,15 +1860,79 @@ export class ScenarioService {
       }
     }
 
+    let contextToUse = scenarioContext;
+    if (fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES) {
+      if (!scenarioContext.languageId || !scenarioContext.languageCode) {
+        throw new BadRequestException(
+          'languageId and languageCode are required for linguistic style samples generation',
+        );
+      }
+      const languageName =
+        scenarioContext.languageName ||
+        this.getLanguageNameFromCode(scenarioContext.languageCode);
+      // Build prompt vars from visible UI fields only: characterProfileText, challengeDescription
+      const characterSummary = scenarioContext.characterProfileText ?? '';
+      const challengeSummary = scenarioContext.challengeDescription ?? '';
+      const emotionalState = [characterSummary, challengeSummary]
+        .filter(Boolean)
+        .join('. ');
+      contextToUse = {
+        ...scenarioContext,
+        language_name: languageName,
+        language_code: scenarioContext.languageCode,
+        location: scenarioContext.currentLocation ?? '',
+        name: scenarioContext.name ?? 'Client',
+        age: scenarioContext.age ?? '',
+        gender: scenarioContext.gender ?? '',
+        emotional_state: emotionalState,
+      } as any;
+    }
+
     const content = await this.openAIAutofillService.generateFieldContent(
       fieldName,
       promptCode,
-      scenarioContext,
+      contextToUse,
       behaviorIdMapping,
+      model,
     );
 
     this.logger.info(`Generation completed for ${fieldName}`);
 
     return { fieldName, content };
+  }
+
+  private getLanguageNameFromCode(code: string): string {
+    const languageNames: Record<string, string> = {
+      en: 'English',
+      'en-IN': 'English (India)',
+      'en-US': 'English (United States)',
+      'en-GB': 'English (United Kingdom)',
+      'en-GLOBAL': 'English (Global)',
+      ml: 'Malayalam',
+      'ml-IN': 'Malayalam',
+      hi: 'Hindi',
+      'hi-IN': 'Hindi',
+      bn: 'Bengali',
+      'bn-IN': 'Bengali',
+      ta: 'Tamil',
+      'ta-IN': 'Tamil',
+      te: 'Telugu',
+      'te-IN': 'Telugu',
+      kn: 'Kannada',
+      'kn-IN': 'Kannada',
+      mr: 'Marathi',
+      'mr-IN': 'Marathi',
+      gu: 'Gujarati',
+      'gu-IN': 'Gujarati',
+      pa: 'Punjabi',
+      'pa-IN': 'Punjabi',
+      ur: 'Urdu',
+      'ur-IN': 'Urdu',
+      or: 'Odia',
+      'or-IN': 'Odia',
+      as: 'Assamese',
+      'as-IN': 'Assamese',
+    };
+    return languageNames[code] ?? languageNames[code?.split('-')[0]] ?? code;
   }
 }
