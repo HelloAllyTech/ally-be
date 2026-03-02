@@ -38,7 +38,8 @@
     "seed:users": "npm run seed -- src/database/seeds/user-tenant.ts",
     "seed:scenarios": "npm run seed -- src/database/seeds/scenarios-pathway.ts",
     "seed:badges": "npm run seed -- src/database/seeds/seed-badges.ts",
-    "seed:all": "npm run seed:orchestrate"
+    "seed:all": "npm run seed:orchestrate",
+    "generate:linguistic-samples": "ts-node -r tsconfig-paths/register src/database/scripts/generate-linguistic-style-samples.ts"
   },
   "pre-commit": [
     "lint",

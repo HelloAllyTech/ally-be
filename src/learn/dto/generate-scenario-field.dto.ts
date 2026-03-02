@@ -111,6 +111,32 @@ export class ScenarioFieldContextDto {
   @IsString()
   @IsOptional()
   predefinedBehaviorInstructionsDoc?: string;
+
+  @ApiProperty({
+    description: 'Language ID (required for linguistic style samples)',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  languageId?: string;
+
+  @ApiProperty({
+    description:
+      'Language code e.g. hi-IN, ml-IN (required for linguistic style samples)',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  languageCode?: string;
+
+  @ApiProperty({
+    description:
+      'Language name e.g. Hindi, Malayalam (required for linguistic style samples)',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  languageName?: string;
 }
 
 export class GenerateScenarioFieldDto {
@@ -131,4 +157,13 @@ export class GenerateScenarioFieldDto {
   @ValidateNested()
   @Type(() => ScenarioFieldContextDto)
   scenarioContext!: ScenarioFieldContextDto;
+
+  @ApiProperty({
+    description:
+      'OpenAI model override for generation (e.g. gpt-4o, gpt-4o-mini)',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  model?: string;
 }
