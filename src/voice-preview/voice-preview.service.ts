@@ -11,6 +11,7 @@ import {
   DEFAULT_SAMPLE_TEXT,
   LANGUAGE_SAMPLE_TEXT,
 } from './constants/language-samples.constant';
+import { normalizeLanguageCodeForProviders } from './constants/language-code.constants';
 
 export interface GeneratePreviewParams {
   provider: string;
@@ -35,15 +36,21 @@ export class VoicePreviewService {
   async generatePreview(
     params: GeneratePreviewParams,
   ): Promise<{ audioBuffer: Buffer; provider: string }> {
-    const languageCode = params.languageCode || 'en-US';
+    const rawLanguageCode = params.languageCode || 'en-US';
     const text =
-      params.text || LANGUAGE_SAMPLE_TEXT[languageCode] || DEFAULT_SAMPLE_TEXT;
+      params.text ||
+      LANGUAGE_SAMPLE_TEXT[rawLanguageCode] ||
+      DEFAULT_SAMPLE_TEXT;
+
+    // Normalize for providers (e.g. en-GLOBAL → en-GB) - Google, Deepgram, etc. don't support en-GLOBAL
+    const effectiveLanguageCode =
+      normalizeLanguageCodeForProviders(rawLanguageCode);
 
     try {
       const provider = this.providerFactory.createProvider(
         params.provider as TTSProviderEnum,
         params.config,
-        languageCode,
+        effectiveLanguageCode,
       );
       const audioBuffer = await provider.generatePreview(text);
       return { audioBuffer, provider: params.provider };
