@@ -147,7 +147,7 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG: Record<
     },
   },
 
-  [LanguageCode.EN_GLOBAL]: {
+  [LanguageCode.EN_GB]: {
     llm: {
       provider: 'openai',
       config: {
@@ -279,7 +279,7 @@ export const LANGUAGE_STT_PROVIDER_CONFIG: Record<
     },
   },
 
-  [LanguageCode.EN_GLOBAL]: {
+  [LanguageCode.EN_GB]: {
     stt: {
       provider: 'deepgram',
       config: {
