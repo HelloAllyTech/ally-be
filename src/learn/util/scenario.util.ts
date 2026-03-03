@@ -51,7 +51,6 @@ export const mapCreateScenarioRequestToEntity = (
       })),
       languageVoices: scenario.languageVoices,
       linguisticStyleSamples: scenario.linguisticStyleSamples,
-      useLinguisticStyleSamples: scenario.useLinguisticStyleSamples ?? true,
       experienceMode: scenario.experienceMode,
       ...(scenario.experienceMode === ExperienceMode.CHECKLIST && {
         checklistType: scenario.checklistType || ChecklistType.GUIDED,
@@ -174,7 +173,6 @@ export const mapUpdateScenarioRequestToEntity = (
     'customFields',
     'languageVoices',
     'linguisticStyleSamples',
-    'useLinguisticStyleSamples',
     'experienceMode',
     'checklistType',
     'timerMode',

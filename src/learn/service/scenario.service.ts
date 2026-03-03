@@ -529,6 +529,13 @@ export class ScenarioService {
   ): Promise<void> {
     this.validateScenarioStatus(createScenarioDto);
 
+    if (createScenarioDto.status === ScenarioStatus.ACTIVE) {
+      await this.validateLinguisticStyleSamplesForNonEnglish(
+        createScenarioDto.languageVoices,
+        createScenarioDto.linguisticStyleSamples,
+      );
+    }
+
     if (createScenarioDto.voiceId)
       await this.getScenarioVoice(createScenarioDto?.voiceId);
     if (
@@ -684,6 +691,60 @@ export class ScenarioService {
     if (timeInSeconds < minSeconds || timeInSeconds > maxSeconds) {
       throw new BadRequestException(
         `Time value must be between ${LOWER_MAX_TIMER_VALUE} and ${UPPER_MAX_TIMER_VALUE}`,
+      );
+    }
+  }
+
+  /**
+   * For ACTIVE scenarios with non-English languages in languageVoices,
+   * linguisticStyleSamples must contain at least one non-empty sample per language.
+   */
+  private async validateLinguisticStyleSamplesForNonEnglish(
+    languageVoices?: Record<string, string>,
+    linguisticStyleSamples?: Record<string, string[]>,
+  ): Promise<void> {
+    if (!languageVoices || Object.keys(languageVoices).length === 0) {
+      return;
+    }
+
+    const languageIds = Object.keys(languageVoices)
+      .map((id) => parseInt(id, 10))
+      .filter((id) => !Number.isNaN(id));
+
+    if (languageIds.length === 0) {
+      return;
+    }
+
+    const languages =
+      await this.sharedLanguageService.getLanguagesByIds(languageIds);
+    const nonEnglishIds = languages
+      .filter((lang) => {
+        const code = (lang.translationCode || lang.value || '').toLowerCase();
+        return code && !code.startsWith('en');
+      })
+      .map((lang) => String(lang.id));
+
+    if (nonEnglishIds.length === 0) {
+      return;
+    }
+
+    const samples = linguisticStyleSamples ?? {};
+    const missing: string[] = [];
+    for (const langId of nonEnglishIds) {
+      const langSamples = samples[langId];
+      const hasContent =
+        Array.isArray(langSamples) &&
+        langSamples.some((s) => typeof s === 'string' && s.trim().length > 0);
+      if (!hasContent) {
+        const lang = languages.find((l) => String(l.id) === langId);
+        missing.push(lang?.label ?? langId);
+      }
+    }
+
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        `Linguistic style samples are required for non-English languages. ` +
+          `Please provide at least one sample for: ${missing.join(', ')}`,
       );
     }
   }
@@ -1077,6 +1138,18 @@ export class ScenarioService {
         );
       }
       await this.validateScenarioStatus(updateScenarioDto);
+
+      if (updateScenarioDto.status === ScenarioStatus.ACTIVE) {
+        const languageVoices =
+          updateScenarioDto.languageVoices ?? scenario.metadata?.languageVoices;
+        const linguisticStyleSamples =
+          updateScenarioDto.linguisticStyleSamples ??
+          scenario.metadata?.linguisticStyleSamples;
+        await this.validateLinguisticStyleSamplesForNonEnglish(
+          languageVoices,
+          linguisticStyleSamples,
+        );
+      }
     }
 
     if (updateScenarioDto.voiceId) {
