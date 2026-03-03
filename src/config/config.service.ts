@@ -154,12 +154,6 @@ export class AppConfigService {
         requestDlqUrl: this.configService.get<string>(
           'SQS_TRANSCRIPTION_REQUEST_DLQ_URL',
         ),
-        responseQueueUrl: this.configService.get<string>(
-          'SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL',
-        ),
-        responseDlqUrl: this.configService.get<string>(
-          'SQS_TRANSCRIPTION_RESPONSE_DLQ_URL',
-        ),
       },
       audioFile: {
         retryQueueUrl: this.configService.get<string>(
@@ -167,12 +161,6 @@ export class AppConfigService {
         ),
         retryDlqUrl: this.configService.get<string>(
           'SQS_AUDIO_FILE_RETRY_DLQ_URL',
-        ),
-        uploadQueueUrl: this.configService.get<string>(
-          'SQS_AUDIO_UPLOAD_QUEUE_URL',
-        ),
-        uploadDlqUrl: this.configService.get<string>(
-          'SQS_AUDIO_UPLOAD_DLQ_URL',
         ),
       },
       learn: {

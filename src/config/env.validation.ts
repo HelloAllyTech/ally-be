@@ -44,12 +44,8 @@ export const validationSchema = Joi.object({
   // SQS
   SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: Joi.string().required(),
   SQS_TRANSCRIPTION_REQUEST_DLQ_URL: Joi.string().required(),
-  SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL: Joi.string().required(),
-  SQS_TRANSCRIPTION_RESPONSE_DLQ_URL: Joi.string().required(),
   SQS_AUDIO_FILE_RETRY_QUEUE_URL: Joi.string().required(),
   SQS_AUDIO_FILE_RETRY_DLQ_URL: Joi.string().required(),
-  SQS_AUDIO_UPLOAD_QUEUE_URL: Joi.string().required(),
-  SQS_AUDIO_UPLOAD_DLQ_URL: Joi.string().required(),
 
   // CloudWatch
   CLOUDWATCH_HIPAA_LOG_GROUP_NAME: Joi.string().required(),
