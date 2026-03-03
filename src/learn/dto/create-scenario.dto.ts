@@ -73,15 +73,6 @@ export class CreateScenarioDto {
   linguisticStyleSamples?: Record<string, string[]>;
 
   @ApiProperty({
-    description: 'Whether to use linguistic style samples in the prompt',
-    example: true,
-    required: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  useLinguisticStyleSamples?: boolean;
-
-  @ApiProperty({
     description: 'Cover image URL of the scenario',
     example: 'https://example.com/cover-image.png',
   })
