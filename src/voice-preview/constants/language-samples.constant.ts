@@ -4,6 +4,7 @@ export const LANGUAGE_SAMPLE_TEXT: Record<string, string> = {
   'en-US': DEFAULT_SAMPLE_TEXT,
   'en-IN': DEFAULT_SAMPLE_TEXT,
   'en-GB': DEFAULT_SAMPLE_TEXT,
+  'en-GLOBAL': DEFAULT_SAMPLE_TEXT,
   'hi-IN':
     'नमस्ते, यह मेरी आवाज़ का एक प्रीव्यू है। मैं आपकी कैसे मदद कर सकती हूँ?',
   'bn-IN':
@@ -14,6 +15,8 @@ export const LANGUAGE_SAMPLE_TEXT: Record<string, string> = {
   'mr-IN':
     'नमस्कार, हा माझ्या आवाजाचा एक प्रीव्ह्यू आहे. मी तुम्हाला कशी मदत करू शकते?',
   'or-IN':
+    'ନମସ୍କାର, ଏହା ମୋ ସ୍ୱରର ଏକ ପ୍ରିଭ୍ୟୁ। ମୁଁ ଆପଣଙ୍କୁ କିପରି ସାହାଯ୍ୟ କରିପାରିବି?',
+  'od-IN':
     'ନମସ୍କାର, ଏହା ମୋ ସ୍ୱରର ଏକ ପ୍ରିଭ୍ୟୁ। ମୁଁ ଆପଣଙ୍କୁ କିପରି ସାହାଯ୍ୟ କରିପାରିବି?',
   'pa-IN':
     'ਸਤ ਸ੍ਰੀ ਅਕਾਲ, ਇਹ ਮੇਰੀ ਆਵਾਜ਼ ਦਾ ਇੱਕ ਪ੍ਰੀਵਿਊ ਹੈ। ਮੈਂ ਤੁਹਾਡੀ ਕਿਵੇਂ ਮਦਦ ਕਰ ਸਕਦੀ ਹਾਂ?',
