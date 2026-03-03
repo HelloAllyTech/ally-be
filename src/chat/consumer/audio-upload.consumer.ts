@@ -10,7 +10,6 @@ export class AudioUploadConsumer {
 
   constructor(private readonly audioUploadService: AudioUploadService) {}
 
-  @SqsListener(process.env.SQS_AUDIO_UPLOAD_QUEUE_URL!)
   async handleAudioUpload(message: Message): Promise<void> {
     if (!message.Body) {
       this.logger.error('Empty message in audio upload queue');

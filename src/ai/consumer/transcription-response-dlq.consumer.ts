@@ -13,7 +13,6 @@ export class TranscriptionResponseDlqConsumer {
 
   constructor(private readonly chatService: ChatService) {}
 
-  @SqsDlqListener(process.env.SQS_TRANSCRIPTION_RESPONSE_DLQ_URL!)
   async handleTranscriptionResponseDlq(message: Message): Promise<void> {
     if (!message.Body) return;
 
