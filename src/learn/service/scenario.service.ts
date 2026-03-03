@@ -1680,10 +1680,38 @@ export class ScenarioService {
         l.translationCode.trim(),
       );
 
-      const translatedMap = (await this.buildTranslatedMetadataForLanguageCodes(
-        sanitized as Partial<ScenarioEventsTranslationData>,
-        languageCodes,
-      )) as Record<string, ScenarioEventsTranslationData>;
+      let translatedMap: Record<string, ScenarioEventsTranslationData> = {};
+      try {
+        const openaiResult =
+          await this.openaiTranslationsService.translateObjectToLanguages(
+            sanitized as Partial<ScenarioEventsTranslationData>,
+            languageCodes,
+            PromptCode.OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE,
+          );
+
+        if (openaiResult && Object.keys(openaiResult).length > 0) {
+          this.logger?.debug?.(
+            '[persistScenarioEventTranslations] successfully translated using OpenAI',
+          );
+          translatedMap = openaiResult as Record<
+            string,
+            ScenarioEventsTranslationData
+          >;
+        }
+      } catch (err) {
+        this.logger?.error?.(
+          '[persistScenarioEventTranslations] translation call failed',
+          { err, languageCodes },
+        );
+        translatedMap = {};
+      }
+
+      if (!translatedMap || Object.keys(translatedMap).length === 0) {
+        this.logger?.warn?.(
+          `[persistSessionEventTranslations] ${scenarioEvent.id}: no translations found, skipping`,
+        );
+        continue;
+      }
 
       // Map translated map back to sessionEventId + languageId
       const translatedList: Array<CreateScenarioEventsTranslation> = [];
