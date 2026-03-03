@@ -243,15 +243,19 @@ describe('ScenarioVoicesRepository', () => {
   });
 
   describe('getLanguagesWithVoices', () => {
-    it('should return languages with voices correctly when no params are provided', async () => {
+    it('should return all active languages when voicesNeeded is not true (e.g. Create Voice dropdown)', async () => {
       const mockRows = [
         {
           language_id: '1',
           value: 'en',
           label: 'English',
-          voices: JSON.stringify([
-            { id: 'v1', name: 'Voice 1', provider: 'openai', config: {} },
-          ]),
+          voices: JSON.stringify([]),
+        },
+        {
+          language_id: '2',
+          value: 'en-US',
+          label: 'English Global',
+          voices: JSON.stringify([]),
         },
       ];
 
@@ -265,24 +269,24 @@ describe('ScenarioVoicesRepository', () => {
         'voices',
       );
       expect(queryBuilder.from).toHaveBeenCalledWith('languages', 'la');
-      expect(queryBuilder.innerJoin).toHaveBeenCalledWith(
+      expect(queryBuilder.leftJoin).toHaveBeenCalledWith(
         'scenario_voices',
         'sv',
         'la.id = sv.languageId',
       );
       expect(queryBuilder.where).toHaveBeenCalledWith('la.active = true');
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith('sv.active = true');
+      expect(queryBuilder.groupBy).toHaveBeenCalledWith(
+        'la.id, la.value, la.label',
+      );
 
-      expect(result).toEqual([
-        {
-          language_id: 1,
-          value: 'en',
-          label: 'English',
-          voices: [
-            { id: 'v1', name: 'Voice 1', provider: 'openai', config: {} },
-          ],
-        },
-      ]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({
+        language_id: 1,
+        value: 'en',
+        label: 'English',
+        voices: [],
+      });
+      expect(result[1].label).toBe('English Global');
     });
 
     it('should return languages with voices and voices detail when voicesNeeded is true', async () => {
