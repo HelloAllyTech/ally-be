@@ -1876,7 +1876,7 @@ describe('ScenarioSessionService', () => {
     it('should return true when languageValue starts with "en-" or equals "en" (case insensitive)', () => {
       expect(isEnglishLanguage(2, 'en', 1)).toBe(true);
       expect(isEnglishLanguage(2, 'en-US', 1)).toBe(true);
-      expect(isEnglishLanguage(2, 'EN-GLOBAL', 1)).toBe(true);
+      expect(isEnglishLanguage(2, 'EN-GB', 1)).toBe(true);
       expect(isEnglishLanguage(2, 'eN-uk', 1)).toBe(true);
     });
 
