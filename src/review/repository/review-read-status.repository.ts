@@ -13,21 +13,17 @@ export class ReviewReadStatusRepository extends Repository<ReviewReadStatus> {
   async getUnreadCount(userId: number, tenantId: string): Promise<number> {
     const result = await this.dataSource
       .createQueryBuilder()
-      .select('COUNT(*)', 'count')
+      .select('COUNT(review.id)', 'count')
       .from(Review, 'review')
-      .where('review.tenantId = :tenantId', { tenantId })
-      .andWhere('review.status = :status', { status: ReviewStatus.IN_REVIEW })
-      .andWhere(
-        'review.id NOT IN ' +
-          this.dataSource
-            .createQueryBuilder()
-            .subQuery()
-            .select('rrs.reviewId')
-            .from(ReviewReadStatus, 'rrs')
-            .where('rrs.userId = :userId')
-            .getQuery(),
+      .leftJoin(
+        ReviewReadStatus,
+        'rrs',
+        'rrs.reviewId = review.id AND rrs.userId = :userId',
         { userId },
       )
+      .where('review.tenantId = :tenantId', { tenantId })
+      .andWhere('review.status = :status', { status: ReviewStatus.IN_REVIEW })
+      .andWhere('rrs.id IS NULL')
       .getRawOne();
 
     return parseInt(result?.count ?? '0', 10);

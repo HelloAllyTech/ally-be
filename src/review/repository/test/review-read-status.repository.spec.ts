@@ -5,6 +5,7 @@ import { DataSource } from 'typeorm';
 const mockQueryBuilder = {
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
+  leftJoin: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
   andWhere: jest.fn().mockReturnThis(),
   subQuery: jest.fn().mockReturnThis(),
