@@ -3,7 +3,6 @@ import { Message } from '@aws-sdk/client-sqs';
 import { LoggerService } from '../../logger/logger.service';
 import { ChatService } from 'src/chat/service/chat.service';
 import { ChatSummaryStatus } from 'src/chat/entity/chat.entity';
-import { SqsDlqListener } from '../../aws/decorators/sqs-listener.decorator';
 
 @Injectable()
 export class TranscriptionResponseDlqConsumer {

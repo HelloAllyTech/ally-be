@@ -41,6 +41,7 @@ import { ConversationalGuardrailsModule } from './conversational-guardrails/conv
 import { CaseModule } from './case/case.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
 import { ScenarioReportModule } from './scenario-report/scenario-report.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 import { AppVersionModule } from './app-version/app-version.module';
 import { VoicePreviewModule } from './voice-preview/voice-preview.module';
 
@@ -87,6 +88,7 @@ import { VoicePreviewModule } from './voice-preview/voice-preview.module';
     ConversationalGuardrailsModule,
     ScenarioCoverImageLibraryModule,
     ScenarioReportModule,
+    SchedulerModule,
     AppVersionModule,
     VoicePreviewModule,
   ],

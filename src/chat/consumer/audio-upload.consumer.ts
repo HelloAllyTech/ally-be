@@ -1,6 +1,5 @@
 import { Message } from '@aws-sdk/client-sqs';
 import { Injectable } from '@nestjs/common';
-import { SqsListener } from 'src/aws/decorators/sqs-listener.decorator';
 import { AudioUploadService } from '../service/audio-upload.service';
 import { LoggerService } from 'src/logger/logger.service';
 

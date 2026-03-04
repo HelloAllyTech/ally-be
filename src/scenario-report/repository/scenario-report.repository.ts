@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Brackets, DataSource, Repository } from 'typeorm';
 import { ScenarioReport } from '../entity/scenario-report.entity';
-import { ScenarioReportStatus } from '../enum/scenario-report.enum';
+import { SCENARIO_REPORT_PENDING_STATUSES } from '../constants/scenario-report.constant';
+import { TIME } from 'src/common/constants/time.constants';
 
 @Injectable()
 export class ScenarioReportRepository extends Repository<ScenarioReport> {
@@ -19,15 +20,14 @@ export class ScenarioReportRepository extends Repository<ScenarioReport> {
     );
 
     if (lookbackMinutes) {
-      const sinceDate = new Date(Date.now() - lookbackMinutes * 60 * 1000);
+      const sinceDate = new Date(
+        Date.now() - lookbackMinutes * TIME.MINUTE_IN_MS,
+      );
       qb.andWhere(
         new Brackets((sub) => {
           sub
             .where('report.status IN (:...activeStatuses)', {
-              activeStatuses: [
-                ScenarioReportStatus.STARTED,
-                ScenarioReportStatus.IN_PROGRESS,
-              ],
+              activeStatuses: SCENARIO_REPORT_PENDING_STATUSES,
             })
             .orWhere('report.createdAt >= :sinceDate', { sinceDate })
             .orWhere('report.endedAt >= :sinceDate', { sinceDate });
