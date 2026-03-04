@@ -68,8 +68,8 @@ export class ReviewThreadDto {
 
   @ApiProperty({ description: 'Selection of the thread' })
   @IsObject()
-  @IsNotEmpty()
-  selection!: Record<string, any>;
+  @IsOptional()
+  selection?: Record<string, any>;
 
   @ApiProperty({ type: [CommentDto], description: 'Comments in the thread' })
   @IsArray()
