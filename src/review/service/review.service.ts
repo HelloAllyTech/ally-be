@@ -29,7 +29,7 @@ import {
   formatCreatedUserDetails,
   getSessionDurationInSeconds,
 } from '../util/review.util';
-import { In } from 'typeorm';
+import { In, IsNull, Not } from 'typeorm';
 import { ReviewCommentRepository } from '../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { GetReviewMessagesResponseDto } from '../dto/review-messages-response.dto';
@@ -182,20 +182,32 @@ export class ReviewService {
       throw new BadRequestException('Scenario session not found');
     }
 
-    const [user, scenario, comments, reactions, myReaction] = await Promise.all(
-      [
-        this.userService.get(review.createdBy),
-        this.scenarioSharedService.getScenarioById(scenarioSession.scenarioId),
-        this.reviewThreadRepository.getCommentsCountByReviewIds(
-          [review.id],
-          userId,
-        ),
-        this.reviewReactionRepository.getReactionsByReviewIds([review.id]),
-        this.reviewReactionRepository.findOne({
-          where: { reviewId: review.id, createdBy: userId },
-        }),
-      ],
-    );
+    const [
+      user,
+      scenario,
+      comments,
+      reactions,
+      myReaction,
+      generalCommentsThread,
+    ] = await Promise.all([
+      this.userService.get(review.createdBy),
+      this.scenarioSharedService.getScenarioById(scenarioSession.scenarioId),
+      this.reviewThreadRepository.getCommentsCountByReviewIds(
+        [review.id],
+        userId,
+      ),
+      this.reviewReactionRepository.getReactionsByReviewIds([review.id]),
+      this.reviewReactionRepository.findOne({
+        where: { reviewId: review.id, createdBy: userId },
+      }),
+      this.reviewThreadRepository.findOne({
+        where: {
+          reviewId: review.id,
+          messageId: IsNull(),
+          selection: IsNull(),
+        },
+      }),
+    ]);
 
     const updatedReactions = reactions.reduce(
       (acc, reaction) => {
@@ -228,6 +240,7 @@ export class ReviewService {
       reactions: updatedReactions,
       myReaction: myReaction?.reaction ?? null,
       ...(userId === review.createdBy && { reviewStatus: review.status }),
+      generalCommentsThreadId: generalCommentsThread?.id ?? null,
     };
   }
 
@@ -317,6 +330,7 @@ export class ReviewService {
       where: {
         reviewId,
         messageId: In(messageIds),
+        selection: Not(IsNull()),
       },
     });
 
@@ -408,6 +422,7 @@ export class ReviewService {
     // Group threads by message
     const threadsByMessage = threads.reduce(
       (acc, thread) => {
+        if (!thread.messageId) return acc;
         const threadComments = commentsByThread[thread.id] || [];
         if (threadComments.length === 0) return acc;
 
