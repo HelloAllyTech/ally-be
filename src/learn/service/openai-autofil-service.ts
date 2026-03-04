@@ -22,6 +22,9 @@ import {
   BehaviorIdMapping,
   GeneratedContent,
 } from '../type/generatable-fields.type';
+import { PREFERRED_AUTOFILL_MODELS } from '../constants/autofill-models.constants';
+
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 @Injectable()
 export class OpenAIAutofillService {
@@ -31,6 +34,10 @@ export class OpenAIAutofillService {
 
   private readonly client: OpenAI;
   private readonly model: string;
+
+  private modelsCache: { models: { value: string; label: string }[] } | null =
+    null;
+  private modelsCacheExpiry = 0;
 
   constructor(
     private readonly configService: AppConfigService,
@@ -134,6 +141,37 @@ export class OpenAIAutofillService {
           (s: unknown): s is string => typeof s === 'string' && s.trim() !== '',
         );
       }
+    }
+  }
+
+  async getAvailableModels(): Promise<{ value: string; label: string }[]> {
+    const now = Date.now();
+    if (this.modelsCache && now < this.modelsCacheExpiry) {
+      return this.modelsCache.models;
+    }
+
+    try {
+      const apiModelIds = new Set<string>();
+      for await (const model of this.client.models.list()) {
+        apiModelIds.add(model.id);
+      }
+
+      const result: { value: string; label: string }[] = [];
+      for (const modelId of PREFERRED_AUTOFILL_MODELS) {
+        if (apiModelIds.has(modelId)) {
+          result.push({ value: modelId, label: modelId });
+        }
+      }
+
+      this.modelsCache = { models: result };
+      this.modelsCacheExpiry = now + CACHE_TTL_MS;
+      return result;
+    } catch (error) {
+      this.logger.error(
+        'Failed to fetch available OpenAI models',
+        error as any,
+      );
+      throw error;
     }
   }
 
