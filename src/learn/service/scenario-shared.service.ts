@@ -198,6 +198,9 @@ export class ScenarioSharedService {
   async getMessagesByIds(
     messageIds: number[],
   ): Promise<ScenarioSessionMessages[]> {
+    if (!messageIds) {
+      return [];
+    }
     return this.scenarioSessionMessagesRepository.find({
       where: { id: In(messageIds) },
     });

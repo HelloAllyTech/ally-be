@@ -1867,6 +1867,10 @@ export class ScenarioService {
     return dynamicBranchShortcuts;
   }
 
+  async getAvailableModels(): Promise<{ value: string; label: string }[]> {
+    return this.openAIAutofillService.getAvailableModels();
+  }
+
   async generateField(
     generateScenarioFieldDto: GenerateScenarioFieldDto,
   ): Promise<GenerateScenarioFieldResponseDto> {

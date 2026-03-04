@@ -3,7 +3,6 @@ import { Message } from '@aws-sdk/client-sqs';
 import { LoggerService } from '../../logger/logger.service';
 import { ProcessorRegistry } from '../processors/processor-registry';
 import { TranscribeAndSummarizeResponseMessage } from '../dto/transcribe-and-summarize-response.model';
-import { SqsListener } from 'src/aws/decorators/sqs-listener.decorator';
 
 @Injectable()
 export class AiEventConsumer {

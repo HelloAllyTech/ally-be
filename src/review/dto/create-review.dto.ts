@@ -1,5 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsUUID } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateReviewDto {
   @ApiProperty({
@@ -10,6 +16,17 @@ export class CreateReviewDto {
   @IsNotEmpty()
   @IsUUID()
   scenarioSessionId!: string;
+
+  @ApiProperty({
+    description: 'Optional note to provide context for reviewers',
+    example: 'I struggled with the empathy section and would like feedback.',
+    required: false,
+    maxLength: 250,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(250)
+  note?: string;
 }
 
 export class CreateReviewResponseDto {

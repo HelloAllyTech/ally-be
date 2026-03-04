@@ -72,7 +72,9 @@ export class ReviewThreadService {
     let messagesPromise;
     if (options?.includeMessage) {
       const messageIds = reviewThreads.map((thread) => thread.messageId);
-      messagesPromise = this.scenarioSharedService.getMessagesByIds(messageIds);
+      messagesPromise = this.scenarioSharedService.getMessagesByIds(
+        messageIds as number[],
+      );
     }
 
     const reviewCommentPromise = this.reviewCommentRepository

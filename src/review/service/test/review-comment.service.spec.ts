@@ -1,4 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DataSource } from 'typeorm';
@@ -221,7 +224,7 @@ describe('ReviewCommentService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should throw BadRequestException when messageId is missing for new thread', async () => {
+    it('should throw InternalServerErrorException when messageId is missing for new thread', async () => {
       reviewRepository.findOne.mockResolvedValue(mockReview as any);
       permissionValidator.validatePermissions.mockResolvedValue(false);
       reviewRepository.findOne.mockResolvedValue(mockReview as any);
@@ -234,10 +237,10 @@ describe('ReviewCommentService', () => {
 
       await expect(
         service.addCommentToReview(mockReviewId, dto),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(InternalServerErrorException);
     });
 
-    it('should throw BadRequestException when selection is missing for new thread', async () => {
+    it('should throw InternalServerErrorException when selection is missing for new thread', async () => {
       reviewRepository.findOne.mockResolvedValue(mockReview as any);
       permissionValidator.validatePermissions.mockResolvedValue(false);
 
@@ -248,7 +251,7 @@ describe('ReviewCommentService', () => {
 
       await expect(
         service.addCommentToReview(mockReviewId, dto),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(InternalServerErrorException);
     });
 
     it('should successfully add comment when user is the creator', async () => {

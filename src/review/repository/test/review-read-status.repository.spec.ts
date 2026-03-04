@@ -8,7 +8,11 @@ const mockQueryBuilder = {
   where: jest.fn().mockReturnThis(),
   andWhere: jest.fn().mockReturnThis(),
   subQuery: jest.fn().mockReturnThis(),
-  getQuery: jest.fn().mockReturnValue('(SELECT rrs.reviewId FROM review_read_status rrs WHERE rrs.userId = :userId)'),
+  getQuery: jest
+    .fn()
+    .mockReturnValue(
+      '(SELECT rrs.reviewId FROM review_read_status rrs WHERE rrs.userId = :userId)',
+    ),
   getRawOne: jest.fn().mockResolvedValue({ count: '3' }),
 };
 
@@ -28,7 +32,9 @@ describe('ReviewReadStatusRepository', () => {
       ],
     }).compile();
 
-    repository = module.get<ReviewReadStatusRepository>(ReviewReadStatusRepository);
+    repository = module.get<ReviewReadStatusRepository>(
+      ReviewReadStatusRepository,
+    );
   });
 
   afterEach(() => {

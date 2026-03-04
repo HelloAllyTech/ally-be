@@ -15,4 +15,10 @@ export class Review extends BaseEntity {
 
   @Column({ enum: ReviewStatus, default: ReviewStatus.IN_REVIEW })
   status!: ReviewStatus;
+
+  @Column({ type: 'varchar', nullable: true })
+  note?: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  noteEditedAt?: Date | null;
 }

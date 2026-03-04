@@ -1,16 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import Redis from 'ioredis';
+import { AppConfigService } from '../../config/config.service';
 
 @Injectable()
 export class RedisService {
   private prefix: string;
   private redis: Redis;
 
-  constructor() {
-    this.prefix = process.env.REDIS_PREFIX || 'ally';
+  constructor(private readonly appConfigService: AppConfigService) {
+    const { host, port, prefix } = this.appConfigService.redis;
+    this.prefix = prefix;
     this.redis = new Redis({
-      host: process.env.REDIS_HOST,
-      port: parseInt(process.env.REDIS_PORT || '6379'),
+      host,
+      port,
     });
   }
 

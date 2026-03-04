@@ -257,6 +257,13 @@ export class LearnController {
     return this.scenarioService.deleteCoverVideo(deleteCoverVideoDto);
   }
 
+  @ApiOperation({ summary: 'Get available OpenAI models for autofill' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Get('models')
+  async getAvailableModels(): Promise<{ value: string; label: string }[]> {
+    return this.scenarioService.getAvailableModels();
+  }
+
   @ApiOperation({
     summary: 'Auto-generate content for a scenario field using AI',
   })

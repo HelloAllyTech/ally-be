@@ -1,4 +1,5 @@
 import { RedisService } from '../redis.service';
+import { AppConfigService } from '../../../config/config.service';
 
 const mockRedis = {
   set: jest.fn(),
@@ -15,27 +16,41 @@ jest.mock('ioredis', () => {
   return { default: MockRedis, __esModule: true };
 });
 
+const createMockAppConfigService = (
+  overrides?: Partial<{
+    prefix: string;
+    host: string;
+    port: number;
+  }>,
+) => ({
+  redis: {
+    prefix: 'testprefix',
+    host: 'localhost',
+    port: 6379,
+    ...overrides,
+  },
+});
+
 describe('RedisService', () => {
   let service: RedisService;
+  let mockAppConfigService: jest.Mocked<Pick<AppConfigService, 'redis'>>;
 
   beforeEach(() => {
     jest.clearAllMocks();
-
-    process.env.REDIS_PREFIX = 'testprefix';
-    process.env.REDIS_HOST = 'localhost';
-    process.env.REDIS_PORT = '6379';
-
-    service = new RedisService();
+    mockAppConfigService = createMockAppConfigService() as any;
+    service = new RedisService(mockAppConfigService as AppConfigService);
   });
 
   describe('constructor', () => {
-    it('should initialize with prefix from env', () => {
+    it('should initialize with prefix from config', () => {
       expect((service as any).prefix).toBe('testprefix');
     });
 
-    it('should fallback to default prefix when env not set', () => {
-      delete process.env.REDIS_PREFIX;
-      const s = new RedisService();
+    it('should use default prefix when config returns ally', () => {
+      const configWithDefaultPrefix = createMockAppConfigService({
+        prefix: 'ally',
+      }) as any;
+      const s = new RedisService(configWithDefaultPrefix as AppConfigService);
       expect((s as any).prefix).toBe('ally');
     });
   });

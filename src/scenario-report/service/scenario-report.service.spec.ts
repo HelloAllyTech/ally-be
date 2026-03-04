@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { In } from 'typeorm';
 import { ScenarioReportService } from './scenario-report.service';
 import { ScenarioReportRepository } from '../repository/scenario-report.repository';
 import { ScenarioReportNotificationService } from './scenario-report-notification.service';
@@ -15,7 +14,12 @@ import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { ScenarioReport } from '../entity/scenario-report.entity';
 import { ScenarioReportStatus } from '../enum/scenario-report.enum';
-import { SCENARIO_REPORT_END_STATUSES } from '../constants/scenario-report.constant';
+import {
+  SCENARIO_REPORT_END_STATUSES,
+  SCENARIO_REPORT_TTL_SECONDS,
+} from '../constants/scenario-report.constant';
+import { RedisService } from '../../redis/service/redis.service';
+import { TIME } from 'src/common/constants/time.constants';
 
 jest.mock('../../logger/logger.service', () => ({
   LoggerService: {
@@ -36,6 +40,7 @@ describe('ScenarioReportService', () => {
   let aiService: jest.Mocked<AiService>;
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
+  let redisService: jest.Mocked<RedisService>;
 
   const userId = 1;
   const scenarioId = 10;
@@ -57,7 +62,13 @@ describe('ScenarioReportService', () => {
       findOne: jest.fn(),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       findAndCount: jest.fn(),
+      getAllScenarioReportsAndCount: jest.fn(),
       findRecentReportsByCreatedBy: jest.fn(),
+    };
+
+    const mockRedisService = {
+      set: jest.fn().mockResolvedValue(undefined),
+      del: jest.fn().mockResolvedValue(undefined),
     };
 
     const mockNotificationService = {
@@ -138,6 +149,10 @@ describe('ScenarioReportService', () => {
           provide: OpenAITranslationsService,
           useValue: mockOpenAITranslationsService,
         },
+        {
+          provide: RedisService,
+          useValue: mockRedisService,
+        },
       ],
     }).compile();
 
@@ -152,6 +167,7 @@ describe('ScenarioReportService', () => {
     aiService = module.get(AiService);
     sharedLanguageService = module.get(SharedLanguageService);
     scenarioSharedService = module.get(ScenarioSharedService);
+    redisService = module.get(RedisService);
   });
 
   afterEach(() => {
@@ -236,19 +252,19 @@ describe('ScenarioReportService', () => {
 
     it('should filter by status list when statuses provided', async () => {
       const reports = [mockReport as ScenarioReport];
-      scenarioReportRepository.findAndCount.mockResolvedValue([reports, 1]);
+      scenarioReportRepository.getAllScenarioReportsAndCount.mockResolvedValue([
+        reports,
+        1,
+      ]);
 
       const result = await service.getScenarioReports(
         scenarioId,
         'COMPLETED, CANCELLED',
       );
 
-      expect(scenarioReportRepository.findAndCount).toHaveBeenCalledWith({
-        where: {
-          scenarioId,
-          status: In(['COMPLETED', 'CANCELLED']),
-        },
-      });
+      expect(
+        scenarioReportRepository.getAllScenarioReportsAndCount,
+      ).toHaveBeenCalledWith(scenarioId, ['COMPLETED', 'CANCELLED'], undefined);
       expect(result).toEqual({
         data: [
           {
@@ -263,13 +279,16 @@ describe('ScenarioReportService', () => {
 
     it('should not filter by status when statuses not provided', async () => {
       const reports = [mockReport as ScenarioReport];
-      scenarioReportRepository.findAndCount.mockResolvedValue([reports, 1]);
+      scenarioReportRepository.getAllScenarioReportsAndCount.mockResolvedValue([
+        reports,
+        1,
+      ]);
 
       await service.getScenarioReports(scenarioId);
 
-      expect(scenarioReportRepository.findAndCount).toHaveBeenCalledWith({
-        where: { scenarioId },
-      });
+      expect(
+        scenarioReportRepository.getAllScenarioReportsAndCount,
+      ).toHaveBeenCalledWith(scenarioId, [], undefined);
     });
   });
 
@@ -306,7 +325,7 @@ describe('ScenarioReportService', () => {
       }
     });
 
-    it('should update to CANCELLED and notify when allowed', async () => {
+    it('should update to CANCELLED, delete Redis key, and notify when allowed', async () => {
       scenarioReportRepository.findOne.mockResolvedValue(
         mockReport as ScenarioReport,
       );
@@ -319,6 +338,9 @@ describe('ScenarioReportService', () => {
         updatedBy: userId,
         endedAt: expect.any(Date),
       });
+      expect(redisService.del).toHaveBeenCalledWith(
+        `scenario-report:${reportId}`,
+      );
       expect(
         scenarioReportNotificationService.notifyUpdate,
       ).toHaveBeenCalledWith(userId, reportId);
@@ -377,6 +399,23 @@ describe('ScenarioReportService', () => {
         expect(result.status).toBe(status);
         expect(scenarioReportRepository.update).not.toHaveBeenCalled();
       }
+    });
+
+    it('should delete Redis key when updating to end status', async () => {
+      scenarioReportRepository.findOne
+        .mockResolvedValueOnce(mockReport as ScenarioReport)
+        .mockResolvedValueOnce({
+          ...mockReport,
+          status: ScenarioReportStatus.COMPLETED,
+        } as ScenarioReport);
+
+      await service.updateScenarioReport(reportId, {
+        status: ScenarioReportStatus.COMPLETED,
+      });
+
+      expect(redisService.del).toHaveBeenCalledWith(
+        `scenario-report:${reportId}`,
+      );
     });
 
     it('should update only provided fields and set endedAt when status is end status', async () => {
@@ -551,6 +590,92 @@ describe('ScenarioReportService', () => {
         report_id: reportId,
         metadata: { events: [], scenario: {} },
       });
+      expect(redisService.set).toHaveBeenCalledWith(
+        `scenario-report:${reportId}`,
+        reportId,
+        SCENARIO_REPORT_TTL_SECONDS,
+      );
+    });
+  });
+
+  describe('handleExpiredReport', () => {
+    it('should do nothing when report not found', async () => {
+      scenarioReportRepository.findOne.mockResolvedValue(null);
+
+      await service.handleExpiredReportGeneration(reportId);
+
+      expect(scenarioReportRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('should do nothing when report already in end status', async () => {
+      for (const status of SCENARIO_REPORT_END_STATUSES) {
+        scenarioReportRepository.findOne.mockResolvedValue({
+          ...mockReport,
+          status,
+        } as ScenarioReport);
+
+        await service.handleExpiredReportGeneration(reportId);
+
+        expect(scenarioReportRepository.update).not.toHaveBeenCalled();
+      }
+    });
+
+    it('should mark report as FAILED when still pending and older than 30 min', async () => {
+      const oldReport = {
+        ...mockReport,
+        status: ScenarioReportStatus.STARTED,
+        createdAt: new Date(Date.now() - 31 * TIME.MINUTE_IN_MS),
+      } as ScenarioReport;
+      scenarioReportRepository.findOne.mockResolvedValue(oldReport);
+
+      await service.handleExpiredReportGeneration(reportId);
+
+      expect(scenarioReportRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: reportId }),
+        expect.objectContaining({
+          status: ScenarioReportStatus.FAILED,
+          metadata: { error: 'Failed due to timeout' },
+          endedAt: expect.any(Date),
+        }),
+      );
+      expect(
+        scenarioReportNotificationService.notifyUpdate,
+      ).toHaveBeenCalledWith(userId, reportId);
+    });
+  });
+
+  describe('markStaleReportsAsFailed', () => {
+    it('should mark stale pending reports as FAILED', async () => {
+      const staleReport = {
+        ...mockReport,
+        status: ScenarioReportStatus.STARTED,
+        createdAt: new Date(Date.now() - 31 * TIME.MINUTE_IN_MS),
+      } as ScenarioReport;
+      scenarioReportRepository.find.mockResolvedValue([
+        staleReport,
+      ] as ScenarioReport[]);
+
+      await service.markStaleReportsAsFailed();
+
+      expect(scenarioReportRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: expect.anything(),
+            createdAt: expect.anything(),
+          }),
+        }),
+      );
+      expect(scenarioReportRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: expect.anything(),
+          status: expect.anything(),
+        }),
+        expect.objectContaining({
+          status: ScenarioReportStatus.FAILED,
+          metadata: { error: 'Failed due to timeout' },
+          endedAt: expect.any(Date),
+        }),
+      );
     });
   });
 });

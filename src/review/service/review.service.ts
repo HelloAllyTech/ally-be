@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Review } from '../entity/review.entity';
 import { ReviewRepository } from '../repository/review.repository';
 import { ReviewReadStatusRepository } from '../repository/review-read-status.repository';
 import {
@@ -15,7 +16,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
 import { Pagination, SuccessResponse } from 'src/common/type/common.type';
-import { UpdateReviewStatusDto } from '../dto/update-review-status.dto';
+import { UpdateReviewDto } from '../dto/update-review.dto';
 import {
   GetReviews,
   GetReviewsOptions,
@@ -30,11 +31,13 @@ import {
   formatCreatedUserDetails,
   getSessionDurationInSeconds,
 } from '../util/review.util';
-import { In } from 'typeorm';
+import { In, IsNull, Not } from 'typeorm';
 import { ReviewCommentRepository } from '../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { GetReviewMessagesResponseDto } from '../dto/review-messages-response.dto';
 import { ReviewAccessValidator } from '../util/review-access-policy.util';
+import { NOTE_EDIT_WINDOW_MS } from '../constant/review.constant';
+import { TIME } from 'src/common/constants/time.constants';
 
 @Injectable()
 export class ReviewService {
@@ -124,9 +127,9 @@ export class ReviewService {
     return { success: true };
   }
 
-  async updateReviewStatus(
+  async updateReview(
     id: string,
-    updateReviewStatusDto: UpdateReviewStatusDto,
+    updateReviewDto: UpdateReviewDto,
   ): Promise<SuccessResponse> {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
@@ -139,10 +142,27 @@ export class ReviewService {
       throw new BadRequestException('Review not found');
     }
 
-    const updatedReview = await this.reviewRepository.create({
-      ...review,
-      status: updateReviewStatusDto.status,
-    });
+    const hasNoteUpdated = updateReviewDto.note !== undefined;
+    if (hasNoteUpdated) {
+      const elapsed = new Date().getTime() - review.createdAt.getTime();
+      if (elapsed > NOTE_EDIT_WINDOW_MS) {
+        throw new ForbiddenException(
+          `Note can only be edited within ${NOTE_EDIT_WINDOW_MS / TIME.MINUTE_IN_MS} minutes of review creation`,
+        );
+      }
+    }
+
+    const updates: Partial<Review> = { ...review };
+
+    if (updateReviewDto.status !== undefined) {
+      updates.status = updateReviewDto.status;
+    }
+    if (hasNoteUpdated) {
+      updates.note = updateReviewDto.note;
+      updates.noteEditedAt = new Date();
+    }
+
+    const updatedReview = this.reviewRepository.create(updates);
     await this.reviewRepository.save(updatedReview);
     return { success: true };
   }
@@ -219,20 +239,32 @@ export class ReviewService {
       throw new BadRequestException('Scenario session not found');
     }
 
-    const [user, scenario, comments, reactions, myReaction] = await Promise.all(
-      [
-        this.userService.get(review.createdBy),
-        this.scenarioSharedService.getScenarioById(scenarioSession.scenarioId),
-        this.reviewThreadRepository.getCommentsCountByReviewIds(
-          [review.id],
-          userId,
-        ),
-        this.reviewReactionRepository.getReactionsByReviewIds([review.id]),
-        this.reviewReactionRepository.findOne({
-          where: { reviewId: review.id, createdBy: userId },
-        }),
-      ],
-    );
+    const [
+      user,
+      scenario,
+      comments,
+      reactions,
+      myReaction,
+      generalCommentsThread,
+    ] = await Promise.all([
+      this.userService.get(review.createdBy),
+      this.scenarioSharedService.getScenarioById(scenarioSession.scenarioId),
+      this.reviewThreadRepository.getCommentsCountByReviewIds(
+        [review.id],
+        userId,
+      ),
+      this.reviewReactionRepository.getReactionsByReviewIds([review.id]),
+      this.reviewReactionRepository.findOne({
+        where: { reviewId: review.id, createdBy: userId },
+      }),
+      this.reviewThreadRepository.findOne({
+        where: {
+          reviewId: review.id,
+          messageId: IsNull(),
+          selection: IsNull(),
+        },
+      }),
+    ]);
 
     const updatedReactions = reactions.reduce(
       (acc, reaction) => {
@@ -265,6 +297,9 @@ export class ReviewService {
       reactions: updatedReactions,
       myReaction: myReaction?.reaction ?? null,
       ...(userId === review.createdBy && { reviewStatus: review.status }),
+      generalCommentsThreadId: generalCommentsThread?.id ?? null,
+      note: review.note ?? null,
+      noteEditedAt: review.noteEditedAt ?? null,
     };
   }
 
@@ -306,6 +341,8 @@ export class ReviewService {
       commentsCount: commentsByReviewId[review.id] ?? 0,
       reactions: reactionsByReviewId[review.id] ?? {},
       createdBy: formatCreatedUserDetails(review.createdBy),
+      note: review.note ?? null,
+      noteEditedAt: review.noteEditedAt ?? null,
     }));
 
     return data;
@@ -354,6 +391,7 @@ export class ReviewService {
       where: {
         reviewId,
         messageId: In(messageIds),
+        selection: Not(IsNull()),
       },
     });
 
@@ -445,6 +483,7 @@ export class ReviewService {
     // Group threads by message
     const threadsByMessage = threads.reduce(
       (acc, thread) => {
+        if (!thread.messageId) return acc;
         const threadComments = commentsByThread[thread.id] || [];
         if (threadComments.length === 0) return acc;
 

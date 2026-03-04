@@ -29,6 +29,9 @@ export class ScenarioReport extends BaseWithoutTenantEntity {
   @Column({ type: 'jsonb', nullable: true })
   metrics?: Record<string, number>;
 
+  @Column({ type: 'jsonb', nullable: true })
+  metadata?: Record<string, any>;
+
   @DeleteDateColumn()
   deletedAt?: Date;
 

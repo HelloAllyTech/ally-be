@@ -98,7 +98,8 @@ export class AppConfigService {
   get redis() {
     return {
       host: this.configService.get<string>('REDIS_HOST'),
-      port: this.configService.get<number>('REDIS_PORT'),
+      port: this.configService.get<number>('REDIS_PORT', 6379),
+      prefix: this.configService.get<string>('REDIS_PREFIX', 'ally'),
     };
   }
 
