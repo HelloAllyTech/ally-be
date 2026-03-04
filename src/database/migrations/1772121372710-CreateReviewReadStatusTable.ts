@@ -10,6 +10,11 @@ export class CreateReviewReadStatusTable1772121372710 implements MigrationInterf
     await queryRunner.query(
       `CREATE UNIQUE INDEX "uq_review_read_status_user_id_review_id_idx" ON "review_read_status" ("userId", "reviewId") `,
     );
+
+    // seed review status
+    await queryRunner.query(
+      `INSERT INTO review_read_status ("userId","reviewId","readAt") SELECT u.id, r.id, NOW() FROM reviews r JOIN users u on r.tenant_id = u.tenant_id WHERE r.status = 'IN_REVIEW' ON CONFLICT ("userId","reviewId") DO NOTHING`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
