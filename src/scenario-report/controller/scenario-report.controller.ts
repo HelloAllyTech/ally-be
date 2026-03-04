@@ -28,7 +28,7 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
-import { SuccessResponse } from 'src/common/type/common.type';
+import { SortOrder, SuccessResponse } from 'src/common/type/common.type';
 
 @ApiTags('Scenario Report')
 @ApiBearerAuth()
@@ -122,11 +122,44 @@ export class ScenarioReportController {
     description:
       'Filter by scenario report status (comma-separated). Valid values: STARTED, IN_PROGRESS, COMPLETED, CANCELLED, FAILED',
   })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of records to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Field to sort by',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    type: String,
+    description: 'Sort order: ASC or DESC',
+  })
   async getScenarioReports(
     @Param('scenarioId') scenarioId: number,
     @Query('statuses') statuses?: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order?: SortOrder,
   ): Promise<ScenarioReportResponseDto> {
-    return this.scenarioReportService.getScenarioReports(scenarioId, statuses);
+    return this.scenarioReportService.getScenarioReports(scenarioId, statuses, {
+      limit,
+      offset,
+      sortBy,
+      order,
+    });
   }
 
   @Post('/reports/:reportId/cancel')

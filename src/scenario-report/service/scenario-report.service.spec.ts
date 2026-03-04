@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { In } from 'typeorm';
 import { ScenarioReportService } from './scenario-report.service';
 import { ScenarioReportRepository } from '../repository/scenario-report.repository';
 import { ScenarioReportNotificationService } from './scenario-report-notification.service';
@@ -63,6 +62,7 @@ describe('ScenarioReportService', () => {
       findOne: jest.fn(),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       findAndCount: jest.fn(),
+      getAllScenarioReportsAndCount: jest.fn(),
       findRecentReportsByCreatedBy: jest.fn(),
     };
 
@@ -252,19 +252,19 @@ describe('ScenarioReportService', () => {
 
     it('should filter by status list when statuses provided', async () => {
       const reports = [mockReport as ScenarioReport];
-      scenarioReportRepository.findAndCount.mockResolvedValue([reports, 1]);
+      scenarioReportRepository.getAllScenarioReportsAndCount.mockResolvedValue([
+        reports,
+        1,
+      ]);
 
       const result = await service.getScenarioReports(
         scenarioId,
         'COMPLETED, CANCELLED',
       );
 
-      expect(scenarioReportRepository.findAndCount).toHaveBeenCalledWith({
-        where: {
-          scenarioId,
-          status: In(['COMPLETED', 'CANCELLED']),
-        },
-      });
+      expect(
+        scenarioReportRepository.getAllScenarioReportsAndCount,
+      ).toHaveBeenCalledWith(scenarioId, ['COMPLETED', 'CANCELLED'], undefined);
       expect(result).toEqual({
         data: [
           {
@@ -279,13 +279,16 @@ describe('ScenarioReportService', () => {
 
     it('should not filter by status when statuses not provided', async () => {
       const reports = [mockReport as ScenarioReport];
-      scenarioReportRepository.findAndCount.mockResolvedValue([reports, 1]);
+      scenarioReportRepository.getAllScenarioReportsAndCount.mockResolvedValue([
+        reports,
+        1,
+      ]);
 
       await service.getScenarioReports(scenarioId);
 
-      expect(scenarioReportRepository.findAndCount).toHaveBeenCalledWith({
-        where: { scenarioId },
-      });
+      expect(
+        scenarioReportRepository.getAllScenarioReportsAndCount,
+      ).toHaveBeenCalledWith(scenarioId, [], undefined);
     });
   });
 
