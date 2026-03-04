@@ -39,6 +39,7 @@ import { CompetencyService } from '../competency.service';
 import { OpenAIAutofillService } from '../openai-autofil-service';
 import { BehaviorService } from '../behavior.service';
 import { GeneratableField } from 'src/learn/enum/generatable-field.enum';
+import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -66,6 +67,7 @@ describe('ScenarioService', () => {
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let triggerWarningsService: jest.Mocked<TriggerWarningsService>;
   let openAIAutofillService: jest.Mocked<OpenAIAutofillService>;
+  let behaviorService: jest.Mocked<BehaviorService>;
   let scenarioBehaviorInstructionService: jest.Mocked<ScenarioBehaviorInstructionService>;
 
   const mockTenantId = 'tenant-123';
@@ -239,6 +241,7 @@ describe('ScenarioService', () => {
       getScenarioVoice: jest.fn(),
       getAdminScenario: jest.fn(),
       getBehaviorInstructionsByScenarioId: jest.fn(),
+      hasAllActiveScenarioMandatoryFields: jest.fn().mockReturnValue(true),
     };
 
     const mockScenarioEventsTranslationsRepository = {
@@ -403,6 +406,7 @@ describe('ScenarioService', () => {
     scenarioSharedService = module.get(ScenarioSharedService);
     triggerWarningsService = module.get(TriggerWarningsService);
     openAIAutofillService = module.get(OpenAIAutofillService);
+    behaviorService = module.get(BehaviorService);
     scenarioBehaviorInstructionService = module.get(
       ScenarioBehaviorInstructionService,
     );
@@ -4568,6 +4572,26 @@ describe('ScenarioService', () => {
         expect.any(String),
         scenarioContext,
         undefined,
+        undefined,
+      );
+    });
+
+    it('should pass model override to OpenAIAutofillService when provided', async () => {
+      const dto = {
+        fieldName: GeneratableField.CHARACTER_PROFILE_TEXT,
+        scenarioContext,
+        model: 'gpt-4o',
+      };
+      openAIAutofillService.generateFieldContent.mockResolvedValue('Generated');
+
+      await service.generateField(dto);
+
+      expect(openAIAutofillService.generateFieldContent).toHaveBeenCalledWith(
+        GeneratableField.CHARACTER_PROFILE_TEXT,
+        expect.any(String),
+        scenarioContext,
+        undefined,
+        'gpt-4o',
       );
     });
 
@@ -4652,6 +4676,157 @@ describe('ScenarioService', () => {
       });
     });
 
+    it('should set predefinedBehaviorInstructionsDoc and only relevant behaviors when competency has a predefined template', async () => {
+      const context = {
+        ...scenarioContext,
+        competency: 'Promote Realistic Hope',
+      };
+      const dto = {
+        fieldName: GeneratableField.BEHAVIOR_INSTRUCTIONS,
+        scenarioContext: context,
+      };
+
+      const mockBehaviors = [
+        { id: 'uuid-1', name: 'Gives unrealistic promises' },
+        { id: 'uuid-2', name: 'Provides no hope for change' },
+        { id: 'uuid-3', name: 'Shames client doubts' },
+        { id: 'uuid-4', name: 'Expresses pessimism about change' },
+        { id: 'uuid-5', name: 'Praises help-seeking behaviour' },
+        { id: 'uuid-6', name: 'Encourages realistic optimism' },
+        { id: 'uuid-7', name: 'Explores and addresses doubts' },
+        { id: 'uuid-8', name: 'Clarifies limits of treatment realistically' },
+        { id: 'uuid-9', name: 'Some unrelated behavior' },
+      ];
+
+      const mapping = new Map(
+        mockBehaviors.map((b, i) => [i + 1, { id: b.id, name: b.name }]),
+      );
+
+      behaviorService.getBehaviors.mockResolvedValue({
+        data: mockBehaviors as any,
+        count: mockBehaviors.length,
+      });
+      openAIAutofillService.buildBehaviorIdMapping.mockReturnValue({
+        mapping,
+        formattedList: mockBehaviors
+          .map((b, i) => `${i + 1}. ${b.name}`)
+          .join('\n'),
+      });
+      openAIAutofillService.generateFieldContent.mockResolvedValue([]);
+
+      await service.generateField(dto);
+
+      const passedContext =
+        openAIAutofillService.generateFieldContent.mock.calls[0][2];
+
+      const predefinedDoc = JSON.parse(
+        passedContext.predefinedBehaviorInstructionsDoc!,
+      );
+      expect(predefinedDoc.SHOULD_NOT_DO).toEqual([1, 2, 3, 4]);
+      expect(predefinedDoc.SHOULD_DO).toEqual([5, 6, 7, 8]);
+
+      expect(passedContext.allowedHelperBehaviorsList).not.toContain(
+        'Some unrelated behavior',
+      );
+      expect(passedContext.allowedHelperBehaviorsList).toContain(
+        'Gives unrealistic promises',
+      );
+    });
+
+    it('should use full behavior list when competency has no predefined template', async () => {
+      const context = {
+        ...scenarioContext,
+        competency: 'Unknown Competency',
+      };
+      const dto = {
+        fieldName: GeneratableField.BEHAVIOR_INSTRUCTIONS,
+        scenarioContext: context,
+      };
+
+      const mockBehaviors = [
+        { id: 'uuid-1', name: 'Behavior A' },
+        { id: 'uuid-2', name: 'Behavior B' },
+      ];
+
+      const fullList = '1. Behavior A\n2. Behavior B';
+      const mapping = new Map(
+        mockBehaviors.map((b, i) => [i + 1, { id: b.id, name: b.name }]),
+      );
+
+      behaviorService.getBehaviors.mockResolvedValue({
+        data: mockBehaviors as any,
+        count: mockBehaviors.length,
+      });
+      openAIAutofillService.buildBehaviorIdMapping.mockReturnValue({
+        mapping,
+        formattedList: fullList,
+      });
+      openAIAutofillService.generateFieldContent.mockResolvedValue([]);
+
+      await service.generateField(dto);
+
+      const passedContext =
+        openAIAutofillService.generateFieldContent.mock.calls[0][2];
+
+      expect(passedContext.predefinedBehaviorInstructionsDoc).toBeUndefined();
+      expect(passedContext.allowedHelperBehaviorsList).toBe(fullList);
+    });
+
+    it('should throw BadRequestException when no competency is provided for BEHAVIOR_INSTRUCTIONS', async () => {
+      const dto = {
+        fieldName: GeneratableField.BEHAVIOR_INSTRUCTIONS,
+        scenarioContext: { ...scenarioContext },
+      };
+
+      await expect(service.generateField(dto)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(behaviorService.getBehaviors).not.toHaveBeenCalled();
+    });
+
+    it('should skip unresolvable behavior names from predefined template', async () => {
+      const context = {
+        ...scenarioContext,
+        competency: 'Promote Realistic Hope',
+      };
+      const dto = {
+        fieldName: GeneratableField.BEHAVIOR_INSTRUCTIONS,
+        scenarioContext: context,
+      };
+
+      const mockBehaviors = [
+        { id: 'uuid-1', name: 'Gives unrealistic promises' },
+        { id: 'uuid-5', name: 'Praises help-seeking behaviour' },
+      ];
+
+      const mapping = new Map(
+        mockBehaviors.map((b, i) => [i + 1, { id: b.id, name: b.name }]),
+      );
+
+      behaviorService.getBehaviors.mockResolvedValue({
+        data: mockBehaviors as any,
+        count: mockBehaviors.length,
+      });
+      openAIAutofillService.buildBehaviorIdMapping.mockReturnValue({
+        mapping,
+        formattedList: mockBehaviors
+          .map((b, i) => `${i + 1}. ${b.name}`)
+          .join('\n'),
+      });
+      openAIAutofillService.generateFieldContent.mockResolvedValue([]);
+
+      await service.generateField(dto);
+
+      const passedContext =
+        openAIAutofillService.generateFieldContent.mock.calls[0][2];
+
+      const predefinedDoc = JSON.parse(
+        passedContext.predefinedBehaviorInstructionsDoc!,
+      );
+      expect(predefinedDoc.SHOULD_NOT_DO).toEqual([1]);
+      expect(predefinedDoc.SHOULD_DO).toEqual([2]);
+    });
+
     it('should throw BadRequestException for unsupported field name', async () => {
       const dto = {
         fieldName: 'unsupportedField' as GeneratableField,
@@ -4677,6 +4852,381 @@ describe('ScenarioService', () => {
       await expect(service.generateField(dto)).rejects.toThrow(
         'OpenAI API error',
       );
+    });
+  });
+
+  describe('persistScenarioEventTranslations', () => {
+    let mockOpenAITranslationsService: any;
+    let mockScenarioEventTranslationsRepository: any;
+    let mockLogger: any;
+
+    const languages = [
+      { id: 1, translationCode: 'hi-IN', value: 'hi-IN' },
+      { id: 2, translationCode: 'ml-IN', value: 'ml-IN' },
+    ];
+
+    const metadataExtractor = (event: any) => ({
+      message: event.message,
+      branchInstruction: event.branchInstruction,
+    });
+
+    beforeEach(() => {
+      mockOpenAITranslationsService = {
+        translateObjectToLanguages: jest.fn(),
+      };
+      mockScenarioEventTranslationsRepository = {
+        getScenarioEventsTranslationsByScenarioIdEventId: jest.fn(),
+        createTranslations: jest.fn(),
+        updateTranslations: jest.fn(),
+      };
+      mockLogger = {
+        debug: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      };
+
+      (service as any).openaiTranslationsService =
+        mockOpenAITranslationsService;
+      (service as any).scenarioEventTranslationsRepository =
+        mockScenarioEventTranslationsRepository;
+      (service as any).logger = mockLogger;
+    });
+
+    it('should call OpenAI with OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE', async () => {
+      const scenarioEvents = [
+        {
+          scenarioId: 1,
+          eventId: 10,
+          message: 'Great job!',
+          branchInstruction: undefined,
+        },
+      ];
+
+      mockOpenAITranslationsService.translateObjectToLanguages.mockResolvedValue(
+        {},
+      );
+
+      await service.persistScenarioEventTranslations(
+        scenarioEvents,
+        metadataExtractor,
+        languages,
+      );
+
+      expect(
+        mockOpenAITranslationsService.translateObjectToLanguages,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Great job!' }),
+        ['hi-IN', 'ml-IN'],
+        PromptCode.OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE,
+      );
+    });
+
+    it('should create new translations when none exist', async () => {
+      const scenarioEvents = [
+        {
+          scenarioId: 1,
+          eventId: 10,
+          message: 'Well done!',
+          branchInstruction: undefined,
+        },
+      ];
+
+      mockOpenAITranslationsService.translateObjectToLanguages.mockResolvedValue(
+        {
+          'hi-IN': { message: 'शाबाश!' },
+          'ml-IN': { message: 'നന്നായി!' },
+        },
+      );
+
+      mockScenarioEventTranslationsRepository.getScenarioEventsTranslationsByScenarioIdEventId.mockResolvedValue(
+        [],
+      );
+      mockScenarioEventTranslationsRepository.createTranslations.mockResolvedValue(
+        undefined,
+      );
+
+      await service.persistScenarioEventTranslations(
+        scenarioEvents,
+        metadataExtractor,
+        languages,
+      );
+
+      expect(
+        mockScenarioEventTranslationsRepository.createTranslations,
+      ).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            scenarioId: 1,
+            eventId: 10,
+            languageId: 1,
+            message: 'शाबाश!',
+          }),
+          expect.objectContaining({
+            scenarioId: 1,
+            eventId: 10,
+            languageId: 2,
+            message: 'നന്നായി!',
+          }),
+        ]),
+      );
+      expect(
+        mockScenarioEventTranslationsRepository.updateTranslations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should update existing translations when they already exist', async () => {
+      const scenarioEvents = [
+        {
+          scenarioId: 1,
+          eventId: 10,
+          message: 'Good!',
+          branchInstruction: undefined,
+        },
+      ];
+
+      mockOpenAITranslationsService.translateObjectToLanguages.mockResolvedValue(
+        {
+          'hi-IN': { message: 'अच्छा!' },
+          'ml-IN': { message: 'നല്ലത്!' },
+        },
+      );
+
+      // Both language translations already exist
+      mockScenarioEventTranslationsRepository.getScenarioEventsTranslationsByScenarioIdEventId.mockResolvedValue(
+        [
+          { eventId: 10, languageId: 1 },
+          { eventId: 10, languageId: 2 },
+        ],
+      );
+      mockScenarioEventTranslationsRepository.updateTranslations.mockResolvedValue(
+        undefined,
+      );
+
+      await service.persistScenarioEventTranslations(
+        scenarioEvents,
+        metadataExtractor,
+        languages,
+      );
+
+      expect(
+        mockScenarioEventTranslationsRepository.updateTranslations,
+      ).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            eventId: 10,
+            languageId: 1,
+            message: 'अच्छा!',
+          }),
+          expect.objectContaining({
+            eventId: 10,
+            languageId: 2,
+            message: 'നല്ലത്!',
+          }),
+        ]),
+      );
+      expect(
+        mockScenarioEventTranslationsRepository.createTranslations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should split into create and update when some translations exist', async () => {
+      const scenarioEvents = [
+        {
+          scenarioId: 1,
+          eventId: 10,
+          message: 'Try again!',
+          branchInstruction: undefined,
+        },
+      ];
+
+      mockOpenAITranslationsService.translateObjectToLanguages.mockResolvedValue(
+        {
+          'hi-IN': { message: 'फिर कोशिश करो!' },
+          'ml-IN': { message: 'വീണ്ടും ശ്രമിക്കൂ!' },
+        },
+      );
+
+      // Only hi-IN exists already
+      mockScenarioEventTranslationsRepository.getScenarioEventsTranslationsByScenarioIdEventId.mockResolvedValue(
+        [{ eventId: 10, languageId: 1 }],
+      );
+      mockScenarioEventTranslationsRepository.createTranslations.mockResolvedValue(
+        undefined,
+      );
+      mockScenarioEventTranslationsRepository.updateTranslations.mockResolvedValue(
+        undefined,
+      );
+
+      await service.persistScenarioEventTranslations(
+        scenarioEvents,
+        metadataExtractor,
+        languages,
+      );
+
+      expect(
+        mockScenarioEventTranslationsRepository.updateTranslations,
+      ).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ eventId: 10, languageId: 1 }),
+        ]),
+      );
+      expect(
+        mockScenarioEventTranslationsRepository.createTranslations,
+      ).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ eventId: 10, languageId: 2 }),
+        ]),
+      );
+    });
+
+    it('should skip DB ops when OpenAI returns empty result', async () => {
+      const scenarioEvents = [
+        {
+          scenarioId: 1,
+          eventId: 10,
+          message: 'Hello!',
+          branchInstruction: undefined,
+        },
+      ];
+
+      mockOpenAITranslationsService.translateObjectToLanguages.mockResolvedValue(
+        {},
+      );
+
+      await service.persistScenarioEventTranslations(
+        scenarioEvents,
+        metadataExtractor,
+        languages,
+      );
+
+      expect(
+        mockScenarioEventTranslationsRepository.createTranslations,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockScenarioEventTranslationsRepository.updateTranslations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should skip DB ops when OpenAI throws an error', async () => {
+      const scenarioEvents = [
+        {
+          scenarioId: 1,
+          eventId: 10,
+          message: 'Hello!',
+          branchInstruction: undefined,
+        },
+      ];
+
+      mockOpenAITranslationsService.translateObjectToLanguages.mockRejectedValue(
+        new Error('OpenAI error'),
+      );
+
+      await service.persistScenarioEventTranslations(
+        scenarioEvents,
+        metadataExtractor,
+        languages,
+      );
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('translation call failed'),
+        expect.objectContaining({ languageCodes: ['hi-IN', 'ml-IN'] }),
+      );
+      expect(
+        mockScenarioEventTranslationsRepository.createTranslations,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockScenarioEventTranslationsRepository.updateTranslations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should skip event when metadata is empty (no message, no branchInstruction)', async () => {
+      const scenarioEvents = [
+        { scenarioId: 1, eventId: 10, message: '', branchInstruction: '' },
+      ];
+
+      await service.persistScenarioEventTranslations(
+        scenarioEvents,
+        metadataExtractor,
+        languages,
+      );
+
+      expect(
+        mockOpenAITranslationsService.translateObjectToLanguages,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockScenarioEventTranslationsRepository.createTranslations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should skip event when languages list is empty', async () => {
+      const scenarioEvents = [
+        {
+          scenarioId: 1,
+          eventId: 10,
+          message: 'Hello!',
+          branchInstruction: undefined,
+        },
+      ];
+
+      await service.persistScenarioEventTranslations(
+        scenarioEvents,
+        metadataExtractor,
+        [], // no languages
+      );
+
+      expect(
+        mockOpenAITranslationsService.translateObjectToLanguages,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockScenarioEventTranslationsRepository.createTranslations,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should process multiple scenario events independently', async () => {
+      const scenarioEvents = [
+        {
+          scenarioId: 1,
+          eventId: 10,
+          message: 'First event!',
+          branchInstruction: undefined,
+        },
+        {
+          scenarioId: 1,
+          eventId: 11,
+          message: 'Second event!',
+          branchInstruction: undefined,
+        },
+      ];
+
+      mockOpenAITranslationsService.translateObjectToLanguages
+        .mockResolvedValueOnce({
+          'hi-IN': { message: 'पहला!' },
+          'ml-IN': { message: 'ആദ്യ!' },
+        })
+        .mockResolvedValueOnce({
+          'hi-IN': { message: 'दूसरा!' },
+          'ml-IN': { message: 'രണ്ടാമത്!' },
+        });
+
+      mockScenarioEventTranslationsRepository.getScenarioEventsTranslationsByScenarioIdEventId.mockResolvedValue(
+        [],
+      );
+      mockScenarioEventTranslationsRepository.createTranslations.mockResolvedValue(
+        undefined,
+      );
+
+      await service.persistScenarioEventTranslations(
+        scenarioEvents,
+        metadataExtractor,
+        languages,
+      );
+
+      expect(
+        mockOpenAITranslationsService.translateObjectToLanguages,
+      ).toHaveBeenCalledTimes(2);
+      expect(
+        mockScenarioEventTranslationsRepository.createTranslations,
+      ).toHaveBeenCalledTimes(2);
     });
   });
 });

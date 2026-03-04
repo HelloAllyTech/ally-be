@@ -18,7 +18,6 @@ export class AudioUploadDlqConsumer {
     private readonly s3Service: S3Service,
   ) {}
 
-  @SqsDlqListener(process.env.SQS_AUDIO_UPLOAD_DLQ_URL!)
   async handleAudioUploadDlq(message: Message): Promise<void> {
     if (!message.Body) {
       this.logger.error('Empty message in audio upload DLQ');

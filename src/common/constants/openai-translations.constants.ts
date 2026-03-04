@@ -184,6 +184,15 @@ Input JSON:
 {{inputJson}}
 `;
 
+export const DEFAULT_OPENAI_TEXT_TRANSLATION_PROMPT_TEMPLATE = `
+Translate the following text to {{languageName}}.
+
+Preserve the meaning and tone. Output only the translated text — no JSON, no markdown, no commentary, no quotes around the result.
+
+Text to translate:
+{{text}}
+`;
+
 // Prompt code identifiers used to fetch templates from DB
 export const OPENAI_TRANSLATION_SYSTEM_PROMPT_CODE =
   'openai_translation_system';

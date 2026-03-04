@@ -12,6 +12,7 @@ import { ScenarioReportTranscriptService } from './scenario-report-transcript.se
 import { AiService } from '../../ai/service/ai.service';
 import { SharedLanguageService } from '../../language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { ScenarioReport } from '../entity/scenario-report.entity';
 import { ScenarioReportStatus } from '../enum/scenario-report.enum';
 import { SCENARIO_REPORT_END_STATUSES } from '../constants/scenario-report.constant';
@@ -75,13 +76,35 @@ describe('ScenarioReportService', () => {
     };
 
     const mockSharedLanguageService = {
-      getLanguagesByIds: jest.fn().mockResolvedValue([{ id: 1, value: 'en' }]),
+      getLanguagesByIds: jest
+        .fn()
+        .mockResolvedValue([{ id: 1, value: 'en', label: 'English' }]),
     };
 
     const mockScenarioSharedService = {
       createMetadataForScenario: jest
         .fn()
         .mockResolvedValue({ events: [], scenario: {} }),
+      getAdminScenario: jest.fn().mockResolvedValue({
+        id: scenarioId,
+        title: 'Test Scenario',
+      }),
+      getScenarioById: jest.fn().mockResolvedValue({
+        id: scenarioId,
+        title: 'Test Scenario',
+      }),
+      getScenarioByIds: jest
+        .fn()
+        .mockImplementation((ids: number[]) =>
+          Promise.resolve(ids.map((id) => ({ id, title: 'Test Scenario' }))),
+        ),
+      hasAllActiveScenarioMandatoryFields: jest.fn().mockReturnValue(true),
+    };
+
+    const mockOpenAITranslationsService = {
+      translateText: jest
+        .fn()
+        .mockImplementation((text: string) => Promise.resolve(text)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -110,6 +133,10 @@ describe('ScenarioReportService', () => {
         {
           provide: ScenarioSharedService,
           useValue: mockScenarioSharedService,
+        },
+        {
+          provide: OpenAITranslationsService,
+          useValue: mockOpenAITranslationsService,
         },
       ],
     }).compile();
@@ -186,7 +213,11 @@ describe('ScenarioReportService', () => {
 
       const result = await service.getScenarioReportById(reportId);
 
-      expect(result).toEqual(mockReport);
+      expect(result).toEqual({
+        ...mockReport,
+        scenarioTitle: 'Test Scenario',
+        language: { id: 1, value: 'en', label: 'English' },
+      });
       expect(scenarioReportRepository.findOne).toHaveBeenCalledWith({
         where: { id: reportId },
       });
@@ -218,7 +249,16 @@ describe('ScenarioReportService', () => {
           status: In(['COMPLETED', 'CANCELLED']),
         },
       });
-      expect(result).toEqual({ data: reports, count: 1 });
+      expect(result).toEqual({
+        data: [
+          {
+            ...mockReport,
+            scenarioTitle: 'Test Scenario',
+            language: { id: 1, value: 'en', label: 'English' },
+          },
+        ],
+        count: 1,
+      });
     });
 
     it('should not filter by status when statuses not provided', async () => {
@@ -297,7 +337,16 @@ describe('ScenarioReportService', () => {
       expect(
         scenarioReportRepository.findRecentReportsByCreatedBy,
       ).toHaveBeenCalledWith(userId, 60);
-      expect(result).toEqual({ data: reports, count: 1 });
+      expect(result).toEqual({
+        data: [
+          {
+            ...mockReport,
+            scenarioTitle: 'Test Scenario',
+            language: { id: 1, value: 'en', label: 'English' },
+          },
+        ],
+        count: 1,
+      });
     });
 
     it('should pass undefined lookbackMinutes when not provided', async () => {
@@ -314,21 +363,19 @@ describe('ScenarioReportService', () => {
   });
 
   describe('updateScenarioReport', () => {
-    it('should throw BadRequestException when report is in end status', async () => {
+    it('should return report without updating when report is in end status', async () => {
       for (const status of SCENARIO_REPORT_END_STATUSES) {
         scenarioReportRepository.findOne.mockResolvedValue({
           ...mockReport,
           status,
         } as ScenarioReport);
 
-        await expect(
-          service.updateScenarioReport(reportId, { metrics: { accuracy: 80 } }),
-        ).rejects.toThrow(BadRequestException);
-        await expect(
-          service.updateScenarioReport(reportId, { metrics: { accuracy: 80 } }),
-        ).rejects.toThrow(
-          'Cannot update scenario report that is already completed, cancelled, or failed',
-        );
+        const result = await service.updateScenarioReport(reportId, {
+          metrics: { accuracy: 80 },
+        });
+
+        expect(result.status).toBe(status);
+        expect(scenarioReportRepository.update).not.toHaveBeenCalled();
       }
     });
 
@@ -411,7 +458,7 @@ describe('ScenarioReportService', () => {
       });
       expect(
         scenarioReportTranscriptService.getScenarioReportTranscripts,
-      ).toHaveBeenCalledWith(reportId);
+      ).toHaveBeenCalledWith(reportId, undefined);
       expect(result).toEqual(transcriptResult);
     });
   });
@@ -475,6 +522,10 @@ describe('ScenarioReportService', () => {
         { languageId: 1, turns: 5, helperAgentPrompt: 'helper prompt' },
         userId,
       );
+
+      // Allow fire-and-forget triggerScenarioReportGeneration to complete
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(result).toEqual({
         id: reportId,

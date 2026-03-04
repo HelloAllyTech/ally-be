@@ -13,6 +13,28 @@ import { ScenarioReportConfig } from '../type/scenario-report-config.type';
 import { UpdateScenarioReportTranscriptDto } from './scenario-report-transcript.dto';
 import { ScenarioReportStatus } from '../enum/scenario-report.enum';
 
+export class ScenarioReportLanguageDto {
+  @IsNumber()
+  @ApiProperty({
+    description: 'ID of the language',
+    example: 1,
+  })
+  id!: number;
+
+  @IsString()
+  @ApiProperty({
+    description: 'Value of the language',
+    example: 'en',
+  })
+  value!: string;
+
+  @IsString()
+  @ApiProperty({
+    description: 'Label of the language',
+    example: 'English',
+  })
+  label!: string;
+}
 export class CreateScenarioReportDto {
   @ApiProperty({ description: 'Language ID', required: true, example: 1 })
   @IsNumber()
@@ -86,6 +108,12 @@ export class ScenarioReportDto {
   scenarioId!: number;
 
   @ApiProperty({
+    description: 'Scenario title',
+    example: 'Scenario title',
+  })
+  scenarioTitle!: string;
+
+  @ApiProperty({
     description: 'Config of the scenario report',
     example: {
       helperAgentPrompt: 'Helper agent prompt',
@@ -139,6 +167,12 @@ export class ScenarioReportDto {
     example: 1,
   })
   updatedBy!: number;
+
+  @ApiProperty({
+    description: 'Language of the scenario report',
+    example: { id: 1, value: 'en', label: 'English' },
+  })
+  language?: ScenarioReportLanguageDto;
 }
 
 export class ScenarioReportResponseDto {

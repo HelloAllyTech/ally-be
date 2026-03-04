@@ -17,7 +17,7 @@ export class LanguagesRepository extends Repository<Languages> {
   }
 
   getLanguageByLanguageCode(languageCode: string): Promise<Languages | null> {
-    return this.findOne({ where: { value: languageCode } });
+    return this.findOne({ where: { translationCode: languageCode } });
   }
 
   getLanguages(
