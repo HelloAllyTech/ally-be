@@ -5,7 +5,7 @@ import {
   ForbiddenException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { DataSource, In } from 'typeorm';
+import { DataSource, In, IsNull } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -169,23 +169,33 @@ export class ReviewCommentService {
       !createReviewCommentDto.threadId &&
       !createReviewCommentDto.parentCommentId
     ) {
-      if (!createReviewCommentDto.messageId) {
-        throw new BadRequestException('messageId required for new threads');
+      // If only content is present, it is a new global comment thread
+      if (
+        !createReviewCommentDto.messageId &&
+        !createReviewCommentDto.selection
+      ) {
+        const thread = await this.reviewThreadRepository.findOne({
+          where: {
+            reviewId,
+            tenantId,
+            messageId: IsNull(),
+            selection: IsNull(),
+          },
+        });
+        if (thread) {
+          throw new BadRequestException(
+            'Only one general discussion thread is allowed per review',
+          );
+        }
       }
-      if (!createReviewCommentDto.selection) {
-        throw new BadRequestException('selection required for new threads');
-      }
-      this.logger.info(
-        `Creating new thread for messageId: ${createReviewCommentDto.messageId}`,
-      );
       try {
         const transactionOutput = await this.dataSource.transaction(
           async (entityManager) => {
             const thread = entityManager.create(ReviewThread, {
               reviewId,
-              messageId: createReviewCommentDto.messageId,
+              messageId: createReviewCommentDto?.messageId,
               createdBy: Number(userId),
-              selection: createReviewCommentDto.selection,
+              selection: createReviewCommentDto?.selection,
               tenantId,
             });
             await entityManager.save(ReviewThread, thread);
@@ -689,5 +699,24 @@ export class ReviewCommentService {
       }
     }
     throw new BadRequestException('Invalid request');
+  }
+
+  async getGeneralReviewComments(
+    reviewId: string,
+    options?: Pagination,
+  ): Promise<GetReviewCommentsResponseDto> {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+
+    const generalCommentsThread = await this.reviewThreadRepository.findOne({
+      where: { reviewId, messageId: IsNull(), selection: IsNull(), tenantId },
+    });
+    if (!generalCommentsThread) {
+      return { data: [], count: 0 };
+    }
+
+    return this.getReviewComments(generalCommentsThread.id, options);
   }
 }

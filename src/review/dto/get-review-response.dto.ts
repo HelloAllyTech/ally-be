@@ -57,4 +57,7 @@ export class GetReviewResponseDto {
 
   @ApiProperty()
   reviewStatus?: ReviewStatus;
+
+  @ApiProperty()
+  generalCommentsThreadId?: string | null;
 }

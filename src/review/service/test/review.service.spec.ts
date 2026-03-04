@@ -84,6 +84,7 @@ describe('ReviewService', () => {
           useValue: {
             getCommentsCountByReviewIds: jest.fn(),
             find: jest.fn(),
+            findOne: jest.fn(),
           },
         },
         {

@@ -160,4 +160,34 @@ export class ReviewCommentController {
       toggleCommentVisibilityDto,
     );
   }
+
+  @ApiOperation({ summary: 'Get general review comments' })
+  @ApiResponse({
+    status: 200,
+    description: 'General review comments retrieved successfully',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of comments to return',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of comments to skip',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @Get(':reviewId/comments')
+  async getGeneralReviewComments(
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ): Promise<GetReviewCommentsResponseDto> {
+    return this.reviewCommentService.getGeneralReviewComments(reviewId, {
+      limit,
+      offset,
+    });
+  }
 }
