@@ -44,4 +44,6 @@ export interface Reviews {
   status: string;
   scenarioSession: ScenarioSessions;
   scenario: Scenarios;
+  note?: string | null;
+  noteEditedAt?: Date | null;
 }

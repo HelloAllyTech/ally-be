@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReviewService } from '../review.service';
 import { ReviewRepository } from '../../repository/review.repository';
@@ -213,8 +217,8 @@ describe('ReviewService', () => {
     });
   });
 
-  describe('updateReviewStatus', () => {
-    const updateReviewStatusDto = {
+  describe('updateReview', () => {
+    const updateReviewDto = {
       status: ReviewStatus.HIDDEN,
     };
 
@@ -228,7 +232,7 @@ describe('ReviewService', () => {
       reviewRepository.findOne.mockResolvedValue(null);
 
       await expect(
-        service.updateReviewStatus(mockReviewId, updateReviewStatusDto),
+        service.updateReview(mockReviewId, updateReviewDto),
       ).rejects.toThrow(BadRequestException);
       expect(reviewRepository.findOne).toHaveBeenCalledWith({
         where: { id: mockReviewId, createdBy: mockUserId },
@@ -236,10 +240,10 @@ describe('ReviewService', () => {
     });
 
     it('should throw BadRequestException when user does not own the review', async () => {
-      reviewRepository.findOne.mockResolvedValue(null); // Not found because of createdBy filter
+      reviewRepository.findOne.mockResolvedValue(null);
 
       await expect(
-        service.updateReviewStatus(mockReviewId, updateReviewStatusDto),
+        service.updateReview(mockReviewId, updateReviewDto),
       ).rejects.toThrow(BadRequestException);
       expect(reviewRepository.findOne).toHaveBeenCalledWith({
         where: { id: mockReviewId, createdBy: mockUserId },
@@ -252,19 +256,105 @@ describe('ReviewService', () => {
       reviewRepository.create.mockReturnValue(updatedReview as any);
       reviewRepository.save.mockResolvedValue(updatedReview as any);
 
-      const result = await service.updateReviewStatus(
-        mockReviewId,
-        updateReviewStatusDto,
-      );
+      const result = await service.updateReview(mockReviewId, updateReviewDto);
 
       expect(result).toEqual({ success: true });
       expect(reviewRepository.findOne).toHaveBeenCalledWith({
         where: { id: mockReviewId, createdBy: mockUserId },
       });
-      expect(reviewRepository.create).toHaveBeenCalledWith({
+      expect(reviewRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ...mockReview,
+          status: ReviewStatus.HIDDEN,
+        }),
+      );
+      expect(reviewRepository.save).toHaveBeenCalled();
+    });
+
+    it('should throw ForbiddenException when editing note after 10 minutes from createdAt', async () => {
+      const oldReview = {
         ...mockReview,
-        status: ReviewStatus.HIDDEN,
+        createdAt: new Date(Date.now() - 11 * 60 * 1000), // 11 minutes ago
+      };
+      reviewRepository.findOne.mockResolvedValue(oldReview as any);
+
+      await expect(
+        service.updateReview(mockReviewId, { note: 'Updated note' }),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.updateReview(mockReviewId, { note: 'Updated note' }),
+      ).rejects.toThrow(
+        'Note can only be edited within 10 minutes of review creation',
+      );
+      expect(reviewRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('should allow editing note within 10 minutes of createdAt', async () => {
+      const recentReview = {
+        ...mockReview,
+        createdAt: new Date(Date.now() - 5 * 60 * 1000), // 5 minutes ago
+        note: null,
+      };
+      reviewRepository.findOne.mockResolvedValue(recentReview as any);
+      const updatedReview = {
+        ...recentReview,
+        note: 'New note',
+        noteEditedAt: expect.any(Date),
+      };
+      reviewRepository.create.mockReturnValue(updatedReview as any);
+      reviewRepository.save.mockResolvedValue(updatedReview as any);
+
+      const result = await service.updateReview(mockReviewId, {
+        note: 'New note',
       });
+
+      expect(result).toEqual({ success: true });
+      expect(reviewRepository.save).toHaveBeenCalled();
+    });
+
+    it('should not update note or noteEditedAt when note key is absent', async () => {
+      const existingNoteEditedAt = new Date('2025-01-15T12:00:00Z');
+      const reviewWithNote = {
+        ...mockReview,
+        createdAt: new Date(Date.now() - 5 * 60 * 1000),
+        note: 'Existing note',
+        noteEditedAt: existingNoteEditedAt,
+      };
+      reviewRepository.findOne.mockResolvedValue(reviewWithNote as any);
+      reviewRepository.create.mockImplementation((entity) => entity as any);
+      reviewRepository.save.mockResolvedValue(reviewWithNote as any);
+
+      await service.updateReview(mockReviewId, { status: ReviewStatus.HIDDEN });
+
+      expect(reviewRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          note: 'Existing note',
+          noteEditedAt: existingNoteEditedAt,
+          status: ReviewStatus.HIDDEN,
+        }),
+      );
+      expect(reviewRepository.save).toHaveBeenCalled();
+    });
+
+    it('should set note to null and noteEditedAt to now when FE sends note: null', async () => {
+      const reviewWithNote = {
+        ...mockReview,
+        createdAt: new Date(Date.now() - 5 * 60 * 1000),
+        note: 'Existing note',
+        noteEditedAt: new Date('2025-01-15T12:00:00Z'),
+      };
+      reviewRepository.findOne.mockResolvedValue(reviewWithNote as any);
+      reviewRepository.create.mockImplementation((entity) => entity as any);
+      reviewRepository.save.mockResolvedValue(reviewWithNote as any);
+
+      await service.updateReview(mockReviewId, { note: null } as any);
+
+      expect(reviewRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          note: null,
+          noteEditedAt: expect.any(Date),
+        }),
+      );
       expect(reviewRepository.save).toHaveBeenCalled();
     });
   });
@@ -348,6 +438,8 @@ describe('ReviewService', () => {
           name: mockUser.name,
           profileImage: mockUser.profileImageUrl,
         },
+        note: null,
+        noteEditedAt: null,
       });
       expect(result.count).toBe(1);
     });
@@ -503,6 +595,8 @@ describe('ReviewService', () => {
           name: mockUser.name,
           profileImage: mockUser.profileImageUrl,
         },
+        note: null,
+        noteEditedAt: null,
       });
     });
   });
