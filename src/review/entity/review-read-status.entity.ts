@@ -1,7 +1,7 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, Unique } from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('review_read_status')
-@Unique(['userId', 'reviewId'])
+@Index('IDX_review_read_status_user_review', ['userId', 'reviewId'], { unique: true })
 export class ReviewReadStatus {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
