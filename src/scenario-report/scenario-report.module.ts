@@ -8,6 +8,8 @@ import { ScenarioReportTranscriptService } from './service/scenario-report-trans
 import { ScenarioReportGateway } from './gateway/scenario-report.gateway';
 import { ScenarioReportNotificationService } from './service/scenario-report-notification.service';
 import { ScenarioReportRepository } from './repository/scenario-report.repository';
+import { ScenarioReportTimerService } from './service/scenario-report-timer.service';
+import { ScenarioReportSchedulerRegistrationService } from './service/scenario-report-scheduler-registration.service';
 import { AiModule } from '../ai/ai.module';
 import { LanguageModule } from '../language/language.module';
 import { ScenarioReportWebhookController } from './controller/scenario-report-webhook.controller';
@@ -28,6 +30,8 @@ import { LearnModule } from 'src/learn/learn.module';
     ScenarioReportTranscriptService,
     ScenarioReportGateway,
     ScenarioReportNotificationService,
+    ScenarioReportTimerService,
+    ScenarioReportSchedulerRegistrationService,
   ],
   exports: [ScenarioReportService],
 })

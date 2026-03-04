@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { In } from 'typeorm';
+import { In, LessThan } from 'typeorm';
 import { ScenarioReport } from '../entity/scenario-report.entity';
 import { ScenarioReportStatus } from '../enum/scenario-report.enum';
 import {
@@ -17,7 +17,10 @@ import {
 import { ScenarioReportNotificationService } from './scenario-report-notification.service';
 import { ScenarioReportRepository } from '../repository/scenario-report.repository';
 import { ScenarioReportTranscriptService } from './scenario-report-transcript.service';
-import { SCENARIO_REPORT_END_STATUSES } from '../constants/scenario-report.constant';
+import {
+  SCENARIO_REPORT_END_STATUSES,
+  SCENARIO_REPORT_PENDING_STATUSES,
+} from '../constants/scenario-report.constant';
 import { AiService } from '../../ai/service/ai.service';
 import { SharedLanguageService } from '../../language/service/shared-language.service';
 import { LoggerService } from '../../logger/logger.service';
@@ -27,6 +30,13 @@ import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service
 import { Languages } from 'src/language/entity/languages.entity';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { RedisService } from '../../redis/service/redis.service';
+import {
+  SCENARIO_REPORT_REDIS_KEY_PREFIX,
+  SCENARIO_REPORT_TIMEOUT_MINUTES,
+  SCENARIO_REPORT_TTL_SECONDS,
+} from '../constants/scenario-report.constant';
+import { TIME } from 'src/common/constants/time.constants';
 
 @Injectable()
 export class ScenarioReportService {
@@ -42,6 +52,7 @@ export class ScenarioReportService {
     private readonly sharedLanguageService: SharedLanguageService,
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly openAITranslationsService: OpenAITranslationsService,
+    private readonly redisService: RedisService,
   ) {}
 
   async createScenarioReport(
@@ -84,6 +95,12 @@ export class ScenarioReportService {
     this.scenarioReportNotificationService.notifyUpdate(
       scenarioReport.createdBy,
       scenarioReport.id,
+    );
+
+    await this.redisService.set(
+      `${SCENARIO_REPORT_REDIS_KEY_PREFIX}:${scenarioReport.id}`,
+      scenarioReport.id,
+      SCENARIO_REPORT_TTL_SECONDS,
     );
 
     this.triggerScenarioReportGeneration(scenarioReport, languages[0]?.value);
@@ -155,14 +172,20 @@ export class ScenarioReportService {
         report.id,
       );
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       this.logger.error(
-        `Scenario report generation failed for report ${report.id}: ${error instanceof Error ? error.message : String(error)}`,
+        `Scenario report generation failed for report ${report.id}: ${errorMessage}`,
       );
 
       await this.scenarioReportRepository.update(report.id, {
         status: ScenarioReportStatus.FAILED,
+        metadata: { error: errorMessage } as Record<string, any>,
         updatedBy: report.updatedBy,
       });
+      await this.redisService.del(
+        `${SCENARIO_REPORT_REDIS_KEY_PREFIX}:${report.id}`,
+      );
 
       this.scenarioReportNotificationService.notifyUpdate(
         report.createdBy,
@@ -268,6 +291,9 @@ export class ScenarioReportService {
       updatedBy: userId,
       endedAt: new Date(),
     });
+    await this.redisService.del(
+      `${SCENARIO_REPORT_REDIS_KEY_PREFIX}:${reportId}`,
+    );
 
     this.scenarioReportNotificationService.notifyUpdate(
       report.createdBy,
@@ -347,6 +373,14 @@ export class ScenarioReportService {
 
       if (Object.keys(updatePayload).length > 0) {
         await this.scenarioReportRepository.update(reportId, updatePayload);
+        if (
+          dto.status !== undefined &&
+          SCENARIO_REPORT_END_STATUSES.includes(dto.status)
+        ) {
+          await this.redisService.del(
+            `${SCENARIO_REPORT_REDIS_KEY_PREFIX}:${reportId}`,
+          );
+        }
       }
 
       if (dto.transcripts && dto.transcripts.length > 0) {
@@ -380,5 +414,92 @@ export class ScenarioReportService {
       reportId,
       options,
     );
+  }
+
+  async handleExpiredReportGeneration(reportId: string): Promise<void> {
+    const report = await this.scenarioReportRepository.findOne({
+      where: { id: reportId },
+    });
+    if (!report || SCENARIO_REPORT_END_STATUSES.includes(report.status)) {
+      return;
+    }
+    const timeoutCutoff = new Date(
+      new Date().getTime() -
+        SCENARIO_REPORT_TIMEOUT_MINUTES * TIME.MINUTE_IN_MS,
+    );
+    if (report.createdAt > timeoutCutoff) {
+      return;
+    }
+    const result = await this.scenarioReportRepository.update(
+      {
+        id: reportId,
+        status: In(SCENARIO_REPORT_PENDING_STATUSES),
+      },
+      {
+        status: ScenarioReportStatus.FAILED,
+        metadata: { error: 'Failed due to timeout' } as Record<string, any>,
+        endedAt: new Date(),
+      },
+    );
+    if (result.affected && result.affected > 0) {
+      this.logger.info(
+        `Marked scenario report ${reportId} as FAILED due to TTL expiration`,
+      );
+      this.scenarioReportNotificationService.notifyUpdate(
+        report.createdBy,
+        reportId,
+      );
+    }
+  }
+
+  async findStalePendingScenarioReports(): Promise<ScenarioReport[]> {
+    const cutoff = new Date(
+      new Date().getTime() -
+        SCENARIO_REPORT_TIMEOUT_MINUTES * TIME.MINUTE_IN_MS,
+    );
+    return this.scenarioReportRepository.find({
+      where: {
+        status: In(SCENARIO_REPORT_PENDING_STATUSES),
+        createdAt: LessThan(cutoff),
+      },
+    });
+  }
+
+  async markStaleReportsAsFailed(): Promise<void> {
+    const staleReports = await this.findStalePendingScenarioReports();
+    try {
+      const result = await this.scenarioReportRepository.update(
+        {
+          id: In(staleReports.map((report) => report.id)),
+          status: In(SCENARIO_REPORT_PENDING_STATUSES),
+        },
+        {
+          status: ScenarioReportStatus.FAILED,
+          metadata: { error: 'Failed due to timeout' } as Record<string, any>,
+          endedAt: new Date(),
+        },
+      );
+      if (result.affected && result.affected > 0) {
+        this.logger.info(
+          `Marked ${result.affected} stale scenario reports as FAILED due to TTL expiration`,
+        );
+        for (const report of staleReports) {
+          this.scenarioReportNotificationService.notifyUpdate(
+            report.createdBy,
+            report.id,
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to mark ${staleReports.length} stale scenario reports as FAILED due to TTL expiration: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    if (staleReports.length > 0) {
+      this.logger.debug(
+        `Cron fallback marked ${staleReports.length} stale scenario report(s) as FAILED due to TTL expiration`,
+      );
+    }
   }
 }

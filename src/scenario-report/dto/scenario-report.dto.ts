@@ -137,6 +137,14 @@ export class ScenarioReportDto {
   metrics?: Record<string, number>;
 
   @ApiProperty({
+    description: 'Metadata',
+    example: { error: 'TTL expired' },
+    required: false,
+  })
+  @IsOptional()
+  metadata?: Record<string, any>;
+
+  @ApiProperty({
     description: 'Date when the scenario report was created',
     type: Date,
     example: '2026-02-04T11:47:56.722Z',
