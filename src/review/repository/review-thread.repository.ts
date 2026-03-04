@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { ReviewThread } from '../entity/review-thread.entity';
-import { Pagination } from 'src/common/type/common.type';
 import { ReviewComment } from '../entity/review-comment.entity';
 import { ReviewCommentCount } from '../type/review-thread.type';
 import { Review } from '../entity/review.entity';
+import { Pagination } from 'src/common/type/common.type';
 
 @Injectable()
 export class ReviewThreadRepository extends Repository<ReviewThread> {
@@ -21,6 +21,10 @@ export class ReviewThreadRepository extends Repository<ReviewThread> {
       'reviewThread.reviewId = :reviewId',
       { reviewId },
     );
+    query.andWhere(
+      'reviewThread.messageId IS NOT NULL AND reviewThread.selection IS NOT NULL',
+    );
+
     if (!isCommentVisible) {
       query.andWhere(
         `EXISTS (

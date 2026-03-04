@@ -14,14 +14,14 @@ export class ReviewThread extends BaseEntity {
   @Column({ type: 'uuid' })
   reviewId!: string;
 
-  @Column()
-  messageId!: number;
+  @Column({ nullable: true })
+  messageId?: number;
 
   @Column()
   createdBy!: number;
 
-  @Column({ type: 'jsonb' })
-  selection!: Record<string, any>;
+  @Column({ type: 'jsonb', nullable: true })
+  selection?: Record<string, any>;
 
   @DeleteDateColumn()
   deletedAt?: Date;
