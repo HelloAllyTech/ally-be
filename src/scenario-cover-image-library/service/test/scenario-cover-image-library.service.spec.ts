@@ -136,16 +136,45 @@ describe('ScenarioCoverImageLibraryService', () => {
       expect(mockRepo.save).not.toHaveBeenCalled();
       expect(res).toEqual(existing);
     });
+
+    it('accepts public image URLs', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(42);
+      const publicUrl = 'https://cdn.example.com/assets/cover.jpg';
+      mockRepo.findOne.mockResolvedValue(null);
+      const saved = { ...mockCoverImage, id: 'new-id', imageUrl: publicUrl };
+      mockRepo.create.mockReturnValue(saved);
+      mockRepo.save.mockResolvedValue(saved);
+
+      const res = await service.addCoverImage({ imageUrl: publicUrl });
+
+      expect(mockRepo.create).toHaveBeenCalledWith({
+        imageUrl: publicUrl,
+        createdBy: 42,
+      });
+      expect(res).toEqual(saved);
+    });
   });
 
   describe('getCoverImages', () => {
     it('returns coverImages and count from repository', async () => {
-      const result = { coverImages: [mockCoverImage], count: 1 };
-      mockRepo.getCoverImages.mockResolvedValue(result);
+      mockRepo.getCoverImages.mockResolvedValue({
+        coverImages: [mockCoverImage],
+        count: 1,
+      });
 
       const res = await service.getCoverImages({ limit: 10, offset: 5 });
 
-      expect(res).toEqual(result);
+      expect(res).toEqual({
+        coverImages: [
+          {
+            id: mockCoverImage.id,
+            imageUrl: mockCoverImage.imageUrl,
+            createdAt: mockCoverImage.createdAt,
+            updatedAt: mockCoverImage.updatedAt,
+          },
+        ],
+        count: 1,
+      });
       expect(mockRepo.getCoverImages).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 10, offset: 5 }),
       );
@@ -161,7 +190,13 @@ describe('ScenarioCoverImageLibraryService', () => {
       expect(mockRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'img-uuid-1' },
       });
-      expect(res).toEqual(mockCoverImage);
+      expect(res).toEqual({
+        id: mockCoverImage.id,
+        imageUrl: mockCoverImage.imageUrl,
+        createdAt: mockCoverImage.createdAt,
+        updatedAt: mockCoverImage.updatedAt,
+      });
+      expect(res).not.toHaveProperty('createdBy');
     });
   });
 
@@ -179,6 +214,25 @@ describe('ScenarioCoverImageLibraryService', () => {
       expect(mockS3Service.deleteS3Image).toHaveBeenCalledWith(
         'test-assets-bucket',
         mockCoverImage.imageUrl,
+      );
+      expect(mockRepo.delete).toHaveBeenCalledWith('img-uuid-1');
+      expect(res).toEqual({ success: true });
+    });
+
+    it('removes library record for non-S3 URL (skips S3 delete)', async () => {
+      const externalImage = {
+        ...mockCoverImage,
+        imageUrl: 'https://cdn.example.com/images/cover.jpg',
+      };
+      mockRepo.findOne.mockResolvedValue(externalImage);
+      mockS3Service.deleteS3Image.mockResolvedValue({ success: false });
+      mockRepo.delete.mockResolvedValue({ affected: 1 });
+
+      const res = await service.delete('img-uuid-1');
+
+      expect(mockS3Service.deleteS3Image).toHaveBeenCalledWith(
+        'test-assets-bucket',
+        externalImage.imageUrl,
       );
       expect(mockRepo.delete).toHaveBeenCalledWith('img-uuid-1');
       expect(res).toEqual({ success: true });

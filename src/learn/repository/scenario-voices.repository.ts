@@ -81,27 +81,42 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
   }
 
   async getLanguagesWithVoices(active?: boolean, voicesNeeded?: boolean) {
+    // When voicesNeeded is false: return ALL active languages (including those with no voices)
+    // so users can create the first voice for a new language in the Create Voice form.
+    // When voicesNeeded is true: return only languages that have at least one scenario voice.
+    const requiresVoices = voicesNeeded === true;
+
     const query = this.createQueryBuilder()
       .select('la.id', 'language_id')
       .addSelect('la.value', 'value')
       .addSelect('la.label', 'label')
       .addSelect(
         voicesNeeded
-          ? `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider,'config',sv.config))`
+          ? `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider))`
           : `'[]'::jsonb`,
         'voices',
       )
       .from('languages', 'la')
-      .innerJoin('scenario_voices', 'sv', 'la.id = sv.languageId')
-      .groupBy('la.id, la.value, la.label')
-      .having('COUNT(sv.id) > 0');
+      .leftJoin('scenario_voices', 'sv', 'la.id = sv.languageId');
 
     if (active !== undefined) {
       query.where('la.active = :active', { active });
-      query.andWhere('sv.active = :active', { active });
+      if (requiresVoices) {
+        query.andWhere('sv.active = :active', { active });
+        query.andWhere('sv.id IS NOT NULL');
+      }
     } else {
       query.where('la.active = true');
-      query.andWhere('sv.active = true');
+      if (requiresVoices) {
+        query.andWhere('sv.active = true');
+        query.andWhere('sv.id IS NOT NULL');
+      }
+    }
+
+    if (requiresVoices) {
+      query.groupBy('la.id, la.value, la.label').having('COUNT(sv.id) > 0');
+    } else {
+      query.groupBy('la.id, la.value, la.label');
     }
 
     const rows = await query.getRawMany();
@@ -147,6 +162,19 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     }
 
     return await query.getRawMany();
+  }
+
+  async getVoiceWithLanguageCode(voiceId: string) {
+    return this.createQueryBuilder('sv')
+      .select('sv.id', 'id')
+      .addSelect('sv.name', 'name')
+      .addSelect('sv.provider', 'provider')
+      .addSelect('sv.config', 'config')
+      .addSelect('sv.languageId', 'languageId')
+      .addSelect('la.value', 'languageCode')
+      .innerJoin('languages', 'la', 'la.id = sv.languageId')
+      .where('sv.id = :voiceId', { voiceId })
+      .getRawOne();
   }
 
   async getFallbackVoice(languageId: number, gender: string) {

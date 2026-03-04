@@ -31,10 +31,16 @@ export class ScenarioReportTranscriptService {
 
   async getScenarioReportTranscripts(
     reportId: string,
+    options?: { limit?: number; offset?: number },
   ): Promise<ScenarioReportTranscriptResponseDto> {
     const [transcript, count] =
       await this.scenarioReportTranscriptRepository.findAndCount({
         where: { scenarioReportId: reportId },
+        order: {
+          startSeconds: 'ASC',
+        },
+        ...(options?.limit !== undefined && { take: options.limit }),
+        ...(options?.offset !== undefined && { skip: options.offset }),
       });
     return {
       messages: transcript,

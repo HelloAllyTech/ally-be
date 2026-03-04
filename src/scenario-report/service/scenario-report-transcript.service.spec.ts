@@ -96,6 +96,7 @@ describe('ScenarioReportTranscriptService', () => {
 
       expect(repository.findAndCount).toHaveBeenCalledWith({
         where: { scenarioReportId: reportId },
+        order: { startSeconds: 'ASC' },
       });
       expect(result).toEqual({ messages, count: 1 });
     });

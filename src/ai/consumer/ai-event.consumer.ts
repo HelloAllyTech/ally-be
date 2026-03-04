@@ -11,7 +11,6 @@ export class AiEventConsumer {
 
   constructor(private readonly processorRegistry: ProcessorRegistry) {}
 
-  @SqsListener(process.env.SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL!)
   async handleTranscribeAndSummarizeResponse(message: Message): Promise<void> {
     if (!message.Body) return;
 

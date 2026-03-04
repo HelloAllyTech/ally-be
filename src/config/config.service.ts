@@ -154,12 +154,6 @@ export class AppConfigService {
         requestDlqUrl: this.configService.get<string>(
           'SQS_TRANSCRIPTION_REQUEST_DLQ_URL',
         ),
-        responseQueueUrl: this.configService.get<string>(
-          'SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL',
-        ),
-        responseDlqUrl: this.configService.get<string>(
-          'SQS_TRANSCRIPTION_RESPONSE_DLQ_URL',
-        ),
       },
       audioFile: {
         retryQueueUrl: this.configService.get<string>(
@@ -167,12 +161,6 @@ export class AppConfigService {
         ),
         retryDlqUrl: this.configService.get<string>(
           'SQS_AUDIO_FILE_RETRY_DLQ_URL',
-        ),
-        uploadQueueUrl: this.configService.get<string>(
-          'SQS_AUDIO_UPLOAD_QUEUE_URL',
-        ),
-        uploadDlqUrl: this.configService.get<string>(
-          'SQS_AUDIO_UPLOAD_DLQ_URL',
         ),
       },
       learn: {
@@ -338,6 +326,15 @@ export class AppConfigService {
         'AI_CHAT_MAX_CONTEXT_TOKENS',
         100000,
       ),
+    };
+  }
+
+  get voicePreview() {
+    return {
+      deepgramApiKey: this.configService.get<string>('DEEPGRAM_API_KEY'),
+      elevenlabsApiKey: this.configService.get<string>('ELEVENLABS_API_KEY'),
+      sarvamApiKey: this.configService.get<string>('SARVAM_API_KEY'),
+      humeApiKey: this.configService.get<string>('HUME_API_KEY'),
     };
   }
 }

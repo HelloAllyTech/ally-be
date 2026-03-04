@@ -107,10 +107,13 @@ import {
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
 import { GeneratableField } from '../enum/generatable-field.enum';
+import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 import {
   isValidTimeFormatHHMMSS,
   parseTimeToSeconds,
 } from 'src/common/util/time.util';
+import { COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS } from '../constants/competency-behavior-instruction-templates.constants';
+import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 
 @Injectable()
 export class ScenarioService {
@@ -183,7 +186,8 @@ export class ScenarioService {
       options,
     );
     const mappedData = scenarios.map((item) => {
-      const isPreviewEnabled = this.checkPreviewEnabled(item);
+      const isPreviewEnabled =
+        this.scenarioSharedService.hasAllActiveScenarioMandatoryFields(item);
 
       return {
         id: item.scenario_id,
@@ -204,42 +208,6 @@ export class ScenarioService {
     });
 
     return { data: mappedData };
-  }
-
-  private checkPreviewEnabled(item: any): boolean {
-    const metadata = item.scenario_metadata || {};
-
-    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
-      this.configService.featureFlag.stateBasedScenarioInstructions,
-    );
-
-    const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter((field) => {
-      if (field === 'behaviorInstructions') {
-        const instructions = item.behaviorInstructions;
-        return (
-          !instructions ||
-          (Array.isArray(instructions) && instructions.length === 0)
-        );
-      }
-      let value = undefined;
-
-      if (metadata.hasOwnProperty(field)) {
-        value = metadata[field];
-      } else {
-        const prefixedFieldName = `scenario_${field}`;
-        if (item.hasOwnProperty(prefixedFieldName)) {
-          value = item[prefixedFieldName];
-        }
-      }
-
-      if (value === null || value === undefined) return true;
-      if (typeof value === 'string' && value.trim() === '') return true;
-      if (Array.isArray(value) && value.length === 0) return true;
-
-      return false;
-    });
-
-    return missingFields.length === 0;
   }
 
   async getScenarioEvents(scenarioId: number, options?: Pagination) {
@@ -561,6 +529,13 @@ export class ScenarioService {
   ): Promise<void> {
     this.validateScenarioStatus(createScenarioDto);
 
+    if (createScenarioDto.status === ScenarioStatus.ACTIVE) {
+      await this.validateLinguisticStyleSamplesForNonEnglish(
+        createScenarioDto.languageVoices,
+        createScenarioDto.linguisticStyleSamples,
+      );
+    }
+
     if (createScenarioDto.voiceId)
       await this.getScenarioVoice(createScenarioDto?.voiceId);
     if (
@@ -716,6 +691,60 @@ export class ScenarioService {
     if (timeInSeconds < minSeconds || timeInSeconds > maxSeconds) {
       throw new BadRequestException(
         `Time value must be between ${LOWER_MAX_TIMER_VALUE} and ${UPPER_MAX_TIMER_VALUE}`,
+      );
+    }
+  }
+
+  /**
+   * For ACTIVE scenarios with non-English languages in languageVoices,
+   * linguisticStyleSamples must contain at least one non-empty sample per language.
+   */
+  private async validateLinguisticStyleSamplesForNonEnglish(
+    languageVoices?: Record<string, string>,
+    linguisticStyleSamples?: Record<string, string[]>,
+  ): Promise<void> {
+    if (!languageVoices || Object.keys(languageVoices).length === 0) {
+      return;
+    }
+
+    const languageIds = Object.keys(languageVoices)
+      .map((id) => parseInt(id, 10))
+      .filter((id) => !Number.isNaN(id));
+
+    if (languageIds.length === 0) {
+      return;
+    }
+
+    const languages =
+      await this.sharedLanguageService.getLanguagesByIds(languageIds);
+    const nonEnglishIds = languages
+      .filter((lang) => {
+        const code = (lang.translationCode || lang.value || '').toLowerCase();
+        return code && !code.startsWith('en');
+      })
+      .map((lang) => String(lang.id));
+
+    if (nonEnglishIds.length === 0) {
+      return;
+    }
+
+    const samples = linguisticStyleSamples ?? {};
+    const missing: string[] = [];
+    for (const langId of nonEnglishIds) {
+      const langSamples = samples[langId];
+      const hasContent =
+        Array.isArray(langSamples) &&
+        langSamples.some((s) => typeof s === 'string' && s.trim().length > 0);
+      if (!hasContent) {
+        const lang = languages.find((l) => String(l.id) === langId);
+        missing.push(lang?.label ?? langId);
+      }
+    }
+
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        `Linguistic style samples are required for non-English languages. ` +
+          `Please provide at least one sample for: ${missing.join(', ')}`,
       );
     }
   }
@@ -1109,6 +1138,18 @@ export class ScenarioService {
         );
       }
       await this.validateScenarioStatus(updateScenarioDto);
+
+      if (updateScenarioDto.status === ScenarioStatus.ACTIVE) {
+        const languageVoices =
+          updateScenarioDto.languageVoices ?? scenario.metadata?.languageVoices;
+        const linguisticStyleSamples =
+          updateScenarioDto.linguisticStyleSamples ??
+          scenario.metadata?.linguisticStyleSamples;
+        await this.validateLinguisticStyleSamplesForNonEnglish(
+          languageVoices,
+          linguisticStyleSamples,
+        );
+      }
     }
 
     if (updateScenarioDto.voiceId) {
@@ -1712,10 +1753,38 @@ export class ScenarioService {
         l.translationCode.trim(),
       );
 
-      const translatedMap = (await this.buildTranslatedMetadataForLanguageCodes(
-        sanitized as Partial<ScenarioEventsTranslationData>,
-        languageCodes,
-      )) as Record<string, ScenarioEventsTranslationData>;
+      let translatedMap: Record<string, ScenarioEventsTranslationData> = {};
+      try {
+        const openaiResult =
+          await this.openaiTranslationsService.translateObjectToLanguages(
+            sanitized as Partial<ScenarioEventsTranslationData>,
+            languageCodes,
+            PromptCode.OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE,
+          );
+
+        if (openaiResult && Object.keys(openaiResult).length > 0) {
+          this.logger?.debug?.(
+            '[persistScenarioEventTranslations] successfully translated using OpenAI',
+          );
+          translatedMap = openaiResult as Record<
+            string,
+            ScenarioEventsTranslationData
+          >;
+        }
+      } catch (err) {
+        this.logger?.error?.(
+          '[persistScenarioEventTranslations] translation call failed',
+          { err, languageCodes },
+        );
+        translatedMap = {};
+      }
+
+      if (!translatedMap || Object.keys(translatedMap).length === 0) {
+        this.logger?.warn?.(
+          `[persistSessionEventTranslations] ${scenarioEvent.id}: no translations found, skipping`,
+        );
+        continue;
+      }
 
       // Map translated map back to sessionEventId + languageId
       const translatedList: Array<CreateScenarioEventsTranslation> = [];
@@ -1801,9 +1870,18 @@ export class ScenarioService {
   async generateField(
     generateScenarioFieldDto: GenerateScenarioFieldDto,
   ): Promise<GenerateScenarioFieldResponseDto> {
-    const { fieldName, scenarioContext } = generateScenarioFieldDto;
+    const { fieldName, scenarioContext, model } = generateScenarioFieldDto;
 
-    const promptCode = getPromptCodeForScenarioField(fieldName);
+    let promptCode = getPromptCodeForScenarioField(fieldName);
+
+    // Use English-specific prompt for linguistic style when language is English
+    if (
+      fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES &&
+      scenarioContext.languageCode?.toLowerCase().startsWith('en')
+    ) {
+      promptCode =
+        PromptCode.OPENAI_SIMULATION_LINGUISTIC_STYLE_SAMPLES_ENGLISH_PROMPT_CODE;
+    }
 
     if (!promptCode) {
       throw new BadRequestException(
@@ -1813,20 +1891,148 @@ export class ScenarioService {
 
     let behaviorIdMapping;
     if (fieldName === GeneratableField.BEHAVIOR_INSTRUCTIONS) {
+      if (!scenarioContext.competency) {
+        throw new BadRequestException(
+          'Competency is required for behavior instruction generation',
+        );
+      }
+
       const { data: behaviors } = await this.behaviorService.getBehaviors();
       const result =
         this.openAIAutofillService.buildBehaviorIdMapping(behaviors);
       behaviorIdMapping = result.mapping;
-      scenarioContext.allowedHelperBehaviorsList = result.formattedList;
+
+      this.logger.info(
+        `Loaded ${behaviors.length} behaviors, mapped ${result.mapping.size} IDs`,
+      );
+
+      let hasPredefined = false;
+
+      const predefinedBehaviors =
+        COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS[scenarioContext.competency];
+
+      if (predefinedBehaviors?.length) {
+        const nameToSeqId = new Map<string, number>();
+        for (const [seqId, behavior] of result.mapping.entries()) {
+          nameToSeqId.set(behavior.name, seqId);
+        }
+
+        const shouldDo: number[] = [];
+        const shouldNotDo: number[] = [];
+
+        for (const template of predefinedBehaviors) {
+          const seqId = nameToSeqId.get(template.behaviorName);
+          if (seqId === undefined) continue;
+          if (template.category === BehaviorInstructionCategory.SHOULD_DO) {
+            shouldDo.push(seqId);
+          } else {
+            shouldNotDo.push(seqId);
+          }
+        }
+
+        if (shouldDo.length > 0 || shouldNotDo.length > 0) {
+          hasPredefined = true;
+          const predefinedDoc: Record<string, number[]> = {};
+          if (shouldDo.length > 0) predefinedDoc.SHOULD_DO = shouldDo;
+          if (shouldNotDo.length > 0) predefinedDoc.SHOULD_NOT_DO = shouldNotDo;
+          scenarioContext.predefinedBehaviorInstructionsDoc =
+            JSON.stringify(predefinedDoc);
+
+          const usedSeqIds = new Set([...shouldDo, ...shouldNotDo]);
+          const relevantLines = [...usedSeqIds]
+            .map((seqId) => {
+              const b = result.mapping.get(seqId);
+              return b ? `${seqId}. ${b.name}` : null;
+            })
+            .filter(Boolean);
+          scenarioContext.allowedHelperBehaviorsList = relevantLines.join('\n');
+
+          this.logger.info(
+            `Using predefined presets: ${shouldDo.length} SHOULD_DO, ${shouldNotDo.length} SHOULD_NOT_DO behaviors`,
+          );
+        }
+      }
+
+      if (!hasPredefined) {
+        scenarioContext.allowedHelperBehaviorsList = result.formattedList;
+        this.logger.info(
+          `No presets found for "${scenarioContext.competency}", using full behavior list`,
+        );
+      }
+    }
+
+    let contextToUse = scenarioContext;
+    if (fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES) {
+      if (!scenarioContext.languageId || !scenarioContext.languageCode) {
+        throw new BadRequestException(
+          'languageId and languageCode are required for linguistic style samples generation',
+        );
+      }
+      const languageName =
+        scenarioContext.languageName ||
+        this.getLanguageNameFromCode(scenarioContext.languageCode);
+      // Build prompt vars from visible UI fields only: characterProfileText, challengeDescription
+      const characterSummary = scenarioContext.characterProfileText ?? '';
+      const challengeSummary = scenarioContext.challengeDescription ?? '';
+      const emotionalState = [characterSummary, challengeSummary]
+        .filter(Boolean)
+        .join('. ');
+      contextToUse = {
+        ...scenarioContext,
+        language_name: languageName,
+        language_code: scenarioContext.languageCode,
+        location: scenarioContext.currentLocation ?? '',
+        name: scenarioContext.name ?? 'Client',
+        age: scenarioContext.age ?? '',
+        gender: scenarioContext.gender ?? '',
+        emotional_state: emotionalState,
+      } as any;
     }
 
     const content = await this.openAIAutofillService.generateFieldContent(
       fieldName,
       promptCode,
-      scenarioContext,
+      contextToUse,
       behaviorIdMapping,
+      model,
     );
 
+    this.logger.info(`Generation completed for ${fieldName}`);
+
     return { fieldName, content };
+  }
+
+  private getLanguageNameFromCode(code: string): string {
+    const languageNames: Record<string, string> = {
+      en: 'English',
+      'en-IN': 'English (India)',
+      'en-US': 'English (United States)',
+      'en-GB': 'English (Global)',
+      ml: 'Malayalam',
+      'ml-IN': 'Malayalam',
+      hi: 'Hindi',
+      'hi-IN': 'Hindi',
+      bn: 'Bengali',
+      'bn-IN': 'Bengali',
+      ta: 'Tamil',
+      'ta-IN': 'Tamil',
+      te: 'Telugu',
+      'te-IN': 'Telugu',
+      kn: 'Kannada',
+      'kn-IN': 'Kannada',
+      mr: 'Marathi',
+      'mr-IN': 'Marathi',
+      gu: 'Gujarati',
+      'gu-IN': 'Gujarati',
+      pa: 'Punjabi',
+      'pa-IN': 'Punjabi',
+      ur: 'Urdu',
+      'ur-IN': 'Urdu',
+      or: 'Odia',
+      'or-IN': 'Odia',
+      as: 'Assamese',
+      'as-IN': 'Assamese',
+    };
+    return languageNames[code] ?? languageNames[code?.split('-')[0]] ?? code;
   }
 }

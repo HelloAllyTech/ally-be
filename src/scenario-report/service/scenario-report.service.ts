@@ -24,6 +24,9 @@ import { LoggerService } from '../../logger/logger.service';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { ScenarioReportTranscriptResponseDto } from '../dto/scenario-report-transcript.dto';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
+import { Languages } from 'src/language/entity/languages.entity';
+import { Scenarios } from 'src/learn/entity/scenarios.entity';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 
 @Injectable()
 export class ScenarioReportService {
@@ -38,6 +41,7 @@ export class ScenarioReportService {
     private readonly aiService: AiService,
     private readonly sharedLanguageService: SharedLanguageService,
     private readonly scenarioSharedService: ScenarioSharedService,
+    private readonly openAITranslationsService: OpenAITranslationsService,
   ) {}
 
   async createScenarioReport(
@@ -47,6 +51,20 @@ export class ScenarioReportService {
   ): Promise<CreateScenarioReportResponseDto> {
     //Check if there are any scenario reports in progress for the same scenario
     await this.checkForInProgressScenarioReports(scenarioId);
+    //Check if the scenario has all the active mandatory fields
+    const scenario =
+      await this.scenarioSharedService.getAdminScenario(scenarioId);
+    if (!scenario) {
+      throw new NotFoundException('Scenario not found');
+    }
+    if (
+      !this.scenarioSharedService.hasAllActiveScenarioMandatoryFields(scenario)
+    ) {
+      throw new BadRequestException(
+        'Required fields are missing for the scenario',
+      );
+    }
+
     const languages = await this.sharedLanguageService.getLanguagesByIds([
       createScenarioReportDto.languageId,
     ]);
@@ -104,8 +122,14 @@ export class ScenarioReportService {
           report.config.languageId,
         );
 
+      const translatedPrompt =
+        await this.openAITranslationsService.translateText(
+          report.config.helperAgentPrompt,
+          languageCode,
+        );
+
       await this.aiService.triggerScenarioReportGenerate({
-        prompt: report.config.helperAgentPrompt,
+        prompt: translatedPrompt,
         turns: report.config.turns,
         language: languageCode,
         scenario_id: report.scenarioId,
@@ -154,7 +178,18 @@ export class ScenarioReportService {
     if (!scenarioReport) {
       throw new NotFoundException('Scenario report not found');
     }
-    return scenarioReport;
+    const [languages, scenario] = await Promise.all([
+      this.sharedLanguageService.getLanguagesByIds([
+        scenarioReport.config.languageId,
+      ]),
+      this.scenarioSharedService.getScenarioById(scenarioReport.scenarioId),
+    ]);
+
+    return {
+      ...scenarioReport,
+      scenarioTitle: scenario?.title ?? '',
+      language: this.toReportLanguage(languages[0]),
+    };
   }
 
   async getScenarioReports(
@@ -182,10 +217,34 @@ export class ScenarioReportService {
           ...(statusList.length > 0 && { status: In(statusList) }),
         },
       });
+
+    const [languagesMap, scenario] = await Promise.all([
+      this.getLanguagesMap(
+        scenarioReports.map((report) => report.config.languageId),
+      ),
+      this.scenarioSharedService.getScenarioById(scenarioId),
+    ]);
+
     return {
-      data: scenarioReports,
+      data: scenarioReports.map((report) => ({
+        ...report,
+        scenarioTitle: scenario?.title ?? '',
+        language: this.toReportLanguage(languagesMap[report.config.languageId]),
+      })),
       count,
     };
+  }
+
+  private async getLanguagesMap(
+    languageIds: number[],
+  ): Promise<Record<number, Languages>> {
+    const languages = await this.sharedLanguageService.getLanguagesByIds([
+      ...new Set(languageIds),
+    ]);
+    return languages.reduce<Record<number, Languages>>((acc, language) => {
+      acc[language.id] = language;
+      return acc;
+    }, {});
   }
 
   async cancelScenarioReport(
@@ -223,59 +282,92 @@ export class ScenarioReportService {
     createdBy: number,
     lookbackMinutes?: number,
   ): Promise<ScenarioReportResponseDto> {
-    const data =
+    const reports =
       await this.scenarioReportRepository.findRecentReportsByCreatedBy(
         createdBy,
         lookbackMinutes,
       );
+
+    const scenarioIds = [
+      ...new Set(reports.map((report) => report.scenarioId)),
+    ];
+    const [languagesMap, scenarios] = await Promise.all([
+      this.getLanguagesMap(reports.map((report) => report.config.languageId)),
+      this.scenarioSharedService.getScenarioByIds(scenarioIds),
+    ]);
+
+    const scenariosMap = scenarios.reduce<Record<number, Scenarios>>(
+      (acc, scenario) => {
+        acc[scenario.id] = scenario;
+        return acc;
+      },
+      {},
+    );
+
     return {
-      data,
-      count: data.length,
+      data: reports.map((report) => ({
+        ...report,
+        scenarioTitle: scenariosMap[report.scenarioId]?.title ?? '',
+        language: this.toReportLanguage(languagesMap[report.config.languageId]),
+      })),
+      count: reports.length,
     };
+  }
+
+  private toReportLanguage(
+    lang: Languages | undefined,
+  ): { id: number; value: string; label: string } | undefined {
+    if (!lang) return undefined;
+    return { id: lang.id, value: lang.value, label: lang.label };
   }
 
   async updateScenarioReport(
     reportId: string,
     dto: UpdateScenarioReportDto,
   ): Promise<ScenarioReportDto> {
+    this.logger.info(
+      `Recieved webhook update for scenario report ${reportId} with status: ${dto.status}`,
+    );
+
     const report = await this.getScenarioReportById(reportId);
 
     if (SCENARIO_REPORT_END_STATUSES.includes(report.status)) {
-      throw new BadRequestException(
-        'Cannot update scenario report that is already completed, cancelled, or failed',
+      this.logger.warn(
+        `Cannot update scenario report ${reportId} that is already completed, cancelled, or failed`,
       );
-    }
-
-    const updatePayload: Partial<ScenarioReport> = {};
-    if (dto.metrics !== undefined) updatePayload.metrics = dto.metrics;
-    if (dto.status !== undefined) {
-      updatePayload.status = dto.status;
-      if (SCENARIO_REPORT_END_STATUSES.includes(dto.status)) {
-        updatePayload.endedAt = new Date();
+    } else {
+      const updatePayload: Partial<ScenarioReport> = {};
+      if (dto.metrics !== undefined) updatePayload.metrics = dto.metrics;
+      if (dto.status !== undefined) {
+        updatePayload.status = dto.status;
+        if (SCENARIO_REPORT_END_STATUSES.includes(dto.status)) {
+          updatePayload.endedAt = new Date();
+        }
       }
-    }
 
-    if (Object.keys(updatePayload).length > 0) {
-      await this.scenarioReportRepository.update(reportId, updatePayload);
-    }
+      if (Object.keys(updatePayload).length > 0) {
+        await this.scenarioReportRepository.update(reportId, updatePayload);
+      }
 
-    if (dto.transcripts && dto.transcripts.length > 0) {
-      await this.scenarioReportTranscriptService.addTranscripts(
+      if (dto.transcripts && dto.transcripts.length > 0) {
+        await this.scenarioReportTranscriptService.addTranscripts(
+          reportId,
+          dto.transcripts,
+        );
+      }
+
+      this.scenarioReportNotificationService.notifyUpdate(
+        report.createdBy,
         reportId,
-        dto.transcripts,
       );
     }
-
-    this.scenarioReportNotificationService.notifyUpdate(
-      report.createdBy,
-      reportId,
-    );
 
     return this.getScenarioReportById(reportId);
   }
 
   async getScenarioReportTranscripts(
     reportId: string,
+    options?: { limit?: number; offset?: number },
   ): Promise<ScenarioReportTranscriptResponseDto> {
     const report = await this.getScenarioReportById(reportId);
     if (report.status !== ScenarioReportStatus.COMPLETED) {
@@ -286,6 +378,7 @@ export class ScenarioReportService {
 
     return this.scenarioReportTranscriptService.getScenarioReportTranscripts(
       reportId,
+      options,
     );
   }
 }

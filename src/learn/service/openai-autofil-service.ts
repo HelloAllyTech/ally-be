@@ -123,6 +123,17 @@ export class OpenAIAutofillService {
           };
         }) as BehaviorInstructionItem[];
       }
+
+      case GeneratableField.LINGUISTIC_STYLE_SAMPLES: {
+        const parsed = JSON.parse(raw);
+        const samples = parsed?.samples;
+        if (!Array.isArray(samples)) {
+          return [];
+        }
+        return samples.filter(
+          (s: unknown): s is string => typeof s === 'string' && s.trim() !== '',
+        );
+      }
     }
   }
 
@@ -131,6 +142,7 @@ export class OpenAIAutofillService {
     promptCode: string,
     scenarioContext: ScenarioFieldContextDto,
     behaviorIdMapping?: BehaviorIdMapping,
+    modelOverride?: string,
   ): Promise<GeneratedContent> {
     const promptTemplate =
       await this.promptSharedService.getPromptByCode(promptCode);
@@ -156,7 +168,7 @@ export class OpenAIAutofillService {
       const jsonSchema = STRUCTURED_OUTPUT_SCHEMAS[fieldName];
 
       const response = await this.client.chat.completions.create({
-        model: this.model,
+        model: modelOverride ?? this.model,
         messages,
         ...(jsonSchema && {
           response_format: {

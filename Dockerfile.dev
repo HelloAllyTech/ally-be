@@ -9,7 +9,7 @@ RUN mkdir -p /mnt/audio_storage
 COPY package*.json ./
 
 # Install build dependencies for native modules (bcrypt)
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ ffmpeg
 
 # Install dependencies fresh in the container
 RUN npm install

@@ -45,7 +45,10 @@ import { Behavior } from '../entity/behavior.entity';
 import { BehaviorRepository } from '../repository/behavior.repository';
 import { BehaviorInstructionWithBehaviorsDto } from '../dto/behavior-instruction-response.dto';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
-import { isEnglishLanguage } from '../util/scenario.util';
+import {
+  getActiveScenarioMandatoryFields,
+  isEnglishLanguage,
+} from '../util/scenario.util';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 import {
@@ -103,6 +106,39 @@ export class ScenarioSharedService {
     return this.scenariosRepository.findOne({
       where: { id: scenarioId },
     });
+  }
+
+  hasAllActiveScenarioMandatoryFields(item: any): boolean {
+    const metadata = item.scenario_metadata ?? item.metadata ?? {};
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
+      this.configService.featureFlag.stateBasedScenarioInstructions,
+    );
+
+    const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter((field) => {
+      if (field === 'behaviorInstructions') {
+        const instructions =
+          item.behaviorInstructions ?? item.scenario_behaviorInstructions;
+        return (
+          !instructions ||
+          (Array.isArray(instructions) && instructions.length === 0)
+        );
+      }
+      const value = metadata[field] ?? item[`scenario_${field}`] ?? item[field];
+
+      if (value === null || value === undefined) return true;
+      if (typeof value === 'string' && value.trim() === '') return true;
+      if (Array.isArray(value) && value.length === 0) return true;
+
+      return false;
+    });
+
+    if (missingFields.length > 0) {
+      this.logger.warn(
+        `Missing mandatory fields for scenario ${item?.scenario_id ?? item?.id ?? 'unknown'}: ${missingFields.join(', ')}`,
+      );
+    }
+
+    return missingFields.length === 0;
   }
 
   async getScenarioSessionById(
@@ -296,6 +332,14 @@ export class ScenarioSharedService {
       promptData.competency = scenario.competency?.name;
     }
 
+    if (metadata?.languageId) {
+      const samples =
+        metadata?.linguisticStyleSamples?.[String(metadata.languageId)];
+      if (samples && Array.isArray(samples)) {
+        promptData.languageDialogueSamples = samples;
+      }
+    }
+
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
       // Ensure we have values even if not translated
@@ -470,6 +514,23 @@ export class ScenarioSharedService {
     }
 
     return scenarioVoice;
+  }
+
+  async getVoiceWithLanguageCode(voiceId: string) {
+    const voice =
+      await this.scenarioVoiceRepository.getVoiceWithLanguageCode(voiceId);
+
+    if (!voice) {
+      throw new NotFoundException('Scenario voice not found');
+    }
+
+    return {
+      ...voice,
+      config:
+        typeof voice.config === 'string'
+          ? JSON.parse(voice.config)
+          : voice.config,
+    };
   }
 
   private async getScenarioTranslationData(metadata: any, scenarioId: number) {
