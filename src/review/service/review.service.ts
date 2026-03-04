@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Review } from '../entity/review.entity';
 import { ReviewRepository } from '../repository/review.repository';
 import {
   CreateReviewDto,
@@ -14,7 +15,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ReviewThreadRepository } from '../repository/review-thread.repository';
 import { Pagination, SuccessResponse } from 'src/common/type/common.type';
-import { UpdateReviewStatusDto } from '../dto/update-review-status.dto';
+import { UpdateReviewDto } from '../dto/update-review.dto';
 import {
   GetReviews,
   GetReviewsOptions,
@@ -34,6 +35,8 @@ import { ReviewCommentRepository } from '../repository/review-comment.repository
 import { ReviewCommentReactionRepository } from '../repository/review-comment-reaction.repository';
 import { GetReviewMessagesResponseDto } from '../dto/review-messages-response.dto';
 import { ReviewAccessValidator } from '../util/review-access-policy.util';
+import { NOTE_EDIT_WINDOW_MS } from '../constant/review.constant';
+import { TIME } from 'src/common/constants/time.constants';
 
 @Injectable()
 export class ReviewService {
@@ -87,9 +90,9 @@ export class ReviewService {
     return { id: savedReview.id };
   }
 
-  async updateReviewStatus(
+  async updateReview(
     id: string,
-    updateReviewStatusDto: UpdateReviewStatusDto,
+    updateReviewDto: UpdateReviewDto,
   ): Promise<SuccessResponse> {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
@@ -102,10 +105,27 @@ export class ReviewService {
       throw new BadRequestException('Review not found');
     }
 
-    const updatedReview = await this.reviewRepository.create({
-      ...review,
-      status: updateReviewStatusDto.status,
-    });
+    const hasNoteUpdated = updateReviewDto.note !== undefined;
+    if (hasNoteUpdated) {
+      const elapsed = new Date().getTime() - review.createdAt.getTime();
+      if (elapsed > NOTE_EDIT_WINDOW_MS) {
+        throw new ForbiddenException(
+          `Note can only be edited within ${NOTE_EDIT_WINDOW_MS / TIME.MINUTE_IN_MS} minutes of review creation`,
+        );
+      }
+    }
+
+    const updates: Partial<Review> = { ...review };
+
+    if (updateReviewDto.status !== undefined) {
+      updates.status = updateReviewDto.status;
+    }
+    if (hasNoteUpdated) {
+      updates.note = updateReviewDto.note;
+      updates.noteEditedAt = new Date();
+    }
+
+    const updatedReview = this.reviewRepository.create(updates);
     await this.reviewRepository.save(updatedReview);
     return { success: true };
   }
@@ -241,6 +261,8 @@ export class ReviewService {
       myReaction: myReaction?.reaction ?? null,
       ...(userId === review.createdBy && { reviewStatus: review.status }),
       generalCommentsThreadId: generalCommentsThread?.id ?? null,
+      note: review.note ?? null,
+      noteEditedAt: review.noteEditedAt ?? null,
     };
   }
 
@@ -282,6 +304,8 @@ export class ReviewService {
       commentsCount: commentsByReviewId[review.id] ?? 0,
       reactions: reactionsByReviewId[review.id] ?? {},
       createdBy: formatCreatedUserDetails(review.createdBy),
+      note: review.note ?? null,
+      noteEditedAt: review.noteEditedAt ?? null,
     }));
 
     return data;

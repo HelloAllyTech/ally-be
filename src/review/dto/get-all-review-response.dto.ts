@@ -12,10 +12,10 @@ export class ScenarioDto {
   @ApiProperty()
   description!: string;
 
-  @ApiProperty({ required: false, nullable: true })
+  @ApiProperty({ required: false, nullable: true, type: String })
   coverImageUrl?: string | null;
 
-  @ApiProperty({ required: false, nullable: true })
+  @ApiProperty({ required: false, nullable: true, type: String })
   coverVideoUrl?: string | null;
 }
 
@@ -56,6 +56,12 @@ export class ReviewItemDto {
   @ApiProperty({ type: () => CreatedByDto })
   @Type(() => CreatedByDto)
   createdBy!: CreatedByDto;
+
+  @ApiProperty({ required: false, nullable: true, type: String })
+  note?: string | null;
+
+  @ApiProperty({ required: false, nullable: true, type: String })
+  noteEditedAt?: Date | null;
 }
 
 export class ReviewsListResponseDto {

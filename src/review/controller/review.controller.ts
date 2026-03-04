@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -24,7 +25,7 @@ import { ReviewService } from '../service/review.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { SortOrder, SuccessResponse } from 'src/common/type/common.type';
-import { UpdateReviewStatusDto } from '../dto/update-review-status.dto';
+import { UpdateReviewDto } from '../dto/update-review.dto';
 import { ReviewSortBy } from '../type/review.type';
 import { ReviewsListResponseDto } from '../dto/get-all-review-response.dto';
 import { GetReviewResponseDto } from '../dto/get-review-response.dto';
@@ -54,18 +55,18 @@ export class ReviewController {
     return this.reviewService.createReview(createReviewDto);
   }
 
-  @ApiOperation({ summary: 'Change review status' })
+  @ApiOperation({ summary: 'Update review status or note' })
   @ApiResponse({
     status: 200,
-    description: 'Review status updated successfully',
+    description: 'Review updated successfully',
   })
   @Patch('/:id')
   @AuthPermissions([PERMISSIONS.EDIT_REVIEW])
-  async updateReviewStatus(
+  async updateReview(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateReviewStatusDto: UpdateReviewStatusDto,
+    @Body() updateReviewDto: UpdateReviewDto,
   ): Promise<SuccessResponse> {
-    return this.reviewService.updateReviewStatus(id, updateReviewStatusDto);
+    return this.reviewService.updateReview(id, updateReviewDto);
   }
 
   @ApiOperation({ summary: 'Get all reviews' })
@@ -74,7 +75,7 @@ export class ReviewController {
   @ApiResponse({
     status: 200,
     description: 'List of reviews retrieved successfully',
-    type: CreateReviewResponseDto,
+    type: ReviewsListResponseDto,
   })
   @ApiQuery({
     name: 'limit',
@@ -101,8 +102,8 @@ export class ReviewController {
     description: 'Sort order: ASC or DESC',
   })
   async getAllReviews(
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
     @Query('sortBy') sortBy?: ReviewSortBy,
     @Query('sortOrder') sortOrder: SortOrder = SortOrder.DESC,
   ): Promise<ReviewsListResponseDto> {
@@ -117,6 +118,11 @@ export class ReviewController {
   @Get('/:id')
   @AuthPermissions([PERMISSIONS.VIEW_REVIEW])
   @ApiOperation({ summary: 'Get review by ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Review retrieved successfully',
+    type: GetReviewResponseDto,
+  })
   async getReviewById(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<GetReviewResponseDto> {
@@ -127,6 +133,7 @@ export class ReviewController {
   @ApiResponse({
     status: 200,
     description: 'Review messages retrieved successfully',
+    type: GetReviewMessagesResponseDto,
   })
   @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
   @ApiQuery({
@@ -151,13 +158,13 @@ export class ReviewController {
     name: 'order',
     required: false,
     enum: SortOrder,
-    description: 'Sort order (default: DESC)',
+    description: 'Sort order (default: ASC)',
   })
   @Get(':reviewId/messages')
   async getReviewMessages(
     @Param('reviewId', ParseUUIDPipe) reviewId: string,
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
     @Query('sortBy') sortBy?: string,
     @Query('order') order: SortOrder = SortOrder.ASC,
   ): Promise<GetReviewMessagesResponseDto> {

@@ -15,10 +15,10 @@ export class ScenarioDto {
   @ApiProperty()
   description?: string;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({ nullable: true, type: String })
   coverImageUrl?: string | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({ nullable: true, type: String })
   coverVideoUrl?: string | null;
 }
 
@@ -52,7 +52,7 @@ export class GetReviewResponseDto {
   @ApiProperty()
   reactions!: Record<string, number>;
 
-  @ApiProperty()
+  @ApiProperty({ required: false, nullable: true, type: String })
   myReaction!: string | null;
 
   @ApiProperty()
@@ -60,4 +60,10 @@ export class GetReviewResponseDto {
 
   @ApiProperty()
   generalCommentsThreadId?: string | null;
+
+  @ApiProperty({ required: false, nullable: true, type: String })
+  note?: string | null;
+
+  @ApiProperty({ required: false, nullable: true, type: String })
+  noteEditedAt?: Date | null;
 }
