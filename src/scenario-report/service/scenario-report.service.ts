@@ -24,7 +24,7 @@ import {
 import { AiService } from '../../ai/service/ai.service';
 import { SharedLanguageService } from '../../language/service/shared-language.service';
 import { LoggerService } from '../../logger/logger.service';
-import { SuccessResponse } from 'src/common/type/common.type';
+import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { ScenarioReportTranscriptResponseDto } from '../dto/scenario-report-transcript.dto';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { Languages } from 'src/language/entity/languages.entity';
@@ -218,6 +218,7 @@ export class ScenarioReportService {
   async getScenarioReports(
     scenarioId: number,
     statuses?: string,
+    pagination?: Pagination,
   ): Promise<ScenarioReportResponseDto> {
     const validStatuses = Object.values(ScenarioReportStatus);
     const statusList =
@@ -234,12 +235,11 @@ export class ScenarioReportService {
       );
     }
     const [scenarioReports, count] =
-      await this.scenarioReportRepository.findAndCount({
-        where: {
-          scenarioId,
-          ...(statusList.length > 0 && { status: In(statusList) }),
-        },
-      });
+      await this.scenarioReportRepository.getAllScenarioReportsAndCount(
+        scenarioId,
+        statusList,
+        pagination,
+      );
 
     const [languagesMap, scenario] = await Promise.all([
       this.getLanguagesMap(
