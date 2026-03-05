@@ -10,6 +10,7 @@ import { ReviewThreadRepository } from '../../repository/review-thread.repositor
 import { ReviewReactionRepository } from '../../repository/review-reaction.repository';
 import { ReviewCommentRepository } from '../../repository/review-comment.repository';
 import { ReviewCommentReactionRepository } from '../../repository/review-comment-reaction.repository';
+import { ReviewReadStatusRepository } from '../../repository/review-read-status.repository';
 import { ReviewAccessValidator } from '../../util/review-access-policy.util';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { UserService } from 'src/user/service/user.service';
@@ -137,6 +138,13 @@ describe('ReviewService', () => {
           provide: ReviewAccessValidator,
           useValue: {
             validateAccess: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: ReviewReadStatusRepository,
+          useValue: {
+            getUnreadCount: jest.fn(),
+            markAsRead: jest.fn(),
           },
         },
       ],
