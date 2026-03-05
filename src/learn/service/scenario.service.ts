@@ -1365,6 +1365,15 @@ export class ScenarioService {
           'Minimum score cannot be greater than maximum score',
         );
       }
+
+      if (
+        event.detectionConfig?.occurrenceInterval &&
+        event.detectionConfig?.occurrenceInterval < 1
+      ) {
+        throw new BadRequestException(
+          'Occurrence interval should be at least 1',
+        );
+      }
     }
   }
 

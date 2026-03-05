@@ -75,6 +75,7 @@ export class EventMappingDto {
       minGapTime: 10,
       minScore: 0,
       maxScore: 100,
+      occurrenceInterval: 3,
     },
   })
   @IsOptional()
@@ -119,6 +120,7 @@ export class CreateScenarioEventsDto {
           minGapTime: 10,
           minScore: 0,
           maxScore: 100,
+          occurrenceInterval: 3,
         },
         checklistVisibilityStatus: false,
       },

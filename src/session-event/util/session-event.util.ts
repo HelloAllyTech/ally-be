@@ -113,6 +113,7 @@ export const mapRequestToDbDetectionConfigByType = (
         minGapTime: detectionConfig.minGapTime,
         minScore: detectionConfig.minScore,
         maxScore: detectionConfig.maxScore,
+        occurrenceInterval: detectionConfig.occurrenceInterval,
       };
     case SessionEventDetectionType.SCORE:
       return {
@@ -120,6 +121,7 @@ export const mapRequestToDbDetectionConfigByType = (
         endTime: detectionConfig.endTime,
         maxOccurrences: detectionConfig.maxOccurrences,
         minGapTime: detectionConfig.minGapTime,
+        occurrenceInterval: detectionConfig.occurrenceInterval,
       };
     default:
       return detectionConfig;

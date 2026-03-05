@@ -66,4 +66,10 @@ export class GetReviewResponseDto {
 
   @ApiProperty({ required: false, nullable: true, type: String })
   noteEditedAt?: Date | null;
+
+  @ApiProperty()
+  createdAt!: Date;
+
+  @ApiProperty()
+  updatedAt!: Date;
 }

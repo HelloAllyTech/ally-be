@@ -222,6 +222,14 @@ export class DetectionConfigDto {
   @IsOptional()
   @IsNumber()
   maxScore?: number;
+
+  @ApiProperty({
+    description: 'The occurrence interval of the event',
+    example: 3,
+  })
+  @IsOptional()
+  @IsNumber()
+  occurrenceInterval?: number;
 }
 
 export class SessionEventDto<T> {
@@ -328,6 +336,7 @@ export class SessionEventDto<T> {
       minGapTime: 10,
       minScore: 0,
       maxScore: 100,
+      occurrenceInterval: 3,
     },
   })
   @IsObject()

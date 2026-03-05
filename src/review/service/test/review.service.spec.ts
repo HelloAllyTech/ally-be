@@ -599,6 +599,150 @@ describe('ReviewService', () => {
         noteEditedAt: null,
       });
     });
+
+    it('should include reviewStatus only when user is the review owner', async () => {
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
+      permissionValidator.validatePermissions.mockResolvedValue(false);
+      scenarioSharedService.getScenarioSessionById.mockResolvedValue(
+        mockScenarioSession as any,
+      );
+      scenarioSharedService.getScenarioById.mockResolvedValue(
+        mockScenario as any,
+      );
+      userService.get.mockResolvedValue(mockUser as any);
+      reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.findOne.mockResolvedValue(null as any);
+
+      const result = await service.getReviewById(mockReviewId);
+
+      expect(result.reviewStatus).toBe(ReviewStatus.IN_REVIEW);
+    });
+
+    it('should not include reviewStatus when user is not the review owner', async () => {
+      const otherUserReview = {
+        ...mockReview,
+        createdBy: 999,
+      };
+      reviewRepository.findOne.mockResolvedValue(otherUserReview as any);
+      permissionValidator.validatePermissions.mockResolvedValue(false);
+      scenarioSharedService.getScenarioSessionById.mockResolvedValue(
+        mockScenarioSession as any,
+      );
+      scenarioSharedService.getScenarioById.mockResolvedValue(
+        mockScenario as any,
+      );
+      userService.get.mockResolvedValue(mockUser as any);
+      reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.findOne.mockResolvedValue(null as any);
+
+      const result = await service.getReviewById(mockReviewId);
+
+      expect(result.reviewStatus).toBeUndefined();
+    });
+
+    it('should return generalCommentsThreadId when a general thread exists', async () => {
+      const mockGeneralThread = { id: 'general-thread-123' };
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
+      permissionValidator.validatePermissions.mockResolvedValue(false);
+      scenarioSharedService.getScenarioSessionById.mockResolvedValue(
+        mockScenarioSession as any,
+      );
+      scenarioSharedService.getScenarioById.mockResolvedValue(
+        mockScenario as any,
+      );
+      userService.get.mockResolvedValue(mockUser as any);
+      reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.findOne.mockResolvedValue(null as any);
+      reviewThreadRepository.findOne.mockResolvedValue(
+        mockGeneralThread as any,
+      );
+
+      const result = await service.getReviewById(mockReviewId);
+
+      expect(result.generalCommentsThreadId).toBe('general-thread-123');
+    });
+
+    it('should return null generalCommentsThreadId when no general thread exists', async () => {
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
+      permissionValidator.validatePermissions.mockResolvedValue(false);
+      scenarioSharedService.getScenarioSessionById.mockResolvedValue(
+        mockScenarioSession as any,
+      );
+      scenarioSharedService.getScenarioById.mockResolvedValue(
+        mockScenario as any,
+      );
+      userService.get.mockResolvedValue(mockUser as any);
+      reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.findOne.mockResolvedValue(null as any);
+      reviewThreadRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getReviewById(mockReviewId);
+
+      expect(result.generalCommentsThreadId).toBeNull();
+    });
+
+    it('should return note and noteEditedAt when present on review', async () => {
+      const noteEditedAt = new Date('2025-06-01T12:00:00Z');
+      const reviewWithNote = {
+        ...mockReview,
+        note: 'Important context',
+        noteEditedAt,
+      };
+      reviewRepository.findOne.mockResolvedValue(reviewWithNote as any);
+      permissionValidator.validatePermissions.mockResolvedValue(false);
+      scenarioSharedService.getScenarioSessionById.mockResolvedValue(
+        mockScenarioSession as any,
+      );
+      scenarioSharedService.getScenarioById.mockResolvedValue(
+        mockScenario as any,
+      );
+      userService.get.mockResolvedValue(mockUser as any);
+      reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue(
+        [] as any,
+      );
+      reviewReactionRepository.findOne.mockResolvedValue(null as any);
+
+      const result = await service.getReviewById(mockReviewId);
+
+      expect(result.note).toBe('Important context');
+      expect(result.noteEditedAt).toBe(noteEditedAt);
+    });
+
+    it('should throw ForbiddenException when non-owner accesses HIDDEN review', async () => {
+      const hiddenReview = {
+        ...mockReview,
+        status: ReviewStatus.HIDDEN,
+        createdBy: 999,
+      };
+      reviewRepository.findOne.mockResolvedValue(hiddenReview as any);
+
+      await expect(service.getReviewById(mockReviewId)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
   });
 
   describe('getReviewMessages', () => {
