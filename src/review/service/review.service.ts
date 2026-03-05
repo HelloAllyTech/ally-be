@@ -263,6 +263,8 @@ export class ReviewService {
       generalCommentsThreadId: generalCommentsThread?.id ?? null,
       note: review.note ?? null,
       noteEditedAt: review.noteEditedAt ?? null,
+      createdAt: review.createdAt,
+      updatedAt: review.updatedAt,
     };
   }
 

@@ -125,6 +125,15 @@ export class SessionEventService {
           'Minimum score cannot be greater than maximum score',
         );
       }
+
+      if (
+        event.detectionConfig?.occurrenceInterval &&
+        event.detectionConfig?.occurrenceInterval < 1
+      ) {
+        throw new BadRequestException(
+          'Occurrence interval should be at least 1',
+        );
+      }
     }
 
     // Validate all referenced event IDs exist (only once, after collecting all)

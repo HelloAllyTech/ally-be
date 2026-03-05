@@ -414,6 +414,91 @@ describe('ReviewCommentService', () => {
       });
     });
 
+    it('should throw BadRequestException when general discussion thread already exists', async () => {
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
+      reviewThreadRepository.findOne.mockResolvedValue(mockThread as any);
+
+      const dto = {
+        content: 'General comment',
+      };
+
+      await expect(
+        service.addCommentToReview(mockReviewId, dto),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.addCommentToReview(mockReviewId, dto),
+      ).rejects.toThrow(
+        'Only one general discussion thread is allowed per review',
+      );
+    });
+
+    it('should create general discussion thread when none exists', async () => {
+      let createdThread: any;
+
+      const mockEntityManager = {
+        create: jest.fn(),
+        save: jest.fn(),
+      };
+
+      mockEntityManager.create.mockImplementation((entity, data) => {
+        if (entity === ReviewThread) {
+          createdThread = {
+            ...mockThread,
+            ...data,
+            messageId: undefined,
+            selection: undefined,
+          };
+          return createdThread;
+        }
+        if (entity === ReviewComment) {
+          return { ...mockComment, ...data };
+        }
+        return data;
+      });
+      mockEntityManager.save.mockImplementation(async (entity, data) => {
+        if (entity === ReviewThread) {
+          data.id = mockThreadId;
+          createdThread.id = mockThreadId;
+        } else if (entity === ReviewComment) {
+          data.id = mockCommentId;
+        }
+        return data;
+      });
+
+      (dataSource.transaction as jest.Mock).mockImplementation(
+        async (callback) => {
+          return callback(mockEntityManager);
+        },
+      );
+
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
+      reviewThreadRepository.findOne.mockResolvedValue(null);
+
+      const dto = {
+        content: 'General comment',
+      };
+
+      const result = await service.addCommentToReview(mockReviewId, dto);
+
+      expect(result).toEqual({
+        thread: {
+          id: mockThreadId,
+          createdAt: createdThread.createdAt,
+        },
+        comment: {
+          id: mockCommentId,
+          createdAt: mockComment.createdAt,
+        },
+      });
+      expect(mockEntityManager.create).toHaveBeenCalledWith(ReviewThread, {
+        reviewId: mockReviewId,
+        messageId: undefined,
+        createdBy: mockUserId,
+        selection: undefined,
+        tenantId: mockTenantId,
+      });
+    });
+
     it('should successfully create new thread with comment', async () => {
       let createdThread: any;
 
@@ -841,6 +926,54 @@ describe('ReviewCommentService', () => {
 
       expect(result).toEqual({ success: true });
       expect(dataSource.transaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('getGeneralReviewComments', () => {
+    beforeEach(() => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(
+        String(mockUserId),
+      );
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
+    });
+
+    it('should return empty data when no general comments thread exists', async () => {
+      reviewThreadRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getGeneralReviewComments(mockReviewId);
+
+      expect(result).toEqual({ data: [], count: 0 });
+    });
+
+    it('should delegate to getReviewComments when general thread exists', async () => {
+      const generalThread = {
+        id: 'general-thread-123',
+        reviewId: mockReviewId,
+        messageId: null,
+        selection: null,
+        tenantId: mockTenantId,
+      };
+
+      reviewThreadRepository.findOne
+        .mockResolvedValueOnce(generalThread as any)
+        .mockResolvedValueOnce(generalThread as any);
+      reviewRepository.findOne.mockResolvedValue(mockReview as any);
+      reviewCommentRepository.getCommentsByThreadId.mockResolvedValue({
+        comments: [],
+        count: 0,
+      } as any);
+
+      const result = await service.getGeneralReviewComments(mockReviewId);
+
+      expect(result).toEqual({ data: [], count: 0 });
+      expect(reviewThreadRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          reviewId: mockReviewId,
+          messageId: expect.anything(),
+          selection: expect.anything(),
+          tenantId: mockTenantId,
+        },
+      });
     });
   });
 });
