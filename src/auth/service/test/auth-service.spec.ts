@@ -780,7 +780,10 @@ describe('AuthService', () => {
       redisService.get.mockResolvedValue(null);
 
       await expect(
-        authService.verifyMagicLink({ token: 'invalid-token' }),
+        authService.verifyMagicLink({
+          token: 'invalid-token',
+          allowedRoles: [UserRole.CLIENT],
+        }),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -801,11 +804,14 @@ describe('AuthService', () => {
       });
 
       await expect(
-        authService.verifyMagicLink({ token: validToken }),
+        authService.verifyMagicLink({
+          token: validToken,
+          allowedRoles: [UserRole.CLIENT],
+        }),
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('should throw UnauthorizedException when user no longer exists', async () => {
+    it('should throw NotFoundException when user no longer exists', async () => {
       redisService.get.mockImplementation((key: string) => {
         if (key === `auth_attempt:magic:${tokenHash}`)
           return Promise.resolve('testuser@example.com');
@@ -816,8 +822,11 @@ describe('AuthService', () => {
       userRepository.findOne.mockResolvedValue(null);
 
       await expect(
-        authService.verifyMagicLink({ token: validToken }),
-      ).rejects.toThrow(UnauthorizedException);
+        authService.verifyMagicLink({
+          token: validToken,
+          allowedRoles: [UserRole.CLIENT],
+        }),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw UserSuspendedException when user is suspended', async () => {
@@ -835,10 +844,33 @@ describe('AuthService', () => {
         return Promise.resolve(null);
       });
       userRepository.findOne.mockResolvedValue(suspendedUser);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.CLIENT]);
 
       await expect(
-        authService.verifyMagicLink({ token: validToken }),
+        authService.verifyMagicLink({
+          token: validToken,
+          allowedRoles: [UserRole.CLIENT],
+        }),
       ).rejects.toThrow(UserSuspendedException);
+    });
+
+    it('should throw ForbiddenException when user does not have allowed role', async () => {
+      redisService.get.mockImplementation((key: string) => {
+        if (key === `auth_attempt:magic:${tokenHash}`)
+          return Promise.resolve('testuser@example.com');
+        if (key === 'auth_attempt:testuser@example.com')
+          return Promise.resolve(mockMagicAttempt);
+        return Promise.resolve(null);
+      });
+      userRepository.findOne.mockResolvedValue(mockMagicLinkUser);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.ADMIN]);
+
+      await expect(
+        authService.verifyMagicLink({
+          token: validToken,
+          allowedRoles: [UserRole.CLIENT],
+        }),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should successfully verify magic link and return tokens', async () => {
@@ -853,6 +885,7 @@ describe('AuthService', () => {
         return Promise.resolve(null);
       });
       userRepository.findOne.mockResolvedValue(mockMagicLinkUser);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.CLIENT]);
 
       (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-refresh-token');
       jwtService.signAsync
@@ -860,7 +893,10 @@ describe('AuthService', () => {
         .mockResolvedValueOnce(refreshToken);
       refreshTokenRepository.save.mockResolvedValue({} as RefreshToken);
 
-      const result = await authService.verifyMagicLink({ token: validToken });
+      const result = await authService.verifyMagicLink({
+        token: validToken,
+        allowedRoles: [UserRole.CLIENT],
+      });
 
       expect(result).toEqual({
         user: {

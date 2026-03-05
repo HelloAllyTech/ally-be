@@ -525,7 +525,7 @@ export class AuthService {
   async verifyMagicLink(
     dto: MagicLinkVerifyDto,
   ): Promise<AuthenticationResponseDto> {
-    const { token } = dto;
+    const { token, allowedRoles } = dto;
     const hash = this.hashSecret(token);
 
     // Reverse-lookup: magic token hash -> email
@@ -563,51 +563,14 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired magic link');
     }
 
-    const user = await this.userRepository.findOne({
-      where: { email: attempt.email },
-    });
-    if (!user) {
-      this.logger.error(`User no longer exists for email ${email}`);
-      this.logVerificationError(
-        email,
-        'User no longer exists',
-        AuthProvider.MAGIC_LINK,
-      );
-      throw new UnauthorizedException('User no longer exists');
-    }
-
-    if (user.status === UserStatus.SUSPENDED) {
-      this.logger.error(`User ${email} is suspended`);
-      this.logVerificationError(
-        email,
-        'User suspended',
-        AuthProvider.MAGIC_LINK,
-      );
-      throw new UserSuspendedException();
-    }
-
     // Mark attempt as used by deleting from cache
     await this.cache.del(this.getAuthAttemptKey(email));
     await this.cache.del(this.getMagicTokenKey(hash));
 
-    const tokens = await this.generateTokens(user);
-
-    this.auditLogger.log({
-      eventType: AUDIT_EVENTS.USER_LOGIN_SUCCESS,
-      tenantId: user.tenantId,
-      userId: user.id,
-      details: {
-        email: user.email,
-        medium: 'magic-link',
-      },
-    });
-    return {
-      user: {
-        id: user.id,
-        username: user.username,
-      },
-      ...tokens,
-      tokenType: 'bearer',
-    };
+    return await this.validateUserAndIssueTokens(
+      allowedRoles,
+      email,
+      AuthProvider.MAGIC_LINK,
+    );
   }
 }
