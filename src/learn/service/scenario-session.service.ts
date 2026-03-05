@@ -338,7 +338,9 @@ export class ScenarioSessionService {
       ...scenarioSession,
       hasFeedback,
       reviewId: review?.id,
+      reviewNote: review?.note,
       reviewStatus: review?.status,
+      reviewCreatedAt: review?.createdAt,
     };
   }
 

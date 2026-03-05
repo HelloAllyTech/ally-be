@@ -109,7 +109,9 @@ export class ReviewService {
       [PERMISSIONS.REVIEWER_ACCESS],
     );
     if (!isReviewer) {
-      throw new ForbiddenException('Only reviewers can access unread review count');
+      throw new ForbiddenException(
+        'Only reviewers can access unread review count',
+      );
     }
     const count = await this.reviewReadStatusRepository.getUnreadCount(
       userId,
