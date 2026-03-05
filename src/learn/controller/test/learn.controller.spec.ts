@@ -601,6 +601,8 @@ describe('LearnController', () => {
         hasFeedback: true,
         reviewId: 'review-id',
         reviewStatus: ReviewStatus.HIDDEN,
+        reviewNote: 'Review note',
+        reviewCreatedAt: new Date(),
       };
       scenarioSessionService.getScenarioSession.mockResolvedValue(mockSession);
 
