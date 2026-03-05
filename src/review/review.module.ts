@@ -8,6 +8,7 @@ import { ReviewThreadRepository } from './repository/review-thread.repository';
 import { ReviewCommentReactionRepository } from './repository/review-comment-reaction.repository';
 import { UserModule } from 'src/user/user.module';
 import { ReviewReactionRepository } from './repository/review-reaction.repository';
+import { ReviewReadStatusRepository } from './repository/review-read-status.repository';
 import { ReviewCommentController } from './controller/review-comment.controller';
 import { ReviewThreadController } from './controller/review-thread.controller';
 import { ReviewCommentService } from './service/review-comment.service';
@@ -39,6 +40,7 @@ import { ReviewAccessValidator } from './util/review-access-policy.util';
     ReviewCommentRepository,
     ReviewCommentReactionRepository,
     ReviewReactionRepository,
+    ReviewReadStatusRepository,
     ReviewService,
     ReviewThreadService,
     ReviewCommentService,
