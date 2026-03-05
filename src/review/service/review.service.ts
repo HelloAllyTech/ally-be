@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Review } from '../entity/review.entity';
 import { ReviewRepository } from '../repository/review.repository';
+import { ReviewReadStatusRepository } from '../repository/review-read-status.repository';
 import {
   CreateReviewDto,
   CreateReviewResponseDto,
@@ -36,6 +37,8 @@ import { ReviewCommentReactionRepository } from '../repository/review-comment-re
 import { GetReviewMessagesResponseDto } from '../dto/review-messages-response.dto';
 import { ReviewAccessValidator } from '../util/review-access-policy.util';
 import { NOTE_EDIT_WINDOW_MS } from '../constant/review.constant';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { TIME } from 'src/common/constants/time.constants';
 
 @Injectable()
@@ -50,6 +53,8 @@ export class ReviewService {
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly userService: UserService,
     private readonly reviewAccessValidator: ReviewAccessValidator,
+    private readonly reviewReadStatusRepository: ReviewReadStatusRepository,
+    private readonly permissionValidator: PermissionValidator,
   ) {}
 
   async createReview(
@@ -88,6 +93,55 @@ export class ReviewService {
     const savedReview = await this.reviewRepository.save(review);
 
     return { id: savedReview.id };
+  }
+
+  async getUnreadReviewCount(): Promise<{ count: number }> {
+    const userId = Number(ExecutionManager.getUserId());
+    const tenantId = ExecutionManager.getTenantId();
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+    const isReviewer = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.REVIEWER_ACCESS],
+    );
+    if (!isReviewer) {
+      throw new ForbiddenException('Only reviewers can access unread review count');
+    }
+    const count = await this.reviewReadStatusRepository.getUnreadCount(
+      userId,
+      tenantId,
+    );
+    return { count };
+  }
+
+  async markReviewAsRead(reviewId: string): Promise<SuccessResponse> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+    const isReviewer = await this.permissionValidator.validatePermissions(
+      userId,
+      [PERMISSIONS.REVIEWER_ACCESS],
+    );
+    if (!isReviewer) {
+      throw new ForbiddenException('Only reviewers can mark reviews as read');
+    }
+    const review = await this.reviewRepository.findOne({
+      where: { id: reviewId, tenantId },
+    });
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+    await this.reviewReadStatusRepository.markAsRead(userId, reviewId);
+    return { success: true };
   }
 
   async updateReview(
