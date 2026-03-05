@@ -13,7 +13,7 @@ export class CreateReviewReadStatusTable1772121372710 implements MigrationInterf
 
     // seed review status
     await queryRunner.query(
-      `INSERT INTO review_read_status ("userId","reviewId","readAt") SELECT u.id, r.id, NOW() FROM reviews r JOIN users u on r.tenant_id = u.tenant_id WHERE r.status = 'IN_REVIEW' ON CONFLICT ("userId","reviewId") DO NOTHING`,
+      `INSERT INTO review_read_status ("userId", "reviewId", "readAt") SELECT DISTINCT u.id, r.id, NOW() FROM reviews r JOIN users u ON r.tenant_id = u.tenant_id JOIN user_groups ug ON ug."userId" = u.id JOIN groups g ON g.id = ug."groupId" AND g.name = 'REVIEWER' WHERE r.status = 'IN_REVIEW' ON CONFLICT ("userId","reviewId") DO NOTHING`,
     );
   }
 
