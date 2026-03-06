@@ -279,6 +279,8 @@ export class ScenarioSessionReviewService extends BaseReviewReadStatusService<
       generalCommentsThreadId: generalCommentsThread?.id ?? null,
       note: review.note ?? null,
       noteEditedAt: review.noteEditedAt ?? null,
+      createdAt: review.createdAt,
+      updatedAt: review.updatedAt,
     };
   }
 
