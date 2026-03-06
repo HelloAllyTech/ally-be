@@ -195,5 +195,6 @@ Text to translate:
 
 // Prompt code identifiers used to fetch templates from DB
 export const OPENAI_TRANSLATION_SYSTEM_PROMPT_CODE =
-  'openai_translation_system';
-export const OPENAI_TRANSLATION_USER_PROMPT_CODE = 'openai_translation_user';
+  'openai_translation_code_mixed_system';
+export const OPENAI_TRANSLATION_USER_PROMPT_CODE =
+  'openai_translation_speech_reexpression_user';

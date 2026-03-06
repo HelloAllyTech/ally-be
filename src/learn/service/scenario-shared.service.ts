@@ -15,7 +15,7 @@ import { ScenarioSessionDetailsRepository } from '../repository/scenario-session
 import { ScenarioSessionMessageTagsRepository } from '../repository/scenario-session-message-tags.repository';
 import { MessageTagMapping } from '../type/scenario-message-tag.type';
 import {
-  SCENARIO_SESSION_PROMPTS_USE_CASE,
+  ALLY_AI_LEARN_PROMPT_PREFIX,
   SCENARIO_SESSION_TRANSLATABLE_FIELDS,
   STT_LLM_PROVIDER_CONFIG,
   SKILL_ICONS_S3_PREFIX,
@@ -719,9 +719,15 @@ export class ScenarioSharedService {
     return this.behaviorRepository.getBehaviorsByIds(ids);
   }
 
+  /**
+   * Get prompts for scenario session metadata.
+   * Only includes prompts with useDashboardOverride=true (enabled from Dashboard).
+   * ally-ai-learn uses metadata prompts when present; otherwise falls back to local .txt.
+   */
   private async getPromptsForScenarioSession() {
     const prompts = await this.promptSharedService.getPromptsByOptions({
-      useCase: [SCENARIO_SESSION_PROMPTS_USE_CASE],
+      promptCodePrefix: ALLY_AI_LEARN_PROMPT_PREFIX,
+      useDashboardOverrideOnly: true,
     });
 
     if (prompts?.length == 0) {

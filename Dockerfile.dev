@@ -16,8 +16,12 @@ RUN npm install
 
 COPY . .
 
+# Dev entrypoint runs migrations before app starts (so PromptsSyncService has correct schema)
+COPY docker-entrypoint.dev.sh ./
+
 RUN npm run build
 
 EXPOSE 8000
 
+ENTRYPOINT ["sh", "./docker-entrypoint.dev.sh"]
 CMD ["npm", "run", "start:dev"]

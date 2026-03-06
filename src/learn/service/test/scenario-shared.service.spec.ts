@@ -22,7 +22,7 @@ import { ScenarioBehaviorInstructionBehaviorRepository } from '../../repository/
 import { BehaviorRepository } from '../../repository/behavior.repository';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { SCENARIO_SESSION_PROMPTS_USE_CASE } from '../../constants/scenario-session.constants';
+import { ALLY_AI_LEARN_PROMPT_PREFIX } from '../../constants/scenario-session.constants';
 import { CompetencyService } from '../competency.service';
 import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
@@ -932,21 +932,25 @@ describe('ScenarioSharedService', () => {
       const result = await (service as any).getPromptsForScenarioSession();
 
       expect(promptSharedService.getPromptsByOptions).toHaveBeenCalledWith({
-        useCase: [SCENARIO_SESSION_PROMPTS_USE_CASE],
+        promptCodePrefix: ALLY_AI_LEARN_PROMPT_PREFIX,
+        useDashboardOverrideOnly: true,
       });
       expect(result).toEqual({});
     });
 
     it('should return a map of promptCode -> prompt when prompts are found', async () => {
       const mockPrompts = [
-        { promptCode: 'ally_ai_learn_default', prompt: 'Default prompt text' },
         {
-          promptCode: 'ally_ai_learn_client_persona_template',
-          prompt: 'Persona template text',
+          promptCode: 'ally_ai_learn_system_default_system_prompt',
+          prompt: 'Default prompt text',
         },
         {
-          promptCode: 'ally_ai_learn_prosody_generation',
+          promptCode: 'ally_ai_learn_prosody_default_generation_prompt',
           prompt: 'Prosody generation text',
+        },
+        {
+          promptCode: 'ally_ai_learn_counselor_report_generation_prompt',
+          prompt: 'Report generation text',
         },
       ];
       promptSharedService.getPromptsByOptions.mockResolvedValue(mockPrompts);
@@ -954,26 +958,35 @@ describe('ScenarioSharedService', () => {
       const result = await (service as any).getPromptsForScenarioSession();
 
       expect(promptSharedService.getPromptsByOptions).toHaveBeenCalledWith({
-        useCase: [SCENARIO_SESSION_PROMPTS_USE_CASE],
+        promptCodePrefix: ALLY_AI_LEARN_PROMPT_PREFIX,
+        useDashboardOverrideOnly: true,
       });
       expect(result).toEqual({
-        ally_ai_learn_default: 'Default prompt text',
-        ally_ai_learn_client_persona_template: 'Persona template text',
-        ally_ai_learn_prosody_generation: 'Prosody generation text',
+        ally_ai_learn_system_default_system_prompt: 'Default prompt text',
+        ally_ai_learn_prosody_default_generation_prompt:
+          'Prosody generation text',
+        ally_ai_learn_counselor_report_generation_prompt:
+          'Report generation text',
       });
     });
 
     it('should correctly overwrite duplicate promptCodes with the last value', async () => {
       const mockPrompts = [
-        { promptCode: 'ally_ai_learn_default', prompt: 'First value' },
-        { promptCode: 'ally_ai_learn_default', prompt: 'Second value' },
+        {
+          promptCode: 'ally_ai_learn_system_default_system_prompt',
+          prompt: 'First value',
+        },
+        {
+          promptCode: 'ally_ai_learn_system_default_system_prompt',
+          prompt: 'Second value',
+        },
       ];
       promptSharedService.getPromptsByOptions.mockResolvedValue(mockPrompts);
 
       const result = await (service as any).getPromptsForScenarioSession();
 
       expect(result).toEqual({
-        ally_ai_learn_default: 'Second value',
+        ally_ai_learn_system_default_system_prompt: 'Second value',
       });
     });
   });

@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdatePromptDto {
@@ -22,8 +22,12 @@ export class UpdatePromptDto {
   @IsString()
   prompt?: string;
 
-  @ApiProperty({ description: 'Prompt use case', required: false })
+  @ApiProperty({
+    description:
+      'When true, use prompt from dashboard (DB). When false, use prompt from folder.',
+    required: false,
+  })
   @IsOptional()
-  @IsString()
-  useCase?: string;
+  @IsBoolean()
+  useDashboardOverride?: boolean;
 }

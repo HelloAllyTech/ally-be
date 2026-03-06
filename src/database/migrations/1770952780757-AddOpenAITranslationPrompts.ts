@@ -1,10 +1,13 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
 export class AddOpenAITranslationPrompts1770952780757 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const systemCode = PromptCode.OPENAI_TRANSLATION_SYSTEM_PROMPT_CODE;
-    const userCode = PromptCode.OPENAI_TRANSLATION_USER_PROMPT_CODE;
+    const systemCode = toPromptCode('openai_translation', 'code_mixed_system');
+    const userCode = toPromptCode(
+      'openai_translation',
+      'speech_reexpression_user',
+    );
 
     const systemName = 'OpenAI Translation System Prompt';
     const userName = 'OpenAI Translation User Prompt';

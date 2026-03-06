@@ -303,6 +303,7 @@ export const SCENARIO_SESSION_TRANSLATABLE_FIELDS: string[] = [
   'stateInstructions',
 ];
 
-export const SCENARIO_SESSION_PROMPTS_USE_CASE: string = 'SCENARIO_SESSION';
+/** Prefix for ally-ai-learn prompts. Fetched dynamically from DB (WHERE promptCode LIKE 'ally_ai_learn_%'). */
+export const ALLY_AI_LEARN_PROMPT_PREFIX = 'ally_ai_learn_';
 
 export const SKILL_ICONS_S3_PREFIX = 'skill-icons/';

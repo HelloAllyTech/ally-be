@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
 @Injectable()
 export class BehaviorInstructionTranslationService {
@@ -39,7 +39,7 @@ export class BehaviorInstructionTranslationService {
         await this.openAITranslationService.translateObjectToLanguages(
           metadataObj,
           codes,
-          PromptCode.OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_CODE,
+          toPromptCode('openai_translation', 'learn_behavior_instruction'),
         );
       return translated ?? {};
     } catch (err) {

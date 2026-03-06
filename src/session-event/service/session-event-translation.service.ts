@@ -18,7 +18,7 @@ import {
 } from '../util/session-event.util';
 import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from 'src/learn/constants/scenario-session.constants';
 import { SessionEventSharedService } from './session-event-shared.service';
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
 @Injectable()
 export class SessionEventTranslationService {
@@ -88,7 +88,7 @@ export class SessionEventTranslationService {
         await this.openAITranslationService.translateObjectToLanguages(
           metadataObj,
           codes,
-          PromptCode.OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE,
+          toPromptCode('openai_translation', 'session_event'),
         );
 
       if (

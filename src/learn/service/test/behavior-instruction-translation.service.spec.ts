@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BehaviorInstructionTranslationService } from '../behavior-instruction-translation.service';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
 describe('BehaviorInstructionTranslationService', () => {
   let service: BehaviorInstructionTranslationService;
@@ -103,7 +103,7 @@ describe('BehaviorInstructionTranslationService', () => {
       ).toHaveBeenCalledWith(
         metadata,
         ['es', 'fr'],
-        PromptCode.OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_CODE,
+        toPromptCode('openai_translation', 'learn_behavior_instruction'),
       );
       expect(result).toEqual(expectedTranslation);
     });
@@ -124,7 +124,7 @@ describe('BehaviorInstructionTranslationService', () => {
       ).toHaveBeenCalledWith(
         metadata,
         ['es'],
-        PromptCode.OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_CODE,
+        toPromptCode('openai_translation', 'learn_behavior_instruction'),
       );
     });
 

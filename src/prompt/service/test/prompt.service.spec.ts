@@ -3,6 +3,7 @@ import { NotFoundException } from '@nestjs/common';
 import { PromptsService } from '../prompt.service';
 import { PromptsRepository } from '../../repository/prompt.repository';
 import { PromptVersionRepository } from '../../repository/prompt-version.repository';
+import { PromptSharedService } from '../prompt-shared.service';
 import { CreatePromptsDto } from '../../dto/create-prompts.dto';
 import { UpdatePromptDto } from '../../dto/update-prompt.dto';
 import { Prompt } from '../../entity/prompt.entity';
@@ -34,7 +35,7 @@ describe('PromptsService', () => {
     name: 'AI Learning Prompt',
     description: 'A prompt for AI learning',
     currentVersion: 1,
-    useCase: 'SCENARIO_SESSION',
+    useDashboardOverride: false,
     createdAt: new Date('2026-02-09'),
     updatedAt: new Date('2026-02-09'),
   };
@@ -91,6 +92,13 @@ describe('PromptsService', () => {
             delete: jest.fn(),
             getLatestPromptVersion: jest.fn(),
             deleteVersionsBefore: jest.fn(),
+          },
+        },
+        {
+          provide: PromptSharedService,
+          useValue: {
+            getPromptByCode: jest.fn(),
+            getPromptsByOptions: jest.fn(),
           },
         },
         {
@@ -376,6 +384,7 @@ describe('PromptsService', () => {
       const updatePromptDto: UpdatePromptDto = {
         name: 'Updated Name',
         prompt: 'New prompt content',
+        useDashboardOverride: true,
       };
 
       (promptsRepository.findOne as jest.Mock).mockResolvedValue(mockPrompt);
@@ -402,6 +411,7 @@ describe('PromptsService', () => {
       const updatePromptDto: UpdatePromptDto = {
         name: 'Updated Name',
         prompt: 'New prompt content',
+        useDashboardOverride: true,
       };
 
       (promptsRepository.findOne as jest.Mock).mockResolvedValue(mockPrompt);
@@ -445,6 +455,7 @@ describe('PromptsService', () => {
     it('should create new version even if only one word changes in prompt content', async () => {
       const updatePromptDto: UpdatePromptDto = {
         prompt: 'This is the updated prompt content',
+        useDashboardOverride: true,
       };
 
       (promptsRepository.findOne as jest.Mock).mockResolvedValue(mockPrompt);
@@ -473,6 +484,7 @@ describe('PromptsService', () => {
     it('should apply version retention limit when creating new version', async () => {
       const updatePromptDto: UpdatePromptDto = {
         prompt: 'New prompt content',
+        useDashboardOverride: true,
       };
 
       (promptsRepository.findOne as jest.Mock).mockResolvedValue(mockPrompt);
@@ -505,6 +517,7 @@ describe('PromptsService', () => {
     it('should keep version 1 even when retention deletes older versions', async () => {
       const updatePromptDto: UpdatePromptDto = {
         prompt: 'New prompt content',
+        useDashboardOverride: true,
       };
 
       (promptsRepository.findOne as jest.Mock).mockResolvedValue(mockPrompt);

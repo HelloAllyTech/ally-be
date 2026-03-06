@@ -51,9 +51,12 @@ export class OpenAIAutofillService {
     template: string,
     variables: Record<string, string>,
   ): string {
-    return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => {
-      return variables[key] ?? '';
-    });
+    // Support both {{var}} (legacy) and <var> (unified format)
+    return template
+      .replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => variables[key] ?? '')
+      .replace(/<(\w+)>/g, (match, key) =>
+        key in variables ? String(variables[key] ?? '') : match,
+      );
   }
 
   private buildTemplateVariables(

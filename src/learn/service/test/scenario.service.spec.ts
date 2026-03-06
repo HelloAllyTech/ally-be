@@ -39,7 +39,7 @@ import { CompetencyService } from '../competency.service';
 import { OpenAIAutofillService } from '../openai-autofil-service';
 import { BehaviorService } from '../behavior.service';
 import { GeneratableField } from 'src/learn/enum/generatable-field.enum';
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -4917,7 +4917,7 @@ describe('ScenarioService', () => {
       ).toHaveBeenCalledWith(
         expect.objectContaining({ message: 'Great job!' }),
         ['hi-IN', 'ml-IN'],
-        PromptCode.OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE,
+        toPromptCode('openai_translation', 'session_event'),
       );
     });
 

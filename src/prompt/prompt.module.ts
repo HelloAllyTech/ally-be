@@ -6,6 +6,7 @@ import { PromptsRepository } from './repository/prompt.repository';
 import { PromptVersionRepository } from './repository/prompt-version.repository';
 import { PromptsService } from './service/prompt.service';
 import { PromptSharedService } from './service/prompt-shared.service';
+import { PromptsSyncService } from './service/prompts-sync.service';
 import { PromptsController } from './controller/prompts.controller';
 
 @Module({
@@ -16,6 +17,7 @@ import { PromptsController } from './controller/prompts.controller';
     PromptVersionRepository,
     PromptsService,
     PromptSharedService,
+    PromptsSyncService,
   ],
   exports: [PromptSharedService],
 })

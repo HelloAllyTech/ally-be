@@ -1,15 +1,26 @@
-import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
+import { AiApiKeyGuard } from 'src/auth/guards/ai-auth.guard';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PromptsService } from '../service/prompt.service';
 import { UpdatePromptDto } from '../dto/update-prompt.dto';
 import { CreatePromptsDto } from '../dto/create-prompts.dto';
+import { SyncPromptsDto } from '../dto/sync-prompts.dto';
 import { SortOrder } from 'src/user/enum/user.enum';
 import { Prompt } from '../entity/prompt.entity';
 import { PromptResponse } from '../type/prompt-response.type';
@@ -25,6 +36,26 @@ export class PromptsController {
   constructor(private readonly promptsService: PromptsService) {}
 
   // ===== PROMPT ENDPOINTS =====
+
+  @ApiOperation({
+    summary: 'Get prompts by codes (e.g. for ally-ai-learn report)',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_PROMPT])
+  @Get('by-codes')
+  async getPromptsByCodes(
+    @Query('codes') codes: string,
+  ): Promise<Record<string, string>> {
+    const codeList = codes
+      ? codes
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean)
+      : [];
+    if (codeList.length === 0) {
+      return {};
+    }
+    return this.promptsService.getPromptsByCodes(codeList);
+  }
 
   @ApiOperation({ summary: 'Get all prompts' })
   @AuthPermissions([PERMISSIONS.VIEW_PROMPT])
@@ -53,6 +84,21 @@ export class PromptsController {
     return this.promptsService.createPrompts(createPromptsDto);
   }
 
+  @ApiOperation({
+    summary:
+      'Sync prompts from folder/codebase (add-only, update defaultPrompt)',
+    description:
+      'Accepts x-api-key for deployment scripts (e.g. ally-ai-learn sync).',
+  })
+  @UseGuards(AiApiKeyGuard)
+  @ApiSecurity('api-key')
+  @Post('sync')
+  async syncPrompts(
+    @Body() syncPromptsDto: SyncPromptsDto,
+  ): Promise<{ added: number; updated: number }> {
+    return this.promptsService.syncPrompts(syncPromptsDto);
+  }
+
   @ApiOperation({ summary: 'Update a prompt' })
   @AuthPermissions([PERMISSIONS.EDIT_PROMPT])
   @Put(':id')
@@ -61,5 +107,12 @@ export class PromptsController {
     @Body() updatePromptDto: UpdatePromptDto,
   ): Promise<boolean> {
     return this.promptsService.updatePrompt(id, updatePromptDto);
+  }
+
+  @ApiOperation({ summary: 'Revert prompt to codebase default' })
+  @AuthPermissions([PERMISSIONS.EDIT_PROMPT])
+  @Post(':id/revert')
+  async revertPrompt(@Param('id') id: string): Promise<boolean> {
+    return this.promptsService.revertPrompt(id);
   }
 }

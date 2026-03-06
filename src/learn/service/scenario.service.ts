@@ -107,7 +107,7 @@ import {
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
 import { GeneratableField } from '../enum/generatable-field.enum';
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import {
   isValidTimeFormatHHMMSS,
   parseTimeToSeconds,
@@ -1768,7 +1768,7 @@ export class ScenarioService {
           await this.openaiTranslationsService.translateObjectToLanguages(
             sanitized as Partial<ScenarioEventsTranslationData>,
             languageCodes,
-            PromptCode.OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE,
+            toPromptCode('openai_translation', 'session_event'),
           );
 
         if (openaiResult && Object.keys(openaiResult).length > 0) {
@@ -1892,8 +1892,10 @@ export class ScenarioService {
       fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES &&
       scenarioContext.languageCode?.toLowerCase().startsWith('en')
     ) {
-      promptCode =
-        PromptCode.OPENAI_SIMULATION_LINGUISTIC_STYLE_SAMPLES_ENGLISH_PROMPT_CODE;
+      promptCode = toPromptCode(
+        'openai_simulation',
+        'linguistic_style_samples_english',
+      );
     }
 
     if (!promptCode) {

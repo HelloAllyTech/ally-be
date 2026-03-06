@@ -49,10 +49,14 @@ services:
       SQS_AUDIO_UPLOAD_DLQ_URL: "http://localstack:4566/000000000000/sqs-audio-upload-queue-dlq"
       SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: "http://localstack:4566/000000000000/sqs-learn-message-and-event-queue"
     depends_on:
-      - postgres
-      - redis
-      - sqs-setup
-      - localstack
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      sqs-setup:
+        condition: service_completed_successfully
+      localstack:
+        condition: service_healthy
     networks:
       - app-network
     volumes:
@@ -70,6 +74,12 @@ services:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ally_local"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
   redis:
     image: redis:latest

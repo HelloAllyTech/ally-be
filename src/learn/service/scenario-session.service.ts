@@ -100,6 +100,9 @@ import { ScenarioSessionReflectionPromptResponse } from '../entity/scenario-sess
 import { SCENARIO_SESSION_REFLECTION_PROMPTS } from '../constants/scenario-session-reflection-prompt.constants';
 import { ScenariosRepository } from '../repository/scenario.repository';
 
+/** Cache for preview room metadata (used when dispatching agent directly in local dev) */
+const previewRoomMetadataCache = new Map<string, object>();
+
 @Injectable()
 export class ScenarioSessionService {
   private readonly logger: LoggerService;
@@ -1295,12 +1298,52 @@ export class ScenarioSessionService {
       metadata: roomMetadata,
     });
 
+    // Cache metadata for direct dispatch (local dev when webhook unreachable)
+    if (this.configService.allowDirectAgentDispatch) {
+      previewRoomMetadataCache.set(roomName, roomMetadata);
+    }
+
     const accessToken = await this.livekitService.generateAccessToken({
       roomName,
       participantName: userId.toString(),
     });
 
-    return { roomName, accessToken, scenario, checklistEvents };
+    return {
+      roomName,
+      accessToken,
+      scenario,
+      checklistEvents,
+      useDirectAgentDispatch: this.configService.allowDirectAgentDispatch,
+    };
+  }
+
+  /**
+   * Dispatch agent to a preview room (local dev only).
+   * Bypasses LiveKit webhook when ally-be is unreachable (e.g. localhost).
+   */
+  async dispatchPreviewAgent(roomName: string): Promise<void> {
+    if (!this.configService.allowDirectAgentDispatch) {
+      throw new BadRequestException(
+        'Direct agent dispatch is not enabled (production uses webhook)',
+      );
+    }
+    if (!roomName.startsWith('preview-')) {
+      throw new BadRequestException(
+        'Only preview rooms can use direct agent dispatch',
+      );
+    }
+    const metadata = previewRoomMetadataCache.get(roomName);
+    if (!metadata) {
+      throw new NotFoundException(
+        `Preview room ${roomName} not found or expired`,
+      );
+    }
+    await this.livekitService.agentDispatch(
+      roomName,
+      'Agent',
+      JSON.stringify(metadata),
+    );
+    this.logger.debug(`Dispatched agent to preview room: ${roomName}`);
   }
 
   private async validatePreviewScenario(scenario: Scenarios) {
@@ -1332,6 +1375,7 @@ export class ScenarioSessionService {
   }
 
   async endPreviewScenario(roomName: string) {
+    previewRoomMetadataCache.delete(roomName);
     await this.livekitService.deleteRoom(roomName);
     this.logger.info(`Preview scenario room deleted: ${roomName}`);
   }

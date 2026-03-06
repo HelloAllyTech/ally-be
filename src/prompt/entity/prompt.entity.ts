@@ -18,8 +18,11 @@ export class Prompt extends BaseWithoutTenantEntity {
   description!: string;
 
   @Column({ nullable: true })
-  useCase!: string;
-
-  @Column({ nullable: true })
   currentVersion?: number;
+
+  @Column({ type: 'text', nullable: true })
+  defaultPrompt?: string;
+
+  @Column({ type: 'boolean', default: false })
+  useDashboardOverride!: boolean;
 }

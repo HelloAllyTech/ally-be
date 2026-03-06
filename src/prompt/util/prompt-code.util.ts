@@ -1,4 +1,19 @@
 /**
+ * Builds promptCode from folder path. Matches PromptsSyncService convention:
+ * subdir/filename.txt -> subdir_filename
+ *
+ * Use when fetching prompts via getPromptByCode(). Keeps code in sync with
+ * src/prompts/ — add a file, use toPromptCode(subdir, filename), no central enum.
+ *
+ * @example
+ * toPromptCode('openai_translation', 'session_event') // 'openai_translation_session_event'
+ * toPromptCode('openai_simulation', 'character_profile_text') // 'openai_simulation_character_profile_text'
+ */
+export function toPromptCode(subdir: string, filename: string): string {
+  return `${subdir}_${filename}`;
+}
+
+/**
  * Converts a prompt code string to the standard format: lowercase_with_underscores
  * Examples:
  * - "AI Learn" -> "ai_learn"
