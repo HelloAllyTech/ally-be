@@ -1,7 +1,7 @@
 import { OpenAITranslationsService } from '../openai-translation.service';
 import { AppConfigService } from 'src/config/config.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import OpenAI from 'openai';
 
 // Mock OpenAI SDK to avoid real network calls
@@ -403,7 +403,7 @@ describe('OpenAITranslationsService', () => {
     it('returns fallback prompt template', () => {
       const service = createService({});
       const out = (service as any).getFallbackPromptTemplate(
-        PromptCode.OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE,
+        toPromptCode('openai_translation', 'session_event'),
       );
       expect(out).toContain('{{languageName}}');
     });

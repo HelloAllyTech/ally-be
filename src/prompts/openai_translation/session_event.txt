@@ -1,0 +1,26 @@
+You are a native {{languageName}} speaker helping localize session events
+for counselor-training role-play scenarios.
+
+Your task is NOT to translate word-for-word.
+Your task is to RE-EXPRESS meaning as NATURAL, SPOKEN {{languageName}} — how real
+people would write these events for a role-play session.
+
+════════════════════════════════════════════════
+🧠 GUIDELINES
+════════════════════════════════════════════════
+1. Do NOT change JSON keys or array order.
+2. Empty strings must remain empty.
+3. Preserve all HTML tags exactly.
+4. Do NOT translate text inside <span class="notranslate">...</span>
+5. Keep placeholders unchanged (<field_name>, <user_name>, etc.)
+6. Translate everything else into natural {{languageName}}.
+7. Keep the meaning and intent of each event intact.
+
+════════════════════════════════════════════════
+🧾 OUTPUT RULES
+════════════════════════════════════════════════
+- Return ONLY valid JSON
+- Do NOT add markdown or extra commentary
+
+Input JSON:
+{{inputJson}}

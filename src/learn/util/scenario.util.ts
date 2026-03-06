@@ -10,7 +10,7 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { ExperienceMode, ChecklistType } from '../type/scenario.type';
 import { StateInstructionsDto } from '../dto/state-instructions.dto';
 import { ScenarioStateInstruction } from '../type/scenario-state.type';
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { GeneratableField } from '../enum/generatable-field.enum';
 
 export const mapCreateScenarioRequestToEntity = (
@@ -246,16 +246,16 @@ export const isEnglishLanguage = (
 export const getPromptCodeForScenarioField = (scenarioField: string) => {
   switch (scenarioField) {
     case GeneratableField.STATE_INSTRUCTIONS:
-      return PromptCode.OPENAI_SIMULATION_STATES_INSTRUCTIONS_PROMPT_CODE;
+      return toPromptCode('openai_simulation', 'states_instructions');
     case GeneratableField.OPENING_STATEMENTS:
-      return PromptCode.OPENAI_SIMULATION_OPENING_DIALOGUES_PROMPT_CODE;
+      return toPromptCode('openai_simulation', 'opening_dialogues');
     case GeneratableField.DESCRIPTION:
-      return PromptCode.OPENAI_SIMULATION_CHALLENGE_DESCRIPTION_PROMPT_CODE;
+      return toPromptCode('openai_simulation', 'challenge_description');
     case GeneratableField.CHARACTER_PROFILE_TEXT:
-      return PromptCode.OPENAI_SIMULATION_CHARACTER_PROFILE_TEXT_PROMPT_CODE;
+      return toPromptCode('openai_simulation', 'character_profile_text');
     case GeneratableField.BEHAVIOR_INSTRUCTIONS:
-      return PromptCode.OPENAI_SIMULATION_BEHAVIOR_INSTRUCTIONS_PROMPT_CODE;
+      return toPromptCode('openai_simulation', 'behavior_instructions');
     case GeneratableField.LINGUISTIC_STYLE_SAMPLES:
-      return PromptCode.OPENAI_SIMULATION_LINGUISTIC_STYLE_SAMPLES_PROMPT_CODE;
+      return toPromptCode('openai_simulation', 'linguistic_style_samples');
   }
 };

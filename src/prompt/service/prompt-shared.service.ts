@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import { PromptsRepository } from '../repository/prompt.repository';
 import {
   PromptSearchOptions,
   PromptsWithPromptCode,
 } from '../type/prompt-response.type';
+
+const PROMPTS_DIR = 'src/prompts';
 
 @Injectable()
 export class PromptSharedService {
@@ -11,9 +15,24 @@ export class PromptSharedService {
 
   /**
    * Get the current prompt content by standardized prompt code.
-   * Returns null if not found or current version is not set.
+   * - When useDashboardOverride is false: read from folder (src/prompts/{promptCode}.txt)
+   * - When useDashboardOverride is true: read from DB (prompts_versions)
+   * Returns null if not found.
    */
   async getPromptByCode(promptCode: string): Promise<string | null> {
+    const promptRow = await this.promptsRepository.findOne({
+      where: { promptCode },
+      select: ['id', 'useDashboardOverride'],
+    });
+
+    if (!promptRow) {
+      return this.readFromFolder(promptCode);
+    }
+
+    if (!promptRow.useDashboardOverride) {
+      return this.readFromFolder(promptCode);
+    }
+
     const row = (await this.promptsRepository
       .createQueryBuilder('prompt')
       .leftJoin(
@@ -29,11 +48,45 @@ export class PromptSharedService {
   }
 
   /**
+   * Resolve promptCode to file path. Supports:
+   * - Flat: promptCode.txt (legacy)
+   * - Subdir: subdir/rest.txt when promptCode = subdir_rest (e.g. openai_simulation_foo -> openai_simulation/foo.txt)
+   */
+  private readFromFolder(promptCode: string): string | null {
+    const promptsDir = path.join(process.cwd(), PROMPTS_DIR);
+    try {
+      if (!fs.existsSync(promptsDir)) return null;
+
+      // Try flat first (backward compat)
+      const flatPath = path.join(promptsDir, `${promptCode}.txt`);
+      if (fs.existsSync(flatPath)) {
+        return fs.readFileSync(flatPath, 'utf-8').trim();
+      }
+
+      // Try subdirs: promptCode subdir_rest -> subdir/rest.txt
+      const entries = fs.readdirSync(promptsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const prefix = entry.name.replace(/-/g, '_');
+        if (promptCode.startsWith(prefix + '_')) {
+          const rest = promptCode.slice(prefix.length + 1);
+          const subdirPath = path.join(promptsDir, entry.name, `${rest}.txt`);
+          if (fs.existsSync(subdirPath)) {
+            return fs.readFileSync(subdirPath, 'utf-8').trim();
+          }
+        }
+      }
+    } catch {
+      // Ignore read errors
+    }
+    return null;
+  }
+
+  /**
    * Get prompts by options.
    * Returns an array of prompts with prompt code.
    *
    * @param options - The options to filter prompts by.
-   * example options: { useCase: ['scenario_session']}
    * example options: { promptCode: ['ally_ai_learn_default']}
    * @returns An array of prompts with prompt code.
    */
@@ -47,20 +100,36 @@ export class PromptSharedService {
         'pv',
         '"prompt"."id" = "pv"."promptId" AND "pv"."version" = "prompt"."currentVersion"',
       )
-      .select(['pv.prompt AS prompt', 'prompt.promptCode AS "promptCode"']);
-
-    if (options.useCase && options.useCase.length > 0) {
-      query.andWhere('prompt.useCase IN (:...useCases)', {
-        useCases: options.useCase,
-      });
-    }
+      .select(['pv.prompt AS prompt', 'prompt.promptCode AS "promptCode"'])
+      .addSelect('prompt.useDashboardOverride', 'useDashboardOverride');
 
     if (options.promptCode && options.promptCode.length > 0) {
       query.andWhere('prompt.promptCode IN (:...promptCodes)', {
         promptCodes: options.promptCode,
       });
     }
+    if (options.promptCodePrefix) {
+      query.andWhere('prompt.promptCode LIKE :prefix', {
+        prefix: `${options.promptCodePrefix}%`,
+      });
+    }
+    if (options.useDashboardOverrideOnly === true) {
+      query.andWhere('prompt.useDashboardOverride = true');
+    }
 
-    return query.getRawMany<PromptsWithPromptCode>();
+    const rows = await query.getRawMany<
+      PromptsWithPromptCode & { useDashboardOverride: boolean }
+    >();
+
+    for (const row of rows) {
+      if (!row.useDashboardOverride) {
+        const fromFolder = this.readFromFolder(row.promptCode);
+        if (fromFolder !== null) {
+          row.prompt = fromFolder;
+        }
+      }
+    }
+
+    return rows;
   }
 }

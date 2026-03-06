@@ -21,12 +21,4 @@ export class CreateSinglePromptDto {
   @IsString()
   @IsNotEmpty()
   prompt!: string;
-
-  @ApiProperty({
-    description: 'Use case or category for the prompt',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  useCase?: string;
 }

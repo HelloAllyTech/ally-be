@@ -1,0 +1,48 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class SyncPromptItemDto {
+  @ApiProperty({
+    description: 'Unique prompt code',
+    example: 'openai_simulation_character_profile_text',
+  })
+  @IsString()
+  @IsNotEmpty()
+  promptCode!: string;
+
+  @ApiProperty({ description: 'Display name' })
+  @IsString()
+  name!: string;
+
+  @ApiProperty({ description: 'Prompt description' })
+  @IsString()
+  description!: string;
+
+  @ApiProperty({ description: 'Prompt content (template)' })
+  @IsString()
+  prompt!: string;
+
+  @ApiPropertyOptional({
+    description: 'Variable placeholders in the prompt (e.g. {var_name})',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  availableVariables?: string[];
+}
+
+export class SyncPromptsDto {
+  @ApiProperty({ type: [SyncPromptItemDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SyncPromptItemDto)
+  prompts!: SyncPromptItemDto[];
+}

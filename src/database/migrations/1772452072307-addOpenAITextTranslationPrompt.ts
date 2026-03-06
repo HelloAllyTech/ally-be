@@ -1,9 +1,9 @@
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddOpenAITextTranslationPrompt1772452072307 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const code = PromptCode.OPENAI_TEXT_TRANSLATION_PROMPT_CODE;
+    const code = toPromptCode('openai_translation', 'general_text_translation');
     const name = 'OpenAI Text Translation Prompt';
     const description =
       'General-purpose prompt template for translating a single text string to a target language.';

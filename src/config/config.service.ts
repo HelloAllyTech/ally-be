@@ -234,6 +234,14 @@ export class AppConfigService {
     };
   }
 
+  /** When true, frontend can trigger agent dispatch (for local dev when webhook unreachable) */
+  get allowDirectAgentDispatch(): boolean {
+    const explicit =
+      this.configService.get<string>('ALLOW_DIRECT_AGENT_DISPATCH') === 'true';
+    const isLocal = this.nodeEnv === 'development' || this.nodeEnv === 'local';
+    return explicit || isLocal;
+  }
+
   get app() {
     return {
       baseUrl: this.configService.get<string>('APP_BASE_URL'),

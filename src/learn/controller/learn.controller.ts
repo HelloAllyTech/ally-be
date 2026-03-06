@@ -328,6 +328,24 @@ export class LearnController {
     );
   }
 
+  @ApiOperation({
+    summary: 'Dispatch agent to preview room (local dev only)',
+    description:
+      'When webhook is unreachable (e.g. localhost), frontend triggers agent dispatch after connecting.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['roomName'],
+      properties: { roomName: { type: 'string' } },
+    },
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @Post('scenarios/preview/dispatch-agent')
+  async dispatchPreviewAgent(@Body('roomName') roomName: string) {
+    return this.scenarioSessionService.dispatchPreviewAgent(roomName);
+  }
+
   @ApiOperation({ summary: 'End a preview scenario' })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
   @Post('scenarios/preview/:roomName/end')

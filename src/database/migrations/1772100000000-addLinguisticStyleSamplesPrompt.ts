@@ -1,8 +1,8 @@
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 const PROMPT = {
-  code: PromptCode.OPENAI_SIMULATION_LINGUISTIC_STYLE_SAMPLES_PROMPT_CODE,
+  code: toPromptCode('openai_simulation', 'linguistic_style_samples'),
   name: 'OpenAI Simulation Linguistic Style Samples Prompt',
   description:
     'Prompt for auto-generating 10 sample client utterances in a target language for linguistic style in counseling simulations',

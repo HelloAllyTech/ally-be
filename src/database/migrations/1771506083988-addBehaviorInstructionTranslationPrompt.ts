@@ -1,10 +1,12 @@
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
 export class AddBehaviorInstructionTranslationPrompt1771506083988 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const systemCode =
-      PromptCode.OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_CODE;
+    const systemCode = toPromptCode(
+      'openai_translation',
+      'learn_behavior_instruction',
+    );
     const systemName = 'OpenAI Translation Learn Behavior Instruction Prompt';
     const systemDescription =
       'System prompt for OpenAI behavior instruction translations';
@@ -55,8 +57,10 @@ export class AddBehaviorInstructionTranslationPrompt1771506083988 implements Mig
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    const systemCode =
-      PromptCode.OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_CODE;
+    const systemCode = toPromptCode(
+      'openai_translation',
+      'learn_behavior_instruction',
+    );
 
     await queryRunner.query(
       `DELETE FROM "prompts_versions" pv

@@ -1,4 +1,4 @@
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 const PROMPT_TEMPLATE_V3 = `You are generating Behaviour Instructions for a mental health counselling simulation.
@@ -81,8 +81,7 @@ Output format:
 
 Only output valid JSON.`;
 
-const PROMPT_CODE =
-  PromptCode.OPENAI_SIMULATION_BEHAVIOR_INSTRUCTIONS_PROMPT_CODE;
+const PROMPT_CODE = toPromptCode('openai_simulation', 'behavior_instructions');
 
 export class UpdateBehaviorInstructionPrompt1772171517715 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {

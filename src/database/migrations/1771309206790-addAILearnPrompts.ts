@@ -1,11 +1,19 @@
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 import { MigrationInterface, QueryRunner } from 'typeorm';
+
+// ally-ai-learn prompts (synced via HTTP, not from folder)
+const ALLY_AI_LEARN_DEFAULT = 'ally_ai_learn_default';
+const ALLY_AI_LEARN_CLIENT_PERSONA_TEMPLATE =
+  'ally_ai_learn_client_persona_template';
+const ALLY_AI_LEARN_PROSODY_GENERATION = 'ally_ai_learn_prosody_generation';
+const ALLY_AI_LEARN_PROSODY_UNIFIED = 'ally_ai_learn_prosody_unified';
+const ALLY_AI_LEARN_PROSODY_PARAMETERS_ONLY =
+  'ally_ai_learn_prosody_parameters_only';
 
 export class addAILearnPrompts1771309206790 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     const prompts = [
       {
-        code: PromptCode.ALLY_AI_LEARN_DEFAULT,
+        code: ALLY_AI_LEARN_DEFAULT,
         name: 'AI Learn Default Base Prompt',
         description:
           'Base system prompt for AI roleplay client in counselor training simulations. Used when no custom prompt is provided in the scenario.',
@@ -36,7 +44,7 @@ unless explicitly instructed.
   the words the client would actually say.`,
       },
       {
-        code: PromptCode.ALLY_AI_LEARN_CLIENT_PERSONA_TEMPLATE,
+        code: ALLY_AI_LEARN_CLIENT_PERSONA_TEMPLATE,
         name: 'Client Persona Template',
         description:
           'Template structure for displaying client persona details. Placeholders are filled at runtime with values from scenario metadata (promptData). Used together with the base instruction to build the full system prompt.',
@@ -81,7 +89,7 @@ This is the background information for your character.
 {agent_dialogues}`,
       },
       {
-        code: PromptCode.ALLY_AI_LEARN_PROSODY_GENERATION,
+        code: ALLY_AI_LEARN_PROSODY_GENERATION,
         name: 'Prosody Default Generation Prompt',
         description:
           'Establishes physiological baseline for character voice using prosody science. Used for initial prosody parameter generation.',
@@ -167,7 +175,7 @@ implied by those statements.`,
     }
 
     // The remaining 2 prompts are very large, so I'll add them separately
-    const prosodyUnifiedCode = PromptCode.ALLY_AI_LEARN_PROSODY_UNIFIED;
+    const prosodyUnifiedCode = ALLY_AI_LEARN_PROSODY_UNIFIED;
     const prosodyUnifiedName = 'Prosody Unified Prompt With Enhancement';
     const prosodyUnifiedDescription =
       'Generates prosody parameters and enhanced text for real-time speech. Supports text enhancement (e.g. therapy-specific tags like [sighs]).';
@@ -226,8 +234,7 @@ TEXT ENHANCEMENT RULES:
       [prosodyUnifiedTemplate, prosodyUnifiedCode],
     );
 
-    const prosodyParametersOnlyCode =
-      PromptCode.ALLY_AI_LEARN_PROSODY_PARAMETERS_ONLY;
+    const prosodyParametersOnlyCode = ALLY_AI_LEARN_PROSODY_PARAMETERS_ONLY;
     const prosodyParametersOnlyName = 'Prosody Parameters Only Prompt';
     const prosodyParametersOnlyDescription =
       'Generates prosody parameters only (no text enhancement). Used when TTS provider does not support text enhancement.';
@@ -260,22 +267,22 @@ determine appropriate prosody parameters.
     await queryRunner.query(
       `UPDATE "prompts" SET "currentVersion" = 1 WHERE "promptCode" IN ($1, $2, $3, $4, $5)`,
       [
-        PromptCode.ALLY_AI_LEARN_DEFAULT,
-        PromptCode.ALLY_AI_LEARN_CLIENT_PERSONA_TEMPLATE,
-        PromptCode.ALLY_AI_LEARN_PROSODY_GENERATION,
-        PromptCode.ALLY_AI_LEARN_PROSODY_UNIFIED,
-        PromptCode.ALLY_AI_LEARN_PROSODY_PARAMETERS_ONLY,
+        ALLY_AI_LEARN_DEFAULT,
+        ALLY_AI_LEARN_CLIENT_PERSONA_TEMPLATE,
+        ALLY_AI_LEARN_PROSODY_GENERATION,
+        ALLY_AI_LEARN_PROSODY_UNIFIED,
+        ALLY_AI_LEARN_PROSODY_PARAMETERS_ONLY,
       ],
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     const promptCodes = [
-      PromptCode.ALLY_AI_LEARN_DEFAULT,
-      PromptCode.ALLY_AI_LEARN_CLIENT_PERSONA_TEMPLATE,
-      PromptCode.ALLY_AI_LEARN_PROSODY_GENERATION,
-      PromptCode.ALLY_AI_LEARN_PROSODY_UNIFIED,
-      PromptCode.ALLY_AI_LEARN_PROSODY_PARAMETERS_ONLY,
+      ALLY_AI_LEARN_DEFAULT,
+      ALLY_AI_LEARN_CLIENT_PERSONA_TEMPLATE,
+      ALLY_AI_LEARN_PROSODY_GENERATION,
+      ALLY_AI_LEARN_PROSODY_UNIFIED,
+      ALLY_AI_LEARN_PROSODY_PARAMETERS_ONLY,
     ];
 
     // Delete prompt versions for the specific prompts

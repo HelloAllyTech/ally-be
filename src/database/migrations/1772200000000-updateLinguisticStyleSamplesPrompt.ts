@@ -1,4 +1,4 @@
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 const PROMPT_TEMPLATE_V2 = `# Role
@@ -43,8 +43,10 @@ The speaker is {{gender}}.
 Return ONLY a JSON object with a "samples" key containing an array of 10 strings. No intro, no outro.
 Example format: {"samples": ["utterance 1", "utterance 2", ...]}`;
 
-const PROMPT_CODE =
-  PromptCode.OPENAI_SIMULATION_LINGUISTIC_STYLE_SAMPLES_PROMPT_CODE;
+const PROMPT_CODE = toPromptCode(
+  'openai_simulation',
+  'linguistic_style_samples',
+);
 
 export class UpdateLinguisticStyleSamplesPrompt1772200000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {

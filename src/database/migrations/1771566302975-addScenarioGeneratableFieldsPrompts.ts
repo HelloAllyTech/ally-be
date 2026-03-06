@@ -1,9 +1,9 @@
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
 const PROMPTS = [
   {
-    code: PromptCode.OPENAI_SIMULATION_CHARACTER_PROFILE_TEXT_PROMPT_CODE,
+    code: toPromptCode('openai_simulation', 'character_profile_text'),
     name: 'OpenAI Simulation Character Profile Text Prompt',
     description:
       'Prompt for auto-generating a character profile text for a role-play simulation scenario',
@@ -41,7 +41,7 @@ Structure (follow exactly):
 Now generate the Character Profile Text for the given inputs.`,
   },
   {
-    code: PromptCode.OPENAI_SIMULATION_CHALLENGE_DESCRIPTION_PROMPT_CODE,
+    code: toPromptCode('openai_simulation', 'challenge_description'),
     name: 'OpenAI Simulation Challenge Description Prompt',
     description:
       'Prompt for auto-generating a challenge description for a role-play simulation scenario',
@@ -88,7 +88,7 @@ The output should read like a precise description of the counselling challenge â
 Now generate the Challenge Description.`,
   },
   {
-    code: PromptCode.OPENAI_SIMULATION_OPENING_DIALOGUES_PROMPT_CODE,
+    code: toPromptCode('openai_simulation', 'opening_dialogues'),
     name: 'OpenAI Simulation Opening Dialogues Prompt',
     description:
       'Prompt for auto-generating opening dialogue lines for a role-play simulation scenario',
@@ -138,7 +138,7 @@ The dialogue should feel like something a real client would actually say in the 
 Now generate the opening dialogue list.`,
   },
   {
-    code: PromptCode.OPENAI_SIMULATION_STATES_INSTRUCTIONS_PROMPT_CODE,
+    code: toPromptCode('openai_simulation', 'states_instructions'),
     name: 'OpenAI Simulation States Instructions Prompt',
     description:
       'Prompt for auto-generating dynamic client states for a role-play simulation scenario',

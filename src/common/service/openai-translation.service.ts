@@ -19,7 +19,7 @@ import {
   DEFAULT_OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_TEXT_TRANSLATION_PROMPT_TEMPLATE,
 } from 'src/common/constants/openai-translations.constants';
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
 @Injectable()
 export class OpenAITranslationsService {
@@ -38,19 +38,42 @@ export class OpenAITranslationsService {
     this.model = this.configService.openai.translationModel;
   }
 
-  // Prompt codes for dynamic templates
-  private readonly SYSTEM_PROMPT_CODE =
-    PromptCode.OPENAI_TRANSLATION_SYSTEM_PROMPT_CODE;
-  private readonly USER_PROMPT_CODE =
-    PromptCode.OPENAI_TRANSLATION_USER_PROMPT_CODE;
+  // Prompt codes for dynamic templates (from openai_translation/*.txt)
+  private readonly SYSTEM_PROMPT_CODE = toPromptCode(
+    'openai_translation',
+    'code_mixed_system',
+  );
+  private readonly USER_PROMPT_CODE = toPromptCode(
+    'openai_translation',
+    'speech_reexpression_user',
+  );
+  private readonly GUARDRAIL_PROMPT_CODE = toPromptCode(
+    'openai_translation',
+    'guardrail_translation',
+  );
+  private readonly BEHAVIOR_INSTRUCTION_PROMPT_CODE = toPromptCode(
+    'openai_translation',
+    'learn_behavior_instruction',
+  );
+  private readonly SESSION_EVENT_PROMPT_CODE = toPromptCode(
+    'openai_translation',
+    'session_event',
+  );
+  private readonly TEXT_TRANSLATION_PROMPT_CODE = toPromptCode(
+    'openai_translation',
+    'general_text_translation',
+  );
 
   private renderTemplate(
     template: string,
     variables: Record<string, string>,
   ): string {
-    return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => {
-      return variables[key] ?? '';
-    });
+    // Support both {{var}} (legacy) and <var> (unified format)
+    return template
+      .replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => variables[key] ?? '')
+      .replace(/<(\w+)>/g, (match, key) =>
+        key in variables ? String(variables[key] ?? '') : match,
+      );
   }
 
   /* ------------------------------------------------------------------
@@ -393,13 +416,13 @@ IMPORTANT:
 
   private getFallbackPromptTemplate(promptCode: string): string | undefined {
     const fallbackPromptMap: Record<string, string> = {
-      [PromptCode.OPENAI_GUARDRAIL_TRANSLATION_PROMPT_CODE]:
+      [this.GUARDRAIL_PROMPT_CODE]:
         DEFAULT_OPENAI_GUARDRAIL_TRANSLATION_PROMPT_TEMPLATE,
-      [PromptCode.OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_CODE]:
+      [this.BEHAVIOR_INSTRUCTION_PROMPT_CODE]:
         DEFAULT_OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_TEMPLATE,
-      [PromptCode.OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_CODE]:
+      [this.SESSION_EVENT_PROMPT_CODE]:
         DEFAULT_OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_TEMPLATE,
-      [PromptCode.OPENAI_TEXT_TRANSLATION_PROMPT_CODE]:
+      [this.TEXT_TRANSLATION_PROMPT_CODE]:
         DEFAULT_OPENAI_TEXT_TRANSLATION_PROMPT_TEMPLATE,
     };
     return fallbackPromptMap[promptCode];
@@ -451,10 +474,10 @@ IMPORTANT:
       LANGUAGE_NAME_MAP[normalizedCode] ?? targetLanguageCode;
 
     const dbTemplate = await this.promptSharedService.getPromptByCode(
-      PromptCode.OPENAI_TEXT_TRANSLATION_PROMPT_CODE,
+      this.TEXT_TRANSLATION_PROMPT_CODE,
     );
     const fallbackTemplate = this.getFallbackPromptTemplate(
-      PromptCode.OPENAI_TEXT_TRANSLATION_PROMPT_CODE,
+      this.TEXT_TRANSLATION_PROMPT_CODE,
     );
     const promptTemplate = dbTemplate ?? fallbackTemplate;
 

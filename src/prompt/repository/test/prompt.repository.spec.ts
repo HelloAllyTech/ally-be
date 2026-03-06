@@ -179,7 +179,7 @@ describe('PromptsRepository', () => {
 
       expect(result).toEqual(mockPrompts);
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        '(prompt.promptCode ILIKE :searchName OR prompt.name ILIKE :searchName OR prompt.description ILIKE :searchName) OR (pv.prompt ILIKE :searchName) OR (prompt.useCase ILIKE :searchName)',
+        '(prompt.promptCode ILIKE :searchName OR prompt.name ILIKE :searchName OR prompt.description ILIKE :searchName) OR (pv.prompt ILIKE :searchName)',
       );
       expect(queryBuilder.setParameters).toHaveBeenCalledWith({
         searchName: `%${searchName}%`,

@@ -1,9 +1,12 @@
-import { PromptCode } from 'src/prompt/enum/prompt-code.enum';
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
 export class addConversationalGuardrailsPrompt1771265050431 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const systemCode = PromptCode.OPENAI_GUARDRAIL_TRANSLATION_PROMPT_CODE;
+    const systemCode = toPromptCode(
+      'openai_translation',
+      'guardrail_translation',
+    );
     const systemName = 'OpenAI Translation System Guardrail Prompt';
 
     const systemDescription = 'System prompt for OpenAI guardrail translations';
@@ -62,7 +65,10 @@ Input JSON:
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    const systemCode = PromptCode.OPENAI_GUARDRAIL_TRANSLATION_PROMPT_CODE;
+    const systemCode = toPromptCode(
+      'openai_translation',
+      'guardrail_translation',
+    );
 
     // Delete prompt versions for the specific prompts
     await queryRunner.query(

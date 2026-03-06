@@ -1,0 +1,13 @@
+Rewrite the following JSON so it sounds like NATURAL, CASUAL spoken {{languageName}}.
+
+IMPORTANT:
+- Keep the JSON structure exactly the same
+- Only rewrite string VALUES, not keys
+- Do NOT translate word-for-word
+- Rewrite how a native speaker would SAY this out loud
+- Keep meaning, not sentence structure
+- Return ONLY valid JSON
+- Do NOT add markdown or extra text
+
+Input JSON:
+{{inputJson}}

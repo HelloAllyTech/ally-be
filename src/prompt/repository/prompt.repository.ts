@@ -22,6 +22,8 @@ export class PromptsRepository extends Repository<Prompt> {
         '"prompt"."id" = "pv"."promptId" AND "pv"."version" = "prompt"."currentVersion"',
       )
       .addSelect('pv.prompt', 'prompt')
+      .addSelect('prompt.defaultPrompt', 'defaultPrompt')
+      .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
       .where('prompt.id = :id', { id })
       .getRawOne() as unknown as Promise<PromptDetailResponse | null>;
   }
@@ -42,12 +44,14 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.description', 'description')
       .addSelect('prompt.createdAt', 'createdAt')
       .addSelect('pv.prompt', 'prompt')
-      .addSelect('prompt.useCase', 'useCase');
+      .addSelect('prompt.defaultPrompt', 'defaultPrompt')
+      .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
+      .where('prompt.defaultPrompt IS NOT NULL');
 
     if (searchName) {
       query
         .andWhere(
-          '(prompt.promptCode ILIKE :searchName OR prompt.name ILIKE :searchName OR prompt.description ILIKE :searchName) OR (pv.prompt ILIKE :searchName) OR (prompt.useCase ILIKE :searchName)',
+          '(prompt.promptCode ILIKE :searchName OR prompt.name ILIKE :searchName OR prompt.description ILIKE :searchName) OR (pv.prompt ILIKE :searchName)',
         )
         .setParameters({
           searchName: `%${searchName}%`,

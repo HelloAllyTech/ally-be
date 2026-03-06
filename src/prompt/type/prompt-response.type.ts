@@ -5,6 +5,9 @@ export type PromptResponse = {
   description: string;
   createdAt: Date;
   prompt: string;
+  defaultPrompt?: string;
+  useDashboardOverride?: boolean;
+  availableVariables?: string[];
 };
 
 export type PromptDetailResponse = {
@@ -16,6 +19,9 @@ export type PromptDetailResponse = {
   createdAt: Date;
   updatedAt: Date;
   prompt?: string;
+  defaultPrompt?: string;
+  useDashboardOverride?: boolean;
+  availableVariables?: string[];
 };
 
 export type PromptsWithPromptCode = {
@@ -28,5 +34,8 @@ export type PromptSearchOptions = {
   description?: string;
   prompt?: string;
   promptCode?: string[];
-  useCase?: string[];
+  /** When set, fetches prompts where promptCode LIKE 'prefix%' (e.g. ally_ai_learn_) */
+  promptCodePrefix?: string;
+  /** When true, only include prompts with useDashboardOverride=true (dashboard-edited) */
+  useDashboardOverrideOnly?: boolean;
 };
