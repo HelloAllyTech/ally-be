@@ -1,48 +1,48 @@
-import { ReviewCommentReaction } from '../entity/review-comment-reaction.entity';
-import { ReviewComment } from '../entity/review-comment.entity';
-import { ReviewReaction } from '../entity/review-reaction.entity';
-import { Review } from '../entity/review.entity';
+import { BaseReviewCommentReaction } from '../entity/base-review-comment-reaction.entity';
+import { BaseReviewComment } from '../entity/base-review-comment.entity';
+import { BaseReviewReaction } from '../entity/base-review-reaction.entity';
+import { BaseReview } from '../entity/base-review.entity';
 
-export enum ReviewEvents {
-  REVIEW_COMMENT_ADDED = 'REVIEW_COMMENT_ADDED',
-  REVIEW_COMMENT_REMOVED = 'REVIEW_COMMENT_REMOVED',
-  REVIEW_COMMENT_REACTION_ADDED = 'REVIEW_COMMENT_REACTION_ADDED',
-  REVIEW_COMMENT_REACTION_REMOVED = 'REVIEW_COMMENT_REACTION_REMOVED',
-  REVIEW_REACTION_ADDED = 'REVIEW_REACTION_ADDED',
-  REVIEW_REACTION_REMOVED = 'REVIEW_REACTION_REMOVED',
+export enum ScenarioSessionReviewEvents {
+  COMMENT_ADDED = 'SCENARIO_SESSION_REVIEW_COMMENT_ADDED',
+  COMMENT_REMOVED = 'SCENARIO_SESSION_REVIEW_COMMENT_REMOVED',
+  COMMENT_REACTION_ADDED = 'SCENARIO_SESSION_REVIEW_COMMENT_REACTION_ADDED',
+  COMMENT_REACTION_REMOVED = 'SCENARIO_SESSION_REVIEW_COMMENT_REACTION_REMOVED',
+  REACTION_ADDED = 'SCENARIO_SESSION_REVIEW_REACTION_ADDED',
+  REACTION_REMOVED = 'SCENARIO_SESSION_REVIEW_REACTION_REMOVED',
 }
 
 export interface ReviewCommentAddedEventParams {
-  review: Review;
-  comment: ReviewComment;
+  review: BaseReview;
+  comment: BaseReviewComment;
 }
 
 export interface ReviewReactionAddedEventParams {
-  review: Review;
-  reaction: ReviewReaction;
+  review: BaseReview;
+  reaction: BaseReviewReaction;
 }
 
 export interface ReviewCommentReactionAddedEventParams {
-  reaction: ReviewCommentReaction;
-  comment: ReviewComment;
-  review: Review;
+  reaction: BaseReviewCommentReaction;
+  comment: BaseReviewComment;
+  review: BaseReview;
 }
 
 export interface ReviewCommentReactionRemovedEventParams {
-  removedReaction: ReviewCommentReaction;
-  comment: ReviewComment;
-  review: Review;
+  removedReaction: BaseReviewCommentReaction;
+  comment: BaseReviewComment;
+  review: BaseReview;
 }
 
 export interface ReviewReactionRemovedEventParams {
-  removedReaction: ReviewReaction;
-  review: Review;
+  removedReaction: BaseReviewReaction;
+  review: BaseReview;
 }
 
 export interface ReviewCommentRemovedEventParams {
-  review: Review;
-  comment: ReviewComment;
-  commentReplies?: ReviewComment[];
-  commentReactions?: ReviewCommentReaction[];
-  commentReplyReactions?: ReviewCommentReaction[];
+  review: BaseReview;
+  comment: BaseReviewComment;
+  commentReplies?: BaseReviewComment[];
+  commentReactions?: BaseReviewCommentReaction[];
+  commentReplyReactions?: BaseReviewCommentReaction[];
 }

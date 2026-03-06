@@ -3,7 +3,7 @@ import { EntityManager, In } from 'typeorm';
 import { BadgeUserRepository } from '../repository/badge-user.repository';
 import { Badge } from '../entity/badge.entity';
 import { BadgeCategory } from '../constants/badge.constants';
-import { ReviewSharedService } from 'src/review/service/review-shared.service';
+import { ScenarioSessionReviewSharedService } from 'src/scenario-session-review/service/review-shared.service';
 import { CommunitySharedService } from 'src/community/service/community-shared.service';
 import { UserValueCount } from '../type/badge.type';
 import { SaveBadgeUsersRequest } from '../type/badge-response.type';
@@ -16,7 +16,7 @@ export class BadgeUserService {
   constructor(
     private readonly badgeUserRepository: BadgeUserRepository,
     private readonly communitySharedService: CommunitySharedService,
-    private readonly reviewSharedService: ReviewSharedService,
+    private readonly scenarioSessionReviewSharedService: ScenarioSessionReviewSharedService,
   ) {}
 
   async awardBadgeToUsersByTenant(
@@ -168,15 +168,15 @@ export class BadgeUserService {
   ): Promise<{ userId: number; count: number }[]> {
     const [givenComments, givenReviewReactions, givenCommentReactions] =
       await Promise.all([
-        this.reviewSharedService.getGivenCommentsCountPerUser(
+        this.scenarioSessionReviewSharedService.getGivenCommentsCountPerUser(
           tenantIds,
           userIds,
         ),
-        this.reviewSharedService.getGivenReviewReactionsCountPerUser(
+        this.scenarioSessionReviewSharedService.getGivenReviewReactionsCountPerUser(
           tenantIds,
           userIds,
         ),
-        this.reviewSharedService.getGivenCommentsReactionsCountPerUser(
+        this.scenarioSessionReviewSharedService.getGivenCommentsReactionsCountPerUser(
           tenantIds,
           userIds,
         ),
@@ -197,15 +197,15 @@ export class BadgeUserService {
       receivedReviewReactions,
       receivedCommentReactions,
     ] = await Promise.all([
-      this.reviewSharedService.getReceivedCommentsCountPerUser(
+      this.scenarioSessionReviewSharedService.getReceivedCommentsCountPerUser(
         tenantIds,
         userIds,
       ),
-      this.reviewSharedService.getReceivedReviewReactionsCountPerUser(
+      this.scenarioSessionReviewSharedService.getReceivedReviewReactionsCountPerUser(
         tenantIds,
         userIds,
       ),
-      this.reviewSharedService.getReceivedCommentsReactionsCountPerUser(
+      this.scenarioSessionReviewSharedService.getReceivedCommentsReactionsCountPerUser(
         tenantIds,
         userIds,
       ),

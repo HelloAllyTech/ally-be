@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadgeUserService } from '../badge-user.service';
 import { BadgeUserRepository } from '../../repository/badge-user.repository';
 import { CommunitySharedService } from 'src/community/service/community-shared.service';
-import { ReviewSharedService } from 'src/review/service/review-shared.service';
+import { ScenarioSessionReviewSharedService } from 'src/scenario-session-review/service/review-shared.service';
 import { Badge } from '../../entity/badge.entity';
 import { BadgeCategory } from '../../constants/badge.constants';
 
@@ -10,7 +10,7 @@ describe('BadgeUserService', () => {
   let service: BadgeUserService;
   let mockBadgeUserRepository: jest.Mocked<BadgeUserRepository>;
   let mockCommunitySharedService: jest.Mocked<CommunitySharedService>;
-  let mockReviewSharedService: jest.Mocked<ReviewSharedService>;
+  let mockScenarioSessionReviewSharedService: jest.Mocked<ScenarioSessionReviewSharedService>;
 
   beforeEach(async () => {
     mockBadgeUserRepository = {
@@ -25,7 +25,7 @@ describe('BadgeUserService', () => {
       getMaxActiveDaysPerUser: jest.fn(),
     } as any;
 
-    mockReviewSharedService = {
+    mockScenarioSessionReviewSharedService = {
       getGivenCommentsCountPerUser: jest.fn(),
       getGivenReviewReactionsCountPerUser: jest.fn(),
       getGivenCommentsReactionsCountPerUser: jest.fn(),
@@ -46,8 +46,8 @@ describe('BadgeUserService', () => {
           useValue: mockCommunitySharedService,
         },
         {
-          provide: ReviewSharedService,
-          useValue: mockReviewSharedService,
+          provide: ScenarioSessionReviewSharedService,
+          useValue: mockScenarioSessionReviewSharedService,
         },
       ],
     }).compile();
@@ -115,26 +115,26 @@ describe('BadgeUserService', () => {
         category: BadgeCategory.COMMENTS_REACTIONS_GIVEN,
         achievementParams: { count: 3 },
       } as unknown as Badge;
-      mockReviewSharedService.getGivenCommentsCountPerUser.mockResolvedValue(
+      mockScenarioSessionReviewSharedService.getGivenCommentsCountPerUser.mockResolvedValue(
         [],
       );
-      mockReviewSharedService.getGivenReviewReactionsCountPerUser.mockResolvedValue(
+      mockScenarioSessionReviewSharedService.getGivenReviewReactionsCountPerUser.mockResolvedValue(
         [],
       );
-      mockReviewSharedService.getGivenCommentsReactionsCountPerUser.mockResolvedValue(
+      mockScenarioSessionReviewSharedService.getGivenCommentsReactionsCountPerUser.mockResolvedValue(
         [],
       );
 
       await service.awardBadgeToUsersByTenant(badge, ['tenant-1']);
 
       expect(
-        mockReviewSharedService.getGivenCommentsCountPerUser,
+        mockScenarioSessionReviewSharedService.getGivenCommentsCountPerUser,
       ).toHaveBeenCalledWith(['tenant-1'], undefined);
       expect(
-        mockReviewSharedService.getGivenReviewReactionsCountPerUser,
+        mockScenarioSessionReviewSharedService.getGivenReviewReactionsCountPerUser,
       ).toHaveBeenCalledWith(['tenant-1'], undefined);
       expect(
-        mockReviewSharedService.getGivenCommentsReactionsCountPerUser,
+        mockScenarioSessionReviewSharedService.getGivenCommentsReactionsCountPerUser,
       ).toHaveBeenCalledWith(['tenant-1'], undefined);
     });
 
@@ -144,26 +144,26 @@ describe('BadgeUserService', () => {
         category: BadgeCategory.COMMENTS_REACTIONS_RECEIVED,
         achievementParams: { count: 3 },
       } as unknown as Badge;
-      mockReviewSharedService.getReceivedCommentsCountPerUser.mockResolvedValue(
+      mockScenarioSessionReviewSharedService.getReceivedCommentsCountPerUser.mockResolvedValue(
         [],
       );
-      mockReviewSharedService.getReceivedReviewReactionsCountPerUser.mockResolvedValue(
+      mockScenarioSessionReviewSharedService.getReceivedReviewReactionsCountPerUser.mockResolvedValue(
         [],
       );
-      mockReviewSharedService.getReceivedCommentsReactionsCountPerUser.mockResolvedValue(
+      mockScenarioSessionReviewSharedService.getReceivedCommentsReactionsCountPerUser.mockResolvedValue(
         [],
       );
 
       await service.awardBadgeToUsersByTenant(badge, ['tenant-1']);
 
       expect(
-        mockReviewSharedService.getReceivedCommentsCountPerUser,
+        mockScenarioSessionReviewSharedService.getReceivedCommentsCountPerUser,
       ).toHaveBeenCalledWith(['tenant-1'], undefined);
       expect(
-        mockReviewSharedService.getReceivedReviewReactionsCountPerUser,
+        mockScenarioSessionReviewSharedService.getReceivedReviewReactionsCountPerUser,
       ).toHaveBeenCalledWith(['tenant-1'], undefined);
       expect(
-        mockReviewSharedService.getReceivedCommentsReactionsCountPerUser,
+        mockScenarioSessionReviewSharedService.getReceivedCommentsReactionsCountPerUser,
       ).toHaveBeenCalledWith(['tenant-1'], undefined);
     });
 
@@ -214,17 +214,19 @@ describe('BadgeUserService', () => {
         category: BadgeCategory.COMMENTS_REACTIONS_GIVEN,
         achievementParams: { count: 6 },
       } as unknown as Badge;
-      mockReviewSharedService.getGivenCommentsCountPerUser.mockResolvedValue([
-        { userId: 1, count: 2 },
-        { userId: 2, count: 1 },
-      ]);
-      mockReviewSharedService.getGivenReviewReactionsCountPerUser.mockResolvedValue(
+      mockScenarioSessionReviewSharedService.getGivenCommentsCountPerUser.mockResolvedValue(
+        [
+          { userId: 1, count: 2 },
+          { userId: 2, count: 1 },
+        ],
+      );
+      mockScenarioSessionReviewSharedService.getGivenReviewReactionsCountPerUser.mockResolvedValue(
         [
           { userId: 1, count: 2 },
           { userId: 3, count: 3 },
         ],
       );
-      mockReviewSharedService.getGivenCommentsReactionsCountPerUser.mockResolvedValue(
+      mockScenarioSessionReviewSharedService.getGivenCommentsReactionsCountPerUser.mockResolvedValue(
         [{ userId: 1, count: 2 }],
       );
       mockBadgeUserRepository.save.mockResolvedValue([] as any);
@@ -245,19 +247,19 @@ describe('BadgeUserService', () => {
         category: BadgeCategory.COMMENTS_REACTIONS_RECEIVED,
         achievementParams: { count: 5 },
       } as unknown as Badge;
-      mockReviewSharedService.getReceivedCommentsCountPerUser.mockResolvedValue(
+      mockScenarioSessionReviewSharedService.getReceivedCommentsCountPerUser.mockResolvedValue(
         [
           { userId: 1, count: 2 },
           { userId: 2, count: 1 },
         ],
       );
-      mockReviewSharedService.getReceivedReviewReactionsCountPerUser.mockResolvedValue(
+      mockScenarioSessionReviewSharedService.getReceivedReviewReactionsCountPerUser.mockResolvedValue(
         [
           { userId: 1, count: 1 },
           { userId: 3, count: 2 },
         ],
       );
-      mockReviewSharedService.getReceivedCommentsReactionsCountPerUser.mockResolvedValue(
+      mockScenarioSessionReviewSharedService.getReceivedCommentsReactionsCountPerUser.mockResolvedValue(
         [{ userId: 1, count: 2 }],
       );
       mockBadgeUserRepository.save.mockResolvedValue([] as any);

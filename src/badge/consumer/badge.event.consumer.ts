@@ -8,7 +8,7 @@ import {
   ReviewCommentReactionRemovedEventParams,
   ReviewReactionAddedEventParams,
   ReviewReactionRemovedEventParams,
-  ReviewEvents,
+  ScenarioSessionReviewEvents,
   ReviewCommentRemovedEventParams,
 } from 'src/review/type/review-event.type';
 import {
@@ -24,7 +24,7 @@ import {
 export class BadgeEventConsumer {
   constructor(private readonly badgeAwardService: BadgeAwardService) {}
 
-  @OnEvent(ReviewEvents.REVIEW_COMMENT_ADDED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.COMMENT_ADDED, { async: true })
   async handleAddReviewComment({
     review,
     comment,
@@ -35,7 +35,7 @@ export class BadgeEventConsumer {
     );
   }
 
-  @OnEvent(ReviewEvents.REVIEW_REACTION_ADDED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.REACTION_ADDED, { async: true })
   async handleAddReviewReaction({
     review,
     reaction,
@@ -46,7 +46,7 @@ export class BadgeEventConsumer {
     );
   }
 
-  @OnEvent(ReviewEvents.REVIEW_COMMENT_REACTION_ADDED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.COMMENT_REACTION_ADDED, { async: true })
   async handleAddReviewCommentReaction({
     reaction,
     review,
@@ -57,7 +57,7 @@ export class BadgeEventConsumer {
     );
   }
 
-  @OnEvent(ReviewEvents.REVIEW_REACTION_REMOVED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.REACTION_REMOVED, { async: true })
   async handleRemoveReviewReaction({
     review,
     removedReaction,
@@ -68,7 +68,9 @@ export class BadgeEventConsumer {
     );
   }
 
-  @OnEvent(ReviewEvents.REVIEW_COMMENT_REACTION_REMOVED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.COMMENT_REACTION_REMOVED, {
+    async: true,
+  })
   async handleRemoveReviewCommentReaction({
     removedReaction,
     review,
@@ -79,7 +81,7 @@ export class BadgeEventConsumer {
     );
   }
 
-  @OnEvent(ReviewEvents.REVIEW_COMMENT_REMOVED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.COMMENT_REMOVED, { async: true })
   async handleReviewCommentRemoved(
     reviewCommentReactionEventParams: ReviewCommentRemovedEventParams,
   ) {

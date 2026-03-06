@@ -32,7 +32,8 @@ import { AuthorizationModule } from './authorization/authorization.module';
 import { PlaceModule } from './place/place.module';
 import { ScenarioPathModule } from './scenario-path/scenario-path.module';
 import { LanguageModule } from './language/language.module';
-import { ReviewModule } from './review/review.module';
+import { ScenarioSessionReviewModule } from './scenario-session-review/scenario-session-review.module';
+import { ScribeSessionReviewModule } from './scribe-session-review/scribe-session-review.module';
 import { BadgeModule } from './badge/badge.module';
 import { CommunityModule } from './community/community.module';
 import { ScenarioCharacterModule } from './scenario-character/scenario-character.module';
@@ -80,7 +81,8 @@ import { VoicePreviewModule } from './voice-preview/voice-preview.module';
     ScenarioPathModule,
     CaseModule,
     LanguageModule,
-    ReviewModule,
+    ScenarioSessionReviewModule,
+    ScribeSessionReviewModule,
     BadgeModule,
     CommunityModule,
     ScenarioCharacterModule,

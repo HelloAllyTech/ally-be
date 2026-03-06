@@ -76,7 +76,7 @@ import {
   isEnglishLanguage,
 } from '../util/scenario.util';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
-import { ReviewSharedService } from 'src/review/service/review-shared.service';
+import { ScenarioSessionReviewSharedService } from 'src/scenario-session-review/service/review-shared.service';
 import {
   ScenarioSessionLeaderboardEvent,
   ScenarioSessionLeaderboardEndedEventParams,
@@ -123,7 +123,7 @@ export class ScenarioSessionService {
     private configService: AppConfigService,
     private scenarioPathSharedService: ScenarioPathSharedService,
     private scenarioVoicesRepository: ScenarioVoicesRepository,
-    private reviewSharedService: ReviewSharedService,
+    private scenarioSessionReviewSharedService: ScenarioSessionReviewSharedService,
     private eventEmitter: EventEmitter2,
     private caseSharedService: CaseSharedService,
     private caseSessionService: CaseSessionService,
@@ -330,7 +330,7 @@ export class ScenarioSessionService {
     const hasFeedback = !!feedback;
 
     const review =
-      await this.reviewSharedService.getReviewByScenarioSessionId(
+      await this.scenarioSessionReviewSharedService.getReviewByScenarioSessionId(
         scenarioSessionId,
       );
 

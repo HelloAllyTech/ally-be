@@ -15,7 +15,7 @@ import { TenantModule } from '../tenant/tenant.module';
 import { BadgeUserService } from './service/badge-user.service';
 import { AuthorizationModule } from 'src/authorization/authorization.module';
 import { CommunityModule } from 'src/community/community.module';
-import { ReviewModule } from 'src/review/review.module'; // Used with forwardRef
+import { ScenarioSessionReviewModule } from 'src/scenario-session-review/scenario-session-review.module';
 import { BadgeEventConsumer } from './consumer/badge.event.consumer';
 import { BadgeAwardService } from './service/badge-award.service';
 import { AwsModule } from 'src/aws/aws.module';
@@ -25,7 +25,7 @@ import { AwsModule } from 'src/aws/aws.module';
     TypeOrmModule.forFeature([Badge, BadgeUser, BadgeGroup, BadgeTenant]),
     TenantModule,
     AuthorizationModule,
-    forwardRef(() => ReviewModule),
+    forwardRef(() => ScenarioSessionReviewModule),
     CommunityModule,
     AwsModule,
   ],
