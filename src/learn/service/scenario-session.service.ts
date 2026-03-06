@@ -334,6 +334,12 @@ export class ScenarioSessionService {
         scenarioSessionId,
       );
 
+    const scenario = (scenarioSession as any).scenario;
+    if (scenario) {
+      delete scenario.metadata;
+      delete scenario.prompt;
+    }
+
     return {
       ...scenarioSession,
       hasFeedback,

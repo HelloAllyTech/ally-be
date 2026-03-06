@@ -49,4 +49,8 @@ export class GetScenarioSessionReviewResponseDto {
   note?: string | null;
   @ApiProperty({ required: false, nullable: true, type: String })
   noteEditedAt?: Date | null;
+  @ApiProperty()
+  createdAt!: Date;
+  @ApiProperty()
+  updatedAt!: Date;
 }
