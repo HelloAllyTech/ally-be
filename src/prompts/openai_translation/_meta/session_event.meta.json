@@ -1,0 +1,4 @@
+{
+  "name": "Session Event Localization",
+  "description": "Localizes session events for role-play into natural language. Preserves JSON structure, HTML tags, placeholders, and notranslate spans; translates all other text."
+}

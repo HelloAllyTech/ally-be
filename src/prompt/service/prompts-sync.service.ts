@@ -6,12 +6,43 @@ import { formatLabel } from '../util/format-label.util';
 import { LoggerService } from 'src/logger/logger.service';
 
 const PROMPTS_DIR = 'src/prompts';
+const META_FILENAME_SUFFIX = '.meta.json';
+
+export interface PromptMeta {
+  name?: string;
+  description?: string;
+}
 
 @Injectable()
 export class PromptsSyncService implements OnModuleInit {
   private readonly logger = LoggerService.getInstance(PromptsSyncService.name);
 
   constructor(private readonly promptsService: PromptsService) {}
+
+  /**
+   * Read optional name/description from subdir/_meta/<stem>.meta.json.
+   * Returns null if file missing or invalid.
+   */
+  private readMeta(dir: string, stem: string): PromptMeta | null {
+    const metaPath = path.join(dir, '_meta', `${stem}${META_FILENAME_SUFFIX}`);
+    if (!fs.existsSync(metaPath)) return null;
+    try {
+      const raw = fs.readFileSync(metaPath, 'utf-8');
+      const data = JSON.parse(raw) as Record<string, unknown>;
+      const name =
+        typeof data.name === 'string' && data.name.trim()
+          ? data.name.trim()
+          : undefined;
+      const description =
+        typeof data.description === 'string' && data.description.trim()
+          ? data.description.trim()
+          : undefined;
+      if (name === undefined && description === undefined) return null;
+      return { name, description };
+    } catch {
+      return null;
+    }
+  }
 
   async onModuleInit(): Promise<void> {
     // Run sync in background to avoid blocking app startup (e.g. when DB is not ready yet)
@@ -65,7 +96,7 @@ export class PromptsSyncService implements OnModuleInit {
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-          scanDir(fullPath, baseDir);
+          if (entry.name !== '_meta') scanDir(fullPath, baseDir);
         } else if (entry.isFile() && entry.name.endsWith('.txt')) {
           const content = fs.readFileSync(fullPath, 'utf-8');
           const relPath = path.relative(baseDir, fullPath);
@@ -74,10 +105,16 @@ export class PromptsSyncService implements OnModuleInit {
             .replace(/\//g, '_')
             .replace(/\\/g, '_');
           const hadSubdir = /[/\\]/.test(pathWithoutExt);
-          const { name, description } = this.getNameAndDescription(
+          let { name, description } = this.getNameAndDescription(
             promptCode,
             hadSubdir,
           );
+          const stem = path.basename(fullPath, '.txt');
+          const meta = this.readMeta(dir, stem);
+          if (meta) {
+            if (meta.name !== undefined) name = meta.name;
+            if (meta.description !== undefined) description = meta.description;
+          }
           items.push({
             promptCode,
             name,

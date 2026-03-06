@@ -1,0 +1,4 @@
+{
+  "name": "General Text Translation",
+  "description": "Translates plain text to the target language. Preserves meaning and tone; output is translated text only (no JSON, markdown, or commentary)."
+}

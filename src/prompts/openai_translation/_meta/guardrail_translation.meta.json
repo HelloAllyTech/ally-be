@@ -1,0 +1,4 @@
+{
+  "name": "Guardrail Translation",
+  "description": "Localizes conversational guardrails for counselor-training role-play into natural spoken language. Preserves JSON structure, Markdown, and category labels."
+}

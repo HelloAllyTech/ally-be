@@ -1,0 +1,4 @@
+{
+  "name": "Speech Reexpression (User)",
+  "description": "Rewrites JSON string values to sound like natural, casual spoken language. Keeps JSON structure and keys; no word-for-word translation—how a native speaker would say it."
+}

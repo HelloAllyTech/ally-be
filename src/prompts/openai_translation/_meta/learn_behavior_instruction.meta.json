@@ -1,0 +1,4 @@
+{
+  "name": "Behavior Instruction Localization",
+  "description": "Localizes behavior instructions for role-play into natural language. Preserves JSON keys, array order, and the \"||||\" separator; translates instruction text only."
+}

@@ -26,15 +26,23 @@ Prompt template files (`.txt`) synced to the database on startup.
 ```
 src/prompts/
 ├── openai_simulation/
+│   ├── _meta/                    # optional: .meta.json for name/description
+│   │   └── character_profile_text.meta.json
 │   ├── character_profile_text.txt
 │   ├── challenge_description.txt
 │   └── ...
 └── openai_translation/
+    ├── _meta/
+    │   └── guardrail_translation.meta.json
     ├── code_mixed_system.txt
     ├── speech_reexpression_user.txt
-    ├── general_text_translation.txt
-    ├── guardrail_translation.txt
     └── ...
+```
+
+**Optional `.meta.json`:** Place `subdir/_meta/<stem>.meta.json` next to a prompt to override the display name and description (otherwise derived from path via `formatLabel`). Example:
+
+```json
+{ "name": "Guardrail translation", "description": "Translates guardrail text for the learner." }
 ```
 
 ### Adding a New Prompt
