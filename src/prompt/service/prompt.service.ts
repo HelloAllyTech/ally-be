@@ -101,7 +101,24 @@ export class PromptsService {
       updatePromptDto.useDashboardOverride !== undefined
         ? updatePromptDto.useDashboardOverride
         : prompt.useDashboardOverride;
-    if (updatePromptDto.prompt && useDashboardOverride) {
+
+    // Resolve content: from DTO, or when enabling override with no version yet, from default/file
+    let contentToVersion: string | null =
+      updatePromptDto.prompt?.trim() || null;
+    if (
+      !contentToVersion &&
+      useDashboardOverride &&
+      (prompt.currentVersion == null || prompt.currentVersion === undefined)
+    ) {
+      const fromDefault =
+        prompt.defaultPrompt?.trim() ||
+        (
+          await this.promptSharedService.getPromptByCode(prompt.promptCode)
+        )?.trim();
+      contentToVersion = fromDefault || null;
+    }
+
+    if (contentToVersion && useDashboardOverride) {
       await this.dataSource.transaction(async () => {
         const latestVersion =
           await this.promptVersionRepository.getLatestPromptVersion(id);
@@ -111,7 +128,7 @@ export class PromptsService {
         const promptVersion = this.promptVersionRepository.create({
           promptId: id,
           version: newVersion,
-          prompt: updatePromptDto.prompt,
+          prompt: contentToVersion,
           createdBy: userId,
           updatedBy: userId,
         });
