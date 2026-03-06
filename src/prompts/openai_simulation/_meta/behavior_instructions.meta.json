@@ -1,0 +1,4 @@
+{
+  "name": "Behavior Instructions",
+  "description": "Generates helper behavior instructions that link counselor behaviors to AI client (actor) responses for evaluation. Uses allowed behaviors and competency context."
+}
