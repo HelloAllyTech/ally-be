@@ -40,7 +40,7 @@ import { SessionEventTranslationService } from 'src/session-event/service/sessio
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
-import { ReviewSharedService } from 'src/review/service/review-shared.service';
+import { ScenarioSessionReviewSharedService } from 'src/scenario-session-review/service/review-shared.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
@@ -85,7 +85,7 @@ describe('ScenarioSessionService', () => {
   let scenarioTenantService: jest.Mocked<ScenarioTenantService>;
   let scenarioPathSessionService: jest.Mocked<ScenarioPathSessionService>;
   let scenarioPathSharedService: jest.Mocked<ScenarioPathSharedService>;
-  let reviewSharedService: jest.Mocked<ReviewSharedService>;
+  let reviewSharedService: jest.Mocked<ScenarioSessionReviewSharedService>;
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let mockConfigService: any;
   let scenarioVoicesRepository: jest.Mocked<ScenarioVoicesRepository>;
@@ -435,7 +435,7 @@ describe('ScenarioSessionService', () => {
           useValue: mockScenarioVoicesRepository,
         },
         {
-          provide: ReviewSharedService,
+          provide: ScenarioSessionReviewSharedService,
           useValue: mockReviewSharedService,
         },
         {
@@ -496,7 +496,7 @@ describe('ScenarioSessionService', () => {
     scenarioPathSharedService = module.get(ScenarioPathSharedService);
     sessionEventTranslationService = module.get(SessionEventTranslationService);
     scenarioVoicesRepository = module.get(ScenarioVoicesRepository);
-    reviewSharedService = module.get(ReviewSharedService);
+    reviewSharedService = module.get(ScenarioSessionReviewSharedService);
     scenarioSharedService = module.get(ScenarioSharedService);
     scenarioEventsRepository = module.get(ScenarioEventsRepository);
     scenariosRepository = module.get(ScenariosRepository) as any;

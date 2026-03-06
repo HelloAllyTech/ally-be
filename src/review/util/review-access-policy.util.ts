@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
-import { Review } from '../entity/review.entity';
+import { BaseReview } from '../entity/base-review.entity';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 
@@ -8,7 +8,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 export class ReviewAccessValidator {
   constructor(private readonly permissionValidator: PermissionValidator) {}
 
-  async validateAccess(review: Review, userId: number) {
+  async validateAccess(review: BaseReview, userId: number) {
     const isReviewer = await this.permissionValidator.validatePermissions(
       userId,
       [PERMISSIONS.REVIEWER_ACCESS],

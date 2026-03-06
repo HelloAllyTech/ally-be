@@ -6,7 +6,7 @@ import { UserDailyScoreRepository } from '../repository/user-daily-score.reposit
 import { scorePoints } from '../constant/community.constant';
 import { LoggerService } from 'src/logger/logger.service';
 import {
-  ReviewEvents,
+  ScenarioSessionReviewEvents,
   ReviewReactionAddedEventParams,
   ReviewReactionRemovedEventParams,
   ReviewCommentAddedEventParams,
@@ -33,7 +33,7 @@ export class CommunityEventConsumer {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  @OnEvent(ReviewEvents.REVIEW_REACTION_ADDED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.REACTION_ADDED, { async: true })
   async handleReviewReactionAdded({
     review,
     reaction,
@@ -58,7 +58,7 @@ export class CommunityEventConsumer {
     }
   }
 
-  @OnEvent(ReviewEvents.REVIEW_REACTION_REMOVED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.REACTION_REMOVED, { async: true })
   async handleReviewReactionRemoved({
     review,
     removedReaction,
@@ -83,7 +83,7 @@ export class CommunityEventConsumer {
     }
   }
 
-  @OnEvent(ReviewEvents.REVIEW_COMMENT_ADDED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.COMMENT_ADDED, { async: true })
   async handleReviewCommentAdded({
     review,
     comment,
@@ -108,7 +108,7 @@ export class CommunityEventConsumer {
     }
   }
 
-  @OnEvent(ReviewEvents.REVIEW_COMMENT_REMOVED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.COMMENT_REMOVED, { async: true })
   async handleReviewCommentRemoved({
     review,
     comment,
@@ -174,7 +174,7 @@ export class CommunityEventConsumer {
     }
   }
 
-  @OnEvent(ReviewEvents.REVIEW_COMMENT_REACTION_ADDED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.COMMENT_REACTION_ADDED, { async: true })
   async handleReviewCommentReactionAdded({
     reaction,
     comment,
@@ -199,7 +199,9 @@ export class CommunityEventConsumer {
     }
   }
 
-  @OnEvent(ReviewEvents.REVIEW_COMMENT_REACTION_REMOVED, { async: true })
+  @OnEvent(ScenarioSessionReviewEvents.COMMENT_REACTION_REMOVED, {
+    async: true,
+  })
   async handleReviewCommentReactionRemoved({
     removedReaction,
     comment,

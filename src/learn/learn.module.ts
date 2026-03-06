@@ -43,7 +43,7 @@ import { ScenarioTriggerWarnings } from './entity/scenario-trigger-warnings.enti
 import { ScenarioTranslationsRepository } from './repository/scenario-translations.repository';
 import { SessionEventTranslationsRepository } from 'src/session-event/repository/session-event-translation.repository';
 import { ScenarioEventsTranslationsRepository } from './repository/scenario-events-translations.repository';
-import { ReviewModule } from 'src/review/review.module';
+import { ScenarioSessionReviewModule } from 'src/scenario-session-review/scenario-session-review.module';
 import { ConversationalGuardrailsModule } from 'src/conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from 'src/case/case.module';
 import { ScenarioSessionDetailsRepository } from './repository/scenario-session-details.repository';
@@ -120,7 +120,7 @@ import { OpenAIAutofillService } from './service/openai-autofil-service';
     AwsModule,
     forwardRef(() => ScenarioPathModule),
     LanguageModule,
-    forwardRef(() => ReviewModule),
+    forwardRef(() => ScenarioSessionReviewModule),
     forwardRef(() => ConversationalGuardrailsModule),
     forwardRef(() => CaseModule),
     forwardRef(() => PromptModule),
