@@ -382,6 +382,8 @@ Authorization: Bearer <your-access-token>
 - `GET /api/v1/users/me` - Get current user
 - `GET /api/v1/health` - Health check endpoint
 
+**Prompts (dashboard and sync):** See [docs/prompts-api.md](docs/prompts-api.md). Prompt folder (naming, meta JSON): [docs/prompts-folder.md](docs/prompts-folder.md).
+
 ---
 
 ## 👥 Contributing
