@@ -101,7 +101,8 @@ export class PromptSharedService {
         '"prompt"."id" = "pv"."promptId" AND "pv"."version" = "prompt"."currentVersion"',
       )
       .select(['pv.prompt AS prompt', 'prompt.promptCode AS "promptCode"'])
-      .addSelect('prompt.useDashboardOverride', 'useDashboardOverride');
+      .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
+      .addSelect('prompt.defaultPrompt', 'defaultPrompt');
 
     if (options.promptCode && options.promptCode.length > 0) {
       query.andWhere('prompt.promptCode IN (:...promptCodes)', {
@@ -118,7 +119,10 @@ export class PromptSharedService {
     }
 
     const rows = await query.getRawMany<
-      PromptsWithPromptCode & { useDashboardOverride: boolean }
+      PromptsWithPromptCode & {
+        useDashboardOverride: boolean;
+        defaultPrompt?: string;
+      }
     >();
 
     for (const row of rows) {
@@ -127,6 +131,9 @@ export class PromptSharedService {
         if (fromFolder !== null) {
           row.prompt = fromFolder;
         }
+      } else if (!row.prompt?.trim() && row.defaultPrompt?.trim()) {
+        // Dashboard override enabled but version join returned null (e.g. currentVersion not set); use default
+        row.prompt = row.defaultPrompt;
       }
     }
 
