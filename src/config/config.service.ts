@@ -234,12 +234,16 @@ export class AppConfigService {
     };
   }
 
-  /** When true, frontend can trigger agent dispatch (for local dev when webhook unreachable) */
+  /**
+   * When true, frontend can trigger agent dispatch (for local dev when webhook unreachable).
+   * Only enabled by explicit env var or NODE_ENV=local. Not enabled for NODE_ENV=development,
+   * so dev server (webhook reachable) does not double-dispatch and cause voice echo.
+   */
   get allowDirectAgentDispatch(): boolean {
     const explicit =
       this.configService.get<string>('ALLOW_DIRECT_AGENT_DISPATCH') === 'true';
-    const isLocal = this.nodeEnv === 'development' || this.nodeEnv === 'local';
-    return explicit || isLocal;
+    const isLocalOnly = this.nodeEnv === 'local';
+    return explicit || isLocalOnly;
   }
 
   get app() {
