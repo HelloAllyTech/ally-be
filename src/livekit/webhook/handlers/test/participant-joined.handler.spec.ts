@@ -53,6 +53,7 @@ describe('ParticipantJoinedHandler', () => {
   beforeEach(async () => {
     const mockLiveKitService = {
       agentDispatch: jest.fn(),
+      listParticipants: jest.fn(),
     };
 
     const mockScenarioSessionService = {
@@ -501,6 +502,46 @@ describe('ParticipantJoinedHandler', () => {
         'Agent',
         JSON.stringify(numericMetadata),
       );
+    });
+
+    it('should skip agent dispatch if an agent is already present in the room', async () => {
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+
+      // Mock listParticipants to return an existing agent
+      liveKitService.listParticipants.mockResolvedValue([
+        { identity: 'Agent', kind: ParticipantInfo_Kind.AGENT },
+        { identity: 'existing-user', kind: ParticipantInfo_Kind.STANDARD },
+      ] as any);
+
+      await handler.handle(mockParticipantJoinedEvent);
+
+      expect(liveKitService.listParticipants).toHaveBeenCalledWith('test-room');
+      expect(liveKitService.agentDispatch).not.toHaveBeenCalled();
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        `Agent already present in room test-room, skipping dispatch`,
+      );
+    });
+
+    it('should proceed with agent dispatch if no agent is present in the room', async () => {
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+
+      // Mock listParticipants to return only human participants
+      liveKitService.listParticipants.mockResolvedValue([
+        { identity: 'other-user', kind: ParticipantInfo_Kind.STANDARD },
+      ] as any);
+
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(mockParticipantJoinedEvent);
+
+      expect(liveKitService.listParticipants).toHaveBeenCalledWith('test-room');
+      expect(liveKitService.agentDispatch).toHaveBeenCalled();
     });
   });
 });

@@ -83,6 +83,28 @@ export class ParticipantJoinedHandler {
       }
 
       if (event.participant.kind !== ParticipantInfo_Kind.AGENT) {
+        // Check if agent is already present in the room
+        try {
+          const participants =
+            await this.liveKitService.listParticipants(roomName);
+          const hasAgent = participants.some(
+            (p) => p.kind === ParticipantInfo_Kind.AGENT,
+          );
+
+          if (hasAgent) {
+            this.logger.info(
+              `Agent already present in room ${roomName}, skipping dispatch`,
+            );
+            return;
+          }
+        } catch (listError) {
+          this.logger.error(
+            `Failed to check existing participants in room ${roomName}: ${listError.message}`,
+          );
+          // Proceed with dispatch as fallback if check fails?
+          // Better to proceed than to have a dead room if check fails due to transient issue.
+        }
+
         await this.liveKitService.agentDispatch(
           roomName,
           participantIdentity,
