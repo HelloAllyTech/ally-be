@@ -209,13 +209,17 @@ export class AuthService {
     });
   }
 
-  private async handleTestAccountOtp(email: string) {
-    let testAccounts: Record<string, string> = {};
+  private getTestAccounts(): Record<string, string> {
     try {
-      testAccounts = JSON.parse(this.configService.testAccounts || '{}');
+      return JSON.parse(this.configService.testAccounts || '{}');
     } catch {
       this.logger.error('Invalid TEST_ACCOUNTS JSON format');
+      return {};
     }
+  }
+
+  private async handleTestAccountOtp(email: string) {
+    const testAccounts = this.getTestAccounts();
     if (testAccounts[email]) {
       const otp = testAccounts[email];
       await this.cache.set(this.getOtpKey(email), otp, this.OTP_TTL);
@@ -335,6 +339,20 @@ export class AuthService {
     const { otp, email, allowedRoles } = verifyOtpDto;
     if (!email) {
       throw new BadRequestException('Email is required');
+    }
+
+    const testAccounts = this.getTestAccounts();
+    if (testAccounts[email]) {
+      const cachedOtp = await this.cache.get(this.getOtpKey(email));
+      if (!cachedOtp || cachedOtp !== otp) {
+        this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
+        throw new UnauthorizedException('Invalid OTP');
+      }
+      return await this.validateUserAndIssueTokens(
+        allowedRoles,
+        email,
+        AuthProvider.EMAIL_OTP,
+      );
     }
 
     const cachedAttempt = await this.cache.get(this.getAuthAttemptKey(email));
