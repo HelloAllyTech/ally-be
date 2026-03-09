@@ -1,12 +1,8 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
-import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
 export class addConversationalGuardrailsPrompt1771265050431 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const systemCode = toPromptCode(
-      'openai_translation',
-      'guardrail_translation',
-    );
+    const systemCode = 'openai_translation_system_guardrail';
     const systemName = 'OpenAI Translation System Guardrail Prompt';
 
     const systemDescription = 'System prompt for OpenAI guardrail translations';
@@ -65,10 +61,7 @@ Input JSON:
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    const systemCode = toPromptCode(
-      'openai_translation',
-      'guardrail_translation',
-    );
+    const systemCode = 'openai_translation_system_guardrail';
 
     // Delete prompt versions for the specific prompts
     await queryRunner.query(

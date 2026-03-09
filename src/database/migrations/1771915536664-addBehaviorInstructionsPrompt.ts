@@ -1,8 +1,7 @@
-import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 const PROMPT = {
-  code: toPromptCode('openai_simulation', 'behavior_instructions'),
+  code: 'openai_simulation_behavior_instructions',
   name: 'OpenAI Simulation Behavior Instructions Prompt',
   description:
     'Prompt for auto-generating behavior instructions for a role-play simulation scenario',
