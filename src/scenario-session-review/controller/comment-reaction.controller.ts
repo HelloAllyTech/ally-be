@@ -24,7 +24,7 @@ export class ScenarioSessionReviewCommentReactionController {
   ) {}
 
   @ApiOperation({ description: 'Toggle review comment reaction' })
-  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
+  @AuthPermissions([PERMISSIONS.EDIT_SIMULATION_REVIEW_THREAD])
   @Post('comments/:commentId/reactions')
   async toggleReviewCommentReaction(
     @Param('commentId', ParseUUIDPipe) commentId: string,

@@ -24,7 +24,7 @@ export class ScribeSessionReviewCommentReactionController {
   ) {}
 
   @ApiOperation({ description: 'Toggle review comment reaction' })
-  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
+  @AuthPermissions([PERMISSIONS.EDIT_SCRIBE_REVIEW_THREAD])
   @Post('comments/:commentId/reactions')
   async toggleReviewCommentReaction(
     @Param('commentId', ParseUUIDPipe) commentId: string,

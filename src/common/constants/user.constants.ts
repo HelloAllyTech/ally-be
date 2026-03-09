@@ -4,7 +4,9 @@ export enum UserRole {
   SUPER_ADMIN = 'SUPER_ADMIN',
   ADMIN = 'ADMIN',
   LEARNER = 'LEARNER',
-  REVIEWER = 'REVIEWER',
+  REVIEWER = 'REVIEWER', // TODO: Remove this later. Maintaining it for backward compatibility.
+  SIMULATION_REVIEWER = 'SIMULATION_REVIEWER',
+  SCRIBE_REVIEWER = 'SCRIBE_REVIEWER',
 }
 
 export enum PreferenceName {
