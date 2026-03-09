@@ -53,7 +53,8 @@ describe('ParticipantJoinedHandler', () => {
   beforeEach(async () => {
     const mockLiveKitService = {
       agentDispatch: jest.fn(),
-      listParticipants: jest.fn(),
+      // Default: no existing agents in room, so dispatch proceeds
+      listParticipants: jest.fn().mockResolvedValue([]),
     };
 
     const mockScenarioSessionService = {
@@ -93,6 +94,8 @@ describe('ParticipantJoinedHandler', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    // Clear the static dispatch lock between tests to prevent state leakage
+    (ParticipantJoinedHandler as any)['dispatchesInProgress'].clear();
   });
 
   describe('handle', () => {
