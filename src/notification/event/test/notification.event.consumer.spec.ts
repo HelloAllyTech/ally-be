@@ -54,6 +54,7 @@ describe('NotificationEventConsumer', () => {
       expect(mockNotificationService.sendEmailOTP).toHaveBeenCalledWith(
         mockOtpPayload.email,
         mockOtpPayload.otp,
+        undefined,
       );
     });
   });
