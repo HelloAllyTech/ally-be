@@ -1,12 +1,8 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
-import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
 export class AddSessionEventTranslationPrompt1771849501153 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const sessionEventCode = toPromptCode(
-      'openai_translation',
-      'session_event',
-    );
+    const sessionEventCode = 'openai_translation_session_event';
     const sessionEventName = 'OpenAI Session Event Translation Prompt';
     const sessionEventDescription =
       'Dynamic prompt template for session event translation.';
