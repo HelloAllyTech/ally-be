@@ -22,7 +22,7 @@ export class ScribeSessionReviewController {
   constructor(private readonly reviewService: ScribeSessionReviewService) {}
 
   @Get('/unread-count')
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEWS])
+  @AuthPermissions([PERMISSIONS.VIEW_SCRIBE_REVIEWS])
   @ApiOperation({ summary: 'Get unread scribe session review count' })
   @ApiResponse({
     status: 200,
@@ -33,7 +33,7 @@ export class ScribeSessionReviewController {
   }
 
   @Patch('/:id/mark-read')
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW])
+  @AuthPermissions([PERMISSIONS.VIEW_SCRIBE_REVIEW])
   @ApiOperation({ summary: 'Mark scribe session review as read' })
   @ApiResponse({
     status: 200,

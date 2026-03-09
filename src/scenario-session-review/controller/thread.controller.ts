@@ -33,7 +33,7 @@ export class ScenarioSessionReviewThreadController {
     description: 'Review threads list',
     type: ReviewThreadsResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEW_THREADS])
   @Get(':reviewId/threads')
   async getReviewThreads(
     @Param('reviewId', ParseUUIDPipe) reviewId: string,

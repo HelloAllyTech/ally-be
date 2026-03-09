@@ -35,7 +35,7 @@ export class ScribeSessionReviewReactionController {
   ) {}
 
   @ApiOperation({ description: 'Toggle review reaction' })
-  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
+  @AuthPermissions([PERMISSIONS.EDIT_SCRIBE_REVIEW_THREAD])
   @Post(':reviewId/reactions')
   async toggleReviewReactions(
     @Param('reviewId', ParseUUIDPipe) reviewId: string,
@@ -48,7 +48,7 @@ export class ScribeSessionReviewReactionController {
   }
 
   @ApiOperation({ description: 'Get review reactions' })
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @AuthPermissions([PERMISSIONS.VIEW_SCRIBE_REVIEW_THREADS])
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
   @ApiQuery({ name: 'reaction', required: false, type: String })
@@ -67,7 +67,7 @@ export class ScribeSessionReviewReactionController {
   }
 
   @ApiOperation({ description: 'Get review reactions and its count' })
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @AuthPermissions([PERMISSIONS.VIEW_SCRIBE_REVIEW_THREADS])
   @Get(':reviewId/reactions/count')
   async getReviewReactionsAndCount(
     @Param('reviewId', ParseUUIDPipe) reviewId: string,

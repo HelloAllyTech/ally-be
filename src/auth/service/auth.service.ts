@@ -225,6 +225,16 @@ export class AuthService {
     return false;
   }
 
+  // TODO: Remove this later. Maintaining it for backward compatibility.
+  private getUpdatedUserRoles(allowedRoles: UserRole[]) {
+    return allowedRoles.map((role) => {
+      if (role === UserRole.REVIEWER) {
+        return UserRole.SIMULATION_REVIEWER;
+      }
+      return role;
+    });
+  }
+
   async generateOtpV2(
     generateOtpDto: GenerateOtpV2Dto,
   ): Promise<GenerateOtpV2ResponseDto> {
@@ -244,8 +254,11 @@ export class AuthService {
       );
     }
 
+    // TODO: Remove this later. Maintaining it for backward compatibility.
+    const updatedAllowedRoles = this.getUpdatedUserRoles(allowedRoles);
+
     const userGroups = await this.groupService.getUserGroupNames(user.id);
-    const hasAllowedRoles = allowedRoles.some((role) =>
+    const hasAllowedRoles = updatedAllowedRoles.some((role) =>
       userGroups.includes(role),
     );
     if (!hasAllowedRoles) {
@@ -468,8 +481,11 @@ export class AuthService {
       );
     }
 
+    // TODO: Remove this later. Maintaining it for backward compatibility.
+    const updatedAllowedRoles = this.getUpdatedUserRoles(allowedRoles);
+
     const userGroups = await this.groupService.getUserGroupNames(user.id);
-    const hasAllowedRoles = allowedRoles.some((role) =>
+    const hasAllowedRoles = updatedAllowedRoles.some((role) =>
       userGroups.includes(role),
     );
 

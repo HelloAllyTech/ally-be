@@ -48,7 +48,7 @@ export class ScenarioSessionReviewCommentController {
     description: 'Comment added successfully',
     type: CreateCommentResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
+  @AuthPermissions([PERMISSIONS.EDIT_SIMULATION_REVIEW_THREAD])
   @Post(':reviewId/comments')
   async addComment(
     @Param('reviewId', ParseUUIDPipe) reviewId: string,
@@ -61,7 +61,7 @@ export class ScenarioSessionReviewCommentController {
   }
 
   @ApiOperation({ summary: 'Get review comments by thread' })
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEW_THREADS])
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
   @Get('threads/:threadId/comments')
@@ -79,7 +79,7 @@ export class ScenarioSessionReviewCommentController {
   @ApiOperation({ summary: 'Get review comment replies' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEW_THREADS])
   @Get('comments/:commentId/replies')
   async getReviewCommentReplies(
     @Param('commentId', ParseUUIDPipe) commentId: string,
@@ -93,7 +93,7 @@ export class ScenarioSessionReviewCommentController {
   }
 
   @ApiOperation({ summary: 'Edit a review comment' })
-  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
+  @AuthPermissions([PERMISSIONS.EDIT_SIMULATION_REVIEW_THREAD])
   @Patch('comments/:commentId')
   async editReviewComment(
     @Param('commentId', ParseUUIDPipe) commentId: string,
@@ -106,7 +106,7 @@ export class ScenarioSessionReviewCommentController {
   }
 
   @ApiOperation({ summary: 'Delete a review comment' })
-  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
+  @AuthPermissions([PERMISSIONS.EDIT_SIMULATION_REVIEW_THREAD])
   @Delete('comments/:commentId')
   async deleteReviewComment(
     @Param('commentId', ParseUUIDPipe) commentId: string,
@@ -115,7 +115,7 @@ export class ScenarioSessionReviewCommentController {
   }
 
   @ApiOperation({ description: 'Toggle comment visibility' })
-  @AuthPermissions([PERMISSIONS.EDIT_REVIEW_THREAD])
+  @AuthPermissions([PERMISSIONS.EDIT_SIMULATION_REVIEW_THREAD])
   @Patch('comments/:commentId/visibility')
   async toggleCommentVisibility(
     @Param('commentId', ParseUUIDPipe) commentId: string,
@@ -130,7 +130,7 @@ export class ScenarioSessionReviewCommentController {
   @ApiOperation({ summary: 'Get general review comments' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEW_THREADS])
   @Get(':reviewId/comments')
   async getGeneralReviewComments(
     @Param('reviewId', ParseUUIDPipe) reviewId: string,

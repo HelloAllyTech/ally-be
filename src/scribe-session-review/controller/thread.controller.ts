@@ -29,7 +29,7 @@ export class ScribeSessionReviewThreadController {
   @ApiQuery({ name: 'offset', required: false, type: Number })
   @ApiQuery({ name: 'includeMessage', required: false, type: String })
   @ApiResponse({ status: 200, type: ReviewThreadsResponseDto })
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @AuthPermissions([PERMISSIONS.VIEW_SCRIBE_REVIEW_THREADS])
   @Get(':reviewId/threads')
   async getReviewThreads(
     @Param('reviewId', ParseUUIDPipe) reviewId: string,

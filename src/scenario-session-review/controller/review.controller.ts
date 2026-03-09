@@ -46,7 +46,7 @@ export class ScenarioSessionReviewController {
     description: 'Review created successfully',
     type: CreateScenarioSessionReviewResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_REVIEW])
+  @AuthPermissions([PERMISSIONS.EDIT_SIMULATION_REVIEW])
   @Post()
   async createReview(
     @Body() createReviewDto: CreateScenarioSessionReviewDto,
@@ -60,7 +60,7 @@ export class ScenarioSessionReviewController {
     description: 'Review updated successfully',
   })
   @Patch('/:id')
-  @AuthPermissions([PERMISSIONS.EDIT_REVIEW])
+  @AuthPermissions([PERMISSIONS.EDIT_SIMULATION_REVIEW])
   async updateReview(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateReviewDto: UpdateReviewDto,
@@ -70,7 +70,7 @@ export class ScenarioSessionReviewController {
 
   @ApiOperation({ summary: 'Get all scenario session reviews' })
   @Get()
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEWS])
+  @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEWS])
   @ApiQuery({
     name: 'limit',
     required: false,
@@ -110,7 +110,7 @@ export class ScenarioSessionReviewController {
   }
 
   @Get('/unread-count')
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEWS])
+  @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEWS])
   @ApiOperation({ summary: 'Get unread review count' })
   @ApiResponse({
     status: 200,
@@ -121,7 +121,7 @@ export class ScenarioSessionReviewController {
   }
 
   @Patch('/:id/mark-read')
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW])
+  @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEW])
   @ApiOperation({ summary: 'Mark review as read' })
   @ApiResponse({
     status: 200,
@@ -134,7 +134,7 @@ export class ScenarioSessionReviewController {
   }
 
   @Get('/:id')
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW])
+  @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEW])
   @ApiOperation({ summary: 'Get scenario session review by ID' })
   @ApiResponse({
     status: 200,
@@ -153,7 +153,7 @@ export class ScenarioSessionReviewController {
     description: 'Review messages retrieved successfully',
     type: GetReviewMessagesResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.VIEW_REVIEW_THREADS])
+  @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEW_THREADS])
   @ApiQuery({
     name: 'limit',
     required: false,
