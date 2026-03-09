@@ -40,6 +40,7 @@ export interface ParticipantJoinedEvent {
 @Injectable()
 export class ParticipantJoinedHandler {
   private readonly logger = new LoggerService(ParticipantJoinedHandler.name);
+  private static dispatchesInProgress = new Set<string>();
 
   constructor(
     private readonly liveKitService: LiveKitService,
@@ -67,6 +68,9 @@ export class ParticipantJoinedHandler {
       }
 
       if (event.participant.kind === ParticipantInfo_Kind.AGENT) {
+        // Agent joined the room - clean up the in-progress set
+        ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
+
         const scenarioSession =
           await this.scenarioSessionService.getScenarioSessionByRoomId(
             roomName,
@@ -83,7 +87,17 @@ export class ParticipantJoinedHandler {
       }
 
       if (event.participant.kind !== ParticipantInfo_Kind.AGENT) {
-        // Check if agent is already present in the room
+        // If human joins, check if we should dispatch an agent
+
+        // 1. Check local "in progress" set to avoid rapid-fire double dispatches (race condition fix)
+        if (ParticipantJoinedHandler.dispatchesInProgress.has(roomName)) {
+          this.logger.info(
+            `Agent dispatch already in progress for room ${roomName}, skipping.`,
+          );
+          return;
+        }
+
+        // 2. Check if agent is already present in the room as a participant
         try {
           const participants =
             await this.liveKitService.listParticipants(roomName);
@@ -101,20 +115,32 @@ export class ParticipantJoinedHandler {
           this.logger.error(
             `Failed to check existing participants in room ${roomName}: ${listError.message}`,
           );
-          // Proceed with dispatch as fallback if check fails?
-          // Better to proceed than to have a dead room if check fails due to transient issue.
+          // Proceed with dispatch as fallback if check fails
         }
 
-        await this.liveKitService.agentDispatch(
-          roomName,
-          participantIdentity,
-          JSON.stringify(metadata),
-        );
-      }
+        // Mark dispatch as in-progress BEFORE awaiting the dispatch call
+        ParticipantJoinedHandler.dispatchesInProgress.add(roomName);
 
-      this.logger.info(
-        `Successfully dispatched agent for participant ${participantIdentity} in room ${roomName}`,
-      );
+        // Set a safety timeout to eventually clear it if the agent fails to join
+        setTimeout(() => {
+          ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
+        }, 30000); // 30s safety window
+
+        try {
+          await this.liveKitService.agentDispatch(
+            roomName,
+            participantIdentity,
+            JSON.stringify(metadata),
+          );
+          this.logger.info(
+            `Successfully dispatched agent for participant ${participantIdentity} in room ${roomName}`,
+          );
+        } catch (dispatchError) {
+          // If dispatch fails, clear it from in-progress so we can retry on next join
+          ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
+          throw dispatchError;
+        }
+      }
     } catch (error) {
       this.logger.error(
         `Error handling participant_joined event: ${error.message}`,
