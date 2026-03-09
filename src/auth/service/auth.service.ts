@@ -30,6 +30,9 @@ import { UserSuspendedException } from '../exception/login.exception';
 import { UserRole } from 'src/common/constants/user.constants';
 import { AuthProvider, GoogleTokenPayload } from '../type/auth.types';
 import { GoogleSignInDto } from '../dto/google-token.dto';
+import * as crypto from 'crypto';
+import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
+import { CachedAuthAttempt } from '../interface/cached-auth-attempt.interface';
 
 @Injectable()
 export class AuthService {
@@ -257,13 +260,40 @@ export class AuthService {
     if (isTestAccount) {
       return { success: true, expiresIn: this.OTP_TTL };
     }
+    // Delete existing unused attempt from cache
+    const existingAttempt = await this.cache.get(this.getAuthAttemptKey(email));
+    if (existingAttempt) {
+      const parsed: CachedAuthAttempt = JSON.parse(existingAttempt);
+      await this.cache.del(this.getMagicTokenKey(parsed.magicTokenHash));
+      await this.cache.del(this.getAuthAttemptKey(email));
+    }
 
     const otp = AuthUtil.generateOtp();
+    const { magicToken, otpHash, magicTokenHash, expiresAt } =
+      this.generateMagicTokenCredentials(otp);
+
+    const attemptData: CachedAuthAttempt = {
+      email,
+      otpHash,
+      magicTokenHash,
+      expiresAt: expiresAt.toISOString(),
+    };
+    await this.cache.set(
+      this.getAuthAttemptKey(email),
+      JSON.stringify(attemptData),
+      this.OTP_TTL,
+    );
+    await this.cache.set(
+      this.getMagicTokenKey(magicTokenHash),
+      email,
+      this.OTP_TTL,
+    );
     await this.cache.set(this.getOtpKey(email), otp, this.OTP_TTL);
 
     this.eventEmitter.emit('otp.generated', {
       email,
       otp,
+      magicLinkToken: magicToken,
     });
     return {
       success: true,
@@ -293,13 +323,44 @@ export class AuthService {
     if (!email) {
       throw new BadRequestException('Email is required');
     }
+
+    const cachedAttempt = await this.cache.get(this.getAuthAttemptKey(email));
+
+    if (!cachedAttempt) {
+      this.logVerificationError(
+        email,
+        'Invalid or expired OTP',
+        AuthProvider.EMAIL_OTP,
+      );
+      throw new UnauthorizedException('Invalid or expired OTP');
+    }
+
+    const attempt: CachedAuthAttempt = JSON.parse(cachedAttempt);
+
+    if (new Date(attempt.expiresAt) < new Date()) {
+      this.logVerificationError(email, 'Expired OTP', AuthProvider.EMAIL_OTP);
+      throw new UnauthorizedException('Expired OTP');
+    }
+
     const cachedOtp = await this.cache.get(this.getOtpKey(email));
-    if (cachedOtp !== otp) {
+    if (cachedOtp && cachedOtp !== otp) {
       this.logger.error(`Invalid OTP for email ${email}`);
       this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
       throw new UnauthorizedException('Invalid OTP');
     }
-    await this.cache.del(this.getOtpKey(email));
+
+    if (this.hashSecret(otp) !== attempt.otpHash) {
+      this.logVerificationError(email, 'Invalid OTP', AuthProvider.EMAIL_OTP);
+      throw new UnauthorizedException('Invalid OTP');
+    }
+
+    // Mark attempt as used by deleting from cache
+    await this.cache.del(this.getAuthAttemptKey(email));
+    await this.cache.del(this.getMagicTokenKey(attempt.magicTokenHash));
+
+    if (cachedOtp) {
+      await this.cache.del(this.getOtpKey(email));
+    }
 
     return await this.validateUserAndIssueTokens(
       allowedRoles,
@@ -310,6 +371,14 @@ export class AuthService {
 
   private getOtpKey(email: string) {
     return `otp:${email}`;
+  }
+
+  private getAuthAttemptKey(email: string) {
+    return `auth_attempt:${email}`;
+  }
+
+  private getMagicTokenKey(magicTokenHash: string) {
+    return `auth_attempt:magic:${magicTokenHash}`;
   }
 
   async verifyGoogleToken(
@@ -437,5 +506,70 @@ export class AuthService {
       ...tokens,
       tokenType: 'bearer',
     };
+  }
+
+  private hashSecret(secret: string): string {
+    return crypto.createHash('sha256').update(secret).digest('hex');
+  }
+
+  private generateMagicTokenCredentials(otp: string) {
+    const magicToken = crypto.randomBytes(32).toString('hex');
+    const otpHash = this.hashSecret(otp);
+    const magicTokenHash = this.hashSecret(magicToken);
+    const expiresAt = new Date(Date.now() + this.OTP_TTL * 1000);
+
+    return { magicToken, otpHash, magicTokenHash, expiresAt };
+  }
+
+  async verifyMagicLink(
+    dto: MagicLinkVerifyDto,
+  ): Promise<AuthenticationResponseDto> {
+    const { token, allowedRoles } = dto;
+    const hash = this.hashSecret(token);
+
+    // Reverse-lookup: magic token hash -> email
+    const email = await this.cache.get(this.getMagicTokenKey(hash));
+    if (!email) {
+      this.logger.error('Invalid or expired magic link token');
+      this.logVerificationError(
+        undefined,
+        'Invalid or expired magic link',
+        AuthProvider.MAGIC_LINK,
+      );
+      throw new UnauthorizedException('Invalid or expired magic link');
+    }
+
+    const cachedAttempt = await this.cache.get(this.getAuthAttemptKey(email));
+    if (!cachedAttempt) {
+      this.logger.error(`No auth attempt found for email ${email}`);
+      this.logVerificationError(
+        email,
+        'Invalid or expired magic link',
+        AuthProvider.MAGIC_LINK,
+      );
+      throw new UnauthorizedException('Invalid or expired magic link');
+    }
+
+    const attempt: CachedAuthAttempt = JSON.parse(cachedAttempt);
+
+    if (new Date(attempt.expiresAt) < new Date()) {
+      this.logger.error(`Expired magic link for email ${email}`);
+      this.logVerificationError(
+        email,
+        'Expired magic link',
+        AuthProvider.MAGIC_LINK,
+      );
+      throw new UnauthorizedException('Invalid or expired magic link');
+    }
+
+    // Mark attempt as used by deleting from cache
+    await this.cache.del(this.getAuthAttemptKey(email));
+    await this.cache.del(this.getMagicTokenKey(hash));
+
+    return await this.validateUserAndIssueTokens(
+      allowedRoles,
+      email,
+      AuthProvider.MAGIC_LINK,
+    );
   }
 }

@@ -357,6 +357,7 @@ describe('AuthService', () => {
       userRepository.findOne.mockResolvedValue(mockUser);
       groupService.getUserGroupNames.mockResolvedValue([UserRole.CLIENT]);
       (AuthUtil.generateOtp as jest.Mock).mockReturnValue('123456');
+      redisService.get.mockResolvedValue(null);
 
       const result = await authService.generateOtpV2(mockGenerateOtpDto);
 
@@ -364,7 +365,21 @@ describe('AuthService', () => {
         success: true,
         expiresIn: 300,
       });
-      expect(redisService.set).toHaveBeenCalled();
+      expect(redisService.set).toHaveBeenCalledWith(
+        'auth_attempt:test@example.com',
+        expect.any(String),
+        300,
+      );
+      expect(redisService.set).toHaveBeenCalledWith(
+        expect.stringContaining('auth_attempt:magic:'),
+        'test@example.com',
+        300,
+      );
+      expect(redisService.set).toHaveBeenCalledWith(
+        'otp:test@example.com',
+        '123456',
+        300,
+      );
     });
 
     it('should throw BadRequestException when email is missing', async () => {
@@ -417,6 +432,26 @@ describe('AuthService', () => {
       tenantId: 'test-tenant',
     } as User;
 
+    const mockCachedAttempt = JSON.stringify({
+      email: 'test@example.com',
+      otpHash: require('crypto')
+        .createHash('sha256')
+        .update('123456')
+        .digest('hex'),
+      magicTokenHash: 'mock-magic-hash',
+      expiresAt: new Date(Date.now() + 10000).toISOString(),
+    });
+
+    const mockWrongOtpAttempt = JSON.stringify({
+      email: 'test@example.com',
+      otpHash: require('crypto')
+        .createHash('sha256')
+        .update('different-otp')
+        .digest('hex'),
+      magicTokenHash: 'mock-magic-hash',
+      expiresAt: new Date(Date.now() + 10000).toISOString(),
+    });
+
     beforeEach(() => {
       jest.clearAllMocks();
     });
@@ -430,9 +465,11 @@ describe('AuthService', () => {
     });
 
     it('should throw NotFoundException when user is not found', async () => {
-      redisService.get.mockResolvedValue('123456');
-      redisService.del.mockResolvedValue();
-
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:test@example.com')
+          return Promise.resolve(mockCachedAttempt);
+        return Promise.resolve(null);
+      });
       userRepository.findOne.mockResolvedValue(null);
 
       await expect(
@@ -443,21 +480,38 @@ describe('AuthService', () => {
     });
 
     it('should throw UserSuspendedException when user is suspended', async () => {
-      redisService.get.mockResolvedValue('123456');
-      redisService.del.mockResolvedValue();
+      const suspendedAttempt = JSON.stringify({
+        email: 'suspended@example.com',
+        otpHash: require('crypto')
+          .createHash('sha256')
+          .update('123456')
+          .digest('hex'),
+        magicTokenHash: 'mock-magic-hash',
+        expiresAt: new Date(Date.now() + 10000).toISOString(),
+      });
 
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:suspended@example.com')
+          return Promise.resolve(suspendedAttempt);
+        return Promise.resolve(null);
+      });
       userRepository.findOne.mockResolvedValue(mockSuspendedUser);
-      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']); // REQUIRED
+      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
 
       await expect(
-        authService.verifyOtpV2(mockVerifyOtpDto as any),
+        authService.verifyOtpV2({
+          ...mockVerifyOtpDto,
+          email: 'suspended@example.com',
+        } as any),
       ).rejects.toThrow(UserSuspendedException);
     });
 
     it('should throw ForbiddenException when user is not authorized', async () => {
-      redisService.get.mockResolvedValue('123456');
-      redisService.del.mockResolvedValue();
-
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:test@example.com')
+          return Promise.resolve(mockCachedAttempt);
+        return Promise.resolve(null);
+      });
       userRepository.findOne.mockResolvedValue(mockUser);
       groupService.getUserGroupNames.mockResolvedValue(['ADMIN']);
 
@@ -469,8 +523,11 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException when OTP is invalid', async () => {
-      redisService.get.mockResolvedValue('different-otp');
-
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:test@example.com')
+          return Promise.resolve(mockWrongOtpAttempt);
+        return Promise.resolve(null);
+      });
       userRepository.findOne.mockResolvedValue(mockUser);
       groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
 
@@ -479,13 +536,32 @@ describe('AuthService', () => {
       ).rejects.toThrow(new UnauthorizedException('Invalid OTP'));
     });
 
+    it('should throw UnauthorizedException when cached OTP does not match', async () => {
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:test@example.com')
+          return Promise.resolve(mockCachedAttempt);
+        if (key === 'otp:test@example.com') return Promise.resolve('wrong-otp');
+        return Promise.resolve(null);
+      });
+
+      await expect(
+        authService.verifyOtpV2(mockVerifyOtpDto as any),
+      ).rejects.toThrow(new UnauthorizedException('Invalid OTP'));
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Invalid OTP for email test@example.com',
+      );
+    });
+
     it('should successfully verify OTP and return tokens', async () => {
       const accessToken = 'access-token';
       const refreshToken = 'refresh-token';
 
-      redisService.get.mockResolvedValue('123456');
-      redisService.del.mockResolvedValue();
-
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:test@example.com')
+          return Promise.resolve(mockCachedAttempt);
+        if (key === 'otp:test@example.com') return Promise.resolve('123456');
+        return Promise.resolve(null);
+      });
       userRepository.findOne.mockResolvedValue(mockUser);
       groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
 
@@ -507,14 +583,22 @@ describe('AuthService', () => {
         tokenType: 'bearer',
       });
 
-      expect(redisService.del).toHaveBeenCalledWith(`otp:${mockUser.email}`);
+      expect(redisService.del).toHaveBeenCalledWith(
+        'auth_attempt:test@example.com',
+      );
+      expect(redisService.del).toHaveBeenCalledWith(
+        'auth_attempt:magic:mock-magic-hash',
+      );
+      expect(redisService.del).toHaveBeenCalledWith('otp:test@example.com');
       expect(refreshTokenRepository.save).toHaveBeenCalled();
     });
 
     it('should log error when user is not found', async () => {
-      redisService.get.mockResolvedValue('123456');
-      redisService.del.mockResolvedValue();
-
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:test@example.com')
+          return Promise.resolve(mockCachedAttempt);
+        return Promise.resolve(null);
+      });
       userRepository.findOne.mockResolvedValue(null);
 
       await expect(
@@ -527,19 +611,29 @@ describe('AuthService', () => {
     });
 
     it('should log error when user is suspended', async () => {
-      const suspendedDto = {
-        ...mockVerifyOtpDto,
-        email: mockSuspendedUser.email,
-      };
+      const suspendedAttempt = JSON.stringify({
+        email: 'suspended@example.com',
+        otpHash: require('crypto')
+          .createHash('sha256')
+          .update('123456')
+          .digest('hex'),
+        magicTokenHash: 'mock-magic-hash',
+        expiresAt: new Date(Date.now() + 10000).toISOString(),
+      });
 
-      redisService.get.mockResolvedValue('123456');
-      redisService.del.mockResolvedValue();
-
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:suspended@example.com')
+          return Promise.resolve(suspendedAttempt);
+        return Promise.resolve(null);
+      });
       userRepository.findOne.mockResolvedValue(mockSuspendedUser);
-      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']); // REQUIRED
+      groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
 
       await expect(
-        authService.verifyOtpV2(suspendedDto as any),
+        authService.verifyOtpV2({
+          ...mockVerifyOtpDto,
+          email: mockSuspendedUser.email,
+        } as any),
       ).rejects.toThrow();
 
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -548,9 +642,11 @@ describe('AuthService', () => {
     });
 
     it('should log error when user is not authorized', async () => {
-      redisService.get.mockResolvedValue('123456');
-      redisService.del.mockResolvedValue();
-
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:test@example.com')
+          return Promise.resolve(mockCachedAttempt);
+        return Promise.resolve(null);
+      });
       userRepository.findOne.mockResolvedValue(mockUser);
       groupService.getUserGroupNames.mockResolvedValue(['ADMIN']);
 
@@ -564,15 +660,12 @@ describe('AuthService', () => {
     });
 
     it('should log error when OTP is invalid', async () => {
-      redisService.get.mockResolvedValue('different-otp');
+      // No auth attempt found in cache
+      redisService.get.mockResolvedValue(null);
 
       await expect(
         authService.verifyOtpV2(mockVerifyOtpDto as any),
       ).rejects.toThrow();
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        `Invalid OTP for email ${mockVerifyOtpDto.email}`,
-      );
     });
 
     it('should call logVerificationError for relevant error scenarios', async () => {
@@ -581,22 +674,25 @@ describe('AuthService', () => {
         'logVerificationError',
       );
 
-      // invalid otp (early)
-      redisService.get.mockResolvedValue('different-otp');
+      // invalid/expired attempt (no attempt found in cache)
+      redisService.get.mockResolvedValue(null);
       await expect(
         authService.verifyOtpV2(mockVerifyOtpDto as any),
       ).rejects.toThrow();
       expect(logVerificationErrorSpy).toHaveBeenCalledWith(
         mockVerifyOtpDto.email,
-        'Invalid OTP',
+        'Invalid or expired OTP',
         AuthProvider.EMAIL_OTP,
       );
 
       jest.clearAllMocks();
 
       // user not found (OTP valid)
-      redisService.get.mockResolvedValue('123456');
-      redisService.del.mockResolvedValue();
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:test@example.com')
+          return Promise.resolve(mockCachedAttempt);
+        return Promise.resolve(null);
+      });
       userRepository.findOne.mockResolvedValue(null);
 
       await expect(
@@ -611,8 +707,11 @@ describe('AuthService', () => {
       jest.clearAllMocks();
 
       // not authorized (OTP valid)
-      redisService.get.mockResolvedValue('123456');
-      redisService.del.mockResolvedValue();
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:test@example.com')
+          return Promise.resolve(mockCachedAttempt);
+        return Promise.resolve(null);
+      });
       userRepository.findOne.mockResolvedValue(mockUser);
       groupService.getUserGroupNames.mockResolvedValue(['ADMIN']);
 
@@ -629,9 +728,12 @@ describe('AuthService', () => {
     });
 
     it('should log audit event on successful verification', async () => {
-      redisService.get.mockResolvedValue('123456');
-      redisService.del.mockResolvedValue();
-
+      redisService.get.mockImplementation((key: string) => {
+        if (key === 'auth_attempt:test@example.com')
+          return Promise.resolve(mockCachedAttempt);
+        if (key === 'otp:test@example.com') return Promise.resolve('123456');
+        return Promise.resolve(null);
+      });
       userRepository.findOne.mockResolvedValue(mockUser);
       groupService.getUserGroupNames.mockResolvedValue(['CLIENT']);
 
@@ -645,6 +747,174 @@ describe('AuthService', () => {
 
       expect(result).toBeDefined();
       expect(result.user.id).toBe(mockUser.id);
+    });
+  });
+
+  describe('verifyMagicLink', () => {
+    const mockMagicLinkUser = {
+      id: 1,
+      email: 'testuser@example.com',
+      username: 'testuser@example.com',
+      status: UserStatus.ACTIVE,
+      tenantId: '1',
+    } as User;
+
+    const validToken = 'valid-magic-token';
+    const tokenHash = require('crypto')
+      .createHash('sha256')
+      .update(validToken)
+      .digest('hex');
+
+    const mockMagicAttempt = JSON.stringify({
+      email: 'testuser@example.com',
+      otpHash: 'some-otp-hash',
+      magicTokenHash: tokenHash,
+      expiresAt: new Date(Date.now() + 10000).toISOString(),
+    });
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should throw UnauthorizedException when token is invalid or not found', async () => {
+      redisService.get.mockResolvedValue(null);
+
+      await expect(
+        authService.verifyMagicLink({
+          token: 'invalid-token',
+          allowedRoles: [UserRole.CLIENT],
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw UnauthorizedException when magic link is expired', async () => {
+      const expiredAttempt = JSON.stringify({
+        email: 'testuser@example.com',
+        otpHash: 'some-otp-hash',
+        magicTokenHash: tokenHash,
+        expiresAt: new Date(Date.now() - 10000).toISOString(),
+      });
+
+      redisService.get.mockImplementation((key: string) => {
+        if (key === `auth_attempt:magic:${tokenHash}`)
+          return Promise.resolve('testuser@example.com');
+        if (key === 'auth_attempt:testuser@example.com')
+          return Promise.resolve(expiredAttempt);
+        return Promise.resolve(null);
+      });
+
+      await expect(
+        authService.verifyMagicLink({
+          token: validToken,
+          allowedRoles: [UserRole.CLIENT],
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw NotFoundException when user no longer exists', async () => {
+      redisService.get.mockImplementation((key: string) => {
+        if (key === `auth_attempt:magic:${tokenHash}`)
+          return Promise.resolve('testuser@example.com');
+        if (key === 'auth_attempt:testuser@example.com')
+          return Promise.resolve(mockMagicAttempt);
+        return Promise.resolve(null);
+      });
+      userRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        authService.verifyMagicLink({
+          token: validToken,
+          allowedRoles: [UserRole.CLIENT],
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw UserSuspendedException when user is suspended', async () => {
+      const suspendedUser = {
+        ...mockMagicLinkUser,
+        email: 'testuser@example.com',
+        status: UserStatus.SUSPENDED,
+      } as User;
+
+      redisService.get.mockImplementation((key: string) => {
+        if (key === `auth_attempt:magic:${tokenHash}`)
+          return Promise.resolve('testuser@example.com');
+        if (key === 'auth_attempt:testuser@example.com')
+          return Promise.resolve(mockMagicAttempt);
+        return Promise.resolve(null);
+      });
+      userRepository.findOne.mockResolvedValue(suspendedUser);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.CLIENT]);
+
+      await expect(
+        authService.verifyMagicLink({
+          token: validToken,
+          allowedRoles: [UserRole.CLIENT],
+        }),
+      ).rejects.toThrow(UserSuspendedException);
+    });
+
+    it('should throw ForbiddenException when user does not have allowed role', async () => {
+      redisService.get.mockImplementation((key: string) => {
+        if (key === `auth_attempt:magic:${tokenHash}`)
+          return Promise.resolve('testuser@example.com');
+        if (key === 'auth_attempt:testuser@example.com')
+          return Promise.resolve(mockMagicAttempt);
+        return Promise.resolve(null);
+      });
+      userRepository.findOne.mockResolvedValue(mockMagicLinkUser);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.ADMIN]);
+
+      await expect(
+        authService.verifyMagicLink({
+          token: validToken,
+          allowedRoles: [UserRole.CLIENT],
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should successfully verify magic link and return tokens', async () => {
+      const accessToken = 'magic-access-token';
+      const refreshToken = 'magic-refresh-token';
+
+      redisService.get.mockImplementation((key: string) => {
+        if (key === `auth_attempt:magic:${tokenHash}`)
+          return Promise.resolve('testuser@example.com');
+        if (key === 'auth_attempt:testuser@example.com')
+          return Promise.resolve(mockMagicAttempt);
+        return Promise.resolve(null);
+      });
+      userRepository.findOne.mockResolvedValue(mockMagicLinkUser);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.CLIENT]);
+
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-refresh-token');
+      jwtService.signAsync
+        .mockResolvedValueOnce(accessToken)
+        .mockResolvedValueOnce(refreshToken);
+      refreshTokenRepository.save.mockResolvedValue({} as RefreshToken);
+
+      const result = await authService.verifyMagicLink({
+        token: validToken,
+        allowedRoles: [UserRole.CLIENT],
+      });
+
+      expect(result).toEqual({
+        user: {
+          id: mockMagicLinkUser.id,
+          username: mockMagicLinkUser.username,
+        },
+        accessToken,
+        refreshToken,
+        tokenType: 'bearer',
+      });
+
+      expect(redisService.del).toHaveBeenCalledWith(
+        'auth_attempt:testuser@example.com',
+      );
+      expect(redisService.del).toHaveBeenCalledWith(
+        `auth_attempt:magic:${tokenHash}`,
+      );
+      expect(refreshTokenRepository.save).toHaveBeenCalled();
     });
   });
 });

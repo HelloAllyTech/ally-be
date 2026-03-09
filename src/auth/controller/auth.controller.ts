@@ -26,6 +26,7 @@ import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { GoogleSignInDto } from '../dto/google-token.dto';
+import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
 
 @Controller({
   path: 'auth',
@@ -116,5 +117,17 @@ export class AuthController {
       payload,
       googleSignInDto.allowedRoles,
     );
+  }
+
+  @RateLimit({
+    name: 'otp',
+    key: 'ip',
+    errorMessage:
+      'Too many magic link verification attempts. Please try again later.',
+  })
+  @Post('magic-link/verify')
+  @HttpCode(HttpStatus.OK)
+  async verifyMagicLink(@Body() dto: MagicLinkVerifyDto) {
+    return this.authService.verifyMagicLink(dto);
   }
 }
