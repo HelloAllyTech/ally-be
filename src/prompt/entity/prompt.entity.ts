@@ -25,4 +25,7 @@ export class Prompt extends BaseWithoutTenantEntity {
 
   @Column({ type: 'boolean', default: false })
   useDashboardOverride!: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  isObsolete!: boolean;
 }

@@ -36,6 +36,7 @@ describe('PromptsService', () => {
     description: 'A prompt for AI learning',
     currentVersion: 1,
     useDashboardOverride: false,
+    isObsolete: false,
     createdAt: new Date('2026-02-09'),
     updatedAt: new Date('2026-02-09'),
   };
@@ -179,6 +180,7 @@ describe('PromptsService', () => {
         id: '323e4567-e89b-12d3-a456-426614174002',
         promptCode: 'ally_learn_path',
         name: 'Learning Path',
+        isObsolete: false,
       };
 
       (promptsRepository.create as jest.Mock)

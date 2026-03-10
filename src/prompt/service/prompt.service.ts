@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, DeepPartial, In } from 'typeorm';
 import { Prompt } from '../entity/prompt.entity';
 import { PromptsRepository } from '../repository/prompt.repository';
 import { PromptVersionRepository } from '../repository/prompt-version.repository';
@@ -7,7 +7,6 @@ import { PromptSharedService } from './prompt-shared.service';
 import { UpdatePromptDto } from '../dto/update-prompt.dto';
 import { CreatePromptsDto } from '../dto/create-prompts.dto';
 import { SyncPromptsDto } from '../dto/sync-prompts.dto';
-import { DeepPartial } from 'typeorm';
 import { Pagination } from 'src/common/type/common.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { PromptResponse } from '../type/prompt-response.type';
@@ -188,6 +187,7 @@ export class PromptsService {
   /**
    * Sync prompts from folder/codebase to DB. Add-only for new prompts;
    * for existing prompts, updates defaultPrompt only (preserves dashboard edits).
+   * Automatically marks missing prompts as obsolete (grouping by ally_ai_learn vs native ally-be).
    */
   async syncPrompts(syncPromptsDto: SyncPromptsDto): Promise<{
     added: number;
@@ -195,6 +195,13 @@ export class PromptsService {
   }> {
     let added = 0;
     let updated = 0;
+
+    const incomingCodes = syncPromptsDto.prompts.map((p) =>
+      standardizePromptCode(p.promptCode),
+    );
+    const isFromAllyAiLearn = incomingCodes.some((code) =>
+      code.startsWith('ally_ai_learn_'),
+    );
 
     for (const item of syncPromptsDto.prompts) {
       const promptCode = standardizePromptCode(item.promptCode);
@@ -208,6 +215,7 @@ export class PromptsService {
           name: item.name,
           description: item.description || '',
           defaultPrompt: item.prompt,
+          isObsolete: false,
         });
         const saved = await this.promptsRepository.save(prompt);
 
@@ -226,12 +234,52 @@ export class PromptsService {
           defaultPrompt: item.prompt,
           name: item.name,
           description: item.description || '',
+          isObsolete: false, // resurrected
         });
         updated++;
       }
     }
 
+    // Pass 2: Mark missing prompts as obsolete
+    const query = this.promptsRepository.createQueryBuilder('prompt');
+    if (isFromAllyAiLearn) {
+      query.where('prompt.promptCode LIKE :prefix', {
+        prefix: 'ally_ai_learn_%',
+      });
+    } else {
+      query.where('prompt.promptCode NOT LIKE :prefix', {
+        prefix: 'ally_ai_learn_%',
+      });
+    }
+
+    if (incomingCodes.length > 0) {
+      query.andWhere('prompt.promptCode NOT IN (:...incomingCodes)', {
+        incomingCodes,
+      });
+    }
+    query.andWhere('prompt.isObsolete = :isObsolete', { isObsolete: false });
+
+    const obsoletePrompts = await query.getMany();
+    if (obsoletePrompts.length > 0) {
+      await this.promptsRepository.update(
+        { id: In(obsoletePrompts.map((p) => p.id)) },
+        { isObsolete: true },
+      );
+    }
+
     return { added, updated };
+  }
+
+  async deleteObsoletePrompt(id: string): Promise<void> {
+    const prompt = await this.promptsRepository.findOne({ where: { id } });
+    if (!prompt) {
+      throw new NotFoundException('Prompt not found');
+    }
+    if (!prompt.isObsolete) {
+      throw new Error('Only obsolete prompts can be deleted');
+    }
+    await this.promptVersionRepository.delete({ promptId: id });
+    await this.promptsRepository.delete(id);
   }
 
   /**
