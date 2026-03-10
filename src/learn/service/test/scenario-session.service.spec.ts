@@ -532,9 +532,11 @@ describe('ScenarioSessionService', () => {
 
   describe('getScenarioSessions', () => {
     it('should return scenario sessions with default status', async () => {
-      const mockSessions = [mockScenarioSession];
+      const mockSessions = [
+        { ...mockScenarioSession, scenario: { ...mockScenario } },
+      ];
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue(
-        mockSessions,
+        mockSessions as any,
       );
 
       const result = await service.getScenarioSessions(
@@ -542,7 +544,9 @@ describe('ScenarioSessionService', () => {
         mockPagination,
       );
 
-      expect(result).toEqual({ data: mockSessions });
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).not.toHaveProperty('scenario.prompt');
+      expect(result.data[0]).not.toHaveProperty('scenario.metadata');
       expect(
         scenarioSessionRepository.getScenarioSessions,
       ).toHaveBeenCalledWith(
@@ -553,10 +557,12 @@ describe('ScenarioSessionService', () => {
     });
 
     it('should return scenario sessions with custom status', async () => {
-      const mockSessions = [mockScenarioSession];
+      const mockSessions = [
+        { ...mockScenarioSession, scenario: { ...mockScenario } },
+      ];
       const customStatus = ScenarioSessionStatus.ACTIVE;
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue(
-        mockSessions,
+        mockSessions as any,
       );
 
       const result = await service.getScenarioSessions(
@@ -565,7 +571,9 @@ describe('ScenarioSessionService', () => {
         customStatus,
       );
 
-      expect(result).toEqual({ data: mockSessions });
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).not.toHaveProperty('scenario.prompt');
+      expect(result.data[0]).not.toHaveProperty('scenario.metadata');
       expect(
         scenarioSessionRepository.getScenarioSessions,
       ).toHaveBeenCalledWith(mockCounselorId, mockPagination, customStatus);
@@ -574,14 +582,18 @@ describe('ScenarioSessionService', () => {
 
   describe('getAdminScenarioSessions', () => {
     it('should return admin scenario sessions', async () => {
-      const mockSessions = [mockScenarioSession];
+      const mockSessions = [
+        { ...mockScenarioSession, scenario: { ...mockScenario } },
+      ];
       scenarioSessionRepository.getAdminScenarioSessions.mockResolvedValue(
-        mockSessions,
+        mockSessions as any,
       );
 
       const result = await service.getAdminScenarioSessions(mockPagination);
 
-      expect(result).toEqual({ data: mockSessions });
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).not.toHaveProperty('scenario.prompt');
+      expect(result.data[0]).not.toHaveProperty('scenario.metadata');
       expect(
         scenarioSessionRepository.getAdminScenarioSessions,
       ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED);
