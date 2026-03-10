@@ -9,7 +9,11 @@ export type MetadataShape = {
   openingStatements?: string[];
   sexualOrientation?: string;
   genderIdentity?: string;
-  customFields?: { name: string; value: string }[];
+  customFields?: {
+    name: string;
+    value: string;
+    useInDefaultPrompt?: boolean;
+  }[];
   stateInstructions?: ScenarioStateInstruction[];
 };
 

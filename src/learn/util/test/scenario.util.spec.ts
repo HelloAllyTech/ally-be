@@ -130,16 +130,16 @@ describe('Scenario Util', () => {
         title: 'Scenario with Custom Fields',
         status: ScenarioStatus.DRAFT,
         customFields: [
-          { name: 'Field 1', value: 'Value 1' },
-          { name: 'Field 2', value: 'Value 2' },
+          { name: 'Field 1', value: 'Value 1', useInDefaultPrompt: true },
+          { name: 'Field 2', value: 'Value 2', useInDefaultPrompt: true },
         ],
       } as any;
 
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
 
       expect(result.metadata.customFields).toEqual([
-        { name: 'Field 1', value: 'Value 1' },
-        { name: 'Field 2', value: 'Value 2' },
+        { name: 'Field 1', value: 'Value 1', useInDefaultPrompt: true },
+        { name: 'Field 2', value: 'Value 2', useInDefaultPrompt: true },
       ]);
     });
 
@@ -154,11 +154,13 @@ describe('Scenario Util', () => {
             value: 'Value 1',
             extraProp: 'should be trimmed',
             anotherExtra: 123,
+            useInDefaultPrompt: true,
           } as any,
           {
             name: 'Field 2',
             value: 'Value 2',
             id: 'some-id',
+            useInDefaultPrompt: true,
             metadata: { nested: 'data' },
           } as any,
         ],
@@ -167,8 +169,8 @@ describe('Scenario Util', () => {
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
 
       expect(result.metadata.customFields).toEqual([
-        { name: 'Field 1', value: 'Value 1' },
-        { name: 'Field 2', value: 'Value 2' },
+        { name: 'Field 1', value: 'Value 1', useInDefaultPrompt: true },
+        { name: 'Field 2', value: 'Value 2', useInDefaultPrompt: true },
       ]);
       expect(result.metadata.customFields).toHaveLength(2);
       expect(result.metadata.customFields![0]).not.toHaveProperty('extraProp');

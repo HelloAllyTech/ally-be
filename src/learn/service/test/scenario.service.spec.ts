@@ -2618,12 +2618,14 @@ describe('ScenarioService', () => {
               value: 'Value 1',
               extraProp: 'should be trimmed',
               anotherExtra: 123,
+              useInDefaultPrompt: true,
             } as any,
             {
               name: 'Field 2',
               value: 'Value 2',
               id: 'some-id',
               metadata: { nested: 'data' },
+              useInDefaultPrompt: true,
             } as any,
           ],
         };
@@ -2679,8 +2681,8 @@ describe('ScenarioService', () => {
         await service.updateScenario(1, updateDto, 1);
 
         expect(capturedUpdateData.metadata.customFields).toEqual([
-          { name: 'Field 1', value: 'Value 1' },
-          { name: 'Field 2', value: 'Value 2' },
+          { name: 'Field 1', value: 'Value 1', useInDefaultPrompt: true },
+          { name: 'Field 2', value: 'Value 2', useInDefaultPrompt: true },
         ]);
         expect(capturedUpdateData.metadata.customFields).toHaveLength(2);
         expect(capturedUpdateData.metadata.customFields[0]).not.toHaveProperty(
@@ -2760,8 +2762,8 @@ describe('ScenarioService', () => {
         const updateDto: UpdateScenarioDto = {
           title: 'Updated Title',
           customFields: [
-            { name: 'Field 1', value: 'Value 1' },
-            { name: 'Field 2', value: 'Value 2' },
+            { name: 'Field 1', value: 'Value 1', useInDefaultPrompt: true },
+            { name: 'Field 2', value: 'Value 2', useInDefaultPrompt: true },
           ],
         };
         const existingScenario = { ...mockScenario, isGlobal: false };
@@ -2816,8 +2818,8 @@ describe('ScenarioService', () => {
         await service.updateScenario(1, updateDto, 1);
 
         expect(capturedUpdateData.metadata.customFields).toEqual([
-          { name: 'Field 1', value: 'Value 1' },
-          { name: 'Field 2', value: 'Value 2' },
+          { name: 'Field 1', value: 'Value 1', useInDefaultPrompt: true },
+          { name: 'Field 2', value: 'Value 2', useInDefaultPrompt: true },
         ]);
       });
     });
