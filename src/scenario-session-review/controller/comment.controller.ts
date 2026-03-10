@@ -26,7 +26,7 @@ import {
 } from 'src/review/dto/create-comment.dto';
 import { GetReviewRepliesResponseDto } from 'src/review/dto/review-replies-response.dto';
 import { UpdateReviewCommentDto } from 'src/review/dto/update-review-comment.dto';
-import { SuccessResponse } from 'src/common/type/common.type';
+import { SortOrder, SuccessResponse } from 'src/common/type/common.type';
 import { ToggleCommentVisibilityDto } from 'src/review/dto/toggle-comment-visibility.dto';
 import { GetReviewCommentsResponseDto } from 'src/review/dto/review-comments-response.dto';
 
@@ -64,31 +64,43 @@ export class ScenarioSessionReviewCommentController {
   @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEW_THREADS])
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiQuery({ name: 'sortBy', required: false, type: String })
+  @ApiQuery({ name: 'order', required: false, enum: SortOrder })
   @Get('threads/:threadId/comments')
   async getReviewComments(
     @Param('threadId', ParseUUIDPipe) threadId: string,
+    @Query('sortBy') sortBy: string = 'createdAt',
+    @Query('order') order: SortOrder = SortOrder.DESC,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
   ): Promise<GetReviewCommentsResponseDto> {
     return this.reviewCommentService.getReviewComments(threadId, {
       limit,
       offset,
+      sortBy,
+      order,
     });
   }
 
   @ApiOperation({ summary: 'Get review comment replies' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiQuery({ name: 'sortBy', required: false, type: String })
+  @ApiQuery({ name: 'order', required: false, enum: SortOrder })
   @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEW_THREADS])
   @Get('comments/:commentId/replies')
   async getReviewCommentReplies(
     @Param('commentId', ParseUUIDPipe) commentId: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
+    @Query('sortBy') sortBy: string = 'createdAt',
+    @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<GetReviewRepliesResponseDto> {
     return this.reviewCommentService.getReviewCommentReplies(commentId, {
       limit,
       offset,
+      sortBy,
+      order,
     });
   }
 
@@ -130,16 +142,22 @@ export class ScenarioSessionReviewCommentController {
   @ApiOperation({ summary: 'Get general review comments' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiQuery({ name: 'sortBy', required: false, type: String })
+  @ApiQuery({ name: 'order', required: false, enum: SortOrder })
   @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEW_THREADS])
   @Get(':reviewId/comments')
   async getGeneralReviewComments(
     @Param('reviewId', ParseUUIDPipe) reviewId: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
+    @Query('sortBy') sortBy: string = 'createdAt',
+    @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<GetReviewCommentsResponseDto> {
     return this.reviewCommentService.getGeneralReviewComments(reviewId, {
       limit,
       offset,
+      sortBy,
+      order,
     });
   }
 }

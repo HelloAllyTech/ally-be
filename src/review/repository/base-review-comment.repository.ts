@@ -48,7 +48,7 @@ export abstract class BaseReviewCommentRepository<
     if (!isCommentVisible) {
       query.andWhere('comment.hidden = false');
     }
-    return query.addOrderBy('comment.createdAt', 'ASC').getRawMany();
+    return query.addOrderBy('comment.createdAt', 'DESC').getRawMany();
   }
 
   async getCommentsByThreadId(
@@ -78,11 +78,11 @@ export abstract class BaseReviewCommentRepository<
 
     const count = await query.getCount();
 
-    const comments = await query
-      .orderBy('comment.createdAt', 'ASC')
-      .limit(limit)
-      .offset(offset)
-      .getRawMany();
+    if (options?.sortBy) {
+      query.orderBy(`comment.${options.sortBy}`, options.order);
+    }
+
+    const comments = await query.limit(limit).offset(offset).getRawMany();
 
     return { comments, count };
   }
@@ -101,7 +101,11 @@ export abstract class BaseReviewCommentRepository<
       query.andWhere('comment.hidden=false');
     }
 
-    query.orderBy('comment.createdAt', 'ASC').limit(limit).offset(offset);
+    if (options?.sortBy) {
+      query.orderBy(`comment.${options.sortBy}`, options.order);
+    }
+
+    query.limit(limit).offset(offset);
     return query.getManyAndCount();
   }
 
