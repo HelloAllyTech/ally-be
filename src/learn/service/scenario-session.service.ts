@@ -99,6 +99,7 @@ import { UpdateReflectionPromptResponseDto } from '../dto/reflection-prompts-req
 import { ScenarioSessionReflectionPromptResponse } from '../entity/scenario-session-reflection-prompt-response.entity';
 import { SCENARIO_SESSION_REFLECTION_PROMPTS } from '../constants/scenario-session-reflection-prompt.constants';
 import { ScenariosRepository } from '../repository/scenario.repository';
+import { getSessionDurationInSeconds } from 'src/review/util/review.util';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -281,6 +282,11 @@ export class ScenarioSessionService {
         statuses ?? `${ScenarioSessionStatus.ENDED}`,
       );
 
+    scenarioSessions.forEach((scenarioSession) => {
+      delete (scenarioSession as any).scenario.prompt;
+      delete (scenarioSession as any).scenario.metadata;
+    });
+
     return { data: scenarioSessions };
   }
 
@@ -290,6 +296,11 @@ export class ScenarioSessionService {
         options,
         `${ScenarioSessionStatus.ENDED}`,
       );
+
+    scenarioSessions.forEach((scenarioSession) => {
+      delete (scenarioSession as any).scenario.prompt;
+      delete (scenarioSession as any).scenario.metadata;
+    });
 
     return { data: scenarioSessions };
   }
@@ -308,6 +319,14 @@ export class ScenarioSessionService {
 
     if (!scenarioSession) {
       throw new BadRequestException('Scenario session not found');
+    }
+
+    if (scenarioSession.startedAt && scenarioSession.endedAt) {
+      const callDuration = getSessionDurationInSeconds(
+        scenarioSession.startedAt,
+        scenarioSession.endedAt,
+      );
+      (scenarioSession as any).details.callDuration = callDuration;
     }
 
     // Filter events to only include those with ACTIVE session events (null when
@@ -339,7 +358,10 @@ export class ScenarioSessionService {
 
     const scenario = (scenarioSession as any).scenario;
     if (scenario) {
-      delete scenario.metadata;
+      scenario.metadata = {
+        experienceMode:
+          scenario.metadata?.experienceMode ?? ExperienceMode.FEEDBACK,
+      };
       delete scenario.prompt;
     }
 
