@@ -7,6 +7,7 @@ import {
   Put,
   Query,
   UseGuards,
+  Delete,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -114,5 +115,12 @@ export class PromptsController {
   @Post(':id/revert')
   async revertPrompt(@Param('id') id: string): Promise<boolean> {
     return this.promptsService.revertPrompt(id);
+  }
+
+  @ApiOperation({ summary: 'Delete an obsolete prompt' })
+  @AuthPermissions([PERMISSIONS.EDIT_PROMPT])
+  @Delete(':id')
+  async deleteObsoletePrompt(@Param('id') id: string): Promise<void> {
+    return this.promptsService.deleteObsoletePrompt(id);
   }
 }

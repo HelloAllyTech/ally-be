@@ -241,7 +241,7 @@ export class AppConfigService {
    */
   get allowDirectAgentDispatch(): boolean {
     const explicit =
-      this.configService.get<string>('ALLOW_DIRECT_AGENT_DISPATCH') === 'true';
+      this.configService.get<boolean>('ALLOW_DIRECT_AGENT_DISPATCH') === true;
     const isLocalOnly = this.nodeEnv === 'local';
     return explicit || isLocalOnly;
   }
