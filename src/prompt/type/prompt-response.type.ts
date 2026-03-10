@@ -8,6 +8,7 @@ export type PromptResponse = {
   defaultPrompt?: string;
   useDashboardOverride?: boolean;
   availableVariables?: string[];
+  isObsolete?: boolean;
 };
 
 export type PromptDetailResponse = {
@@ -22,6 +23,7 @@ export type PromptDetailResponse = {
   defaultPrompt?: string;
   useDashboardOverride?: boolean;
   availableVariables?: string[];
+  isObsolete?: boolean;
 };
 
 export type PromptsWithPromptCode = {
