@@ -1,5 +1,14 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsArray,
+  IsObject,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { MessageRequest } from '../../ai/dto/ai.request.dto';
+import { FlattenedSummaryNotePayload } from '../type/call.details.type';
 
 export class TranscriptRequestDto {
   @ApiProperty({
@@ -8,6 +17,20 @@ export class TranscriptRequestDto {
   @IsNumber()
   @IsNotEmpty()
   chatId!: number;
+
+  @ApiProperty({
+    description: 'Chat transcription',
+  })
+  @IsArray()
+  @IsOptional()
+  transcription?: MessageRequest[];
+
+  @ApiProperty({
+    description: 'Chat Summary',
+  })
+  @IsObject()
+  @IsOptional()
+  summary?: FlattenedSummaryNotePayload;
 
   @ApiProperty({
     required: false,

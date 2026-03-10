@@ -162,6 +162,41 @@ describe('ChatTranscriptService', () => {
       expect(mockedAxios.delete).toHaveBeenCalledWith('delete-url');
     });
 
+    it('should process inline transcription and summary when both are provided', async () => {
+      chatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+      mockedAxios.delete.mockResolvedValueOnce({} as any);
+
+      const transcription = [
+        {
+          role: 'client',
+          content: 'hello world',
+          start_time: 0,
+          end_time: 2,
+        },
+      ];
+      const summary = {
+        session_summary: 'short summary',
+      } as any;
+
+      await service.processTranscribeResult({
+        chatId,
+        transcription,
+        summary,
+        deletePresignedUrl: 'delete-url',
+      });
+
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+      expect(chatAiService.addTranscript).toHaveBeenCalledWith(
+        mockChat,
+        transcription,
+      );
+      expect(chatAiService.addSummary).toHaveBeenCalledWith(chatId, summary);
+      expect(mockedAxios.delete).toHaveBeenCalledWith('delete-url');
+      expect(chatService.updateChat).toHaveBeenCalledWith(chatId, {
+        summaryStatus: ChatSummaryStatus.SUCCESS,
+      });
+    });
+
     it('should mark chat as FAILED if S3 download fails', async () => {
       chatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
       mockedAxios.get.mockRejectedValueOnce(new Error('S3 error'));
