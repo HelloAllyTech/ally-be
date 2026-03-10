@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { SESService } from 'src/aws/service/ses.service';
+import { AppType } from 'src/common/constants/user.constants';
 
 @Injectable()
 export class EmailService {
@@ -18,6 +19,7 @@ export class EmailService {
     to: string;
     otp: string;
     magicLinkToken?: string;
+    appType?: AppType;
   }): Promise<boolean> {
     if (this.config.isDevelopment) {
       // TODO: Remove this once email otp is verified in dev
@@ -32,8 +34,13 @@ export class EmailService {
     }
     const minutes = Math.floor(this.config.otp.ttl / 60);
 
+    const baseUrl =
+      params.appType === AppType.ADMIN
+        ? this.config.app.adminBaseUrl
+        : this.config.app.baseUrl;
+
     const magicLink = params.magicLinkToken
-      ? `${this.config.app.baseUrl}/auth/verify?token=${params.magicLinkToken}`
+      ? `${baseUrl}/auth/verify?token=${params.magicLinkToken}`
       : undefined;
 
     const subject = 'Your Ally Verification Code';

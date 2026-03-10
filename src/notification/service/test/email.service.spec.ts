@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EmailService } from '../email.service';
 import { AppConfigService } from 'src/config/config.service';
+import { AppType } from 'src/common/constants/user.constants';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { SESService } from 'src/aws/service/ses.service';
 
@@ -149,6 +150,30 @@ describe('EmailService', () => {
         subject: 'Your Ally Verification Code',
         body: expect.stringContaining(
           'https://test.example.com/auth/verify?token=test-magic-token',
+        ),
+        isHtml: false,
+      });
+      expect(result).toBe(true);
+    });
+
+    it('should use adminBaseUrl when appType is ADMIN', async () => {
+      mockConfig.app.adminBaseUrl = 'https://admin.example.com';
+      const params = {
+        to: 'test@example.com',
+        otp: '123456',
+        magicLinkToken: 'test-magic-token',
+        appType: AppType.ADMIN,
+      };
+      mockSESService.sendEmail.mockResolvedValue(true);
+
+      const result = await service.sendEmailOTP(params);
+
+      expect(mockSESService.sendEmail).toHaveBeenCalledWith({
+        from: 'test@example.com',
+        to: 'test@example.com',
+        subject: 'Your Ally Verification Code',
+        body: expect.stringContaining(
+          'https://admin.example.com/auth/verify?token=test-magic-token',
         ),
         isHtml: false,
       });

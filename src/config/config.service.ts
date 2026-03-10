@@ -249,6 +249,7 @@ export class AppConfigService {
   get app() {
     return {
       baseUrl: this.configService.get<string>('APP_BASE_URL'),
+      adminBaseUrl: this.configService.get<string>('ADMIN_APP_BASE_URL'),
     };
   }
 

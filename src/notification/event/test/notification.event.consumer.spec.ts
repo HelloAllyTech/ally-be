@@ -55,6 +55,7 @@ describe('NotificationEventConsumer', () => {
         mockOtpPayload.email,
         mockOtpPayload.otp,
         undefined,
+        undefined,
       );
     });
   });
