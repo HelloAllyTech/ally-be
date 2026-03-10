@@ -6,6 +6,8 @@ import {
   IsArray,
   IsBoolean,
   IsNumber,
+  IsOptional,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole, AppType } from 'src/common/constants/user.constants';
@@ -53,6 +55,8 @@ export class GenerateOtpV2Dto {
     enum: AppType,
     required: false,
   })
+  @IsOptional()
+  @ValidateIf((o) => o.appType !== undefined)
   @IsEnum(AppType)
   appType?: AppType;
 }
