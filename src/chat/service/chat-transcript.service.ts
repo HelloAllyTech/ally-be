@@ -7,6 +7,8 @@ import { LoggerService } from 'src/logger/logger.service';
 import { ChatSummaryStatus } from '../entity/chat.entity';
 import axios from 'axios';
 import { FailedDependencyException } from 'src/exception/custom.exception';
+import { MessageRequest } from 'src/ai/dto/ai.request.dto';
+import { FlattenedSummaryNotePayload } from '../type/call.details.type';
 
 @Injectable()
 export class ChatTranscriptService {
@@ -20,11 +22,20 @@ export class ChatTranscriptService {
 
   async processTranscribeResult(params: {
     chatId: number;
+    transcription?: MessageRequest[];
+    summary?: FlattenedSummaryNotePayload;
     downloadPresignedUrl?: string;
     deletePresignedUrl?: string;
     error?: string;
   }): Promise<void> {
-    const { chatId, downloadPresignedUrl, deletePresignedUrl, error } = params;
+    const {
+      chatId,
+      transcription,
+      summary,
+      downloadPresignedUrl,
+      deletePresignedUrl,
+      error,
+    } = params;
 
     this.logger.info(`Processing transcription result for chat: ${chatId}`);
     this.logger.debug(`S3 Result Path: ${downloadPresignedUrl}`);
@@ -48,8 +59,11 @@ export class ChatTranscriptService {
         this.logger.info(`Error from AI service: ${error}`);
         throw new FailedDependencyException(params);
       }
+      if (transcription && summary) {
+        await this.chatAiService.addTranscript(chat, transcription);
 
-      if (downloadPresignedUrl) {
+        await this.chatAiService.addSummary(chatId, summary);
+      } else if (downloadPresignedUrl) {
         // Download the result from S3
         const s3Result = await this.downloadFromS3(downloadPresignedUrl);
 
