@@ -22,5 +22,5 @@ export class CustomFieldsDto {
   })
   @IsOptional()
   @IsBoolean()
-  isEnabled?: boolean;
+  useInDefaultPrompt?: boolean;
 }
