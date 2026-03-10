@@ -26,7 +26,7 @@ import {
 } from 'src/review/dto/create-comment.dto';
 import { GetReviewRepliesResponseDto } from 'src/review/dto/review-replies-response.dto';
 import { UpdateReviewCommentDto } from 'src/review/dto/update-review-comment.dto';
-import { SuccessResponse } from 'src/common/type/common.type';
+import { SortOrder, SuccessResponse } from 'src/common/type/common.type';
 import { ToggleCommentVisibilityDto } from 'src/review/dto/toggle-comment-visibility.dto';
 import { GetReviewCommentsResponseDto } from 'src/review/dto/review-comments-response.dto';
 
@@ -60,15 +60,21 @@ export class ScribeSessionReviewCommentController {
   @AuthPermissions([PERMISSIONS.VIEW_SCRIBE_REVIEW_THREADS])
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiQuery({ name: 'sortBy', required: false, type: String })
+  @ApiQuery({ name: 'order', required: false, enum: SortOrder })
   @Get('threads/:threadId/comments')
   async getReviewComments(
     @Param('threadId', ParseUUIDPipe) threadId: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
+    @Query('sortBy') sortBy: string = 'createdAt',
+    @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<GetReviewCommentsResponseDto> {
     return this.reviewCommentService.getReviewComments(threadId, {
       limit,
       offset,
+      sortBy,
+      order,
     });
   }
 
