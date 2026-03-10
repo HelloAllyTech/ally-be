@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 
 export class CustomFieldsDto {
   @ApiProperty({
@@ -15,4 +15,12 @@ export class CustomFieldsDto {
   })
   @IsString()
   value!: string;
+
+  @ApiPropertyOptional({
+    description: 'Whether this field is injected into the default prompt',
+    default: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isEnabled?: boolean;
 }

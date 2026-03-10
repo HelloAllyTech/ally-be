@@ -48,6 +48,7 @@ export const mapCreateScenarioRequestToEntity = (
       customFields: scenario.customFields?.map((customField) => ({
         name: customField.name,
         value: customField.value,
+        isEnabled: customField.isEnabled ?? true,
       })),
       languageVoices: scenario.languageVoices,
       linguisticStyleSamples: scenario.linguisticStyleSamples,
@@ -195,6 +196,7 @@ export const mapUpdateScenarioRequestToEntity = (
         metadataUpdates[field] = value.map((customField: any) => ({
           name: customField.name,
           value: customField.value,
+          isEnabled: customField.isEnabled ?? true,
         }));
       } else {
         metadataUpdates[field] = value;
