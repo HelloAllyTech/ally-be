@@ -9,6 +9,11 @@ export enum UserRole {
   SCRIBE_REVIEWER = 'SCRIBE_REVIEWER',
 }
 
+export enum AppType {
+  APP = 'APP',
+  ADMIN = 'ADMIN',
+}
+
 export enum PreferenceName {
   SUMMARY_HIDDEN_FIELDS = 'SUMMARY_HIDDEN_FIELDS',
   SUMMARY_HIDDEN_SECTIONS = 'SUMMARY_HIDDEN_SECTIONS',

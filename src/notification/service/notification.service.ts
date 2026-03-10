@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { NotificationErrorType } from '../type/notification.error.type';
 import { SlackService } from './slack.service';
 import { EmailService } from './email.service';
+import { AppType } from 'src/common/constants/user.constants';
 @Injectable()
 export class NotificationService {
   private ignoreStatusCode = [401];
@@ -18,8 +19,13 @@ export class NotificationService {
     this.slackService.sendMessage(slackMessage, channel);
   }
 
-  async sendEmailOTP(to: string, otp: string, magicLinkToken?: string) {
-    await this.emailService.sendEmailOTP({ to, otp, magicLinkToken });
+  async sendEmailOTP(
+    to: string,
+    otp: string,
+    magicLinkToken?: string,
+    appType?: AppType,
+  ) {
+    await this.emailService.sendEmailOTP({ to, otp, magicLinkToken, appType });
   }
 
   async sendEmailSummaryNotification({

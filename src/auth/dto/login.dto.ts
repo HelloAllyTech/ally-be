@@ -8,7 +8,7 @@ import {
   IsNumber,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { UserRole } from 'src/common/constants/user.constants';
+import { UserRole, AppType } from 'src/common/constants/user.constants';
 
 export class LoginDto {
   @ApiProperty({
@@ -46,6 +46,15 @@ export class GenerateOtpV2Dto {
   @IsEnum(UserRole, { each: true })
   @ArrayNotEmpty()
   allowedRoles!: UserRole[];
+
+  @ApiProperty({
+    description: 'App type for OTP generation (optional)',
+    example: AppType.APP,
+    enum: AppType,
+    required: false,
+  })
+  @IsEnum(AppType)
+  appType?: AppType;
 }
 
 export class VerifyOtpV2Dto {

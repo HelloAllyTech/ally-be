@@ -242,7 +242,7 @@ export class AuthService {
   async generateOtpV2(
     generateOtpDto: GenerateOtpV2Dto,
   ): Promise<GenerateOtpV2ResponseDto> {
-    const { email, allowedRoles } = generateOtpDto;
+    const { email, allowedRoles, appType } = generateOtpDto;
     if (!email) {
       throw new BadRequestException('Email is required');
     }
@@ -311,6 +311,7 @@ export class AuthService {
       email,
       otp,
       magicLinkToken: magicToken,
+      appType,
     });
     return {
       success: true,

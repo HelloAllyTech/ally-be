@@ -7,7 +7,7 @@ import { AuthController } from '../auth.controller';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from 'src/auth/service/auth.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
-import { UserRole } from 'src/common/constants/user.constants';
+import { AppType, UserRole } from 'src/common/constants/user.constants';
 
 const mockAuthService = {
   login: jest.fn(),
@@ -107,6 +107,7 @@ describe('AuthController', () => {
     const result = await controller.generateOtpV2({
       email: 'test@example.com',
       allowedRoles: [UserRole.CLIENT],
+      appType: AppType.APP,
     });
     expect(result).toEqual({ success: true });
   });
