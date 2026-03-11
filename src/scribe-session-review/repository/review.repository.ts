@@ -55,7 +55,7 @@ export class ScribeSessionReviewRepository extends Repository<ScribeSessionRevie
           { userId },
         )
         .addSelect('COUNT(reviewComment.id)', 'comments_count')
-        .groupBy('review.id, chat.id, callDetails.id, user.id')
+        .groupBy('review.id, chat.id, user.id')
         .orderBy('comments_count', 'DESC');
     } else if (options.sortBy === ReviewSortBy.UNDISCOVERED) {
       query
@@ -71,7 +71,7 @@ export class ScribeSessionReviewRepository extends Repository<ScribeSessionRevie
           { userId },
         )
         .addSelect('COUNT(reviewComment.id)', 'comments_count')
-        .groupBy('review.id, chat.id, callDetails.id, user.id')
+        .groupBy('review.id, chat.id, user.id')
         .orderBy('comments_count', 'ASC');
     } else {
       const sortBy =
