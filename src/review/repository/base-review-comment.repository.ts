@@ -40,7 +40,7 @@ export abstract class BaseReviewCommentRepository<
           );
       }, 'reply_count')
       .addSelect(
-        `ROW_NUMBER() OVER (PARTITION BY comment."reviewThreadId" ORDER BY comment."createdAt" ASC)`,
+        `ROW_NUMBER() OVER (PARTITION BY comment."reviewThreadId" ORDER BY comment."createdAt" DESC)`,
         'row_num',
       )
       .where('comment.reviewThreadId IN (:...threadIds)', { threadIds })
