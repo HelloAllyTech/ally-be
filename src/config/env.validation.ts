@@ -81,6 +81,8 @@ export const validationSchema = Joi.object({
 
   APP_BASE_URL: Joi.string().required(),
 
+  ADMIN_APP_BASE_URL: Joi.string().required(),
+
   LEARN_MEDIA_PUBLIC_S3_BUCKET: Joi.string().required(),
 
   ASSETS_S3_BUCKET: Joi.string().required(),
