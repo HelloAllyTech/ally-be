@@ -363,6 +363,7 @@ export class ScenarioSessionService {
       scenario.metadata = {
         experienceMode:
           scenario.metadata?.experienceMode ?? ExperienceMode.FEEDBACK,
+        name: scenario.metadata?.name,
       };
       delete scenario.prompt;
     }
