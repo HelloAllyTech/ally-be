@@ -326,7 +326,9 @@ export class ScenarioSessionService {
         scenarioSession.startedAt,
         scenarioSession.endedAt,
       );
-      (scenarioSession as any).details.callDuration = callDuration;
+      if ((scenarioSession as any).details) {
+        (scenarioSession as any).details.callDuration = callDuration;
+      }
     }
 
     // Filter events to only include those with ACTIVE session events (null when
