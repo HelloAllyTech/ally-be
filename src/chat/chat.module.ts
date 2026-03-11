@@ -36,6 +36,7 @@ import { AiChatIntegrationService } from './service/ai-chat-integration.service'
 import { ChatFeedbackService } from './service/chat-feedback.service';
 import { ChatTranscriptService } from './service/chat-transcript.service';
 import { ChatSharedService } from './service/chat-shared.service';
+import { ScribeSessionReviewModule } from 'src/scribe-session-review/scribe-session-review.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { ChatSharedService } from './service/chat-shared.service';
     forwardRef(() => AudioModule),
     AwsModule,
     NotificationModule,
+    ScribeSessionReviewModule,
   ],
   controllers: [ChatController, AudioUploadController],
   providers: [

@@ -3,7 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { LoggerService } from 'src/logger/logger.service';
 import { UserService } from 'src/user/service/user.service';
 import { BaseReviewReactionService } from 'src/review/service/base-review-reaction.service';
-import { ReviewAccessValidator } from 'src/review/util/review-access-policy.util';
+import { ScenarioReviewAccessValidator } from '../util/scenario-review-access-validator';
 import {
   ScenarioSessionReviewEvents,
   ReviewReactionAddedEventParams,
@@ -28,7 +28,7 @@ export class ScenarioSessionReviewReactionService extends BaseReviewReactionServ
     protected readonly reviewReactionRepository: ScenarioSessionReviewReactionRepository,
     protected readonly userService: UserService,
     private readonly eventEmitter: EventEmitter2,
-    protected readonly reviewAccessValidator: ReviewAccessValidator,
+    protected readonly reviewAccessValidator: ScenarioReviewAccessValidator,
   ) {
     super();
   }

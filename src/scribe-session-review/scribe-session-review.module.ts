@@ -1,6 +1,7 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { UserModule } from 'src/user/user.module';
-import { ReviewAccessValidator } from 'src/review/util/review-access-policy.util';
+import { ChatModule } from 'src/chat/chat.module';
+import { ScribeReviewAccessValidator } from './util/scribe-review-access-validator';
 import { ScribeSessionReviewRepository } from './repository/review.repository';
 import { ScribeSessionReviewThreadRepository } from './repository/thread.repository';
 import { ScribeSessionReviewCommentRepository } from './repository/comment.repository';
@@ -20,7 +21,7 @@ import { ScribeSessionReviewReactionController } from './controller/reaction.con
 import { ScribeSessionReviewCommentReactionController } from './controller/comment-reaction.controller';
 
 @Module({
-  imports: [forwardRef(() => UserModule)],
+  imports: [forwardRef(() => UserModule), forwardRef(() => ChatModule)],
   controllers: [
     ScribeSessionReviewController,
     ScribeSessionReviewThreadController,
@@ -41,7 +42,7 @@ import { ScribeSessionReviewCommentReactionController } from './controller/comme
     ScribeSessionReviewReactionService,
     ScribeSessionReviewCommentReactionService,
     ScribeSessionReviewSharedService,
-    ReviewAccessValidator,
+    ScribeReviewAccessValidator,
   ],
   exports: [ScribeSessionReviewSharedService],
 })

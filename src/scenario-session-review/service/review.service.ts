@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
-import { BaseReviewReadStatusService } from 'src/review/service/base-review-read-status.service';
+import { BaseReviewService } from 'src/review/service/base-review.service';
 import { ScenarioSessionReviewReadStatusRepository } from '../repository/read-status.repository';
 import { ScenarioSessionReviewReadStatus } from '../entity/read-status.entity';
 import { ScenarioSessionReview } from '../entity/review.entity';
@@ -18,8 +18,7 @@ import {
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ScenarioSessionReviewThreadRepository } from '../repository/thread.repository';
-import { Pagination, SuccessResponse } from 'src/common/type/common.type';
-import { UpdateReviewDto } from 'src/review/dto/update-review.dto';
+import { Pagination } from 'src/common/type/common.type';
 import { GetReviewsOptions, ReviewStatus } from 'src/review/type/review.type';
 import { UserService } from 'src/user/service/user.service';
 import { ScenarioSessionReviewReactionRepository } from '../repository/reaction.repository';
@@ -32,9 +31,7 @@ import { In, IsNull, Not } from 'typeorm';
 import { ScenarioSessionReviewCommentRepository } from '../repository/comment.repository';
 import { ScenarioSessionReviewCommentReactionRepository } from '../repository/comment-reaction.repository';
 import { GetReviewMessagesResponseDto } from 'src/review/dto/review-messages-response.dto';
-import { ReviewAccessValidator } from 'src/review/util/review-access-policy.util';
-import { NOTE_EDIT_WINDOW_MS } from 'src/review/constant/review.constant';
-import { TIME } from 'src/common/constants/time.constants';
+import { ScenarioReviewAccessValidator } from '../util/scenario-review-access-validator';
 import {
   CreateScenarioSessionReviewDto,
   CreateScenarioSessionReviewResponseDto,
@@ -42,7 +39,7 @@ import {
 import { GetScenarioSessionReviewResponseDto } from '../dto/get-review-response.dto';
 
 @Injectable()
-export class ScenarioSessionReviewService extends BaseReviewReadStatusService<
+export class ScenarioSessionReviewService extends BaseReviewService<
   ScenarioSessionReview,
   ScenarioSessionReviewReadStatus
 > {
@@ -57,7 +54,7 @@ export class ScenarioSessionReviewService extends BaseReviewReadStatusService<
     private readonly reviewCommentReactionRepository: ScenarioSessionReviewCommentReactionRepository,
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly userService: UserService,
-    private readonly reviewAccessValidator: ReviewAccessValidator,
+    protected readonly reviewAccessValidator: ScenarioReviewAccessValidator,
     protected readonly reviewReadStatusRepository: ScenarioSessionReviewReadStatusRepository,
     protected readonly permissionValidator: PermissionValidator,
   ) {
@@ -100,46 +97,6 @@ export class ScenarioSessionReviewService extends BaseReviewReadStatusService<
     const savedReview = await this.reviewRepository.save(review);
 
     return { id: savedReview.id };
-  }
-
-  async updateReview(
-    id: string,
-    updateReviewDto: UpdateReviewDto,
-  ): Promise<SuccessResponse> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) {
-      throw new BadRequestException('User not found');
-    }
-    const review = await this.reviewRepository.findOne({
-      where: { id, createdBy: Number(userId) },
-    });
-    if (!review) {
-      throw new BadRequestException('Review not found');
-    }
-
-    const hasNoteUpdated = updateReviewDto.note !== undefined;
-    if (hasNoteUpdated) {
-      const elapsed = new Date().getTime() - review.createdAt.getTime();
-      if (elapsed > NOTE_EDIT_WINDOW_MS) {
-        throw new ForbiddenException(
-          `Note can only be edited within ${NOTE_EDIT_WINDOW_MS / TIME.MINUTE_IN_MS} minutes of review creation`,
-        );
-      }
-    }
-
-    const updates: Partial<ScenarioSessionReview> = { ...review };
-
-    if (updateReviewDto.status !== undefined) {
-      updates.status = updateReviewDto.status;
-    }
-    if (hasNoteUpdated) {
-      updates.note = updateReviewDto.note;
-      updates.noteEditedAt = new Date();
-    }
-
-    const updatedReview = this.reviewRepository.create(updates);
-    await this.reviewRepository.save(updatedReview);
-    return { success: true };
   }
 
   async getAllReviews(options: GetReviewsOptions): Promise<any> {

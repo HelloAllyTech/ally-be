@@ -7,12 +7,15 @@ import { Repository } from 'typeorm';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
-import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { BaseReview } from '../entity/base-review.entity';
+import { ReviewAccessValidator } from '../util/review-access-policy.util';
 import { BaseReviewReadStatus } from '../entity/base-review-read-status.entity';
 import { BaseReviewReadStatusRepository } from '../repository/base-review-read-status.repository';
+import { UpdateReviewDto } from '../dto/update-review.dto';
+import { NOTE_EDIT_WINDOW_MS } from '../constant/review.constant';
+import { TIME } from 'src/common/constants/time.constants';
 
-export abstract class BaseReviewReadStatusService<
+export abstract class BaseReviewService<
   TReview extends BaseReview,
   TReadStatus extends BaseReviewReadStatus,
 > {
@@ -22,6 +25,47 @@ export abstract class BaseReviewReadStatusService<
     TReview
   >;
   protected abstract readonly permissionValidator: PermissionValidator;
+  protected abstract readonly reviewAccessValidator: ReviewAccessValidator;
+
+  async updateReview(
+    id: string,
+    updateReviewDto: UpdateReviewDto,
+  ): Promise<SuccessResponse> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+    const review = await this.reviewRepository.findOne({
+      where: { id, createdBy: Number(userId) } as any,
+    });
+    if (!review) {
+      throw new BadRequestException('Review not found');
+    }
+
+    const hasNoteUpdated = updateReviewDto.note !== undefined;
+    if (hasNoteUpdated) {
+      const elapsed = new Date().getTime() - review.createdAt.getTime();
+      if (elapsed > NOTE_EDIT_WINDOW_MS) {
+        throw new ForbiddenException(
+          `Note can only be edited within ${NOTE_EDIT_WINDOW_MS / TIME.MINUTE_IN_MS} minutes of review creation`,
+        );
+      }
+    }
+
+    const updates: Partial<TReview> = { ...review };
+
+    if (updateReviewDto.status !== undefined) {
+      updates.status = updateReviewDto.status;
+    }
+    if (hasNoteUpdated) {
+      updates.note = updateReviewDto.note;
+      updates.noteEditedAt = new Date();
+    }
+
+    const updatedReview = this.reviewRepository.create(updates as any);
+    await this.reviewRepository.save(updatedReview);
+    return { success: true };
+  }
 
   async getUnreadReviewCount(): Promise<{ count: number }> {
     const userId = Number(ExecutionManager.getUserId());
@@ -34,7 +78,7 @@ export abstract class BaseReviewReadStatusService<
     }
     const isReviewer = await this.permissionValidator.validatePermissions(
       userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
+      [this.reviewAccessValidator.getReviewerAccessPermission()],
     );
     if (!isReviewer) {
       throw new ForbiddenException(
@@ -59,7 +103,7 @@ export abstract class BaseReviewReadStatusService<
     }
     const isReviewer = await this.permissionValidator.validatePermissions(
       userId,
-      [PERMISSIONS.REVIEWER_ACCESS],
+      [this.reviewAccessValidator.getReviewerAccessPermission()],
     );
     if (!isReviewer) {
       throw new ForbiddenException('Only reviewers can mark reviews as read');
