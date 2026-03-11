@@ -49,6 +49,7 @@ import { CallLogService } from './call-log.service';
 import { AiChatIntegrationService } from './ai-chat-integration.service';
 import { ChatFeedbackService } from './chat-feedback.service';
 import { ToggleArchiveStatusDto } from '../dto/toggle-archive-status.dto';
+import { ScribeSessionReviewSharedService } from 'src/scribe-session-review/service/review-shared.service';
 
 @Injectable()
 export class ChatService {
@@ -71,6 +72,7 @@ export class ChatService {
     private dataSource: DataSource,
     private chatAudioUploadsService: ChatAudioUploadsService,
     private permissionValidator: PermissionValidator,
+    private readonly scribeSessionReviewSharedService: ScribeSessionReviewSharedService,
   ) {}
 
   async getChat(id: number) {
@@ -100,6 +102,21 @@ export class ChatService {
     }
     const decryptedCallDetails = await this.decryptCallDetails(chat.details);
     chat.details = decryptedCallDetails ?? ({} as CallDetails);
+
+    const review =
+      await this.scribeSessionReviewSharedService.getReviewByScribeSessionId(
+        id,
+      );
+    if (review) {
+      return {
+        ...chat,
+        reviewId: review.id,
+        reviewStatus: review.status,
+        reviewNote: review.note,
+        reviewCreatedAt: review.createdAt,
+        reviewUpdatedAt: review.updatedAt,
+      };
+    }
     return chat;
   }
 

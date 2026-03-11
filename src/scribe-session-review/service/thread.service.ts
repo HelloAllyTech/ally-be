@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { UserService } from 'src/user/service/user.service';
 import { BaseReviewThreadService } from 'src/review/service/base-review-thread.service';
-import { ReviewAccessValidator } from 'src/review/util/review-access-policy.util';
+import { ScribeReviewAccessValidator } from '../util/scribe-review-access-validator';
 import { ScribeSessionReview } from '../entity/review.entity';
 import { ScribeSessionReviewThread } from '../entity/thread.entity';
 import { ScribeSessionReviewComment } from '../entity/comment.entity';
@@ -24,7 +24,7 @@ export class ScribeSessionReviewThreadService extends BaseReviewThreadService<
     protected readonly reviewCommentRepository: ScribeSessionReviewCommentRepository,
     protected readonly reviewCommentReactionRepository: ScribeSessionReviewCommentReactionRepository,
     protected readonly userService: UserService,
-    protected readonly reviewAccessValidator: ReviewAccessValidator,
+    protected readonly reviewAccessValidator: ScribeReviewAccessValidator,
   ) {
     super();
   }

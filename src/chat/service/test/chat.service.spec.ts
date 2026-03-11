@@ -27,6 +27,7 @@ import { AppConfigService } from '../../../config/config.service';
 import { ChatAudioUploadsService } from '../../../audio/service/chat-audio-uploads.service';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { GroupService } from '../../../authorization/service/group.service';
+import { ScribeSessionReviewSharedService } from '../../../scribe-session-review/service/review-shared.service';
 
 import { Message } from '../../entity/message.entity';
 import { CallDetails } from '../../entity/call.details.entity';
@@ -389,6 +390,13 @@ describe('ChatService', () => {
             getUserRolesByUserId: jest
               .fn()
               .mockResolvedValue([{ name: 'COUNSELOR' }, { name: 'CLIENT' }]),
+          },
+        },
+        {
+          provide: ScribeSessionReviewSharedService,
+          useValue: {
+            deleteReviewByScribeSessionId: jest.fn(),
+            getReviewByScribeSessionId: jest.fn().mockResolvedValue(null),
           },
         },
       ],

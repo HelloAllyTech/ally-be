@@ -3,7 +3,7 @@ import { DataSource } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { UserService } from 'src/user/service/user.service';
 import { BaseReviewCommentService } from 'src/review/service/base-review-comment.service';
-import { ReviewAccessValidator } from 'src/review/util/review-access-policy.util';
+import { ScribeReviewAccessValidator } from '../util/scribe-review-access-validator';
 import { ScribeSessionReview } from '../entity/review.entity';
 import { ScribeSessionReviewThread } from '../entity/thread.entity';
 import { ScribeSessionReviewComment } from '../entity/comment.entity';
@@ -31,7 +31,7 @@ export class ScribeSessionReviewCommentService extends BaseReviewCommentService<
     protected readonly reviewCommentRepository: ScribeSessionReviewCommentRepository,
     protected readonly reviewCommentReactionRepository: ScribeSessionReviewCommentReactionRepository,
     protected readonly userService: UserService,
-    protected readonly reviewAccessValidator: ReviewAccessValidator,
+    protected readonly reviewAccessValidator: ScribeReviewAccessValidator,
   ) {
     super();
   }

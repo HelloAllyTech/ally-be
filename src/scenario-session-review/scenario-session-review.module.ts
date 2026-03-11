@@ -2,7 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { LearnModule } from 'src/learn/learn.module';
 import { UserModule } from 'src/user/user.module';
 import { BadgeModule } from 'src/badge/badge.module';
-import { ReviewAccessValidator } from 'src/review/util/review-access-policy.util';
+import { ScenarioReviewAccessValidator } from './util/scenario-review-access-validator';
 import { ScenarioSessionReviewRepository } from './repository/review.repository';
 import { ScenarioSessionReviewThreadRepository } from './repository/thread.repository';
 import { ScenarioSessionReviewCommentRepository } from './repository/comment.repository';
@@ -47,7 +47,7 @@ import { ScenarioSessionReviewCommentReactionController } from './controller/com
     ScenarioSessionReviewReactionService,
     ScenarioSessionReviewCommentReactionService,
     ScenarioSessionReviewSharedService,
-    ReviewAccessValidator,
+    ScenarioReviewAccessValidator,
   ],
   exports: [ScenarioSessionReviewSharedService],
 })

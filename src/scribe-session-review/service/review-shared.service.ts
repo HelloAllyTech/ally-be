@@ -13,7 +13,7 @@ export class ScribeSessionReviewSharedService {
     private readonly reviewCommentReactionRepository: ScribeSessionReviewCommentReactionRepository,
   ) {}
 
-  async getReviewByScribeSessionId(scribeSessionId: string) {
+  async getReviewByScribeSessionId(scribeSessionId: number) {
     return this.reviewRepository.findOne({ where: { scribeSessionId } });
   }
 

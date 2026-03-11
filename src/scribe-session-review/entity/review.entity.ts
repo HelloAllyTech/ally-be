@@ -3,6 +3,6 @@ import { BaseReview } from 'src/review/entity/base-review.entity';
 
 @Entity('scribe_session_reviews')
 export class ScribeSessionReview extends BaseReview {
-  @Column({ type: 'uuid' })
-  scribeSessionId!: string;
+  @Column()
+  scribeSessionId!: number;
 }
