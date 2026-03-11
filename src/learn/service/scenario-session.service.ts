@@ -869,9 +869,17 @@ export class ScenarioSessionService {
           },
         });
       let summary;
+      const callDurationInSeconds = callDuration ? callDuration / 1000 : 0;
       if (scenarioSessionMessages.length === 0) {
         this.logger.warn(
           `No scenario session messages found for scenario session ${scenarioSessionId}`,
+        );
+        summary = {
+          errorMessage: 'Session has no messages. No summary generated.',
+        };
+      } else if (callDurationInSeconds < 30) {
+        this.logger.warn(
+          `Scenario session ${scenarioSessionId} is too short. No evaluation will be performed.`,
         );
         summary = {
           errorMessage: 'Session was too short. No summary generated.',
