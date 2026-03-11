@@ -1,10 +1,6 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ExecutionManager } from '../../common/execution/execution-manager';
-import { Pagination, SuccessResponse } from '../../common/type/common.type';
+import { Pagination } from '../../common/type/common.type';
 import { TokenUser } from '../../auth/type/auth.types';
 import { ChatRepository } from '../repository/chat.repository';
 import { CallDetailsRepository } from '../repository/call-details.repository';
@@ -12,7 +8,6 @@ import { CallDetailsService } from './call-details.service';
 import { UserService } from '../../user/service/user.service';
 import { CallLogFilters } from '../dto/call-log.request.dto';
 import { CallDetails } from '../entity/call.details.entity';
-import { ToggleArchiveStatusDto } from '../dto/toggle-archive-status.dto';
 
 @Injectable()
 export class CallLogService {
@@ -47,35 +42,6 @@ export class CallLogService {
     return {
       data: decryptedCallLogs,
       count,
-    };
-  }
-
-  async updateArchiveStatus(
-    id: number,
-    toggleArchiveStatusDto: ToggleArchiveStatusDto,
-  ): Promise<SuccessResponse> {
-    const userId = Number(ExecutionManager.getUserId());
-    if (!userId) {
-      throw new BadRequestException('User not found');
-    }
-    const tenantId = ExecutionManager.getTenantId();
-    if (!tenantId) {
-      throw new BadRequestException('Tenant not found');
-    }
-    const chat = await this.chatRepository.findOne({
-      where: { id, tenantId, counselorId: userId },
-    });
-    if (!chat) {
-      throw new NotFoundException('Call log not found');
-    }
-    const updatedChat = this.chatRepository.create({
-      ...chat,
-      archivedAt: toggleArchiveStatusDto.archive ? new Date() : (null as any),
-    });
-    await this.chatRepository.save(updatedChat);
-
-    return {
-      success: true,
     };
   }
 
