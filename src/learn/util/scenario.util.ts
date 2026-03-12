@@ -68,6 +68,11 @@ export const mapCreateScenarioRequestToEntity = (
         scenario.stateInstructions,
         { context: scenario.context, agentDialogues: scenario.agentDialogues },
       ),
+      knowledgeSources: scenario.knowledgeSources?.map((knowledgeSource) => ({
+        id: knowledgeSource.id,
+        title: knowledgeSource.title,
+        content: knowledgeSource.content,
+      })),
     },
   };
 };
@@ -182,6 +187,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'characterProfileText',
     'showScoreMeter',
     'stateInstructions',
+    'knowledgeSources',
   ];
 
   // Handle metadata fields - merge with existing metadata

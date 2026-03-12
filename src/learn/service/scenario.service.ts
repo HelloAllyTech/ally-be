@@ -506,6 +506,7 @@ export class ScenarioService {
                   genderIdentity: scenario.metadata?.genderIdentity,
                   customFields: scenario.metadata?.customFields,
                   stateInstructions: scenario.metadata?.stateInstructions,
+                  knowledgeSources: scenario.metadata?.knowledgeSources,
                 }),
               translationConsiderableData,
             );
@@ -876,6 +877,7 @@ export class ScenarioService {
                 genderIdentity: updateScenarioDto.genderIdentity,
                 customFields: updateScenarioDto?.customFields,
                 stateInstructions: updateScenarioDto?.stateInstructions,
+                knowledgeSources: updateScenarioDto?.knowledgeSources,
               }),
             translationConsiderableData,
           );

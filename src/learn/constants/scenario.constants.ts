@@ -13,3 +13,5 @@ export const BRANCHING_INSTRUCTION_DYNAMIC_SHORTCUTS: string[] = [
 // Timer validation constants
 export const LOWER_MAX_TIMER_VALUE = '00:05:00'; // 5 minutes
 export const UPPER_MAX_TIMER_VALUE = '02:00:00'; // 2 hours
+
+export const MAX_KNOWLEDGE_SOURCES_COUNT = 50;
