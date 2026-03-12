@@ -50,6 +50,7 @@ import { AiChatIntegrationService } from './ai-chat-integration.service';
 import { ChatFeedbackService } from './chat-feedback.service';
 import { ToggleArchiveStatusDto } from '../dto/toggle-archive-status.dto';
 import { ScribeSessionReviewSharedService } from 'src/scribe-session-review/service/review-shared.service';
+import { ReviewStatus } from 'src/review/type/review.type';
 
 @Injectable()
 export class ChatService {
@@ -445,7 +446,41 @@ export class ChatService {
     id: number,
     toggleArchiveStatusDto: ToggleArchiveStatusDto,
   ): Promise<SuccessResponse> {
-    return this.callLogService.updateArchiveStatus(id, toggleArchiveStatusDto);
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+    const chat = await this.chatRepository.findOne({
+      where: { id, tenantId, counselorId: userId },
+    });
+    if (!chat) {
+      throw new NotFoundException('Call log not found');
+    }
+    if (toggleArchiveStatusDto.archive) {
+      const review =
+        await this.scribeSessionReviewSharedService.getReviewByScribeSessionId(
+          chat.id,
+          ReviewStatus.IN_REVIEW,
+        );
+      if (review) {
+        throw new BadRequestException(
+          'Scribe session review already exists for this call log',
+        );
+      }
+    }
+    const updatedChat = this.chatRepository.create({
+      ...chat,
+      archivedAt: toggleArchiveStatusDto.archive ? new Date() : (null as any),
+    });
+    await this.chatRepository.save(updatedChat);
+
+    return {
+      success: true,
+    };
   }
 
   async getAdminCallLogs(filters: CallLogFilters) {

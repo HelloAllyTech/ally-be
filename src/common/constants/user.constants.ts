@@ -7,6 +7,7 @@ export enum UserRole {
   REVIEWER = 'REVIEWER', // TODO: Remove this later. Maintaining it for backward compatibility.
   SIMULATION_REVIEWER = 'SIMULATION_REVIEWER',
   SCRIBE_REVIEWER = 'SCRIBE_REVIEWER',
+  MULTI_TENANT_ADMIN = 'MULTI_TENANT_ADMIN',
 }
 
 export enum AppType {

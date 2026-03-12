@@ -13,6 +13,7 @@ import {
   ScribeSessionReviews,
   ScribeSessionReviewsResult,
 } from '../type/scribe-session-reviews.type';
+import { CallDetails } from 'src/chat/entity/call.details.entity';
 
 @Injectable()
 export class ScribeSessionReviewRepository extends Repository<ScribeSessionReview> {
@@ -31,6 +32,12 @@ export class ScribeSessionReviewRepository extends Repository<ScribeSessionRevie
         Chat,
         'chat',
         'chat.id = review.scribeSessionId',
+      )
+      .leftJoinAndMapOne(
+        'review.callDetails',
+        CallDetails,
+        'callDetails',
+        'callDetails.chatId = chat.id',
       )
       .leftJoinAndMapOne(
         'review.createdBy',
@@ -55,7 +62,7 @@ export class ScribeSessionReviewRepository extends Repository<ScribeSessionRevie
           { userId },
         )
         .addSelect('COUNT(reviewComment.id)', 'comments_count')
-        .groupBy('review.id, chat.id, user.id')
+        .groupBy('review.id, chat.id, user.id, callDetails.id')
         .orderBy('comments_count', 'DESC');
     } else if (options.sortBy === ReviewSortBy.UNDISCOVERED) {
       query
@@ -71,7 +78,7 @@ export class ScribeSessionReviewRepository extends Repository<ScribeSessionRevie
           { userId },
         )
         .addSelect('COUNT(reviewComment.id)', 'comments_count')
-        .groupBy('review.id, chat.id, user.id')
+        .groupBy('review.id, chat.id, user.id, callDetails.id')
         .orderBy('comments_count', 'ASC');
     } else {
       const sortBy =
