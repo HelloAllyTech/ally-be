@@ -9,6 +9,8 @@ import { LearnModule } from 'src/learn/learn.module';
 import { AuthorizationModule } from 'src/authorization/authorization.module';
 import { User } from './entity/user.entity';
 import { AdminTenant } from './entity/admin-tenant.entity';
+import { AdminTenantRepository } from './repository/admin-tenant.repository';
+import { AdminTenantService } from './service/admin-tenant.service';
 import { UserPreferencesRepository } from './repository/user-prefernces.repository';
 import { AwsModule } from 'src/aws/aws.module';
 
@@ -21,8 +23,14 @@ import { AwsModule } from 'src/aws/aws.module';
     AuthorizationModule,
     AwsModule,
   ],
-  providers: [UserService, UserRepository, UserPreferencesRepository],
+  providers: [
+    UserService,
+    UserRepository,
+    UserPreferencesRepository,
+    AdminTenantRepository,
+    AdminTenantService,
+  ],
   controllers: [UserController],
-  exports: [UserService, UserRepository],
+  exports: [UserService, UserRepository, AdminTenantRepository],
 })
 export class UserModule {}

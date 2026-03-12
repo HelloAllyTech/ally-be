@@ -12,8 +12,7 @@ import { AddUserDto } from '../../dto/add-user.dto';
 import { UpdateUserDto } from '../../dto/update-user.dto';
 import { UpdateUserStatusDto } from '../../dto/update-user-status.dto';
 import { UserSortBy, SortOrder } from '../../enum/user.enum';
-import { BadRequestException } from '@nestjs/common';
-
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import {
   UserListResponseDto,
   UserUpdateResponseDto,
@@ -21,11 +20,17 @@ import {
 import { AddUserResponseDto } from '../../dto/user-add-response.dto';
 import { AppConfigService } from '../../../config/config.service';
 import { UpdateUserPreferencesDto } from 'src/user/dto/update-user-prefernces.dto';
+import { AdminTenantService } from '../../service/admin-tenant.service';
+import {
+  AssignAdminTenantsDto,
+  RemoveAdminTenantsDto,
+} from '../../dto/admin-tenant.dto';
 
 describe('UserController', () => {
   let controller: UserController;
   let mockUserService: any;
   let mockGroupService: any;
+  let mockAdminTenantService: any;
 
   const mockTokenUser: TokenUser = {
     id: 1,
@@ -81,11 +86,18 @@ describe('UserController', () => {
       removeRole: jest.fn(),
     };
 
+    mockAdminTenantService = {
+      assignTenants: jest.fn(),
+      removeTenants: jest.fn(),
+      getTenantsForAdmin: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
       providers: [
         { provide: UserService, useValue: mockUserService },
         { provide: GroupService, useValue: mockGroupService },
+        { provide: AdminTenantService, useValue: mockAdminTenantService },
         { provide: Reflector, useValue: { get: jest.fn() } },
         {
           provide: PermissionsService,
@@ -605,6 +617,176 @@ describe('UserController', () => {
           controller.getUserPreferences(mockTokenUser),
         ).rejects.toThrow(error);
       });
+    });
+  });
+
+  // ==========================================================================
+  // MULTI_TENANT_ADMIN — Tenant Mapping
+  // ==========================================================================
+
+  const mockTenant = {
+    id: 'c56a4180-65aa-42ec-a945-5fd21dec0538',
+    name: 'Org Alpha',
+    logoUrl: 'https://example.com/logo.png',
+  };
+
+  describe('assignAdminTenants', () => {
+    const dto: AssignAdminTenantsDto = {
+      userId: 42,
+      tenantIds: ['c56a4180-65aa-42ec-a945-5fd21dec0538'],
+    };
+
+    it('should assign tenants and return { success: true }', async () => {
+      mockAdminTenantService.assignTenants.mockResolvedValue({ success: true });
+
+      const result = await controller.assignAdminTenants(dto);
+
+      expect(mockAdminTenantService.assignTenants).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should throw NotFoundException when user does not exist', async () => {
+      mockAdminTenantService.assignTenants.mockRejectedValue(
+        new NotFoundException('User with ID 42 not found'),
+      );
+
+      await expect(controller.assignAdminTenants(dto)).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(controller.assignAdminTenants(dto)).rejects.toThrow(
+        'User with ID 42 not found',
+      );
+    });
+
+    it('should throw BadRequestException when user is not MULTI_TENANT_ADMIN', async () => {
+      mockAdminTenantService.assignTenants.mockRejectedValue(
+        new BadRequestException(
+          'User 42 does not have the MULTI_TENANT_ADMIN role',
+        ),
+      );
+
+      await expect(controller.assignAdminTenants(dto)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw NotFoundException when a tenant does not exist', async () => {
+      mockAdminTenantService.assignTenants.mockRejectedValue(
+        new NotFoundException(`Tenant with ID ${dto.tenantIds[0]} not found`),
+      );
+
+      await expect(controller.assignAdminTenants(dto)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should handle assignment of multiple tenants', async () => {
+      const multiDto: AssignAdminTenantsDto = {
+        userId: 42,
+        tenantIds: [
+          'c56a4180-65aa-42ec-a945-5fd21dec0538',
+          'd56a4180-65aa-42ec-a945-5fd21dec0539',
+        ],
+      };
+      mockAdminTenantService.assignTenants.mockResolvedValue({ success: true });
+
+      const result = await controller.assignAdminTenants(multiDto);
+
+      expect(mockAdminTenantService.assignTenants).toHaveBeenCalledWith(
+        multiDto,
+      );
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('removeAdminTenants', () => {
+    const dto: RemoveAdminTenantsDto = {
+      userId: 42,
+      tenantIds: ['c56a4180-65aa-42ec-a945-5fd21dec0538'],
+    };
+
+    it('should remove tenants and return { success: true }', async () => {
+      mockAdminTenantService.removeTenants.mockResolvedValue({ success: true });
+
+      const result = await controller.removeAdminTenants(dto);
+
+      expect(mockAdminTenantService.removeTenants).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should throw NotFoundException when no active mapping exists', async () => {
+      mockAdminTenantService.removeTenants.mockRejectedValue(
+        new NotFoundException(
+          'No active tenant mappings found for user 42 with the given tenant IDs',
+        ),
+      );
+
+      await expect(controller.removeAdminTenants(dto)).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(controller.removeAdminTenants(dto)).rejects.toThrow(
+        'No active tenant mappings found',
+      );
+    });
+
+    it('should handle removal of multiple tenants at once', async () => {
+      const multiDto: RemoveAdminTenantsDto = {
+        userId: 42,
+        tenantIds: [
+          'c56a4180-65aa-42ec-a945-5fd21dec0538',
+          'd56a4180-65aa-42ec-a945-5fd21dec0539',
+        ],
+      };
+      mockAdminTenantService.removeTenants.mockResolvedValue({ success: true });
+
+      const result = await controller.removeAdminTenants(multiDto);
+
+      expect(mockAdminTenantService.removeTenants).toHaveBeenCalledWith(
+        multiDto,
+      );
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('getAdminTenants', () => {
+    it('should return tenants assigned to a user', async () => {
+      const expectedResponse = { data: [mockTenant], count: 1 };
+      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue(
+        expectedResponse,
+      );
+
+      const result = await controller.getAdminTenants(42);
+
+      expect(mockAdminTenantService.getTenantsForAdmin).toHaveBeenCalledWith(
+        42,
+      );
+      expect(result).toEqual(expectedResponse);
+      expect(result.count).toBe(1);
+    });
+
+    it('should return empty list when user has no assigned tenants', async () => {
+      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [],
+        count: 0,
+      });
+
+      const result = await controller.getAdminTenants(42);
+
+      expect(result).toEqual({ data: [], count: 0 });
+      expect(result.count).toBe(0);
+    });
+
+    it('should throw NotFoundException when user does not exist', async () => {
+      mockAdminTenantService.getTenantsForAdmin.mockRejectedValue(
+        new NotFoundException('User with ID 999 not found'),
+      );
+
+      await expect(controller.getAdminTenants(999)).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(controller.getAdminTenants(999)).rejects.toThrow(
+        'User with ID 999 not found',
+      );
     });
   });
 });
