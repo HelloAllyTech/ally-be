@@ -50,6 +50,11 @@ import {
 } from '../dto/profile-image-upload-request.dto';
 import { DeleteProfileImageDto } from '../dto/delete-profile-image.dto';
 import { ProfileImageUploadDto } from '../dto/profile-image-upload.dto';
+import { AdminTenantService } from '../service/admin-tenant.service';
+import {
+  AssignAdminTenantsDto,
+  RemoveAdminTenantsDto,
+} from '../dto/admin-tenant.dto';
 
 @Controller('v1/users')
 @ApiTags('Users')
@@ -60,6 +65,7 @@ export class UserController {
   constructor(
     private userService: UserService,
     private groupService: GroupService,
+    private adminTenantService: AdminTenantService,
   ) {}
 
   @Get('me')
@@ -281,5 +287,45 @@ export class UserController {
     @Body() deleteProfileImageDto: DeleteProfileImageDto,
   ): Promise<SuccessResponse> {
     return this.userService.deleteProfileImage(deleteProfileImageDto);
+  }
+
+  // =====================================================================
+  // MULTI_TENANT_ADMIN — Tenant Mapping (Super Admin only)
+  // =====================================================================
+
+  @ApiOperation({
+    summary: 'Assign tenants to a MULTI_TENANT_ADMIN user (Super Admin only)',
+  })
+  @ApiResponse({ status: 200, description: 'Tenants assigned successfully' })
+  @Post('admin-tenants')
+  @AuthPermissions([PERMISSIONS.EDIT_MULTI_TENANT_ADMINS])
+  async assignAdminTenants(
+    @Body() dto: AssignAdminTenantsDto,
+  ): Promise<SuccessResponse> {
+    return this.adminTenantService.assignTenants(dto);
+  }
+
+  @ApiOperation({
+    summary:
+      'Remove tenant mappings from a MULTI_TENANT_ADMIN user (Super Admin only)',
+  })
+  @ApiResponse({ status: 200, description: 'Tenants removed successfully' })
+  @Delete('admin-tenants')
+  @AuthPermissions([PERMISSIONS.EDIT_MULTI_TENANT_ADMINS])
+  async removeAdminTenants(
+    @Body() dto: RemoveAdminTenantsDto,
+  ): Promise<SuccessResponse> {
+    return this.adminTenantService.removeTenants(dto);
+  }
+
+  @ApiOperation({
+    summary:
+      'Get all tenants assigned to a MULTI_TENANT_ADMIN user (Super Admin only)',
+  })
+  @ApiResponse({ status: 200, description: 'List of assigned tenants' })
+  @Get(':userId/admin-tenants')
+  @AuthPermissions([PERMISSIONS.VIEW_MULTI_TENANT_ADMINS])
+  async getAdminTenants(@Param('userId', ParseIntPipe) userId: number) {
+    return this.adminTenantService.getTenantsForAdmin(userId);
   }
 }
