@@ -8,12 +8,13 @@ import { TenantModule } from 'src/tenant/tenant.module';
 import { LearnModule } from 'src/learn/learn.module';
 import { AuthorizationModule } from 'src/authorization/authorization.module';
 import { User } from './entity/user.entity';
+import { AdminTenant } from './entity/admin-tenant.entity';
 import { UserPreferencesRepository } from './repository/user-prefernces.repository';
 import { AwsModule } from 'src/aws/aws.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, AdminTenant]),
     QueueModule,
     forwardRef(() => LearnModule),
     forwardRef(() => TenantModule),
