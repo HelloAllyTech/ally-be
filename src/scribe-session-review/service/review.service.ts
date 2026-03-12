@@ -168,25 +168,32 @@ export class ScribeSessionReviewService extends BaseReviewService<
       throw new BadRequestException('Scribe session not found');
     }
 
-    const [user, comments, reactions, myReaction, generalCommentsThread] =
-      await Promise.all([
-        this.userService.get(review.createdBy),
-        this.reviewThreadRepository.getCommentsCountByReviewIds(
-          [review.id],
-          userId,
-        ),
-        this.reviewReactionRepository.getReactionsByReviewIds([review.id]),
-        this.reviewReactionRepository.findOne({
-          where: { reviewId: review.id, createdBy: userId },
-        }),
-        this.reviewThreadRepository.findOne({
-          where: {
-            reviewId: review.id,
-            messageId: IsNull(),
-            selection: IsNull(),
-          },
-        }),
-      ]);
+    const [
+      user,
+      comments,
+      reactions,
+      myReaction,
+      generalCommentsThread,
+      callDetails,
+    ] = await Promise.all([
+      this.userService.get(review.createdBy),
+      this.reviewThreadRepository.getCommentsCountByReviewIds(
+        [review.id],
+        userId,
+      ),
+      this.reviewReactionRepository.getReactionsByReviewIds([review.id]),
+      this.reviewReactionRepository.findOne({
+        where: { reviewId: review.id, createdBy: userId },
+      }),
+      this.reviewThreadRepository.findOne({
+        where: {
+          reviewId: review.id,
+          messageId: IsNull(),
+          selection: IsNull(),
+        },
+      }),
+      this.chatSharedService.getCallDetailsByChatId(chat.id),
+    ]);
     const updatedReactions = reactions.reduce(
       (acc, reaction) => {
         acc[reaction.reaction] = Number(reaction.count);
@@ -201,6 +208,7 @@ export class ScribeSessionReviewService extends BaseReviewService<
         id: chat.id,
         duration: getSessionDurationInSeconds(chat.startedAt!, chat.endedAt!),
         createdAt: chat.createdAt,
+        summaryName: callDetails?.callInfo?.summaryName,
       },
       commentsCount: comments.length > 0 ? Number(comments[0].count) : 0,
       createdBy: formatCreatedUserDetails(user!),
@@ -413,6 +421,7 @@ export class ScribeSessionReviewService extends BaseReviewService<
               review.chat.startedAt!,
               review.chat.endedAt!,
             ),
+            summaryName: review.callDetails.callInfo?.summaryName,
           }
         : {},
       commentsCount: commentsByReviewId[review.id] ?? 0,

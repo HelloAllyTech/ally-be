@@ -6,12 +6,15 @@ import { Chat, ChatStatus, ChatSummaryStatus } from '../entity/chat.entity';
 import { MessageService } from './message.service';
 import { MessageFilter } from '../type/message.type';
 import { IsNull } from 'typeorm';
+import { CallDetails } from '../entity/call.details.entity';
+import { CallDetailsRepository } from '../repository/call-details.repository';
 
 @Injectable()
 export class ChatSharedService {
   constructor(
     private readonly chatRepository: ChatRepository,
     private readonly messageService: MessageService,
+    private readonly callDetailsRepository: CallDetailsRepository,
   ) {}
 
   async getCounselorStatsRaw(
@@ -39,5 +42,11 @@ export class ChatSharedService {
 
   async getMessagesByChatId(chatId: number, options?: MessageFilter) {
     return this.messageService.getMessageByChatId(chatId, options);
+  }
+
+  async getCallDetailsByChatId(chatId: number): Promise<CallDetails | null> {
+    return this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
   }
 }
