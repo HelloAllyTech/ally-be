@@ -3,6 +3,7 @@ import { ScribeSessionReviewRepository } from '../repository/review.repository';
 import { ScribeSessionReviewReactionRepository } from '../repository/reaction.repository';
 import { ScribeSessionReviewCommentRepository } from '../repository/comment.repository';
 import { ScribeSessionReviewCommentReactionRepository } from '../repository/comment-reaction.repository';
+import { ReviewStatus } from 'src/review/type/review.type';
 
 @Injectable()
 export class ScribeSessionReviewSharedService {
@@ -13,8 +14,13 @@ export class ScribeSessionReviewSharedService {
     private readonly reviewCommentReactionRepository: ScribeSessionReviewCommentReactionRepository,
   ) {}
 
-  async getReviewByScribeSessionId(scribeSessionId: number) {
-    return this.reviewRepository.findOne({ where: { scribeSessionId } });
+  async getReviewByScribeSessionId(
+    scribeSessionId: number,
+    status?: ReviewStatus,
+  ) {
+    return this.reviewRepository.findOne({
+      where: { scribeSessionId, ...(status ? { status } : {}) },
+    });
   }
 
   async getGivenCommentsReactionsCountPerUser(
