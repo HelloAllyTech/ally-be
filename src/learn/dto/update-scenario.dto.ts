@@ -25,12 +25,16 @@ import {
 } from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
-import { MAX_CUSTOM_FIELDS_COUNT } from '../constants/scenario.constants';
+import {
+  MAX_CUSTOM_FIELDS_COUNT,
+  MAX_KNOWLEDGE_SOURCES_COUNT,
+} from '../constants/scenario.constants';
 import { TerminationEventsDto } from './termination-events.dto';
 import { StateInstructionsDto } from './state-instructions.dto';
 import { BehaviorInstructionDto } from './behavior-instruction.dto';
 import { MAX_BEHAVIOR_INSTRUCTIONS_COUNT } from '../constants/scenario-behavior-instuctions.constants';
 import { MAX_SCENARIO_STATE_INSTRUCTIONS } from '../constants/scenario-state-instructions.constants';
+import { KnowledgeSourceDto } from './knowledge-source.dto';
 
 export class UpdateScenarioDto {
   @ApiProperty({
@@ -394,4 +398,28 @@ export class UpdateScenarioDto {
   @IsOptional()
   @IsUUID()
   competencyId?: string;
+
+  @ApiProperty({
+    description: 'Knowledge sources',
+    example: [
+      {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        title: 'Knowledge source 1',
+        content: 'Knowledge source content 1',
+      },
+      {
+        id: '123e4567-e89b-12d3-a456-426614174001',
+        title: 'Knowledge source 2',
+        content: 'Knowledge source content 2',
+      },
+    ],
+    type: [KnowledgeSourceDto],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_KNOWLEDGE_SOURCES_COUNT)
+  @ValidateNested({ each: true })
+  @Type(() => KnowledgeSourceDto)
+  knowledgeSources?: KnowledgeSourceDto[];
 }
