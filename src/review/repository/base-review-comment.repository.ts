@@ -161,6 +161,19 @@ export abstract class BaseReviewCommentRepository<
     return query.getRawMany();
   }
 
+  async getRootCommentCountByThreadId(
+    threadId: string,
+    isCommentVisible: boolean,
+  ): Promise<number> {
+    const query = this.createQueryBuilder('comment')
+      .where('comment.reviewThreadId = :threadId', { threadId })
+      .andWhere('comment.parentCommentId IS NULL');
+    if (!isCommentVisible) {
+      query.andWhere('comment.hidden = false');
+    }
+    return query.getCount();
+  }
+
   async getCommentCountsByThreadIds(
     threadIds: string[],
     isCommentVisible: boolean,
