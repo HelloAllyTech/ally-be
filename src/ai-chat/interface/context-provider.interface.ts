@@ -1,6 +1,14 @@
+import { ScenarioSessionMessages } from 'src/learn/entity/scenario-session-messages.entity';
+
 export interface ChatContext {
   systemPrompt: string;
-  metadata?: Record<string, unknown>;
+  metadata?: {
+    scenarioId?: number;
+    scenarioSessionId?: string;
+    transcriptTurns?: number;
+    callDuration?: number;
+    transcriptMessages?: ScenarioSessionMessages[];
+  };
 }
 
 export interface ContextProvider {

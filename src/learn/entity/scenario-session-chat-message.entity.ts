@@ -20,4 +20,7 @@ export class ScenarioSessionChatMessage extends BaseEntity {
 
   @Column({ type: 'text' })
   content!: string;
+
+  @Column({ type: 'integer', array: true, nullable: true })
+  citationTranscriptIds?: number[];
 }

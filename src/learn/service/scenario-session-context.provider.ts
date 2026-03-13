@@ -27,7 +27,7 @@ export class ScenarioSessionContextProvider implements ContextProvider {
       where: { id: session.scenarioId },
     });
 
-    const messages = await this.scenarioSessionMessageRepo.find({
+    const transcriptMessages = await this.scenarioSessionMessageRepo.find({
       where: { scenarioSessionId },
       order: { startSeconds: 'ASC' },
     });
@@ -36,7 +36,7 @@ export class ScenarioSessionContextProvider implements ContextProvider {
       where: { scenarioSessionId },
     });
 
-    const formattedTranscript = messages
+    const formattedTranscript = transcriptMessages
       .map((m) => {
         const ts = formatSecondsToMMSS(m.startSeconds);
         return ts
@@ -166,12 +166,31 @@ ${summaryStr}
 
 SESSION TRANSCRIPT (source of truth)
 
-${formattedTranscript}`,
+${formattedTranscript}
+
+TRANSCRIPT REFERENCE FORMATTING
+
+When referencing specific moments in the transcript, you MUST include timestamps in one of these formats:
+- [mm:ss] for minutes and seconds (e.g., [5:46], [2:52])
+- [m:ss] for single-digit minutes (e.g., [3:10])
+- [hh:mm:ss] for hours, minutes, and seconds (e.g., [1:23:45])
+- [h:mm:ss] for single-digit hours (e.g., [1:05:30])
+
+Use timestamps whenever you reference specific dialogue, moments, or events from the transcript. This helps provide precise citations for your feedback.
+
+Examples:
+- "At [5:46], you validated the client's feelings..."
+- "The client mentioned tension at [3:10], and you responded at [3:47]..."
+- "Your response at [2:52] offered a solution..."
+
+Always use the exact timestamp format that appears in the transcript (MM:SS format).
+`,
       metadata: {
         scenarioId: session.scenarioId,
         scenarioSessionId,
-        transcriptTurns: messages.length,
+        transcriptTurns: transcriptMessages.length,
         callDuration: details?.callDuration,
+        transcriptMessages,
       },
     };
   }
