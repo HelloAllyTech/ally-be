@@ -129,6 +129,22 @@ export class ScribeSessionReviewCommentController {
     );
   }
 
+  @ApiOperation({ summary: 'Get review comments overview' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  @AuthPermissions([PERMISSIONS.VIEW_SCRIBE_REVIEW_THREADS])
+  @Get(':reviewId/comments-overview')
+  async getReviewCommentsOverview(
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ): Promise<GetReviewCommentsResponseDto> {
+    return this.reviewCommentService.getReviewCommentsOverview(reviewId, {
+      limit,
+      offset,
+    });
+  }
+
   @ApiOperation({ summary: 'Get general review comments' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
