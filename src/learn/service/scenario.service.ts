@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -114,6 +115,8 @@ import {
 } from 'src/common/util/time.util';
 import { COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS } from '../constants/competency-behavior-instruction-templates.constants';
 import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { TokenUser } from 'src/auth/type/auth.types';
 
 @Injectable()
 export class ScenarioService {
@@ -143,6 +146,7 @@ export class ScenarioService {
     private competencyService: CompetencyService,
     private openAIAutofillService: OpenAIAutofillService,
     private behaviorService: BehaviorService,
+    private permissionsService: PermissionsService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -173,6 +177,7 @@ export class ScenarioService {
   async getAdminScenarios(
     scenarioFilters?: ScenarioFilters,
     options?: Pagination,
+    currentUser?: TokenUser,
   ) {
     const { status, tenantId, search } = scenarioFilters ?? {};
     if (tenantId) {
@@ -181,8 +186,19 @@ export class ScenarioService {
         throw new NotFoundException('Tenant not found');
       }
     }
+
+    const isMultiTenantAdmin = currentUser
+      ? await this.permissionsService.isMultiTenantAdmin(currentUser.id)
+      : false;
+
     const scenarios = await this.scenariosRepository.getAdminScenarios(
-      { status, tenantId, search },
+      {
+        status,
+        tenantId,
+        search,
+        isMultiTenantAdmin,
+        userId: currentUser?.id,
+      },
       options,
     );
     const mappedData = scenarios.map((item) => {
@@ -204,6 +220,7 @@ export class ScenarioService {
         isAssignedToTenant: item.isAssignedToTenant,
         triggerWarnings: item.triggerWarnings,
         isPreviewEnabled,
+        isPublic: item.scenario_isPublic,
       };
     });
 
@@ -262,8 +279,27 @@ export class ScenarioService {
     return scenario;
   }
 
-  async getAdminScenario(id: number): Promise<GetAdminScenarioDto> {
-    return this.scenarioSharedService.getAdminScenario(id);
+  async getAdminScenario(
+    id: number,
+    currentUser?: TokenUser,
+  ): Promise<GetAdminScenarioDto> {
+    const result = await this.scenarioSharedService.getAdminScenario(id);
+
+    if (!result) {
+      throw new NotFoundException('Scenario not found');
+    }
+
+    if (currentUser) {
+      const isMultiTenantAdmin =
+        await this.permissionsService.isMultiTenantAdmin(currentUser.id);
+      if (isMultiTenantAdmin && result.createdBy !== currentUser.id) {
+        throw new ForbiddenException(
+          'You do not have permission to view this roleplay',
+        );
+      }
+    }
+
+    return result;
   }
 
   async getPresignedUrlForScenarioCoverImage(
@@ -840,6 +876,13 @@ export class ScenarioService {
     userId: number,
   ): Promise<boolean> {
     const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
+
+    const isMultiTenantAdmin =
+      await this.permissionsService.isMultiTenantAdmin(userId);
+    if (isMultiTenantAdmin && scenario.createdBy !== userId) {
+      throw new ForbiddenException('You can only edit your own roleplays');
+    }
+
     await this.checkForInProgressScenarioReports(scenario.id);
 
     try {
@@ -985,11 +1028,11 @@ export class ScenarioService {
     }
   }
 
-  async duplicateScenario(id: number): Promise<Scenarios> {
-    const scenario = await this.scenariosRepository.findOne({ where: { id } });
-    if (!scenario) {
-      throw new NotFoundException('Scenario not found ');
-    }
+  async duplicateScenario(
+    id: number,
+    currentUser?: TokenUser,
+  ): Promise<Scenarios> {
+    const scenario = await this.getAdminScenario(id, currentUser);
 
     const scenarioEvents = await this.scenarioEventsRepository.find({
       where: { scenarioId: id },
@@ -1191,9 +1234,12 @@ export class ScenarioService {
     return scenario;
   }
 
-  async deleteAdminScenario(id: number): Promise<boolean> {
+  async deleteAdminScenario(
+    id: number,
+    currentUser?: TokenUser,
+  ): Promise<boolean> {
     // To check if the scenario exists
-    await this.getAdminScenario(id);
+    await this.getAdminScenario(id, currentUser);
 
     const scenarioPathItem =
       await this.scenarioPathSharedService.getScenarioPathItemByScenarioId(id);

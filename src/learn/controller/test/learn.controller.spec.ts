@@ -227,6 +227,7 @@ describe('LearnController', () => {
 
     const mockPermissionsService = {
       getUserRoles: jest.fn(),
+      isMultiTenantAdmin: jest.fn(),
     };
 
     const mockTriggerWarningsService = {
@@ -406,10 +407,16 @@ describe('LearnController', () => {
         mockScenarioResponse as any,
       );
 
-      const result = await controller.getAdminScenario(scenarioId);
+      const result = await controller.getAdminScenario(
+        mockTokenUser,
+        scenarioId,
+      );
 
       expect(result).toEqual(mockScenarioResponse);
-      expect(scenarioService.getAdminScenario).toHaveBeenCalledWith(scenarioId);
+      expect(scenarioService.getAdminScenario).toHaveBeenCalledWith(
+        scenarioId,
+        mockTokenUser,
+      );
     });
   });
 
@@ -564,6 +571,9 @@ describe('LearnController', () => {
       const result = await controller.deleteAdminScenario(scenarioId);
 
       expect(result).toBe(true);
+      expect(scenarioService.deleteAdminScenario).toHaveBeenCalledWith(
+        scenarioId,
+      );
     });
   });
 

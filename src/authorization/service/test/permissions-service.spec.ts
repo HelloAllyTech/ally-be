@@ -182,6 +182,37 @@ describe('PermissionsService', () => {
     });
   });
 
+  describe('isMultiTenantAdmin', () => {
+    const userId = 123;
+
+    it('should return true if user has MULTI_TENANT_ADMIN role', async () => {
+      redisService.get.mockResolvedValue(
+        JSON.stringify(['MULTI_TENANT_ADMIN']),
+      );
+
+      const result = await service.isMultiTenantAdmin(userId);
+
+      expect(result).toBe(true);
+      expect(redisService.get).toHaveBeenCalledWith(`user:roles:${userId}`);
+    });
+
+    it('should return false if user does not have MULTI_TENANT_ADMIN role', async () => {
+      redisService.get.mockResolvedValue(JSON.stringify(['LEARNER', 'ADMIN']));
+
+      const result = await service.isMultiTenantAdmin(userId);
+
+      expect(result).toBe(false);
+    });
+
+    it('should return false if user has no roles', async () => {
+      redisService.get.mockResolvedValue(JSON.stringify([]));
+
+      const result = await service.isMultiTenantAdmin(userId);
+
+      expect(result).toBe(false);
+    });
+  });
+
   describe('getUserPermissions', () => {
     const userId = 123;
 

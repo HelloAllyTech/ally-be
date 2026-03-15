@@ -120,7 +120,8 @@ export class ScenariosRepository extends Repository<Scenarios> {
     scenarioFilters?: ScenarioFilters,
     options?: Pagination,
   ) {
-    const { status, tenantId, search } = scenarioFilters ?? {};
+    const { status, tenantId, search, isMultiTenantAdmin, userId } =
+      scenarioFilters ?? {};
     const query = this.createQueryBuilder('scenario')
       .leftJoin(User, 'user', 'scenario."createdBy"=user.id')
       .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
@@ -152,6 +153,13 @@ export class ScenariosRepository extends Repository<Scenarios> {
       .addGroupBy('user.name');
 
     this.applySearchFilter(query, search);
+
+    if (isMultiTenantAdmin && userId) {
+      query.andWhere(
+        '(scenario.isPublic = true OR scenario.createdBy = :userId)',
+        { userId },
+      );
+    }
 
     if (status) {
       const statuses = this.parseStringArray(status);
