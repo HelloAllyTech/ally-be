@@ -3,6 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { UserRole } from 'src/common/constants/user.constants';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GroupService } from 'src/authorization/service/group.service';
 import { GroupPermissionsService } from './group-permissions.service';
@@ -33,6 +34,11 @@ export class PermissionsService {
     const roleNames = userRoles.map((role) => role.name);
     await this.cache.set(`user:roles:${userId}`, JSON.stringify(roleNames));
     return roleNames;
+  }
+
+  async isMultiTenantAdmin(userId: number): Promise<boolean> {
+    const roles = await this.getUserRoles(userId);
+    return roles.includes(UserRole.MULTI_TENANT_ADMIN);
   }
 
   async validatePermissions(

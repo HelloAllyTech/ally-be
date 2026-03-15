@@ -6,6 +6,8 @@ export type ScenarioFilters = {
   tenantId?: string;
   search?: string;
   isPublic?: boolean;
+  isMultiTenantAdmin?: boolean;
+  userId?: number;
 };
 
 export type GetScenarioByIdOptions = {

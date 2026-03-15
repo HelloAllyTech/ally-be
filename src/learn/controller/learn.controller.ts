@@ -156,6 +156,7 @@ export class LearnController {
   @Get('admin-scenarios')
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIOS])
   async getAdminScenarios(
+    @CurrentUser() tokenUser: TokenUser,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
     @Query('sortBy')
@@ -173,6 +174,7 @@ export class LearnController {
         sortBy,
         order,
       },
+      tokenUser,
     );
   }
 
@@ -222,9 +224,10 @@ export class LearnController {
   })
   @Get('admin-scenarios/:id')
   async getAdminScenario(
+    @CurrentUser() tokenUser: TokenUser,
     @Param('id') id: number,
   ): Promise<GetAdminScenarioDto> {
-    return this.scenarioService.getAdminScenario(id);
+    return this.scenarioService.getAdminScenario(id, tokenUser);
   }
 
   @ApiOperation({ summary: 'Get presigned URL for scenario cover image' })

@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Repository, DataSource } from 'typeorm';
 import { S3Service } from 'src/aws/service/s3.service';
 import { AppConfigService } from 'src/config/config.service';
@@ -40,6 +44,8 @@ import { OpenAIAutofillService } from '../openai-autofil-service';
 import { BehaviorService } from '../behavior.service';
 import { GeneratableField } from 'src/learn/enum/generatable-field.enum';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { TokenUser } from 'src/auth/type/auth.types';
 
 // Mock static classes
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -62,6 +68,7 @@ describe('ScenarioService', () => {
   let scenarioPathSharedService: jest.Mocked<ScenarioPathSharedService>;
   let mockS3Service: any;
   let mockConfigService: any;
+  let permissionsService: jest.Mocked<PermissionsService>;
   let scenarioTranslationsRepository: jest.Mocked<ScenarioTranslationsRepository>;
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
@@ -284,6 +291,10 @@ describe('ScenarioService', () => {
       getBehaviors: jest.fn().mockResolvedValue({ data: [], count: 0 }),
     };
 
+    const mockPermissionsService = {
+      isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+    };
+
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -389,6 +400,10 @@ describe('ScenarioService', () => {
           provide: BehaviorService,
           useValue: mockBehaviorService,
         },
+        {
+          provide: PermissionsService,
+          useValue: mockPermissionsService,
+        },
       ],
     }).compile();
 
@@ -410,6 +425,7 @@ describe('ScenarioService', () => {
     scenarioBehaviorInstructionService = module.get(
       ScenarioBehaviorInstructionService,
     );
+    permissionsService = module.get(PermissionsService);
   });
 
   afterEach(() => {
@@ -586,6 +602,30 @@ describe('ScenarioService', () => {
       expect(mockScenarioTenantsRepo.softDelete).toHaveBeenCalledWith({
         scenarioId,
       });
+    });
+
+    it('should throw ForbiddenException if multi-tenant admin tries to delete a roleplay they did not create', async () => {
+      const scenarioId = 1;
+      const mockUser: TokenUser = {
+        id: 123,
+        username: 'admin',
+        tenantId: 'tenant-1',
+      };
+      const mockScenarioData = {
+        ...mockScenario,
+        id: scenarioId,
+        isPublic: false,
+        createdBy: 456,
+      };
+
+      scenarioSharedService.getAdminScenario.mockResolvedValue(
+        mockScenarioData as any,
+      );
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+
+      await expect(
+        service.deleteAdminScenario(scenarioId, mockUser),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -1494,6 +1534,26 @@ describe('ScenarioService', () => {
       expect(result.data[0]).toHaveProperty('isPreviewEnabled');
     });
 
+    it('should pass isMultiTenantAdmin and userId filters for multi-tenant admin', async () => {
+      const mockUser: TokenUser = {
+        id: 123,
+        username: 'admin',
+        tenantId: 'tenant-1',
+      };
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      scenariosRepository.getAdminScenarios.mockResolvedValue([]);
+
+      await service.getAdminScenarios({}, {}, mockUser);
+
+      expect(scenariosRepository.getAdminScenarios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isMultiTenantAdmin: true,
+          userId: 123,
+        }),
+        expect.anything(),
+      );
+    });
+
     it('should throw NotFoundException when tenant not found', async () => {
       tenantService.findById.mockResolvedValue(null);
 
@@ -1582,6 +1642,53 @@ describe('ScenarioService', () => {
       expect(scenarioSharedService.getAdminScenario).toHaveBeenCalledWith(
         scenarioId,
       );
+    });
+
+    it('should throw ForbiddenException if multi-tenant admin tries to view a private roleplay they did not create', async () => {
+      const scenarioId = 1;
+      const mockUser: TokenUser = {
+        id: 123,
+        username: 'admin',
+        tenantId: 'tenant-1',
+      };
+      const mockScenarioData = {
+        ...mockScenario,
+        id: scenarioId,
+        isPublic: false,
+        createdBy: 456, // Different user
+      };
+
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      scenarioSharedService.getAdminScenario.mockResolvedValue(
+        mockScenarioData as any,
+      );
+
+      await expect(
+        service.getAdminScenario(scenarioId, mockUser),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should allow multi-tenant admin to view their own private roleplay', async () => {
+      const scenarioId = 1;
+      const mockUser: TokenUser = {
+        id: 123,
+        username: 'admin',
+        tenantId: 'tenant-1',
+      };
+      const mockScenarioData = {
+        ...mockScenario,
+        id: scenarioId,
+        isPublic: false,
+        createdBy: 123, // Same user
+      };
+
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      scenarioSharedService.getAdminScenario.mockResolvedValue(
+        mockScenarioData as any,
+      );
+
+      const result = await service.getAdminScenario(scenarioId, mockUser);
+      expect(result).toBeDefined();
     });
 
     it('should return scenario without behavior instructions when they do not exist', async () => {
@@ -2485,6 +2592,7 @@ describe('ScenarioService', () => {
           };
         }),
       };
+
       dataSource.transaction.mockImplementation((cb: any) =>
         cb(mockEntityManager as any),
       );
@@ -2501,6 +2609,24 @@ describe('ScenarioService', () => {
           }),
         }),
       );
+    });
+
+    it('should throw ForbiddenException if multi-tenant admin tries to update a roleplay they did not create', async () => {
+      const scenarioId = 1;
+      const userId = 123;
+      const updateDto: UpdateScenarioDto = { title: 'New Title' };
+      const mockScenarioData = {
+        ...mockScenario,
+        id: scenarioId,
+        createdBy: 456, // Different user
+      };
+
+      scenariosRepository.findOne.mockResolvedValue(mockScenarioData);
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+
+      await expect(
+        service.updateScenario(scenarioId, updateDto, userId),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should return false when update affects no rows', async () => {
@@ -3420,10 +3546,10 @@ describe('ScenarioService', () => {
           updatedBy: mockUserId,
         };
 
-        scenariosRepository.findOne.mockResolvedValue({
+        scenarioSharedService.getAdminScenario.mockResolvedValue({
           ...mockScenario,
           isGlobal: true,
-        });
+        } as any);
         scenarioEventsRepository.find.mockResolvedValue(
           mockScenarioEvents as any,
         );
@@ -3472,9 +3598,9 @@ describe('ScenarioService', () => {
         const result = await service.duplicateScenario(scenarioId);
 
         expect(result).toEqual(mockNewScenario);
-        expect(scenariosRepository.findOne).toHaveBeenCalledWith({
-          where: { id: scenarioId },
-        });
+        expect(scenarioSharedService.getAdminScenario).toHaveBeenCalledWith(
+          scenarioId,
+        );
         expect(scenarioEventsRepository.find).toHaveBeenCalledWith({
           where: { scenarioId },
         });
@@ -3581,7 +3707,7 @@ describe('ScenarioService', () => {
       });
 
       it('should throw NotFoundException when scenario does not exist', async () => {
-        scenariosRepository.findOne.mockResolvedValue(null);
+        scenarioSharedService.getAdminScenario.mockResolvedValue(null as any);
 
         await expect(service.duplicateScenario(scenarioId)).rejects.toThrow(
           NotFoundException,
@@ -3590,9 +3716,9 @@ describe('ScenarioService', () => {
           'Scenario not found',
         );
 
-        expect(scenariosRepository.findOne).toHaveBeenCalledWith({
-          where: { id: scenarioId },
-        });
+        expect(scenarioSharedService.getAdminScenario).toHaveBeenCalledWith(
+          scenarioId,
+        );
       });
 
       it('should duplicate scenario without events when no events exist', async () => {
@@ -3603,7 +3729,9 @@ describe('ScenarioService', () => {
           isGlobal: false,
         };
 
-        scenariosRepository.findOne.mockResolvedValue(mockScenario);
+        scenarioSharedService.getAdminScenario.mockResolvedValue(
+          mockScenario as any,
+        );
         scenarioEventsRepository.find.mockResolvedValue([]);
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
@@ -3655,7 +3783,9 @@ describe('ScenarioService', () => {
           isGlobal: false,
         };
 
-        scenariosRepository.findOne.mockResolvedValue(mockScenario);
+        scenarioSharedService.getAdminScenario.mockResolvedValue(
+          mockScenario as any,
+        );
         scenarioEventsRepository.find.mockResolvedValue([]);
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
@@ -3700,10 +3830,10 @@ describe('ScenarioService', () => {
           isGlobal: false,
         };
 
-        scenariosRepository.findOne.mockResolvedValue({
+        scenarioSharedService.getAdminScenario.mockResolvedValue({
           ...mockScenario,
           isGlobal: false,
-        });
+        } as any);
         scenarioEventsRepository.find.mockResolvedValue([]);
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
@@ -3753,7 +3883,9 @@ describe('ScenarioService', () => {
           updatedBy: customUserId,
         };
 
-        scenariosRepository.findOne.mockResolvedValue(mockScenario);
+        scenarioSharedService.getAdminScenario.mockResolvedValue(
+          mockScenario as any,
+        );
         scenarioEventsRepository.find.mockResolvedValue([]);
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
@@ -3795,10 +3927,10 @@ describe('ScenarioService', () => {
           isGlobal: false,
         };
 
-        scenariosRepository.findOne.mockResolvedValue({
+        scenarioSharedService.getAdminScenario.mockResolvedValue({
           ...mockScenario,
           title: 'My Awesome Scenario',
-        });
+        } as any);
         scenarioEventsRepository.find.mockResolvedValue([]);
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
@@ -3840,10 +3972,10 @@ describe('ScenarioService', () => {
           isGlobal: false,
         };
 
-        scenariosRepository.findOne.mockResolvedValue({
+        scenarioSharedService.getAdminScenario.mockResolvedValue({
           ...mockScenario,
           status: ScenarioStatus.ACTIVE,
-        });
+        } as any);
         scenarioEventsRepository.find.mockResolvedValue([]);
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
@@ -3878,7 +4010,9 @@ describe('ScenarioService', () => {
       });
 
       it('should handle transaction rollback on error', async () => {
-        scenariosRepository.findOne.mockResolvedValue(mockScenario);
+        scenarioSharedService.getAdminScenario.mockResolvedValue(
+          mockScenario as any,
+        );
         scenarioEventsRepository.find.mockResolvedValue([]);
         triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
           [],
