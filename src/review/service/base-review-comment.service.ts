@@ -17,6 +17,8 @@ import { BaseReviewThread } from '../entity/base-review-thread.entity';
 import { BaseReview } from '../entity/base-review.entity';
 import { BaseReviewCommentReaction } from '../entity/base-review-comment-reaction.entity';
 import { BaseReviewCommentRepository } from '../repository/base-review-comment.repository';
+import { BaseReviewCommentReactionRepository } from '../repository/base-review-comment-reaction.repository';
+import { BaseReviewThreadRepository } from '../repository/base-review-thread.repository';
 import { ReviewStatus } from '../type/review.type';
 import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { UserService } from 'src/user/service/user.service';
@@ -27,6 +29,7 @@ import { formatCreatedUserDetails } from '../util/review.util';
 import { ToggleCommentVisibilityDto } from '../dto/toggle-comment-visibility.dto';
 import { ReviewAccessValidator } from '../util/review-access-policy.util';
 import { GetReviewCommentsResponseDto } from '../dto/review-comments-response.dto';
+import { ReviewComment } from '../type/review-comment.type';
 
 export abstract class BaseReviewCommentService<
   TReview extends BaseReview,
@@ -37,13 +40,22 @@ export abstract class BaseReviewCommentService<
   protected abstract readonly logger: LoggerService;
   protected abstract readonly dataSource: DataSource;
   protected abstract readonly reviewRepository: Repository<TReview>;
-  protected abstract readonly reviewThreadRepository: Repository<TThread>;
+  protected abstract readonly reviewThreadRepository: BaseReviewThreadRepository<
+    TThread,
+    TComment,
+    TReview
+  >;
   protected abstract readonly reviewCommentRepository: BaseReviewCommentRepository<
     TComment,
     TThread,
     TReview
   >;
-  protected abstract readonly reviewCommentReactionRepository: Repository<TCommentReaction>;
+  protected abstract readonly reviewCommentReactionRepository: BaseReviewCommentReactionRepository<
+    TCommentReaction,
+    TComment,
+    TThread,
+    TReview
+  >;
   protected abstract readonly userService: UserService;
   protected abstract readonly reviewAccessValidator: ReviewAccessValidator;
 
@@ -298,15 +310,9 @@ export abstract class BaseReviewCommentService<
     ];
 
     const [reactions, users, myReactions] = await Promise.all([
-      this.reviewCommentReactionRepository
-        .createQueryBuilder('rcr')
-        .select('rcr.reviewCommentId', 'commentId')
-        .addSelect('rcr.reaction', 'reaction')
-        .addSelect('COUNT(*)', 'count')
-        .where('rcr.reviewCommentId IN (:...commentIds)', { commentIds })
-        .groupBy('rcr.reviewCommentId')
-        .addGroupBy('rcr.reaction')
-        .getRawMany(),
+      this.reviewCommentReactionRepository.getReactionAndCountByCommentIds(
+        commentIds,
+      ),
       this.userService.getUsersByIds(creatorIds),
       this.reviewCommentReactionRepository.find({
         where: {
@@ -417,17 +423,9 @@ export abstract class BaseReviewCommentService<
     const creatorIds = [...new Set(replies.map((reply) => reply.createdBy))];
 
     const [reactions, users, myReactions] = await Promise.all([
-      this.reviewCommentReactionRepository
-        .createQueryBuilder('rcr')
-        .select('rcr.reviewCommentId', 'commentId')
-        .addSelect('rcr.reaction', 'reaction')
-        .addSelect('COUNT(*)', 'count')
-        .where('rcr.reviewCommentId IN (:...commentIds)', {
-          commentIds: replyIds,
-        })
-        .groupBy('rcr.reviewCommentId')
-        .addGroupBy('rcr.reaction')
-        .getRawMany(),
+      this.reviewCommentReactionRepository.getReactionAndCountByCommentIds(
+        replyIds,
+      ),
       this.userService.getUsersByIds(creatorIds),
       this.reviewCommentReactionRepository.find({
         where: {
@@ -732,5 +730,158 @@ export abstract class BaseReviewCommentService<
     }
 
     return this.getReviewComments(generalCommentsThread.id, options);
+  }
+
+  async getReviewCommentsOverview(
+    reviewId: string,
+    options?: Pagination,
+  ): Promise<GetReviewCommentsResponseDto> {
+    const userId = Number(ExecutionManager.getUserId());
+    if (!userId) {
+      throw new BadRequestException('User not found');
+    }
+
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant not found');
+    }
+
+    const review = await this.reviewRepository.findOne({
+      where: { id: reviewId, tenantId } as any,
+    });
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+
+    if (review.status === ReviewStatus.HIDDEN && review.createdBy !== userId) {
+      throw new ForbiddenException('You are not allowed to access this review');
+    }
+
+    await this.reviewAccessValidator.validateAccess(review, userId);
+
+    const isCommentVisible = review.createdBy === userId;
+
+    const generalThread = await this.reviewThreadRepository.findOne({
+      where: {
+        reviewId,
+        messageId: IsNull(),
+        selection: IsNull(),
+        tenantId,
+      } as any,
+    });
+
+    let generalCommentsCount = 0;
+    if (generalThread) {
+      generalCommentsCount =
+        await this.reviewCommentRepository.getRootCommentCountByThreadId(
+          generalThread.id,
+          isCommentVisible,
+        );
+    }
+
+    const { limit = 20, offset = 0 } = options || {};
+    const generalOffset = Math.min(offset, generalCommentsCount);
+    const generalLimit = Math.max(
+      0,
+      Math.min(limit, generalCommentsCount - offset),
+    );
+
+    const threadOffset = Math.max(0, offset - generalCommentsCount);
+    const threadLimit = limit - generalLimit;
+
+    const [generalResult, threadsResult] = await Promise.all([
+      generalLimit > 0 && generalThread
+        ? this.reviewCommentRepository.getCommentsByThreadId(
+            generalThread.id,
+            isCommentVisible,
+            { limit: generalLimit, offset: generalOffset },
+          )
+        : Promise.resolve({ comments: [] as ReviewComment[], count: 0 }),
+      this.reviewThreadRepository.getReviewThreadsByReviewId(
+        reviewId,
+        isCommentVisible,
+        threadLimit > 0
+          ? { limit: threadLimit, offset: threadOffset }
+          : { limit: 1 },
+      ),
+    ]);
+
+    const generalComments = generalResult.comments;
+    const { threads, count: totalMessageThreads } = threadsResult;
+    const totalCount = generalCommentsCount + totalMessageThreads;
+
+    let threadFirstComments: ReviewComment[] = [];
+    if (threadLimit > 0 && threads.length > 0) {
+      const threadIds = threads.map((t) => t.id);
+      threadFirstComments = await this.reviewCommentRepository
+        .getCommentsForThreadIds(threadIds, isCommentVisible)
+        .then((results) => results.filter((result) => result.row_num <= 1));
+    }
+
+    const allComments = [...generalComments, ...threadFirstComments];
+
+    if (allComments.length === 0) {
+      return { data: [], count: totalCount };
+    }
+
+    const commentIds = allComments.map((c) => c.comment_id);
+    const userIds = [...new Set(allComments.map((c) => c.comment_createdBy))];
+
+    const [reactions, users, myReactions] = await Promise.all([
+      this.reviewCommentReactionRepository.getReactionAndCountByCommentIds(
+        commentIds,
+      ),
+      this.userService.getUsersByIds(userIds),
+      this.reviewCommentReactionRepository.find({
+        where: {
+          reviewCommentId: In(commentIds),
+          createdBy: userId,
+        } as any,
+      }),
+    ]);
+
+    const myReactionsByCommentId = myReactions.reduce(
+      (acc, reaction: any) => {
+        acc[reaction.reviewCommentId] = reaction.reaction;
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
+
+    const userMap = new Map(
+      users.map((user) => [user.id, formatCreatedUserDetails(user)]),
+    );
+
+    const reactionsByComment = reactions.reduce(
+      (acc, { commentId, reaction, count }) => {
+        if (!acc[commentId]) {
+          acc[commentId] = {};
+        }
+        acc[commentId][reaction] = parseInt(count);
+        return acc;
+      },
+      {} as Record<string, Record<string, number>>,
+    );
+
+    const data: GetReviewCommentsResponseDto['data'] = allComments.map(
+      (comment) => {
+        const user = userMap.get(comment.comment_createdBy);
+        return {
+          id: comment.comment_id,
+          content: comment.comment_content,
+          createdAt: comment.comment_createdAt,
+          createdBy: user!,
+          myReaction: myReactionsByCommentId[comment.comment_id] || null,
+          reactions: reactionsByComment[comment.comment_id] || {},
+          replyCount: parseInt(comment.reply_count) || 0,
+          hidden: comment.comment_hidden,
+        };
+      },
+    );
+
+    return {
+      data,
+      count: totalCount,
+    };
   }
 }

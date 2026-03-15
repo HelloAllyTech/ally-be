@@ -9,6 +9,7 @@ import { BaseReviewComment } from '../entity/base-review-comment.entity';
 import { BaseReviewCommentReaction } from '../entity/base-review-comment-reaction.entity';
 import { BaseReviewThreadRepository } from '../repository/base-review-thread.repository';
 import { BaseReviewCommentRepository } from '../repository/base-review-comment.repository';
+import { BaseReviewCommentReactionRepository } from '../repository/base-review-comment-reaction.repository';
 import { formatCreatedUserDetails } from '../util/review.util';
 import { GetReviewThreadsOptions } from '../type/review-thread.type';
 import { ReviewAccessValidator } from '../util/review-access-policy.util';
@@ -30,7 +31,12 @@ export abstract class BaseReviewThreadService<
     TThread,
     TReview
   >;
-  protected abstract readonly reviewCommentReactionRepository: Repository<TCommentReaction>;
+  protected abstract readonly reviewCommentReactionRepository: BaseReviewCommentReactionRepository<
+    TCommentReaction,
+    TComment,
+    TThread,
+    TReview
+  >;
   protected abstract readonly userService: UserService;
   protected abstract readonly reviewAccessValidator: ReviewAccessValidator;
 
@@ -104,17 +110,9 @@ export abstract class BaseReviewThreadService<
     ];
 
     const [reactions, users, myReactions, commentCount] = await Promise.all([
-      this.reviewCommentReactionRepository
-        .createQueryBuilder('rcr')
-        .select('rcr.reviewCommentId', 'commentId')
-        .addSelect('rcr.reaction', 'reaction')
-        .addSelect('COUNT(*)', 'count')
-        .where('rcr.reviewCommentId IN (:...commentIds)', {
-          commentIds: commentIds.length ? commentIds : [''],
-        })
-        .groupBy('rcr.reviewCommentId')
-        .addGroupBy('rcr.reaction')
-        .getRawMany(),
+      this.reviewCommentReactionRepository.getReactionAndCountByCommentIds(
+        commentIds,
+      ),
       this.userService.getUsersByIds(userIds),
       this.reviewCommentReactionRepository.find({
         where: {
