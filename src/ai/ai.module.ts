@@ -10,9 +10,14 @@ import { UnknownEventProcessor } from './processors/unknown-event.processor';
 import { TranscriptionRequestDlqConsumer } from './consumer/transcription-request-dlq.consumer';
 import { TranscriptionResponseDlqConsumer } from './consumer/transcription-response-dlq.consumer';
 import { LearnModule } from 'src/learn/learn.module';
+import { PromptModule } from '../prompt/prompt.module';
 
 @Module({
-  imports: [forwardRef(() => ChatModule), forwardRef(() => LearnModule)],
+  imports: [
+    forwardRef(() => ChatModule),
+    forwardRef(() => LearnModule),
+    PromptModule,
+  ],
   providers: [
     AiService,
     AiEventService,
