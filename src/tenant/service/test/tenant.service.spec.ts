@@ -24,6 +24,8 @@ import { ChatTypes } from 'src/common/constants/chat.constants';
 import { TenantResponseDto } from 'src/tenant/dto/tenant-response.dto';
 import { PreferenceService } from 'src/settings/service/preference.service';
 import { TenantCaseSharedService } from '../tenant-case-shared';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { AdminTenantService } from 'src/user/service/admin-tenant.service';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -56,6 +58,8 @@ describe('TenantService', () => {
   let s3Service: jest.Mocked<S3Service>;
   let settingsService: jest.Mocked<SettingsService>;
   let tenantDashboardSharedService: jest.Mocked<TenantDashboardSharedService>;
+  let mockPermissionsService: any;
+  let mockAdminTenantService: any;
 
   const mockTenant: Tenant = {
     id: 'test-tenant-id',
@@ -166,6 +170,14 @@ describe('TenantService', () => {
       assignGlobalCasesToTenant: jest.fn(),
     };
 
+    mockPermissionsService = {
+      isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+    };
+
+    mockAdminTenantService = {
+      getTenantsForAdmin: jest.fn().mockResolvedValue({ data: [], count: 0 }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
@@ -220,6 +232,14 @@ describe('TenantService', () => {
         {
           provide: TenantCaseSharedService,
           useValue: mockTenantCaseSharedService,
+        },
+        {
+          provide: PermissionsService,
+          useValue: mockPermissionsService,
+        },
+        {
+          provide: AdminTenantService,
+          useValue: mockAdminTenantService,
         },
       ],
     }).compile();

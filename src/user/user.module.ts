@@ -31,6 +31,11 @@ import { AwsModule } from 'src/aws/aws.module';
     AdminTenantService,
   ],
   controllers: [UserController],
-  exports: [UserService, UserRepository, AdminTenantRepository],
+  exports: [
+    UserService,
+    UserRepository,
+    AdminTenantRepository,
+    AdminTenantService,
+  ],
 })
 export class UserModule {}
