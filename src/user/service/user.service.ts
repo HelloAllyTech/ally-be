@@ -265,6 +265,17 @@ export class UserService {
     id: number,
     body: UpdateUserDto,
   ): Promise<UserUpdateResponseDto> {
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(userId)
+      : false;
+
+    if (isMultiTenantAdmin) {
+      throw new BadRequestException('User is not authorized to update user');
+    }
+
     const user = await this.userRepository.findOne({ where: { id } });
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -300,8 +311,6 @@ export class UserService {
       }
     }
 
-    const userIdStr = ExecutionManager.getUserId();
-    const userId = userIdStr ? Number(userIdStr) : undefined;
     const updatedUserData = {
       ...body,
       ...(userId ? { updatedBy: userId } : {}),
@@ -367,6 +376,9 @@ export class UserService {
   }
 
   async addUser(userData: AddUserDto): Promise<AddUserResponseDto> {
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+
     // Check if user with email or phone already exists
     const existingUser = await this.userRepository.findOne({
       where: [{ email: userData.email }, { phone: userData.phone }],
@@ -381,6 +393,13 @@ export class UserService {
     }
 
     const isSuperAdmin = userData.roles.includes(UserRole.SUPER_ADMIN);
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(Number(userId))
+      : false;
+
+    if (isMultiTenantAdmin) {
+      throw new BadRequestException('User is not authorized to add user');
+    }
 
     if (!userData.tenantId) {
       throw new BadRequestException('Tenant ID is required');
@@ -410,8 +429,6 @@ export class UserService {
       ? await bcrypt.hash(userData.password, 10)
       : undefined;
 
-    const userIdStr = ExecutionManager.getUserId();
-    const userId = userIdStr ? Number(userIdStr) : undefined;
     const newUser = this.userRepository.create({
       email: userData.email,
       password: hashedPassword,

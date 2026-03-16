@@ -570,6 +570,16 @@ describe('UserService', () => {
         where: { id: 1 },
       });
     });
+
+    it('should throw BadRequestException when MULTI_TENANT_ADMIN attempts to update user', async () => {
+      const userId = '123';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+
+      await expect(
+        service.updateUser(1, { name: 'Updated' } as any),
+      ).rejects.toThrow('User is not authorized to update user');
+    });
   });
 
   describe('updateUserStatus', () => {
@@ -832,6 +842,16 @@ describe('UserService', () => {
           username: userData.email,
         }),
       );
+    });
+
+    it('should throw BadRequestException when MULTI_TENANT_ADMIN attempts to add user', async () => {
+      const userId = '123';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+
+      await expect(
+        service.addUser({ email: 'new@example.com', roles: [] } as any),
+      ).rejects.toThrow('User is not authorized to add user');
     });
   });
 
