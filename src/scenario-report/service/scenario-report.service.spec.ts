@@ -20,6 +20,8 @@ import {
 } from '../constants/scenario-report.constant';
 import { RedisService } from '../../redis/service/redis.service';
 import { TIME } from 'src/common/constants/time.constants';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 jest.mock('../../logger/logger.service', () => ({
   LoggerService: {
@@ -32,6 +34,12 @@ jest.mock('../../logger/logger.service', () => ({
   },
 }));
 
+jest.mock('src/common/execution/execution-manager', () => ({
+  ExecutionManager: {
+    getUserId: jest.fn(),
+  },
+}));
+
 describe('ScenarioReportService', () => {
   let service: ScenarioReportService;
   let scenarioReportRepository: jest.Mocked<ScenarioReportRepository>;
@@ -41,6 +49,7 @@ describe('ScenarioReportService', () => {
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let redisService: jest.Mocked<RedisService>;
+  let permissionsService: jest.Mocked<PermissionsService>;
 
   const userId = 1;
   const scenarioId = 10;
@@ -118,6 +127,10 @@ describe('ScenarioReportService', () => {
         .mockImplementation((text: string) => Promise.resolve(text)),
     };
 
+    const mockPermissionsService = {
+      isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioReportService,
@@ -153,6 +166,10 @@ describe('ScenarioReportService', () => {
           provide: RedisService,
           useValue: mockRedisService,
         },
+        {
+          provide: PermissionsService,
+          useValue: mockPermissionsService,
+        },
       ],
     }).compile();
 
@@ -168,6 +185,7 @@ describe('ScenarioReportService', () => {
     sharedLanguageService = module.get(SharedLanguageService);
     scenarioSharedService = module.get(ScenarioSharedService);
     redisService = module.get(RedisService);
+    permissionsService = module.get(PermissionsService);
   });
 
   afterEach(() => {
@@ -237,6 +255,27 @@ describe('ScenarioReportService', () => {
       expect(scenarioReportRepository.findOne).toHaveBeenCalledWith({
         where: { id: reportId },
       });
+    });
+
+    it('should throw ForbiddenException when multi-tenant admin is not the creator of the scenario', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(
+        userId.toString(),
+      );
+      scenarioReportRepository.findOne.mockResolvedValue(
+        mockReport as ScenarioReport,
+      );
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      scenarioSharedService.getAdminScenario.mockResolvedValue({
+        id: scenarioId,
+        createdBy: 999,
+      } as any);
+
+      await expect(service.getScenarioReportById(reportId)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(permissionsService.isMultiTenantAdmin).toHaveBeenCalledWith(
+        userId,
+      );
     });
   });
 
@@ -594,6 +633,25 @@ describe('ScenarioReportService', () => {
         `scenario-report:${reportId}`,
         reportId,
         SCENARIO_REPORT_TTL_SECONDS,
+      );
+    });
+
+    it('should throw ForbiddenException when multi-tenant admin tries to generate report for someone else scenario', async () => {
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      scenarioSharedService.getAdminScenario.mockResolvedValue({
+        id: scenarioId,
+        createdBy: 999,
+      } as any);
+
+      await expect(
+        service.createScenarioReport(
+          scenarioId,
+          { languageId: 1, turns: 5, helperAgentPrompt: 'p' },
+          userId,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(permissionsService.isMultiTenantAdmin).toHaveBeenCalledWith(
+        userId,
       );
     });
   });
