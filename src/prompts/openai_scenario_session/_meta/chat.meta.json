@@ -1,0 +1,4 @@
+{
+  "name": "Scenario Session Chat",
+  "description": "System prompt for AI supervisor providing feedback and guidance to counselors-in-training after completing a simulated counseling session. Includes role boundaries, evidence rules, evaluation standards, and formatting constraints."
+}
