@@ -37,6 +37,8 @@ import {
   SCENARIO_REPORT_TTL_SECONDS,
 } from '../constants/scenario-report.constant';
 import { TIME } from 'src/common/constants/time.constants';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
 
 @Injectable()
 export class ScenarioReportService {
@@ -53,6 +55,7 @@ export class ScenarioReportService {
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly openAITranslationsService: OpenAITranslationsService,
     private readonly redisService: RedisService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   async createScenarioReport(
@@ -60,6 +63,24 @@ export class ScenarioReportService {
     createScenarioReportDto: CreateScenarioReportDto,
     userId: number,
   ): Promise<CreateScenarioReportResponseDto> {
+    //Check if the user is generating report for their own scenario if user is multi tenant
+    const isMultiTenantAdmin =
+      await this.permissionsService.isMultiTenantAdmin(userId);
+    if (isMultiTenantAdmin) {
+      const scenario =
+        await this.scenarioSharedService.getAdminScenario(scenarioId);
+
+      if (!scenario) {
+        throw new NotFoundException('Scenario not found');
+      }
+
+      if (scenario.createdBy !== userId) {
+        throw new ForbiddenException(
+          'You are not authorized to generate report for this scenario.',
+        );
+      }
+    }
+
     //Check if there are any scenario reports in progress for the same scenario
     await this.checkForInProgressScenarioReports(scenarioId);
     //Check if the scenario has all the active mandatory fields
@@ -195,11 +216,36 @@ export class ScenarioReportService {
   }
 
   async getScenarioReportById(reportId: string): Promise<ScenarioReportDto> {
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+
     const scenarioReport = await this.scenarioReportRepository.findOne({
       where: { id: reportId },
     });
     if (!scenarioReport) {
       throw new NotFoundException('Scenario report not found');
+    }
+
+    if (userId) {
+      //Check if the user is generating report for their own scenario if user is multi tenant
+      const isMultiTenantAdmin =
+        await this.permissionsService.isMultiTenantAdmin(userId);
+
+      if (isMultiTenantAdmin) {
+        const scenario = await this.scenarioSharedService.getAdminScenario(
+          scenarioReport.scenarioId,
+        );
+
+        if (!scenario) {
+          throw new NotFoundException('Scenario not found');
+        }
+
+        if (scenario.createdBy !== userId) {
+          throw new ForbiddenException(
+            'You are not authorized to view report for this scenario.',
+          );
+        }
+      }
     }
     const [languages, scenario] = await Promise.all([
       this.sharedLanguageService.getLanguagesByIds([
