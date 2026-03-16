@@ -25,6 +25,11 @@ import {
   TranscribeAudioRequest,
   UpdateReferenceDocumentRequest,
 } from '../dto/ai.request.dto';
+import { PromptSharedService } from '../../prompt/service/prompt-shared.service';
+import {
+  ALLY_AI_PROMPT_PREFIX,
+  ALLY_AI_LEARN_PROMPT_PREFIX,
+} from '../../learn/constants/scenario-session.constants';
 import {
   AddReferenceDocumentResponse,
   DeleteReferenceDocumentResponse,
@@ -47,6 +52,7 @@ export class AiService {
   constructor(
     private config: AppConfigService,
     private eventEmitter: EventEmitter2,
+    private promptSharedService: PromptSharedService,
   ) {}
 
   async transcribeAudioFromBuffer(audioBuffer: Buffer): Promise<string> {
@@ -94,8 +100,10 @@ export class AiService {
 
   async identifySpeakersFromConversation(chatHistory: Chat[]) {
     try {
+      const prompts = await this.getPromptOverrides();
       const request: IdentifySpeakersRequest = {
         chat_history: chatHistory,
+        prompts,
       };
       const response = await this.makeRequest<
         IdentifySpeakersResponse,
@@ -110,8 +118,10 @@ export class AiService {
 
   @RetryOnFail(3, 1000)
   async generateSummaryAndTags(messages: MessageRequest[]) {
+    const prompts = await this.getPromptOverrides();
     const request: GenerateSummaryRequest = {
       chat_history: messages,
+      prompts,
     };
     let response: GenerateSummaryResponse;
     try {
@@ -127,8 +137,10 @@ export class AiService {
   }
 
   async generateTagPositivityRatings(tags: string[]) {
+    const prompts = await this.getPromptOverrides();
     const request: TagPositivityRatingsRequest = {
       tags: tags,
+      prompts,
     };
     const response = await this.makeRequest<
       TagPositivityRatingsResponse,
@@ -196,10 +208,15 @@ export class AiService {
 
   @RetryOnFail(3, 1000)
   async transcribeAudioAndSummarize(request: TranscribeAudioRequest) {
+    const prompts = await this.getPromptOverrides();
+    const enrichedRequest = {
+      ...request,
+      prompts,
+    };
     const response = await this.makeRequest<
       TranscribeAudioResponse,
       TranscribeAudioRequest
-    >(ENDPOINTS.TRANSCRIBE_AND_SUMMARIZE, request);
+    >(ENDPOINTS.TRANSCRIBE_AND_SUMMARIZE, enrichedRequest);
     return response;
   }
 
@@ -286,8 +303,10 @@ export class AiService {
   }
 
   async enhance(summary: string) {
+    const prompts = await this.getPromptOverrides();
     const request: EnhanceTextRequest = {
       content: summary,
+      prompts,
     };
     const response = await this.makeRequest<
       EnhanceTextResponse,
@@ -302,12 +321,14 @@ export class AiService {
     previousMemory?: string | null,
   ) {
     try {
+      const prompts = await this.getPromptOverrides();
       const response = await this.makeRequest<
         any,
         {
           chat_history: MessageRequest[];
           previous_memory?: string | null;
           need_memory: boolean;
+          prompts: Record<string, string>;
         }
       >(
         'api/v1/summary/scenario/feedback',
@@ -315,6 +336,7 @@ export class AiService {
           chat_history: messages,
           need_memory: needMemory,
           previous_memory: previousMemory,
+          prompts,
         },
         true,
         'post',
@@ -336,11 +358,13 @@ export class AiService {
     memoryPrompt?: string | null,
   ): Promise<ScenarioEvaluationResponse> {
     try {
+      const prompts = await this.getPromptOverrides();
       const request: ScenarioEvaluationRequest = {
         chat_history: messages,
         need_memory: needMemory,
         previous_memory: previousMemory ?? null,
         memory_prompt: memoryPrompt ?? null,
+        prompts,
       };
 
       const response = await this.makeRequest<
@@ -354,6 +378,42 @@ export class AiService {
     } catch (error) {
       this.logger.error(`AI Service Error: ${error.message}`);
       throw new Error('AI scenario session evaluation request failed');
+    }
+  }
+
+  /**
+   * Fetches prompt overrides from DB that have the ALLY_AI_PROMPT_PREFIX.
+   * Maps 'ally_ai_folder_file' -> 'folder/file' for ally-ai consumption.
+   */
+  private async getPromptOverrides(): Promise<Record<string, string>> {
+    try {
+      const prompts = await this.promptSharedService.getPromptsByOptions({
+        promptCodePrefix: ALLY_AI_PROMPT_PREFIX,
+        useDashboardOverrideOnly: true,
+      });
+
+      const overrides: Record<string, string> = {};
+      for (const p of prompts) {
+        // Skip if it actually belongs to ally-ai-learn
+        if (p.promptCode.startsWith(ALLY_AI_LEARN_PROMPT_PREFIX)) {
+          continue;
+        }
+
+        // Strip prefix 'ally_ai_'
+        const rawCode = p.promptCode.slice(ALLY_AI_PROMPT_PREFIX.length);
+        /**
+         * Replace underscores with slashes to match ally-ai's folder structure.
+         * Example: 'summary_summary' -> 'summary/summary'
+         * Example: 'user_identify_user' -> 'user/identify_user'
+         * We use a global replace with /_/g to handle nested structures if any.
+         */
+        const mappedKey = rawCode.replace(/_/g, '/');
+        overrides[mappedKey] = p.prompt;
+      }
+      return overrides;
+    } catch (error) {
+      this.logger.error(`Failed to fetch prompt overrides: ${error.message}`);
+      return {};
     }
   }
 }

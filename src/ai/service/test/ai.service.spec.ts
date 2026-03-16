@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import axios from 'axios';
 import { AiService } from '../ai.service';
+import { PromptSharedService } from '../../../prompt/service/prompt-shared.service';
 import { AppConfigService } from '../../../config/config.service';
 import { LoggerService } from '../../../logger/logger.service';
 
@@ -14,6 +15,7 @@ describe('AiService', () => {
   let service: AiService;
   let eventEmitter: jest.Mocked<EventEmitter2>;
   let mockLogger: jest.Mocked<LoggerService>;
+  let mockPromptSharedService: jest.Mocked<PromptSharedService>;
 
   const mockConfig = {
     ai: {
@@ -40,6 +42,9 @@ describe('AiService', () => {
     const mockEventEmitter = {
       emit: jest.fn(),
     };
+    mockPromptSharedService = {
+      getPromptsByOptions: jest.fn().mockResolvedValue([]),
+    } as any;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -51,6 +56,10 @@ describe('AiService', () => {
         {
           provide: EventEmitter2,
           useValue: mockEventEmitter,
+        },
+        {
+          provide: PromptSharedService,
+          useValue: mockPromptSharedService,
         },
       ],
     }).compile();
@@ -131,6 +140,7 @@ describe('AiService', () => {
       const serviceWithoutUrl = new AiService(
         { ai: { ...mockConfig.ai, apiUrl: '' } } as any,
         eventEmitter,
+        mockPromptSharedService,
       );
 
       const result = await serviceWithoutUrl.getNudge(
@@ -390,6 +400,7 @@ describe('AiService', () => {
       const serviceWithoutUrl = new AiService(
         { ai: { ...mockConfig.ai, apiUrl: '' } } as any,
         eventEmitter,
+        mockPromptSharedService,
       );
 
       const mockChatHistory = [{ role: 'user', content: 'test' }];
@@ -402,6 +413,7 @@ describe('AiService', () => {
       const serviceWithoutKey = new AiService(
         { ai: { ...mockConfig.ai, outboundApiKey: '' } } as any,
         eventEmitter,
+        mockPromptSharedService,
       );
 
       expect(serviceWithoutKey).toBeDefined();
