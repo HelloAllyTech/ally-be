@@ -685,6 +685,99 @@ describe('TenantService', () => {
         tenantDashboardSharedService.assignDashboardsToTenant,
       ).toHaveBeenCalledWith('test-tenant-id', dashboardIds, mockEntityManager);
     });
+
+    it('should throw BadRequestException when multi-tenant admin is not authorized to update the tenant', async () => {
+      const userId = '123';
+      const tenantId = 'test-tenant-id';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+
+      tenantRepository.findOne.mockResolvedValueOnce(mockTenant);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [{ id: 'other-tenant-id' }],
+        count: 1,
+      });
+
+      await expect(
+        service.updateTenant(tenantId, { name: 'New Name' } as any),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'You are not authorized to update this organization settings.',
+        ),
+      );
+
+      expect(mockPermissionsService.isMultiTenantAdmin).toHaveBeenCalledWith(
+        Number(userId),
+      );
+      expect(mockAdminTenantService.getTenantsForAdmin).toHaveBeenCalledWith(
+        Number(userId),
+      );
+      expect(mockEntityManager.update).not.toHaveBeenCalled();
+    });
+
+    it('should allow multi-tenant admin to update the tenant if they have access', async () => {
+      const userId = '123';
+      const tenantId = 'test-tenant-id';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+
+      const updateDto = { name: 'New Name' };
+      const updatedTenantEntity = { ...mockTenant, ...updateDto } as Tenant;
+
+      tenantRepository.findOne
+        .mockResolvedValueOnce(mockTenant) // Initial find
+        .mockResolvedValueOnce(null) // Conflict check (no existing tenant with same name)
+        .mockResolvedValueOnce(updatedTenantEntity); // Final findById
+
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [{ id: tenantId }],
+        count: 1,
+      });
+
+      const result = await service.updateTenant(tenantId, updateDto as any);
+
+      expect(mockPermissionsService.isMultiTenantAdmin).toHaveBeenCalledWith(
+        Number(userId),
+      );
+      expect(mockAdminTenantService.getTenantsForAdmin).toHaveBeenCalledWith(
+        Number(userId),
+      );
+      expect(mockEntityManager.update).toHaveBeenCalled();
+      expect(result).toEqual(
+        expect.objectContaining({
+          ...updateDto,
+        }),
+      );
+    });
+
+    it('should allow regular admin (not multi-tenant admin) to update the tenant', async () => {
+      const userId = '123';
+      const tenantId = 'test-tenant-id';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+
+      const updateDto = { name: 'New Name' };
+      const updatedTenantEntity = { ...mockTenant, ...updateDto } as Tenant;
+
+      tenantRepository.findOne
+        .mockResolvedValueOnce(mockTenant) // Initial find
+        .mockResolvedValueOnce(null) // Conflict check
+        .mockResolvedValueOnce(updatedTenantEntity); // Final findById
+
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(false);
+
+      const result = await service.updateTenant(tenantId, updateDto as any);
+
+      expect(mockPermissionsService.isMultiTenantAdmin).toHaveBeenCalledWith(
+        Number(userId),
+      );
+      expect(mockAdminTenantService.getTenantsForAdmin).not.toHaveBeenCalled();
+      expect(mockEntityManager.update).toHaveBeenCalled();
+      expect(result).toEqual(
+        expect.objectContaining({
+          ...updateDto,
+        }),
+      );
+    });
   });
 
   describe('getPresignedUrlForOrganizationLogo', () => {

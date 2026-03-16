@@ -342,6 +342,28 @@ export class TenantService {
     if (!tenant) {
       throw new NotFoundException(`Tenant with ID ${id} not found`);
     }
+
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(userId)
+      : false;
+
+    if (isMultiTenantAdmin) {
+      const adminTenants = await this.adminTenantService.getTenantsForAdmin(
+        Number(userId),
+      );
+
+      if (adminTenants) {
+        const adminTenantIds = adminTenants.data.map((t: any) => t.id);
+        if (!adminTenantIds.includes(id)) {
+          throw new BadRequestException(
+            'You are not authorized to update this organization settings.',
+          );
+        }
+      }
+    }
     if (
       (updateTenantDto.name && updateTenantDto.name !== tenant.name) ||
       (updateTenantDto.code && updateTenantDto.code !== tenant.code)
@@ -352,15 +374,17 @@ export class TenantService {
           { code: updateTenantDto.code, id: Not(id) },
         ],
       });
-      if (existingTenant?.name == updateTenantDto.name) {
-        throw new BadRequestException(
-          `Tenant with name "${updateTenantDto.name}" already exists`,
-        );
-      }
-      if (existingTenant?.code === updateTenantDto.code) {
-        throw new BadRequestException(
-          `Tenant with code "${updateTenantDto.code}" already exists`,
-        );
+      if (existingTenant) {
+        if (existingTenant.name === updateTenantDto.name) {
+          throw new BadRequestException(
+            `Tenant with name "${updateTenantDto.name}" already exists`,
+          );
+        }
+        if (existingTenant.code === updateTenantDto.code) {
+          throw new BadRequestException(
+            `Tenant with code "${updateTenantDto.code}" already exists`,
+          );
+        }
       }
     }
 
@@ -389,9 +413,6 @@ export class TenantService {
         hideRankInCommunity: hideRankInCommunity,
       };
     }
-
-    const userIdStr = ExecutionManager.getUserId();
-    const userId = userIdStr ? Number(userIdStr) : undefined;
 
     const updatedTenantData = {
       ...tenantUpdateData,
