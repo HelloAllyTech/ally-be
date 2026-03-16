@@ -22,7 +22,7 @@ import {
 } from '../interface/user-filter-options.interface';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { UserRepository } from '../repository/user.repository';
-import { TenantService } from 'src/tenant/service/tenant.service';
+import { TenantService } from '../../tenant/service/tenant.service';
 import { Group } from 'src/authorization/entity/group.entity';
 import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { GroupService } from 'src/authorization/service/group.service';
@@ -31,9 +31,9 @@ import {
   UserListResponseDto,
   UserUpdateResponseDto,
 } from '../dto/user-response.dto';
-import { SimulationCreditsService } from 'src/learn/service/simulation-credits.service';
+import { SimulationCreditsService } from '../../learn/service/simulation-credits.service';
 import { AddUserResponseDto } from '../dto/user-add-response.dto';
-import { UserGroupService } from 'src/authorization/service/user-group.service';
+import { UserGroupService } from '../../authorization/service/user-group.service';
 import { AddUserDto } from '../dto/add-user.dto';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
@@ -50,6 +50,8 @@ import { S3Service } from 'src/aws/service/s3.service';
 import { DeleteProfileImageDto } from '../dto/delete-profile-image.dto';
 import { LoggerService } from 'src/logger/logger.service';
 import { ProfileImageUploadDto } from '../dto/profile-image-upload.dto';
+import { AdminTenantService } from './admin-tenant.service';
+import { PermissionsService } from '../../authorization/service/permissions.service';
 
 @Injectable()
 export class UserService {
@@ -62,6 +64,7 @@ export class UserService {
     private groupRepository: GroupRepository,
     private userGroupRepository: UserGroupRepository,
     private userPreferencesRepository: UserPreferencesRepository,
+    @Inject(forwardRef(() => TenantService))
     private readonly tenantService: TenantService,
     private readonly userRepository: UserRepository,
     private readonly groupService: GroupService,
@@ -70,6 +73,8 @@ export class UserService {
     private readonly usersGroupService: UserGroupService,
     private configService: AppConfigService,
     private s3Service: S3Service,
+    private permissionsService: PermissionsService,
+    private readonly adminTenantService: AdminTenantService,
   ) {}
 
   async get(id: number): Promise<User | null> {
@@ -190,6 +195,40 @@ export class UserService {
   }
 
   async getAllUsers(filters: UserFilterOptions): Promise<UserListResponseDto> {
+    const userId = ExecutionManager.getUserId();
+
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(Number(userId))
+      : false;
+
+    if (isMultiTenantAdmin) {
+      const adminTenants = await this.adminTenantService.getTenantsForAdmin(
+        Number(userId),
+      );
+
+      const mappedTenantIds = adminTenants.data.map((t: any) => t.id);
+
+      if (filters.tenantIds) {
+        const requestedTenantIds = filters.tenantIds
+          .split(',')
+          .map((id) => id.trim());
+
+        const allowedTenantIds = requestedTenantIds.filter((id) =>
+          mappedTenantIds.includes(id),
+        );
+
+        filters.tenantIds =
+          allowedTenantIds.length > 0
+            ? allowedTenantIds.join(',')
+            : '00000000-0000-0000-0000-000000000000';
+      } else {
+        filters.tenantIds =
+          mappedTenantIds.length > 0
+            ? mappedTenantIds.join(',')
+            : '00000000-0000-0000-0000-000000000000';
+      }
+    }
+
     const result = await this.userRepository.getAllUsers(filters, true);
     if (result.users.length === 0) {
       return { data: [], count: 0 };

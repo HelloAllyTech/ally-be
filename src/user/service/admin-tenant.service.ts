@@ -1,13 +1,15 @@
 import {
   BadRequestException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AdminTenantRepository } from '../repository/admin-tenant.repository';
 import { UserRepository } from '../repository/user.repository';
-import { TenantService } from 'src/tenant/service/tenant.service';
-import { GroupService } from 'src/authorization/service/group.service';
+import { TenantService } from '../../tenant/service/tenant.service';
+import { GroupService } from '../../authorization/service/group.service';
 import {
   AssignAdminTenantsDto,
   RemoveAdminTenantsDto,
@@ -24,6 +26,7 @@ export class AdminTenantService {
   constructor(
     private readonly adminTenantRepository: AdminTenantRepository,
     private readonly userRepository: UserRepository,
+    @Inject(forwardRef(() => TenantService))
     private readonly tenantService: TenantService,
     private readonly groupService: GroupService,
     private readonly dataSource: DataSource,

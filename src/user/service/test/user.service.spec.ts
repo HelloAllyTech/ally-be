@@ -21,6 +21,8 @@ import { UserPreferencesRepository } from 'src/user/repository/user-prefernces.r
 import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { ProfileImageUploadContentType } from 'src/user/enum/user.enum';
+import { AdminTenantService } from '../admin-tenant.service';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -51,6 +53,8 @@ describe('UserService', () => {
   let mockSimulationCreditsService: any;
   let mockConfigService: any;
   let mockS3Service: any;
+  let mockAdminTenantService: any;
+  let mockPermissionsService: any;
 
   const mockUser: User = {
     id: 1,
@@ -172,6 +176,14 @@ describe('UserService', () => {
       deleteObject: jest.fn(),
     };
 
+    mockAdminTenantService = {
+      getTenantsForAdmin: jest.fn(),
+    };
+
+    mockPermissionsService = {
+      isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
@@ -194,6 +206,8 @@ describe('UserService', () => {
         },
         { provide: AppConfigService, useValue: mockConfigService },
         { provide: S3Service, useValue: mockS3Service },
+        { provide: AdminTenantService, useValue: mockAdminTenantService },
+        { provide: PermissionsService, useValue: mockPermissionsService },
       ],
     }).compile();
 
@@ -409,7 +423,6 @@ describe('UserService', () => {
         [1],
       );
     });
-
     it('should return empty array when no users found', async () => {
       mockUsersRepository.getAllUsers.mockResolvedValue({
         users: [],
@@ -421,6 +434,53 @@ describe('UserService', () => {
       expect(
         mockUsersGroupService.getUserGroupsByUserIds,
       ).not.toHaveBeenCalled();
+    });
+
+    it('should filter by mapped tenants for MULTI_TENANT_ADMIN', async () => {
+      const userId = '123';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [{ id: 'tenant-1' }, { id: 'tenant-2' }],
+      });
+      mockUsersRepository.getAllUsers.mockResolvedValue({
+        users: [],
+        count: 0,
+      });
+
+      await service.getAllUsers({ tenantIds: 'tenant-1,tenant-3' });
+
+      expect(mockAdminTenantService.getTenantsForAdmin).toHaveBeenCalledWith(
+        123,
+      );
+      expect(mockUsersRepository.getAllUsers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantIds: 'tenant-1',
+        }),
+        true,
+      );
+    });
+
+    it('should restrict to nothing if MULTI_TENANT_ADMIN has no mapped tenants', async () => {
+      const userId = '123';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [],
+      });
+      mockUsersRepository.getAllUsers.mockResolvedValue({
+        users: [],
+        count: 0,
+      });
+
+      await service.getAllUsers({});
+
+      expect(mockUsersRepository.getAllUsers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantIds: '00000000-0000-0000-0000-000000000000',
+        }),
+        true,
+      );
     });
   });
 

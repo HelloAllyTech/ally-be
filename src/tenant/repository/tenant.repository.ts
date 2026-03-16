@@ -11,10 +11,18 @@ export class TenantsRepository extends Repository<Tenant> {
     super(Tenant, dataSource.createEntityManager());
   }
 
-  async getallTenants(search?: string, options?: Pagination) {
+  async getallTenants(
+    search?: string,
+    options?: Pagination,
+    tenantIds?: string[],
+  ) {
     const query = this.createQueryBuilder('tenant').select(['tenant']);
 
     this.applySearchFilter(query, search);
+
+    if (tenantIds && tenantIds.length > 0) {
+      query.andWhere('tenant.id IN (:...tenantIds)', { tenantIds });
+    }
 
     if (options?.sortBy) {
       const sortColumn = this.getValidatedSortColumn(options.sortBy);

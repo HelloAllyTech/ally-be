@@ -15,7 +15,7 @@ import { TenantsRepository } from '../repository/tenant.repository';
 import { Pagination } from 'src/common/type/common.type';
 import { UpdateTenantDto } from '../dto/update-tenant.dto';
 import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
-import { UserRepository } from 'src/user/repository/user.repository';
+import { UserRepository } from '../../user/repository/user.repository';
 import { TenantScenarioSharedService } from './tenant-scenario-shared';
 import { TenantScenarioPathSharedService } from './tenant-scenario-path-shared';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -37,6 +37,8 @@ import { TenantResponseDto } from '../dto/tenant-response.dto';
 import { PreferenceRelatedEntity } from 'src/common/constants/user.constants';
 import { PreferenceService } from 'src/settings/service/preference.service';
 import { TenantCaseSharedService } from './tenant-case-shared';
+import { PermissionsService } from '../../authorization/service/permissions.service';
+import { AdminTenantService } from '../../user/service/admin-tenant.service';
 
 @Injectable()
 export class TenantService {
@@ -58,6 +60,10 @@ export class TenantService {
     private readonly settingsService: SettingsService,
     private readonly preferenceService: PreferenceService,
     private readonly tenantCaseSharedService: TenantCaseSharedService,
+    @Inject(forwardRef(() => PermissionsService))
+    private permissionsService: PermissionsService,
+    @Inject(forwardRef(() => AdminTenantService))
+    private adminTenantService: AdminTenantService,
   ) {}
 
   async findAll(): Promise<Tenant[]> {
@@ -264,9 +270,24 @@ export class TenantService {
     search?: string,
     options?: Pagination,
   ): Promise<GetAllTenantsResponseDto> {
+    const userId = ExecutionManager.getUserId();
+
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(Number(userId))
+      : false;
+
+    let tenantsIds: string[] = [];
+    if (isMultiTenantAdmin) {
+      const adminTenants = await this.adminTenantService.getTenantsForAdmin(
+        Number(userId),
+      );
+      tenantsIds = adminTenants.data.map((t: any) => t.id);
+    }
+
     const { tenants, count } = await this.tenantsRepository.getallTenants(
       search,
       options,
+      tenantsIds,
     );
     if (tenants.length == 0) {
       return { data: [], count: 0 };
