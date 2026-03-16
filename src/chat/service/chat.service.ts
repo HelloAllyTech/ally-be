@@ -587,6 +587,14 @@ export class ChatService {
       throw new BadRequestException('Deletion is nor supported for this chat');
     }
     const tenantId = ExecutionManager.getTenantId()!;
+    const review =
+      await this.scribeSessionReviewSharedService.getReviewByScribeSessionId(
+        chatId,
+        ReviewStatus.IN_REVIEW,
+      );
+    if (review) {
+      throw new BadRequestException('Chat is already in review process');
+    }
     try {
       await this.dataSource.transaction(async (manager) => {
         await this.messageRepository.deleteMessageByChatId(
@@ -607,6 +615,10 @@ export class ChatService {
         await this.chatAudioUploadsService.deleteChatAudioUploadsByChatId(
           chatId,
           tenantId,
+          manager,
+        );
+        await this.scribeSessionReviewSharedService.deleteReviewByScribeSessionId(
+          chatId,
           manager,
         );
         await this.chatRepository.deleteChat(chatId, tenantId, manager);
