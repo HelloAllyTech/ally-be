@@ -240,16 +240,33 @@ export class PromptsService {
       }
     }
 
-    // Pass 2: Mark missing prompts as obsolete
+    // Pass 2: Mark missing prompts as obsolete (scoped to the sync source)
     const query = this.promptsRepository.createQueryBuilder('prompt');
+
+    const isFromAllyAi = incomingCodes.some(
+      (code) =>
+        code.startsWith('ally_ai_') && !code.startsWith('ally_ai_learn_'),
+    );
+    const isInternalBE = incomingCodes.some((code) =>
+      code.startsWith('openai_'),
+    );
+
     if (isFromAllyAiLearn) {
       query.where('prompt.promptCode LIKE :prefix', {
         prefix: 'ally_ai_learn_%',
       });
+    } else if (isFromAllyAi) {
+      query
+        .where('prompt.promptCode LIKE :prefix', { prefix: 'ally_ai_%' })
+        .andWhere('prompt.promptCode NOT LIKE :learnPrefix', {
+          learnPrefix: 'ally_ai_learn_%',
+        });
+    } else if (isInternalBE) {
+      query.where('prompt.promptCode LIKE :prefix', { prefix: 'openai_%' });
     } else {
-      query.where('prompt.promptCode NOT LIKE :prefix', {
-        prefix: 'ally_ai_learn_%',
-      });
+      // If we don't recognize the prefix pattern, skip auto-obsolescence
+      // to avoid accidentally nuking prompts from other services.
+      return { added, updated };
     }
 
     if (incomingCodes.length > 0) {
