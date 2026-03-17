@@ -282,6 +282,10 @@ export class TenantService {
         Number(userId),
       );
       tenantsIds = adminTenants.data.map((t: any) => t.id);
+
+      if (tenantsIds.length == 0) {
+        return { data: [], count: 0 };
+      }
     }
 
     const { tenants, count } = await this.tenantsRepository.getallTenants(
