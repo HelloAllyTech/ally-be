@@ -9,6 +9,7 @@ import {
   MaxLength,
   IsEnum,
   MinLength,
+  IsUrl,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import {
@@ -74,6 +75,33 @@ export class ScenarioCharacterRequestDto {
   @MinLength(1)
   @MaxLength(100)
   sexualOrientation!: string;
+
+  @ApiProperty({
+    description: 'URL of the character cover image',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @IsUrl()
+  coverImageUrl?: string;
+
+  @ApiProperty({
+    description: 'URL of the character cover video',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @IsUrl()
+  coverVideoUrl?: string;
+
+  @ApiProperty({
+    description: 'Character backstory / profile text',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2500)
+  characterProfileText?: string;
 }
 
 export class GetScenarioCharacterQueryDto {
@@ -153,6 +181,24 @@ export class ScenarioCharacterResponseDto {
 
   @ApiProperty({ description: 'Scenario character sexual orientation' })
   sexualOrientation!: string;
+
+  @ApiProperty({
+    description: 'URL of the character cover image',
+    required: false,
+  })
+  coverImageUrl?: string;
+
+  @ApiProperty({
+    description: 'URL of the character cover video',
+    required: false,
+  })
+  coverVideoUrl?: string;
+
+  @ApiProperty({
+    description: 'Character backstory / profile text',
+    required: false,
+  })
+  characterProfileText?: string;
 
   @ApiProperty({ description: 'Created at' })
   createdAt!: Date;

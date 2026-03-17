@@ -78,9 +78,9 @@ export class ConversationalGuardrailsService {
     }
 
     return {
-          prompt: this.formatGuardrailsForPrompt(guardrailsResponse),
-          items: guardrailsResponse,
-        };
+      prompt: this.formatGuardrailsForPrompt(guardrailsResponse),
+      items: guardrailsResponse,
+    };
   }
 
   formatGuardrailsForPrompt(guardrails: GuardrailMetadata[]): string {

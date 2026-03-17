@@ -303,6 +303,5 @@ describe('ConversationalGuardrailsService', () => {
       expect(result.prompt).toBe('');
       expect(result.items).toEqual([]);
     });
-
   });
 });
