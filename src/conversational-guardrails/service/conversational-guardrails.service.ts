@@ -77,7 +77,10 @@ export class ConversationalGuardrailsService {
       }));
     }
 
-    return this.formatGuardrailsForPrompt(guardrailsResponse);
+    return {
+          prompt: this.formatGuardrailsForPrompt(guardrailsResponse),
+          items: guardrailsResponse,
+        };
   }
 
   formatGuardrailsForPrompt(guardrails: GuardrailMetadata[]): string {

@@ -247,4 +247,62 @@ describe('ConversationalGuardrailsService', () => {
       });
     });
   });
+
+  describe('getRandomGuardrailsForSession', () => {
+    it('should return items array with correct helperDialogue and actorDialogue shape', async () => {
+      guardrailsRepository.getGuardrails.mockResolvedValue(mockGuardrails);
+
+      const result = await service.getRandomGuardrailsForSession();
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]).toEqual({
+        helperDialogue: mockGuardrails[0].helperDialogue,
+        actorDialogue: mockGuardrails[0].actorDialogue,
+      });
+      expect(result.items[1]).toEqual({
+        helperDialogue: mockGuardrails[1].helperDialogue,
+        actorDialogue: mockGuardrails[1].actorDialogue,
+      });
+    });
+
+    it('should return prompt string containing guardrail dialogues', async () => {
+      guardrailsRepository.getGuardrails.mockResolvedValue(mockGuardrails);
+
+      const result = await service.getRandomGuardrailsForSession();
+
+      expect(result.prompt).toContain('Consider the following guardrails');
+      expect(result.prompt).toContain(mockGuardrails[0].helperDialogue);
+      expect(result.prompt).toContain(mockGuardrails[0].actorDialogue);
+    });
+
+    it('should use translations for non-English sessions', async () => {
+      guardrailsRepository.getGuardrails.mockResolvedValue(mockGuardrails);
+      translationsRepository.getTranslationsForGuardrails.mockResolvedValue([
+        mockTranslation,
+      ]);
+
+      const result = await service.getRandomGuardrailsForSession(2);
+
+      // use expect.objectContaining since translation object has extra fields
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          helperDialogue: mockTranslation.helperDialogue,
+          actorDialogue: mockTranslation.actorDialogue,
+        }),
+      );
+      expect(
+        translationsRepository.getTranslationsForGuardrails,
+      ).toHaveBeenCalledWith(['guardrail-uuid-1', 'guardrail-uuid-2'], 2);
+    });
+
+    it('should return empty prompt string and empty items array when no guardrails exist', async () => {
+      guardrailsRepository.getGuardrails.mockResolvedValue([]);
+
+      const result = await service.getRandomGuardrailsForSession();
+
+      expect(result.prompt).toBe('');
+      expect(result.items).toEqual([]);
+    });
+
+  });
 });

@@ -501,7 +501,8 @@ export class ScenarioSharedService {
         triggerEvents: Array.from(triggerEvents),
         autoTerminationEvents,
         stateInstructions: formattedStateInstructions,
-        guardrails: guardrails,
+        guardrailsPrompt: guardrails.prompt,
+        guardrails: guardrails.items,
         behaviorInstructions: formattedBehaviorInstructionForMetadata,
       },
     };
