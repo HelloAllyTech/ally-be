@@ -5,10 +5,12 @@ import { PromptsController } from '../prompts.controller';
 import { PromptsService } from '../../service/prompt.service';
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import { AiApiKeyGuard } from 'src/auth/guards/ai-auth.guard';
+import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { CreatePromptsDto } from '../../dto/create-prompts.dto';
 import { UpdatePromptDto } from '../../dto/update-prompt.dto';
 import { SortOrder } from 'src/user/enum/user.enum';
 import { PromptResponse } from '../../type/prompt-response.type';
+import { SyncPromptsDto } from '../../dto/sync-prompts.dto';
 
 // Mock guard that allows all requests
 class MockGuard implements CanActivate {
@@ -52,6 +54,8 @@ describe('PromptsController', () => {
             getPrompts: jest.fn(),
             createPrompts: jest.fn(),
             updatePrompt: jest.fn(),
+            getPromptsByCodes: jest.fn(),
+            syncPrompts: jest.fn(),
           },
         },
       ],
@@ -61,6 +65,8 @@ describe('PromptsController', () => {
       .overrideGuard(PermissionsGuard)
       .useClass(MockGuard)
       .overrideGuard(AiApiKeyGuard)
+      .useClass(MockGuard)
+      .overrideGuard(ApiAuthGuard)
       .useClass(MockGuard)
       .compile();
 
@@ -163,6 +169,42 @@ describe('PromptsController', () => {
           order: SortOrder.ASC,
         }),
       );
+    });
+  });
+
+  describe('getPromptsByCodes', () => {
+    it('should return prompts by codes', async () => {
+      const codes = 'code1,code2';
+      const mockResult = { code1: 'prompt1', code2: 'prompt2' };
+      jest.spyOn(service, 'getPromptsByCodes').mockResolvedValue(mockResult);
+
+      const result = await controller.getPromptsByCodes(codes);
+
+      expect(result).toEqual(mockResult);
+      expect(service.getPromptsByCodes).toHaveBeenCalledWith([
+        'code1',
+        'code2',
+      ]);
+    });
+
+    it('should return empty object if no codes provided', async () => {
+      const result = await controller.getPromptsByCodes('');
+      expect(result).toEqual({});
+      expect(service.getPromptsByCodes).not.toHaveBeenCalled();
+    });
+
+    it('should handle whitespace and empty entries in codes', async () => {
+      const codes = ' code1 , , code2 ';
+      const mockResult = { code1: 'prompt1', code2: 'prompt2' };
+      jest.spyOn(service, 'getPromptsByCodes').mockResolvedValue(mockResult);
+
+      const result = await controller.getPromptsByCodes(codes);
+
+      expect(result).toEqual(mockResult);
+      expect(service.getPromptsByCodes).toHaveBeenCalledWith([
+        'code1',
+        'code2',
+      ]);
     });
   });
 
@@ -406,6 +448,28 @@ describe('PromptsController', () => {
         promptId,
         updatePromptDto,
       );
+    });
+  });
+
+  describe('syncPrompts', () => {
+    it('should sync prompts successfully', async () => {
+      const syncPromptsDto: SyncPromptsDto = {
+        prompts: [
+          {
+            promptCode: 'test-code',
+            name: 'test-name',
+            description: 'test-desc',
+            prompt: 'test-prompt',
+          },
+        ],
+      };
+      const mockSyncResult = { added: 1, updated: 0 };
+      jest.spyOn(service, 'syncPrompts').mockResolvedValue(mockSyncResult);
+
+      const result = await controller.syncPrompts(syncPromptsDto);
+
+      expect(result).toEqual(mockSyncResult);
+      expect(service.syncPrompts).toHaveBeenCalledWith(syncPromptsDto);
     });
   });
 

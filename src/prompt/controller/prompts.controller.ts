@@ -15,7 +15,7 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AiApiKeyGuard } from 'src/auth/guards/ai-auth.guard';
+import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PromptsService } from '../service/prompt.service';
@@ -41,7 +41,8 @@ export class PromptsController {
   @ApiOperation({
     summary: 'Get prompts by codes (e.g. for ally-ai-learn report)',
   })
-  @AuthPermissions([PERMISSIONS.VIEW_PROMPT])
+  @UseGuards(ApiAuthGuard)
+  @ApiSecurity('api-key')
   @Get('by-codes')
   async getPromptsByCodes(
     @Query('codes') codes: string,
@@ -91,7 +92,7 @@ export class PromptsController {
     description:
       'Accepts x-api-key for deployment scripts (e.g. ally-ai-learn sync).',
   })
-  @UseGuards(AiApiKeyGuard)
+  @UseGuards(ApiAuthGuard)
   @ApiSecurity('api-key')
   @Post('sync')
   async syncPrompts(
