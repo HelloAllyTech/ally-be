@@ -292,7 +292,7 @@ export class BadgeController {
     description: 'Returns all badges assigned to the tenant',
     type: TenantBadgeListResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_BADGES])
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_BADGES_FOR_SETTING])
   @Get('/tenants/:tenantId')
   async getBadgesForTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
