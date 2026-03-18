@@ -3,7 +3,7 @@ import { AuthorizationController } from '../authorization.controller';
 import { PermissionsService } from '../../service/permissions.service';
 import { GroupService } from '../../service/group.service';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
-import { AiApiKeyGuard } from '../../../auth/guards/ai-auth.guard';
+import { ApiAuthGuard } from '../../../auth/guards/api-auth.guard';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { ChangeUserRolesDto } from '../../../user/dto/group.dto';
 import { ValidatePermissionsDto } from '../../dto/validate-permissions.dto';
@@ -80,7 +80,7 @@ describe('AuthorizationController', () => {
           return true;
         },
       })
-      .overrideGuard(AiApiKeyGuard)
+      .overrideGuard(ApiAuthGuard)
       .useValue({
         canActivate: () => true,
       })

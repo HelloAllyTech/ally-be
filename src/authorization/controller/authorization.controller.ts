@@ -21,7 +21,7 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { PERMISSIONS } from '../constants/permissions.constants';
 import { ChangeUserRolesDto } from 'src/user/dto/group.dto';
 import { GroupService } from '../service/group.service';
-import { AiServiceAuthGuard } from 'src/auth/decorators/ai-auth.decorator';
+import { ApiServiceAuthGuard } from 'src/auth/decorators/api-auth.decorator';
 import { ValidatePermissionsDto } from '../dto/validate-permissions.dto';
 
 @ApiTags('Authorization')
@@ -82,7 +82,7 @@ export class AuthorizationController {
   }
 
   @ApiOperation({ summary: 'Validate permissions' })
-  @AiServiceAuthGuard()
+  @ApiServiceAuthGuard()
   @HttpCode(HttpStatus.OK)
   @Post('/permissions/validate')
   async validatePermissions(
