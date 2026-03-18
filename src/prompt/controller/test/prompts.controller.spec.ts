@@ -4,7 +4,6 @@ import { AuthGuard } from '@nestjs/passport';
 import { PromptsController } from '../prompts.controller';
 import { PromptsService } from '../../service/prompt.service';
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
-import { AiApiKeyGuard } from 'src/auth/guards/ai-auth.guard';
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { CreatePromptsDto } from '../../dto/create-prompts.dto';
 import { UpdatePromptDto } from '../../dto/update-prompt.dto';
@@ -63,8 +62,6 @@ describe('PromptsController', () => {
       .overrideGuard(AuthGuard('jwt'))
       .useClass(MockGuard)
       .overrideGuard(PermissionsGuard)
-      .useClass(MockGuard)
-      .overrideGuard(AiApiKeyGuard)
       .useClass(MockGuard)
       .overrideGuard(ApiAuthGuard)
       .useClass(MockGuard)
