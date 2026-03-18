@@ -165,8 +165,25 @@ export class PromptsService {
   async getPrompts(
     searchName?: string,
     options?: Pagination,
+  ): Promise<PromptResponse[]>;
+  async getPrompts(
+    searchName?: string,
+    includeBlocks?: boolean,
+    options?: Pagination,
+  ): Promise<PromptResponse[]>;
+  async getPrompts(
+    searchName?: string,
+    arg2?: boolean | Pagination,
+    arg3?: Pagination,
   ): Promise<PromptResponse[]> {
-    const data = await this.promptsRepository.getPrompts(searchName, options);
+    const includeBlocks = typeof arg2 === 'boolean' ? arg2 : true;
+    const options = typeof arg2 === 'boolean' ? arg3 : arg2;
+
+    const data = await this.promptsRepository.getPrompts(
+      searchName,
+      includeBlocks,
+      options,
+    );
     console.log(
       `getPrompts returned ${data.length} prompts. searchName: ${searchName}`,
     );

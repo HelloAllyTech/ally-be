@@ -68,8 +68,10 @@ export class PromptsController {
     @Query('sortBy') sortBy?: string,
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('searchName') searchName?: string,
+    @Query('includeBlocks') includeBlocks?: string,
   ): Promise<PromptResponse[]> {
-    return this.promptsService.getPrompts(searchName, {
+    const includeBlocksBool = includeBlocks !== 'false';
+    return this.promptsService.getPrompts(searchName, includeBlocksBool, {
       limit,
       offset,
       sortBy,
