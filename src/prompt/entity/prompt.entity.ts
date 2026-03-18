@@ -28,4 +28,10 @@ export class Prompt extends BaseWithoutTenantEntity {
 
   @Column({ type: 'boolean', default: false })
   isObsolete!: boolean;
+
+  @Column({ type: 'varchar', nullable: true })
+  kind?: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  usesBlocks?: string[];
 }
