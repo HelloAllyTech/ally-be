@@ -25,6 +25,8 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.defaultPrompt', 'defaultPrompt')
       .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
       .addSelect('prompt.isObsolete', 'isObsolete')
+      .addSelect('prompt.kind', 'kind')
+      .addSelect('prompt.usesBlocks', 'usesBlocks')
       .where('prompt.id = :id', { id })
       .getRawOne() as unknown as Promise<PromptDetailResponse | null>;
   }
@@ -48,6 +50,8 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.defaultPrompt', 'defaultPrompt')
       .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
       .addSelect('prompt.isObsolete', 'isObsolete')
+      .addSelect('prompt.kind', 'kind')
+      .addSelect('prompt.usesBlocks', 'usesBlocks')
       .where('prompt.defaultPrompt IS NOT NULL');
 
     if (searchName) {

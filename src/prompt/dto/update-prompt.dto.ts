@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsArray } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdatePromptDto {
@@ -30,4 +30,13 @@ export class UpdatePromptDto {
   @IsOptional()
   @IsBoolean()
   useDashboardOverride?: boolean;
+
+  @IsOptional()
+  @IsString()
+  kind?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  usesBlocks?: string[];
 }

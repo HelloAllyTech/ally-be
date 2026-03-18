@@ -37,6 +37,20 @@ export class SyncPromptItemDto {
   @IsArray()
   @IsString({ each: true })
   availableVariables?: string[];
+
+  @ApiPropertyOptional({ description: 'Kind of prompt (e.g. block)' })
+  @IsOptional()
+  @IsString()
+  kind?: string;
+
+  @ApiPropertyOptional({
+    description: 'List of block codes used by this prompt',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  usesBlocks?: string[];
 }
 
 export class SyncPromptsDto {
