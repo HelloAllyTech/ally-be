@@ -87,10 +87,14 @@ export class ScribeSessionReviewCommentController {
     @Param('commentId', ParseUUIDPipe) commentId: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
+    @Query('sortBy') sortBy: string = 'createdAt',
+    @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<GetReviewRepliesResponseDto> {
     return this.reviewCommentService.getReviewCommentReplies(commentId, {
       limit,
       offset,
+      sortBy,
+      order,
     });
   }
 
@@ -154,10 +158,14 @@ export class ScribeSessionReviewCommentController {
     @Param('reviewId', ParseUUIDPipe) reviewId: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
+    @Query('sortBy') sortBy: string = 'createdAt',
+    @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<GetReviewCommentsResponseDto> {
     return this.reviewCommentService.getGeneralReviewComments(reviewId, {
       limit,
       offset,
+      sortBy,
+      order,
     });
   }
 }
