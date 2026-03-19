@@ -97,4 +97,5 @@ export type ScenarioEvaluationRequest = {
   previous_memory: string | null;
   memory_prompt: string | null;
   prompts?: Record<string, string>;
+  enable_recommendations?: boolean;
 };

@@ -644,6 +644,119 @@ describe('ScenarioSessionService', () => {
       );
     });
 
+    it('should strip areas_of_improvement and populate improvements when enableRecommendations is false', async () => {
+      const mockSessionWithDetails = {
+        ...mockScenarioSession,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T10:30:00Z'),
+        details: {
+          summary: {
+            areas_of_improvement: [
+              {
+                improvement: 'Be more empathetic',
+                recommendation: 'Try active listening',
+              },
+              {
+                improvement: 'Ask open questions',
+                recommendation: 'Use how/what',
+              },
+            ],
+          },
+        },
+      };
+
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        mockSessionWithDetails as any,
+      );
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+        false,
+      );
+
+      expect((result as any).details.summary.improvements).toEqual([
+        'Be more empathetic',
+        'Ask open questions',
+      ]);
+      expect(
+        (result as any).details.summary.areas_of_improvement,
+      ).toBeUndefined();
+    });
+
+    it('should preserve areas_of_improvement when enableRecommendations is true', async () => {
+      const areasOfImprovement = [
+        {
+          improvement: 'Be more empathetic',
+          recommendation: 'Try active listening',
+        },
+        { improvement: 'Ask open questions', recommendation: 'Use how/what' },
+      ];
+      const mockSessionWithDetails = {
+        ...mockScenarioSession,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T10:30:00Z'),
+        details: {
+          summary: {
+            areas_of_improvement: areasOfImprovement,
+          },
+        },
+      };
+
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        mockSessionWithDetails as any,
+      );
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+        true,
+      );
+
+      expect((result as any).details.summary.areas_of_improvement).toEqual(
+        areasOfImprovement,
+      );
+    });
+
+    it('should keep existing improvements and clear areas_of_improvement when enableRecommendations is false and improvements already exist', async () => {
+      const mockSessionWithDetails = {
+        ...mockScenarioSession,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T10:30:00Z'),
+        details: {
+          summary: {
+            improvements: ['Existing improvement 1'],
+            areas_of_improvement: [
+              { improvement: 'New improvement', recommendation: 'Do this' },
+            ],
+          },
+        },
+      };
+
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        mockSessionWithDetails as any,
+      );
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+        false,
+      );
+
+      expect((result as any).details.summary.improvements).toEqual([
+        'Existing improvement 1',
+      ]);
+      expect(
+        (result as any).details.summary.areas_of_improvement,
+      ).toBeUndefined();
+    });
+
     it('should return only ACTIVE events (filtering done at repository level)', async () => {
       // Repository now returns only ACTIVE events with autoTerminationStatus=false
       const mockSessionWithActiveEvents = {
@@ -908,6 +1021,75 @@ describe('ScenarioSessionService', () => {
           summary: { feedback: mockFeedbackResponse },
         }),
       );
+    });
+
+    it('should pass enableRecommendations to getScenarioSessionEvaluation', async () => {
+      const mockSummaryResponse = {
+        improvements: [],
+        positives: [],
+        sessionGlimpse: '',
+        cumulativeMemory: '',
+        messageTags: [] as string[],
+        emotionalMovement: [] as string[],
+        areas_of_improvement: [
+          { improvement: 'Improve X', recommendation: 'Do Y' },
+        ],
+      };
+      const mockMessages = [
+        {
+          id: 1,
+          scenarioSessionId: mockScenarioSessionId,
+          senderId: 1,
+          messageType: ScenarioSessionMessageType.TEXT,
+          content: 'Hello',
+          startSeconds: 0,
+          endSeconds: 2,
+          tenantId: mockTenantId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+      const mockDetailsSave = jest.fn().mockResolvedValue(undefined);
+      const mockDetailsRepo = {
+        create: jest.fn().mockImplementation((dto) => dto),
+        save: mockDetailsSave,
+      };
+      const mockEntityManager = {
+        getRepository: jest.fn(() => mockDetailsRepo),
+      };
+
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = true;
+      scenarioSessionMessagesRepository.find.mockResolvedValue(
+        mockMessages as ScenarioSessionMessages[],
+      );
+      aiService.getScenarioSessionEvaluation.mockResolvedValue(
+        mockSummaryResponse as any,
+      );
+      dataSource.transaction.mockImplementation(async (cb: any) =>
+        cb(mockEntityManager),
+      );
+
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId, {
+        enableRecommendations: true,
+      });
+      await new Promise((r) => setImmediate(r));
+
+      expect(aiService.getScenarioSessionEvaluation).toHaveBeenCalledWith(
+        expect.any(Array),
+        false,
+        null,
+        undefined,
+        true,
+      );
+
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
     });
   });
 

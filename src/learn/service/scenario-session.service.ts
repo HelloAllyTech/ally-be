@@ -100,6 +100,7 @@ import { ScenarioSessionReflectionPromptResponse } from '../entity/scenario-sess
 import { SCENARIO_SESSION_REFLECTION_PROMPTS } from '../constants/scenario-session-reflection-prompt.constants';
 import { ScenariosRepository } from '../repository/scenario.repository';
 import { getSessionDurationInSeconds } from 'src/review/util/review.util';
+import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -305,7 +306,11 @@ export class ScenarioSessionService {
     return { data: scenarioSessions };
   }
 
-  async getScenarioSession(scenarioSessionId: string, counselorId: number) {
+  async getScenarioSession(
+    scenarioSessionId: string,
+    counselorId: number,
+    enableRecommendations = false,
+  ) {
     const hasAdminAccess =
       await this.permissionValidatorService.validatePermissions(counselorId, [
         PERMISSIONS.ORGANIZATION_ACCESS,
@@ -328,6 +333,15 @@ export class ScenarioSessionService {
       );
       if ((scenarioSession as any).details) {
         (scenarioSession as any).details.callDuration = callDuration;
+        if (!enableRecommendations) {
+          (scenarioSession as any).details.summary.improvements =
+            (scenarioSession as any).details.summary.improvements ??
+            (scenarioSession as any).details.summary.areas_of_improvement?.map(
+              (area: any) => area.improvement,
+            );
+          (scenarioSession as any).details.summary.areas_of_improvement =
+            undefined;
+        }
       }
     }
 
@@ -761,7 +775,11 @@ export class ScenarioSessionService {
   }
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
-  async endScenarioSession(scenarioSessionId: string, counselorId: number) {
+  async endScenarioSession(
+    scenarioSessionId: string,
+    counselorId: number,
+    endScenarioSessionRequestBodyDto?: EndScenarioSessionRequestBodyDto,
+  ) {
     const scenarioSession = await this.scenarioSessionRepository.findOne({
       where: {
         id: scenarioSessionId,
@@ -811,6 +829,7 @@ export class ScenarioSessionService {
         needMemory,
         callDuration,
         previousMemory,
+        endScenarioSessionRequestBodyDto?.enableRecommendations,
       );
 
       await this.livekitService.deleteRoom(scenarioSession.roomId);
@@ -853,6 +872,7 @@ export class ScenarioSessionService {
     needMemory: boolean,
     callDuration?: number,
     previousMemory?: string | null,
+    enableRecommendations?: boolean,
   ) {
     try {
       const tenantId = ExecutionManager.getTenantId();
@@ -904,6 +924,8 @@ export class ScenarioSessionService {
               messages as ScenarioEvaluationChatMessage[],
               needMemory,
               previousMemory,
+              undefined,
+              enableRecommendations,
             )
           : await this.aiService.getScenarioSessionSummary(
               messages as MessageRequest[],
