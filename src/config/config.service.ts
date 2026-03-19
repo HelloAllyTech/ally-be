@@ -44,8 +44,6 @@ export class AppConfigService {
       sentenceCompletionRequired:
         this.configService.get<string>('SENTENCE_COMPLETION_REQUIRED') ===
         'true',
-      // inbound key (AI -> BE) remains for any inbound verification needs
-      apiKey: this.configService.get<string>('AI_SERVICE_API_KEY'),
       // outbound key (BE -> AI) for x-api-key header
       outboundApiKey: this.configService.get<string>(
         'AI_SERVICE_OUTBOUND_API_KEY',
@@ -278,11 +276,6 @@ export class AppConfigService {
   }
   get featureFlag() {
     return {
-      stateBasedScenarioInstructions:
-        this.configService.get<string>(
-          'FEATURE_SCENARIO_STATE_INSTRUCTIONS',
-          'false',
-        ) === 'true',
       useScenarioSessionEvaluation:
         this.configService.get<string>(
           'FEATURE_SCENARIO_SESSION_EVALUATION',

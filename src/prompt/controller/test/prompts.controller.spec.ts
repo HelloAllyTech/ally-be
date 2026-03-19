@@ -4,7 +4,6 @@ import { AuthGuard } from '@nestjs/passport';
 import { PromptsController } from '../prompts.controller';
 import { PromptsService } from '../../service/prompt.service';
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
-import { AiApiKeyGuard } from 'src/auth/guards/ai-auth.guard';
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { CreatePromptsDto } from '../../dto/create-prompts.dto';
 import { UpdatePromptDto } from '../../dto/update-prompt.dto';
@@ -64,8 +63,6 @@ describe('PromptsController', () => {
       .useClass(MockGuard)
       .overrideGuard(PermissionsGuard)
       .useClass(MockGuard)
-      .overrideGuard(AiApiKeyGuard)
-      .useClass(MockGuard)
       .overrideGuard(ApiAuthGuard)
       .useClass(MockGuard)
       .compile();
@@ -101,7 +98,7 @@ describe('PromptsController', () => {
       );
 
       expect(result).toEqual(mockPrompts);
-      expect(service.getPrompts).toHaveBeenCalledWith('prompt', {
+      expect(service.getPrompts).toHaveBeenCalledWith('prompt', true, {
         limit: 10,
         offset: 0,
         sortBy: 'createdAt',
@@ -116,7 +113,7 @@ describe('PromptsController', () => {
       const result = await controller.getPrompts();
 
       expect(result).toEqual([]);
-      expect(service.getPrompts).toHaveBeenCalledWith(undefined, {
+      expect(service.getPrompts).toHaveBeenCalledWith(undefined, true, {
         limit: undefined,
         offset: undefined,
         sortBy: undefined,
@@ -130,7 +127,7 @@ describe('PromptsController', () => {
 
       await controller.getPrompts(20, 40, 'name', SortOrder.ASC);
 
-      expect(service.getPrompts).toHaveBeenCalledWith(undefined, {
+      expect(service.getPrompts).toHaveBeenCalledWith(undefined, true, {
         limit: 20,
         offset: 40,
         sortBy: 'name',
@@ -150,7 +147,7 @@ describe('PromptsController', () => {
         'AI',
       );
 
-      expect(service.getPrompts).toHaveBeenCalledWith('AI', {
+      expect(service.getPrompts).toHaveBeenCalledWith('AI', true, {
         limit: undefined,
         offset: undefined,
         sortBy: undefined,
@@ -165,6 +162,7 @@ describe('PromptsController', () => {
 
       expect(service.getPrompts).toHaveBeenCalledWith(
         undefined,
+        true,
         expect.objectContaining({
           order: SortOrder.ASC,
         }),

@@ -93,6 +93,14 @@ export class PromptsService {
       updateData.useDashboardOverride = updatePromptDto.useDashboardOverride;
     }
 
+    if (updatePromptDto.kind !== undefined) {
+      updateData.kind = updatePromptDto.kind;
+    }
+
+    if (updatePromptDto.usesBlocks !== undefined) {
+      updateData.usesBlocks = updatePromptDto.usesBlocks;
+    }
+
     const updated = await this.promptsRepository.update(id, updateData);
 
     // If prompt content is being updated and dashboard override is enabled, create a new version
@@ -157,8 +165,28 @@ export class PromptsService {
   async getPrompts(
     searchName?: string,
     options?: Pagination,
+  ): Promise<PromptResponse[]>;
+  async getPrompts(
+    searchName?: string,
+    includeBlocks?: boolean,
+    options?: Pagination,
+  ): Promise<PromptResponse[]>;
+  async getPrompts(
+    searchName?: string,
+    arg2?: boolean | Pagination,
+    arg3?: Pagination,
   ): Promise<PromptResponse[]> {
-    const data = await this.promptsRepository.getPrompts(searchName, options);
+    const includeBlocks = typeof arg2 === 'boolean' ? arg2 : true;
+    const options = typeof arg2 === 'boolean' ? arg3 : arg2;
+
+    const data = await this.promptsRepository.getPrompts(
+      searchName,
+      includeBlocks,
+      options,
+    );
+    console.log(
+      `getPrompts returned ${data.length} prompts. searchName: ${searchName}`,
+    );
     for (const row of data) {
       if (!row.useDashboardOverride && row.promptCode) {
         const fromFolder = await this.promptSharedService.getPromptByCode(
@@ -209,12 +237,17 @@ export class PromptsService {
         where: { promptCode },
       });
 
+      console.log(
+        `Syncing ${promptCode}, prompt length: ${item.prompt?.length}`,
+      );
       if (!existing) {
         const prompt = this.promptsRepository.create({
           promptCode,
           name: item.name,
           description: item.description || '',
           defaultPrompt: item.prompt,
+          kind: item.kind,
+          usesBlocks: item.usesBlocks,
           isObsolete: false,
         });
         const saved = await this.promptsRepository.save(prompt);
@@ -234,7 +267,9 @@ export class PromptsService {
           defaultPrompt: item.prompt,
           name: item.name,
           description: item.description || '',
-          isObsolete: false, // resurrected
+          kind: item.kind,
+          usesBlocks: item.usesBlocks,
+          isObsolete: false, // resurrected if it was obsolete
         });
         updated++;
       }

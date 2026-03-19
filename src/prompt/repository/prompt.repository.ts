@@ -25,6 +25,8 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.defaultPrompt', 'defaultPrompt')
       .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
       .addSelect('prompt.isObsolete', 'isObsolete')
+      .addSelect('prompt.kind', 'kind')
+      .addSelect('prompt.usesBlocks', 'usesBlocks')
       .where('prompt.id = :id', { id })
       .getRawOne() as unknown as Promise<PromptDetailResponse | null>;
   }
@@ -32,7 +34,20 @@ export class PromptsRepository extends Repository<Prompt> {
   getPrompts(
     searchName?: string,
     options?: Pagination,
+  ): Promise<PromptResponse[]>;
+  getPrompts(
+    searchName?: string,
+    includeBlocks?: boolean,
+    options?: Pagination,
+  ): Promise<PromptResponse[]>;
+  getPrompts(
+    searchName?: string,
+    arg2?: boolean | Pagination,
+    arg3?: Pagination,
   ): Promise<PromptResponse[]> {
+    const includeBlocks = typeof arg2 === 'boolean' ? arg2 : true;
+    const options = typeof arg2 === 'boolean' ? arg3 : arg2;
+
     const query = this.createQueryBuilder('prompt')
       .leftJoin(
         'prompts_versions',
@@ -48,7 +63,15 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.defaultPrompt', 'defaultPrompt')
       .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
       .addSelect('prompt.isObsolete', 'isObsolete')
+      .addSelect('prompt.kind', 'kind')
+      .addSelect('prompt.usesBlocks', 'usesBlocks')
       .where('prompt.defaultPrompt IS NOT NULL');
+
+    if (!includeBlocks) {
+      query.andWhere('(prompt.kind IS NULL OR prompt.kind != :blockKind)', {
+        blockKind: 'block',
+      });
+    }
 
     if (searchName) {
       query

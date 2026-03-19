@@ -72,6 +72,7 @@ import { ScenarioSessionReflectionPromptsResponseDto } from '../dto/scenario-ses
 import { UpdateReflectionPromptResponseDto } from '../dto/reflection-prompts-request.dto';
 import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
 import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
+import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -465,14 +466,25 @@ export class LearnController {
     });
   }
 
+  @ApiQuery({
+    name: 'enableRecommendations',
+    required: false,
+    type: Boolean,
+    description: 'Enable recommendations',
+  })
   @ApiOperation({ summary: 'Get a scenario session by id' })
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_SESSION_DETAILS])
   @Get('scenario-session/:id')
   async getScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
     @Param('id') id: string,
+    @Query('enableRecommendations') enableRecommendations?: boolean,
   ) {
-    return this.scenarioSessionService.getScenarioSession(id, tokenUser.id);
+    return this.scenarioSessionService.getScenarioSession(
+      id,
+      tokenUser.id,
+      enableRecommendations,
+    );
   }
 
   @ApiOperation({ summary: 'Get scenario events' })
@@ -551,16 +563,27 @@ export class LearnController {
     );
   }
 
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        enableRecommendations: { type: 'boolean' },
+      },
+    },
+    required: false,
+  })
   @ApiOperation({ summary: 'End a scenario session' })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_SESSION])
   @Post('scenario-session/:scenarioSessionId/end')
   async endScenarioSession(
     @CurrentUser() tokenUser: TokenUser,
     @Param('scenarioSessionId') scenarioSessionId: string,
+    @Body() endScenarioSessionRequestBodyDto?: EndScenarioSessionRequestBodyDto,
   ) {
     return this.scenarioSessionService.endScenarioSession(
       scenarioSessionId,
       tokenUser.id,
+      endScenarioSessionRequestBodyDto,
     );
   }
 

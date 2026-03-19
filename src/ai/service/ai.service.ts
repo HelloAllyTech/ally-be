@@ -356,6 +356,7 @@ export class AiService {
     needMemory: boolean,
     previousMemory?: string | null,
     memoryPrompt?: string | null,
+    enableRecommendations?: boolean,
   ): Promise<ScenarioEvaluationResponse> {
     try {
       const prompts = await this.getPromptOverrides();
@@ -365,6 +366,7 @@ export class AiService {
         previous_memory: previousMemory ?? null,
         memory_prompt: memoryPrompt ?? null,
         prompts,
+        enable_recommendations: enableRecommendations ?? false,
       };
 
       const response = await this.makeRequest<

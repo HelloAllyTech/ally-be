@@ -83,6 +83,11 @@ export interface ScenarioEvaluationEmotionalMovementItem {
   start_time?: number;
 }
 
+export interface ScenarioEvaluationAreaOfImprovementItem {
+  improvement: string;
+  recommendation: string;
+}
+
 export interface ScenarioEvaluationResponse {
   improvements: string[];
   positives: string[];
@@ -91,4 +96,5 @@ export interface ScenarioEvaluationResponse {
   message_tags: ScenarioEvaluationMessageTag[];
   skill_coverage?: ScenarioEvaluationSkillCoverageItem[];
   emotional_movement: ScenarioEvaluationEmotionalMovementItem[];
+  areas_of_growth: ScenarioEvaluationAreaOfImprovementItem[];
 }

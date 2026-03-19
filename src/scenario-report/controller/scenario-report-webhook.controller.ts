@@ -9,12 +9,12 @@ import {
   ScenarioReportDto,
   UpdateScenarioReportDto,
 } from '../dto/scenario-report.dto';
-import { AiApiKeyGuard } from 'src/auth/guards/ai-auth.guard';
+import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { ScenarioReportService } from '../service/scenario-report.service';
 
 @Controller({ path: 'learn/scenarios/reports/webhook', version: '1' })
 @ApiTags('Scenario Report Webhook')
-@UseGuards(AiApiKeyGuard)
+@UseGuards(ApiAuthGuard)
 @ApiSecurity('api-key')
 export class ScenarioReportWebhookController {
   constructor(private readonly scenarioReportService: ScenarioReportService) {}

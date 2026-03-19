@@ -2172,7 +2172,6 @@ describe('ScenarioService', () => {
         age: 30,
         gender: 'Male' as any,
         currentLocation: 'NY',
-        context: 'Context',
         openingStatements: ['Hi'],
         optGuardrails: true,
       };
@@ -2198,7 +2197,6 @@ describe('ScenarioService', () => {
         age: 30,
         gender: 'Male' as any,
         currentLocation: 'NY',
-        context: 'Context',
         openingStatements: ['Hi'],
       };
       scenarioSharedService.getScenarioVoice.mockRejectedValue(
@@ -2241,7 +2239,6 @@ describe('ScenarioService', () => {
             age: 30,
             gender: 'Male',
             currentLocation: 'NY',
-            context: 'Context',
             openingStatements: ['Hi'],
             stateInstructions: mockStateInstructions,
             terminationEvents: [
@@ -2352,7 +2349,6 @@ describe('ScenarioService', () => {
             age: 30,
             gender: 'Male',
             currentLocation: 'NY',
-            context: 'Context',
             openingStatements: ['Hi'],
           },
         ],
@@ -2408,7 +2404,6 @@ describe('ScenarioService', () => {
             age: 30,
             gender: 'Male',
             currentLocation: 'NY',
-            context: 'Context',
             openingStatements: ['Hi'],
             triggerWarningIds: ['uuid-1', 'uuid-2'],
           },
@@ -2481,7 +2476,6 @@ describe('ScenarioService', () => {
             age: 30,
             gender: 'Male',
             currentLocation: 'NY',
-            context: 'Context',
             openingStatements: ['Hi'],
             triggerWarningIds: [],
           },

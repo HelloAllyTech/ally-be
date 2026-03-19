@@ -11,6 +11,8 @@ const META_FILENAME_SUFFIX = '.meta.json';
 export interface PromptMeta {
   name?: string;
   description?: string;
+  kind?: string;
+  usesBlocks?: string[];
 }
 
 @Injectable()
@@ -20,7 +22,7 @@ export class PromptsSyncService implements OnModuleInit {
   constructor(private readonly promptsService: PromptsService) {}
 
   /**
-   * Read optional name/description from subdir/_meta/<stem>.meta.json.
+   * Read optional metadata from subdir/_meta/<stem>.meta.json.
    * Returns null if file missing or invalid.
    */
   private readMeta(dir: string, stem: string): PromptMeta | null {
@@ -37,8 +39,32 @@ export class PromptsSyncService implements OnModuleInit {
         typeof data.description === 'string' && data.description.trim()
           ? data.description.trim()
           : undefined;
-      if (name === undefined && description === undefined) return null;
-      return { name, description };
+      const kind =
+        typeof data.kind === 'string' && data.kind.trim()
+          ? data.kind.trim()
+          : undefined;
+
+      // ally-ai-learn prompt metas use "uses_blocks"; accept both snake_case and camelCase.
+      const rawUsesBlocks = (data.uses_blocks ?? data.usesBlocks) as
+        | unknown
+        | undefined;
+      const usesBlocks = Array.isArray(rawUsesBlocks)
+        ? rawUsesBlocks
+            .filter((v): v is string => typeof v === 'string')
+            .map((v) => v.trim())
+            .filter(Boolean)
+        : undefined;
+
+      if (
+        name === undefined &&
+        description === undefined &&
+        kind === undefined &&
+        usesBlocks === undefined
+      ) {
+        return null;
+      }
+
+      return { name, description, kind, usesBlocks };
     } catch {
       return null;
     }
@@ -89,6 +115,8 @@ export class PromptsSyncService implements OnModuleInit {
       name: string;
       description: string;
       prompt: string;
+      kind?: string;
+      usesBlocks?: string[];
     }[] = [];
 
     const scanDir = (dir: string, baseDir: string = dir): void => {
@@ -111,15 +139,21 @@ export class PromptsSyncService implements OnModuleInit {
           );
           const stem = path.basename(fullPath, '.txt');
           const meta = this.readMeta(dir, stem);
+          let kind: string | undefined;
+          let usesBlocks: string[] | undefined;
           if (meta) {
             if (meta.name !== undefined) name = meta.name;
             if (meta.description !== undefined) description = meta.description;
+            if (meta.kind !== undefined) kind = meta.kind;
+            if (meta.usesBlocks !== undefined) usesBlocks = meta.usesBlocks;
           }
           items.push({
             promptCode,
             name,
             description,
             prompt: content.trim(),
+            kind,
+            usesBlocks,
           });
         }
       }
