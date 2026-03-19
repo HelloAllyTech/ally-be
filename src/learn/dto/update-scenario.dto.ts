@@ -175,14 +175,6 @@ export class UpdateScenarioDto {
   profession?: string;
 
   @ApiProperty({
-    description: 'Context of the AI client persona',
-    example: 'Context of the AI client persona',
-  })
-  @IsString()
-  @IsOptional()
-  context?: string;
-
-  @ApiProperty({
     description: 'Personality of the AI client persona',
     example: 'Extraverted, anxious, open to new experiences, honest',
   })
@@ -207,16 +199,6 @@ export class UpdateScenarioDto {
   @IsEnum(ScenarioResponseLength)
   @IsOptional()
   responseLength?: ScenarioResponseLength;
-
-  // FEATURE_CLEANUP(FEATURE_SCENARIO_STATE_INSTRUCTIONS): remove agentDialogues, context
-  @ApiProperty({
-    description: 'Your dialogues',
-    example: ['Absolutely', 'Probably'],
-  })
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  agentDialogues?: string[];
 
   @ApiProperty({
     description: 'Tone of the AI client persona',

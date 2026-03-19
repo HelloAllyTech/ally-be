@@ -1,15 +1,10 @@
 import { DeepPartial } from 'typeorm';
-import {
-  SCENARIO_MANDATORY_FIELDS,
-  SCENARIO_MANDATORY_FIELDS_WITHOUT_STATE_BASED_CHANGES,
-} from '../constants/scenario-mandatory-fields.constants';
+import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { Scenarios } from '../entity/scenarios.entity';
 import { ExperienceMode, ChecklistType } from '../type/scenario.type';
-import { StateInstructionsDto } from '../dto/state-instructions.dto';
-import { ScenarioStateInstruction } from '../type/scenario-state.type';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { GeneratableField } from '../enum/generatable-field.enum';
 
@@ -40,10 +35,8 @@ export const mapCreateScenarioRequestToEntity = (
       sexualOrientation: scenario.sexualOrientation,
       currentLocation: scenario.currentLocation,
       profession: scenario.profession,
-      context: scenario.context,
       tone: scenario.tone,
       openingStatements: scenario.openingStatements,
-      agentDialogues: scenario.agentDialogues,
       responseLength: scenario.responseLength,
       customFields: scenario.customFields?.map((customField) => ({
         name: customField.name,
@@ -63,11 +56,7 @@ export const mapCreateScenarioRequestToEntity = (
       optGuardrails: scenario.optGuardrails,
       characterProfileText: scenario.characterProfileText,
       showScoreMeter: scenario.showScoreMeter,
-      // FEATURE_CLEANUP(FEATURE_SCENARIO_STATE_INSTRUCTIONS): remove the input from context and dialogues and keep it only stateInstructions
-      stateInstructions: getFormattedScenarioInstructions(
-        scenario.stateInstructions,
-        { context: scenario.context, agentDialogues: scenario.agentDialogues },
-      ),
+      stateInstructions: scenario.stateInstructions,
       knowledgeSources: scenario.knowledgeSources?.map((knowledgeSource) => ({
         id: knowledgeSource.id,
         title: knowledgeSource.title,
@@ -75,22 +64,6 @@ export const mapCreateScenarioRequestToEntity = (
       })),
     },
   };
-};
-
-const getFormattedScenarioInstructions = (
-  scenarioInstructions: StateInstructionsDto[] | undefined,
-  { context, agentDialogues }: { context?: string; agentDialogues?: string[] },
-): ScenarioStateInstruction[] | undefined => {
-  if (scenarioInstructions) return scenarioInstructions;
-  if (context || agentDialogues)
-    return [
-      {
-        stateId: '2',
-        instruction: context || '',
-        dialogues: agentDialogues || [],
-      },
-    ];
-  return undefined;
 };
 
 export const formatAutoTerminationEventsList = (
@@ -125,11 +98,7 @@ export const formatScenarioTriggerWarningsList = (
     }));
   });
 
-// FEATURE_CLEANUP(FEATURE_SCENARIO_STATE_INSTRUCTIONS): remove the input feature flag and util accordingly
-export const getActiveScenarioMandatoryFields = (stateBasedFeature: boolean) =>
-  stateBasedFeature
-    ? SCENARIO_MANDATORY_FIELDS
-    : SCENARIO_MANDATORY_FIELDS_WITHOUT_STATE_BASED_CHANGES;
+export const getActiveScenarioMandatoryFields = () => SCENARIO_MANDATORY_FIELDS;
 
 export const mapUpdateScenarioRequestToEntity = (
   updateScenarioDto: UpdateScenarioDto,
@@ -170,10 +139,8 @@ export const mapUpdateScenarioRequestToEntity = (
     'sexualOrientation',
     'currentLocation',
     'profession',
-    'context',
     'tone',
     'openingStatements',
-    'agentDialogues',
     'responseLength',
     'voiceId',
     'customFields',
@@ -209,14 +176,7 @@ export const mapUpdateScenarioRequestToEntity = (
       }
     }
   }
-  // FEATURE_CLEANUP(FEATURE_SCENARIO_STATE_INSTRUCTIONS): remove the input from context and dialogues and keep it only stateInstructions
-  metadataUpdates.stateInstructions = getFormattedScenarioInstructions(
-    updateScenarioDto.stateInstructions,
-    {
-      context: updateScenarioDto.context,
-      agentDialogues: updateScenarioDto.agentDialogues,
-    },
-  );
+  metadataUpdates.stateInstructions = updateScenarioDto.stateInstructions;
 
   // If there are metadata updates, merge with existing metadata
   if (Object.keys(metadataUpdates).length > 0) {

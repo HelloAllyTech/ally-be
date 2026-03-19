@@ -36,7 +36,6 @@ describe('Scenario Util', () => {
         sexualOrientation: SexualOrientation.HETEROSEXUAL,
         currentLocation: 'New York',
         profession: 'Engineer',
-        context: 'Context',
         personality: 'Friendly',
         tone: 'Warm',
         openingStatements: ['Hello', 'Welcome'],
@@ -72,10 +71,8 @@ describe('Scenario Util', () => {
           sexualOrientation: scenario.sexualOrientation,
           currentLocation: scenario.currentLocation,
           profession: scenario.profession,
-          context: scenario.context,
           tone: scenario.tone,
           openingStatements: scenario.openingStatements,
-          agentDialogues: scenario.agentDialogues,
           responseLength: scenario.responseLength,
           customFields: scenario.customFields,
           languageVoices: scenario.languageVoices,
@@ -87,13 +84,8 @@ describe('Scenario Util', () => {
           timerMode: true,
           maxTimeValue: '1:30:00',
           optGuardrails: scenario.optGuardrails,
-          stateInstructions: [
-            {
-              stateId: '2',
-              instruction: 'Context',
-              dialogues: [],
-            },
-          ],
+          stateInstructions: scenario.stateInstructions,
+          knowledgeSources: scenario.knowledgeSources,
         },
       });
     });
@@ -111,7 +103,6 @@ describe('Scenario Util', () => {
         age: 25,
         gender: Gender.FEMALE,
         currentLocation: 'LA',
-        context: 'Context',
         openingStatements: ['Hi'],
       } as any;
 
