@@ -1,3 +1,4 @@
+import { AuditLogService } from 'src/audit/service/audit-log.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
@@ -299,6 +300,7 @@ describe('ScenarioService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: AuditLogService, useValue: { log: jest.fn() } },
         ScenarioService,
         {
           provide: getRepositoryToken(Scenarios),

@@ -45,6 +45,7 @@ import { ScenarioReportModule } from './scenario-report/scenario-report.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { AppVersionModule } from './app-version/app-version.module';
 import { VoicePreviewModule } from './voice-preview/voice-preview.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -93,6 +94,7 @@ import { VoicePreviewModule } from './voice-preview/voice-preview.module';
     SchedulerModule,
     AppVersionModule,
     VoicePreviewModule,
+    AuditModule,
   ],
   controllers: [],
   providers: [
