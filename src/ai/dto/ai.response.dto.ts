@@ -96,5 +96,5 @@ export interface ScenarioEvaluationResponse {
   message_tags: ScenarioEvaluationMessageTag[];
   skill_coverage?: ScenarioEvaluationSkillCoverageItem[];
   emotional_movement: ScenarioEvaluationEmotionalMovementItem[];
-  areas_of_improvement: ScenarioEvaluationAreaOfImprovementItem[];
+  areas_of_growth: ScenarioEvaluationAreaOfImprovementItem[];
 }
