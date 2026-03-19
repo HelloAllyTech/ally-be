@@ -117,6 +117,11 @@ import { COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS } from '../constants/competency
 import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { TokenUser } from 'src/auth/type/auth.types';
+import { AuditLogService } from 'src/audit/service/audit-log.service';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_EVENTS,
+} from 'src/audit/constants/audit-event.constants';
 
 @Injectable()
 export class ScenarioService {
@@ -147,6 +152,7 @@ export class ScenarioService {
     private openAIAutofillService: OpenAIAutofillService,
     private behaviorService: BehaviorService,
     private permissionsService: PermissionsService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -215,6 +221,7 @@ export class ScenarioService {
         coverImageUrl: item.scenario_coverImageUrl,
         coverVideoUrl: item.scenario_coverVideoUrl,
         createdBy: item.user_name,
+        createdByUserId: item.scenario_createdBy,
         status: item.scenario_status,
         usage: item.usage,
         isAssignedToTenant: item.isAssignedToTenant,
@@ -435,12 +442,29 @@ export class ScenarioService {
       }),
     );
 
+    const isMultiTenantAdmin =
+      await this.permissionsService.isMultiTenantAdmin(userId);
+
     try {
       return await this.dataSource.transaction(async (entityManager) => {
         const scenariosRepo = entityManager.getRepository(Scenarios);
         const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
         const scenarios = scenariosRepo.create(createScenarioDtos);
         const savedScenarios = await scenariosRepo.save(scenarios);
+
+        if (isMultiTenantAdmin) {
+          savedScenarios.forEach((scenario) => {
+            this.auditLogService.log({
+              eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SCENARIO,
+              details: {
+                action: AUDIT_ACTIONS.CREATE_SCENARIO,
+                scenarioId: scenario.id,
+                userId,
+              },
+            });
+          });
+        }
+
         const globalScenarios = savedScenarios.filter(
           (scenario) => scenario.isGlobal,
         );
@@ -1014,6 +1038,17 @@ export class ScenarioService {
           await scenarioTriggerWarningsRepo.delete(triggerWarningListToDelete);
         }
 
+        if (isMultiTenantAdmin) {
+          this.auditLogService.log({
+            eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SCENARIO,
+            details: {
+              action: AUDIT_ACTIONS.UPDATE_SCENARIO,
+              scenarioId: id,
+              userId,
+            },
+          });
+        }
+
         return true;
       });
     } catch (error) {
@@ -1130,6 +1165,21 @@ export class ScenarioService {
           ],
           manager,
         );
+      }
+
+      if (currentUser?.id) {
+        const isMultiTenantAdmin =
+          await this.permissionsService.isMultiTenantAdmin(currentUser.id);
+        if (isMultiTenantAdmin) {
+          this.auditLogService.log({
+            eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SCENARIO,
+            details: {
+              action: AUDIT_ACTIONS.DUPLICATE_SCENARIO,
+              originalScenarioId: id,
+              newScenarioId: newScenarioData.id,
+            },
+          });
+        }
       }
 
       this.logger.info(`Scenario ${id} duplicated successfully`);

@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { AuditLogService } from 'src/audit/service/audit-log.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ScenarioTenantService } from '../scenario-tenant.service';
 import { ScenarioTenantRepository } from '../../repository/scenario-tenant.repository';
@@ -24,6 +25,7 @@ describe('ScenarioTenantService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: AuditLogService, useValue: { log: jest.fn() } },
         ScenarioTenantService,
         {
           provide: ScenarioTenantRepository,
