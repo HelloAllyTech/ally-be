@@ -563,6 +563,7 @@ describe('PromptsService', () => {
       expect(result).toEqual(mockPrompts);
       expect(promptsRepository.getPrompts).toHaveBeenCalledWith(
         undefined,
+        true,
         undefined,
       );
     });
@@ -581,6 +582,7 @@ describe('PromptsService', () => {
       expect(result).toEqual(mockPrompts);
       expect(promptsRepository.getPrompts).toHaveBeenCalledWith(
         searchName,
+        true,
         pagination,
       );
     });
