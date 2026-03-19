@@ -2174,6 +2174,7 @@ describe('ScenarioService', () => {
         currentLocation: 'NY',
         openingStatements: ['Hi'],
         optGuardrails: true,
+        currentState: true,
       };
       scenarioSharedService.getScenarioVoice.mockResolvedValue({
         id: 'voice-1',
@@ -2192,6 +2193,7 @@ describe('ScenarioService', () => {
         prompt: 'Prompt',
         isGlobal: false,
         optGuardrails: true,
+        currentState: true,
         voiceId: 'invalid-voice',
         name: 'Test',
         age: 30,
@@ -2214,6 +2216,7 @@ describe('ScenarioService', () => {
       const mockStateInstructions = [
         {
           id: 1,
+          name: 'Resistant',
           instruction: 'Express mild doubt about if talking is helping',
           dialogues: [
             'I highly doubt if this is helping',
@@ -2222,6 +2225,7 @@ describe('ScenarioService', () => {
         },
         {
           id: 2,
+          name: 'Engaged',
           instruction: 'Show more engagement',
           dialogues: ['Tell me more', 'I understand'],
         },
@@ -2528,6 +2532,7 @@ describe('ScenarioService', () => {
       const mockStateInstructions = [
         {
           stateId: '1',
+          name: 'Resistant',
           instruction: 'Express mild doubt about if talking is helping',
           dialogues: [
             'I highly doubt if this is helping',
@@ -2536,6 +2541,7 @@ describe('ScenarioService', () => {
         },
         {
           stateId: '2',
+          name: 'Engaged',
           instruction: 'Show more engagement',
           dialogues: ['Tell me more', 'I understand'],
         },

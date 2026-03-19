@@ -112,6 +112,7 @@ describe('LearnController', () => {
         openingStatements: ['Hello', 'Welcome'],
         isGlobal: false,
         optGuardrails: true,
+        currentState: true,
       },
     ],
   };
