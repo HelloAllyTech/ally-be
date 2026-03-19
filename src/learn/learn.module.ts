@@ -86,6 +86,8 @@ import { ScenarioBehaviorInstructionTranslationService } from './service/scenari
 import { BehaviorInstructionTranslationService } from './service/behavior-instruction-translation.service';
 import { OpenAIAutofillService } from './service/openai-autofil-service';
 
+import { AuditModule } from 'src/audit/audit.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -127,6 +129,7 @@ import { OpenAIAutofillService } from './service/openai-autofil-service';
     ScenarioReportModule,
     forwardRef(() => ConversationalGuardrailsModule),
     AiChatModule,
+    AuditModule,
   ],
   controllers: [
     LearnController,
