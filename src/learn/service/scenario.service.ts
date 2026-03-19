@@ -660,9 +660,8 @@ export class ScenarioService {
 
     // Validate ACTIVE: all required fields must be present
     if (status === ScenarioStatus.ACTIVE) {
-      const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
-        this.configService.featureFlag.stateBasedScenarioInstructions,
-      );
+      const ACTIVE_SCENARIO_MANDATORY_FIELDS =
+        getActiveScenarioMandatoryFields();
       const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
         (field) => !data[field as keyof typeof data],
       );
@@ -914,7 +913,6 @@ export class ScenarioService {
                 description: updateScenarioDto.description,
                 tone: updateScenarioDto.tone,
                 personality: updateScenarioDto.personality,
-                context: updateScenarioDto.context,
                 openingStatements: updateScenarioDto.openingStatements,
                 sexualOrientation: updateScenarioDto.sexualOrientation,
                 genderIdentity: updateScenarioDto.genderIdentity,

@@ -1189,6 +1189,7 @@ describe('ScenarioSessionService', () => {
         coverImageUrl: 'https://example.com/cover.jpg',
         status: ScenarioStatus.DRAFT,
         difficultyLevel: ScenarioDifficultyLevel.EASY,
+        competencyId: '123e4567-e89b-12d3-a456-426614174000',
         metadata: {
           voiceId: 'voice-123',
           name: 'Test Client',
@@ -1207,6 +1208,8 @@ describe('ScenarioSessionService', () => {
           timerMode: true,
           maxTimeValue: '1:20:00',
           stateInstructions: mockStateInstructions,
+          behaviorInstructions: [],
+          characterProfileText: 'Test character profile',
         },
         isGlobal: false,
         isPublic: false,
@@ -1259,8 +1262,28 @@ describe('ScenarioSessionService', () => {
       );
     });
     it('should use default voice ID from languageVoices when not set in metadata', async () => {
+      const mockStateInstructions = [
+        {
+          stateId: '1',
+          instruction: 'Express mild doubt about if talking is helping',
+          dialogues: [
+            'I highly doubt if this is helping',
+            'I think we should stop talking',
+          ],
+        },
+        {
+          stateId: '2',
+          instruction: 'Show more engagement',
+          dialogues: ['Tell me more', 'I understand'],
+        },
+      ];
       const scenarioWithoutVoiceId = {
         ...mockScenario,
+        title: 'Test Scenario',
+        description: 'Test Description',
+        coverImageUrl: 'https://example.com/cover.jpg',
+        difficultyLevel: ScenarioDifficultyLevel.EASY,
+        competencyId: '123e4567-e89b-12d3-a456-426614174000',
         metadata: {
           voiceId: 'voice-123',
           name: 'Test Client',
@@ -1280,6 +1303,9 @@ describe('ScenarioSessionService', () => {
           checklistType: ChecklistType.GUIDED,
           timerMode: true,
           maxTimeValue: '1:20:00',
+          stateInstructions: mockStateInstructions,
+          behaviorInstructions: [],
+          characterProfileText: 'Test character profile',
         },
       };
 
