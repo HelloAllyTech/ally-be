@@ -1332,6 +1332,7 @@ describe('ScenarioSessionService', () => {
       const mockStateInstructions = [
         {
           stateId: '1',
+          name: 'Resistant',
           instruction: 'Express mild doubt about if talking is helping',
           dialogues: [
             'I highly doubt if this is helping',
@@ -1340,6 +1341,7 @@ describe('ScenarioSessionService', () => {
         },
         {
           stateId: '2',
+          name: 'Engaged',
           instruction: 'Show more engagement',
           dialogues: ['Tell me more', 'I understand'],
         },
@@ -1348,6 +1350,7 @@ describe('ScenarioSessionService', () => {
       const expectedFormattedStateInstructions = [
         {
           stateId: '1',
+          name: 'Resistant',
           instruction: 'Express mild doubt about if talking is helping',
           dialogues: [
             'I highly doubt if this is helping',
@@ -1358,6 +1361,7 @@ describe('ScenarioSessionService', () => {
         },
         {
           stateId: '2',
+          name: 'Engaged',
           instruction: 'Show more engagement',
           dialogues: ['Tell me more', 'I understand'],
           scoreUpper: 20,
@@ -1674,6 +1678,7 @@ describe('ScenarioSessionService', () => {
       const mockStateInstructions = [
         {
           stateId: '1',
+          name: 'Resistant',
           instruction: 'Express mild doubt about if talking is helping',
           dialogues: [
             'I highly doubt if this is helping',
@@ -1682,6 +1687,7 @@ describe('ScenarioSessionService', () => {
         },
         {
           stateId: '2',
+          name: 'Engaged',
           instruction: 'Show more engagement',
           dialogues: ['Tell me more', 'I understand'],
         },
@@ -1690,6 +1696,7 @@ describe('ScenarioSessionService', () => {
       const expectedFormattedStateInstructions = [
         {
           stateId: '1',
+          name: 'Resistant',
           instruction: 'Express mild doubt about if talking is helping',
           dialogues: [
             'I highly doubt if this is helping',
@@ -1700,6 +1707,7 @@ describe('ScenarioSessionService', () => {
         },
         {
           stateId: '2',
+          name: 'Engaged',
           instruction: 'Show more engagement',
           dialogues: ['Tell me more', 'I understand'],
           scoreUpper: 20,

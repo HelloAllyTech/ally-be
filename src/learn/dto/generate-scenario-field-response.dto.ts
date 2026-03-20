@@ -7,6 +7,9 @@ export class StateInstructionItem {
   @ApiProperty({ description: 'State identifier (1-4)' })
   stateId!: string;
 
+  @ApiProperty({ description: 'Name of the state', required: false })
+  name?: string;
+
   @ApiProperty({ description: 'Behavioral directive for the state' })
   instruction!: string;
 

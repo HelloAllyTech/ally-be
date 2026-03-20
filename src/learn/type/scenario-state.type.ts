@@ -2,6 +2,7 @@ import { ScenarioDifficultyLevel } from './scenario.type';
 
 export interface ScenarioStateInstruction {
   stateId: string;
+  name?: string;
   instruction?: string;
   dialogues?: string[];
 }

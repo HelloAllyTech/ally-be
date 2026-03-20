@@ -153,10 +153,10 @@ describe('OpenAIAutofillService', () => {
 
     it('should parse and return array of state instruction items for STATE_INSTRUCTIONS', async () => {
       const rawResponse = {
-        state_1: { instruction: 'Be calm', dialogues: ['I am fine.'] },
-        state_2: { instruction: 'Show worry', dialogues: ['I am worried.'] },
-        state_3: { instruction: 'Escalate', dialogues: ['I cannot cope.'] },
-        state_4: { instruction: 'Crisis', dialogues: ['Help me.'] },
+        state_1: { name: 'Calm', instruction: 'Be calm', dialogues: ['I am fine.'] },
+        state_2: { name: 'Worried', instruction: 'Show worry', dialogues: ['I am worried.'] },
+        state_3: { name: 'Escalated', instruction: 'Escalate', dialogues: ['I cannot cope.'] },
+        state_4: { name: 'Crisis', instruction: 'Crisis', dialogues: ['Help me.'] },
       };
       mockCreate.mockResolvedValue({
         choices: [{ message: { content: JSON.stringify(rawResponse) } }],
@@ -169,18 +169,20 @@ describe('OpenAIAutofillService', () => {
       );
 
       expect(result).toEqual([
-        { stateId: '1', instruction: 'Be calm', dialogues: ['I am fine.'] },
+        { stateId: '1', name: 'Calm', instruction: 'Be calm', dialogues: ['I am fine.'] },
         {
           stateId: '2',
+          name: 'Worried',
           instruction: 'Show worry',
           dialogues: ['I am worried.'],
         },
         {
           stateId: '3',
+          name: 'Escalated',
           instruction: 'Escalate',
           dialogues: ['I cannot cope.'],
         },
-        { stateId: '4', instruction: 'Crisis', dialogues: ['Help me.'] },
+        { stateId: '4', name: 'Crisis', instruction: 'Crisis', dialogues: ['Help me.'] },
       ]);
     });
 
@@ -342,10 +344,10 @@ describe('OpenAIAutofillService', () => {
 
     it('should include json_schema response_format for STATE_INSTRUCTIONS', async () => {
       const stateInstructions = {
-        state_1: { instruction: 'a', dialogues: ['b'] },
-        state_2: { instruction: 'c', dialogues: ['d'] },
-        state_3: { instruction: 'e', dialogues: ['f'] },
-        state_4: { instruction: 'g', dialogues: ['h'] },
+        state_1: { name: 'Calm', instruction: 'a', dialogues: ['b'] },
+        state_2: { name: 'Worried', instruction: 'c', dialogues: ['d'] },
+        state_3: { name: 'Escalated', instruction: 'e', dialogues: ['f'] },
+        state_4: { name: 'Crisis', instruction: 'g', dialogues: ['h'] },
       };
       mockCreate.mockResolvedValue({
         choices: [{ message: { content: JSON.stringify(stateInstructions) } }],
