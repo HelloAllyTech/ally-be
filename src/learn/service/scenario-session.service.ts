@@ -463,10 +463,10 @@ export class ScenarioSessionService {
     // Determine voiceId from scenario metadata languageVoices if languageId is provided or from metadata voiceId if languageId is not provided
     let voiceId = languageId
       ? scenario?.metadata?.languageVoices?.[languageId]
-      : scenario?.metadata?.voiceId;
+      : false;
 
     // If voiceId is not found, get fallback voice for language and gender
-    if (!voiceId && languageId) {
+    if (!voiceId) {
       const voiceDetails = await this.getFallbackVoiceForLanguageGender(
         languageId,
         scenario?.metadata?.gender,
@@ -1298,7 +1298,7 @@ export class ScenarioSessionService {
     // Determine voiceId from scenario metadata languageVoices if languageId is provided or from metadata voiceId if languageId is not provided
     let voiceId = languageId
       ? scenario?.metadata?.languageVoices?.[languageId]
-      : scenario?.metadata?.voiceId;
+      : false;
 
     // If languageId is provided and voiceId is not found, get fallback voice for language and gender
     if (!voiceId && languageId) {

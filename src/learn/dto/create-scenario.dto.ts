@@ -217,9 +217,13 @@ export class CreateScenarioDto {
   @IsOptional()
   openingStatements?: string[];
 
+  /**
+   * @deprecated voiceId is deprecated. Please use languageVoices instead.
+   */
   @ApiProperty({
     description: 'Voice ID (UUID) of the AI client persona',
     example: '123e4567-e89b-12d3-a456-426614174000',
+    deprecated: true,
   })
   @IsUUID()
   @IsOptional()

@@ -11,7 +11,6 @@ export const SCENARIO_MANDATORY_FIELDS: (keyof CreateScenarioDto)[] = [
   'currentLocation',
   'prompt',
   'openingStatements',
-  'voiceId',
   'languageVoices',
   'experienceMode',
   'stateInstructions',

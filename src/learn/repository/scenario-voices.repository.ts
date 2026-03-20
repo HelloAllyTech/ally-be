@@ -3,6 +3,7 @@ import { DataSource, Raw, Repository, SelectQueryBuilder } from 'typeorm';
 import { ScenarioVoices } from '../entity/scenario-voices.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioVoiceSortBy } from '../enum/scenario-voice-sort-by.enum';
+import { Gender } from '../enum/gender.enum';
 
 @Injectable()
 export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
@@ -182,7 +183,13 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       select: ['id', 'name', 'config'],
       where: {
         languageId,
-        config: Raw((alias) => `${alias} ->> 'gender' = :gender`, { gender }),
+        ...(gender !== Gender.NON_BINARY
+          ? {
+              config: Raw((alias) => `${alias} ->> 'gender' = :gender`, {
+                gender,
+              }),
+            }
+          : {}),
       },
     });
   }
