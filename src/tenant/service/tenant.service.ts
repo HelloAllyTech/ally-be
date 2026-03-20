@@ -39,6 +39,11 @@ import { PreferenceService } from 'src/settings/service/preference.service';
 import { TenantCaseSharedService } from './tenant-case-shared';
 import { PermissionsService } from '../../authorization/service/permissions.service';
 import { AdminTenantService } from '../../user/service/admin-tenant.service';
+import { AuditLogService } from 'src/audit/service/audit-log.service';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_EVENTS,
+} from 'src/audit/constants/audit-event.constants';
 
 @Injectable()
 export class TenantService {
@@ -64,6 +69,7 @@ export class TenantService {
     private permissionsService: PermissionsService,
     @Inject(forwardRef(() => AdminTenantService))
     private adminTenantService: AdminTenantService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async findAll(): Promise<Tenant[]> {
@@ -466,6 +472,19 @@ export class TenantService {
           );
         }
       });
+
+      if (isMultiTenantAdmin) {
+        this.auditLogService.log({
+          eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_TENANT,
+          details: {
+            action: AUDIT_ACTIONS.UPDATE_TENANT,
+            tenantId: id,
+            updatedTenantId: id,
+            userId,
+          },
+        });
+      }
+
       return this.findById(id);
     } catch (error) {
       this.logger.error(

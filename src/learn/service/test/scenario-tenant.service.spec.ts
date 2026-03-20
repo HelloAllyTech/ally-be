@@ -4,11 +4,26 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ScenarioTenantService } from '../scenario-tenant.service';
 import { ScenarioTenantRepository } from '../../repository/scenario-tenant.repository';
 import { ScenarioTenantValidationShared } from '../scenario-tenant-validation-shared';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { ExecutionManager } from 'src/common/execution/execution-manager';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_EVENTS,
+} from 'src/audit/constants/audit-event.constants';
+
+// Mock ExecutionManager
+jest.mock('src/common/execution/execution-manager', () => ({
+  ExecutionManager: {
+    getUserId: jest.fn(),
+  },
+}));
 
 describe('ScenarioTenantService', () => {
   let service: ScenarioTenantService;
   let scenarioTenantRepository: jest.Mocked<ScenarioTenantRepository>;
   let scenarioTenantValidationUtil: jest.Mocked<ScenarioTenantValidationShared>;
+  let mockAuditLogService: any;
+  let mockPermissionsService: any;
 
   beforeEach(async () => {
     const mockScenarioTenantRepository = {
@@ -23,9 +38,15 @@ describe('ScenarioTenantService', () => {
       validateScenarioTenant: jest.fn(),
     };
 
+    mockAuditLogService = { log: jest.fn() };
+
+    mockPermissionsService = {
+      isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        { provide: AuditLogService, useValue: { log: jest.fn() } },
+        { provide: AuditLogService, useValue: mockAuditLogService },
         ScenarioTenantService,
         {
           provide: ScenarioTenantRepository,
@@ -34,6 +55,10 @@ describe('ScenarioTenantService', () => {
         {
           provide: ScenarioTenantValidationShared,
           useValue: mockScenarioTenantValidationUtil,
+        },
+        {
+          provide: PermissionsService,
+          useValue: mockPermissionsService,
         },
       ],
     }).compile();
@@ -45,6 +70,7 @@ describe('ScenarioTenantService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    (ExecutionManager.getUserId as jest.Mock).mockReturnValue(undefined);
   });
 
   describe('assignScenariosToTenants', () => {
@@ -163,6 +189,56 @@ describe('ScenarioTenantService', () => {
       expect(
         scenarioTenantValidationUtil.validateScenarioTenant,
       ).toHaveBeenCalledTimes(1);
+    });
+
+    it('should call auditLogService.log with correct payload when multi-tenant admin assigns scenarios', async () => {
+      const userId = '123';
+      const tenantId = 'tenant-123';
+      const addScenarioTenantDto = { scenarioIds: [1, 2] };
+
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+
+      scenarioTenantValidationUtil.validateScenarioTenant.mockResolvedValue(
+        undefined,
+      );
+      scenarioTenantRepository.getScenarioTenant.mockResolvedValue([]);
+      scenarioTenantRepository.createScenarioTenants.mockResolvedValue({
+        success: true,
+      });
+
+      await service.assignScenariosToTenant(tenantId, addScenarioTenantDto);
+
+      expect(mockAuditLogService.log).toHaveBeenCalledWith({
+        eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_ASSIGNED_SCENARIO_TO_TENANT,
+        details: {
+          action: AUDIT_ACTIONS.ASSIGN_SCENARIO_TENANT,
+          tenantId,
+          scenarioIds: addScenarioTenantDto.scenarioIds,
+          userId: Number(userId),
+        },
+      });
+    });
+
+    it('should NOT call auditLogService.log when regular admin assigns scenarios', async () => {
+      const userId = '123';
+      const tenantId = 'tenant-123';
+      const addScenarioTenantDto = { scenarioIds: [1, 2] };
+
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(false);
+
+      scenarioTenantValidationUtil.validateScenarioTenant.mockResolvedValue(
+        undefined,
+      );
+      scenarioTenantRepository.getScenarioTenant.mockResolvedValue([]);
+      scenarioTenantRepository.createScenarioTenants.mockResolvedValue({
+        success: true,
+      });
+
+      await service.assignScenariosToTenant(tenantId, addScenarioTenantDto);
+
+      expect(mockAuditLogService.log).not.toHaveBeenCalled();
     });
   });
 
@@ -295,6 +371,76 @@ describe('ScenarioTenantService', () => {
       expect(
         scenarioTenantValidationUtil.validateScenarioTenant,
       ).toHaveBeenCalledTimes(1);
+    });
+
+    it('should call auditLogService.log with correct payload when multi-tenant admin removes scenarios', async () => {
+      const userId = '456';
+      const tenantId = 'tenant-123';
+      const deleteScenarioTenantDto = { scenarioIds: [1, 2] };
+
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+
+      const existingMappings = [
+        { scenarioId: 1, tenantId },
+        { scenarioId: 2, tenantId },
+      ];
+
+      scenarioTenantValidationUtil.validateScenarioTenant.mockResolvedValue(
+        undefined,
+      );
+      scenarioTenantRepository.getScenarioTenant.mockResolvedValue(
+        existingMappings as any,
+      );
+      scenarioTenantRepository.deleteByScenarioIds.mockResolvedValue({
+        success: true,
+      });
+
+      await service.removeScenariosFromTenant(
+        tenantId,
+        deleteScenarioTenantDto,
+      );
+
+      expect(mockAuditLogService.log).toHaveBeenCalledWith({
+        eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_REMOVED_SCENARIO_FROM_TENANT,
+        details: {
+          action: AUDIT_ACTIONS.REMOVE_SCENARIO_TENANT,
+          tenantId,
+          scenarioIds: deleteScenarioTenantDto.scenarioIds,
+          userId: Number(userId),
+        },
+      });
+    });
+
+    it('should NOT call auditLogService.log when regular admin removes scenarios', async () => {
+      const userId = '456';
+      const tenantId = 'tenant-123';
+      const deleteScenarioTenantDto = { scenarioIds: [1, 2] };
+
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(false);
+
+      const existingMappings = [
+        { scenarioId: 1, tenantId },
+        { scenarioId: 2, tenantId },
+      ];
+
+      scenarioTenantValidationUtil.validateScenarioTenant.mockResolvedValue(
+        undefined,
+      );
+      scenarioTenantRepository.getScenarioTenant.mockResolvedValue(
+        existingMappings as any,
+      );
+      scenarioTenantRepository.deleteByScenarioIds.mockResolvedValue({
+        success: true,
+      });
+
+      await service.removeScenariosFromTenant(
+        tenantId,
+        deleteScenarioTenantDto,
+      );
+
+      expect(mockAuditLogService.log).not.toHaveBeenCalled();
     });
   });
 
