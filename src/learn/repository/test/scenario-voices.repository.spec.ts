@@ -4,6 +4,7 @@ import { ScenarioVoicesRepository } from '../scenario-voices.repository';
 import { ScenarioVoices } from '../../entity/scenario-voices.entity';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { ScenarioVoiceSortBy } from '../../enum/scenario-voice-sort-by.enum';
+import { Gender } from '../../enum/gender.enum';
 
 describe('ScenarioVoicesRepository', () => {
   let repository: ScenarioVoicesRepository;
@@ -395,26 +396,45 @@ describe('ScenarioVoicesRepository', () => {
   });
 
   describe('getFallbackVoice', () => {
-    it('should return fallback voice', async () => {
+    it('should return fallback voice for male/female gender', async () => {
       const mockVoice = {
-        id: 'voice-1',
-        name: 'Voice 1',
+        id: 'voice-male',
+        name: 'Male Voice',
         languageId: 1,
-        config: {
-          gender: 'female',
-        },
+        config: { gender: Gender.MALE },
       };
 
       jest.spyOn(repository, 'findOne').mockResolvedValue(mockVoice as any);
 
-      const result = await repository.getFallbackVoice(1, 'female');
+      const result = await repository.getFallbackVoice(1, Gender.MALE);
 
       expect(result).toEqual(mockVoice);
       expect(repository.findOne).toHaveBeenCalledWith({
         select: ['id', 'name', 'config'],
         where: {
           languageId: 1,
-          config: expect.anything(), // Raw(...) matcher
+          config: expect.any(Object), // Raw matcher
+        },
+      });
+    });
+
+    it('should return fallback voice for non-binary gender without config filter', async () => {
+      const mockVoice = {
+        id: 'voice-nb',
+        name: 'Non-Binary Voice',
+        languageId: 1,
+        config: {},
+      };
+
+      jest.spyOn(repository, 'findOne').mockResolvedValue(mockVoice as any);
+
+      const result = await repository.getFallbackVoice(1, Gender.NON_BINARY);
+
+      expect(result).toEqual(mockVoice);
+      expect(repository.findOne).toHaveBeenCalledWith({
+        select: ['id', 'name', 'config'],
+        where: {
+          languageId: 1,
         },
       });
     });

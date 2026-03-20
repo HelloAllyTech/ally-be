@@ -1328,7 +1328,7 @@ describe('ScenarioSessionService', () => {
 
   describe('previewScenario', () => {
     it('should create preview scenario session successfully', async () => {
-      const previewDto = { scenarioId: mockScenarioId };
+      const previewDto = { scenarioId: mockScenarioId, languageId: 1 };
       const mockStateInstructions = [
         {
           stateId: '1',
@@ -1377,7 +1377,6 @@ describe('ScenarioSessionService', () => {
         difficultyLevel: ScenarioDifficultyLevel.EASY,
         competencyId: '123e4567-e89b-12d3-a456-426614174000',
         metadata: {
-          voiceId: 'voice-123',
           name: 'Test Client',
           age: 25,
           gender: 'female',
