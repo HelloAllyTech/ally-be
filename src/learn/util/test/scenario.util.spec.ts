@@ -44,6 +44,7 @@ describe('Scenario Util', () => {
         timerMode: true,
         maxTimeValue: '1:30:00',
         optGuardrails: true,
+        currentState: true,
       };
 
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
@@ -86,6 +87,7 @@ describe('Scenario Util', () => {
           optGuardrails: scenario.optGuardrails,
           stateInstructions: scenario.stateInstructions,
           knowledgeSources: scenario.knowledgeSources,
+          currentState: scenario.currentState,
         },
       });
     });

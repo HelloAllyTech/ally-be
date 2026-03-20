@@ -57,6 +57,7 @@ export const mapCreateScenarioRequestToEntity = (
       characterProfileText: scenario.characterProfileText,
       showScoreMeter: scenario.showScoreMeter,
       stateInstructions: scenario.stateInstructions,
+      currentState: scenario.currentState,
       knowledgeSources: scenario.knowledgeSources?.map((knowledgeSource) => ({
         id: knowledgeSource.id,
         title: knowledgeSource.title,
@@ -153,6 +154,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'optGuardrails',
     'characterProfileText',
     'showScoreMeter',
+    'currentState',
     'stateInstructions',
     'knowledgeSources',
   ];

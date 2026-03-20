@@ -26,6 +26,11 @@ import { PreferenceService } from 'src/settings/service/preference.service';
 import { TenantCaseSharedService } from '../tenant-case-shared';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { AdminTenantService } from 'src/user/service/admin-tenant.service';
+import { AuditLogService } from 'src/audit/service/audit-log.service';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_EVENTS,
+} from 'src/audit/constants/audit-event.constants';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -60,6 +65,7 @@ describe('TenantService', () => {
   let tenantDashboardSharedService: jest.Mocked<TenantDashboardSharedService>;
   let mockPermissionsService: any;
   let mockAdminTenantService: any;
+  let mockAuditLogService: any;
 
   const mockTenant: Tenant = {
     id: 'test-tenant-id',
@@ -178,6 +184,10 @@ describe('TenantService', () => {
       getTenantsForAdmin: jest.fn().mockResolvedValue({ data: [], count: 0 }),
     };
 
+    mockAuditLogService = {
+      log: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
@@ -240,6 +250,10 @@ describe('TenantService', () => {
         {
           provide: AdminTenantService,
           useValue: mockAdminTenantService,
+        },
+        {
+          provide: AuditLogService,
+          useValue: mockAuditLogService,
         },
       ],
     }).compile();
@@ -748,6 +762,56 @@ describe('TenantService', () => {
           ...updateDto,
         }),
       );
+    });
+
+    it('should call auditLogService.log when multi-tenant admin successfully updates the tenant', async () => {
+      const userId = '123';
+      const tenantId = 'test-tenant-id';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+
+      const updateDto = { description: 'Updated by multi-tenant admin' };
+      const updatedTenantEntity = { ...mockTenant, ...updateDto } as Tenant;
+
+      tenantRepository.findOne
+        .mockResolvedValueOnce(mockTenant) // Initial find
+        .mockResolvedValueOnce(updatedTenantEntity); // Final findById
+
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [{ id: tenantId }],
+        count: 1,
+      });
+
+      await service.updateTenant(tenantId, updateDto as any);
+
+      expect(mockAuditLogService.log).toHaveBeenCalledWith({
+        eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_TENANT,
+        details: {
+          action: AUDIT_ACTIONS.UPDATE_TENANT,
+          tenantId,
+          updatedTenantId: tenantId,
+          userId: Number(userId),
+        },
+      });
+    });
+
+    it('should NOT call auditLogService.log when a regular admin updates the tenant', async () => {
+      const userId = '123';
+      const tenantId = 'test-tenant-id';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+
+      const updateDto = { description: 'Updated by regular admin' };
+      const updatedTenantEntity = { ...mockTenant, ...updateDto } as Tenant;
+
+      tenantRepository.findOne
+        .mockResolvedValueOnce(mockTenant) // Initial find
+        .mockResolvedValueOnce(updatedTenantEntity); // Final findById
+
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(false);
+
+      await service.updateTenant(tenantId, updateDto as any);
+
+      expect(mockAuditLogService.log).not.toHaveBeenCalled();
     });
 
     it('should allow regular admin (not multi-tenant admin) to update the tenant', async () => {

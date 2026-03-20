@@ -113,6 +113,7 @@ import { AuditModule } from 'src/audit/audit.module';
       Competency,
       BehaviorTranslation,
       ScenarioBehaviorInstructionTranslation,
+      AuditModule,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
