@@ -12,6 +12,7 @@ import { BadgeTenantSharedService } from 'src/badge/service/badge-tenant-shared.
 import { TenantDashboardSharedService } from './service/tenant-dashboard-shared';
 import { SettingsModule } from 'src/settings/settings.module';
 import { TenantCaseSharedService } from './service/tenant-case-shared';
+import { AuditModule } from 'src/audit/audit.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { TenantCaseSharedService } from './service/tenant-case-shared';
     forwardRef(() => UserModule),
     AwsModule,
     SettingsModule,
+    AuditModule,
   ],
   providers: [
     TenantService,
