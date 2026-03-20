@@ -4,10 +4,11 @@ import { GeneratableField } from '../enum/generatable-field.enum';
 const STATE_INSTRUCTION_OBJECT = {
   type: 'object',
   properties: {
+    name: { type: 'string' },
     instruction: { type: 'string' },
     dialogues: { type: 'array', items: { type: 'string' } },
   },
-  required: ['instruction', 'dialogues'],
+  required: ['name', 'instruction', 'dialogues'],
   additionalProperties: false,
 };
 

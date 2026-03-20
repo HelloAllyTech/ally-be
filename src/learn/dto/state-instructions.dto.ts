@@ -11,6 +11,15 @@ export class StateInstructionsDto {
   stateId!: string;
 
   @ApiProperty({
+    description: 'Name of the state',
+    example: 'Resistant',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({
     description: 'State Instruction',
     example: 'Express mild doubt about if talking is helping',
   })

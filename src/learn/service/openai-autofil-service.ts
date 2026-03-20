@@ -105,6 +105,7 @@ export class OpenAIAutofillService {
         const parsed = JSON.parse(raw);
         return Object.entries(parsed).map(([key, value]: [string, any]) => ({
           stateId: key.replace('state_', ''),
+          name: value.name,
           instruction: value.instruction,
           dialogues: value.dialogues,
         })) as StateInstructionItem[];

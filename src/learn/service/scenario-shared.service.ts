@@ -461,6 +461,7 @@ export class ScenarioSharedService {
         );
         return {
           stateId: stateItem.stateId,
+          name: stateItem?.name,
           instruction: stateItem?.instruction,
           dialogues: stateItem?.dialogues,
           scoreUpper: stateConfigInfo?.scoreRange?.max,
