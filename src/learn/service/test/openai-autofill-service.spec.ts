@@ -153,10 +153,26 @@ describe('OpenAIAutofillService', () => {
 
     it('should parse and return array of state instruction items for STATE_INSTRUCTIONS', async () => {
       const rawResponse = {
-        state_1: { name: 'Calm', instruction: 'Be calm', dialogues: ['I am fine.'] },
-        state_2: { name: 'Worried', instruction: 'Show worry', dialogues: ['I am worried.'] },
-        state_3: { name: 'Escalated', instruction: 'Escalate', dialogues: ['I cannot cope.'] },
-        state_4: { name: 'Crisis', instruction: 'Crisis', dialogues: ['Help me.'] },
+        state_1: {
+          name: 'Calm',
+          instruction: 'Be calm',
+          dialogues: ['I am fine.'],
+        },
+        state_2: {
+          name: 'Worried',
+          instruction: 'Show worry',
+          dialogues: ['I am worried.'],
+        },
+        state_3: {
+          name: 'Escalated',
+          instruction: 'Escalate',
+          dialogues: ['I cannot cope.'],
+        },
+        state_4: {
+          name: 'Crisis',
+          instruction: 'Crisis',
+          dialogues: ['Help me.'],
+        },
       };
       mockCreate.mockResolvedValue({
         choices: [{ message: { content: JSON.stringify(rawResponse) } }],
@@ -169,7 +185,12 @@ describe('OpenAIAutofillService', () => {
       );
 
       expect(result).toEqual([
-        { stateId: '1', name: 'Calm', instruction: 'Be calm', dialogues: ['I am fine.'] },
+        {
+          stateId: '1',
+          name: 'Calm',
+          instruction: 'Be calm',
+          dialogues: ['I am fine.'],
+        },
         {
           stateId: '2',
           name: 'Worried',
@@ -182,7 +203,12 @@ describe('OpenAIAutofillService', () => {
           instruction: 'Escalate',
           dialogues: ['I cannot cope.'],
         },
-        { stateId: '4', name: 'Crisis', instruction: 'Crisis', dialogues: ['Help me.'] },
+        {
+          stateId: '4',
+          name: 'Crisis',
+          instruction: 'Crisis',
+          dialogues: ['Help me.'],
+        },
       ]);
     });
 
