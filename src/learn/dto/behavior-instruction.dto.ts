@@ -6,8 +6,28 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
+
+class BehaviorStateInstructionDto {
+  @ApiProperty({
+    description: 'State ID',
+    example: '1',
+  })
+  @IsNotEmpty()
+  @IsString()
+  stateId!: string;
+
+  @ApiProperty({
+    description: 'State Instruction',
+    example: 'Express mild doubt about if talking is helping',
+  })
+  @IsOptional()
+  @IsString()
+  instruction?: string;
+}
 
 export class BehaviorInstructionDto {
   @ApiProperty({
@@ -38,6 +58,7 @@ export class BehaviorInstructionDto {
   @IsOptional()
   behaviors?: string[];
 
+  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove instructions field
   @ApiProperty({
     description: 'Array of instruction strings',
     example: ['Listen actively', 'Show empathy'],
@@ -47,4 +68,14 @@ export class BehaviorInstructionDto {
   @IsString({ each: true })
   @IsOptional()
   instructions?: string[];
+
+  @ApiProperty({
+    description: 'State instructions',
+    type: [BehaviorStateInstructionDto],
+  })
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => BehaviorStateInstructionDto)
+  stateInstructions?: BehaviorStateInstructionDto[];
 }

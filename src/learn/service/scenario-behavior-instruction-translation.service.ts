@@ -53,7 +53,18 @@ export class ScenarioBehaviorInstructionTranslationService {
           (str) => str && str.trim(),
         );
 
-        if (!instructionsArray || instructionsArray.length === 0) {
+        const stateInstructionsArray = instruction.stateInstructions?.filter(
+          (stateInstruction) =>
+            stateInstruction &&
+            stateInstruction.instruction &&
+            stateInstruction.instruction.trim(),
+        );
+
+        // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove instructionArray field
+        if (
+          (!instructionsArray || instructionsArray.length === 0) &&
+          (!stateInstructionsArray || stateInstructionsArray.length === 0)
+        ) {
           this.logger?.debug?.(
             `[persistInstructionTranslations] ${instruction.id}: no instructions to translate, skipping`,
           );
@@ -80,7 +91,8 @@ export class ScenarioBehaviorInstructionTranslationService {
         );
 
         const metadataObj = {
-          instructions: instructionsArray.join(INSTRUCTION_SEPARATOR),
+          instructions: instructionsArray?.join(INSTRUCTION_SEPARATOR),
+          stateInstructions: stateInstructionsArray,
         };
 
         const translatedMap =
@@ -108,6 +120,7 @@ export class ScenarioBehaviorInstructionTranslationService {
             scenarioBehaviorInstructionId: instruction.id,
             languageId: Number(language.id),
             instructions: translatedInstructions,
+            stateInstructions: translatedData.stateInstructions,
           });
         }
 

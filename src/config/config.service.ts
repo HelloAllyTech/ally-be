@@ -281,6 +281,11 @@ export class AppConfigService {
           'FEATURE_SCENARIO_SESSION_EVALUATION',
           'false',
         ) === 'true',
+      scenarioBehaviorStateInstructions:
+        this.configService.get<string>(
+          'FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS',
+          'false',
+        ) === 'true',
     };
   }
 

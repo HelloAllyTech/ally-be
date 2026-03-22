@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 import { BehaviorResponseDto } from './behavior-response.dto';
+import { BehaviorStateInstruction } from '../type/scenario-behavior-instructions.type';
 
 export class BehaviorInstructionWithBehaviorsDto {
   @ApiProperty({
@@ -21,7 +22,12 @@ export class BehaviorInstructionWithBehaviorsDto {
     example: ['Listen actively', 'Show empathy'],
     type: [String],
   })
-  instructions!: string[];
+  instructions?: string[];
+
+  @ApiProperty({
+    description: 'State instructions',
+  })
+  stateInstructions?: BehaviorStateInstruction[];
 
   @ApiProperty({
     description: 'Array of behaviors associated with this instruction',

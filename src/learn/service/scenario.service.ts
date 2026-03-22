@@ -122,6 +122,7 @@ import {
   AUDIT_ACTIONS,
   AUDIT_EVENTS,
 } from 'src/audit/constants/audit-event.constants';
+import { BehaviorInstructionDto } from '../dto/behavior-instruction.dto';
 
 @Injectable()
 export class ScenarioService {
@@ -518,7 +519,21 @@ export class ScenarioService {
           createScenariosDto.scenarios
             ?.map((scenario, index) => ({
               scenarioId: savedScenarios[index].id,
-              behaviorInstructions: scenario.behaviorInstructions ?? [],
+              // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove map and keep behaviorInstructions: scenario.behaviorInstructions
+              behaviorInstructions:
+                scenario.behaviorInstructions?.map((item) =>
+                  item?.stateInstructions
+                    ? item
+                    : {
+                        ...item,
+                        stateInstructions: scenario.stateInstructions?.map(
+                          (stateInstruction) => ({
+                            stateId: stateInstruction.stateId,
+                            instruction: stateInstruction.instruction,
+                          }),
+                        ),
+                      },
+                ) ?? [],
             }))
             ?.filter(
               (item): item is ScenarioBehaviorInstructionRequest =>
@@ -565,6 +580,7 @@ export class ScenarioService {
                   sexualOrientation: scenario.metadata?.sexualOrientation,
                   genderIdentity: scenario.metadata?.genderIdentity,
                   customFields: scenario.metadata?.customFields,
+                  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions field
                   stateInstructions: scenario.metadata?.stateInstructions,
                   knowledgeSources: scenario.metadata?.knowledgeSources,
                 }),
@@ -612,7 +628,7 @@ export class ScenarioService {
       await this.validateTerminationEvents(createScenarioDto.terminationEvents);
     }
     if (createScenarioDto.behaviorInstructions) {
-      await this.scenarioBehaviorInstructionService.validateBehaviorInstructions(
+      await this.scenarioBehaviorInstructionService.validateBehaviorInstructionsBehaviors(
         createScenarioDto.behaviorInstructions,
       );
     }
@@ -684,8 +700,9 @@ export class ScenarioService {
 
     // Validate ACTIVE: all required fields must be present
     if (status === ScenarioStatus.ACTIVE) {
-      const ACTIVE_SCENARIO_MANDATORY_FIELDS =
-        getActiveScenarioMandatoryFields();
+      const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
+        this.configService.featureFlag.scenarioBehaviorStateInstructions,
+      );
       const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
         (field) => !data[field as keyof typeof data],
       );
@@ -696,7 +713,42 @@ export class ScenarioService {
         );
       }
 
-      this.validateStateInstructions(data?.stateInstructions);
+      // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions validation as there wont be stateInstructions anymore
+      if (!this.configService.featureFlag.scenarioBehaviorStateInstructions) {
+        this.validateStateInstructions(data?.stateInstructions);
+      }
+
+      if (
+        this.configService.featureFlag.scenarioBehaviorStateInstructions &&
+        data?.behaviorInstructions
+      ) {
+        this.validateBehaviorInstructionsStructure(data?.behaviorInstructions);
+      }
+    }
+  }
+
+  private validateBehaviorInstructionsStructure(
+    behaviorInstructions: BehaviorInstructionDto[],
+  ) {
+    if (behaviorInstructions?.length === 0) {
+      throw new BadRequestException('Behavior instructions are required');
+    }
+
+    const invalidBehaviorInstructions = behaviorInstructions?.filter(
+      (instruction) =>
+        !instruction.category ||
+        !instruction.behaviors ||
+        instruction.behaviors.length === 0 ||
+        !instruction.stateInstructions ||
+        instruction.stateInstructions.length !==
+          MAX_SCENARIO_STATE_INSTRUCTIONS ||
+        !instruction.stateInstructions?.every((stateInstruction) =>
+          supportedStateInstructionStateIds.includes(stateInstruction.stateId),
+        ),
+    );
+    this.logger.error(JSON.stringify(invalidBehaviorInstructions));
+    if (invalidBehaviorInstructions.length > 0) {
+      throw new BadRequestException('Invalid behavior instructions');
     }
   }
 
@@ -961,7 +1013,22 @@ export class ScenarioService {
           await this.scenarioBehaviorInstructionService.updateBehaviorInstructions(
             {
               scenarioId: id,
-              behaviorInstructions: updateScenarioDto.behaviorInstructions,
+              // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Replace with behaviorInstructions: updateScenarioDto.behaviorInstructions
+              behaviorInstructions: updateScenarioDto.behaviorInstructions?.map(
+                (item) =>
+                  item?.stateInstructions
+                    ? item
+                    : {
+                        ...item,
+                        stateInstructions:
+                          updateScenarioDto?.stateInstructions?.map(
+                            (stateInstruction) => ({
+                              stateId: stateInstruction.stateId,
+                              instruction: stateInstruction.instruction,
+                            }),
+                          ),
+                      },
+              ),
             },
             entityManager,
           );
@@ -1263,7 +1330,7 @@ export class ScenarioService {
     }
 
     if (updateScenarioDto.behaviorInstructions) {
-      await this.scenarioBehaviorInstructionService.validateBehaviorInstructions(
+      await this.scenarioBehaviorInstructionService.validateBehaviorInstructionsBehaviors(
         updateScenarioDto.behaviorInstructions,
       );
     }

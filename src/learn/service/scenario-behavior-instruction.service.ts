@@ -15,6 +15,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioBehaviorInstructionTranslationService } from './scenario-behavior-instruction-translation.service';
 import { ScenarioBehaviorInstructionTranslationRepository } from '../repository/scenario-behavior-instruction-translation.repository';
+import { AppConfigService } from 'src/config/config.service';
 
 @Injectable()
 export class ScenarioBehaviorInstructionService {
@@ -28,6 +29,7 @@ export class ScenarioBehaviorInstructionService {
     private readonly behaviorService: BehaviorService,
     private readonly scenarioBehaviorInstructionTranslationService: ScenarioBehaviorInstructionTranslationService,
     private readonly scenarioBehaviorInstructionTranslationRepository: ScenarioBehaviorInstructionTranslationRepository,
+    private configService: AppConfigService,
   ) {}
 
   /**
@@ -37,7 +39,7 @@ export class ScenarioBehaviorInstructionService {
    * @param behaviorInstructions - Array of behavior instruction DTOs to validate
    * @throws NotFoundException if any behavior ID doesn't exist
    */
-  async validateBehaviorInstructions(
+  async validateBehaviorInstructionsBehaviors(
     behaviorInstructions: BehaviorInstructionDto[] | undefined,
   ): Promise<void> {
     this.logger.debug(
@@ -97,7 +99,7 @@ export class ScenarioBehaviorInstructionService {
     this.logger.debug(`Creating instructions for user: ${userIdNumber}`);
 
     // Validate all behavior IDs exist before proceeding
-    await this.validateBehaviorInstructions(
+    await this.validateBehaviorInstructionsBehaviors(
       req.flatMap((item) => item.behaviorInstructions),
     );
 
@@ -114,7 +116,9 @@ export class ScenarioBehaviorInstructionService {
       item.behaviorInstructions.map((behaviorInstructionItem) => ({
         scenarioId: item.scenarioId,
         category: behaviorInstructionItem.category,
+        // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove instructions field
         instructions: behaviorInstructionItem.instructions,
+        stateInstructions: behaviorInstructionItem.stateInstructions,
         createdBy: userIdNumber,
         updatedBy: userIdNumber,
         behaviors: behaviorInstructionItem.behaviors,
@@ -131,6 +135,7 @@ export class ScenarioBehaviorInstructionService {
         scenarioId: item.scenarioId,
         category: item.category,
         instructions: item.instructions,
+        stateInstructions: item.stateInstructions,
         createdBy: item.createdBy,
         updatedBy: item.updatedBy,
       })),
@@ -209,7 +214,7 @@ export class ScenarioBehaviorInstructionService {
     this.logger.debug(`Updating instructions for user: ${userIdNumber}`);
 
     // Validate all behavior IDs exist before proceeding
-    await this.validateBehaviorInstructions(behaviorInstructions);
+    await this.validateBehaviorInstructionsBehaviors(behaviorInstructions);
 
     // Use transaction repository if provided, otherwise use default repository
     const instructionRepo = em
@@ -269,6 +274,7 @@ export class ScenarioBehaviorInstructionService {
           scenarioId,
           category: instruction.category,
           instructions: instruction.instructions,
+          stateInstructions: instruction.stateInstructions,
           createdBy: userIdNumber,
         })),
       );
@@ -290,6 +296,7 @@ export class ScenarioBehaviorInstructionService {
           id: item.id,
           category: item.category,
           instructions: item.instructions,
+          stateInstructions: item.stateInstructions,
           updatedBy: userIdNumber,
         }),
       );
