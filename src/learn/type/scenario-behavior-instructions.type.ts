@@ -10,8 +10,9 @@ export interface FormattedBehaviorInstructionForLivekit {
   category: BehaviorInstructionCategory;
   behaviors: string[];
   score: number;
-  actorsResponses: string[];
+  actorsResponses?: string[];
   behaviorInstructionId: string;
+  stateMatchedInstructions?: BehaviorStateInstruction[];
 }
 
 export interface MergedBehaviorInstructions {
@@ -19,7 +20,8 @@ export interface MergedBehaviorInstructions {
   id: string;
   scenarioId: number;
   category: BehaviorInstructionCategory;
-  instructions: string[];
+  instructions?: string[];
+  stateInstructions?: BehaviorStateInstruction[];
 }
 
 export interface BehaviorMappingRequestType {
@@ -28,4 +30,9 @@ export interface BehaviorMappingRequestType {
   createdInstructions: MergedBehaviorInstructions[];
   updatedInstructions: BehaviorInstructionDto[];
   removedInstructionIds: string[];
+}
+
+export interface BehaviorStateInstruction {
+  stateId: string;
+  instruction: string;
 }

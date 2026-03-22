@@ -110,7 +110,9 @@ export class ScenarioSharedService {
 
   hasAllActiveScenarioMandatoryFields(item: any): boolean {
     const metadata = item.scenario_metadata ?? item.metadata ?? {};
-    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields();
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
+      this.configService.featureFlag.scenarioBehaviorStateInstructions,
+    );
 
     const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter((field) => {
       if (field === 'behaviorInstructions') {

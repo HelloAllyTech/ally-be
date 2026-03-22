@@ -1,5 +1,8 @@
 import { DeepPartial } from 'typeorm';
-import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
+import {
+  SCENARIO_MANDATORY_FIELDS,
+  SCENARIO_MANDATORY_FIELDS_WITH_STATE_INSTRUCTIONS,
+} from '../constants/scenario-mandatory-fields.constants';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
@@ -56,6 +59,7 @@ export const mapCreateScenarioRequestToEntity = (
       optGuardrails: scenario.optGuardrails,
       characterProfileText: scenario.characterProfileText,
       showScoreMeter: scenario.showScoreMeter,
+      // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions field
       stateInstructions: scenario.stateInstructions,
       currentState: scenario.currentState,
       knowledgeSources: scenario.knowledgeSources?.map((knowledgeSource) => ({
@@ -99,7 +103,12 @@ export const formatScenarioTriggerWarningsList = (
     }));
   });
 
-export const getActiveScenarioMandatoryFields = () => SCENARIO_MANDATORY_FIELDS;
+export const getActiveScenarioMandatoryFields = (
+  scenarioBehaviorStateInstructionsFeatureFlag: boolean,
+) =>
+  scenarioBehaviorStateInstructionsFeatureFlag
+    ? SCENARIO_MANDATORY_FIELDS
+    : SCENARIO_MANDATORY_FIELDS_WITH_STATE_INSTRUCTIONS;
 
 export const mapUpdateScenarioRequestToEntity = (
   updateScenarioDto: UpdateScenarioDto,
@@ -155,6 +164,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'characterProfileText',
     'showScoreMeter',
     'currentState',
+    //FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions
     'stateInstructions',
     'knowledgeSources',
   ];

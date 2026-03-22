@@ -324,6 +324,7 @@ export class CreateScenarioDto {
   @IsBoolean()
   optGuardrails?: boolean;
 
+  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions field
   @ApiProperty({
     description: 'State instructions',
     type: [StateInstructionsDto],

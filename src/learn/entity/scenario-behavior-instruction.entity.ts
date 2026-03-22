@@ -6,7 +6,9 @@ import {
   DeleteDateColumn,
   Index,
 } from 'typeorm';
+import { IsOptional } from 'class-validator';
 import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
+import { BehaviorStateInstruction } from '../type/scenario-behavior-instructions.type';
 
 @Entity('scenario_behavior_instructions')
 @Index('idx_scenario_behavior_instructions_scenario_id_idx', ['scenarioId'])
@@ -22,8 +24,15 @@ export class ScenarioBehaviorInstruction extends BaseWithoutTenantEntity {
   })
   category!: BehaviorInstructionCategory;
 
+  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove instructions column - as of now deprecated
   @Column({ type: 'text', array: true })
-  instructions!: string[];
+  @IsOptional()
+  instructions?: string[];
+
+  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Make stateInstructions column mandatory
+  @Column({ type: 'jsonb', nullable: true })
+  @IsOptional()
+  stateInstructions?: BehaviorStateInstruction[];
 
   @DeleteDateColumn()
   deletedAt?: Date;
