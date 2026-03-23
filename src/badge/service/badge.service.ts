@@ -562,6 +562,7 @@ export class BadgeService {
               this.badgeTenantService.removeBadgeFromTenants(
                 badgeId,
                 tenantIdsToRemove,
+                userId,
                 entityManager,
               ),
               this.badgeUserService.removeBadgeUsersForTenants(
@@ -594,8 +595,13 @@ export class BadgeService {
   async removeBadgeAndUsersFromTenants(
     badgeId: string,
     tenantIds: string[],
+    userId: number,
   ): Promise<void> {
-    await this.badgeTenantService.removeBadgeFromTenants(badgeId, tenantIds);
+    await this.badgeTenantService.removeBadgeFromTenants(
+      badgeId,
+      tenantIds,
+      userId,
+    );
     await this.badgeUserService.removeBadgeUsersForTenants(badgeId, tenantIds);
   }
 
