@@ -11,6 +11,13 @@ import {
   BadgeStatus,
   BadgeVisibilityType,
 } from '../../constants/badge.constants';
+import { AuditLogService } from 'src/audit/service/audit-log.service';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { AdminTenantService } from 'src/user/service/admin-tenant.service';
+import {
+  AUDIT_EVENTS,
+  AUDIT_ACTIONS,
+} from 'src/audit/constants/audit-event.constants';
 
 describe('BadgeTenantService', () => {
   let service: BadgeTenantService;
@@ -19,6 +26,13 @@ describe('BadgeTenantService', () => {
   let mockTenantsRepository: jest.Mocked<TenantsRepository>;
   let mockBadgeUserService: jest.Mocked<
     Pick<BadgeUserService, 'awardBadgeToUsersByTenant'>
+  >;
+  let mockAuditLogService: jest.Mocked<Pick<AuditLogService, 'log'>>;
+  let mockPermissionsService: jest.Mocked<
+    Pick<PermissionsService, 'isMultiTenantAdmin'>
+  >;
+  let mockAdminTenantService: jest.Mocked<
+    Pick<AdminTenantService, 'getTenantsForAdmin'>
   >;
 
   beforeEach(async () => {
@@ -44,6 +58,18 @@ describe('BadgeTenantService', () => {
       awardBadgeToUsersByTenant: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockAuditLogService = {
+      log: jest.fn(),
+    } as any;
+
+    mockPermissionsService = {
+      isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+    } as any;
+
+    mockAdminTenantService = {
+      getTenantsForAdmin: jest.fn(),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BadgeTenantService,
@@ -63,6 +89,18 @@ describe('BadgeTenantService', () => {
           provide: BadgeUserService,
           useValue: mockBadgeUserService,
         },
+        {
+          provide: AuditLogService,
+          useValue: mockAuditLogService,
+        },
+        {
+          provide: PermissionsService,
+          useValue: mockPermissionsService,
+        },
+        {
+          provide: AdminTenantService,
+          useValue: mockAdminTenantService,
+        },
       ],
     }).compile();
 
@@ -78,7 +116,7 @@ describe('BadgeTenantService', () => {
       mockBadgeRepository.findOne.mockResolvedValue(null);
 
       await expect(
-        service.addBadgeToTenants('badge-1', ['tenant-1']),
+        service.addBadgeToTenants('badge-1', ['tenant-1'], 1),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -89,7 +127,7 @@ describe('BadgeTenantService', () => {
       } as Badge);
 
       await expect(
-        service.addBadgeToTenants('badge-1', ['tenant-1']),
+        service.addBadgeToTenants('badge-1', ['tenant-1'], 1),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -101,7 +139,7 @@ describe('BadgeTenantService', () => {
       mockTenantsRepository.find.mockResolvedValue([{ id: 'tenant-1' }] as any);
 
       await expect(
-        service.addBadgeToTenants('badge-1', ['tenant-1', 'tenant-2']),
+        service.addBadgeToTenants('badge-1', ['tenant-1', 'tenant-2'], 1),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -120,11 +158,11 @@ describe('BadgeTenantService', () => {
       ] as BadgeTenant[]);
       mockBadgeTenantRepository.save.mockResolvedValue([] as any);
 
-      await service.addBadgeToTenants('badge-1', [
-        'tenant-1',
-        'tenant-2',
-        'tenant-3',
-      ]);
+      await service.addBadgeToTenants(
+        'badge-1',
+        ['tenant-1', 'tenant-2', 'tenant-3'],
+        1,
+      );
 
       expect(mockBadgeTenantRepository.save).toHaveBeenCalledWith([
         { badgeId: 'badge-1', tenantId: 'tenant-2' },
@@ -142,10 +180,65 @@ describe('BadgeTenantService', () => {
         { badgeId: 'badge-1', tenantId: 'tenant-1' },
       ] as BadgeTenant[]);
 
-      const result = await service.addBadgeToTenants('badge-1', ['tenant-1']);
+      const result = await service.addBadgeToTenants(
+        'badge-1',
+        ['tenant-1'],
+        1,
+      );
 
       expect(result).toBe(true);
       expect(mockBadgeTenantRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when multi-tenant admin assigns to unauthorized tenant', async () => {
+      mockBadgeRepository.findOne.mockResolvedValue({
+        id: 'badge-1',
+        status: BadgeStatus.ACTIVE,
+      } as Badge);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [{ id: 'tenant-1' }],
+      } as any);
+
+      await expect(
+        service.addBadgeToTenants(
+          'badge-1',
+          ['tenant-1', 'unauthorized-tenant'],
+          1,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should assign badge to tenants and log audit event for multi-tenant admin', async () => {
+      mockBadgeRepository.findOne.mockResolvedValue({
+        id: 'badge-1',
+        status: BadgeStatus.ACTIVE,
+      } as Badge);
+      mockTenantsRepository.find.mockResolvedValue([{ id: 'tenant-1' }] as any);
+      mockBadgeTenantRepository.find.mockResolvedValue([]);
+      const savedBadgeTenant = { badgeId: 'badge-1', tenantId: 'tenant-1' };
+      mockBadgeTenantRepository.save.mockResolvedValue([
+        savedBadgeTenant,
+      ] as any);
+
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [{ id: 'tenant-1' }],
+      } as any);
+
+      await service.addBadgeToTenants('badge-1', ['tenant-1'], 1);
+
+      expect(mockAdminTenantService.getTenantsForAdmin).toHaveBeenCalledWith(1);
+      expect(mockBadgeTenantRepository.save).toHaveBeenCalled();
+      expect(mockAuditLogService.log).toHaveBeenCalledWith({
+        eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_ASSIGNED_BADGE_TO_TENANT,
+        details: {
+          action: AUDIT_ACTIONS.ASSIGN_BADGE_TO_TENANT,
+          tenantIdsToAdd: ['tenant-1'],
+          userId: 1,
+          badgeId: 'badge-1',
+        },
+      });
     });
   });
 
@@ -219,7 +312,7 @@ describe('BadgeTenantService', () => {
 
   describe('removeBadgeFromTenants', () => {
     it('should return early when tenantIds array is empty', async () => {
-      await service.removeBadgeFromTenants('badge-1', []);
+      await service.removeBadgeFromTenants('badge-1', [], 1);
 
       expect(mockBadgeTenantRepository.softDelete).not.toHaveBeenCalled();
     });
@@ -227,11 +320,61 @@ describe('BadgeTenantService', () => {
     it('should soft delete badge-tenant mappings', async () => {
       mockBadgeTenantRepository.softDelete.mockResolvedValue({} as any);
 
-      await service.removeBadgeFromTenants('badge-1', ['tenant-1', 'tenant-2']);
+      await service.removeBadgeFromTenants(
+        'badge-1',
+        ['tenant-1', 'tenant-2'],
+        1,
+      );
 
       expect(mockBadgeTenantRepository.softDelete).toHaveBeenCalledWith({
         badgeId: 'badge-1',
         tenantId: In(['tenant-1', 'tenant-2']),
+      });
+    });
+
+    it('should throw BadRequestException when multi-tenant admin removes from unauthorized tenant', async () => {
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [{ id: 'tenant-1' }],
+      } as any);
+
+      await expect(
+        service.removeBadgeFromTenants(
+          'badge-1',
+          ['tenant-1', 'unauthorized-tenant'],
+          1,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should soft delete mappings and log audit event for multi-tenant admin', async () => {
+      mockBadgeTenantRepository.softDelete.mockResolvedValue({} as any);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [
+          { id: 'tenant-1', name: 'Tenant 1' },
+          { id: 'tenant-2', name: 'Tenant 2' },
+        ],
+      } as any);
+
+      await service.removeBadgeFromTenants(
+        'badge-1',
+        ['tenant-1', 'tenant-2'],
+        1,
+      );
+
+      expect(mockBadgeTenantRepository.softDelete).toHaveBeenCalledWith({
+        badgeId: 'badge-1',
+        tenantId: In(['tenant-1', 'tenant-2']),
+      });
+      expect(mockAuditLogService.log).toHaveBeenCalledWith({
+        eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_REMOVED_BADGE_FROM_TENANT,
+        details: {
+          action: AUDIT_ACTIONS.REMOVE_BADGE_FROM_TENANT,
+          tenantIds: ['tenant-1', 'tenant-2'],
+          badgeId: 'badge-1',
+          userId: 1,
+        },
       });
     });
   });
