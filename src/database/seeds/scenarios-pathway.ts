@@ -108,9 +108,31 @@ const createScenariosData = async (
         {
           category: 'SHOULD_DO',
           behaviors: behaviorIds.slice(0, 2), // Use first 2 behaviors
+          // Legacy column is still NOT NULL in DB; keep instructions during transition
           instructions: [
-            'Listen actively to concerns about work-life balance',
-            'Show empathy for his stress and overwhelm',
+            'Use an open, warm greeting to build rapport',
+            'Reflect feelings about stress and workload',
+            'Ask one open-ended question to deepen understanding',
+            'Summarize key concern and validate effort',
+          ],
+          stateInstructions: [
+            {
+              stateId: '1',
+              instruction: 'Use an open, warm greeting to build rapport',
+            },
+            {
+              stateId: '2',
+              instruction: 'Reflect feelings about stress and workload',
+            },
+            {
+              stateId: '3',
+              instruction:
+                'Ask one open-ended question to deepen understanding',
+            },
+            {
+              stateId: '4',
+              instruction: 'Summarize key concern and validate effort',
+            },
           ],
         },
       ],
@@ -145,6 +167,7 @@ const createScenariosData = async (
         'Even small tasks are starting to feel stressful.',
       ],
       agentDialogues: ['I hear you', 'Tell me more', 'That sounds tough'],
+      // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions
       stateInstructions: [
         {
           stateId: '1',
@@ -175,9 +198,30 @@ const createScenariosData = async (
         {
           category: 'SHOULD_DO',
           behaviors: behaviorIds.slice(0, 2), // Use first 2 behaviors
+          // Legacy column is still NOT NULL in DB; keep instructions during transition
           instructions: [
-            'Acknowledge anxiety about work performance',
-            'Help her explore the sources of her workplace anxiety',
+            'Offer brief validation to reduce immediate tension',
+            'Invite specifics about triggers and contexts',
+            'Reflect patterns and name one emerging theme',
+            'Summarize strengths and set one small next step',
+          ],
+          stateInstructions: [
+            {
+              stateId: '1',
+              instruction: 'Offer brief validation to reduce immediate tension',
+            },
+            {
+              stateId: '2',
+              instruction: 'Invite specifics about triggers and contexts',
+            },
+            {
+              stateId: '3',
+              instruction: 'Reflect patterns and name one emerging theme',
+            },
+            {
+              stateId: '4',
+              instruction: 'Summarize strengths and set one small next step',
+            },
           ],
         },
       ],
