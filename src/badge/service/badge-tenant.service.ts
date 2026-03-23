@@ -11,6 +11,13 @@ import { TenantsRepository } from 'src/tenant/repository/tenant.repository';
 import { Badge } from '../entity/badge.entity';
 import { BadgeStatus, BadgeVisibilityType } from '../constants/badge.constants';
 import { BadgeUserService } from './badge-user.service';
+import { AuditLogService } from 'src/audit/service/audit-log.service';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { AdminTenantService } from 'src/user/service/admin-tenant.service';
+import {
+  AUDIT_EVENTS,
+  AUDIT_ACTIONS,
+} from 'src/audit/constants/audit-event.constants';
 
 @Injectable()
 export class BadgeTenantService {
@@ -23,11 +30,15 @@ export class BadgeTenantService {
     @InjectRepository(Badge)
     private readonly badgeRepository: Repository<Badge>,
     private readonly badgeUserService: BadgeUserService,
+    private readonly auditLogService: AuditLogService,
+    private permissionsService: PermissionsService,
+    private readonly adminTenantService: AdminTenantService,
   ) {}
 
   async addBadgeToTenants(
     badgeId: string,
     tenantIds: string[],
+    userId: number,
   ): Promise<boolean> {
     const badge = await this.badgeRepository.findOne({
       where: { id: badgeId },
@@ -37,6 +48,27 @@ export class BadgeTenantService {
     }
     if (badge.status !== BadgeStatus.ACTIVE) {
       throw new BadRequestException('Badge is not active');
+    }
+
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(userId)
+      : false;
+
+    if (isMultiTenantAdmin) {
+      const adminTenants = await this.adminTenantService.getTenantsForAdmin(
+        Number(userId),
+      );
+
+      if (adminTenants) {
+        const adminTenantIds = adminTenants.data.map((t: any) => t.id);
+        for (const tenantId of tenantIds) {
+          if (!adminTenantIds.includes(tenantId)) {
+            throw new BadRequestException(
+              'You are not authorized to update this organization settings.',
+            );
+          }
+        }
+      }
     }
     const badgeTenants: BadgeTenant[] = [];
 
@@ -66,6 +98,18 @@ export class BadgeTenantService {
     if (badgeTenants.length > 0) {
       await this.badgeTenantRepository.save(badgeTenants);
       this.badgeUserService.awardBadgeToUsersByTenant(badge, tenantIdsToAdd);
+
+      if (isMultiTenantAdmin) {
+        this.auditLogService.log({
+          eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_ASSIGNED_BADGE_TO_TENANT,
+          details: {
+            action: AUDIT_ACTIONS.ASSIGN_BADGE_TO_TENANT,
+            tenantIdsToAdd,
+            userId,
+            badgeId,
+          },
+        });
+      }
     }
 
     return true;
@@ -116,10 +160,32 @@ export class BadgeTenantService {
   async removeBadgeFromTenants(
     badgeId: string,
     tenantIds: string[],
+    userId: number,
     entityManager?: EntityManager,
   ): Promise<void> {
     if (tenantIds.length === 0) {
       return;
+    }
+
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(userId)
+      : false;
+
+    if (isMultiTenantAdmin) {
+      const adminTenants = await this.adminTenantService.getTenantsForAdmin(
+        Number(userId),
+      );
+
+      if (adminTenants) {
+        const adminTenantIds = adminTenants.data.map((t: any) => t.id);
+        for (const tenantId of tenantIds) {
+          if (!adminTenantIds.includes(tenantId)) {
+            throw new BadRequestException(
+              'You are not authorized to update this organization settings.',
+            );
+          }
+        }
+      }
     }
     const badgeTenantRepository =
       entityManager?.getRepository(BadgeTenant) ?? this.badgeTenantRepository;
@@ -130,6 +196,18 @@ export class BadgeTenantService {
     this.logger.log(
       `Badge ${badgeId} removed from tenants: ${tenantIds.join(', ')}`,
     );
+
+    if (isMultiTenantAdmin) {
+      this.auditLogService.log({
+        eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_REMOVED_BADGE_FROM_TENANT,
+        details: {
+          action: AUDIT_ACTIONS.REMOVE_BADGE_FROM_TENANT,
+          tenantIds,
+          badgeId,
+          userId,
+        },
+      });
+    }
   }
 
   async updateBadgeTenants(

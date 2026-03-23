@@ -250,11 +250,13 @@ export class BadgeController {
   @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
   @Post('/tenants')
   async addBadgeToTenants(
+    @CurrentUser() tokenUser: TokenUser,
     @Body() addBadgeToTenantsDto: AddBadgeToTenantsRequestDto,
   ) {
     await this.badgeTenantService.addBadgeToTenants(
       addBadgeToTenantsDto.badgeId,
       addBadgeToTenantsDto.tenantIds,
+      tokenUser.id,
     );
     return {
       message: 'Badge added to tenants successfully',
@@ -320,11 +322,13 @@ export class BadgeController {
   @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
   @Delete('/tenants')
   async removeBadgeFromTenants(
+    @CurrentUser() tokenUser: TokenUser,
     @Body() removeBadgeFromTenantsDto: AddBadgeToTenantsRequestDto,
   ) {
     await this.badgeService.removeBadgeAndUsersFromTenants(
       removeBadgeFromTenantsDto.badgeId,
       removeBadgeFromTenantsDto.tenantIds,
+      tokenUser.id,
     );
     return {
       message: 'Badge removed from tenants successfully',
