@@ -54,6 +54,69 @@ The system is organized as a modular NestJS monolith with the following key laye
 | Observability    | Winston Logger + Slack alerts          |
 | Documentation    | Swagger/OpenAPI                        |
 
+## Codebase Directory Structure
+
+```
+ally-be/
+├── src/
+│   ├── ai/                              # LLM integration (OpenAI), session summarization, event analysis
+│   ├── ai-chat/                         # AI chat interfaces and provider abstraction
+│   ├── analytics/                       # Metabase integration and tenant analytics dashboards
+│   ├── app-version/                     # App version management
+│   ├── audio/                           # Audio file storage and processing utilities
+│   ├── audio-ingest/                    # SQS-based async transcription pipeline and DLQ handling
+│   ├── audit/                           # Audit logging (AWS CloudWatch, HIPAA-compliant)
+│   ├── auth/                            # JWT, OTP, Google OAuth, Magic Link authentication
+│   ├── authorization/                   # RBAC guards and permission decorators
+│   ├── aws/                             # AWS S3, SQS, SES service wrappers
+│   ├── badge/                           # Badge definitions, award logic, bulk and auto awarding
+│   ├── case/                            # Case management and tenant-isolated case items
+│   ├── chat/                            # Chat session tracking
+│   ├── common/                          # Shared utilities, interceptors, and decorators
+│   ├── community/                       # Leaderboard and user ranking
+│   ├── config/                          # Application configuration
+│   ├── conversational-guardrails/       # Real-time boundary detection with multi-language support
+│   ├── database/                        # TypeORM data source, migrations, and seed scripts
+│   ├── exception/                       # Global exception filters
+│   ├── factory/                         # Factory classes for testing
+│   ├── health/                          # Health check endpoint
+│   ├── language/                        # Language settings and translation service
+│   ├── learn/                           # Scenario engine, learning pathways, and session management
+│   ├── livekit/                         # LiveKit room lifecycle, participant tracking, and webhooks
+│   ├── logger/                          # Winston logger configuration
+│   ├── message-broker/                  # Redis pub/sub for inter-service events
+│   ├── notification/                    # Email and push notification delivery (AWS SES)
+│   ├── place/                           # Location and place data
+│   ├── prompt/                          # Prompt management and dashboard sync
+│   ├── prompts/                         # Versioned system prompt definitions
+│   ├── queue/                           # SQS queue setup and configuration
+│   ├── rate-limit/                      # Request rate limiting
+│   ├── redis/                           # Redis client configuration
+│   ├── reference-document/              # Reference materials associated with scenarios or pathways
+│   ├── review/                          # Shared review utilities
+│   ├── scenario-character/              # Scenario NPC/character (client persona) definitions
+│   ├── scenario-cover-image-library/    # Scenario cover image management
+│   ├── scenario-path/                   # Learning pathway composition
+│   ├── scenario-report/                 # Real-time scenario reporting WebSocket gateway
+│   ├── scenario-session-review/         # Threaded comments, reactions, and badge awards on sessions
+│   ├── scheduler/                       # Periodic background jobs (@nestjs/schedule)
+│   ├── scribe-session-review/           # Transcript-based feedback with threaded comments
+│   ├── session-event/                   # Session event tracking and storage
+│   ├── settings/                        # Application settings management
+│   ├── tenant/                          # Multi-tenant management and isolation
+│   ├── user/                            # User profiles and management
+│   └── voice-preview/                   # TTS voice preview (ElevenLabs, Sarvam, Google, Hume)
+├── docs/                                # Additional documentation (prompts API, folder conventions)
+├── test/                                # End-to-end tests
+├── .env.example                         # Local development environment template
+├── docker.env.example                   # Docker Compose environment template
+├── docker-compose.yml                   # Infrastructure services (Postgres, Redis, LocalStack, SQS)
+├── Makefile                             # Convenience make targets
+├── nest-cli.json                        # NestJS CLI configuration
+├── tsconfig.json                        # TypeScript configuration
+└── package.json                         # Dependencies and npm scripts
+```
+
 ## Prerequisites
 
 Before you begin, ensure you have the following installed:
