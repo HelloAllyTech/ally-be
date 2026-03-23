@@ -123,7 +123,14 @@ describe('ScenarioSessionService', () => {
     coverImageUrl: 'https://example.com/image.jpg',
     status: ScenarioStatus.ACTIVE,
     prompt: 'You are a counselor',
-    metadata: {},
+    metadata: {
+      stateInstructions: [
+        {
+          stateId: '1',
+          name: 'State 1',
+        },
+      ],
+    },
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -2116,6 +2123,31 @@ describe('ScenarioSessionService', () => {
     it('should return false when languageValue is empty/invalid and IDs do not match', () => {
       expect(isEnglishLanguage(2, '', 1)).toBe(false);
       expect(isEnglishLanguage(2, undefined, 1)).toBe(false);
+    });
+  });
+
+  describe('getStateInstructions', () => {
+    it('should return empty array when currentState is false', () => {
+      const stateInstructions = service.getStateInstructions(
+        false,
+        mockScenario.metadata.stateInstructions,
+      );
+      expect(stateInstructions).toEqual([]);
+    });
+
+    it('should return empty array when stateInstructions is empty', () => {
+      const stateInstructions = service.getStateInstructions(true, []);
+      expect(stateInstructions).toEqual([]);
+    });
+
+    it('should return stateInstructions when currentState is true and stateInstructions is not empty', () => {
+      const stateInstructions = service.getStateInstructions(
+        true,
+        mockScenario.metadata?.stateInstructions,
+      );
+      expect(stateInstructions).toEqual(
+        mockScenario.metadata.stateInstructions,
+      );
     });
   });
 });
