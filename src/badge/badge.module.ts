@@ -19,6 +19,8 @@ import { ScenarioSessionReviewModule } from 'src/scenario-session-review/scenari
 import { BadgeEventConsumer } from './consumer/badge.event.consumer';
 import { BadgeAwardService } from './service/badge-award.service';
 import { AwsModule } from 'src/aws/aws.module';
+import { AuditModule } from 'src/audit/audit.module';
+import { UserModule } from 'src/user/user.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { AwsModule } from 'src/aws/aws.module';
     forwardRef(() => ScenarioSessionReviewModule),
     CommunityModule,
     AwsModule,
+    AuditModule,
+    forwardRef(() => UserModule),
   ],
   controllers: [BadgeController],
   providers: [
