@@ -62,6 +62,7 @@ import {
   ChecklistItem,
   ExperienceMode,
   ScenarioStatus,
+  StateInstructions,
 } from '../type/scenario.type';
 import { ScenarioTenantService } from './scenario-tenant.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
@@ -541,6 +542,11 @@ export class ScenarioSessionService {
           }));
       }
 
+      // Preparing state instructions for simulation room, only if currentState is present for scenario
+      const stateInstructions: StateInstructions[] = this.getStateInstructions(
+        scenario?.metadata?.currentState,
+        scenario?.metadata?.stateInstructions,
+      );
       // Create LiveKit room
       await this.livekitService.createRoom({
         name: `${scenarioSession.roomId}`,
@@ -570,13 +576,18 @@ export class ScenarioSessionService {
         maxTimeValue: scenario?.metadata?.maxTimeValue,
         checklistEvents,
         showScoreMeter: scenario?.metadata?.showScoreMeter,
+        stateInstructions,
         metadata: {
           name: scenario?.metadata?.name,
           title: scenario?.metadata?.title,
           age: scenario?.metadata?.age,
         },
       };
-      return { scenarioSession, accessToken, scenario: mappedScenarioData };
+      return {
+        scenarioSession,
+        accessToken,
+        scenario: mappedScenarioData,
+      };
     } catch (error) {
       // If room creation fails, clean up the session
       await this.scenarioSessionRepository.delete(scenarioSession.id);
@@ -1348,6 +1359,12 @@ export class ScenarioSessionService {
         }));
     }
 
+    // Preparing state instructions for simulation room, only if currentState is present for scenario
+    const stateInstructions: StateInstructions[] = this.getStateInstructions(
+      scenario?.metadata?.currentState,
+      scenario?.metadata?.stateInstructions,
+    );
+
     await this.livekitService.createRoom({
       name: roomName,
       metadata: roomMetadata,
@@ -1368,6 +1385,7 @@ export class ScenarioSessionService {
       accessToken,
       scenario,
       checklistEvents,
+      stateInstructions,
       useDirectAgentDispatch: this.configService.allowDirectAgentDispatch,
     };
   }
@@ -1555,5 +1573,20 @@ export class ScenarioSessionService {
     }));
 
     return { eventChecklist: eventChecklistDto };
+  }
+
+  getStateInstructions(
+    currentState?: boolean,
+    stateInstructions?: StateInstructions[],
+  ) {
+    if (currentState && stateInstructions?.length) {
+      return stateInstructions.map((stateInstruction: StateInstructions) => {
+        return {
+          name: stateInstruction.name,
+          stateId: stateInstruction.stateId,
+        };
+      });
+    }
+    return [];
   }
 }

@@ -47,6 +47,10 @@ export interface ChecklistItem {
   name: string;
   message?: string;
 }
+export interface StateInstructions {
+  name: string;
+  stateId: string;
+}
 
 import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
