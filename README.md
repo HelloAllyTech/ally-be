@@ -1,4 +1,4 @@
-# 🤝 Ally Backend
+# Ally Backend Service
 
 A multi-tenant, AI-powered backend platform for mental health counselor training built with NestJS. It connects counselors and learners through real-time voice communication, scenario-based simulations, AI-driven feedback, and comprehensive analytics.
 
