@@ -73,6 +73,9 @@ export const validationSchema = Joi.object({
 
   SIMULATION_SESSION_SECONDS_PER_CREDIT: Joi.number().required(),
 
+  // Simulation Concurrency
+  MAX_CONCURRENT_SIMULATIONS: Joi.number().default(100),
+
   SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: Joi.string().required(),
 
   // CORS ORIGINS

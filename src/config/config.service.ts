@@ -259,6 +259,15 @@ export class AppConfigService {
     };
   }
 
+  get simulationConcurrency() {
+    return {
+      maxConcurrentSimulations: this.configService.get<number>(
+        'MAX_CONCURRENT_SIMULATIONS',
+        100,
+      ),
+    };
+  }
+
   get simulationPath() {
     return {
       simulationPathItemMinDurationForCompletion:
