@@ -4,6 +4,7 @@ import * as path from 'path';
 import { PromptsService } from './prompt.service';
 import { formatLabel } from '../util/format-label.util';
 import { LoggerService } from 'src/logger/logger.service';
+import { parseVariablesFromPrompt } from '../util/parse-variables.util';
 
 const PROMPTS_DIR = 'src/prompts';
 const META_FILENAME_SUFFIX = '.meta.json';
@@ -115,6 +116,7 @@ export class PromptsSyncService implements OnModuleInit {
       name: string;
       description: string;
       prompt: string;
+      availableVariables: string[];
       kind?: string;
       usesBlocks?: string[];
     }[] = [];
@@ -152,6 +154,7 @@ export class PromptsSyncService implements OnModuleInit {
             name,
             description,
             prompt: content.trim(),
+            availableVariables: parseVariablesFromPrompt(content),
             kind,
             usesBlocks,
           });

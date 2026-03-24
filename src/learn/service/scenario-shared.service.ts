@@ -737,10 +737,21 @@ export class ScenarioSharedService {
     }
 
     // Only include prompts with non-empty content so ally-ai-learn uses dashboard edits
-    return prompts.reduce<Record<string, string>>((acc, prompt) => {
+    return prompts.reduce<
+      Record<
+        string,
+        {
+          prompt: string;
+          availableVariables?: string[];
+        }
+      >
+    >((acc, prompt) => {
       const content = prompt.prompt?.trim();
       if (content) {
-        acc[prompt.promptCode] = content;
+        acc[prompt.promptCode] = {
+          prompt: content,
+          availableVariables: prompt.availableVariables || [],
+        };
       }
       return acc;
     }, {});

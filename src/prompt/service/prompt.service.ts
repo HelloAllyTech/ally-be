@@ -11,7 +11,6 @@ import { Pagination } from 'src/common/type/common.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { PromptResponse } from '../type/prompt-response.type';
 import { standardizePromptCode } from '../util/prompt-code.util';
-import { parseVariablesFromPrompt } from '../util/parse-variables.util';
 import { PROMPT_VERSION_RETENTION_LIMIT } from '../constants/prompt.constants';
 
 @Injectable()
@@ -196,11 +195,6 @@ export class PromptsService {
           row.prompt = fromFolder;
         }
       }
-      const effectivePrompt =
-        (!row.useDashboardOverride
-          ? row.defaultPrompt || row.prompt
-          : row.prompt || row.defaultPrompt) || '';
-      row.availableVariables = parseVariablesFromPrompt(effectivePrompt);
     }
     return data;
   }
@@ -250,6 +244,7 @@ export class PromptsService {
           description: item.description || '',
           defaultPrompt: item.prompt,
           kind: item.kind,
+          availableVariables: item.availableVariables,
           usesBlocks: item.usesBlocks,
           isObsolete: false,
         });
@@ -271,6 +266,7 @@ export class PromptsService {
           name: item.name,
           description: item.description || '',
           kind: item.kind,
+          availableVariables: item.availableVariables,
           usesBlocks: item.usesBlocks,
           isObsolete: false, // resurrected if it was obsolete
         });

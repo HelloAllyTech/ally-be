@@ -33,5 +33,8 @@ export class Prompt extends BaseWithoutTenantEntity {
   kind?: string;
 
   @Column({ type: 'jsonb', nullable: true })
+  availableVariables?: string[];
+
+  @Column({ type: 'jsonb', nullable: true })
   usesBlocks?: string[];
 }
