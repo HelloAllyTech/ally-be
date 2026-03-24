@@ -31,11 +31,21 @@ import {
 } from '../../dto/summary-fields.dto';
 import { UpdateSummarySectionsDto } from '../../dto/summary-sections.dto';
 import { UpdateChatTypesDto } from '../../dto/chat-types.dto';
+import { AuditLogService } from '../../../audit/service/audit-log.service';
+import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { AdminTenantService } from '../../../user/service/admin-tenant.service';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_EVENTS,
+} from '../../../audit/constants/audit-event.constants';
 
 describe('SettingsService', () => {
   let service: SettingsService;
   let preferenceService: jest.Mocked<PreferenceService>;
   let permissionValidator: jest.Mocked<PermissionValidator>;
+  let auditLogService: jest.Mocked<AuditLogService>;
+  let permissionsService: jest.Mocked<PermissionsService>;
+  let adminTenantService: jest.Mocked<AdminTenantService>;
 
   const mockTenantId = 'test-tenant-id';
   const mockUserId = 'test-user-id';
@@ -105,12 +115,27 @@ describe('SettingsService', () => {
             validatePermissions: jest.fn(),
           },
         },
+        {
+          provide: AuditLogService,
+          useValue: { log: jest.fn() },
+        },
+        {
+          provide: PermissionsService,
+          useValue: { isMultiTenantAdmin: jest.fn() },
+        },
+        {
+          provide: AdminTenantService,
+          useValue: { getTenantsForAdmin: jest.fn() },
+        },
       ],
     }).compile();
 
     service = module.get<SettingsService>(SettingsService);
     preferenceService = module.get(PreferenceService);
     permissionValidator = module.get(PermissionValidator);
+    auditLogService = module.get(AuditLogService) as any;
+    permissionsService = module.get(PermissionsService) as any;
+    adminTenantService = module.get(AdminTenantService) as any;
 
     // Mock ExecutionManager static methods
     jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(mockTenantId);
@@ -564,6 +589,7 @@ describe('SettingsService', () => {
       jest
         .spyOn(permissionValidator, 'validatePermissions')
         .mockResolvedValue(true);
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(false);
     });
 
     it('should update SUMMARY_HIDDEN_SECTIONS when valid section ids provided', async () => {
@@ -632,6 +658,45 @@ describe('SettingsService', () => {
       await expect(service.updateSummarySections(updateDto)).rejects.toThrow(
         'Only super admin can update summary sections',
       );
+    });
+
+    it('should throw ForbiddenException if multi-tenant admin does not manage the tenant', async () => {
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      adminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [{ id: 'other-tenant-id' }],
+      } as any);
+
+      await expect(service.updateSummarySections(updateDto)).rejects.toThrow(
+        ForbiddenException,
+      );
+      await expect(service.updateSummarySections(updateDto)).rejects.toThrow(
+        'You are not authorized to update summary sections for this tenant',
+      );
+    });
+
+    it('should update SUMMARY_HIDDEN_SECTIONS and log audit event if updated by multi-tenant admin', async () => {
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      adminTenantService.getTenantsForAdmin.mockResolvedValue({
+        data: [{ id: mockTenantId }],
+      } as any);
+
+      preferenceService.getPreference.mockResolvedValue(null);
+      preferenceService.createPreference.mockResolvedValue({} as any);
+
+      const result = await service.updateSummarySections(updateDto);
+
+      expect(preferenceService.createPreference).toHaveBeenCalled();
+      expect(auditLogService.log).toHaveBeenCalledWith({
+        eventType:
+          AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SETTINGS_SUMMARY_FIELDS,
+        details: {
+          action: AUDIT_ACTIONS.UPDATE_SETTING_SUMMARY_FIELDS,
+          tenantId: mockTenantId,
+          userId: mockUserId,
+          hiddenSections: ['intake', 'ongoingRisks'],
+        },
+      });
+      expect(result).toEqual({ success: true });
     });
   });
 

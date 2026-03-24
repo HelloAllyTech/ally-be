@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { SettingsService } from './service/settings.service';
 import { SettingsController } from './controller/settings.controller';
 import { RedisModule } from 'src/redis/redis.module';
@@ -8,9 +8,16 @@ import { PreferenceService } from './service/preference.service';
 import { PreferenceRepository } from './repository/preference.repository';
 import { GlobalSettingsRepository } from './repository/global-settings.repository';
 import { SettingsShared } from './service/settings.shared';
+import { AuditModule } from 'src/audit/audit.module';
+import { UserModule } from 'src/user/user.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Preference]), RedisModule],
+  imports: [
+    TypeOrmModule.forFeature([Preference]),
+    RedisModule,
+    AuditModule,
+    forwardRef(() => UserModule),
+  ],
   providers: [
     SettingsService,
     PreferenceService,
