@@ -1,13 +1,13 @@
-import { createClient } from '@deepgram/sdk';
+import { DeepgramClient } from '@deepgram/sdk';
 import { ITTSProvider } from './tts-provider.interface';
 import { pcmToMp3 } from '../utils/audio-converter.util';
 
 export class DeepgramTTSProvider implements ITTSProvider {
-  private readonly client: ReturnType<typeof createClient>;
+  private readonly client: DeepgramClient;
   private readonly model: string;
 
   constructor(apiKey: string, config: Record<string, any>) {
-    this.client = createClient(apiKey);
+    this.client = new DeepgramClient({ apiKey });
     this.model = config.model;
     if (!this.model) {
       throw new Error('Deepgram config requires "model" field');
@@ -15,12 +15,14 @@ export class DeepgramTTSProvider implements ITTSProvider {
   }
 
   async generatePreview(text: string): Promise<Buffer> {
-    const response = await this.client.speak.request(
-      { text },
-      { model: this.model, encoding: 'linear16', sample_rate: 24000 },
-    );
+    const response = await this.client.speak.v1.audio.generate({
+      text,
+      model: this.model,
+      encoding: 'linear16',
+      sample_rate: 24000,
+    });
 
-    const stream = await response.getStream();
+    const stream = await response.stream();
     if (!stream) {
       throw new Error('Deepgram returned no audio stream');
     }
