@@ -30,7 +30,16 @@ export class PromptSharedService {
     }
 
     if (!promptRow.useDashboardOverride) {
-      return this.readFromFolder(promptCode);
+      const fromFolder = this.readFromFolder(promptCode);
+      if (fromFolder !== null) {
+        return fromFolder;
+      }
+      // Fallback: check if DB prompt row has defaultPrompt
+      const fullRow = await this.promptsRepository.findOne({
+        where: { promptCode },
+        select: ['defaultPrompt'],
+      });
+      return fullRow?.defaultPrompt || null;
     }
 
     const row = (await this.promptsRepository
@@ -130,6 +139,8 @@ export class PromptSharedService {
         const fromFolder = this.readFromFolder(row.promptCode);
         if (fromFolder !== null) {
           row.prompt = fromFolder;
+        } else if (row.defaultPrompt) {
+          row.prompt = row.defaultPrompt;
         }
       } else if (!row.prompt?.trim() && row.defaultPrompt?.trim()) {
         // Dashboard override enabled but version join returned null (e.g. currentVersion not set); use default

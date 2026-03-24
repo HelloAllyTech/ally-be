@@ -196,7 +196,10 @@ export class PromptsService {
           row.prompt = fromFolder;
         }
       }
-      const effectivePrompt = row.prompt || row.defaultPrompt || '';
+      const effectivePrompt =
+        (!row.useDashboardOverride
+          ? row.defaultPrompt || row.prompt
+          : row.prompt || row.defaultPrompt) || '';
       row.availableVariables = parseVariablesFromPrompt(effectivePrompt);
     }
     return data;

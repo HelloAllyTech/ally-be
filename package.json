@@ -51,7 +51,7 @@
     "@aws-sdk/client-ses": "^3.1012.0",
     "@aws-sdk/client-sqs": "^3.1012.0",
     "@aws-sdk/s3-request-presigner": "^3.1012.0",
-    "@deepgram/sdk": "^5.0.0",
+    "@deepgram/sdk": "^4.11.3",
     "@elevenlabs/elevenlabs-js": "^2.39.0",
     "@google-cloud/text-to-speech": "^6.4.0",
     "@google-cloud/translate": "^9.3.0",
