@@ -116,7 +116,12 @@ export class OpenAIAutofillService {
         const items: Array<{
           category: string;
           helper_behavior_ids: number[];
+          // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove actore_response and all the related ones even from prompt
           actor_response: string;
+          stateInstructions?: Array<{
+            stateId: string | number;
+            instruction?: string;
+          }>;
         }> = parsed.instructions.slice(0, MAX_BEHAVIOR_INSTRUCTIONS_COUNT);
 
         return items.map((item) => {
@@ -127,10 +132,18 @@ export class OpenAIAutofillService {
                 behavior !== undefined,
             );
 
+          const stateInstructions = (item.stateInstructions ?? []).map(
+            (si) => ({
+              stateId: String(si.stateId),
+              instruction: si.instruction ?? '',
+            }),
+          );
+
           return {
             category: item.category as BehaviorInstructionCategory,
             behaviors,
             instructions: [item.actor_response],
+            stateInstructions,
           };
         }) as BehaviorInstructionItem[];
       }
