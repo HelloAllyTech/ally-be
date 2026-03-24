@@ -19,6 +19,13 @@ jest.mock('openai', () => ({
   })),
 }));
 
+const mockBehaviorStateInstructions = [
+  { stateId: '1', instruction: 'Phase 1 reaction text for tests.' },
+  { stateId: '2', instruction: 'Phase 2 reaction text for tests.' },
+  { stateId: '3', instruction: 'Phase 3 reaction text for tests.' },
+  { stateId: '4', instruction: 'Phase 4 reaction text for tests.' },
+];
+
 describe('OpenAIAutofillService', () => {
   let service: OpenAIAutofillService;
   let promptSharedService: jest.Mocked<PromptSharedService>;
@@ -403,6 +410,7 @@ describe('OpenAIAutofillService', () => {
             category: 'SHOULD_DO',
             helper_behavior_ids: [1],
             actor_response: 'I feel heard and understood right now.',
+            stateInstructions: mockBehaviorStateInstructions,
           },
         ],
       };
@@ -486,12 +494,14 @@ describe('OpenAIAutofillService', () => {
             helper_behavior_ids: [1, 3],
             actor_response:
               'I feel like you truly understand what I am going through.',
+            stateInstructions: mockBehaviorStateInstructions,
           },
           {
             category: 'SHOULD_NOT_DO',
             helper_behavior_ids: [2],
             actor_response:
               'I feel dismissed and unheard when you respond that way.',
+            stateInstructions: mockBehaviorStateInstructions,
           },
         ],
       };
@@ -516,6 +526,7 @@ describe('OpenAIAutofillService', () => {
           instructions: [
             'I feel like you truly understand what I am going through.',
           ],
+          stateInstructions: mockBehaviorStateInstructions,
         },
         {
           category: BehaviorInstructionCategory.SHOULD_NOT_DO,
@@ -523,6 +534,7 @@ describe('OpenAIAutofillService', () => {
           instructions: [
             'I feel dismissed and unheard when you respond that way.',
           ],
+          stateInstructions: mockBehaviorStateInstructions,
         },
       ]);
     });
@@ -534,6 +546,7 @@ describe('OpenAIAutofillService', () => {
             category: 'SHOULD_DO',
             helper_behavior_ids: [1, 999],
             actor_response: 'I feel supported by your approach.',
+            stateInstructions: mockBehaviorStateInstructions,
           },
         ],
       };
@@ -553,6 +566,7 @@ describe('OpenAIAutofillService', () => {
           category: BehaviorInstructionCategory.SHOULD_DO,
           behaviors: [{ id: 'uuid-aaa', name: 'Active Listening' }],
           instructions: ['I feel supported by your approach.'],
+          stateInstructions: mockBehaviorStateInstructions,
         },
       ]);
     });

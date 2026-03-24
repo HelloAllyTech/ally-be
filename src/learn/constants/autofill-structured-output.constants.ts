@@ -62,6 +62,16 @@ const LINGUISTIC_STYLE_SAMPLES_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
   },
 };
 
+const BEHAVIOR_INSTRUCTION_STATE_ITEM = {
+  type: 'object',
+  properties: {
+    stateId: { type: 'string', enum: ['1', '2', '3', '4'] },
+    instruction: { type: 'string' },
+  },
+  required: ['stateId', 'instruction'],
+  additionalProperties: false,
+};
+
 const BEHAVIOR_INSTRUCTIONS_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
   name: 'behavior_instructions',
   strict: true,
@@ -82,8 +92,19 @@ const BEHAVIOR_INSTRUCTIONS_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
               items: { type: 'number' },
             },
             actor_response: { type: 'string' },
+            stateInstructions: {
+              type: 'array',
+              items: BEHAVIOR_INSTRUCTION_STATE_ITEM,
+              minItems: 4,
+              maxItems: 4,
+            },
           },
-          required: ['category', 'helper_behavior_ids', 'actor_response'],
+          required: [
+            'category',
+            'helper_behavior_ids',
+            'actor_response',
+            'stateInstructions',
+          ],
           additionalProperties: false,
         },
       },

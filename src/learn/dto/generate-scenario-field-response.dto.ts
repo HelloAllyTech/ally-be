@@ -20,6 +20,17 @@ export class StateInstructionItem {
   dialogues!: string[];
 }
 
+export class BehaviorInstructionStateItem {
+  @ApiProperty({ description: 'State identifier (1-4)' })
+  stateId!: string;
+
+  @ApiProperty({
+    description:
+      'How the simulated client should react in this phase when the linked helper behaviors are observed',
+  })
+  instruction!: string;
+}
+
 export class BehaviorInstructionItem {
   @ApiProperty({
     description: 'Category of the behavior instruction',
@@ -40,6 +51,13 @@ export class BehaviorInstructionItem {
     type: [BehaviorResponseDto],
   })
   behaviors!: BehaviorResponseDto[];
+
+  @ApiProperty({
+    description:
+      'Per-phase (states 1-4) guidance for the actor; must align with scenario flow',
+    type: [BehaviorInstructionStateItem],
+  })
+  stateInstructions!: BehaviorInstructionStateItem[];
 }
 
 export class GenerateScenarioFieldResponseDto {
@@ -51,7 +69,7 @@ export class GenerateScenarioFieldResponseDto {
 
   @ApiProperty({
     description:
-      'Generated content. String for characterProfileText/description, string[] for openingStatements, StateInstructionItem[] for stateInstructions, BehaviorInstructionItem[] for behaviorInstructions.',
+      'Generated content. String for characterProfileText/description, string[] for openingStatements, StateInstructionItem[] for stateInstructions, BehaviorInstructionItem[] for behaviorInstructions (each item includes stateInstructions for phases 1–4).',
   })
   content!:
     | string
