@@ -51,6 +51,7 @@ import { BehaviorTranslationRepository } from 'src/learn/repository/behavior-tra
 import { ScenarioBehaviorInstructionTranslationRepository } from 'src/learn/repository/scenario-behavior-instruction-translation.repository';
 import { ScenarioEventsRepository } from 'src/learn/repository/scenario-events.repository';
 import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
+import { SimulationCapacityException } from 'src/learn/exception/simulation-capacity.exception';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -197,6 +198,7 @@ describe('ScenarioSessionService', () => {
       deleteRoom: jest.fn(),
       generateAccessToken: jest.fn(),
       getRoom: jest.fn(),
+      listRooms: jest.fn().mockResolvedValue([]),
     };
 
     const mockSessionEventSharedService = {
@@ -337,6 +339,9 @@ describe('ScenarioSessionService', () => {
       featureFlag: {
         scenarioCustomFields: true,
         useScenarioSessionEvaluation: false,
+      },
+      simulationConcurrency: {
+        maxConcurrentSimulations: 100,
       },
     };
 
@@ -1562,6 +1567,46 @@ describe('ScenarioSessionService', () => {
         ),
       );
     });
+
+    it('should throw SimulationCapacityException when at max concurrent simulations', async () => {
+      const previewDto = { scenarioId: mockScenarioId };
+      const mockValidScenario = {
+        ...mockScenario,
+        title: 'Test Scenario',
+        description: 'Test Description',
+        coverImageUrl: 'https://example.com/cover.jpg',
+        status: ScenarioStatus.ACTIVE,
+        difficultyLevel: ScenarioDifficultyLevel.EASY,
+        competencyId: '123e4567-e89b-12d3-a456-426614174000',
+        metadata: {
+          name: 'Test Client',
+          age: 25,
+          gender: 'female',
+          currentLocation: 'New York',
+          openingStatements: ['Opening'],
+          languageVoices: { 1: 'voice-123' },
+          experienceMode: ExperienceMode.FEEDBACK,
+          behaviorInstructions: [],
+          characterProfileText: 'Test character profile',
+          stateInstructions: [{ stateId: '1', instruction: 'Test' }],
+        },
+        isGlobal: true,
+        isPublic: false,
+      };
+
+      scenarioService.getAdminScenario.mockResolvedValue(mockValidScenario);
+      mockConfigService.simulationConcurrency.maxConcurrentSimulations = 2;
+      livekitService.listRooms.mockResolvedValue([
+        { name: 'room-1' },
+        { name: 'room-2' },
+      ] as any);
+
+      await expect(
+        service.previewScenario(previewDto as any, mockUserId),
+      ).rejects.toThrow(SimulationCapacityException);
+
+      mockConfigService.simulationConcurrency.maxConcurrentSimulations = 100;
+    });
   });
 
   describe('endPreviewScenario', () => {
@@ -1893,6 +1938,26 @@ describe('ScenarioSessionService', () => {
       expect(scenarioSessionRepository.delete).toHaveBeenCalledWith(
         mockCreatedSession.id,
       );
+    });
+
+    it('should throw SimulationCapacityException when at max concurrent simulations', async () => {
+      const startDto = {
+        scenarioId: mockScenarioId,
+        ttl: 3600,
+      };
+
+      scenarioService.getAdminScenario.mockResolvedValue(mockScenario as any);
+      mockConfigService.simulationConcurrency.maxConcurrentSimulations = 2;
+      livekitService.listRooms.mockResolvedValue([
+        { name: 'room-1' },
+        { name: 'room-2' },
+      ] as any);
+
+      await expect(
+        service.startScenarioSession(mockCounselorId, startDto as any),
+      ).rejects.toThrow(SimulationCapacityException);
+
+      mockConfigService.simulationConcurrency.maxConcurrentSimulations = 100;
     });
   });
 

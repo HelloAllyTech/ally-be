@@ -46,6 +46,7 @@ import {
 import { ScenarioSessionBehaviorInstructions } from '../entity/scenario-session-behavior-instructions.entity';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { EntityOperationException } from 'src/exception/custom.exception';
+import { SimulationCapacityException } from '../exception/simulation-capacity.exception';
 import { Scenarios } from '../entity/scenarios.entity';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -616,11 +617,22 @@ export class ScenarioSessionService {
     return voiceDetails;
   }
 
+  private async validateGlobalSimulationCapacity(): Promise<void> {
+    const maxConcurrent =
+      this.configService.simulationConcurrency.maxConcurrentSimulations;
+    const activeRooms = await this.livekitService.listRooms();
+    if (activeRooms.length >= maxConcurrent) {
+      throw new SimulationCapacityException(maxConcurrent);
+    }
+  }
+
   private async validateStartScenarioSession(
     counselorId: number,
     scenarioId: number,
     startScenarioSessionDto: StartScenarioSessionRequestDto,
   ) {
+    await this.validateGlobalSimulationCapacity();
+
     const tenantId = ExecutionManager.getTenantId();
     if (!tenantId) {
       throw new NotFoundException('TenantId not found');
@@ -1255,6 +1267,7 @@ export class ScenarioSessionService {
     const scenario = await this.scenarioService.getAdminScenario(scenarioId);
 
     await this.validatePreviewScenario(scenario);
+    await this.validateGlobalSimulationCapacity();
 
     const { enLanguageDetails, languageDetails } =
       await this.getLanguageDetailsForScenarioSession(languageId);
