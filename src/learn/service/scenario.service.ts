@@ -56,6 +56,7 @@ import {
   mapUpdateScenarioRequestToEntity,
   formatAutoTerminationEventsList,
   getPromptCodeForScenarioField,
+  applyScenarioTranslations,
 } from '../util/scenario.util';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
@@ -173,14 +174,23 @@ export class ScenarioService {
     return { data, count };
   }
 
-  async getScenariosV2(): Promise<GetScenarioDtoWithPagination> {
+  async getScenariosV2(
+    languageCode?: string,
+  ): Promise<GetScenarioDtoWithPagination> {
     const tenantId = ExecutionManager.getTenantId();
     if (!tenantId) {
       throw new BadRequestException('Tenant ID is required');
     }
     const { data, count } = await this.scenariosRepository.getScenarios({
       tenantId,
+      ...(languageCode && { languageCode }),
     });
+
+    if (languageCode) {
+      data.forEach((scenario) =>
+        applyScenarioTranslations(scenario, languageCode),
+      );
+    }
 
     return { data, count };
   }
@@ -278,15 +288,21 @@ export class ScenarioService {
   async getScenario(
     id: number,
     options?: GetScenarioByIdOptions,
+    languageCode?: string,
   ): Promise<GetScenarioResponse> {
     const scenario = await this.scenariosRepository.getScenarioById(id, {
       select: options?.select,
       em: options?.em,
       isPublic: options?.isPublic,
+      ...(languageCode && { languageCode }),
     });
 
     if (!scenario) {
       throw new NotFoundException('Scenario not found');
+    }
+
+    if (languageCode) {
+      applyScenarioTranslations(scenario, languageCode);
     }
     return scenario;
   }

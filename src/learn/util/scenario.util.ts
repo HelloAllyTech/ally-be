@@ -239,3 +239,18 @@ export const getPromptCodeForScenarioField = (scenarioField: string) => {
       return toPromptCode('openai_simulation', 'linguistic_style_samples');
   }
 };
+
+export const applyScenarioTranslations = (
+  scenario: Scenarios,
+  languageCode?: string,
+) => {
+  if (!scenario || !languageCode) return scenario;
+  if (scenario.translations && scenario.translations[languageCode]) {
+    scenario.title =
+      scenario.translations[languageCode].title || scenario.title;
+    scenario.description =
+      scenario.translations[languageCode].description || scenario.description;
+  }
+  delete scenario.translations;
+  return scenario;
+};

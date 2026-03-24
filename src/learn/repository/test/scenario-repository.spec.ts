@@ -153,6 +153,23 @@ describe('ScenariosRepository', () => {
         { isPublic: true },
       );
     });
+
+    it('should include translations in select fields when languageCode filter is provided', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+      await repository.getScenarios({ languageCode: 'mr' });
+
+      expect(mockQueryBuilder.select).toHaveBeenCalledWith([
+        'scenario.id',
+        'scenario.title',
+        'scenario.scenario',
+        'scenario.description',
+        'scenario.coverImageUrl',
+        'scenario.coverVideoUrl',
+        'scenario.status',
+        'scenario.isPublic',
+        'scenario.translations',
+      ]);
+    });
   });
 
   describe('getScenarioById', () => {
@@ -191,6 +208,22 @@ describe('ScenariosRepository', () => {
       expect(mockQueryBuilder.select).toHaveBeenCalledWith([
         'scenario.id',
         'scenario.title',
+      ]);
+    });
+
+    it('should append translations to select fields when languageCode and select options are provided', async () => {
+      const options: GetScenarioByIdOptions = {
+        select: ['id', 'title'] as any,
+        languageCode: 'mr',
+      };
+      mockQueryBuilder.getOne.mockResolvedValue(null);
+
+      await repository.getScenarioById(1, options);
+
+      expect(mockQueryBuilder.select).toHaveBeenCalledWith([
+        'scenario.id',
+        'scenario.title',
+        'scenario.translations',
       ]);
     });
 

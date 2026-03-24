@@ -8,10 +8,12 @@ export type ScenarioFilters = {
   isPublic?: boolean;
   isMultiTenantAdmin?: boolean;
   userId?: number;
+  languageCode?: string;
 };
 
 export type GetScenarioByIdOptions = {
   select?: (keyof Scenarios)[];
   em?: EntityManager;
   isPublic?: boolean;
+  languageCode?: string;
 };

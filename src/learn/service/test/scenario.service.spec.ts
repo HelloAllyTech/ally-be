@@ -1484,6 +1484,30 @@ describe('ScenarioService', () => {
       });
     });
 
+    it('should apply translations when languageCode is provided', async () => {
+      const mockScenarios = [
+        { 
+          ...mockScenario, 
+          status: ScenarioStatus.ACTIVE,
+          translations: { mr: { title: 'Marathi Title' } } 
+        },
+      ];
+      const mockResponse = {
+        data: mockScenarios,
+        count: mockScenarios.length,
+      };
+      scenariosRepository.getScenarios.mockResolvedValue(mockResponse as any);
+
+      const result = await service.getScenariosV2('mr');
+
+      expect(result.data[0].title).toEqual('Marathi Title');
+      expect((result.data[0] as any).translations).toBeUndefined();
+      expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
+        tenantId: mockTenantId,
+        languageCode: 'mr',
+      });
+    });
+
     it('should throw BadRequestException when tenantId is not available', async () => {
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(null);
 
@@ -1575,6 +1599,22 @@ describe('ScenarioService', () => {
       const result = await service.getScenario(1);
 
       expect(result).toEqual(mockScenario);
+    });
+
+    it('should apply translations when languageCode is provided', async () => {
+      const scenarioWithTranslations = {
+        ...mockScenario,
+        translations: { mr: { title: 'Marathi Title' } }
+      };
+      scenariosRepository.getScenarioById.mockResolvedValue(scenarioWithTranslations as any);
+
+      const result = await service.getScenario(1, undefined, 'mr');
+
+      expect(result.title).toEqual('Marathi Title');
+      expect((result as any).translations).toBeUndefined();
+      expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(1, {
+        languageCode: 'mr'
+      });
     });
 
     it('should throw NotFoundException when scenario not found', async () => {
