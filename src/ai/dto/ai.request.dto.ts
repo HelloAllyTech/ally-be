@@ -1,6 +1,13 @@
+export type PromptOverride =
+  | string
+  | {
+      prompt: string;
+      availableVariables?: string[];
+    };
+
 export type GenerateSummaryRequest = {
   chat_history: MessageRequest[];
-  prompts?: Record<string, string>;
+  prompts?: Record<string, PromptOverride>;
 };
 
 export type MessageRequest = {
@@ -12,7 +19,7 @@ export type MessageRequest = {
 
 export type EnhanceTextRequest = {
   content: string;
-  prompts?: Record<string, string>;
+  prompts?: Record<string, PromptOverride>;
 };
 
 export type Chat = {
@@ -22,12 +29,12 @@ export type Chat = {
 
 export type IdentifySpeakersRequest = {
   chat_history: Chat[];
-  prompts?: Record<string, string>;
+  prompts?: Record<string, PromptOverride>;
 };
 
 export type TagPositivityRatingsRequest = {
   tags: string[];
-  prompts?: Record<string, string>;
+  prompts?: Record<string, PromptOverride>;
 };
 
 export interface AddReferenceDocumentRequest {
@@ -71,7 +78,7 @@ export interface TranscribeAudioRequest {
   presigned_url: string;
   chat_id: number;
   sample_rate: number;
-  prompts?: Record<string, string>;
+  prompts?: Record<string, PromptOverride>;
 }
 
 export interface ScenarioReportGenerateRequest {
@@ -96,6 +103,6 @@ export type ScenarioEvaluationRequest = {
   need_memory: boolean;
   previous_memory: string | null;
   memory_prompt: string | null;
-  prompts?: Record<string, string>;
+  prompts?: Record<string, PromptOverride>;
   enable_recommendations?: boolean;
 };

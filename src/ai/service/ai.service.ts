@@ -17,6 +17,7 @@ import {
   GetReferenceDocumentRequest,
   IdentifySpeakersRequest,
   MessageRequest,
+  PromptOverride,
   ScenarioReportGenerateRequest,
   ScenarioEvaluationChatMessage,
   ScenarioEvaluationRequest,
@@ -328,7 +329,7 @@ export class AiService {
           chat_history: MessageRequest[];
           previous_memory?: string | null;
           need_memory: boolean;
-          prompts: Record<string, string>;
+          prompts: Record<string, PromptOverride>;
         }
       >(
         'api/v1/summary/scenario/feedback',
@@ -387,14 +388,28 @@ export class AiService {
    * Fetches prompt overrides from DB that have the ALLY_AI_PROMPT_PREFIX.
    * Maps 'ally_ai_folder_file' -> 'folder/file' for ally-ai consumption.
    */
-  private async getPromptOverrides(): Promise<Record<string, string>> {
+  private async getPromptOverrides(): Promise<
+    Record<
+      string,
+      {
+        prompt: string;
+        availableVariables?: string[];
+      }
+    >
+  > {
     try {
       const prompts = await this.promptSharedService.getPromptsByOptions({
         promptCodePrefix: ALLY_AI_PROMPT_PREFIX,
         useDashboardOverrideOnly: true,
       });
 
-      const overrides: Record<string, string> = {};
+      const overrides: Record<
+        string,
+        {
+          prompt: string;
+          availableVariables?: string[];
+        }
+      > = {};
       for (const p of prompts) {
         // Skip if it actually belongs to ally-ai-learn
         if (p.promptCode.startsWith(ALLY_AI_LEARN_PROMPT_PREFIX)) {
@@ -410,7 +425,10 @@ export class AiService {
          * We use a global replace with /_/g to handle nested structures if any.
          */
         const mappedKey = rawCode.replace(/_/g, '/');
-        overrides[mappedKey] = p.prompt;
+        overrides[mappedKey] = {
+          prompt: p.prompt,
+          availableVariables: p.availableVariables || [],
+        };
       }
       return overrides;
     } catch (error) {
