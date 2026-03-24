@@ -363,28 +363,29 @@ describe('LearnController', () => {
   });
 
   describe('getPublicScenariosV2', () => {
-    it('should return paginated scenarios for v2', async () => {
+    it('should return paginated scenarios for v2 and pass languageCode', async () => {
       const mockResponse = {
         data: mockScenarios,
         count: mockScenarios.length,
       };
       scenarioService.getScenariosV2.mockResolvedValue(mockResponse as any);
 
-      const result = await controller.getPublicScenariosV2();
+      const result = await controller.getPublicScenariosV2('mr');
 
       expect(result).toEqual(mockResponse);
       expect(scenarioService.getScenariosV2).toHaveBeenCalledTimes(1);
+      expect(scenarioService.getScenariosV2).toHaveBeenCalledWith('mr');
     });
   });
 
   describe('getScenario', () => {
-    it('should return a scenario by id', async () => {
+    it('should return a scenario by id and pass languageCode if provided', async () => {
       const scenarioId = 1;
       scenarioService.getScenario.mockResolvedValue(
         mockScenarioResponse as any,
       );
 
-      const result = await controller.getScenario(scenarioId);
+      const result = await controller.getScenario(scenarioId, 'mr');
 
       expect(result).toEqual(mockScenarioResponse);
       expect(scenarioService.getScenario).toHaveBeenCalledWith(scenarioId, {
@@ -397,6 +398,7 @@ describe('LearnController', () => {
           'coverVideoUrl',
           'status',
         ],
+        languageCode: 'mr',
       });
     });
   });

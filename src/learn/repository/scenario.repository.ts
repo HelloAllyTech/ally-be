@@ -63,17 +63,23 @@ export class ScenariosRepository extends Repository<Scenarios> {
       });
     }
 
+    const selectColumns = [
+      'scenario.id',
+      'scenario.title',
+      'scenario.scenario',
+      'scenario.description',
+      'scenario.coverImageUrl',
+      'scenario.coverVideoUrl',
+      'scenario.status',
+      'scenario.isPublic',
+    ];
+
+    if (filters?.languageCode) {
+      selectColumns.push('scenario.translations');
+    }
+
     const [data, count] = await query
-      .select([
-        'scenario.id',
-        'scenario.title',
-        'scenario.scenario',
-        'scenario.description',
-        'scenario.coverImageUrl',
-        'scenario.coverVideoUrl',
-        'scenario.status',
-        'scenario.isPublic',
-      ])
+      .select(selectColumns)
       .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
       .leftJoinAndMapMany(
         'scenario.triggerWarnings',
@@ -97,7 +103,16 @@ export class ScenariosRepository extends Repository<Scenarios> {
       : this.dataSource.getRepository(Scenarios);
     const query = scenarioRepo.createQueryBuilder('scenario');
     if (options?.select) {
-      query?.select(options.select.map((field) => `scenario.${String(field)}`));
+      const selectFields = options.select.map(
+        (field) => `scenario.${String(field)}`,
+      );
+      if (
+        options?.languageCode &&
+        !selectFields.includes('scenario.translations')
+      ) {
+        selectFields.push('scenario.translations');
+      }
+      query?.select(selectFields);
     }
     query
       .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
@@ -114,7 +129,7 @@ export class ScenariosRepository extends Repository<Scenarios> {
         isPublic: options?.isPublic,
       });
     }
-    return query.getOne();
+    return await query.getOne();
   }
   async getAdminScenarios(
     scenarioFilters?: ScenarioFilters,

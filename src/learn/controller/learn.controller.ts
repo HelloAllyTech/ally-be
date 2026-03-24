@@ -107,8 +107,10 @@ export class LearnController {
   @Version('2')
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIOS])
   @Get('scenarios')
-  async getPublicScenariosV2(): Promise<GetScenarioDtoWithPagination> {
-    return this.scenarioService.getScenariosV2();
+  async getPublicScenariosV2(
+    @Query('languageCode') languageCode?: string,
+  ): Promise<GetScenarioDtoWithPagination> {
+    return this.scenarioService.getScenariosV2(languageCode);
   }
 
   @ApiOperation({ summary: 'Get all scenarios ' })
@@ -182,7 +184,10 @@ export class LearnController {
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO])
   @ApiOperation({ summary: 'Get a scenario by id' })
   @Get('scenarios/:id')
-  async getScenario(@Param('id') id: number): Promise<GetScenarioResponse> {
+  async getScenario(
+    @Param('id') id: number,
+    @Query('languageCode') languageCode?: string,
+  ): Promise<GetScenarioResponse> {
     return this.scenarioService.getScenario(id, {
       select: [
         'id',
@@ -193,6 +198,7 @@ export class LearnController {
         'coverVideoUrl',
         'status',
       ],
+      languageCode,
     });
   }
 
