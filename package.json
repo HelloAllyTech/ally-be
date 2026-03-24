@@ -39,12 +39,9 @@
     "seed:scenarios": "npm run seed -- src/database/seeds/scenarios-pathway.ts",
     "seed:badges": "npm run seed -- src/database/seeds/seed-badges.ts",
     "seed:all": "npm run seed:orchestrate",
-    "generate:linguistic-samples": "ts-node -r tsconfig-paths/register src/database/scripts/generate-linguistic-style-samples.ts"
+    "generate:linguistic-samples": "ts-node -r tsconfig-paths/register src/database/scripts/generate-linguistic-style-samples.ts",
+    "prepare": "husky"
   },
-  "pre-commit": [
-    "lint",
-    "test"
-  ],
   "dependencies": {
     "@aws-sdk/client-cloudwatch-logs": "^3.1012.0",
     "@aws-sdk/client-s3": "^3.1012.0",
@@ -93,7 +90,6 @@
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
     "pg": "^8.20.0",
-    "pre-commit": "^1.2.2",
     "reflect-metadata": "^0.2.2",
     "remove": "^0.1.5",
     "rxjs": "^7.8.2",
@@ -128,6 +124,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
     "globals": "^17.4.0",
+    "husky": "^9.1.7",
     "jest": "^30.3.0",
     "prettier": "^3.8.1",
     "source-map-support": "^0.5.21",
