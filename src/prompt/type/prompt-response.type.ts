@@ -33,6 +33,7 @@ export type PromptDetailResponse = {
 export type PromptsWithPromptCode = {
   prompt: string;
   promptCode: string;
+  availableVariables?: string[];
 };
 
 export type PromptSearchOptions = {

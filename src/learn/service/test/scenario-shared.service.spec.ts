@@ -943,14 +943,17 @@ describe('ScenarioSharedService', () => {
         {
           promptCode: 'ally_ai_learn_system_default_system_prompt',
           prompt: 'Default prompt text',
+          availableVariables: [],
         },
         {
           promptCode: 'ally_ai_learn_prosody_default_generation_prompt',
           prompt: 'Prosody generation text',
+          availableVariables: [],
         },
         {
           promptCode: 'ally_ai_learn_counselor_report_generation_prompt',
           prompt: 'Report generation text',
+          availableVariables: [],
         },
       ];
       promptSharedService.getPromptsByOptions.mockResolvedValue(mockPrompts);
@@ -962,11 +965,18 @@ describe('ScenarioSharedService', () => {
         useDashboardOverrideOnly: true,
       });
       expect(result).toEqual({
-        ally_ai_learn_system_default_system_prompt: 'Default prompt text',
-        ally_ai_learn_prosody_default_generation_prompt:
-          'Prosody generation text',
-        ally_ai_learn_counselor_report_generation_prompt:
-          'Report generation text',
+        ally_ai_learn_system_default_system_prompt: {
+          prompt: 'Default prompt text',
+          availableVariables: [],
+        },
+        ally_ai_learn_prosody_default_generation_prompt: {
+          prompt: 'Prosody generation text',
+          availableVariables: [],
+        },
+        ally_ai_learn_counselor_report_generation_prompt: {
+          prompt: 'Report generation text',
+          availableVariables: [],
+        },
       });
     });
 
@@ -986,7 +996,10 @@ describe('ScenarioSharedService', () => {
       const result = await (service as any).getPromptsForScenarioSession();
 
       expect(result).toEqual({
-        ally_ai_learn_system_default_system_prompt: 'Second value',
+        ally_ai_learn_system_default_system_prompt: {
+          prompt: 'Second value',
+          availableVariables: [],
+        },
       });
     });
   });
