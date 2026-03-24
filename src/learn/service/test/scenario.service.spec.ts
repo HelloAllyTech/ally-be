@@ -1486,10 +1486,10 @@ describe('ScenarioService', () => {
 
     it('should apply translations when languageCode is provided', async () => {
       const mockScenarios = [
-        { 
-          ...mockScenario, 
+        {
+          ...mockScenario,
           status: ScenarioStatus.ACTIVE,
-          translations: { mr: { title: 'Marathi Title' } } 
+          translations: { mr: { title: 'Marathi Title' } },
         },
       ];
       const mockResponse = {
@@ -1604,16 +1604,18 @@ describe('ScenarioService', () => {
     it('should apply translations when languageCode is provided', async () => {
       const scenarioWithTranslations = {
         ...mockScenario,
-        translations: { mr: { title: 'Marathi Title' } }
+        translations: { mr: { title: 'Marathi Title' } },
       };
-      scenariosRepository.getScenarioById.mockResolvedValue(scenarioWithTranslations as any);
+      scenariosRepository.getScenarioById.mockResolvedValue(
+        scenarioWithTranslations as any,
+      );
 
       const result = await service.getScenario(1, undefined, 'mr');
 
       expect(result.title).toEqual('Marathi Title');
       expect((result as any).translations).toBeUndefined();
       expect(scenariosRepository.getScenarioById).toHaveBeenCalledWith(1, {
-        languageCode: 'mr'
+        languageCode: 'mr',
       });
     });
 
