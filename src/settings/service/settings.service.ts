@@ -36,12 +36,22 @@ import {
 } from '../dto/summary-fields.dto';
 import { UpdateSummarySectionsDto } from '../dto/summary-sections.dto';
 import { GetChatTypesDto, UpdateChatTypesDto } from '../dto/chat-types.dto';
+import { AuditLogService } from 'src/audit/service/audit-log.service';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { AdminTenantService } from 'src/user/service/admin-tenant.service';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_EVENTS,
+} from 'src/audit/constants/audit-event.constants';
 
 @Injectable()
 export class SettingsService {
   constructor(
     private readonly preferenceService: PreferenceService,
     private readonly permissionValidator: PermissionValidator,
+    private readonly auditLogService: AuditLogService,
+    private permissionsService: PermissionsService,
+    private readonly adminTenantService: AdminTenantService,
   ) {}
 
   async getSummaryFieldsConfig(getSummaryFieldsDto?: GetSummaryFieldsDto) {
@@ -296,6 +306,24 @@ export class SettingsService {
       );
     }
 
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(parseInt(userId))
+      : false;
+
+    if (isMultiTenantAdmin) {
+      const adminTenants = await this.adminTenantService.getTenantsForAdmin(
+        Number(userId),
+      );
+
+      const adminTenantIds = adminTenants.data.map((t: any) => t.id);
+
+      if (!adminTenantIds.includes(dto.tenantId)) {
+        throw new ForbiddenException(
+          'You are not authorized to update summary sections for this tenant',
+        );
+      }
+    }
+
     const { hiddenSections, tenantId } = dto;
 
     const invalidSectionIds = hiddenSections.filter(
@@ -330,6 +358,18 @@ export class SettingsService {
       });
     }
 
+    if (isMultiTenantAdmin) {
+      this.auditLogService.log({
+        eventType:
+          AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SETTINGS_SUMMARY_FIELDS,
+        details: {
+          action: AUDIT_ACTIONS.UPDATE_SETTING_SUMMARY_FIELDS,
+          tenantId,
+          userId,
+          hiddenSections,
+        },
+      });
+    }
     return { success: true };
   }
 
