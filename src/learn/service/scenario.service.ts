@@ -23,7 +23,10 @@ import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
-import { ScenarioStatus } from '../type/scenario.type';
+import {
+  ScenarioAppLangugeTranslations,
+  ScenarioStatus,
+} from '../type/scenario.type';
 import { SCENARIO_STATUS_MAP } from 'src/learn/constants/scenario-status.map';
 import { S3Service } from 'src/aws/service/s3.service';
 import { AppConfigService } from 'src/config/config.service';
@@ -85,6 +88,7 @@ import isDuplicateKeyException from 'src/exception/custom.exception';
 import {
   BRANCHING_INSTRUCTION_DYNAMIC_SHORTCUTS,
   LOWER_MAX_TIMER_VALUE,
+  SCENARIO_FIELDS,
   UPPER_MAX_TIMER_VALUE,
 } from '../constants/scenario.constants';
 import {
@@ -1727,6 +1731,35 @@ export class ScenarioService {
     }
   }
 
+  private hasTranslatableFieldsChanged(
+    scenario: Scenarios,
+    sanitized: Partial<MetadataShape>,
+  ): boolean {
+    const isCreateOrNew =
+      !scenario.translations || Object.keys(scenario.translations).length === 0;
+
+    if (isCreateOrNew) {
+      return true;
+    }
+
+    for (const [key, newValue] of Object.entries(sanitized)) {
+      let oldValue: any;
+      if (
+        key === SCENARIO_FIELDS.TITLE ||
+        key === SCENARIO_FIELDS.DESCRIPTION
+      ) {
+        oldValue = (scenario as any)[key];
+      } else {
+        oldValue = scenario.metadata?.[key];
+      }
+
+      if (JSON.stringify(newValue) !== JSON.stringify(oldValue)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /**
    * Persist translations for scenarios:
    * - creates new translations for new languageIds
@@ -1746,6 +1779,18 @@ export class ScenarioService {
         const rawMetadata = metadataExtractor(scenario);
 
         const sanitized = this.sanitizeMetadata(rawMetadata);
+
+        if (
+          !this.hasTranslatableFieldsChanged(
+            scenario,
+            sanitized as Partial<MetadataShape>,
+          )
+        ) {
+          this.logger?.debug?.(
+            `[persistTranslationsForScenarios] scenario ${scenario.id}: no translatable fields have changed, skipping translations`,
+          );
+          continue;
+        }
 
         if (!sanitized || Object.keys(sanitized).length === 0) {
           this.logger?.debug?.(
@@ -1833,6 +1878,24 @@ export class ScenarioService {
             toUpdate,
           );
         }
+
+        const formattedResult: Record<string, ScenarioAppLangugeTranslations> =
+          {};
+        for (const [langCode, metadata] of Object.entries(translatedMap)) {
+          formattedResult[langCode] = {
+            title: metadata?.title,
+            description: metadata?.description,
+          };
+        }
+
+        const mergedTranslations = {
+          ...(scenario.translations || {}),
+          ...formattedResult,
+        };
+
+        this.dataSource
+          .getRepository(Scenarios)
+          .update(scenario.id, { translations: mergedTranslations });
       } catch (outerErr) {
         this.logger?.error?.(
           `[persistTranslationsForScenarios] unexpected error processing scenario ${scenario.id}`,

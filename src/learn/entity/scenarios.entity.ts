@@ -60,4 +60,7 @@ export class Scenarios extends BaseWithoutTenantEntity {
 
   @Column({ type: 'uuid', nullable: true })
   competencyId?: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  translations?: Record<string, any>;
 }
