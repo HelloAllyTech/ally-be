@@ -62,3 +62,8 @@ export interface CreateRoomMetadataOptions {
   languageDetails?: Languages | null;
   previousMemory?: string | null;
 }
+
+export interface ScenarioAppLangugeTranslations {
+  title?: string;
+  description?: string;
+}

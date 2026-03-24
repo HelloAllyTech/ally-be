@@ -5367,4 +5367,135 @@ describe('ScenarioService', () => {
       ).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe('hasTranslatableFieldsChanged', () => {
+    it('should return true if translations do not exist or are empty', () => {
+      const sanitized = { title: 'Title' };
+
+      const scenarioEmpty = { id: 1, title: 'Title', translations: {} } as any;
+      expect(
+        (service as any).hasTranslatableFieldsChanged(scenarioEmpty, sanitized),
+      ).toBe(true);
+
+      const scenarioMissing = { id: 1, title: 'Title' } as any;
+      expect(
+        (service as any).hasTranslatableFieldsChanged(
+          scenarioMissing,
+          sanitized,
+        ),
+      ).toBe(true);
+    });
+
+    it('should return false if translatable fields have not changed', () => {
+      const scenario = {
+        id: 1,
+        title: 'Original Title',
+        description: 'Original Description',
+        metadata: {
+          tone: 'Friendly',
+          customFields: [{ name: 'Test', value: 'Test' }],
+        },
+        translations: { hi: { title: 'Translated' } },
+      } as any;
+
+      const sanitized = {
+        title: 'Original Title',
+        description: 'Original Description',
+        tone: 'Friendly',
+        customFields: [{ name: 'Test', value: 'Test' }],
+      };
+
+      expect(
+        (service as any).hasTranslatableFieldsChanged(scenario, sanitized),
+      ).toBe(false);
+    });
+
+    it('should return true if a root field (title or description) has changed', () => {
+      const scenario = {
+        id: 1,
+        title: 'Original Title',
+        description: 'Original Description',
+        translations: { hi: { title: 'Translated' } },
+      } as any;
+
+      const sanitizedTitleChanged = {
+        title: 'New Title',
+        description: 'Original Description',
+      };
+      expect(
+        (service as any).hasTranslatableFieldsChanged(
+          scenario,
+          sanitizedTitleChanged,
+        ),
+      ).toBe(true);
+
+      const sanitizedDescChanged = {
+        title: 'Original Title',
+        description: 'New Description',
+      };
+      expect(
+        (service as any).hasTranslatableFieldsChanged(
+          scenario,
+          sanitizedDescChanged,
+        ),
+      ).toBe(true);
+    });
+
+    it('should return true if a metadata field has changed', () => {
+      const scenario = {
+        id: 1,
+        title: 'Original Title',
+        metadata: { tone: 'Friendly' },
+        translations: { hi: { title: 'Translated' } },
+      } as any;
+
+      const sanitizedToneChanged = {
+        title: 'Original Title',
+        tone: 'Professional',
+      };
+
+      expect(
+        (service as any).hasTranslatableFieldsChanged(
+          scenario,
+          sanitizedToneChanged,
+        ),
+      ).toBe(true);
+    });
+
+    it('should correctly handle deep JSON equality checks for arrays/objects', () => {
+      const scenario = {
+        id: 1,
+        metadata: {
+          customFields: [
+            { name: 'Field 1', value: 'Value 1' },
+            { name: 'Field 2', value: 'Value 2' },
+          ],
+        },
+        translations: { hi: { title: 'Translated' } },
+      } as any;
+
+      const sanitizedSame = {
+        customFields: [
+          { name: 'Field 1', value: 'Value 1' },
+          { name: 'Field 2', value: 'Value 2' },
+        ],
+      };
+      expect(
+        (service as any).hasTranslatableFieldsChanged(scenario, sanitizedSame),
+      ).toBe(false);
+
+      const sanitizedDifferent = {
+        customFields: [
+          { name: 'Field 1', value: 'Value 1' },
+          { name: 'Field X', value: 'Value X' },
+        ],
+      };
+      expect(
+        (service as any).hasTranslatableFieldsChanged(
+          scenario,
+          sanitizedDifferent,
+        ),
+      ).toBe(true);
+    });
+  });
 });
