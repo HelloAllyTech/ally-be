@@ -188,18 +188,21 @@ export class LearnController {
     @Param('id') id: number,
     @Query('languageCode') languageCode?: string,
   ): Promise<GetScenarioResponse> {
-    return this.scenarioService.getScenario(id, {
-      select: [
-        'id',
-        'title',
-        'scenario',
-        'description',
-        'coverImageUrl',
-        'coverVideoUrl',
-        'status',
-      ],
+    return this.scenarioService.getScenario(
+      id,
+      {
+        select: [
+          'id',
+          'title',
+          'scenario',
+          'description',
+          'coverImageUrl',
+          'coverVideoUrl',
+          'status',
+        ],
+      },
       languageCode,
-    });
+    );
   }
 
   @Public()
