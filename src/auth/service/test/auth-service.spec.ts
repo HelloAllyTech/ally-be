@@ -262,10 +262,10 @@ describe('AuthService', () => {
         expiresAt: new Date(Date.now() + 86400000),
       } as RefreshToken;
 
+      userRepository.findOne.mockResolvedValue(mockUser);
       refreshTokenRepository.findOne.mockResolvedValue(tokenEntity);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       refreshTokenRepository.remove.mockResolvedValue(tokenEntity);
-      userRepository.findOneOrFail.mockResolvedValue(mockUser);
       (bcrypt.hash as jest.Mock).mockResolvedValue('new-hashed-refresh-token');
       jwtService.signAsync
         .mockResolvedValueOnce(newAccessToken)
@@ -281,6 +281,7 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException for invalid refresh token', async () => {
+      userRepository.findOne.mockResolvedValue(mockUser);
       refreshTokenRepository.findOne.mockResolvedValue(null);
 
       await expect(
@@ -295,6 +296,7 @@ describe('AuthService', () => {
         expiresAt: new Date(Date.now() + 86400000),
       } as RefreshToken;
 
+      userRepository.findOne.mockResolvedValue(mockUser);
       refreshTokenRepository.findOne.mockResolvedValue(tokenEntity);
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 

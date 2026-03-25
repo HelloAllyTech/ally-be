@@ -117,6 +117,17 @@ export class AuthService {
   }
 
   async refreshTokens(oldRefreshToken: string, userId: number) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      this.logger.error(
+        `User ${user.email} is suspended while refreshing tokens`,
+      );
+      throw new UserSuspendedException();
+    }
     // Find and validate the old refresh token
     const tokenEntity = await this.refreshTokenRepository.findOne({
       where: {
@@ -136,9 +147,6 @@ export class AuthService {
     await this.refreshTokenRepository.remove(tokenEntity);
 
     // Generate new tokens
-    const user = await this.userRepository.findOneOrFail({
-      where: { id: userId },
-    });
     return this.generateTokens(user);
   }
 
@@ -273,6 +281,7 @@ export class AuthService {
     }
 
     const otp = AuthUtil.generateOtp();
+    console.log('otp', otp);
     const { magicToken, otpHash, magicTokenHash, expiresAt } =
       this.generateMagicTokenCredentials(otp);
 
