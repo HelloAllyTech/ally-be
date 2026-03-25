@@ -12,7 +12,7 @@ import { ToggleReviewCommentReactionDto } from 'src/review/dto/toggle-review-com
 import { ScenarioSessionReviewCommentReactionService } from '../service/comment-reaction.service';
 
 @Controller({
-  path: ['scenario-session-reviews', 'reviews'],
+  path: 'scenario-session-reviews',
   version: '1',
 })
 @ApiBearerAuth()

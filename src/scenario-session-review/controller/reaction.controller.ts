@@ -23,7 +23,7 @@ import { ScenarioSessionReviewReactionService } from '../service/reaction.servic
 import { GetReviewReactionCountResponseDto } from 'src/review/dto/get-review-reaction-and-count-response.dto';
 
 @Controller({
-  path: ['scenario-session-reviews', 'reviews'],
+  path: 'scenario-session-reviews',
   version: '1',
 })
 @ApiBearerAuth()

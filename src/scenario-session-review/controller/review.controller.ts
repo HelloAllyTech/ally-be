@@ -31,7 +31,7 @@ import { ReviewSortBy } from 'src/review/type/review.type';
 import { GetReviewMessagesResponseDto } from 'src/review/dto/review-messages-response.dto';
 
 @Controller({
-  path: ['scenario-session-reviews', 'reviews'],
+  path: 'scenario-session-reviews',
   version: '1',
 })
 @ApiBearerAuth()

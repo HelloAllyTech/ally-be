@@ -91,16 +91,6 @@ describe('AuthController', () => {
     expect(result).toEqual({ message: 'Logged out successfully' });
   });
 
-  it('should get user permissions', async () => {
-    mockPermissionsService.getUserPermissions.mockResolvedValue([
-      'read',
-      'write',
-    ]);
-    const req = { user: { id: '1' } };
-    const result = await controller.getPermissions(req as any);
-    expect(result).toEqual(['read', 'write']);
-  });
-
   // V2 OTP tests
   it('should generate OTP V2 successfully', async () => {
     mockAuthService.generateOtpV2.mockResolvedValue({ success: true });

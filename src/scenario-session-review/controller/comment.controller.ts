@@ -31,7 +31,7 @@ import { ToggleCommentVisibilityDto } from 'src/review/dto/toggle-comment-visibi
 import { GetReviewCommentsResponseDto } from 'src/review/dto/review-comments-response.dto';
 
 @Controller({
-  path: ['scenario-session-reviews', 'reviews'],
+  path: 'scenario-session-reviews',
   version: '1',
 })
 @ApiBearerAuth()
