@@ -13,7 +13,7 @@ import { ReviewThreadsResponseDto } from 'src/review/dto/review-threads.dto';
 import { ScenarioSessionReviewThreadService } from '../service/thread.service';
 
 @Controller({
-  path: ['scenario-session-reviews', 'reviews'],
+  path: 'scenario-session-reviews',
   version: '1',
 })
 @ApiBearerAuth()

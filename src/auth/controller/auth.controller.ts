@@ -4,7 +4,6 @@ import {
   Body,
   UseGuards,
   Req,
-  Get,
   UnauthorizedException,
   HttpCode,
   HttpStatus,
@@ -97,15 +96,6 @@ export class AuthController {
   async logout(@Req() req: { user: { id: string } }) {
     await this.authService.logout(parseInt(req.user.id));
     return { message: 'Logged out successfully' };
-  }
-
-  // TO Do: Remove this endpoint after app force update
-  @UseGuards(JwtAuthGuard)
-  @Get('permissions')
-  async getPermissions(@Req() req: { user: { id: string } }) {
-    return await this.permissionsService.getUserPermissions(
-      parseInt(req.user.id),
-    );
   }
 
   @Post('google')
