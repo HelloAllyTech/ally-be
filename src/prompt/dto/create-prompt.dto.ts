@@ -17,6 +17,11 @@ export class CreateSinglePromptDto {
   @IsString()
   description?: string;
 
+  @ApiProperty({ description: 'Prompt category', required: false })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
   @ApiProperty({ description: 'Initial prompt content' })
   @IsString()
   @IsNotEmpty()

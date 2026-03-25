@@ -17,6 +17,11 @@ export class UpdatePromptDto {
   @IsString()
   description?: string;
 
+  @ApiProperty({ description: 'Prompt category', required: false })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
   @ApiProperty({ description: 'Prompt content', required: false })
   @IsOptional()
   @IsString()

@@ -99,6 +99,7 @@ services:
       - SERVICES=sqs
       - DEBUG=1
       - LOCALSTACK_HOSTNAME=localstack
+      - LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT=1
     networks:
       - app-network
     healthcheck:

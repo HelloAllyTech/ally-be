@@ -49,14 +49,15 @@ You can override the **display name** and **description** shown in the Admin Das
 subdir/_meta/<stem>.meta.json
 ```
 
-**Schema:** JSON object with optional `name` and `description` (strings). If a key is missing or empty, the sync falls back to the path-derived value (via `formatLabel`).
+**Schema:** JSON object with optional `name`, `description`, and `category` (strings). If a key is missing or empty, the sync falls back to the path-derived value (via `formatLabel`).
 
 **Example:** For `openai_translation/guardrail_translation.txt`, create `openai_translation/_meta/guardrail_translation.meta.json`:
 
 ```json
 {
   "name": "Guardrail Translation",
-  "description": "Localizes conversational guardrails for role-play into natural spoken language. Preserves JSON structure and Markdown."
+  "description": "Localizes conversational guardrails for role-play into natural spoken language. Preserves JSON structure and Markdown.",
+  "category": "Translation"
 }
 ```
 

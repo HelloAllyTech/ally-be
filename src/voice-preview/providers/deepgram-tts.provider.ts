@@ -7,7 +7,7 @@ export class DeepgramTTSProvider implements ITTSProvider {
   private readonly model: string;
 
   constructor(apiKey: string, config: Record<string, any>) {
-    this.client = new DeepgramClient({ apiKey });
+    this.client = new DeepgramClient({ apiKey } as any);
     this.model = config.model;
     if (!this.model) {
       throw new Error('Deepgram config requires "model" field');
@@ -15,7 +15,7 @@ export class DeepgramTTSProvider implements ITTSProvider {
   }
 
   async generatePreview(text: string): Promise<Buffer> {
-    const response = await this.client.speak.v1.audio.generate({
+    const response = await (this.client.speak as any).v1.audio.generate({
       text,
       model: this.model,
       encoding: 'linear16',
