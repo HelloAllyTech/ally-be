@@ -1324,10 +1324,14 @@ export class ScenarioSessionService {
       ? scenario?.metadata?.languageVoices?.[languageId]
       : false;
 
-    // If languageId is provided and voiceId is not found, get fallback voice for language and gender
-    if (!voiceId && languageId) {
+    // Resolve effective languageId
+    const effectiveLanguageId =
+      languageId || (!voiceId && enLanguageDetails?.id);
+
+    // Fetch fallback voice only if needed
+    if (!voiceId && effectiveLanguageId) {
       const voiceDetails = await this.getFallbackVoiceForLanguageGender(
-        languageId,
+        effectiveLanguageId,
         scenario?.metadata?.gender,
       );
       voiceId = voiceDetails?.id;
