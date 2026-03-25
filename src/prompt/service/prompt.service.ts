@@ -29,6 +29,7 @@ export class PromptsService {
         promptCode: standardizePromptCode(promptDto.promptCode),
         name: promptDto.name,
         description: promptDto.description || '',
+        category: promptDto.category,
       }),
     );
 
@@ -86,6 +87,10 @@ export class PromptsService {
 
     if (updatePromptDto.description !== undefined) {
       updateData.description = updatePromptDto.description;
+    }
+
+    if (updatePromptDto.category !== undefined) {
+      updateData.category = updatePromptDto.category;
     }
 
     if (updatePromptDto.useDashboardOverride !== undefined) {
@@ -242,6 +247,7 @@ export class PromptsService {
           promptCode,
           name: item.name,
           description: item.description || '',
+          category: item.category,
           defaultPrompt: item.prompt,
           kind: item.kind,
           availableVariables: item.availableVariables,
@@ -265,6 +271,7 @@ export class PromptsService {
           defaultPrompt: item.prompt,
           name: item.name,
           description: item.description || '',
+          category: item.category,
           kind: item.kind,
           availableVariables: item.availableVariables,
           usesBlocks: item.usesBlocks,

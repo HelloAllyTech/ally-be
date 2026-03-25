@@ -12,6 +12,7 @@ const META_FILENAME_SUFFIX = '.meta.json';
 export interface PromptMeta {
   name?: string;
   description?: string;
+  category?: string;
   kind?: string;
   usesBlocks?: string[];
 }
@@ -40,6 +41,10 @@ export class PromptsSyncService implements OnModuleInit {
         typeof data.description === 'string' && data.description.trim()
           ? data.description.trim()
           : undefined;
+      const category =
+        typeof data.category === 'string' && data.category.trim()
+          ? data.category.trim()
+          : undefined;
       const kind =
         typeof data.kind === 'string' && data.kind.trim()
           ? data.kind.trim()
@@ -59,13 +64,14 @@ export class PromptsSyncService implements OnModuleInit {
       if (
         name === undefined &&
         description === undefined &&
+        category === undefined &&
         kind === undefined &&
         usesBlocks === undefined
       ) {
         return null;
       }
 
-      return { name, description, kind, usesBlocks };
+      return { name, description, category, kind, usesBlocks };
     } catch {
       return null;
     }
@@ -99,6 +105,14 @@ export class PromptsSyncService implements OnModuleInit {
     return { name: formatted, description: formatted };
   }
 
+  private getCategoryFromRelativePath(relPath: string): string | undefined {
+    const [topLevelFolder] = relPath.split(/[/\\]/);
+    if (!topLevelFolder || topLevelFolder === relPath) {
+      return undefined;
+    }
+    return formatLabel(topLevelFolder);
+  }
+
   /**
    * Scan prompts folder and sync to DB. Add-only for new; update defaultPrompt for existing.
    */
@@ -115,6 +129,7 @@ export class PromptsSyncService implements OnModuleInit {
       promptCode: string;
       name: string;
       description: string;
+      category?: string;
       prompt: string;
       availableVariables: string[];
       kind?: string;
@@ -139,6 +154,7 @@ export class PromptsSyncService implements OnModuleInit {
             promptCode,
             hadSubdir,
           );
+          let category = this.getCategoryFromRelativePath(relPath);
           const stem = path.basename(fullPath, '.txt');
           const meta = this.readMeta(dir, stem);
           let kind: string | undefined;
@@ -146,6 +162,7 @@ export class PromptsSyncService implements OnModuleInit {
           if (meta) {
             if (meta.name !== undefined) name = meta.name;
             if (meta.description !== undefined) description = meta.description;
+            if (meta.category !== undefined) category = meta.category;
             if (meta.kind !== undefined) kind = meta.kind;
             if (meta.usesBlocks !== undefined) usesBlocks = meta.usesBlocks;
           }
@@ -153,6 +170,7 @@ export class PromptsSyncService implements OnModuleInit {
             promptCode,
             name,
             description,
+            category,
             prompt: content.trim(),
             availableVariables: parseVariablesFromPrompt(content),
             kind,

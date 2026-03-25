@@ -3,6 +3,7 @@ export type PromptResponse = {
   promptCode: string;
   name: string;
   description: string;
+  category?: string;
   createdAt: Date;
   prompt: string;
   defaultPrompt?: string;
@@ -18,6 +19,7 @@ export type PromptDetailResponse = {
   promptCode: string;
   name: string;
   description: string;
+  category?: string;
   currentVersion?: number;
   createdAt: Date;
   updatedAt: Date;
@@ -39,6 +41,7 @@ export type PromptsWithPromptCode = {
 export type PromptSearchOptions = {
   name?: string;
   description?: string;
+  category?: string[];
   prompt?: string;
   promptCode?: string[];
   /** When set, fetches prompts where promptCode LIKE 'prefix%' (e.g. ally_ai_learn_) */

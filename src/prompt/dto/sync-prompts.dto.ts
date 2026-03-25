@@ -25,6 +25,11 @@ export class SyncPromptItemDto {
   @IsString()
   description!: string;
 
+  @ApiPropertyOptional({ description: 'Prompt category used for dashboard filtering' })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
   @ApiProperty({ description: 'Prompt content (template)' })
   @IsString()
   prompt!: string;

@@ -17,6 +17,9 @@ export class Prompt extends BaseWithoutTenantEntity {
   @Column()
   description!: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  category?: string;
+
   @Column({ nullable: true })
   currentVersion?: number;
 
