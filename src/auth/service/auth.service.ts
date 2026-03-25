@@ -281,7 +281,6 @@ export class AuthService {
     }
 
     const otp = AuthUtil.generateOtp();
-    console.log('otp', otp);
     const { magicToken, otpHash, magicTokenHash, expiresAt } =
       this.generateMagicTokenCredentials(otp);
 
