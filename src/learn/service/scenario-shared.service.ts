@@ -458,6 +458,8 @@ export class ScenarioSharedService {
 
     const stateConfig = getScenarioStateConfigByDifficultyLevel(
       scenario.difficultyLevel as ScenarioDifficultyLevel,
+      this.configService.featureFlag?.scenarioBehaviorStateInstructions ??
+        false,
     );
 
     const formattedStateInstructions = metadata?.stateInstructions?.map(

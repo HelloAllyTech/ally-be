@@ -65,7 +65,7 @@ const LINGUISTIC_STYLE_SAMPLES_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
 const BEHAVIOR_INSTRUCTION_STATE_ITEM = {
   type: 'object',
   properties: {
-    stateId: { type: 'string', enum: ['1', '2', '3', '4'] },
+    stateId: { type: 'string', enum: ['-1', '1', '2', '3'] },
     instruction: { type: 'string' },
   },
   required: ['stateId', 'instruction'],
