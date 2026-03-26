@@ -169,9 +169,11 @@ export class UpdateScenarioDto {
   @ApiProperty({
     description: 'Profession of the AI client persona',
     example: 'Student',
+    required: true,
   })
   @IsString()
   @IsOptional()
+  @IsNotEmpty()
   profession?: string;
 
   @ApiProperty({

@@ -169,10 +169,11 @@ export class CreateScenarioDto {
   @ApiProperty({
     description: 'Profession of the AI client persona',
     example: 'Student',
+    required: true,
   })
   @IsString()
-  @IsOptional()
-  profession?: string;
+  @IsNotEmpty()
+  profession!: string;
 
   @ApiProperty({
     description: 'Personality of the AI client persona',
