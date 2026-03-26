@@ -6,11 +6,15 @@ import {
   ScenarioPathStatus,
   ScenarioPathSortBy,
   SortOrder,
+  ScenarioPathTranslations,
 } from '../../type/scenario-paths.type';
 import { ScenarioPath } from '../../entity/scenario-path.entity';
 import { CreateScenarioPathTenantDto } from '../../dto/create-scenario-path-tenant.dto';
 import { DeleteScenarioPathTenantDto } from '../../dto/delete-scenario-path-tenant.dto';
 import { ScenarioPathController } from 'src/scenario-path/controller/scenario-path.controller';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 
 jest.mock('../../../auth/decorators/auth-permissions.decorator', () => ({
   AuthPermissions: () => () => {},
@@ -20,6 +24,8 @@ describe('ScenarioPathController', () => {
   let controller: ScenarioPathController;
   let service: jest.Mocked<ScenarioPathService>;
   let tenantService: jest.Mocked<ScenarioPathTenantService>;
+  let openaiTranslationsService: jest.Mocked<OpenAITranslationsService>;
+  let sharedLanguageService: jest.Mocked<SharedLanguageService>;
 
   const mockScenarioPathService = {
     createScenarioPath: jest.fn(),
@@ -28,6 +34,17 @@ describe('ScenarioPathController', () => {
     updateScenarioPath: jest.fn(),
     deleteScenarioPath: jest.fn(),
     duplicateScenarioPath: jest.fn(),
+    checkIfTranslationRequired: (
+      oldData: ScenarioPathTranslations,
+      newData: ScenarioPathTranslations,
+    ) => {
+      return (
+        oldData.title?.trim().toLowerCase() !==
+          newData.title?.trim().toLowerCase() ||
+        oldData.description?.trim().toLowerCase() !==
+          newData.description?.trim().toLowerCase()
+      );
+    },
   };
 
   const mockScenarioPathTenantService = {
@@ -47,12 +64,29 @@ describe('ScenarioPathController', () => {
           provide: ScenarioPathTenantService,
           useValue: mockScenarioPathTenantService,
         },
+        {
+          provide: ScenarioSharedService,
+          useValue: {
+            getScenarioByIds: jest.fn(),
+            getUniqueLanguagesFromScenarioTranslations: jest.fn(),
+          },
+        },
+        {
+          provide: OpenAITranslationsService,
+          useValue: { translateObjectToLanguages: jest.fn() },
+        },
+        {
+          provide: SharedLanguageService,
+          useValue: { getValidLanguageCodes: jest.fn() },
+        },
       ],
     }).compile();
 
     controller = module.get<ScenarioPathController>(ScenarioPathController);
     service = module.get(ScenarioPathService);
     tenantService = module.get(ScenarioPathTenantService);
+    openaiTranslationsService = module.get(OpenAITranslationsService);
+    sharedLanguageService = module.get(SharedLanguageService);
   });
 
   afterEach(() => {
@@ -340,6 +374,103 @@ describe('ScenarioPathController', () => {
         tenantId,
         deleteDto,
       );
+    });
+  });
+
+  describe('checkIfTranslationRequired', () => {
+    it('should return true if title has changed', () => {
+      const oldData: ScenarioPathTranslations = {
+        title: 'Old Title',
+        description: 'Description',
+      };
+      const newData: ScenarioPathTranslations = {
+        title: 'New Title',
+        description: 'Description',
+      };
+
+      const result = (service as any).checkIfTranslationRequired(
+        oldData,
+        newData,
+      );
+      expect(result).toBe(true);
+    });
+
+    it('should return true if description has changed', () => {
+      const oldData: ScenarioPathTranslations = {
+        title: 'Title',
+        description: 'Old Description',
+      };
+      const newData: ScenarioPathTranslations = {
+        title: 'Title',
+        description: 'New Description',
+      };
+
+      const result = (service as any).checkIfTranslationRequired(
+        oldData,
+        newData,
+      );
+      expect(result).toBe(true);
+    });
+
+    it('should return false if title and description are same (case-insensitive and trimmed)', () => {
+      const oldData: ScenarioPathTranslations = {
+        title: ' Title ',
+        description: 'Description',
+      };
+      const newData: ScenarioPathTranslations = {
+        title: 'title',
+        description: 'DESCRIPTION',
+      };
+
+      const result = (service as any).checkIfTranslationRequired(
+        oldData,
+        newData,
+      );
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('createScenarioPathTranslations', () => {
+    it('should return true if title is changed', () => {
+      const oldData: ScenarioPathTranslations = {
+        title: 'Old',
+        description: 'Desc',
+      };
+      const newData: ScenarioPathTranslations = {
+        title: 'New',
+        description: 'Desc',
+      };
+      expect(
+        (service as any).checkIfTranslationRequired(oldData, newData),
+      ).toBe(true);
+    });
+
+    it('should return true if description is changed', () => {
+      const oldData: ScenarioPathTranslations = {
+        title: 'Title',
+        description: 'Old',
+      };
+      const newData: ScenarioPathTranslations = {
+        title: 'Title',
+        description: 'New',
+      };
+      expect(
+        (service as any).checkIfTranslationRequired(oldData, newData),
+      ).toBe(true);
+    });
+
+    it('should return false if nothing is changed (case insensitive and trimmed)', () => {
+      const oldData: ScenarioPathTranslations = {
+        title: ' Title ',
+        description: 'Desc',
+      };
+      const newData: ScenarioPathTranslations = {
+        title: 'title',
+        description: 'DESC',
+      };
+      expect(
+        (service as any).checkIfTranslationRequired(oldData, newData),
+      ).toBe(false);
     });
   });
 });

@@ -17,6 +17,7 @@ import {
   MinimalScenarioPathData,
   ScenarioPathData,
   ScenarioPathItemData,
+  ScenarioPathTranslations,
 } from '../type/scenario-paths.type';
 import {
   SCENARIO_PATH_MAX_SCENARIOS,
@@ -41,6 +42,8 @@ import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioPathTenant } from '../entity/scenario-path-tenant.entity';
 import { UpdateScenarioPathItemDto } from '../dto/update-scenario-path-item.dto';
 import { ScenarioStatus } from 'src/learn/type/scenario.type';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 @Injectable()
 export class ScenarioPathService {
@@ -53,6 +56,8 @@ export class ScenarioPathService {
     private readonly scenarioPathSessionService: ScenarioPathSessionService,
     private readonly scenarioPathSharedService: ScenarioPathSharedService,
     private tenantService: TenantService,
+    private openaiTranslationsService: OpenAITranslationsService,
+    private readonly sharedLanguageService: SharedLanguageService,
   ) {}
 
   async getScenarioPaths(
@@ -146,6 +151,10 @@ export class ScenarioPathService {
         );
         await scenarioPathTenantRepository.save(scenarioPathTenant);
       }
+      this.createScenarioPathTranslations(scenarioPath.id, {
+        title,
+        description,
+      });
       this.logger.info(`Scenario path ${scenarioPath.id} created successfully`);
       return this.getMinimalScenarioPathData(scenarioPath);
     });
@@ -284,6 +293,15 @@ export class ScenarioPathService {
             tenantId: In(tenantIds),
           });
         }
+      }
+
+      if (
+        this.checkIfTranslationRequired(scenarioPath, { title, description })
+      ) {
+        this.createScenarioPathTranslations(id, {
+          title,
+          description,
+        });
       }
       this.logger.info(`Scenario path ${id} updated successfully`);
 
@@ -527,5 +545,58 @@ export class ScenarioPathService {
       coverImageUrl: scenarioPath.coverImageUrl,
       status: scenarioPath.status,
     };
+  }
+
+  private async createScenarioPathTranslations(
+    scenarioPathId: string,
+    scenarioPathData: ScenarioPathTranslations,
+  ) {
+    const validLanguagesCodes: number[] =
+      await this.scenarioSharedService.getUniqueLanguagesFromScenarioTranslations();
+
+    if (!validLanguagesCodes || validLanguagesCodes.length === 0) {
+      return;
+    }
+
+    const languageCodes =
+      await this.sharedLanguageService.getValidLanguageCodes(
+        validLanguagesCodes,
+      );
+
+    if (!languageCodes || languageCodes.length === 0) {
+      return;
+    }
+
+    const translatedScenarioPath =
+      await this.openaiTranslationsService.translateObjectToLanguages(
+        scenarioPathData,
+        languageCodes,
+        'openai_translation_speech_reexpression_user',
+      );
+
+    if (translatedScenarioPath) {
+      await this.scenarioPathRepository.update(scenarioPathId, {
+        translations: translatedScenarioPath,
+      } as any);
+    }
+
+    return false;
+  }
+
+  private checkIfTranslationRequired(
+    OldcaseData: ScenarioPathTranslations,
+    newCaseData: ScenarioPathTranslations,
+  ) {
+    const { title, description } = newCaseData;
+    const { title: oldTitle, description: oldDescription } = OldcaseData;
+
+    if (
+      title?.trim().toLowerCase() !== oldTitle?.trim().toLowerCase() ||
+      description?.trim().toLowerCase() !== oldDescription?.trim().toLowerCase()
+    ) {
+      return true;
+    }
+
+    return false;
   }
 }
