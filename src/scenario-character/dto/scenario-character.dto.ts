@@ -44,13 +44,13 @@ export class ScenarioCharacterRequestDto {
 
   @ApiProperty({
     description: 'Scenario character profession',
-    required: false,
+    required: true,
   })
-  @IsOptional()
+  @IsNotEmpty()
   @Transform(TrimStringTransform)
   @IsString()
   @MaxLength(200)
-  profession?: string;
+  profession!: string;
 
   @ApiProperty({ description: 'Scenario character current location' })
   @Transform(TrimStringTransform)

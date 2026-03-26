@@ -172,6 +172,26 @@ describe('CaseSharedService', () => {
       expect(result.id).toBe('10000000-0000-0000-0000-000000000001');
       expect(result.scenarios).toHaveLength(2);
     });
+
+    it('should return translated title and description when languageCode is provided', async () => {
+      caseRepository.findOne.mockResolvedValue({
+        ...mockCase,
+        translations: {
+          mr: { title: 'Marathi Title', description: 'Marathi Desc' },
+        },
+      } as any);
+      caseItemRepository.find.mockResolvedValue([]);
+      scenarioSharedService.getScenarioWithTriggerWarningsByIds.mockResolvedValue([]);
+
+      const result = await service.getCaseWithScenarios(
+        '10000000-0000-0000-0000-000000000001',
+        undefined,
+        'mr',
+      );
+
+      expect(result.title).toBe('Marathi Title');
+      expect(result.description).toBe('Marathi Desc');
+    });
   });
 
   describe('getActiveCaseById', () => {
