@@ -5,6 +5,7 @@ export interface CaseSessionFilterOptions {
   offset?: number;
   sortBy?: CaseSessionSortBy;
   order?: SortOrder;
+  languageCode?: string;
 }
 
 export enum CaseSessionSortBy {
