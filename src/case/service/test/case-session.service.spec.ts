@@ -121,6 +121,28 @@ describe('CaseSessionService', () => {
       expect(result.data[0].title).toBe('Test Case');
       expect(result.data[0].completedScenarios).toBe(1);
     });
+
+    it('should return translated title and description when languageCode is present', async () => {
+      caseSharedService.getCasesWithSession.mockResolvedValue({
+        data: [
+          {
+            id: '1',
+            title: 'English Title',
+            description: 'English Desc',
+            translations: {
+              mr: { title: 'Marathi Title', description: 'Marathi Desc' },
+            },
+            session: { completedScenarios: 1 },
+          },
+        ] as any,
+        count: 1,
+      });
+
+      const result = await service.getUserCases({ languageCode: 'mr' });
+
+      expect(result.data[0].title).toBe('Marathi Title');
+      expect(result.data[0].description).toBe('Marathi Desc');
+    });
   });
 
   describe('getUserCaseItems', () => {
@@ -174,6 +196,22 @@ describe('CaseSessionService', () => {
       expect(result.caseSessionId).toBe('30000000-0000-0000-0000-000000000001');
       expect(result.completedScenarios).toBe(1);
       expect(result.scenarios).toHaveLength(2);
+    });
+
+    it('should pass languageCode to getCaseWithScenarios in getUserCaseItems', async () => {
+      caseSharedService.getActiveCaseById.mockResolvedValue({ id: '1' } as any);
+      caseSharedService.getCaseWithScenarios.mockResolvedValue({
+        id: '1',
+        scenarios: [],
+      } as any);
+
+      await service.getUserCaseItems('1', 'mr');
+
+      expect(caseSharedService.getCaseWithScenarios).toHaveBeenCalledWith(
+        '1',
+        expect.any(String),
+        'mr',
+      );
     });
   });
 

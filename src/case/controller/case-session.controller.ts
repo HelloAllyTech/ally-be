@@ -61,6 +61,12 @@ export class CaseSessionController {
     enum: SortOrder,
     description: 'Sort order',
   })
+  @ApiQuery({
+    name: 'languageCode',
+    required: false,
+    type: String,
+    description: 'Language code',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_CASES])
   @Get('/cases')
   async getUserCases(
@@ -69,20 +75,25 @@ export class CaseSessionController {
     @Query('sortBy')
     sortBy: CaseSessionSortBy = CaseSessionSortBy.UPDATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
+    @Query('languageCode') languageCode?: string,
   ): Promise<CaseSessionsResponseDto> {
     return this.caseSessionService.getUserCases({
       offset,
       limit,
       sortBy,
       order,
+      languageCode,
     });
   }
 
   @ApiOperation({ summary: 'Get case session by case id' })
   @AuthPermissions([PERMISSIONS.VIEW_CASE])
   @Get('cases/:id')
-  async getUserCaseItems(@Param('id', ParseUUIDPipe) id: string) {
-    return this.caseSessionService.getUserCaseItems(id);
+  async getUserCaseItems(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('languageCode') languageCode?: string,
+  ) {
+    return this.caseSessionService.getUserCaseItems(id, languageCode);
   }
 
   @ApiOperation({ summary: 'Create Scenario path session for user' })

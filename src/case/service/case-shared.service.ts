@@ -49,6 +49,7 @@ export class CaseSharedService {
   async getCaseWithScenarios(
     caseId: string,
     tenantId?: string,
+    languageCode?: string,
   ): Promise<GetCaseItemResponseDto> {
     const result = await this.caseRepository.findOne({
       where: { id: caseId },
@@ -98,10 +99,22 @@ export class CaseSharedService {
       };
     });
 
+    let { title, description } = result;
+
+    if (
+      languageCode &&
+      result.translations &&
+      result.translations[languageCode]
+    ) {
+      title = result.translations[languageCode].title || title;
+      description =
+        result.translations[languageCode].description || description;
+    }
+
     return {
       id: result.id,
-      title: result.title,
-      description: result.description,
+      title,
+      description,
       coverImageUrl: result.coverImageUrl,
       status: result.status,
       isGlobal: result.isGlobal,
