@@ -60,3 +60,8 @@ export interface CasesWithSession {
   data: CaseWithSession[];
   count: number;
 }
+
+export interface CaseTranslations {
+  title?: string;
+  description?: string;
+}

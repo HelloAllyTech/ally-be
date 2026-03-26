@@ -63,3 +63,8 @@ export type ScenarioPathData = Omit<CreateScenarioPathDto, 'scenarios'> & {
   id?: string;
   scenarios?: ScenarioPathItemData[];
 };
+
+export interface ScenarioPathTranslations {
+  title?: string;
+  description?: string;
+}
