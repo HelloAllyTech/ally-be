@@ -7,7 +7,9 @@ import { CaseRepository } from '../../repository/case.repository';
 import { CaseSharedService } from '../case-shared.service';
 import { CaseSessionService } from '../case-session.service';
 import { CaseItemRepository } from '../../repository/case-item.repository';
-import { CaseStatus } from '../../type/cases.type';
+import { CaseStatus, CaseTranslations } from '../../type/cases.type';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 jest.mock('src/logger/logger.service', () => ({
   LoggerService: {
@@ -36,6 +38,8 @@ describe('CaseService', () => {
   let caseSessionService: jest.Mocked<CaseSessionService>;
   let caseItemRepository: jest.Mocked<CaseItemRepository>;
   let dataSource: jest.Mocked<DataSource>;
+  let openaiTranslationsService: jest.Mocked<OpenAITranslationsService>;
+  let sharedLanguageService: jest.Mocked<SharedLanguageService>;
 
   const mockCase = {
     id: '10000000-0000-0000-0000-000000000001',
@@ -55,7 +59,10 @@ describe('CaseService', () => {
         CaseService,
         {
           provide: ScenarioSharedService,
-          useValue: { getScenarioByIds: jest.fn() },
+          useValue: {
+            getScenarioByIds: jest.fn(),
+            getUniqueLanguagesFromScenarioTranslations: jest.fn(),
+          },
         },
         { provide: DataSource, useValue: { transaction: jest.fn() } },
         {
@@ -75,6 +82,14 @@ describe('CaseService', () => {
           useValue: { getCaseSessionByCaseId: jest.fn() },
         },
         { provide: CaseItemRepository, useValue: { find: jest.fn() } },
+        {
+          provide: OpenAITranslationsService,
+          useValue: { translateObjectToLanguages: jest.fn() },
+        },
+        {
+          provide: SharedLanguageService,
+          useValue: { getValidLanguageCodes: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -85,6 +100,8 @@ describe('CaseService', () => {
     caseSessionService = module.get(CaseSessionService);
     caseItemRepository = module.get(CaseItemRepository);
     dataSource = module.get(DataSource);
+    openaiTranslationsService = module.get(OpenAITranslationsService);
+    sharedLanguageService = module.get(SharedLanguageService);
 
     jest.clearAllMocks();
   });
@@ -243,6 +260,74 @@ describe('CaseService', () => {
 
       expect(result).toEqual({ success: true });
       expect(dataSource.transaction).toHaveBeenCalled();
+    });
+  });
+
+  describe('checkIfTranslationRequired', () => {
+    it('should return true if title is changed', () => {
+      const oldData: CaseTranslations = { title: 'Old', description: 'Desc' };
+      const newData: CaseTranslations = { title: 'New', description: 'Desc' };
+      expect(
+        (service as any).checkIfTranslationRequired(oldData, newData),
+      ).toBe(true);
+    });
+
+    it('should return true if description is changed', () => {
+      const oldData: CaseTranslations = { title: 'Title', description: 'Old' };
+      const newData: CaseTranslations = { title: 'Title', description: 'New' };
+      expect(
+        (service as any).checkIfTranslationRequired(oldData, newData),
+      ).toBe(true);
+    });
+
+    it('should return false if nothing is changed (case insensitive and trimmed)', () => {
+      const oldData: CaseTranslations = {
+        title: ' Title ',
+        description: 'Desc',
+      };
+      const newData: CaseTranslations = { title: 'title', description: 'DESC' };
+      expect(
+        (service as any).checkIfTranslationRequired(oldData, newData),
+      ).toBe(false);
+    });
+  });
+
+  describe('createCaseTranslations', () => {
+    it('should translate and update case repository', async () => {
+      const caseId = '123';
+      const caseData: CaseTranslations = {
+        title: 'Title',
+        description: 'Desc',
+      };
+      const mockResult = { mr: { title: 'Marathi' } };
+
+      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [1],
+      );
+      sharedLanguageService.getValidLanguageCodes.mockResolvedValue(['mr']);
+      openaiTranslationsService.translateObjectToLanguages.mockResolvedValue(
+        mockResult,
+      );
+      caseRepository.update = jest.fn().mockResolvedValue(undefined);
+
+      await (service as any).createCaseTranslations(caseId, caseData);
+
+      expect(
+        openaiTranslationsService.translateObjectToLanguages,
+      ).toHaveBeenCalled();
+      expect(caseRepository.update).toHaveBeenCalledWith(caseId, {
+        translations: mockResult,
+      });
+    });
+
+    it('should return early if no valid language codes found', async () => {
+      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [],
+      );
+      await (service as any).createCaseTranslations('123', {});
+      expect(
+        openaiTranslationsService.translateObjectToLanguages,
+      ).not.toHaveBeenCalled();
     });
   });
 });

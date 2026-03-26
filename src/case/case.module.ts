@@ -13,9 +13,10 @@ import { CaseSessionService } from './service/case-session.service';
 import { CaseTenantValidationShared } from './service/case-tenant-validation-shared';
 import { CaseSessionItemRepository } from './repository/case-session-item.repository';
 import { CaseSessionController } from './controller/case-session.controller';
+import { LanguageModule } from 'src/language/language.module';
 
 @Module({
-  imports: [forwardRef(() => LearnModule), TenantModule],
+  imports: [forwardRef(() => LearnModule), TenantModule, LanguageModule],
   controllers: [CaseController, CaseSessionController],
   providers: [
     CaseService,

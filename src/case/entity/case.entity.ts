@@ -38,4 +38,7 @@ export class Case extends BaseWithoutTenantEntity {
 
   @DeleteDateColumn()
   deletedAt?: Date;
+
+  @Column({ type: 'jsonb', nullable: true })
+  translations?: Record<string, any>;
 }

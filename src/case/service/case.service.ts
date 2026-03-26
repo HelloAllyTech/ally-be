@@ -12,6 +12,7 @@ import {
   CaseFilterOptions,
   CaseItemData,
   CaseStatus,
+  CaseTranslations,
   MinimalCaseData,
 } from '../type/cases.type';
 import {
@@ -35,6 +36,8 @@ import { CaseItemRepository } from '../repository/case-item.repository';
 import { UpdateCaseItemDto } from '../dto/update-case-item.dto';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { DuplicateCaseResponseDto } from '../dto/duplicate-case.dto';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 @Injectable()
 export class CaseService {
@@ -47,6 +50,8 @@ export class CaseService {
     private caseSharedService: CaseSharedService,
     private caseSessionService: CaseSessionService,
     private caseItemRepository: CaseItemRepository,
+    private openaiTranslationsService: OpenAITranslationsService,
+    private readonly sharedLanguageService: SharedLanguageService,
   ) {}
   async getCases(filters?: CaseFilterOptions): Promise<GetCaseResponseDto> {
     if (filters?.tenantId) {
@@ -132,6 +137,7 @@ export class CaseService {
         await caseTenantRepository.save(caseTenants);
       }
       this.logger.info(`Case ${caseEntity.id} created successfully`);
+      this.createCaseTranslations(caseEntity.id, { title, description });
       return this.getMinimalCaseData(caseEntity);
     });
   }
@@ -261,6 +267,15 @@ export class CaseService {
             tenantId: In(tenantIds),
           });
         }
+      }
+
+      if (
+        this.checkIfTranslationRequired(
+          { title: caseEntity.title, description: caseEntity.description },
+          { title, description },
+        )
+      ) {
+        this.createCaseTranslations(id, { title, description });
       }
       this.logger.info(`Case ${id} updated successfully`);
 
@@ -493,5 +508,58 @@ export class CaseService {
     });
 
     return updatedCaseItems;
+  }
+
+  private async createCaseTranslations(
+    caseId: string,
+    caseData: CaseTranslations,
+  ) {
+    const validLanguagesCodes: number[] =
+      await this.scenarioSharedService.getUniqueLanguagesFromScenarioTranslations();
+
+    if (!validLanguagesCodes || validLanguagesCodes.length === 0) {
+      return;
+    }
+
+    const languageCodes =
+      await this.sharedLanguageService.getValidLanguageCodes(
+        validLanguagesCodes,
+      );
+
+    if (!languageCodes || languageCodes.length === 0) {
+      return;
+    }
+
+    const translatedCase =
+      await this.openaiTranslationsService.translateObjectToLanguages(
+        caseData,
+        languageCodes,
+        'openai_translation_speech_reexpression_user',
+      );
+
+    if (translatedCase) {
+      await this.caseRepository.update(caseId, {
+        translations: translatedCase,
+      } as any);
+    }
+
+    return false;
+  }
+
+  private checkIfTranslationRequired(
+    OldcaseData: CaseTranslations,
+    newCaseData: CaseTranslations,
+  ) {
+    const { title, description } = newCaseData;
+    const { title: oldTitle, description: oldDescription } = OldcaseData;
+
+    if (
+      title?.trim().toLowerCase() !== oldTitle?.trim().toLowerCase() ||
+      description?.trim().toLowerCase() !== oldDescription?.trim().toLowerCase()
+    ) {
+      return true;
+    }
+
+    return false;
   }
 }
