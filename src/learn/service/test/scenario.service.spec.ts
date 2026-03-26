@@ -2217,6 +2217,7 @@ describe('ScenarioService', () => {
         gender: 'Male' as any,
         currentLocation: 'NY',
         openingStatements: ['Hi'],
+        profession: 'Doctor',
         optGuardrails: true,
         currentState: true,
       };
@@ -2243,6 +2244,7 @@ describe('ScenarioService', () => {
         age: 30,
         gender: 'Male' as any,
         currentLocation: 'NY',
+        profession: 'Doctor',
         openingStatements: ['Hi'],
       };
       scenarioSharedService.getScenarioVoice.mockRejectedValue(
