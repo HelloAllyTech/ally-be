@@ -52,9 +52,12 @@ Each object must contain:
    - No new factual backstory.
    - No crisis escalation or explicit self-harm content.
 
-4) "stateInstructions" → exactly four objects, one per simulation phase, in ascending order by stateId "1", "2", "3", "4".
-   - Each object has "stateId" (string "1", "2", "3", or "4") and "instruction" (short actor guidance for that phase when these helper behaviors are present).
-   - Phase 1 = early rapport/opening; 2–3 = middle of session; 4 = closing/wrap-up. Tune tone and openness across phases consistently with the title and competency.
+4) "stateInstructions" → exactly four objects, one per simulation phase, in ascending order by stateId "-1", "1", "2", "3".
+   - Each object has "stateId" (string "-1", "1", "2", or "3") and "instruction" (short actor guidance for that phase when these helper behaviors are present).
+   - State -1 → Highest resistance, defensiveness, emotional constriction, or dysregulation consistent with the challenge.
+   - State 1 → Slight softening or emotional cracks appearing.
+   - State 2 → Noticeable reflection, insight, or vulnerability emerging.
+   - State 3 → Most emotionally regulated, open, or constructive version of the client.
    - 8–25 words per "instruction".
    - Same constraints as actor_response: emotionally grounded, no technique names, no scoring, no new backstory, no crisis/self-harm content.
    - "actor_response" can summarize the overall reaction; "stateInstructions" spell out how that reaction shows up in each phase.
@@ -80,10 +83,10 @@ Output format:
       "helper_behavior_ids": [1, 3],
       "actor_response": "Client reaction line",
       "stateInstructions": [
-        { "stateId": "1", "instruction": "Brief opening-phase reaction" },
-        { "stateId": "2", "instruction": "Mid-session reaction" },
-        { "stateId": "3", "instruction": "Deeper mid-session reaction" },
-        { "stateId": "4", "instruction": "Closing-phase reaction" }
+        { "stateId": "-1", "instruction": "Highest-resistance reaction" },
+        { "stateId": "1", "instruction": "Slight softening reaction" },
+        { "stateId": "2", "instruction": "Insight-emerging reaction" },
+        { "stateId": "3", "instruction": "Most open and constructive reaction" }
       ]
     }
   ]

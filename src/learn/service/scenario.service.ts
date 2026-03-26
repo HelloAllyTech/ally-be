@@ -109,6 +109,7 @@ import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field
 import {
   MAX_SCENARIO_STATE_INSTRUCTIONS,
   supportedStateInstructionStateIds,
+  supportedStateInstructionStateIdsOld,
 } from '../constants/scenario-state-instructions.constants';
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
@@ -754,6 +755,10 @@ export class ScenarioService {
       throw new BadRequestException('Behavior instructions are required');
     }
 
+    const supportedStateInstructionStateIdList = this.configService.featureFlag
+      .scenarioBehaviorStateInstructions
+      ? supportedStateInstructionStateIds
+      : supportedStateInstructionStateIdsOld;
     const invalidBehaviorInstructions = behaviorInstructions?.filter(
       (instruction) =>
         !instruction.category ||
@@ -763,7 +768,9 @@ export class ScenarioService {
         instruction.stateInstructions.length !==
           MAX_SCENARIO_STATE_INSTRUCTIONS ||
         !instruction.stateInstructions?.every((stateInstruction) =>
-          supportedStateInstructionStateIds.includes(stateInstruction.stateId),
+          supportedStateInstructionStateIdList.includes(
+            stateInstruction.stateId,
+          ),
         ),
     );
     this.logger.error(JSON.stringify(invalidBehaviorInstructions));
@@ -772,6 +779,7 @@ export class ScenarioService {
     }
   }
 
+  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove this method as there wont be stateInstructions anymore
   private validateStateInstructions(
     stateInstructions: StateInstructionsDto[] = [],
   ) {
@@ -797,7 +805,7 @@ export class ScenarioService {
     if (
       validStateInstructions.some(
         (instruction) =>
-          !supportedStateInstructionStateIds.includes(instruction.stateId),
+          !supportedStateInstructionStateIdsOld.includes(instruction.stateId),
       )
     ) {
       throw new BadRequestException('Invalid state instruction state ID');
