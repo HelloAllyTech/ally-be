@@ -53,14 +53,29 @@ export class CaseSessionService {
 
     const { data, count } = cases;
 
-    const formattedData = data.map((caseData) => ({
-      id: caseData.id,
-      title: caseData.title,
-      description: caseData.description,
-      coverImageUrl: caseData.coverImageUrl,
-      totalScenarios: caseData.totalScenarios,
-      completedScenarios: caseData.session?.completedScenarios,
-    }));
+    const formattedData = data.map((caseData) => {
+      let { title, description } = caseData;
+
+      if (
+        filters?.languageCode &&
+        caseData.translations &&
+        caseData.translations[filters.languageCode]
+      ) {
+        title = caseData.translations[filters.languageCode].title || title;
+        description =
+          caseData.translations[filters.languageCode].description ||
+          description;
+      }
+
+      return {
+        id: caseData.id,
+        title,
+        description,
+        coverImageUrl: caseData.coverImageUrl,
+        totalScenarios: caseData.totalScenarios,
+        completedScenarios: caseData.session?.completedScenarios,
+      };
+    });
 
     return {
       data: formattedData,
@@ -68,7 +83,7 @@ export class CaseSessionService {
     };
   }
 
-  async getUserCaseItems(caseId: string) {
+  async getUserCaseItems(caseId: string, languageCode?: string) {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
       throw new UnauthorizedException('Unauthorized access');
@@ -85,6 +100,7 @@ export class CaseSessionService {
     const caseWithScenarios = await this.caseSharedService.getCaseWithScenarios(
       caseId,
       tenantId,
+      languageCode,
     );
 
     const caseSession = await this.caseSessionRepository.findOne({
