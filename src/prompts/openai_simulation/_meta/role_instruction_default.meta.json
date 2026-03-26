@@ -1,0 +1,5 @@
+{
+  "name": "Role Instruction Default",
+  "description": "Default role instruction used to prepopulate the Create Simulation form for counselor-training roleplay sessions. Dashboard edits can override this content.",
+  "category": "Simulation"
+}

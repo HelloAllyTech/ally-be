@@ -331,6 +331,10 @@ export class ScenarioSharedService {
       promptData.previousMemory = previousMemory;
     }
 
+    if (scenario?.prompt) {
+      promptData.roleInstructions = scenario.prompt;
+    }
+
     if (scenario?.competency?.name) {
       promptData.competency = scenario.competency?.name;
     }
