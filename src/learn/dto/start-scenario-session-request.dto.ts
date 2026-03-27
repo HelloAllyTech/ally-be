@@ -43,11 +43,4 @@ export class StartScenarioSessionRequestDto {
   @IsNumber()
   languageId!: number;
 
-  @ApiProperty({
-    description: 'Voice ID',
-    example: 'voice-123',
-  })
-  @IsOptional()
-  @IsString()
-  voiceId?: string;
 }

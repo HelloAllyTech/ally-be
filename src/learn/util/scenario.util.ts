@@ -30,7 +30,6 @@ export const mapCreateScenarioRequestToEntity = (
     difficultyLevel: scenario.difficultyLevel,
     competencyId: scenario.competencyId,
     metadata: {
-      voiceId: scenario.voiceId,
       name: scenario.name,
       age: scenario.age,
       gender: scenario.gender,
@@ -152,7 +151,6 @@ export const mapUpdateScenarioRequestToEntity = (
     'tone',
     'openingStatements',
     'responseLength',
-    'voiceId',
     'customFields',
     'languageVoices',
     'linguisticStyleSamples',

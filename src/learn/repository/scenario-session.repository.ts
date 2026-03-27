@@ -13,6 +13,10 @@ import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { ScenarioSessionSortBy } from '../enum/scenario-session-sort-by.enum';
 
+type CreateScenarioSessionDto = StartScenarioSessionRequestDto & {
+  voiceId?: string;
+};
+
 @Injectable()
 export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
   constructor(private dataSource: DataSource) {
@@ -116,7 +120,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
 
   async createScenarioSession(
     counselorId: number,
-    createScenarioSessionDto: StartScenarioSessionRequestDto,
+    createScenarioSessionDto: CreateScenarioSessionDto,
   ): Promise<ScenarioSessions> {
     const uuid = uuidv4();
 

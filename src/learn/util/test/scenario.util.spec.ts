@@ -28,7 +28,6 @@ describe('Scenario Util', () => {
         coverVideoUrl: 'https://example.com/video.mp4',
         status: ScenarioStatus.DRAFT,
         prompt: 'You are a counselor',
-        voiceId: 'voice-123',
         name: 'John Doe',
         age: 30,
         gender: Gender.MALE,
@@ -64,7 +63,6 @@ describe('Scenario Util', () => {
         difficultyLevel: scenario.difficultyLevel,
         competencyId: scenario.competencyId,
         metadata: {
-          voiceId: scenario.voiceId,
           name: scenario.name,
           age: scenario.age,
           gender: scenario.gender,
@@ -100,7 +98,6 @@ describe('Scenario Util', () => {
         status: ScenarioStatus.ACTIVE,
         prompt: 'Minimal Prompt',
         isGlobal: false,
-        voiceId: 'voice-456',
         name: 'Jane',
         age: 25,
         gender: Gender.FEMALE,
@@ -247,7 +244,6 @@ describe('Scenario Util', () => {
         difficultyLevel: 'INTERMEDIATE',
         name: 'Test User',
         age: 30,
-        voiceId: 'voice-123',
         experienceMode: ExperienceMode.FEEDBACK,
       } as any;
 
@@ -258,7 +254,6 @@ describe('Scenario Util', () => {
           experienceMode: ExperienceMode.FEEDBACK,
           name: 'Test User',
           age: 30,
-          voiceId: 'voice-123',
         }),
       );
       expect(result.metadata.checklistType).toBeUndefined();

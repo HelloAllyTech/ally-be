@@ -392,7 +392,9 @@ describe('ScenarioSessionRepository', () => {
 
   describe('createScenarioSession', () => {
     it('should create a new scenario session', async () => {
-      const mockStartDto: StartScenarioSessionRequestDto = {
+      const mockStartDto: StartScenarioSessionRequestDto & {
+        voiceId: string;
+      } = {
         scenarioId: mockScenarioId,
         languageId: mockLanguageId,
         voiceId: mockVoiceId,
@@ -444,7 +446,9 @@ describe('ScenarioSessionRepository', () => {
     });
 
     it('should handle sequence query with no result', async () => {
-      const mockStartDto: StartScenarioSessionRequestDto = {
+      const mockStartDto: StartScenarioSessionRequestDto & {
+        voiceId: string;
+      } = {
         scenarioId: mockScenarioId,
         languageId: mockLanguageId,
         voiceId: mockVoiceId,
