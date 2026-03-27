@@ -24,4 +24,5 @@ export enum AudioChatPlatform {
 export enum ChatTypes {
   MICROPHONE_CHAT = 'MICROPHONE_CHAT',
   AUDIO_UPLOAD = 'AUDIO_UPLOAD',
+  DICTATION_MODE = 'DICTATION_MODE',
 }

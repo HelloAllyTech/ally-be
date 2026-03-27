@@ -60,6 +60,12 @@ export class TenantResponseDto {
   })
   enableMicrophoneMode!: boolean;
 
+  @ApiProperty({
+    description: 'Whether dictation mode is enabled',
+    example: true,
+  })
+  enableDictationMode!: boolean;
+
   @ApiProperty({ example: '2025-10-15T12:00:00.000Z' })
   createdAt!: Date;
 

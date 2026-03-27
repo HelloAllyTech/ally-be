@@ -89,6 +89,7 @@ describe('TenantService', () => {
     hideRankInCommunity: false,
     enableAudioUpload: true,
     enableMicrophoneMode: true,
+    enableDictationMode: true,
   };
 
   const mockCreateTenantData = {
@@ -551,6 +552,7 @@ describe('TenantService', () => {
           enabledDashboardIds: [],
           enableAudioUpload: true,
           enableMicrophoneMode: true,
+          enableDictationMode: true,
         }),
       );
     });
@@ -646,10 +648,11 @@ describe('TenantService', () => {
       );
     });
 
-    it('should call settingsService.updateChatTypes when enableAudioUpload or enableMicrophoneMode is provided', async () => {
+    it('should call settingsService.updateChatTypes when enableAudioUpload, enableMicrophoneMode, or enableDictationMode is provided', async () => {
       const updateDto = {
         enableAudioUpload: false,
         enableMicrophoneMode: false,
+        enableDictationMode: false,
       };
 
       tenantRepository.findOne
@@ -664,6 +667,7 @@ describe('TenantService', () => {
           hiddenChatTypes: expect.arrayContaining([
             ChatTypes.AUDIO_UPLOAD,
             ChatTypes.MICROPHONE_CHAT,
+            ChatTypes.DICTATION_MODE,
           ]),
         },
         mockEntityManager,

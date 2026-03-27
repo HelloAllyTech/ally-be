@@ -167,6 +167,9 @@ export class TenantService {
           if (!(tenantData.enableMicrophoneMode ?? false)) {
             hiddenChatTypes.push(ChatTypes.MICROPHONE_CHAT);
           }
+          if (!(tenantData.enableDictationMode ?? false)) {
+            hiddenChatTypes.push(ChatTypes.DICTATION_MODE);
+          }
           if (hiddenChatTypes.length > 0) {
             await this.settingsService.updateChatTypes(
               { tenantId: savedTenant.id, hiddenChatTypes },
@@ -240,6 +243,9 @@ export class TenantService {
       enableAudioUpload: !hiddenChatTypes.includes(ChatTypes.AUDIO_UPLOAD),
       enableMicrophoneMode: !hiddenChatTypes.includes(
         ChatTypes.MICROPHONE_CHAT,
+      ),
+      enableDictationMode: !hiddenChatTypes.includes(
+        ChatTypes.DICTATION_MODE,
       ),
       ...(options?.includeUserCount
         ? { userCount: parseInt(userCountResult?.[0]?.userCount ?? '0', 10) }
@@ -403,6 +409,7 @@ export class TenantService {
       enabledDashboardIds,
       enableMicrophoneMode,
       enableAudioUpload,
+      enableDictationMode,
       hideRankInCommunity,
       ...tenantUpdateData
     } = updateTenantDto;
@@ -441,7 +448,8 @@ export class TenantService {
         // Handle chat types if explicitly provided
         if (
           enableAudioUpload !== undefined ||
-          enableMicrophoneMode !== undefined
+          enableMicrophoneMode !== undefined ||
+          enableDictationMode !== undefined
         ) {
           const hiddenChatTypes = <ChatTypes[]>[];
           if (
@@ -455,6 +463,12 @@ export class TenantService {
             !(enableMicrophoneMode ?? false)
           ) {
             hiddenChatTypes.push(ChatTypes.MICROPHONE_CHAT);
+          }
+          if (
+            enableDictationMode !== undefined &&
+            !(enableDictationMode ?? false)
+          ) {
+            hiddenChatTypes.push(ChatTypes.DICTATION_MODE);
           }
 
           await this.settingsService.updateChatTypes(
