@@ -41,9 +41,20 @@ describe('TenantController', () => {
     hideRankInCommunity: false,
     enableAudioUpload: true,
     enableMicrophoneMode: true,
+    enableDictationMode: true,
   };
 
   const mockTenantWithUserCount = {
+    ...mockTenant,
+    userCount: 5,
+    enabledDashboardIds: [],
+    hideRankInCommunity: false,
+    enableAudioUpload: true,
+    enableMicrophoneMode: true,
+    enableDictationMode: true,
+  };
+
+  const mockTenantListItem = {
     ...mockTenant,
     userCount: 5,
     enabledDashboardIds: [],
@@ -207,7 +218,7 @@ describe('TenantController', () => {
   describe('getAllTenants', () => {
     it('should return list of tenants with correct properties', async () => {
       const response: GetAllTenantsResponseDto = {
-        data: [mockTenantWithUserCount],
+        data: [mockTenantListItem],
         count: 1,
       };
 
