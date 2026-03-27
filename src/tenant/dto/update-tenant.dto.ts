@@ -66,6 +66,13 @@ export class UpdateTenantDto {
   enableAudioUpload?: boolean;
 
   @ApiProperty({
+    description: 'Enable dictation mode for the tenant',
+  })
+  @IsBoolean()
+  @IsOptional()
+  enableDictationMode?: boolean;
+
+  @ApiProperty({
     description: 'Hide rank in leaderboard for the tenant',
   })
   @IsBoolean()
