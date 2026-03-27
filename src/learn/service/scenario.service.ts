@@ -627,6 +627,10 @@ export class ScenarioService {
   ): Promise<void> {
     this.validateScenarioStatus(createScenarioDto);
 
+    if (createScenarioDto.languageVoices) {
+      await this.validateLanguageVoices(createScenarioDto.languageVoices);
+    }
+
     if (createScenarioDto.status === ScenarioStatus.ACTIVE) {
       await this.validateLinguisticStyleSamplesForNonEnglish(
         createScenarioDto.languageVoices,
@@ -634,8 +638,6 @@ export class ScenarioService {
       );
     }
 
-    if (createScenarioDto.voiceId)
-      await this.getScenarioVoice(createScenarioDto?.voiceId);
     if (
       createScenarioDto.triggerWarningIds &&
       createScenarioDto.triggerWarningIds.length > 0
@@ -887,6 +889,23 @@ export class ScenarioService {
           `Please provide at least one sample for: ${missing.join(', ')}`,
       );
     }
+  }
+
+  private async validateLanguageVoices(
+    languageVoices: Record<string, string>,
+  ): Promise<void> {
+    const voiceIds = Array.from(
+      new Set(
+        Object.values(languageVoices).filter(
+          (voiceId): voiceId is string =>
+            typeof voiceId === 'string' && voiceId.trim().length > 0,
+        ),
+      ),
+    );
+
+    await Promise.all(
+      voiceIds.map((voiceId) => this.getScenarioVoice(voiceId)),
+    );
   }
 
   private async updateScenarioTerminationEvents(
@@ -1340,9 +1359,11 @@ export class ScenarioService {
       }
     }
 
-    if (updateScenarioDto.voiceId) {
-      await this.getScenarioVoice(updateScenarioDto?.voiceId);
+
+    if (updateScenarioDto.languageVoices) {
+      await this.validateLanguageVoices(updateScenarioDto.languageVoices);
     }
+
     if (
       updateScenarioDto.triggerWarningIds &&
       updateScenarioDto.triggerWarningIds.length > 0

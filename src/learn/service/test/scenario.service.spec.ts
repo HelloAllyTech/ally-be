@@ -93,7 +93,6 @@ describe('ScenarioService', () => {
     metadata: {
       name: 'Test Client',
       age: 30,
-      voiceId: 'voice-123',
     },
     createdAt: new Date('2025-01-01'),
     updatedAt: new Date('2025-01-01'),
@@ -2211,7 +2210,7 @@ describe('ScenarioService', () => {
         status: ScenarioStatus.DRAFT,
         prompt: 'Prompt',
         isGlobal: false,
-        voiceId: 'voice-1',
+        languageVoices: { '1': 'voice-1' },
         name: 'Test',
         age: 30,
         gender: 'Male' as any,
@@ -2230,7 +2229,7 @@ describe('ScenarioService', () => {
       ).resolves.not.toThrow();
     });
 
-    it('should throw error when voice not found', async () => {
+    it('should throw error when a language voice is not found', async () => {
       const createDto: CreateScenarioDto = {
         title: 'Test',
         description: 'Desc',
@@ -2239,7 +2238,7 @@ describe('ScenarioService', () => {
         isGlobal: false,
         optGuardrails: true,
         currentState: true,
-        voiceId: 'invalid-voice',
+        languageVoices: { '1': 'invalid-voice' },
         name: 'Test',
         age: 30,
         gender: 'Male' as any,

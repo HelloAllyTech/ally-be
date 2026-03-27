@@ -845,8 +845,7 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Create scenario voices' })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
-  @Post('scenario-voices')
-  @Post('scenarios/voices')
+  @Post(['scenario-voices', 'scenarios/voices'])
   async createScenarioVoices(
     @Body() createScenarioVoicesDto: CreateScenarioVoicesDto,
   ) {
@@ -855,8 +854,7 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Update a scenario voice' })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
-  @Put('scenario-voices/:id')
-  @Put('scenarios/voices/:id')
+  @Put(['scenario-voices/:id', 'scenarios/voices/:id'])
   async updateScenarioVoice(
     @Param('id') id: string,
     @Body() updateScenarioVoiceDto: UpdateScenarioVoiceDto,

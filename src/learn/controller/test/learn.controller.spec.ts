@@ -55,7 +55,6 @@ describe('LearnController', () => {
     metadata: {
       name: 'Test Client',
       age: 30,
-      voiceId: 'voice-123',
     },
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -99,7 +98,6 @@ describe('LearnController', () => {
         status: ScenarioStatus.ACTIVE,
         prompt: 'Test prompt',
         name: 'Test Name',
-        voiceId: 'voice-123',
         age: 25,
         gender: Gender.FEMALE,
         genderIdentity: GenderIdentity.FEMALE_WOMAN,
@@ -128,7 +126,6 @@ describe('LearnController', () => {
   const mockStartScenarioSessionDto = {
     scenarioId: 1,
     languageId: 4,
-    voiceId: 'voice-123',
     language: 'en-IN',
   };
 

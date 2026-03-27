@@ -44,7 +44,6 @@ Important Instructions:
 
 // Function to create scenarios data with voiceId
 const createScenariosData = async (
-  voiceId: string,
   client: AxiosInstance,
   accessToken: string,
 ) => {
@@ -76,7 +75,6 @@ const createScenariosData = async (
       context: 'Struggling with work-life balance and stress',
       tone: 'Casual',
       // Voice and dialogue
-      voiceId,
       languageVoices,
       prompt: SHARED_PROMPT,
       openingStatements: [
@@ -159,7 +157,6 @@ const createScenariosData = async (
         'Experiencing anxiety due to high expectations and fear of underperforming at work',
       tone: 'Thoughtful',
       // Voice and dialogue
-      voiceId,
       languageVoices,
       prompt: SHARED_PROMPT,
       openingStatements: [
@@ -317,11 +314,9 @@ async function getOrCreateVoice(
 async function createScenarios(
   client: AxiosInstance,
   accessToken: string,
-  voiceId: string,
 ): Promise<number[]> {
   try {
     const scenariosData: any[] = await createScenariosData(
-      voiceId,
       client,
       accessToken,
     );
@@ -385,7 +380,6 @@ async function createScenarioSessions(
   client: AxiosInstance,
   accessToken: string,
   scenarioIds: number[],
-  voiceId: string,
 ): Promise<void> {
   logStep(`[scenarios-pathway] Creating scenario sessions for scenarios...`);
   try {
@@ -394,7 +388,6 @@ async function createScenarioSessions(
         '/api/v1/learn/scenario-session-start',
         {
           scenarioId,
-          voiceId,
           languageId: 1,
         },
         {
@@ -437,13 +430,13 @@ async function seedScenariosAndPath() {
     const voiceId = await getOrCreateVoice(client, accessToken);
 
     // Create scenarios with the voice ID
-    const scenarioIds = await createScenarios(client, accessToken, voiceId);
+    const scenarioIds = await createScenarios(client, accessToken);
 
     // Login as learner to create sessions (admin lacks EDIT_SCENARIO_SESSION)
     const { accessToken: learnerToken } = await loginAsLearner(client);
 
     // Create scenario sessions
-    await createScenarioSessions(client, learnerToken, scenarioIds, voiceId);
+    await createScenarioSessions(client, learnerToken, scenarioIds);
 
     // Create scenario path using admin token
     await createScenarioPath(client, accessToken, scenarioIds);
