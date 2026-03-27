@@ -632,7 +632,7 @@ export class ScenarioService {
     }
 
     if (createScenarioDto.status === ScenarioStatus.ACTIVE) {
-      await this.validateLinguisticStyleSamplesForNonEnglish(
+      await this.validateLinguisticStyleSamples(
         createScenarioDto.languageVoices,
         createScenarioDto.linguisticStyleSamples,
       );
@@ -838,10 +838,10 @@ export class ScenarioService {
   }
 
   /**
-   * For ACTIVE scenarios with non-English languages in languageVoices,
-   * linguisticStyleSamples must contain at least one non-empty sample per language.
+   * For ACTIVE scenarios, linguisticStyleSamples must contain at least one
+   * non-empty sample per selected language in languageVoices.
    */
-  private async validateLinguisticStyleSamplesForNonEnglish(
+  private async validateLinguisticStyleSamples(
     languageVoices?: Record<string, string>,
     linguisticStyleSamples?: Record<string, string[]>,
   ): Promise<void> {
@@ -859,20 +859,10 @@ export class ScenarioService {
 
     const languages =
       await this.sharedLanguageService.getLanguagesByIds(languageIds);
-    const nonEnglishIds = languages
-      .filter((lang) => {
-        const code = (lang.translationCode || lang.value || '').toLowerCase();
-        return code && !code.startsWith('en');
-      })
-      .map((lang) => String(lang.id));
-
-    if (nonEnglishIds.length === 0) {
-      return;
-    }
 
     const samples = linguisticStyleSamples ?? {};
     const missing: string[] = [];
-    for (const langId of nonEnglishIds) {
+    for (const langId of languageIds.map((id) => String(id))) {
       const langSamples = samples[langId];
       const hasContent =
         Array.isArray(langSamples) &&
@@ -885,7 +875,7 @@ export class ScenarioService {
 
     if (missing.length > 0) {
       throw new BadRequestException(
-        `Linguistic style samples are required for non-English languages. ` +
+        `Linguistic style samples are required. ` +
           `Please provide at least one sample for: ${missing.join(', ')}`,
       );
     }
@@ -1352,7 +1342,7 @@ export class ScenarioService {
         const linguisticStyleSamples =
           updateScenarioDto.linguisticStyleSamples ??
           scenario.metadata?.linguisticStyleSamples;
-        await this.validateLinguisticStyleSamplesForNonEnglish(
+        await this.validateLinguisticStyleSamples(
           languageVoices,
           linguisticStyleSamples,
         );
