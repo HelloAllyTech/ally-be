@@ -339,11 +339,26 @@ export class ScenarioSharedService {
       promptData.competency = scenario.competency?.name;
     }
 
+    // Drop per-language map; learn payload uses same key as scenario API for the
+    // active language's string[] only (see create-scenario DTO allowedFillerWords).
+    delete promptData.allowedFillerWords;
+
     if (metadata?.languageId) {
       const samples =
         metadata?.linguisticStyleSamples?.[String(metadata.languageId)];
       if (samples && Array.isArray(samples)) {
         promptData.languageDialogueSamples = samples;
+      }
+
+      const fillers =
+        metadata?.allowedFillerWords?.[String(metadata.languageId)];
+      if (fillers && Array.isArray(fillers)) {
+        const cleaned = fillers
+          .map((f) => (typeof f === 'string' ? f.trim() : ''))
+          .filter((f) => f.length > 0);
+        if (cleaned.length > 0) {
+          promptData.allowedFillerWords = cleaned;
+        }
       }
     }
 

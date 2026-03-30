@@ -27,6 +27,8 @@ describe('prompt-code.util', () => {
         ['openai_simulation', 'behavior_instructions'],
         ['openai_simulation', 'linguistic_style_samples'],
         ['openai_simulation', 'linguistic_style_samples_english'],
+        ['openai_simulation', 'allowed_filler_words'],
+        ['openai_simulation', 'allowed_filler_words_english'],
       ];
 
       for (const [subdir, filename] of folderToCodes) {

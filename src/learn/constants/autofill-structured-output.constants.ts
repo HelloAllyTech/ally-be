@@ -62,6 +62,24 @@ const LINGUISTIC_STYLE_SAMPLES_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
   },
 };
 
+const ALLOWED_FILLER_WORDS_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
+  name: 'allowed_filler_words',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      fillers: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: 6,
+        maxItems: 14,
+      },
+    },
+    required: ['fillers'],
+    additionalProperties: false,
+  },
+};
+
 const BEHAVIOR_INSTRUCTION_STATE_ITEM = {
   type: 'object',
   properties: {
@@ -121,4 +139,5 @@ export const STRUCTURED_OUTPUT_SCHEMAS: Partial<
   [GeneratableField.STATE_INSTRUCTIONS]: STATE_INSTRUCTIONS_SCHEMA,
   [GeneratableField.BEHAVIOR_INSTRUCTIONS]: BEHAVIOR_INSTRUCTIONS_SCHEMA,
   [GeneratableField.LINGUISTIC_STYLE_SAMPLES]: LINGUISTIC_STYLE_SAMPLES_SCHEMA,
+  [GeneratableField.ALLOWED_FILLER_WORDS]: ALLOWED_FILLER_WORDS_SCHEMA,
 };

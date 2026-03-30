@@ -69,7 +69,7 @@ export class GenerateScenarioFieldResponseDto {
 
   @ApiProperty({
     description:
-      'Generated content. String for characterProfileText/description, string[] for openingStatements, StateInstructionItem[] for stateInstructions, BehaviorInstructionItem[] for behaviorInstructions (each item includes stateInstructions for phases 1–4).',
+      'Generated content. String for characterProfileText/description, string[] for openingStatements or linguisticStyleSamples/allowedFillerWords, StateInstructionItem[] for stateInstructions, BehaviorInstructionItem[] for behaviorInstructions (each item includes stateInstructions for phases 1–4).',
   })
   content!:
     | string

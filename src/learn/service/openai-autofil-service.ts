@@ -158,6 +158,17 @@ export class OpenAIAutofillService {
           (s: unknown): s is string => typeof s === 'string' && s.trim() !== '',
         );
       }
+
+      case GeneratableField.ALLOWED_FILLER_WORDS: {
+        const parsed = JSON.parse(raw);
+        const fillers = parsed?.fillers;
+        if (!Array.isArray(fillers)) {
+          return [];
+        }
+        return fillers.filter(
+          (s: unknown): s is string => typeof s === 'string' && s.trim() !== '',
+        );
+      }
     }
   }
 

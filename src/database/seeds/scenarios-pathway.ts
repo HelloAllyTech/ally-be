@@ -17,7 +17,31 @@ type TriggerWarnings = {
 
 config();
 
-const API_BASE_URL = 'http://localhost:8001';
+// Use SEED_API_BASE_URL only — API_BASE_URL in .env is often a placeholder and breaks axios.
+const API_BASE_URL = process.env.SEED_API_BASE_URL || 'http://localhost:8001';
+
+/** Ten client utterances per language ID (ACTIVE scenarios require linguistic style samples). */
+function buildLinguisticStyleSamples(
+  languageVoices: Record<string, string>,
+): Record<string, string[]> {
+  const samples = [
+    'I am not sure where to start, but things have felt overwhelming.',
+    'It has been building up for a while now.',
+    'Some days I cope fine; other days not so much.',
+    'I keep replaying things in my head after work.',
+    'I do not want to sound dramatic, but it has been hard.',
+    'Maybe I am overreacting—I honestly do not know.',
+    'Even small tasks feel like too much lately.',
+    'I have tried to just push through, but it is tiring.',
+    'Talking about it feels a bit awkward, if I am honest.',
+    'I hope I can sort this out with a bit of support.',
+  ];
+  const out: Record<string, string[]> = {};
+  for (const langId of Object.keys(languageVoices)) {
+    out[langId] = [...samples];
+  }
+  return out;
+}
 
 // Admin credentials for authentication
 const adminCredentials = {
@@ -48,6 +72,7 @@ const createScenariosData = async (
   accessToken: string,
 ) => {
   const languageVoices = await mapLanguagesVoices(client, accessToken);
+  const linguisticStyleSamples = buildLinguisticStyleSamples(languageVoices);
   const terminationEvents = await getTerminationEventData(client, accessToken);
   const triggerWarningIds = await getTriggerWarnings(client, accessToken);
   const competencyId = await getOrCreateCompetency(client, accessToken);
@@ -76,6 +101,7 @@ const createScenariosData = async (
       tone: 'Casual',
       // Voice and dialogue
       languageVoices,
+      linguisticStyleSamples,
       prompt: SHARED_PROMPT,
       openingStatements: [
         'I am not sure where to start...',
@@ -158,6 +184,7 @@ const createScenariosData = async (
       tone: 'Thoughtful',
       // Voice and dialogue
       languageVoices,
+      linguisticStyleSamples,
       prompt: SHARED_PROMPT,
       openingStatements: [
         'I have been feeling on edge at work lately.',

@@ -47,6 +47,7 @@ export const mapCreateScenarioRequestToEntity = (
       })),
       languageVoices: scenario.languageVoices,
       linguisticStyleSamples: scenario.linguisticStyleSamples,
+      allowedFillerWords: scenario.allowedFillerWords,
       experienceMode: scenario.experienceMode,
       ...(scenario.experienceMode === ExperienceMode.CHECKLIST && {
         checklistType: scenario.checklistType || ChecklistType.GUIDED,
@@ -154,6 +155,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'customFields',
     'languageVoices',
     'linguisticStyleSamples',
+    'allowedFillerWords',
     'experienceMode',
     'checklistType',
     'timerMode',
@@ -235,6 +237,8 @@ export const getPromptCodeForScenarioField = (scenarioField: string) => {
       return toPromptCode('openai_simulation', 'behavior_instructions');
     case GeneratableField.LINGUISTIC_STYLE_SAMPLES:
       return toPromptCode('openai_simulation', 'linguistic_style_samples');
+    case GeneratableField.ALLOWED_FILLER_WORDS:
+      return toPromptCode('openai_simulation', 'allowed_filler_words');
   }
 };
 

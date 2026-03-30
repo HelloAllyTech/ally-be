@@ -76,6 +76,7 @@ describe('Scenario Util', () => {
           customFields: scenario.customFields,
           languageVoices: scenario.languageVoices,
           linguisticStyleSamples: scenario.linguisticStyleSamples,
+          allowedFillerWords: scenario.allowedFillerWords,
           characterProfileText: scenario.characterProfileText,
           showScoreMeter: scenario.showScoreMeter,
           experienceMode: ExperienceMode.CHECKLIST,

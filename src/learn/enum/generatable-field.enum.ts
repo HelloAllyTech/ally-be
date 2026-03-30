@@ -5,4 +5,5 @@ export enum GeneratableField {
   CHARACTER_PROFILE_TEXT = 'characterProfileText',
   BEHAVIOR_INSTRUCTIONS = 'behaviorInstructions',
   LINGUISTIC_STYLE_SAMPLES = 'linguisticStyleSamples',
+  ALLOWED_FILLER_WORDS = 'allowedFillerWords',
 }
