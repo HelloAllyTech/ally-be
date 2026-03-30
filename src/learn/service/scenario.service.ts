@@ -1349,7 +1349,6 @@ export class ScenarioService {
       }
     }
 
-
     if (updateScenarioDto.languageVoices) {
       await this.validateLanguageVoices(updateScenarioDto.languageVoices);
     }

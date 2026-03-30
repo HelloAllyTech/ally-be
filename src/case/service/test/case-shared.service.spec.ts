@@ -181,7 +181,9 @@ describe('CaseSharedService', () => {
         },
       } as any);
       caseItemRepository.find.mockResolvedValue([]);
-      scenarioSharedService.getScenarioWithTriggerWarningsByIds.mockResolvedValue([]);
+      scenarioSharedService.getScenarioWithTriggerWarningsByIds.mockResolvedValue(
+        [],
+      );
 
       const result = await service.getCaseWithScenarios(
         '10000000-0000-0000-0000-000000000001',

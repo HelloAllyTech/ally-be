@@ -24,8 +24,6 @@ describe('ScenarioPathController', () => {
   let controller: ScenarioPathController;
   let service: jest.Mocked<ScenarioPathService>;
   let tenantService: jest.Mocked<ScenarioPathTenantService>;
-  let openaiTranslationsService: jest.Mocked<OpenAITranslationsService>;
-  let sharedLanguageService: jest.Mocked<SharedLanguageService>;
 
   const mockScenarioPathService = {
     createScenarioPath: jest.fn(),
@@ -85,8 +83,6 @@ describe('ScenarioPathController', () => {
     controller = module.get<ScenarioPathController>(ScenarioPathController);
     service = module.get(ScenarioPathService);
     tenantService = module.get(ScenarioPathTenantService);
-    openaiTranslationsService = module.get(OpenAITranslationsService);
-    sharedLanguageService = module.get(SharedLanguageService);
   });
 
   afterEach(() => {
