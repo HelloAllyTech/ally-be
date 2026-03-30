@@ -476,22 +476,31 @@ export class ScenarioSharedService {
       this.configService.featureFlag?.scenarioBehaviorStateInstructions ??
         false,
     );
+    let formattedStateInstructions;
 
-    const formattedStateInstructions = metadata?.stateInstructions?.map(
-      (stateItem: ScenarioStateInstruction) => {
-        const stateConfigInfo = stateConfig.find(
-          (state) => state?.stateId === stateItem.stateId,
-        );
-        return {
-          stateId: stateItem.stateId,
-          name: stateItem?.name,
-          instruction: stateItem?.instruction,
-          dialogues: stateItem?.dialogues,
-          scoreUpper: stateConfigInfo?.scoreRange?.max,
-          scoreLower: stateConfigInfo?.scoreRange?.min,
-        };
-      },
-    );
+    if (this.configService.featureFlag?.scenarioBehaviorStateInstructions) {
+      formattedStateInstructions = stateConfig.map((state) => ({
+        stateId: state.stateId,
+        scoreUpper: state.scoreRange.max,
+        scoreLower: state.scoreRange.min,
+      }));
+    } else {
+      formattedStateInstructions = metadata?.stateInstructions?.map(
+        (stateItem: ScenarioStateInstruction) => {
+          const stateConfigInfo = stateConfig.find(
+            (state) => state?.stateId === stateItem.stateId,
+          );
+          return {
+            stateId: stateItem.stateId,
+            name: stateItem?.name,
+            instruction: stateItem?.instruction,
+            dialogues: stateItem?.dialogues,
+            scoreUpper: stateConfigInfo?.scoreRange?.max,
+            scoreLower: stateConfigInfo?.scoreRange?.min,
+          };
+        },
+      );
+    }
 
     const guardrails =
       await this.conversationalGuardrailsService.getRandomGuardrailsForSession(
