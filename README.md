@@ -249,6 +249,12 @@ Seed scripts are located in `src/database/seeds/` and populate the database with
 | `seed-voices-and-events.ts` | Seeds scenario voices and session events data                         | Requires app to be running                        |
 | `seed-badges.ts`            | Seeds badge definitions                                               | Requires app to be running                        |
 
+#### API URL for API-based seeds
+
+Seeds that call the HTTP API (e.g. `scenarios-pathway.ts`) use **`SEED_API_BASE_URL`** (default `http://localhost:8001`). Do not use generic **`API_BASE_URL`** from `.env` for these scripts if it is not a full `http(s)://` URL.
+
+**Docker:** Optional **`AUTO_SEED=true`** in `.env` runs `npm run seed:all` once after migrations (see `docker-compose.yml`). Or run manually: `docker compose exec app npm run seed:all`.
+
 #### Seed Execution Order
 
 For a fresh database, run seeds in this order:

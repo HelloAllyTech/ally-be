@@ -9,6 +9,8 @@ services:
     env_file:
       - .env
     environment:
+      # First-time dev: set AUTO_SEED=true in .env to run npm run seed:all after migrations, then set false.
+      AUTO_SEED: "${AUTO_SEED:-false}"
       # Docker networking note:
       # Containers talk to each other via Docker DNS using service names, not localhost.
       # These values deliberately override any .env values to ensure the app connects

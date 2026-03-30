@@ -2158,6 +2158,17 @@ export class ScenarioService {
       );
     }
 
+    // Indic-skewed default filler prompt pushes Malayalam/Devanagari; use English prompt for en*
+    if (
+      fieldName === GeneratableField.ALLOWED_FILLER_WORDS &&
+      scenarioContext.languageCode?.toLowerCase().startsWith('en')
+    ) {
+      promptCode = toPromptCode(
+        'openai_simulation',
+        'allowed_filler_words_english',
+      );
+    }
+
     if (!promptCode) {
       throw new BadRequestException(
         `Field "${fieldName}" is not supported for auto-generation`,
@@ -2237,22 +2248,19 @@ export class ScenarioService {
     }
 
     let contextToUse = scenarioContext;
-    if (fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES) {
+    if (
+      fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES ||
+      fieldName === GeneratableField.ALLOWED_FILLER_WORDS
+    ) {
       if (!scenarioContext.languageId || !scenarioContext.languageCode) {
         throw new BadRequestException(
-          'languageId and languageCode are required for linguistic style samples generation',
+          'languageId and languageCode are required for this field generation',
         );
       }
       const languageName =
         scenarioContext.languageName ||
         this.getLanguageNameFromCode(scenarioContext.languageCode);
-      // Build prompt vars from visible UI fields only: characterProfileText, challengeDescription
-      const characterSummary = scenarioContext.characterProfileText ?? '';
-      const challengeSummary = scenarioContext.challengeDescription ?? '';
-      const emotionalState = [characterSummary, challengeSummary]
-        .filter(Boolean)
-        .join('. ');
-      contextToUse = {
+      const baseLinguisticContext = {
         ...scenarioContext,
         language_name: languageName,
         language_code: scenarioContext.languageCode,
@@ -2260,8 +2268,23 @@ export class ScenarioService {
         name: scenarioContext.name ?? 'Client',
         age: scenarioContext.age ?? '',
         gender: scenarioContext.gender ?? '',
-        emotional_state: emotionalState,
       } as any;
+
+      if (fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES) {
+        const characterSummary = scenarioContext.characterProfileText ?? '';
+        const challengeSummary = scenarioContext.challengeDescription ?? '';
+        const emotionalState = [characterSummary, challengeSummary]
+          .filter(Boolean)
+          .join('. ');
+        contextToUse = {
+          ...baseLinguisticContext,
+          emotional_state: emotionalState,
+        };
+      } else {
+        // Allowed fillers: prompt Context uses only characterProfileText; avoid duplicating
+        // persona/challenge blobs (Task line already has language, location, gender).
+        contextToUse = baseLinguisticContext;
+      }
     }
 
     const content = await this.openAIAutofillService.generateFieldContent(

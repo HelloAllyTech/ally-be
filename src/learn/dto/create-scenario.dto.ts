@@ -75,6 +75,17 @@ export class CreateScenarioDto {
   linguisticStyleSamples?: Record<string, string[]>;
 
   @ApiProperty({
+    description:
+      'Per-language allowed discourse fillers for the voice agent (native script preferred)',
+    example: { '2': ['അങ്ങനെയൊന്നു', 'എന്തോ'] },
+    type: 'object',
+    additionalProperties: { type: 'array', items: { type: 'string' } },
+  })
+  @IsObject()
+  @IsOptional()
+  allowedFillerWords?: Record<string, string[]>;
+
+  @ApiProperty({
     description: 'Cover image URL of the scenario',
     example: 'https://example.com/cover-image.png',
   })

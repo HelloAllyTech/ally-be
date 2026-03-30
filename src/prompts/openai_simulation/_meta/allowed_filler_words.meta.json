@@ -1,0 +1,4 @@
+{
+  "name": "Allowed Filler Words (Simulation Autofill)",
+  "description": "Generates a small set of spoken discourse fillers / particles for the scenario language. Used when admins click Generate for allowed filler words in linguistic style."
+}

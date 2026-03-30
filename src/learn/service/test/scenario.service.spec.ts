@@ -4817,6 +4817,74 @@ describe('ScenarioService', () => {
       });
     });
 
+    it('should use English filler prompt when languageCode is English for ALLOWED_FILLER_WORDS', async () => {
+      const ctx = {
+        ...scenarioContext,
+        languageId: '5',
+        languageCode: 'en-IN',
+        languageName: 'English (India)',
+        characterProfileText: 'Profile',
+        challengeDescription: 'Challenge',
+        currentLocation: 'Mumbai',
+      };
+      openAIAutofillService.generateFieldContent.mockResolvedValue([
+        'um',
+        'well',
+      ]);
+
+      await service.generateField({
+        fieldName: GeneratableField.ALLOWED_FILLER_WORDS,
+        scenarioContext: ctx,
+      });
+
+      expect(openAIAutofillService.generateFieldContent).toHaveBeenCalledWith(
+        GeneratableField.ALLOWED_FILLER_WORDS,
+        'openai_simulation_allowed_filler_words_english',
+        expect.objectContaining({
+          language_code: 'en-IN',
+          language_name: 'English (India)',
+        }),
+        undefined,
+        undefined,
+      );
+      const calls = openAIAutofillService.generateFieldContent.mock.calls;
+      const passedContext = calls[calls.length - 1]?.[2];
+      expect(passedContext).not.toHaveProperty('emotional_state');
+    });
+
+    it('should use default filler prompt when languageCode is not English for ALLOWED_FILLER_WORDS', async () => {
+      const ctx = {
+        ...scenarioContext,
+        languageId: '3',
+        languageCode: 'ml-IN',
+        languageName: 'Malayalam',
+        characterProfileText: 'Profile',
+        challengeDescription: 'Challenge',
+        currentLocation: 'Kochi',
+      };
+      openAIAutofillService.generateFieldContent.mockResolvedValue([
+        'അ',
+      ]);
+
+      await service.generateField({
+        fieldName: GeneratableField.ALLOWED_FILLER_WORDS,
+        scenarioContext: ctx,
+      });
+
+      expect(openAIAutofillService.generateFieldContent).toHaveBeenCalledWith(
+        GeneratableField.ALLOWED_FILLER_WORDS,
+        'openai_simulation_allowed_filler_words',
+        expect.objectContaining({
+          language_code: 'ml-IN',
+        }),
+        undefined,
+        undefined,
+      );
+      const calls = openAIAutofillService.generateFieldContent.mock.calls;
+      const passedContext = calls[calls.length - 1]?.[2];
+      expect(passedContext).not.toHaveProperty('emotional_state');
+    });
+
     it('should return generated object content for STATE_INSTRUCTIONS', async () => {
       const dto = {
         fieldName: GeneratableField.STATE_INSTRUCTIONS,

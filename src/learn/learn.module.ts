@@ -54,11 +54,15 @@ import { ScenarioSessionTagsRepository } from './repository/scenario-session-tag
 import { ScenarioSessionMessageTagsRepository } from './repository/scenario-session-message-tags.repository';
 import { ScenarioSessionReflectionPromptResponse } from './entity/scenario-session-reflection-prompt-response.entity';
 import { Behavior } from './entity/behavior.entity';
+import { FillerTag } from './entity/filler-tag.entity';
 import { ScenarioBehaviorInstruction } from './entity/scenario-behavior-instruction.entity';
 import { ScenarioBehaviorInstructionBehavior } from './entity/scenario-behavior-instruction-behavior.entity';
 import { BehaviorController } from './controller/behavior.controller';
+import { FillerTagController } from './controller/filler-tag.controller';
 import { BehaviorService } from './service/behavior.service';
+import { FillerTagService } from './service/filler-tag.service';
 import { BehaviorRepository } from './repository/behavior.repository';
+import { FillerTagRepository } from './repository/filler-tag.repository';
 import { ScenarioBehaviorInstructionService } from './service/scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRepository } from './repository/scenario-behavior-instruction.repository';
 import { ScenarioBehaviorInstructionBehaviorRepository } from './repository/scenario-behavior-instruction-behavior.repository';
@@ -105,6 +109,7 @@ import { AuditModule } from 'src/audit/audit.module';
       ScenarioSessionMessageTags,
       ScenarioSessionReflectionPromptResponse,
       Behavior,
+      FillerTag,
       ScenarioBehaviorInstruction,
       ScenarioBehaviorInstructionBehavior,
       ScenarioSessionChat,
@@ -136,6 +141,7 @@ import { AuditModule } from 'src/audit/audit.module';
     LearnController,
     SimulationCreditsController,
     BehaviorController,
+    FillerTagController,
     ScenarioSessionChatController,
     CompetencyController,
   ],
@@ -169,7 +175,9 @@ import { AuditModule } from 'src/audit/audit.module';
     ScenarioSessionTagsRepository,
     ScenarioSessionMessageTagsRepository,
     BehaviorService,
+    FillerTagService,
     BehaviorRepository,
+    FillerTagRepository,
     ScenarioBehaviorInstructionService,
     ScenarioBehaviorInstructionRepository,
     ScenarioBehaviorInstructionBehaviorRepository,

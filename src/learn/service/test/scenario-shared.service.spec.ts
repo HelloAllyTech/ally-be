@@ -949,6 +949,49 @@ describe('ScenarioSharedService', () => {
         'Act only as the client in this simulation.',
       );
     });
+
+    it('should put active language allowed fillers on promptData.allowedFillerWords (string[])', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+
+      const result = await service.createRoomMetadata({
+        scenario: {
+          id: 1,
+          title: 'Test Scenario',
+          description: 'Test Description',
+          prompt: 'Act only as the client.',
+          metadata: {
+            voiceId: 'voice-1',
+            languageId: 1,
+            language: 'en',
+            name: 'Alex',
+            age: 28,
+            gender: 'Male',
+            currentLocation: 'NYC',
+            openingStatements: ['Hi'],
+            allowedFillerWords: { '1': ['  um  ', 'like'] },
+          },
+          terminationEvents: [],
+          behaviorInstructions: [],
+          difficultyLevel: 'BEGINNER',
+        } as any,
+        sessionEvents: [],
+        languageDetails: null as any,
+        previousMemory: null,
+      });
+
+      expect(result.scenario.promptData.allowedFillerWords).toEqual([
+        'um',
+        'like',
+      ]);
+      expect(
+        (result.scenario.promptData as any).allowedFillers,
+      ).toBeUndefined();
+    });
   });
 
   describe('getBehaviorsByIds', () => {
