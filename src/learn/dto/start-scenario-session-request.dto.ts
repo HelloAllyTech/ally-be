@@ -42,5 +42,4 @@ export class StartScenarioSessionRequestDto {
   @IsOptional()
   @IsNumber()
   languageId!: number;
-
 }

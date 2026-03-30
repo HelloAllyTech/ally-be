@@ -244,9 +244,7 @@ export class TenantService {
       enableMicrophoneMode: !hiddenChatTypes.includes(
         ChatTypes.MICROPHONE_CHAT,
       ),
-      enableDictationMode: !hiddenChatTypes.includes(
-        ChatTypes.DICTATION_MODE,
-      ),
+      enableDictationMode: !hiddenChatTypes.includes(ChatTypes.DICTATION_MODE),
       ...(options?.includeUserCount
         ? { userCount: parseInt(userCountResult?.[0]?.userCount ?? '0', 10) }
         : {}),

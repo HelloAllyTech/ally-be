@@ -289,37 +289,12 @@ async function loginAsLearner(
   }
 }
 
-async function getOrCreateVoice(
-  client: AxiosInstance,
-  accessToken: string,
-): Promise<string> {
-  const headers = { Authorization: `Bearer ${accessToken}` };
-
-  // Try to get existing voices first
-  try {
-    const response = await client.get('/api/v1/learn/scenario-voices', {
-      headers,
-    });
-    const voice = response.data[0];
-    logStep(
-      `[scenarios-pathway] Using existing voice: ${voice.name} (${voice.id})`,
-    );
-    return voice.id;
-  } catch (error: any) {
-    logStep('[scenarios-pathway] No existing voices found');
-    throw error;
-  }
-}
-
 async function createScenarios(
   client: AxiosInstance,
   accessToken: string,
 ): Promise<number[]> {
   try {
-    const scenariosData: any[] = await createScenariosData(
-      client,
-      accessToken,
-    );
+    const scenariosData: any[] = await createScenariosData(client, accessToken);
 
     const response = await client.post(
       '/api/v1/learn/scenarios',
@@ -425,9 +400,6 @@ async function seedScenariosAndPath() {
   try {
     // Login to get access token
     const { accessToken } = await login(client);
-
-    // Get or create a voice
-    const voiceId = await getOrCreateVoice(client, accessToken);
 
     // Create scenarios with the voice ID
     const scenarioIds = await createScenarios(client, accessToken);
