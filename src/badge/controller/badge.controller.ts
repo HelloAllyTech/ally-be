@@ -103,6 +103,11 @@ export class BadgeController {
     enum: BadgeViewedStatus,
     description: 'Filter by viewed status (VIEWED or UNVIEWED)',
   })
+  @ApiQuery({
+    name: 'languageCode',
+    required: false,
+    description: 'Language code for badge translations',
+  })
   @ApiResponse({
     status: 200,
     description:
@@ -114,8 +119,14 @@ export class BadgeController {
   async getMyBadges(
     @CurrentUser() tokenUser: TokenUser,
     @Query('viewedStatus') viewedStatus?: BadgeViewedStatus,
+    @Query('languageCode') languageCode?: string,
   ): Promise<UserBadgeResponseDto> {
-    return this.badgeService.getUserBadges(tokenUser.id, viewedStatus, true);
+    return this.badgeService.getUserBadges(
+      tokenUser.id,
+      viewedStatus,
+      true,
+      languageCode,
+    );
   }
 
   @ApiOperation({ summary: 'Get count of badges awarded to the current user' })
@@ -153,12 +164,21 @@ export class BadgeController {
       'Returns all badges available for the tenant, grouped by category and sorted by achievement count',
     type: [GroupedUserAvailableBadgesDto],
   })
+  @ApiQuery({
+    name: 'languageCode',
+    required: false,
+    description: 'Language code for badge translations',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_USER_BADGES])
   @Get('me/available')
   async getAvailableBadges(
     @CurrentUser() tokenUser: TokenUser,
+    @Query('languageCode') languageCode?: string,
   ): Promise<GroupedUserAvailableBadgesDto[]> {
-    return this.badgeService.getFormattedUserAvailableBadges(tokenUser.id);
+    return this.badgeService.getFormattedUserAvailableBadges(
+      tokenUser.id,
+      languageCode,
+    );
   }
 
   @ApiOperation({ summary: 'Mark a badge as viewed for the current user' })

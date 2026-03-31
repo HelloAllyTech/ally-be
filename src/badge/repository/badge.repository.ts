@@ -77,8 +77,11 @@ export class BadgeRepository extends Repository<Badge> {
     return [data];
   }
 
-  async getBadgesForTenant(tenantId: string): Promise<TenantBadgeResponse[]> {
-    return this.dataSource
+  async getBadgesForTenant(
+    tenantId: string,
+    languageCode?: string,
+  ): Promise<TenantBadgeResponse[]> {
+    const query = this.dataSource
       .createQueryBuilder(Badge, 'badge')
       .innerJoin(
         BadgeTenant,
@@ -96,8 +99,13 @@ export class BadgeRepository extends Repository<Badge> {
       ])
       .where('badgeTenant.tenantId = :tenantId', { tenantId })
       .andWhere('badge.deletedAt IS NULL')
-      .andWhere('badge.status = :status', { status: BadgeStatus.ACTIVE })
-      .getRawMany();
+      .andWhere('badge.status = :status', { status: BadgeStatus.ACTIVE });
+
+    if (languageCode) {
+      query.addSelect('badge.translations', 'translations');
+    }
+
+    return query.getRawMany();
   }
 
   async getBadgeIdsForUserGroups(userId: number): Promise<string[]> {
@@ -120,6 +128,7 @@ export class BadgeRepository extends Repository<Badge> {
     userId: number,
     viewedStatus?: BadgeViewedStatus,
     enableGroupFilter?: boolean,
+    languageCode?: string,
   ): Promise<UserBadgeWithDetails[]> {
     const query = this.dataSource
       .createQueryBuilder(BadgeUser, 'badgeUser')
@@ -151,6 +160,10 @@ export class BadgeRepository extends Repository<Badge> {
           'userGroup.groupId = badgeGroup.groupId',
         )
         .andWhere('userGroup.userId = :userId', { userId });
+    }
+
+    if (languageCode) {
+      query.addSelect('badge.translations', 'translations');
     }
 
     if (viewedStatus) {
