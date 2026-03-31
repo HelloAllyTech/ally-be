@@ -151,8 +151,9 @@ export class ScenarioSessionReviewController {
   })
   async getReviewById(
     @Param('id', ParseUUIDPipe) id: string,
+    @Query('languageCode') languageCode?: string,
   ): Promise<GetScenarioSessionReviewResponseDto> {
-    return this.reviewService.getReviewById(id);
+    return this.reviewService.getReviewById(id, languageCode);
   }
 
   @ApiOperation({ summary: 'Get scenario session review messages' })
