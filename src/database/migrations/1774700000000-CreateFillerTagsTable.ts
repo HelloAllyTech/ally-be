@@ -20,9 +20,7 @@ export class CreateFillerTagsTable1774700000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP INDEX "public"."UQ_filler_tags_name_lower"`,
-    );
+    await queryRunner.query(`DROP INDEX "public"."UQ_filler_tags_name_lower"`);
     await queryRunner.query(`DROP TABLE "filler_tags"`);
   }
 }

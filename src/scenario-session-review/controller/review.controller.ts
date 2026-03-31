@@ -95,17 +95,25 @@ export class ScenarioSessionReviewController {
     enum: SortOrder,
     description: 'Sort order: ASC or DESC',
   })
+  @ApiQuery({
+    name: 'languageCode',
+    required: false,
+    type: String,
+    description: 'Language code',
+  })
   async getAllReviews(
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
     @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
     @Query('sortBy') sortBy?: ReviewSortBy,
     @Query('sortOrder') sortOrder: SortOrder = SortOrder.DESC,
+    @Query('languageCode') languageCode?: string,
   ) {
     return this.reviewService.getAllReviews({
       limit,
       offset,
       sortBy,
       sortOrder,
+      languageCode,
     });
   }
 
