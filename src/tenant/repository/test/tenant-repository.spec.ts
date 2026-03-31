@@ -74,7 +74,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(2);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      const result = await repository.getallTenants();
+      const result = await repository.getAllTenants();
 
       expect(result).toEqual({
         tenants: mockTenants,
@@ -102,14 +102,14 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(1);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      const result = await repository.getallTenants(searchTerm);
+      const result = await repository.getAllTenants(searchTerm);
 
       expect(result).toEqual({
         tenants: mockTenants,
         count: 1,
       });
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        '(tenant.name ILIKE :search )',
+        '(tenant.name ILIKE :search OR tenant.code ILIKE :search)',
         { search: '%Test%' },
       );
     });
@@ -130,10 +130,10 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(1);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      await repository.getallTenants(searchTerm);
+      await repository.getAllTenants(searchTerm);
 
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        '(tenant.name ILIKE :search )',
+        '(tenant.name ILIKE :search OR tenant.code ILIKE :search)',
         { search: '%Test%' },
       );
     });
@@ -153,7 +153,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(1);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      await repository.getallTenants('');
+      await repository.getAllTenants('');
 
       expect(mockQueryBuilder.andWhere).not.toHaveBeenCalled();
     });
@@ -173,7 +173,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(1);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      await repository.getallTenants('   ');
+      await repository.getAllTenants('   ');
 
       expect(mockQueryBuilder.andWhere).not.toHaveBeenCalled();
     });
@@ -206,7 +206,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(2);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      const result = await repository.getallTenants(undefined, options);
+      const result = await repository.getAllTenants(undefined, options);
 
       expect(result).toEqual({
         tenants: mockTenants,
@@ -246,7 +246,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(2);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      await repository.getallTenants(undefined, options);
+      await repository.getAllTenants(undefined, options);
 
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
         'tenant.createdAt',
@@ -273,7 +273,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(50);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      await repository.getallTenants(undefined, options);
+      await repository.getAllTenants(undefined, options);
 
       expect(mockQueryBuilder.limit).toHaveBeenCalledWith(10);
     });
@@ -297,7 +297,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(50);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      await repository.getallTenants(undefined, options);
+      await repository.getAllTenants(undefined, options);
 
       expect(mockQueryBuilder.offset).toHaveBeenCalledWith(10);
     });
@@ -330,7 +330,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(50);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      const result = await repository.getallTenants(undefined, options);
+      const result = await repository.getAllTenants(undefined, options);
 
       expect(result).toEqual({
         tenants: mockTenants,
@@ -371,14 +371,14 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(100);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      const result = await repository.getallTenants(searchTerm, options);
+      const result = await repository.getAllTenants(searchTerm, options);
 
       expect(result).toEqual({
         tenants: mockTenants,
         count: 100,
       });
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        '(tenant.name ILIKE :search )',
+        '(tenant.name ILIKE :search OR tenant.code ILIKE :search)',
         { search: '%Test%' },
       );
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
@@ -393,7 +393,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(0);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue([]);
 
-      const result = await repository.getallTenants();
+      const result = await repository.getAllTenants();
 
       expect(result).toEqual({
         tenants: [],
@@ -420,7 +420,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(1);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      await repository.getallTenants(undefined, options);
+      await repository.getAllTenants(undefined, options);
 
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
         'tenant.name',
@@ -447,7 +447,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(1);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      await repository.getallTenants(undefined, options);
+      await repository.getAllTenants(undefined, options);
 
       expect(mockQueryBuilder.limit).not.toHaveBeenCalled();
     });
@@ -471,7 +471,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(1);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      await repository.getallTenants(undefined, options);
+      await repository.getAllTenants(undefined, options);
 
       expect(mockQueryBuilder.offset).not.toHaveBeenCalled();
     });
@@ -491,7 +491,7 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(1);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      const result = await repository.getallTenants(undefined, undefined);
+      const result = await repository.getAllTenants(undefined, undefined);
 
       expect(result).toEqual({
         tenants: mockTenants,
@@ -518,10 +518,10 @@ describe('TenantsRepository', () => {
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(1);
       (mockQueryBuilder.getMany as jest.Mock).mockResolvedValue(mockTenants);
 
-      await repository.getallTenants(searchTerm);
+      await repository.getAllTenants(searchTerm);
 
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        '(tenant.name ILIKE :search )',
+        '(tenant.name ILIKE :search OR tenant.code ILIKE :search)',
         { search: '%Test &%' },
       );
     });
