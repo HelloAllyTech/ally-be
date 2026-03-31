@@ -129,12 +129,15 @@ export class ScenarioSessionReviewService extends BaseReviewService<
       ),
     ]);
 
-    const data = this.formatReviewListResponse({
-      reviews: result.reviews,
-      count: result.count,
-      reactions,
-      comments,
-    });
+    const data = this.formatReviewListResponse(
+      {
+        reviews: result.reviews,
+        count: result.count,
+        reactions,
+        comments,
+      },
+      options?.languageCode,
+    );
     return { data, count: result.count };
   }
 
@@ -241,7 +244,10 @@ export class ScenarioSessionReviewService extends BaseReviewService<
     };
   }
 
-  private formatReviewListResponse(result: GetScenarioSessionReviews) {
+  private formatReviewListResponse(
+    result: GetScenarioSessionReviews,
+    languageCode?: string,
+  ) {
     const reactionsByReviewId: Record<string, Record<string, number>> = {};
     const commentsByReviewId: Record<string, number> = {};
 
@@ -260,9 +266,19 @@ export class ScenarioSessionReviewService extends BaseReviewService<
       createdAt: review.createdAt,
       scenario: review.scenario
         ? {
-            title: review.scenario.title,
+            title:
+              languageCode &&
+              review.scenario.translations &&
+              review.scenario.translations[languageCode]
+                ? review.scenario.translations[languageCode].title
+                : review.scenario.title,
             createdAt: review.scenario.createdAt,
-            description: review.scenario.description,
+            description:
+              languageCode &&
+              review.scenario.translations &&
+              review.scenario.translations[languageCode]
+                ? review.scenario.translations[languageCode].description
+                : review.scenario.description,
             coverImageUrl: review.scenario.coverImageUrl,
             coverVideoUrl: review.scenario.coverVideoUrl,
           }

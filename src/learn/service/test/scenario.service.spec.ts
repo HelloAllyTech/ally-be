@@ -4862,9 +4862,7 @@ describe('ScenarioService', () => {
         challengeDescription: 'Challenge',
         currentLocation: 'Kochi',
       };
-      openAIAutofillService.generateFieldContent.mockResolvedValue([
-        'അ',
-      ]);
+      openAIAutofillService.generateFieldContent.mockResolvedValue(['അ']);
 
       await service.generateField({
         fieldName: GeneratableField.ALLOWED_FILLER_WORDS,

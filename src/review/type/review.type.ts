@@ -17,4 +17,5 @@ export interface GetReviewsOptions {
   offset?: number;
   sortBy?: ReviewSortBy;
   sortOrder?: SortOrder;
+  languageCode?: string;
 }

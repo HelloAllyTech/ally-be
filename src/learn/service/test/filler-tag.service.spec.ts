@@ -1,8 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  BadRequestException,
-  ConflictException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { FillerTagService } from '../filler-tag.service';
 import { FillerTagRepository } from '../../repository/filler-tag.repository';
 
@@ -24,7 +21,9 @@ describe('FillerTagService', () => {
         updatedAt: new Date('2026-01-01'),
       })),
       getFillerTags: jest.fn(async () => ({
-        data: [{ id: 'a', name: 'um', createdAt: new Date(), updatedAt: new Date() }],
+        data: [
+          { id: 'a', name: 'um', createdAt: new Date(), updatedAt: new Date() },
+        ],
         count: 1,
       })),
     };

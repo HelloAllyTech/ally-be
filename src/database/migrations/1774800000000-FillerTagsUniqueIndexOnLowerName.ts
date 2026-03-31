@@ -7,9 +7,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * If CREATE UNIQUE INDEX fails, dedupe filler_tags where LOWER(name) collides first.
  */
-export class FillerTagsUniqueIndexOnLowerName1774800000000
-  implements MigrationInterface
-{
+export class FillerTagsUniqueIndexOnLowerName1774800000000 implements MigrationInterface {
   name = 'FillerTagsUniqueIndexOnLowerName1774800000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
