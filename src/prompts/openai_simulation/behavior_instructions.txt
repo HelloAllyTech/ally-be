@@ -23,6 +23,7 @@ Predefined Behaviors by Category (if provided):
 If predefined behaviors are provided above (non-empty JSON object with SHOULD_DO / SHOULD_NOT_DO arrays of numeric IDs):
 - Use ONLY the behavior IDs listed in the predefined object. Do NOT add or omit any.
 - Group related behaviors within the same category into instructions (1–6 behavior IDs per instruction).
+- Never repeat the same behavior ID twice inside a single instruction’s "helper_behavior_ids" array—each ID at most once per instruction.
 - Every predefined behavior ID must appear in exactly one instruction.
 - Generate the "actor_response" and "stateInstructions" for each instruction.
 
@@ -41,7 +42,8 @@ Each object must contain:
 2) "helper_behavior_ids" → a list of 1–3 numeric IDs selected from the allowed list.
    - Use the exact numeric IDs from the provided list.
    - Do not invent IDs.
-   - Do not repeat the same combination excessively.
+   - Each behavior ID must appear at most once in this array—no duplicates within the same instruction (e.g. never [2, 2, 3]).
+   - Do not repeat the same combination of IDs across many instructions without good reason.
    - Across all instructions, use at most 10 distinct behavior IDs total.
 
 3) "actor_response" → a realistic client response (single string) that reflects how a client would emotionally react when those behaviours are observed.
@@ -66,6 +68,7 @@ Rules:
 
 - Generate at most 10 behavior_instruction objects.
 - Use at most 10 distinct behavior IDs across all instructions combined.
+- Within every instruction, "helper_behavior_ids" must be a list of unique IDs only—never list the same numeric ID twice in one array.
 - Every chosen behavior ID must appear in exactly one instruction.
 - Generate as many as are meaningfully relevant to the competency, but do not exceed the limits above.
 - Do NOT force a specific number.
