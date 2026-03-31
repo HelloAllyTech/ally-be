@@ -143,6 +143,7 @@ export class ScenarioSessionReviewService extends BaseReviewService<
 
   async getReviewById(
     id: string,
+    languageCode?: string,
   ): Promise<GetScenarioSessionReviewResponseDto> {
     const userId = Number(ExecutionManager.getUserId());
 
@@ -216,10 +217,15 @@ export class ScenarioSessionReviewService extends BaseReviewService<
     return {
       id: review.id,
       scenario: {
-        title: scenario?.title,
+        title:
+          (languageCode && scenario?.translations?.[languageCode]?.title) ||
+          scenario?.title,
         createdAt: scenario?.createdAt,
         name: scenario?.metadata?.name,
-        description: scenario?.description,
+        description:
+          (languageCode &&
+            scenario?.translations?.[languageCode]?.description) ||
+          scenario?.description,
         coverImageUrl: scenario?.coverImageUrl,
         coverVideoUrl: scenario?.coverVideoUrl,
       },

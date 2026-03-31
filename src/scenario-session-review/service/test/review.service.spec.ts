@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { ScenarioSessionReviewService } from '../review.service';
 import { ScenarioSessionReviewRepository } from '../../repository/review.repository';
 import { ScenarioSessionReviewThreadRepository } from '../../repository/thread.repository';
@@ -158,5 +159,162 @@ describe('formatReviewListResponse', () => {
 
     expect(formattedData[0].scenario).toEqual({});
     expect(formattedData[0].scenarioSession).toEqual({});
+  });
+});
+
+describe('getReviewById', () => {
+  let service: ScenarioSessionReviewService;
+  const reviewRepository = { findOne: jest.fn() };
+  const scenarioSharedService = {
+    getScenarioSessionById: jest.fn(),
+    getScenarioById: jest.fn(),
+  };
+  const userService = { get: jest.fn() };
+  const reviewAccessValidator = { validateAccess: jest.fn() };
+  const reviewThreadRepository = {
+    getCommentsCountByReviewIds: jest.fn(),
+    findOne: jest.fn(),
+  };
+  const reviewReactionRepository = {
+    getReactionsByReviewIds: jest.fn(),
+    findOne: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ScenarioSessionReviewService,
+        {
+          provide: ScenarioSessionReviewRepository,
+          useValue: reviewRepository,
+        },
+        {
+          provide: ScenarioSessionReviewThreadRepository,
+          useValue: reviewThreadRepository,
+        },
+        {
+          provide: ScenarioSessionReviewReactionRepository,
+          useValue: reviewReactionRepository,
+        },
+        { provide: ScenarioSessionReviewCommentRepository, useValue: {} },
+        {
+          provide: ScenarioSessionReviewCommentReactionRepository,
+          useValue: {},
+        },
+        { provide: ScenarioSharedService, useValue: scenarioSharedService },
+        { provide: UserService, useValue: userService },
+        {
+          provide: ScenarioReviewAccessValidator,
+          useValue: reviewAccessValidator,
+        },
+        { provide: ScenarioSessionReviewReadStatusRepository, useValue: {} },
+        { provide: PermissionValidator, useValue: {} },
+      ],
+    }).compile();
+
+    service = module.get<ScenarioSessionReviewService>(
+      ScenarioSessionReviewService,
+    );
+
+    jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('1');
+    jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue('tenant-1');
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should return review with translated scenario title and description if languageCode is provided and translation exists', async () => {
+    reviewRepository.findOne.mockResolvedValue({
+      id: 'review-1',
+      status: 'IN_REVIEW',
+      createdBy: 1,
+      scenarioSessionId: 'session-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      note: 'test',
+    });
+    reviewAccessValidator.validateAccess.mockResolvedValue(true);
+    scenarioSharedService.getScenarioSessionById.mockResolvedValue({
+      id: 'session-1',
+      scenarioId: 1,
+      startedAt: new Date(),
+      endedAt: new Date(),
+      createdAt: new Date(),
+    });
+    userService.get.mockResolvedValue({
+      id: 1,
+      name: 'User 1',
+      status: 'ACTIVE',
+    });
+    scenarioSharedService.getScenarioById.mockResolvedValue({
+      id: 1,
+      title: 'English Title',
+      description: 'English Description',
+      translations: {
+        fr: { title: 'French Title', description: 'French Description' },
+      },
+      createdAt: new Date(),
+    });
+    reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue([
+      { count: '2' },
+    ]);
+    reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue([
+      { reaction: 'like', count: '5' },
+    ]);
+    reviewReactionRepository.findOne.mockResolvedValue({ reaction: 'like' });
+    reviewThreadRepository.findOne.mockResolvedValue({ id: 'thread-1' });
+
+    const result = await service.getReviewById('review-1', 'fr');
+
+    expect(result.scenario.title).toEqual('French Title');
+    expect(result.scenario.description).toEqual('French Description');
+  });
+
+  it('should return review with default scenario title and description if languageCode is not found in translations', async () => {
+    reviewRepository.findOne.mockResolvedValue({
+      id: 'review-1',
+      status: 'IN_REVIEW',
+      createdBy: 1,
+      scenarioSessionId: 'session-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      note: 'test',
+    });
+    reviewAccessValidator.validateAccess.mockResolvedValue(true);
+    scenarioSharedService.getScenarioSessionById.mockResolvedValue({
+      id: 'session-1',
+      scenarioId: 1,
+      startedAt: new Date(),
+      endedAt: new Date(),
+      createdAt: new Date(),
+    });
+    userService.get.mockResolvedValue({
+      id: 1,
+      name: 'User 1',
+      status: 'ACTIVE',
+    });
+    scenarioSharedService.getScenarioById.mockResolvedValue({
+      id: 1,
+      title: 'English Title',
+      description: 'English Description',
+      translations: {
+        fr: { title: 'French Title', description: 'French Description' },
+      },
+      createdAt: new Date(),
+    });
+    reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue([
+      { count: '2' },
+    ]);
+    reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue([
+      { reaction: 'like', count: '5' },
+    ]);
+    reviewReactionRepository.findOne.mockResolvedValue({ reaction: 'like' });
+    reviewThreadRepository.findOne.mockResolvedValue({ id: 'thread-1' });
+
+    const result = await service.getReviewById('review-1', 'es'); // 'es' does not exist
+
+    expect(result.scenario.title).toEqual('English Title');
+    expect(result.scenario.description).toEqual('English Description');
   });
 });
