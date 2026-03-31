@@ -222,7 +222,7 @@ describe('TenantController', () => {
         count: 1,
       };
 
-      tenantService.getallTenants.mockResolvedValue(response);
+      tenantService.getAllTenants.mockResolvedValue(response);
 
       const result = await controller.getAllTenants(
         10,
@@ -232,7 +232,7 @@ describe('TenantController', () => {
         'search',
       );
 
-      expect(tenantService.getallTenants).toHaveBeenCalledWith('search', {
+      expect(tenantService.getAllTenants).toHaveBeenCalledWith('search', {
         limit: 10,
         offset: 0,
         sortBy: TenantSortBy.NAME,
@@ -246,10 +246,10 @@ describe('TenantController', () => {
         data: [],
         count: 0,
       };
-      tenantService.getallTenants.mockResolvedValue(response);
+      tenantService.getAllTenants.mockResolvedValue(response);
 
       const result = await controller.getAllTenants();
-      expect(tenantService.getallTenants).toHaveBeenCalledWith(undefined, {
+      expect(tenantService.getAllTenants).toHaveBeenCalledWith(undefined, {
         limit: undefined,
         offset: undefined,
         sortBy: undefined,

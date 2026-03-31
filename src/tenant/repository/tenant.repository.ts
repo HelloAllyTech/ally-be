@@ -11,7 +11,7 @@ export class TenantsRepository extends Repository<Tenant> {
     super(Tenant, dataSource.createEntityManager());
   }
 
-  async getallTenants(
+  async getAllTenants(
     search?: string,
     options?: Pagination,
     tenantIds?: string[],
@@ -53,9 +53,12 @@ export class TenantsRepository extends Repository<Tenant> {
     if (search && search.trim()) {
       const searchTerm = `%${search.trim()}%`;
 
-      query.andWhere('(tenant.name ILIKE :search )', {
-        search: searchTerm,
-      });
+      query.andWhere(
+        '(tenant.name ILIKE :search OR tenant.code ILIKE :search)',
+        {
+          search: searchTerm,
+        },
+      );
     }
   }
 

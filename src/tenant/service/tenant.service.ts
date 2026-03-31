@@ -276,7 +276,7 @@ export class TenantService {
     return tenant !== null && tenant.status === TenantStatus.ACTIVE;
   }
 
-  async getallTenants(
+  async getAllTenants(
     search?: string,
     options?: Pagination,
   ): Promise<GetAllTenantsResponseDto> {
@@ -298,7 +298,7 @@ export class TenantService {
       }
     }
 
-    const { tenants, count } = await this.tenantsRepository.getallTenants(
+    const { tenants, count } = await this.tenantsRepository.getAllTenants(
       search,
       options,
       tenantsIds,

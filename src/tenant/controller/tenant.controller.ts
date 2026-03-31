@@ -157,7 +157,7 @@ export class TenantController {
     @Query('sortOrder') order?: SortOrder,
     @Query('search') search?: string,
   ): Promise<GetAllTenantsResponseDto> {
-    return this.tenantService.getallTenants(search, {
+    return this.tenantService.getAllTenants(search, {
       limit,
       offset,
       sortBy,
