@@ -333,14 +333,36 @@ export class BadgeService {
     userId: number,
     viewedStatus?: BadgeViewedStatus,
     enableGroupFilter: boolean = false,
+    languageCode?: string,
   ): Promise<UserBadgeResponse> {
     const badges = await this.badgeRepository.getUserBadges(
       userId,
       viewedStatus,
       enableGroupFilter,
+      languageCode,
     );
+    const formattedBadges = badges.map((badge) => {
+      let { name, description } = badge;
+
+      if (
+        languageCode &&
+        badge.translations &&
+        badge.translations[languageCode]
+      ) {
+        name = badge.translations[languageCode].name || name;
+        description =
+          badge.translations[languageCode].description || description;
+      }
+
+      return {
+        ...badge,
+        name,
+        description,
+      };
+    });
+
     return {
-      data: badges,
+      data: formattedBadges,
     };
   }
 
@@ -357,6 +379,7 @@ export class BadgeService {
 
   async getFormattedUserAvailableBadges(
     userId: number,
+    languageCode?: string,
   ): Promise<GroupedUserAvailableBadges[]> {
     const tenantId = ExecutionManager.getTenantId();
     if (!tenantId) {
@@ -364,8 +387,10 @@ export class BadgeService {
     }
 
     // Get all badges assigned to the tenant
-    const tenantBadges =
-      await this.badgeRepository.getBadgesForTenant(tenantId);
+    const tenantBadges = await this.badgeRepository.getBadgesForTenant(
+      tenantId,
+      languageCode,
+    );
 
     if (tenantBadges.length === 0) {
       return [];
@@ -389,13 +414,29 @@ export class BadgeService {
       .filter((badge) =>
         supportedUserGroupBadgeIds.some((id) => id === badge.id),
       )
-      .map((badge) => ({
-        ...badge,
-        viewedStatus: awardedBadgeMap.get(badge.id) ?? null,
-        lockStatus: awardedBadgeMap.has(badge.id)
-          ? BadgeLockStatus.UNLOCKED
-          : BadgeLockStatus.LOCKED,
-      }));
+      .map((badge) => {
+        let { name, description } = badge;
+
+        if (
+          languageCode &&
+          badge.translations &&
+          badge.translations[languageCode]
+        ) {
+          name = badge.translations[languageCode].name || name;
+          description =
+            badge.translations[languageCode].description || description;
+        }
+
+        return {
+          ...badge,
+          name,
+          description,
+          viewedStatus: awardedBadgeMap.get(badge.id) ?? null,
+          lockStatus: awardedBadgeMap.has(badge.id)
+            ? BadgeLockStatus.UNLOCKED
+            : BadgeLockStatus.LOCKED,
+        };
+      });
 
     // Group badges by category and sort by achievementParams.count
     return groupAndSortBadgesByCategory(availableBadges);

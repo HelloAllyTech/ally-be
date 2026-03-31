@@ -396,6 +396,78 @@ describe('BadgeService', () => {
       expect(badgeIds).toContain('badge-3');
       expect(badgeIds).not.toContain('badge-2');
     });
+
+    it('should return Translated name and description if languageCode is provided', async () => {
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+      mockBadgeRepository.getBadgesForTenant.mockResolvedValue([
+        {
+          id: 'badge-1',
+          name: 'English Name',
+          description: 'English Description',
+          category: 'SIMULATION_MINUTES',
+          achievementParams: { count: 10 },
+          translations: {
+            hi: { name: 'हिन्दी नाम', description: 'हिन्दी विवरण' },
+          },
+        },
+      ] as any);
+      mockBadgeRepository.getBadgeIdsForUserGroups.mockResolvedValue([
+        'badge-1',
+      ]);
+      mockBadgeUserRepository.find.mockResolvedValue([]);
+
+      const result = await service.getFormattedUserAvailableBadges(1, 'hi');
+
+      expect(result[0].badges[0].name).toBe('हिन्दी नाम');
+      expect(result[0].badges[0].description).toBe('हिन्दी विवरण');
+      expect(mockBadgeRepository.getBadgesForTenant).toHaveBeenCalledWith(
+        'tenant-1',
+        'hi',
+      );
+    });
+  });
+
+  describe('getUserBadges', () => {
+    it('should return user badges from repository', async () => {
+      const badges = [{ id: 'badge-1', name: 'Badge 1' }] as any;
+      mockBadgeRepository.getUserBadges.mockResolvedValue(badges);
+
+      const result = await service.getUserBadges(1);
+
+      expect(result.data).toEqual(badges);
+      expect(mockBadgeRepository.getUserBadges).toHaveBeenCalledWith(
+        1,
+        undefined,
+        false,
+        undefined,
+      );
+    });
+
+    it('should return translated name and description if languageCode is provided', async () => {
+      const badges = [
+        {
+          id: 'user-badge-1',
+          badgeId: 'badge-1',
+          name: 'English Name',
+          description: 'English Description',
+          translations: {
+            hi: { name: 'हिन्दी नाम', description: 'हिन्दी विवरण' },
+          },
+        },
+      ] as any;
+      mockBadgeRepository.getUserBadges.mockResolvedValue(badges);
+
+      const result = await service.getUserBadges(1, undefined, false, 'hi');
+
+      expect(result.data[0].name).toBe('हिन्दी नाम');
+      expect(result.data[0].description).toBe('हिन्दी विवरण');
+      expect(mockBadgeRepository.getUserBadges).toHaveBeenCalledWith(
+        1,
+        undefined,
+        false,
+        'hi',
+      );
+    });
   });
 
   describe('markBadgeAsViewed', () => {
