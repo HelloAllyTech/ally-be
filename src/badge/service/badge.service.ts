@@ -354,6 +354,7 @@ export class BadgeService {
           badge.translations[languageCode].description || description;
       }
 
+      delete badge?.translations;
       return {
         ...badge,
         name,
