@@ -79,7 +79,7 @@ describe('TenantController', () => {
       updateStatus: jest.fn(),
       updateSettings: jest.fn(),
       updateMetadata: jest.fn(),
-      getallTenants: jest.fn(),
+      getAllTenants: jest.fn(),
       updateTenant: jest.fn(),
     };
 
