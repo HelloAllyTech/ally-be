@@ -38,6 +38,9 @@ export class Badge extends BaseWithoutTenantEntity {
   @Column({ type: 'jsonb', nullable: true })
   achievementParams?: BadgeAchievementParams;
 
+  @Column({ type: 'jsonb', nullable: true })
+  translations?: Record<string, any>;
+
   @DeleteDateColumn()
   deletedAt?: Date;
 

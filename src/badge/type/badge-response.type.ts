@@ -17,6 +17,7 @@ export interface UserBadgeWithDetails {
   imageUrl?: string;
   category?: BadgeCategory;
   achievementParams?: BadgeAchievementParams;
+  translations?: Record<string, any>;
 }
 
 export interface UserBadgeResponse {
@@ -32,6 +33,7 @@ export interface TenantBadgeResponse {
   visibilityType: BadgeVisibilityType;
   achievementParams?: BadgeAchievementParams;
   enabled: boolean;
+  translations?: Record<string, any>;
 }
 
 export interface UserAvailableBadge extends TenantBadgeResponse {

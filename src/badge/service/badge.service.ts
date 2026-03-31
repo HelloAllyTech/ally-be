@@ -44,6 +44,14 @@ import { BadgeImageUploadContentType } from '../enum/badge-image-upload-content-
 import { DeleteBadgeImageDto } from '../dto/delete-badge-image.dto';
 import { BadgeFilterDto } from '../dto/badge-filter.dto';
 import { Pagination } from 'src/common/type/common.type';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
+
+interface BadgeTranslatableFields {
+  name: string;
+  description?: string;
+}
 
 @Injectable()
 export class BadgeService {
@@ -60,6 +68,9 @@ export class BadgeService {
     private readonly badgeGroupRepository: BadgeGroupRepository,
     private readonly configService: AppConfigService,
     private readonly s3Service: S3Service,
+    private readonly openaiTranslationsService: OpenAITranslationsService,
+    private readonly sharedLanguageService: SharedLanguageService,
+    private readonly scenarioSharedService: ScenarioSharedService,
   ) {}
 
   async createBadge(
@@ -83,6 +94,11 @@ export class BadgeService {
       });
 
       const savedBadge = await badgeRepo.save(badge);
+
+      this.createBadgeTranslations(savedBadge.id, {
+        name: savedBadge.name,
+        description: savedBadge.description,
+      });
 
       if (createBadgeDto.groupIds && createBadgeDto.groupIds.length > 0) {
         const badgeGroups = createBadgeDto.groupIds.map((groupId) =>
@@ -139,6 +155,13 @@ export class BadgeService {
           }),
         );
         const inserted = await badgeRepo.save(badgeEntities);
+
+        inserted.forEach((badge) => {
+          this.createBadgeTranslations(badge.id, {
+            name: badge.name,
+            description: badge.description,
+          });
+        });
 
         // Bulk insert badge-group mappings
         const allBadgeGroups: BadgeGroup[] = [];
@@ -451,6 +474,13 @@ export class BadgeService {
 
       // 1. Update badge fields
       const updateData = this.buildBadgeUpdateData(updateBadgeDto, userId);
+
+      if (updateData?.name || updateData?.description) {
+        this.createBadgeTranslations(badgeId, {
+          name: updateData.name ?? badge.name,
+          description: updateData.description ?? badge.description,
+        });
+      }
 
       if (Object.keys(updateData).length > 0) {
         await badgeRepo.update(badgeId, updateData);
@@ -781,5 +811,37 @@ export class BadgeService {
       throw new Error('S3 bucket name for assetsBucket is not defined');
     }
     return bucket;
+  }
+
+  private async createBadgeTranslations(
+    badgeId: string,
+    badgeData: BadgeTranslatableFields,
+  ) {
+    const validLanguageIds: number[] =
+      await this.scenarioSharedService.getUniqueLanguagesFromScenarioTranslations();
+
+    if (!validLanguageIds || validLanguageIds.length === 0) {
+      return;
+    }
+
+    const languageCodes =
+      await this.sharedLanguageService.getValidLanguageCodes(validLanguageIds);
+
+    if (!languageCodes || languageCodes.length === 0) {
+      return;
+    }
+
+    const translated =
+      await this.openaiTranslationsService.translateObjectToLanguages(
+        badgeData,
+        languageCodes,
+        'openai_translation_speech_reexpression_user',
+      );
+
+    if (translated) {
+      await this.badgeRepository.update(badgeId, {
+        translations: translated,
+      } as any);
+    }
   }
 }

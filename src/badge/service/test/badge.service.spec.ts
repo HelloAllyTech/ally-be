@@ -19,6 +19,9 @@ import { NotFoundException } from 'src/exception/custom.exception';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 
 jest.mock('src/common/execution/execution-manager');
 
@@ -34,6 +37,9 @@ describe('BadgeService', () => {
   let mockDataSource: jest.Mocked<DataSource>;
   let mockAppConfigService: jest.Mocked<AppConfigService>;
   let mockS3Service: jest.Mocked<S3Service>;
+  let mockOpenaiTranslationsService: jest.Mocked<OpenAITranslationsService>;
+  let mockSharedLanguageService: jest.Mocked<SharedLanguageService>;
+  let mockScenarioSharedService: jest.Mocked<ScenarioSharedService>;
 
   beforeEach(async () => {
     mockBadgeRepository = {
@@ -46,6 +52,8 @@ describe('BadgeService', () => {
       getBadgesForTenant: jest.fn(),
       getPaginatedBadgesForTenant: jest.fn(),
       getBadgeIdsForUserGroups: jest.fn(),
+      update: jest.fn(),
+      save: jest.fn(),
     } as any;
 
     mockBadgeUserRepository = {
@@ -90,6 +98,15 @@ describe('BadgeService', () => {
 
     mockAppConfigService = {} as any;
     mockS3Service = {} as any;
+    mockOpenaiTranslationsService = {
+      translateObjectToLanguages: jest.fn(),
+    } as any;
+    mockSharedLanguageService = {
+      getValidLanguageCodes: jest.fn(),
+    } as any;
+    mockScenarioSharedService = {
+      getUniqueLanguagesFromScenarioTranslations: jest.fn(),
+    } as any;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -104,6 +121,12 @@ describe('BadgeService', () => {
         { provide: DataSource, useValue: mockDataSource },
         { provide: AppConfigService, useValue: mockAppConfigService },
         { provide: S3Service, useValue: mockS3Service },
+        {
+          provide: OpenAITranslationsService,
+          useValue: mockOpenaiTranslationsService,
+        },
+        { provide: SharedLanguageService, useValue: mockSharedLanguageService },
+        { provide: ScenarioSharedService, useValue: mockScenarioSharedService },
       ],
     }).compile();
 
@@ -433,6 +456,39 @@ describe('BadgeService', () => {
         service.updateBadge('badge-1', { name: 'New Name' }),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('should update badge and related records in a transaction', async () => {
+      const badge = { id: 'badge-1', name: 'Test Badge' } as Badge;
+      mockBadgeRepository.findOne.mockResolvedValue(badge);
+      mockBadgeGroupRepository.findByBadgeId.mockResolvedValue([]);
+      (mockDataSource.transaction as jest.Mock).mockImplementation(
+        async (cb: (entityManager: any) => Promise<boolean>) =>
+          cb({
+            getRepository: jest.fn().mockImplementation((entity) => {
+              if (entity.name === 'Badge') {
+                return { update: jest.fn().mockResolvedValue(undefined) };
+              }
+              if (entity.name === 'BadgeGroup') {
+                return {
+                  find: jest.fn().mockResolvedValue([]),
+                  softDelete: jest.fn().mockResolvedValue(undefined),
+                  create: jest.fn().mockReturnValue({}),
+                  save: jest.fn().mockResolvedValue(undefined),
+                };
+              }
+              return {
+                softDelete: jest.fn().mockResolvedValue(undefined),
+                find: jest.fn().mockResolvedValue([]),
+              };
+            }),
+          }),
+      );
+
+      const result = await service.updateBadge('badge-1', { name: 'New Name' });
+
+      expect(result).toBe(true);
+      expect(mockDataSource.transaction).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('deleteBadge', () => {
@@ -610,6 +666,77 @@ describe('BadgeService', () => {
       expect(result.ids).toHaveLength(2);
       expect(mockBadgeRepo.save).toHaveBeenCalledTimes(1);
       expect(mockBadgeGroupRepo.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('should create translations for all languages', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      const batchDto = {
+        badges: [
+          createMockBadgeDto('Test Badge 1'),
+          createMockBadgeDto('Test Badge 2'),
+        ],
+      };
+
+      mockGroupRepository.getAll.mockResolvedValue([{ id: 1 }] as any);
+
+      const mockBadgeRepo = {
+        create: jest.fn((dto) => ({ ...dto, id: `id-${dto.name}` })),
+        save: jest.fn((entities) =>
+          entities.map((e: any) => ({ ...e, status: BadgeStatus.DRAFT })),
+        ),
+      };
+      const mockBadgeGroupRepo = {
+        create: jest.fn((entity) => entity),
+        save: jest.fn(),
+      };
+
+      (mockDataSource.transaction as jest.Mock).mockImplementation(
+        async (cb: any) => {
+          return cb({
+            getRepository: (entity: any) => {
+              if (entity.name === 'Badge') return mockBadgeRepo;
+              if (entity.name === 'BadgeGroup') return mockBadgeGroupRepo;
+              return {};
+            },
+          });
+        },
+      );
+
+      const result = await service.createBadgesBatch(batchDto as any);
+
+      expect(mockDataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(result.ids).toHaveLength(2);
+      expect(mockBadgeRepo.save).toHaveBeenCalledTimes(1);
+      expect(mockBadgeGroupRepo.save).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('createBadgeTranslations', () => {
+    it('should create translations for all languages', async () => {
+      const badgeId = 'badge-1';
+      const badgeData = { name: 'Test Badge', description: 'Test Description' };
+      const languageCodes = ['en', 'hi'];
+      const translated = {
+        en: { name: 'Test Badge', description: 'Test Description' },
+        hi: { name: 'टेस्ट बैज', description: 'टेस्ट विवरण' },
+      };
+
+      mockScenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [1, 2],
+      );
+      mockSharedLanguageService.getValidLanguageCodes.mockResolvedValue(
+        languageCodes,
+      );
+      mockOpenaiTranslationsService.translateObjectToLanguages.mockResolvedValue(
+        translated,
+      );
+
+      await (service as any).createBadgeTranslations(badgeId, badgeData);
+
+      expect(mockBadgeRepository.update).toHaveBeenCalledTimes(1);
+      expect(mockBadgeRepository.update).toHaveBeenCalledWith(badgeId, {
+        translations: translated,
+      });
     });
   });
 });

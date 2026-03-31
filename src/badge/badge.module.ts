@@ -21,6 +21,8 @@ import { BadgeAwardService } from './service/badge-award.service';
 import { AwsModule } from 'src/aws/aws.module';
 import { AuditModule } from 'src/audit/audit.module';
 import { UserModule } from 'src/user/user.module';
+import { LanguageModule } from 'src/language/language.module';
+import { LearnModule } from 'src/learn/learn.module';
 
 @Module({
   imports: [
@@ -32,6 +34,8 @@ import { UserModule } from 'src/user/user.module';
     AwsModule,
     AuditModule,
     forwardRef(() => UserModule),
+    LanguageModule,
+    forwardRef(() => LearnModule),
   ],
   controllers: [BadgeController],
   providers: [
