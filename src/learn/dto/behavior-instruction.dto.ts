@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
   IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -10,14 +11,17 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
+import { supportedStateInstructionStateIds } from '../constants/scenario-state-instructions.constants';
 
 class BehaviorStateInstructionDto {
   @ApiProperty({
-    description: 'State ID',
+    description: 'State ID (simulation phase)',
+    enum: supportedStateInstructionStateIds,
     example: '1',
   })
   @IsNotEmpty()
   @IsString()
+  @IsIn(supportedStateInstructionStateIds)
   stateId!: string;
 
   @ApiProperty({
