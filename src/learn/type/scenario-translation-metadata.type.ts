@@ -27,3 +27,7 @@ export type TranslationConsiderableData = {
   age: string;
   gender: string;
 };
+
+export type TriggerWarningTranslatableFields = {
+  name: string;
+};
