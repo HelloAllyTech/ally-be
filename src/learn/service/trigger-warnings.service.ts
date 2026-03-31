@@ -7,12 +7,20 @@ import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.ent
 import { Pagination } from 'src/common/type/common.type';
 import { TriggerWarningsRepository } from '../repository/trigger-warnings.repository';
 
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
+import { TriggerWarningTranslatableFields } from '../type/scenario-translation-metadata.type';
+
 @Injectable()
 export class TriggerWarningsService {
   constructor(
     private triggerWarningsRepository: TriggerWarningsRepository,
     @InjectRepository(ScenarioTriggerWarnings)
     private triggerWarningsScenarioRepository: Repository<ScenarioTriggerWarnings>,
+    private readonly openaiTranslationsService: OpenAITranslationsService,
+    private readonly sharedLanguageService: SharedLanguageService,
+    private readonly scenarioSharedService: ScenarioSharedService,
   ) {}
 
   async getTriggerWarnings(name?: string, options?: Pagination) {
@@ -38,7 +46,13 @@ export class TriggerWarningsService {
     const triggerWarning = this.triggerWarningsRepository.create(
       createTriggerWarningDto,
     );
-    return this.triggerWarningsRepository.save(triggerWarning);
+    const savedTriggerWarning =
+      await this.triggerWarningsRepository.save(triggerWarning);
+
+    this.createTriggerWarningTranslations(savedTriggerWarning.id, {
+      name: savedTriggerWarning.name,
+    });
+    return savedTriggerWarning;
   }
 
   async assignTriggerWarningsToScenario(
@@ -53,5 +67,37 @@ export class TriggerWarningsService {
         })),
       );
     return this.triggerWarningsScenarioRepository.save(scenarioTriggerWarnings);
+  }
+
+  private async createTriggerWarningTranslations(
+    triggerWarningId: string,
+    triggerWarningData: TriggerWarningTranslatableFields,
+  ) {
+    const validLanguageIds: number[] =
+      await this.scenarioSharedService.getUniqueLanguagesFromScenarioTranslations();
+
+    if (!validLanguageIds || validLanguageIds.length === 0) {
+      return;
+    }
+
+    const languageCodes =
+      await this.sharedLanguageService.getValidLanguageCodes(validLanguageIds);
+
+    if (!languageCodes || languageCodes.length === 0) {
+      return;
+    }
+
+    const translated =
+      await this.openaiTranslationsService.translateObjectToLanguages(
+        triggerWarningData,
+        languageCodes,
+        'openai_translation_speech_reexpression_user',
+      );
+
+    if (translated) {
+      await this.triggerWarningsRepository.update(triggerWarningId, {
+        translations: translated,
+      } as any);
+    }
   }
 }

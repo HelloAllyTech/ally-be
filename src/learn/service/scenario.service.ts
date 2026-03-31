@@ -191,6 +191,18 @@ export class ScenarioService {
       data.forEach((scenario) =>
         applyScenarioTranslations(scenario, languageCode),
       );
+      data.forEach((scenario) =>
+        scenario.triggerWarnings?.forEach((triggerWarning) => {
+          if (
+            triggerWarning.translations &&
+            triggerWarning.translations[languageCode]
+          ) {
+            triggerWarning.name =
+              triggerWarning.translations[languageCode].name ||
+              triggerWarning.name;
+          }
+        }),
+      );
     }
 
     return { data, count };

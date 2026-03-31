@@ -9,4 +9,7 @@ export class TriggerWarnings extends BaseWithoutTenantEntity {
 
   @Column()
   name!: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  translations?: Record<string, any>;
 }

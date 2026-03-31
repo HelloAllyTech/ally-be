@@ -47,11 +47,7 @@ import { Pagination } from 'src/common/type/common.type';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
-
-interface BadgeTranslatableFields {
-  name: string;
-  description?: string;
-}
+import { BadgeTranslatableFields } from '../type/badge.type';
 
 @Injectable()
 export class BadgeService {
