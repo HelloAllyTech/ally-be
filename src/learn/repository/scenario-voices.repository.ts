@@ -91,6 +91,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       .select('la.id', 'language_id')
       .addSelect('la.value', 'value')
       .addSelect('la.label', 'label')
+      .addSelect('la.translationCode', 'translationCode')
       .addSelect(
         voicesNeeded
           ? `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider))`
@@ -115,9 +116,11 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     }
 
     if (requiresVoices) {
-      query.groupBy('la.id, la.value, la.label').having('COUNT(sv.id) > 0');
+      query
+        .groupBy('la.id, la.value, la.label, la.translationCode')
+        .having('COUNT(sv.id) > 0');
     } else {
-      query.groupBy('la.id, la.value, la.label');
+      query.groupBy('la.id, la.value, la.label, la.translationCode');
     }
 
     const rows = await query.getRawMany();
@@ -130,6 +133,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       language_id: Number(r.language_id),
       value: r.value,
       label: r.label,
+      translationCode: r.translationCode ?? '',
       voices: typeof r.voices === 'string' ? JSON.parse(r.voices) : r.voices,
     }));
   }

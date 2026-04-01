@@ -111,6 +111,24 @@ export class AppConfigService {
     };
   }
 
+  /** Local/dev only: bypass S3 for scenario cover image presign. */
+  get isMockScenarioCoverImageUpload(): boolean {
+    return (
+      this.configService.get<string>('MOCK_SCENARIO_COVER_IMAGE_UPLOAD') ===
+      'true'
+    );
+  }
+
+  get mockScenarioCoverImageUrl(): string {
+    const url = this.configService.get<string>(
+      'MOCK_SCENARIO_COVER_IMAGE_URL',
+    );
+    if (url?.trim()) {
+      return url.trim();
+    }
+    return 'https://placehold.co/1920x1080/png?text=Local+dev+cover';
+  }
+
   get email() {
     return {
       sourceEmail: this.configService.get<string>('SOURCE_EMAIL'),

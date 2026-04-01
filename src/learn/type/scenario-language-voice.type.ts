@@ -9,6 +9,8 @@ export interface ScenarioVoiceLanguage {
   language_id: number;
   value: string;
   label: string;
+  /** BCP-47 / translation locale from languages.translationCode (fallback when value is not a locale). */
+  translationCode: string;
   voices: ScenarioVoice[];
 }
 

@@ -1,5 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import { config } from 'dotenv';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
 import { logStep } from './seed-utils';
 import {
   ExperienceMode,
@@ -15,10 +17,30 @@ type TriggerWarnings = {
   name: string;
 };
 
-config();
+// Load ally-be/.env from this file's location so FEATURE_* flags match the API even if cwd differs.
+const allyBeEnv = resolve(__dirname, '../../../.env');
+if (existsSync(allyBeEnv)) {
+  config({ path: allyBeEnv });
+} else {
+  config();
+}
 
 // Use SEED_API_BASE_URL only — API_BASE_URL in .env is often a placeholder and breaks axios.
 const API_BASE_URL = process.env.SEED_API_BASE_URL || 'http://localhost:8001';
+
+/**
+ * Must match learn validation (scenario.service validateBehaviorInstructionsStructure):
+ * - FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS=false → ['1','2','3','4']
+ * - FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS=true  → ['-1','1','2','3']
+ */
+function behaviorInstructionPhaseStateIds(): [string, string, string, string] {
+  const newModel =
+    process.env.FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS === 'true';
+  if (newModel) {
+    return ['-1', '1', '2', '3'];
+  }
+  return ['1', '2', '3', '4'];
+}
 
 /** Ten client utterances per language ID (ACTIVE scenarios require linguistic style samples). */
 function buildLinguisticStyleSamples(
@@ -77,10 +99,15 @@ const createScenariosData = async (
   const triggerWarningIds = await getTriggerWarnings(client, accessToken);
   const competencyId = await getOrCreateCompetency(client, accessToken);
   const behaviorIds = await getOrCreateBehaviors(client, accessToken);
+  const [bi0, bi1, bi2, bi3] = behaviorInstructionPhaseStateIds();
+  logStep(
+    `[scenarios-pathway] Phase stateIds for seed: ${bi0}, ${bi1}, ${bi2}, ${bi3} (FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS=${process.env.FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS ?? 'unset'})`,
+  );
 
   const scenarios = [
     {
       isGlobal: true,
+      isPublic: true,
       title: 'Active Listening Basics',
       coverImageUrl: 'https://placehold.co/400x300/png?text=Active+Listening',
       coverVideoUrl: null,
@@ -109,14 +136,14 @@ const createScenariosData = async (
       ],
       agentDialogues: ['I hear you', 'Tell me more', 'That sounds tough'],
       stateInstructions: [
-        { stateId: '1', instruction: 'Start', dialogues: ['I hear you'] },
-        { stateId: '2', instruction: 'Middle', dialogues: ['Tell me more'] },
+        { stateId: bi0, instruction: 'Start', dialogues: ['I hear you'] },
+        { stateId: bi1, instruction: 'Middle', dialogues: ['Tell me more'] },
         {
-          stateId: '3',
+          stateId: bi2,
           instruction: 'Middle 2',
           dialogues: ['That sounds tough'],
         },
-        { stateId: '4', instruction: 'End', dialogues: ['I understand'] },
+        { stateId: bi3, instruction: 'End', dialogues: ['I understand'] },
       ],
       // Termination settings
       terminationEvents,
@@ -141,20 +168,20 @@ const createScenariosData = async (
           ],
           stateInstructions: [
             {
-              stateId: '1',
+              stateId: bi0,
               instruction: 'Use an open, warm greeting to build rapport',
             },
             {
-              stateId: '2',
+              stateId: bi1,
               instruction: 'Reflect feelings about stress and workload',
             },
             {
-              stateId: '3',
+              stateId: bi2,
               instruction:
                 'Ask one open-ended question to deepen understanding',
             },
             {
-              stateId: '4',
+              stateId: bi3,
               instruction: 'Summarize key concern and validate effort',
             },
           ],
@@ -163,6 +190,7 @@ const createScenariosData = async (
     },
     {
       isGlobal: true,
+      isPublic: true,
       title: 'Managing Workplace Anxiety',
       coverImageUrl: 'https://placehold.co/400x300/png?text=Workplace+Anxiety',
       coverVideoUrl: null,
@@ -191,24 +219,23 @@ const createScenariosData = async (
         'Even small tasks are starting to feel stressful.',
       ],
       agentDialogues: ['I hear you', 'Tell me more', 'That sounds tough'],
-      // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions
       stateInstructions: [
         {
-          stateId: '1',
+          stateId: bi0,
           instruction: 'Start',
           dialogues: ['That sounds overwhelming.'],
         },
         {
-          stateId: '2',
+          stateId: bi1,
           instruction: 'Middle',
           dialogues: ['Can you tell me more about that?'],
         },
         {
-          stateId: '3',
+          stateId: bi2,
           instruction: 'Middle 2',
           dialogues: ['I am listening.'],
         },
-        { stateId: '4', instruction: 'End', dialogues: ['I see.'] },
+        { stateId: bi3, instruction: 'End', dialogues: ['I see.'] },
       ],
       triggerWarningIds,
       experienceMode: ExperienceMode.FEEDBACK,
@@ -231,19 +258,19 @@ const createScenariosData = async (
           ],
           stateInstructions: [
             {
-              stateId: '1',
+              stateId: bi0,
               instruction: 'Offer brief validation to reduce immediate tension',
             },
             {
-              stateId: '2',
+              stateId: bi1,
               instruction: 'Invite specifics about triggers and contexts',
             },
             {
-              stateId: '3',
+              stateId: bi2,
               instruction: 'Reflect patterns and name one emerging theme',
             },
             {
-              stateId: '4',
+              stateId: bi3,
               instruction: 'Summarize strengths and set one small next step',
             },
           ],
@@ -442,10 +469,11 @@ async function seedScenariosAndPath() {
 
     logStep('[scenarios-pathway] ✅ Scenario seeding completed successfully!');
   } catch (error: any) {
-    console.error(
-      '[scenarios-pathway] ❌ Error during seeding:',
-      error.message,
-    );
+    const detail =
+      error.response?.data?.message ??
+      JSON.stringify(error.response?.data) ??
+      error.message;
+    console.error('[scenarios-pathway] ❌ Error during seeding:', detail);
     process.exit(1);
   }
 }

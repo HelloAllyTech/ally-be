@@ -78,7 +78,10 @@ import {
   MetadataShape,
   TranslationConsiderableData,
 } from '../type/scenario-translation-metadata.type';
-import { CreateScenarioTranslation } from '../interface/scenario-translation.interface';
+import {
+  CreateScenarioTranslation,
+  UpdateScenarioTranslation,
+} from '../interface/scenario-translation.interface';
 import {
   CreateScenarioEventsTranslation,
   ScenarioEventsTranslationData,
@@ -346,19 +349,26 @@ export class ScenarioService {
   async getPresignedUrlForScenarioCoverImage(
     scenarioImageUploadRequestDto: ScenarioImageUploadRequestDto,
   ): Promise<ScenarioImageUploadResponseDto> {
-    const bucket = this.configService.s3.learnMediaPublicBucket;
-    if (!bucket) {
-      throw new Error(
-        'S3 bucket name for learnMediaPublicBucket is not defined',
-      );
-    }
-
     if (
       !Object.values(ScenarioImageUploadContentType).includes(
         scenarioImageUploadRequestDto.contentType,
       )
     ) {
       throw new BadRequestException('Invalid file type');
+    }
+
+    if (this.configService.isMockScenarioCoverImageUpload) {
+      return {
+        presignedUrl: '',
+        coverImageUrl: this.configService.mockScenarioCoverImageUrl,
+      };
+    }
+
+    const bucket = this.configService.s3.learnMediaPublicBucket;
+    if (!bucket) {
+      throw new Error(
+        'S3 bucket name for learnMediaPublicBucket is not defined',
+      );
     }
 
     const { presignedUrl, imageUrl } =
@@ -374,6 +384,9 @@ export class ScenarioService {
   }
 
   async deleteCoverImage(deleteCoverImageDto: DeleteCoverImageDto) {
+    if (this.configService.isMockScenarioCoverImageUpload) {
+      return { success: true };
+    }
     const bucket = this.configService.s3.learnMediaPublicBucket;
     if (!bucket) {
       throw new Error(
@@ -480,7 +493,7 @@ export class ScenarioService {
       await this.permissionsService.isMultiTenantAdmin(userId);
 
     try {
-      return await this.dataSource.transaction(async (entityManager) => {
+      const savedScenarios = await this.dataSource.transaction(async (entityManager) => {
         const scenariosRepo = entityManager.getRepository(Scenarios);
         const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
         const scenarios = scenariosRepo.create(createScenarioDtos);
@@ -587,7 +600,7 @@ export class ScenarioService {
           (scenario) => scenario.status == ScenarioStatus.ACTIVE,
         );
 
-        if (activeScenarios.length === 0) {
+        if (activeScenarios.length > 0) {
           for (const scenario of activeScenarios) {
             const translationConsiderableData: TranslationConsiderableData = {
               currentLocation: scenario.metadata?.currentLocation,
@@ -609,10 +622,11 @@ export class ScenarioService {
                   tone: scenario.metadata?.tone,
                   personality: scenario.metadata?.personality,
                   context: scenario.metadata?.context,
-                  openingStatements: scenario.metadata?.openingStatements,
                   sexualOrientation: scenario.metadata?.sexualOrientation,
                   genderIdentity: scenario.metadata?.genderIdentity,
                   customFields: scenario.metadata?.customFields,
+                  // Phase 2: opening dialogues are not auto-translated; primary stays in
+                  // scenario.metadata.openingStatements, others in scenario_translations (upsert).
                   // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions field
                   stateInstructions: scenario.metadata?.stateInstructions,
                   knowledgeSources: scenario.metadata?.knowledgeSources,
@@ -624,6 +638,21 @@ export class ScenarioService {
 
         return savedScenarios;
       });
+      for (let i = 0; i < savedScenarios.length; i++) {
+        const dto = createScenariosDto.scenarios[i];
+        if (
+          dto.translationOpeningStatements &&
+          Object.keys(dto.translationOpeningStatements).length > 0
+        ) {
+          await this.upsertTranslationOpeningStatements(
+            savedScenarios[i].id,
+            dto.translationOpeningStatements,
+            savedScenarios[i].metadata,
+          );
+        }
+      }
+
+      return savedScenarios;
     } catch (error) {
       this.logger.error(
         `Failed to create scenarios with error ${JSON.stringify(error)}`,
@@ -1010,7 +1039,7 @@ export class ScenarioService {
     await this.checkForInProgressScenarioReports(scenario.id);
 
     try {
-      return await this.dataSource.transaction(async (entityManager) => {
+      const success = await this.dataSource.transaction(async (entityManager) => {
         const updateData = mapUpdateScenarioRequestToEntity(
           updateScenarioDto,
           scenario,
@@ -1038,14 +1067,16 @@ export class ScenarioService {
                 description: updateScenarioDto.description,
                 tone: updateScenarioDto.tone,
                 personality: updateScenarioDto.personality,
-                openingStatements: updateScenarioDto.openingStatements,
                 sexualOrientation: updateScenarioDto.sexualOrientation,
                 genderIdentity: updateScenarioDto.genderIdentity,
                 customFields: updateScenarioDto?.customFields,
+                // Opening dialogues: not part of bulk auto-translate (see create path).
                 stateInstructions: updateScenarioDto?.stateInstructions,
                 knowledgeSources: updateScenarioDto?.knowledgeSources,
               }),
             translationConsiderableData,
+            (s) =>
+              updateScenarioDto.languageVoices ?? s.metadata?.languageVoices,
           );
         }
         await this.updateScenarioTerminationEvents(
@@ -1167,6 +1198,22 @@ export class ScenarioService {
 
         return true;
       });
+
+      if (
+        success &&
+        updateScenarioDto.translationOpeningStatements !== undefined
+      ) {
+        const fresh = await this.scenariosRepository.findOne({
+          where: { id },
+        });
+        await this.upsertTranslationOpeningStatements(
+          id,
+          updateScenarioDto.translationOpeningStatements,
+          fresh?.metadata,
+        );
+      }
+
+      return success;
     } catch (error) {
       this.logger.error(
         `Failed to update scenario with error ${JSON.stringify(error)}`,
@@ -1806,6 +1853,121 @@ export class ScenarioService {
     return false;
   }
 
+  private async upsertTranslationOpeningStatements(
+    scenarioId: number,
+    translationOpeningStatements: Record<string, string[]>,
+    metadataForPrimaryResolution?: Record<string, any> | null,
+  ): Promise<void> {
+    const primaryId =
+      await this.scenarioSharedService.resolveOpeningDialoguePrimaryLanguageId(
+        metadataForPrimaryResolution,
+      );
+
+    const existing =
+      await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
+        scenarioId,
+      );
+
+    const toCreate: CreateScenarioTranslation[] = [];
+    const toUpdate: UpdateScenarioTranslation[] = [];
+
+    for (const [langIdStr, lines] of Object.entries(
+      translationOpeningStatements,
+    )) {
+      const languageId = Number(langIdStr);
+      if (!Number.isFinite(languageId)) continue;
+      if (primaryId != null && languageId === primaryId) continue;
+
+      const row = existing?.find((r) => Number(r.languageId) === languageId);
+      const normalizedLines = Array.isArray(lines)
+        ? lines.map((l) => String(l).trim()).filter((l) => l.length > 0)
+        : [];
+
+      const mergedMetadata = {
+        ...(row?.metadata ?? {}),
+        openingStatements: normalizedLines,
+      };
+
+      if (row) {
+        toUpdate.push({ scenarioId, languageId, metadata: mergedMetadata });
+      } else {
+        toCreate.push({ scenarioId, languageId, metadata: mergedMetadata });
+      }
+    }
+
+    if (toCreate.length) {
+      await this.scenarioTranslationsRepository.createScenarioTranslations(
+        toCreate,
+      );
+    }
+    if (toUpdate.length) {
+      await this.scenarioTranslationsRepository.updateScenarioTranslations(
+        toUpdate,
+      );
+    }
+  }
+
+  /**
+   * Target languages for auto-translation: scenario Language–Voice mappings only
+   * (not the global catalog rule requiring male+female voices per language).
+   */
+  private async getTranslationTargetLanguagesFromLanguageVoices(
+    languageVoices: Record<string, string> | null | undefined,
+  ): Promise<
+    Array<{
+      language_id: number;
+      value: string;
+      label: string;
+      translationCode: string;
+    }>
+  > {
+    if (!languageVoices || typeof languageVoices !== 'object') {
+      return [];
+    }
+
+    const languageIds = Object.entries(languageVoices)
+      .filter(
+        ([, voiceId]) => voiceId != null && String(voiceId).trim() !== '',
+      )
+      .map(([langId]) => Number(langId))
+      .filter((id) => Number.isFinite(id));
+
+    if (!languageIds.length) {
+      return [];
+    }
+
+    const rows = await this.sharedLanguageService.getLanguagesByIds(
+      languageIds,
+    );
+
+    const isEnglishTranslationTarget = (code: string): boolean => {
+      const c = code.trim().toLowerCase();
+      return c === DEFAULT_LANGUAGE_TRANSLATION_CODE || c.startsWith('en-');
+    };
+
+    return (rows ?? [])
+      .filter((l) => l.active)
+      .filter((l) => l.translationCode && l.translationCode.trim() !== '')
+      .filter((l) => !isEnglishTranslationTarget(l.translationCode))
+      .map((l) => ({
+        language_id: l.id,
+        value: l.value,
+        label: l.label,
+        translationCode: l.translationCode.trim(),
+      }));
+  }
+
+  /** Strip opening lines from auto-translate output so DB merges never overwrite manual/per-tab openings. */
+  private omitOpeningStatementsFromTranslationMetadata(
+    metadata: Partial<MetadataShape>,
+  ): Partial<MetadataShape> {
+    if (!metadata || typeof metadata !== 'object') {
+      return metadata;
+    }
+    const { openingStatements: _drop, ...rest } = metadata;
+    return rest;
+  }
+
   /**
    * Persist translations for scenarios:
    * - creates new translations for new languageIds
@@ -1815,6 +1977,9 @@ export class ScenarioService {
     scenarios: Array<Scenarios>,
     metadataExtractor: (scenario: Scenarios) => MetadataShape,
     translationConsiderableData?: TranslationConsiderableData,
+    resolveLanguageVoices?: (
+      scenario: Scenarios,
+    ) => Record<string, string> | undefined,
   ) {
     if (!scenarios.length) {
       return;
@@ -1845,16 +2010,12 @@ export class ScenarioService {
           continue;
         }
 
-        // Picking all languages with voices
-        const languages = await this.getLanguagesForScenario(true, true);
-
-        const languagesFiltered = (languages ?? []).filter(
-          (l: any) =>
-            l &&
-            l.translationCode &&
-            l.translationCode.trim() !== '' &&
-            !l.value.includes(DEFAULT_LANGUAGE_TRANSLATION_CODE),
-        );
+        const languageVoices =
+          resolveLanguageVoices?.(scenario) ?? scenario.metadata?.languageVoices;
+        const languagesFiltered =
+          await this.getTranslationTargetLanguagesFromLanguageVoices(
+            languageVoices,
+          );
         if (!languagesFiltered.length) {
           this.logger?.warn?.(
             `[persistTranslationsForScenarios] scenario ${scenario.id}: no valid languages, skipping`,
@@ -1862,10 +2023,11 @@ export class ScenarioService {
           continue;
         }
 
-        const languageCodes = languagesFiltered.map((l: any) =>
-          l.translationCode.trim(),
-        );
+        const languageCodes = languagesFiltered.map((l) => l.translationCode);
 
+        this.logger.info(
+          `[persistTranslationsForScenarios] invoking translation API for scenario ${scenario.id} → codes: ${languageCodes.join(', ')}`,
+        );
         const translatedMap =
           await this.buildTranslatedMetadataForLanguageCodes(
             sanitized as Partial<MetadataShape>,
@@ -1908,8 +2070,22 @@ export class ScenarioService {
         const toUpdate: Array<any> = [];
 
         for (const t of translatedList) {
-          if (existingLanguageIdSet.has(Number(t.languageId))) toUpdate.push(t);
-          else toCreate.push(t);
+          const existingRow = existingTranslations?.find(
+            (r) => Number(r.languageId) === Number(t.languageId),
+          );
+          const mergedMetadata = {
+            ...(existingRow?.metadata ?? {}),
+            ...this.omitOpeningStatementsFromTranslationMetadata(
+              t.metadata as Partial<MetadataShape>,
+            ),
+          } as MetadataShape;
+          const entry = {
+            scenarioId: t.scenarioId,
+            languageId: t.languageId,
+            metadata: mergedMetadata,
+          };
+          if (existingLanguageIdSet.has(Number(t.languageId))) toUpdate.push(entry);
+          else toCreate.push(entry);
         }
 
         // Persist creates first
@@ -2297,6 +2473,40 @@ export class ScenarioService {
         // persona/challenge blobs (Task line already has language, location, gender).
         contextToUse = baseLinguisticContext;
       }
+    }
+
+    if (
+      fieldName === GeneratableField.OPENING_STATEMENTS &&
+      scenarioContext.languageId
+    ) {
+      const id = Number(scenarioContext.languageId);
+      if (!Number.isFinite(id)) {
+        throw new BadRequestException('Invalid languageId');
+      }
+      const langs = await this.sharedLanguageService.getLanguagesByIds([id]);
+      const lang = langs[0];
+      if (!lang) {
+        throw new BadRequestException(`Language not found: ${id}`);
+      }
+      const code =
+        scenarioContext.languageCode?.trim() ||
+        lang.value?.trim() ||
+        lang.translationCode?.trim() ||
+        '';
+      const name =
+        scenarioContext.languageName?.trim() ||
+        lang.label?.trim() ||
+        this.getLanguageNameFromCode(code);
+      if (!code) {
+        throw new BadRequestException(
+          'Could not resolve language code for opening statement generation',
+        );
+      }
+      contextToUse = {
+        ...scenarioContext,
+        languageCode: code,
+        languageName: name,
+      };
     }
 
     const content = await this.openAIAutofillService.generateFieldContent(

@@ -250,12 +250,14 @@ describe('ScenarioVoicesRepository', () => {
           language_id: '1',
           value: 'en',
           label: 'English',
+          translationCode: 'en-GB',
           voices: JSON.stringify([]),
         },
         {
           language_id: '2',
           value: 'en-US',
           label: 'English Global',
+          translationCode: 'en-US',
           voices: JSON.stringify([]),
         },
       ];
@@ -277,7 +279,7 @@ describe('ScenarioVoicesRepository', () => {
       );
       expect(queryBuilder.where).toHaveBeenCalledWith('la.active = true');
       expect(queryBuilder.groupBy).toHaveBeenCalledWith(
-        'la.id, la.value, la.label',
+        'la.id, la.value, la.label, la.translationCode',
       );
 
       expect(result).toHaveLength(2);
@@ -285,6 +287,7 @@ describe('ScenarioVoicesRepository', () => {
         language_id: 1,
         value: 'en',
         label: 'English',
+        translationCode: 'en-GB',
         voices: [],
       });
       expect(result[1].label).toBe('English Global');
@@ -296,6 +299,7 @@ describe('ScenarioVoicesRepository', () => {
           language_id: 1,
           value: 'es',
           label: 'Spanish',
+          translationCode: 'es-ES',
           voices: [{ id: 'v2' }],
         },
       ];
@@ -321,6 +325,7 @@ describe('ScenarioVoicesRepository', () => {
           language_id: 1,
           value: 'es',
           label: 'Spanish',
+          translationCode: 'es-ES',
           voices: [{ id: 'v2' }],
         },
       ]);

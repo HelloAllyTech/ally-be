@@ -9,11 +9,13 @@ Inputs (authoritative):
 - Title: {{title}}
 - Character Profile Text: {{characterProfileText}}
 - Challenge Description: {{challengeDescription}}
+- Target language (spoken): {{languageName}} (code: {{languageCode}}). Every generated line must be in this language only (natural code-mixing allowed for this locale).
 
 Goal:
 Generate a list of realistic, emotionally grounded opening statements the client might say at the start of the session.
 
 Critical Instructions:
+0) Every line must be written entirely in the target language when languageName/languageCode are provided; natural code-mixing is allowed when appropriate for that locale.
 1) These must be spoken dialogue lines only.
 2) Do NOT include narration, explanations, or stage directions.
 3) Do NOT include the counsellor's lines.
