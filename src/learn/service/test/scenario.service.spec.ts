@@ -188,6 +188,9 @@ describe('ScenarioService', () => {
       featureFlag: {
         scenarioCustomFields: true,
       },
+      isMockScenarioCoverImageUpload: false,
+      mockScenarioCoverImageUrl:
+        'https://placehold.co/1920x1080/png?text=Local+dev+cover',
     };
 
     const mockTenantService = {
@@ -239,6 +242,7 @@ describe('ScenarioService', () => {
     const mockSharedLanguageService = {
       getSharedLanguages: jest.fn(),
       getValidLanguages: jest.fn(),
+      getLanguagesByIds: jest.fn().mockResolvedValue([]),
     };
 
     const mockScenarioSharedService = {
@@ -861,10 +865,20 @@ describe('ScenarioService', () => {
       mockConfigService.s3 = {
         learnMediaPublicBucket: 'test-bucket',
       };
+      mockConfigService.isMockScenarioCoverImageUpload = false;
 
       mockS3Service.deleteObject = jest.fn().mockResolvedValue(true);
       mockLogger.warn = jest.fn();
       mockLogger.error = jest.fn();
+    });
+
+    it('should skip S3 when mock cover image upload is enabled', async () => {
+      mockConfigService.isMockScenarioCoverImageUpload = true;
+      const result = await service.deleteCoverImage({
+        coverImageUrl: 'https://example.com/any.png',
+      });
+      expect(result).toEqual({ success: true });
+      expect(mockS3Service.deleteObject).not.toHaveBeenCalled();
     });
 
     it('should successfully delete cover image and return { success: true }', async () => {
@@ -1815,6 +1829,27 @@ describe('ScenarioService', () => {
       await expect(
         service.getPresignedUrlForScenarioCoverImage(requestDto),
       ).rejects.toThrow('File size must be less than 2 MB');
+    });
+
+    it('should return placeholder URL and skip S3 when mock cover upload is enabled', async () => {
+      mockConfigService.isMockScenarioCoverImageUpload = true;
+      mockConfigService.mockScenarioCoverImageUrl =
+        'https://example.com/mock-cover.png';
+
+      const requestDto: ScenarioImageUploadRequestDto = {
+        fileName: 'test.jpg',
+        fileSize: 1024,
+        contentType: ScenarioImageUploadContentType.JPEG,
+      };
+
+      const result =
+        await service.getPresignedUrlForScenarioCoverImage(requestDto);
+
+      expect(result.presignedUrl).toBe('');
+      expect(result.coverImageUrl).toBe('https://example.com/mock-cover.png');
+      expect(mockS3Service.getPresignedUrlForImageUpload).not.toHaveBeenCalled();
+
+      mockConfigService.isMockScenarioCoverImageUpload = false;
     });
   });
 
@@ -4103,6 +4138,7 @@ describe('ScenarioService', () => {
 
       mockLogger = {
         debug: jest.fn(),
+        info: jest.fn(),
         warn: jest.fn(),
         error: jest.fn(),
       };
@@ -4119,7 +4155,13 @@ describe('ScenarioService', () => {
           }, {}),
       );
 
-      (service as any).getLanguagesForScenario = jest.fn();
+      sharedLanguageService.getLanguagesByIds = jest
+        .fn()
+        .mockResolvedValue([]);
+
+      dataSource.getRepository = jest.fn().mockReturnValue({
+        update: jest.fn().mockResolvedValue({ affected: 1 }),
+      });
 
       scenarioTranslationsRepository.createScenarioTranslations = jest.fn();
       scenarioTranslationsRepository.updateScenarioTranslations = jest.fn();
@@ -4148,21 +4190,27 @@ describe('ScenarioService', () => {
     });
 
     it('should skip scenarios with no valid languages', async () => {
-      const scenarios = [{ id: 1 }];
+      const scenarios = [
+        {
+          id: 1,
+          metadata: { languageVoices: { '1': 'voice-1' } },
+        },
+      ];
 
       const metadataExtractor = jest.fn(() => ({
         title: 'Test',
         description: 'Test',
       }));
 
-      (service as any).getLanguagesForScenario.mockResolvedValue([
+      sharedLanguageService.getLanguagesByIds.mockResolvedValue([
         {
+          id: 1,
           translationCode: '',
           value: 'en-US',
           label: 'English (US)',
-          language_id: 1,
+          active: true,
         },
-      ]);
+      ] as any);
 
       await persistTranslationsForScenarios(scenarios, metadataExtractor);
 
@@ -4179,27 +4227,35 @@ describe('ScenarioService', () => {
     });
 
     it('should create translations for new language IDs', async () => {
-      const scenarios = [{ id: 1, name: 'Scenario 1' }];
+      const scenarios = [
+        {
+          id: 1,
+          name: 'Scenario 1',
+          metadata: { languageVoices: { '1': 'v1', '2': 'v2' } },
+        },
+      ];
 
       const metadataExtractor = jest.fn(() => ({
         title: 'Test Title',
         description: 'Test Description',
       }));
 
-      (service as any).getLanguagesForScenario.mockResolvedValue([
+      sharedLanguageService.getLanguagesByIds.mockResolvedValue([
         {
-          language_id: 1,
+          id: 1,
           translationCode: 'en',
           value: 'en-IN',
           label: 'English (India)',
+          active: true,
         },
         {
-          language_id: 2,
+          id: 2,
           translationCode: 'es',
           value: 'es-ES',
           label: 'Spanish (Spain)',
+          active: true,
         },
-      ]);
+      ] as any);
 
       scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
         [],
@@ -4226,20 +4282,28 @@ describe('ScenarioService', () => {
     });
 
     it('should update existing translations', async () => {
-      const scenarios = [{ id: 1, name: 'Scenario 1' }];
+      const scenarios = [
+        {
+          id: 1,
+          name: 'Scenario 1',
+          metadata: { languageVoices: { '2': 'v2' } },
+        },
+      ];
 
       const metadataExtractor = jest.fn(() => ({
         title: 'Updated Title',
         description: 'Updated Description',
       }));
 
-      (service as any).getLanguagesForScenario.mockResolvedValue([
+      sharedLanguageService.getLanguagesByIds.mockResolvedValue([
         {
-          language_id: 2,
+          id: 2,
           translationCode: 'hi',
           value: 'hi-IN',
+          label: 'Hindi',
+          active: true,
         },
-      ]);
+      ] as any);
 
       scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
         [
@@ -4274,22 +4338,93 @@ describe('ScenarioService', () => {
       ).not.toHaveBeenCalled();
     });
 
+    it('should not let auto-translate output overwrite translation openingStatements', async () => {
+      const scenarios = [
+        {
+          id: 1,
+          metadata: { languageVoices: { '2': 'v' } },
+        },
+      ];
+
+      const metadataExtractor = jest.fn(() => ({
+        title: 'T',
+        description: 'D',
+      }));
+
+      sharedLanguageService.getLanguagesByIds.mockResolvedValue([
+        {
+          id: 2,
+          translationCode: 'hi',
+          value: 'hi-IN',
+          label: 'Hindi',
+          active: true,
+        },
+      ] as any);
+
+      (service as any).buildTranslatedMetadataForLanguageCodes.mockResolvedValue(
+        {
+          hi: {
+            title: 'T-hi',
+            description: 'D-hi',
+            openingStatements: ['should not be persisted from auto-translate'],
+          },
+        },
+      );
+
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
+        [
+          {
+            scenarioId: 1,
+            languageId: 2,
+            id: '2',
+            metadata: { openingStatements: ['manual hi line'] },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      );
+
+      await persistTranslationsForScenarios(scenarios, metadataExtractor);
+
+      expect(
+        scenarioTranslationsRepository.updateScenarioTranslations,
+      ).toHaveBeenCalledWith([
+        expect.objectContaining({
+          languageId: 2,
+          metadata: expect.objectContaining({
+            title: 'T-hi',
+            description: 'D-hi',
+            openingStatements: ['manual hi line'],
+          }),
+        }),
+      ]);
+    });
+
     it('should continue processing when one scenario throws an error', async () => {
       const scenarios = [
-        { id: 1, name: 'Scenario 1' },
-        { id: 2, name: 'Scenario 2' },
+        {
+          id: 1,
+          name: 'Scenario 1',
+          metadata: { languageVoices: { '2': 'v' } },
+        },
+        {
+          id: 2,
+          name: 'Scenario 2',
+          metadata: { languageVoices: { '2': 'v' } },
+        },
       ];
 
       const metadataExtractor = jest.fn(() => ({ title: 'Test' }));
 
-      (service as any).getLanguagesForScenario.mockResolvedValue([
+      sharedLanguageService.getLanguagesByIds.mockResolvedValue([
         {
-          language_id: 2,
+          id: 2,
           translationCode: 'hi',
           value: 'hi-IN',
           label: 'Hindi (India)',
+          active: true,
         },
-      ]);
+      ] as any);
 
       scenarioTranslationsRepository.getScenarioTranslationsByScenarioId
         .mockResolvedValueOnce([])
@@ -4798,12 +4933,26 @@ describe('ScenarioService', () => {
     it('should return generated array content for OPENING_STATEMENTS', async () => {
       const dto = {
         fieldName: GeneratableField.OPENING_STATEMENTS,
-        scenarioContext,
+        scenarioContext: {
+          ...scenarioContext,
+          languageId: '9',
+          languageCode: 'hi-IN',
+          languageName: 'Hindi',
+        },
       };
       const generatedContent = [
         'Hello, I have been feeling anxious lately.',
         'Hi, I need help with my anxiety.',
       ];
+
+      sharedLanguageService.getLanguagesByIds.mockResolvedValueOnce([
+        {
+          id: 9,
+          value: 'hi-IN',
+          label: 'Hindi (India)',
+          translationCode: 'hi',
+        } as any,
+      ]);
 
       openAIAutofillService.generateFieldContent.mockResolvedValue(
         generatedContent,
@@ -4815,6 +4964,51 @@ describe('ScenarioService', () => {
         fieldName: GeneratableField.OPENING_STATEMENTS,
         content: generatedContent,
       });
+      expect(openAIAutofillService.generateFieldContent).toHaveBeenCalledWith(
+        GeneratableField.OPENING_STATEMENTS,
+        expect.any(String),
+        expect.objectContaining({
+          languageId: '9',
+          languageCode: 'hi-IN',
+          languageName: 'Hindi',
+        }),
+        undefined,
+        undefined,
+      );
+    });
+
+    it('should resolve languageCode from DB for OPENING_STATEMENTS when client omits code', async () => {
+      const dto = {
+        fieldName: GeneratableField.OPENING_STATEMENTS,
+        scenarioContext: {
+          ...scenarioContext,
+          languageId: '9',
+          languageCode: '',
+          languageName: '',
+        },
+      };
+      sharedLanguageService.getLanguagesByIds.mockResolvedValueOnce([
+        {
+          id: 9,
+          value: 'hi-IN',
+          label: 'Hindi (India)',
+          translationCode: 'hi',
+        } as any,
+      ]);
+      openAIAutofillService.generateFieldContent.mockResolvedValue(['line']);
+
+      await service.generateField(dto);
+
+      expect(openAIAutofillService.generateFieldContent).toHaveBeenCalledWith(
+        GeneratableField.OPENING_STATEMENTS,
+        expect.any(String),
+        expect.objectContaining({
+          languageCode: 'hi-IN',
+          languageName: 'Hindi (India)',
+        }),
+        undefined,
+        undefined,
+      );
     });
 
     it('should use English filler prompt when languageCode is English for ALLOWED_FILLER_WORDS', async () => {

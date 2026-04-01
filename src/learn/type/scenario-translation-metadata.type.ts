@@ -6,6 +6,7 @@ export type MetadataShape = {
   tone?: string;
   personality?: string;
   context?: string;
+  /** Primary language openings live on scenario.metadata; non-primary rows use this on scenario_translations only (not filled by bulk auto-translate). */
   openingStatements?: string[];
   sexualOrientation?: string;
   genderIdentity?: string;

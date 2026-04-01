@@ -1239,6 +1239,7 @@ describe('LearnController', () => {
         language_id: 1,
         value: 'en-IN',
         label: 'English (India)',
+        translationCode: 'en',
         voices: [
           {
             id: 'cxsx-shans-ssbs8w',
@@ -1250,6 +1251,7 @@ describe('LearnController', () => {
         language_id: 2,
         value: 'hi-IN',
         label: 'Hindi (India)',
+        translationCode: 'hi',
         voices: [
           {
             id: 'cxsx-shans-ssbs8q',

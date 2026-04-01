@@ -231,6 +231,16 @@ export class UpdateScenarioDto {
   openingStatements?: string[];
 
   @ApiProperty({
+    description:
+      'Opening dialogue lines for non-primary languages (persisted to scenario_translations), keyed by languageId string',
+    type: 'object',
+    additionalProperties: { type: 'array', items: { type: 'string' } },
+  })
+  @IsObject()
+  @IsOptional()
+  translationOpeningStatements?: Record<string, string[]>;
+
+  @ApiProperty({
     description: 'AutoTermination status',
     example: true,
   })

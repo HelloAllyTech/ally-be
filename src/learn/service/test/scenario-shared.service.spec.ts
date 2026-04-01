@@ -119,6 +119,7 @@ describe('ScenarioSharedService', () => {
 
     const mockScenarioTranslationsRepository = {
       getUniqueLanguagesFromScenarioTranslations: jest.fn(),
+      getScenarioTranslationsByScenarioId: jest.fn().mockResolvedValue([]),
     };
 
     const mockScenarioSessionMessagesRepository = {
@@ -645,6 +646,9 @@ describe('ScenarioSharedService', () => {
       sessionEventSharedService.findSessionEventById
         .mockResolvedValueOnce({ id: 'evt-1', name: 'Termination 1' } as any)
         .mockResolvedValueOnce({ id: 'evt-2', name: 'Termination 2' } as any);
+      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue({
+        id: 1,
+      } as any);
 
       const result = await service.getAdminScenario(1);
 
@@ -668,10 +672,15 @@ describe('ScenarioSharedService', () => {
       scenariosRepository.getAdminScenarioById.mockResolvedValue(
         scenarioResult as any,
       );
+      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(null);
 
       const result = await service.getAdminScenario(1);
 
-      expect(result).toEqual(scenarioResult);
+      expect(result).toEqual({
+        ...scenarioResult,
+        translationOpeningStatements: {},
+        openingDialoguePrimaryLanguageId: null,
+      });
       expect(
         sessionEventSharedService.findSessionEventById,
       ).not.toHaveBeenCalled();

@@ -37,6 +37,7 @@ import { extractEventIds } from 'src/session-event/util/session-event.util';
 import { MAX_COMBINATION_EVENT_DEPTH } from 'src/session-event/constants/event.constant';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { DEFAULT_LANGUAGE_CODE } from 'src/language/constants/language.constant';
+import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from '../constants/scenario-session.constants';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
 import { ScenarioBehaviorInstructionRepository } from '../repository/scenario-behavior-instruction.repository';
 import { ScenarioBehaviorInstructionBehaviorRepository } from '../repository/scenario-behavior-instruction-behavior.repository';
@@ -701,7 +702,40 @@ export class ScenarioSharedService {
       result.terminationEvents = terminationEvents;
     }
 
+    const translationRows =
+      await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
+        id,
+      );
+    const translationOpeningStatements: Record<string, string[]> = {};
+    for (const row of translationRows ?? []) {
+      const lines = row.metadata?.openingStatements;
+      if (Array.isArray(lines)) {
+        const cleaned = lines
+          .map((l) => String(l).trim())
+          .filter((l) => l.length > 0);
+        if (cleaned.length > 0) {
+          translationOpeningStatements[String(row.languageId)] = cleaned;
+        }
+      }
+    }
+    (result as GetAdminScenarioDto).translationOpeningStatements =
+      translationOpeningStatements;
+    (result as GetAdminScenarioDto).openingDialoguePrimaryLanguageId =
+      await this.resolveOpeningDialoguePrimaryLanguageId(result.metadata);
+
     return result;
+  }
+
+  async resolveOpeningDialoguePrimaryLanguageId(
+    metadata?: Record<string, any> | null,
+  ): Promise<number | null> {
+    if (metadata?.defaultLanguageId != null) {
+      return Number(metadata.defaultLanguageId);
+    }
+    const en = await this.sharedLanguageService.getLanguageByLanguageCode(
+      DEFAULT_LANGUAGE_TRANSLATION_CODE,
+    );
+    return en?.id ?? null;
   }
 
   /**

@@ -230,6 +230,16 @@ export class CreateScenarioDto {
   openingStatements?: string[];
 
   @ApiProperty({
+    description:
+      'Opening dialogue lines for non-primary languages (scenario_translations), keyed by languageId string',
+    type: 'object',
+    additionalProperties: { type: 'array', items: { type: 'string' } },
+  })
+  @IsObject()
+  @IsOptional()
+  translationOpeningStatements?: Record<string, string[]>;
+
+  @ApiProperty({
     description: 'Termination events',
     example: [
       {
