@@ -20,6 +20,7 @@ jest.mock('src/common/util/audio.util', () => ({
 }));
 
 describe('ParticipantJoinedHandler', () => {
+  let module: TestingModule;
   let handler: ParticipantJoinedHandler;
   let liveKitService: jest.Mocked<LiveKitService>;
   let scenarioSessionService: jest.Mocked<ScenarioSessionService>;
@@ -76,6 +77,8 @@ describe('ParticipantJoinedHandler', () => {
   };
 
   beforeEach(async () => {
+    jest.useFakeTimers();
+
     const mockLiveKitService = {
       agentDispatch: jest.fn(),
       listParticipants: jest.fn().mockResolvedValue([]),
@@ -113,7 +116,7 @@ describe('ParticipantJoinedHandler', () => {
       LoggerService as jest.MockedClass<typeof LoggerService>
     ).mockImplementation(() => mockLogger);
 
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       providers: [
         ParticipantJoinedHandler,
         {
@@ -141,10 +144,13 @@ describe('ParticipantJoinedHandler', () => {
     scenarioSharedService = module.get(ScenarioSharedService);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     jest.clearAllMocks();
     // Clear the static dispatch lock between tests to prevent state leakage
     (ParticipantJoinedHandler as any)['dispatchesInProgress'].clear();
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+    await module?.close();
   });
 
   describe('handle', () => {
