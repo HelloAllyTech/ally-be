@@ -295,6 +295,11 @@ export class AppConfigService {
           'FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS',
           'false',
         ) === 'true',
+      scenarioSessionAudioRecording:
+        this.configService.get<string>(
+          'FEATURE_SCENARIO_SESSION_AUDIO_RECORDING',
+          'false',
+        ) === 'true',
     };
   }
 
@@ -356,6 +361,23 @@ export class AppConfigService {
       elevenlabsApiKey: this.configService.get<string>('ELEVENLABS_API_KEY'),
       sarvamApiKey: this.configService.get<string>('SARVAM_API_KEY'),
       humeApiKey: this.configService.get<string>('HUME_API_KEY'),
+    };
+  }
+
+  get scenarioSessionAudioStorage() {
+    return {
+      bucket: this.configService.get<string>(
+        'SCENARIO_SESSION_AUDIO_STORAGE_S3_BUCKET',
+      ),
+      region: this.configService.get<string>(
+        'SCENARIO_SESSION_AUDIO_STORAGE_REGION',
+      ),
+      accessKey: this.configService.get<string>(
+        'SCENARIO_SESSION_AUDIO_STORAGE_ACCESS_KEY',
+      ),
+      secret: this.configService.get<string>(
+        'SCENARIO_SESSION_AUDIO_STORAGE_SECRET',
+      ),
     };
   }
 }

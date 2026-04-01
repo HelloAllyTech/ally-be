@@ -3,6 +3,9 @@ import { LiveKitService } from '../../service/livekit.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ParticipantInfo_Kind } from '@livekit/protocol';
 import { ScenarioSessionService } from 'src/learn/service/scenario-session.service';
+import { AppConfigService } from 'src/config/config.service';
+import { generateAudioStorageKey } from 'src/common/util/audio.util';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 
 export interface ParticipantJoinedEvent {
   event: 'participant_joined';
@@ -45,7 +48,13 @@ export class ParticipantJoinedHandler {
   constructor(
     private readonly liveKitService: LiveKitService,
     private readonly scenarioSessionService: ScenarioSessionService,
+    private readonly scenarioSharedService: ScenarioSharedService,
+    private readonly configService: AppConfigService,
   ) {}
+
+  private egressTimestampNsToDate(timestampNs: bigint): Date {
+    return new Date(Number(timestampNs / 1_000_000n));
+  }
 
   async handle(event: ParticipantJoinedEvent): Promise<void> {
     try {
@@ -67,6 +76,8 @@ export class ParticipantJoinedHandler {
         );
       }
 
+      let scenarioSessionStartedAt = new Date();
+
       if (event.participant.kind === ParticipantInfo_Kind.AGENT) {
         // Agent joined the room - clean up the in-progress set
         ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
@@ -75,12 +86,62 @@ export class ParticipantJoinedHandler {
           await this.scenarioSessionService.getScenarioSessionByRoomId(
             roomName,
           );
+        if (this.configService.featureFlag.scenarioSessionAudioRecording) {
+          const { bucket, region, accessKey, secret } =
+            this.configService.scenarioSessionAudioStorage;
+          if (!bucket || !region || !accessKey || !secret) {
+            this.logger.error(
+              'Scenario session audio storage configuration is missing',
+            );
+            return;
+          }
+          const filepath = generateAudioStorageKey({
+            key: roomName,
+            extension: 'ogg',
+            prefix: 'recordings',
+          });
+          if (!event.room.active_recording) {
+            try {
+              const egressInfo =
+                await this.liveKitService.startRoomCompositeEgress({
+                  roomName,
+                  filepath,
+                  bucket,
+                  region,
+                  accessKey,
+                  secret,
+                });
+              this.logger.info(`Audio recording started for room ${roomName}`);
+
+              if (egressInfo.startedAt) {
+                scenarioSessionStartedAt = this.egressTimestampNsToDate(
+                  egressInfo.startedAt,
+                );
+              }
+
+              const savedRecording =
+                await this.scenarioSharedService.saveScenarioSessionRecording({
+                  scenarioSessionId: scenarioSession.id,
+                  storageKey: filepath,
+                  tenantId: scenarioSession.tenantId,
+                  egressId: egressInfo.egressId,
+                });
+              this.logger.info(
+                `Scenario session recording saved: ${savedRecording.id}`,
+              );
+            } catch (egressError) {
+              this.logger.error(
+                `Failed to start audio recording for room ${roomName}: ${egressError.message}`,
+              );
+            }
+          }
+        }
+
         if (!scenarioSession.startedAt) {
-          const startedAt = new Date();
           await this.scenarioSessionService.updateScenarioSession(
             scenarioSession.id,
             {
-              startedAt,
+              startedAt: scenarioSessionStartedAt,
             },
           );
         }

@@ -52,6 +52,7 @@ import { ScenarioBehaviorInstructionTranslationRepository } from 'src/learn/repo
 import { ScenarioEventsRepository } from 'src/learn/repository/scenario-events.repository';
 import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
 import { SimulationCapacityException } from 'src/learn/exception/simulation-capacity.exception';
+import { ScenarioSessionRecordingService } from '../scenario-session-recording.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -332,6 +333,10 @@ describe('ScenarioSessionService', () => {
       findOne: jest.fn(),
     };
 
+    const mockScenarioSessionRecordingService = {
+      stopScenarioSessionRecording: jest.fn(),
+    };
+
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -481,6 +486,10 @@ describe('ScenarioSessionService', () => {
         {
           provide: ScenariosRepository,
           useValue: mockScenariosRepository,
+        },
+        {
+          provide: ScenarioSessionRecordingService,
+          useValue: mockScenarioSessionRecordingService,
         },
       ],
     }).compile();
