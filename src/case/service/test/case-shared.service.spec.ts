@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { CaseSharedService } from '../case-shared.service';
 import { CaseRepository } from '../../repository/case.repository';
@@ -30,6 +31,7 @@ jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
     getUserId: jest.fn(),
     getTenantId: jest.fn(),
+    getExecutionId: jest.fn(),
   },
 }));
 
@@ -40,6 +42,7 @@ describe('CaseSharedService', () => {
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let caseSessionItemRepository: jest.Mocked<CaseSessionItemRepository>;
   let caseSessionRepository: jest.Mocked<CaseSessionRepository>;
+  let caseTenantService: jest.Mocked<CaseTenantService>;
 
   const mockCase = {
     id: '10000000-0000-0000-0000-000000000001',
@@ -115,6 +118,7 @@ describe('CaseSharedService', () => {
     scenarioSharedService = module.get(ScenarioSharedService);
     caseSessionItemRepository = module.get(CaseSessionItemRepository);
     caseSessionRepository = module.get(CaseSessionRepository);
+    caseTenantService = module.get(CaseTenantService);
 
     jest.clearAllMocks();
   });
@@ -193,6 +197,78 @@ describe('CaseSharedService', () => {
 
       expect(result.title).toBe('Marathi Title');
       expect(result.description).toBe('Marathi Desc');
+    });
+
+    it('should return translated title and description for scenarios when languageCode is provided', async () => {
+      caseRepository.findOne.mockResolvedValue(mockCase);
+      caseItemRepository.find.mockResolvedValue([mockCaseItems[0]]);
+      scenarioSharedService.getScenarioWithTriggerWarningsByIds.mockResolvedValue(
+        [
+          {
+            id: 1,
+            title: 'Scenario 1',
+            description: 'Desc 1',
+            translations: {
+              mr: { title: 'मराठी शीर्षक', description: 'मराठी वर्णन' },
+            },
+          },
+        ] as any,
+      );
+
+      const result = await service.getCaseWithScenarios(
+        '10000000-0000-0000-0000-000000000001',
+        undefined,
+        'mr',
+      );
+
+      expect(result.scenarios[0].title).toBe('मराठी शीर्षक');
+      expect(result.scenarios[0].description).toBe('मराठी वर्णन');
+    });
+
+    it('should fallback to default scenario title and description when translations are missing', async () => {
+      caseRepository.findOne.mockResolvedValue(mockCase);
+      caseItemRepository.find.mockResolvedValue([mockCaseItems[0]]);
+      scenarioSharedService.getScenarioWithTriggerWarningsByIds.mockResolvedValue(
+        [
+          {
+            id: 1,
+            title: 'Scenario 1',
+            description: 'Desc 1',
+            translations: {
+              mr: { title: 'मराठी शीर्षक' }, // Missing description
+            },
+          },
+        ] as any,
+      );
+
+      const result = await service.getCaseWithScenarios(
+        '10000000-0000-0000-0000-000000000001',
+        undefined,
+        'mr',
+      );
+
+      expect(result.scenarios[0].title).toBe('मराठी शीर्षक');
+      expect(result.scenarios[0].description).toBe('Desc 1'); // Fallback
+    });
+
+    it('should throw NotFoundException when case is not found', async () => {
+      caseRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.getCaseWithScenarios('non-existent'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw BadRequestException when organization access is denied', async () => {
+      caseRepository.findOne.mockResolvedValue(mockCase);
+      caseTenantService.getCaseTenant.mockResolvedValue(null);
+
+      await expect(
+        service.getCaseWithScenarios(
+          '10000000-0000-0000-0000-000000000001',
+          'tenant-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

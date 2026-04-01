@@ -91,8 +91,15 @@ export class CaseSharedService {
         messageTitle: item.messageTitle,
         messageContent: item.messageContent,
         minimumScore: item.minimumScore ?? 0,
-        title: scenarioData?.title,
-        description: scenarioData?.description,
+        title:
+          languageCode && scenarioData?.translations?.[languageCode]?.title
+            ? scenarioData?.translations?.[languageCode]?.title
+            : scenarioData?.title,
+        description:
+          languageCode &&
+          scenarioData?.translations?.[languageCode]?.description
+            ? scenarioData?.translations?.[languageCode]?.description
+            : scenarioData?.description,
         coverImageUrl: scenarioData?.coverImageUrl,
         coverVideoUrl: scenarioData?.coverVideoUrl,
         triggerWarnings: scenarioData?.triggerWarnings,
