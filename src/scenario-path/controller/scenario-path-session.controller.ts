@@ -83,8 +83,14 @@ export class ScenarioPathSessionController {
   @ApiOperation({ summary: 'Get scenario path session by scenario path id' })
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_PATH])
   @Get('/scenario-paths/:id')
-  async getUserScenarioPathItems(@Param('id', ParseUUIDPipe) id: string) {
-    return this.scenarioPathSessionService.getUserScenarioPathItems(id);
+  async getUserScenarioPathItems(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('languageCode') languageCode?: string,
+  ) {
+    return this.scenarioPathSessionService.getUserScenarioPathItems(
+      id,
+      languageCode,
+    );
   }
 
   @ApiOperation({ summary: 'Create Scenario path session for user' })

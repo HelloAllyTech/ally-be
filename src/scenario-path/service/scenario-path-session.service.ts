@@ -90,7 +90,10 @@ export class ScenarioPathSessionService {
     });
   }
 
-  async getUserScenarioPathItems(scenarioPathId: string) {
+  async getUserScenarioPathItems(
+    scenarioPathId: string,
+    languageCode?: string,
+  ) {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
       throw new UnauthorizedException('Unauthorized access');
@@ -111,6 +114,7 @@ export class ScenarioPathSessionService {
       await this.scenarioPathSharedService.getScenarioPathWithScenarios(
         scenarioPathId,
         tenantId,
+        languageCode,
       );
 
     const scenarioPathSession =

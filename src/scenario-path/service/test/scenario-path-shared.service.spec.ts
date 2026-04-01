@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ScenarioPathSharedService } from '../scenario-path-shared.service';
 import { ScenarioPathRepository } from '../../repository/scenario-path.repository';
 import { ScenarioPathItemRepository } from '../../repository/scenario-path-item.repository';
@@ -24,6 +28,7 @@ jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
     getUserId: jest.fn(),
     getTenantId: jest.fn(),
+    getExecutionId: jest.fn(),
   },
 }));
 
@@ -108,6 +113,7 @@ describe('ScenarioPathSharedService', () => {
   afterEach(() => {
     (ExecutionManager.getUserId as jest.Mock).mockReset();
     (ExecutionManager.getTenantId as jest.Mock).mockReset();
+    (ExecutionManager.getExecutionId as jest.Mock).mockReset();
   });
 
   describe('getScenarioPathsWithSession', () => {
@@ -377,6 +383,101 @@ describe('ScenarioPathSharedService', () => {
         scenarioPathTenantService.getScenarioPathTenant,
       ).toHaveBeenCalledWith('tenant-1', 'path-1');
       expect(scenarioPathItemRepository.find).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when scenario path is not found', async () => {
+      scenarioPathRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.getScenarioPathWithScenarios('non-existent'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(scenarioPathRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'non-existent' },
+      });
+    });
+
+    it('returns translated title and description when languageCode is provided', async () => {
+      const mockScenarioPathWithTranslations = {
+        ...mockScenarioPath,
+        translations: {
+          es: {
+            title: 'Título en español',
+            description: 'Descripción en español',
+          },
+        },
+      } as any;
+
+      const mockScenariosWithTranslations = [
+        {
+          id: 1,
+          title: 'Scenario 1',
+          description: 'Description 1',
+          translations: {
+            es: { title: 'Escenario 1', description: 'Descripción 1' },
+          },
+        },
+      ] as any;
+
+      const mockItems = [mockScenarioPathItems[0]];
+
+      scenarioPathRepository.findOne.mockResolvedValue(
+        mockScenarioPathWithTranslations,
+      );
+      scenarioPathItemRepository.find.mockResolvedValue(mockItems);
+      scenarioSharedService.getScenarioWithTriggerWarningsByIds.mockResolvedValue(
+        mockScenariosWithTranslations,
+      );
+
+      const result = await service.getScenarioPathWithScenarios(
+        'path-1',
+        undefined,
+        'es',
+      );
+
+      expect(result.title).toBe('Título en español');
+      expect(result.description).toBe('Descripción en español');
+      expect(result.scenarios[0].title).toBe('Escenario 1');
+      expect(result.scenarios[0].description).toBe('Descripción 1');
+    });
+
+    it('falls back to default title and description when languageCode is provided but translations are missing', async () => {
+      const mockScenarioPathWithTranslations = {
+        ...mockScenarioPath,
+        translations: {
+          fr: { title: 'Titre en français' }, // missing description
+        },
+      } as any;
+
+      const mockScenariosWithTranslations = [
+        {
+          id: 1,
+          title: 'Scenario 1',
+          description: 'Description 1',
+          translations: {}, // empty translations
+        },
+      ] as any;
+
+      const mockItems = [mockScenarioPathItems[0]];
+
+      scenarioPathRepository.findOne.mockResolvedValue(
+        mockScenarioPathWithTranslations,
+      );
+      scenarioPathItemRepository.find.mockResolvedValue(mockItems);
+      scenarioSharedService.getScenarioWithTriggerWarningsByIds.mockResolvedValue(
+        mockScenariosWithTranslations,
+      );
+
+      const result = await service.getScenarioPathWithScenarios(
+        'path-1',
+        undefined,
+        'fr',
+      );
+
+      expect(result.title).toBe('Titre en français');
+      expect(result.description).toBe('Description 1'); // Fallback
+      expect(result.scenarios[0].title).toBe('Scenario 1'); // Fallback
+      expect(result.scenarios[0].description).toBe('Description 1'); // Fallback
     });
   });
 

@@ -139,7 +139,22 @@ describe('ScenarioPathSessionController', () => {
       const result = await controller.getUserScenarioPathItems('path-1');
 
       expect(result).toEqual(mockResponse);
-      expect(service.getUserScenarioPathItems).toHaveBeenCalledWith('path-1');
+      expect(service.getUserScenarioPathItems).toHaveBeenCalledWith(
+        'path-1',
+        undefined,
+      );
+    });
+
+    it('should return scenario path items by id and languageCode', async () => {
+      service.getUserScenarioPathItems.mockResolvedValue(mockResponse);
+
+      const result = await controller.getUserScenarioPathItems('path-1', 'es');
+
+      expect(result).toEqual(mockResponse);
+      expect(service.getUserScenarioPathItems).toHaveBeenCalledWith(
+        'path-1',
+        'es',
+      );
     });
   });
 
