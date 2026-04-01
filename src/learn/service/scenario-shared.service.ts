@@ -58,6 +58,8 @@ import {
 import { formatBehaviorInstructionsForLivekitMetadata } from '../util/scenario-behavior-instructions.util';
 import { CompetencyService } from './competency.service';
 import { S3Service } from 'src/aws/service/s3.service';
+import { ScenarioSessionRecordingRepository } from '../repository/scenario-session-recording.repository';
+import { ScenarioSessionRecording } from '../entity/scenario-session-recording.entity';
 
 @Injectable()
 export class ScenarioSharedService {
@@ -72,6 +74,7 @@ export class ScenarioSharedService {
     private scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
     private scenarioSessionMessageTagsRepository: ScenarioSessionMessageTagsRepository,
     private scenarioVoiceRepository: ScenarioVoicesRepository,
+    private scenarioSessionRecordingRepository: ScenarioSessionRecordingRepository,
     private sessionEventSharedService: SessionEventSharedService,
     private sharedLanguageService: SharedLanguageService,
     private scenarioBehaviorInstructionRepository: ScenarioBehaviorInstructionRepository,
@@ -827,5 +830,21 @@ export class ScenarioSharedService {
         )
       : [];
     return { skillCoverage, emotionalMovement };
+  }
+
+  async saveScenarioSessionRecording(data: {
+    scenarioSessionId: string;
+    storageKey: string;
+    tenantId: string;
+    egressId: string;
+  }): Promise<ScenarioSessionRecording> {
+    const recording = this.scenarioSessionRecordingRepository.create({
+      scenarioSessionId: data.scenarioSessionId,
+      storageKey: data.storageKey,
+      tenantId: data.tenantId,
+      egressId: data.egressId,
+    });
+
+    return this.scenarioSessionRecordingRepository.save(recording);
   }
 }
