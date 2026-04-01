@@ -37,6 +37,12 @@ export const validationSchema = Joi.object({
   AWS_SESSION_TOKEN: Joi.string().optional(),
   AWS_ENDPOINT_URL: Joi.string().optional(),
 
+  // SCENARIO SESSION AUDIO STORAGE
+  SCENARIO_SESSION_AUDIO_STORAGE_S3_BUCKET: Joi.string().required(),
+  SCENARIO_SESSION_AUDIO_STORAGE_REGION: Joi.string().required(),
+  SCENARIO_SESSION_AUDIO_STORAGE_ACCESS_KEY: Joi.string().required(),
+  SCENARIO_SESSION_AUDIO_STORAGE_SECRET: Joi.string().required(),
+
   // SOURCE EMAIL
   SOURCE_EMAIL: Joi.string().required(),
 
