@@ -7,15 +7,33 @@ import {
 import { LiveKitService } from '../../../service/livekit.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioSessionService } from 'src/learn/service/scenario-session.service';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
+import { AppConfigService } from 'src/config/config.service';
 
 // Mock LoggerService
 jest.mock('src/logger/logger.service');
+
+jest.mock('src/common/util/audio.util', () => ({
+  generateAudioStorageKey: jest
+    .fn()
+    .mockReturnValue('recordings/2025/01/01/test-room.ogg'),
+}));
 
 describe('ParticipantJoinedHandler', () => {
   let handler: ParticipantJoinedHandler;
   let liveKitService: jest.Mocked<LiveKitService>;
   let scenarioSessionService: jest.Mocked<ScenarioSessionService>;
+  let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let mockLogger: jest.Mocked<LoggerService>;
+  let mockAppConfigService: {
+    scenarioSessionAudioStorage: {
+      bucket: string;
+      region: string;
+      accessKey: string;
+      secret: string;
+    };
+    featureFlag: { scenarioSessionAudioRecording: boolean };
+  };
 
   const mockParticipantJoinedEvent: ParticipantJoinedEvent = {
     event: 'participant_joined',
@@ -50,16 +68,38 @@ describe('ParticipantJoinedHandler', () => {
     created_at: Date.now(),
   };
 
+  const mockAudioStorageConfig = {
+    bucket: 'test-bucket',
+    region: 'us-east-1',
+    accessKey: 'test-access-key',
+    secret: 'test-secret',
+  };
+
   beforeEach(async () => {
     const mockLiveKitService = {
       agentDispatch: jest.fn(),
-      // Default: no existing agents in room, so dispatch proceeds
       listParticipants: jest.fn().mockResolvedValue([]),
+      startRoomCompositeEgress: jest
+        .fn()
+        .mockResolvedValue({ egressId: 'egress-1' }),
     };
 
     const mockScenarioSessionService = {
       getScenarioSessionByRoomId: jest.fn(),
       updateScenarioSession: jest.fn(),
+    };
+
+    const mockScenarioSharedService = {
+      saveScenarioSessionRecording: jest
+        .fn()
+        .mockResolvedValue({ id: 'rec-1' }),
+    };
+
+    mockAppConfigService = {
+      scenarioSessionAudioStorage: mockAudioStorageConfig,
+      featureFlag: {
+        scenarioSessionAudioRecording: false,
+      },
     };
 
     mockLogger = {
@@ -84,12 +124,21 @@ describe('ParticipantJoinedHandler', () => {
           provide: ScenarioSessionService,
           useValue: mockScenarioSessionService,
         },
+        {
+          provide: ScenarioSharedService,
+          useValue: mockScenarioSharedService,
+        },
+        {
+          provide: AppConfigService,
+          useValue: mockAppConfigService,
+        },
       ],
     }).compile();
 
     handler = module.get<ParticipantJoinedHandler>(ParticipantJoinedHandler);
     liveKitService = module.get(LiveKitService);
     scenarioSessionService = module.get(ScenarioSessionService);
+    scenarioSharedService = module.get(ScenarioSharedService);
   });
 
   afterEach(() => {
@@ -136,6 +185,7 @@ describe('ParticipantJoinedHandler', () => {
 
       scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
         id: 'session-123',
+        tenantId: 'tenant-1',
         startedAt: null,
       } as any);
       scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
@@ -165,6 +215,7 @@ describe('ParticipantJoinedHandler', () => {
 
       scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
         id: 'session-123',
+        tenantId: 'tenant-1',
         startedAt: new Date(),
       } as any);
       scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
@@ -505,6 +556,45 @@ describe('ParticipantJoinedHandler', () => {
         'Agent',
         JSON.stringify(numericMetadata),
       );
+    });
+
+    it('should start audio recording and create recording entry when agent joins and room is not recording', async () => {
+      const agentEvent: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        participant: {
+          ...mockParticipantJoinedEvent.participant,
+          kind: ParticipantInfo_Kind.AGENT,
+        },
+      };
+
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        tenantId: 'tenant-1',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
+
+      mockAppConfigService.featureFlag.scenarioSessionAudioRecording = true;
+
+      await handler.handle(agentEvent);
+
+      expect(liveKitService.startRoomCompositeEgress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          roomName: 'test-room',
+          bucket: mockAudioStorageConfig.bucket,
+          region: mockAudioStorageConfig.region,
+          accessKey: mockAudioStorageConfig.accessKey,
+          secret: mockAudioStorageConfig.secret,
+        }),
+      );
+      expect(
+        scenarioSharedService.saveScenarioSessionRecording,
+      ).toHaveBeenCalledWith({
+        scenarioSessionId: 'session-123',
+        storageKey: 'recordings/2025/01/01/test-room.ogg',
+        tenantId: 'tenant-1',
+        egressId: 'egress-1',
+      });
     });
 
     it('should skip agent dispatch if an agent is already present in the room', async () => {

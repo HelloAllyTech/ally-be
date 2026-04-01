@@ -91,6 +91,10 @@ import { BehaviorInstructionTranslationService } from './service/behavior-instru
 import { OpenAIAutofillService } from './service/openai-autofil-service';
 
 import { AuditModule } from 'src/audit/audit.module';
+import { ScenarioSessionRecording } from './entity/scenario-session-recording.entity';
+import { ScenarioSessionRecordingRepository } from './repository/scenario-session-recording.repository';
+import { ScenarioSessionRecordingController } from './controller/scenario-session-recording.controller';
+import { ScenarioSessionRecordingService } from './service/scenario-session-recording.service';
 
 @Module({
   imports: [
@@ -119,6 +123,7 @@ import { AuditModule } from 'src/audit/audit.module';
       BehaviorTranslation,
       ScenarioBehaviorInstructionTranslation,
       AuditModule,
+      ScenarioSessionRecording,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -144,6 +149,7 @@ import { AuditModule } from 'src/audit/audit.module';
     FillerTagController,
     ScenarioSessionChatController,
     CompetencyController,
+    ScenarioSessionRecordingController,
   ],
   providers: [
     ScenarioService,
@@ -193,6 +199,8 @@ import { AuditModule } from 'src/audit/audit.module';
     BehaviorTranslationService,
     ScenarioBehaviorInstructionTranslationService,
     OpenAIAutofillService,
+    ScenarioSessionRecordingRepository,
+    ScenarioSessionRecordingService,
   ],
   exports: [
     LearnMessageProcessor,

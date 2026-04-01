@@ -5,6 +5,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import {
   AccessToken,
   AgentDispatchClient,
+  EgressClient,
   RoomServiceClient,
 } from 'livekit-server-sdk';
 import { CreateRoomDto } from '../../dto/create-room.dto';
@@ -26,10 +27,20 @@ jest.mock('livekit-server-sdk', () => ({
   AgentDispatchClient: jest.fn().mockImplementation(() => ({
     createDispatch: jest.fn(),
   })),
+  EgressClient: jest.fn().mockImplementation(() => ({
+    startRoomCompositeEgress: jest.fn(),
+    stopEgress: jest.fn(),
+  })),
   AccessToken: jest.fn().mockImplementation(() => ({
     addGrant: jest.fn(),
     toJwt: jest.fn(),
   })),
+}));
+
+jest.mock('@livekit/protocol', () => ({
+  EncodedFileOutput: jest.fn().mockImplementation((data) => data),
+  EncodedFileType: { OGG: 3 },
+  S3Upload: jest.fn().mockImplementation((data) => data),
 }));
 
 // Mock LoggerService
@@ -49,6 +60,7 @@ describe('LiveKitService', () => {
   let mockLogger: jest.Mocked<any>;
   let mockRoomService: jest.Mocked<RoomServiceClient>;
   let mockAgentService: jest.Mocked<AgentDispatchClient>;
+  let mockEgressService: jest.Mocked<any>;
   let mockAccessToken: jest.Mocked<AccessToken>;
 
   const mockLiveKitConfig = {
@@ -81,6 +93,11 @@ describe('LiveKitService', () => {
       createDispatch: jest.fn(),
     } as any;
 
+    mockEgressService = {
+      startRoomCompositeEgress: jest.fn(),
+      stopEgress: jest.fn(),
+    };
+
     mockAccessToken = {
       addGrant: jest.fn(),
       toJwt: jest.fn(),
@@ -89,6 +106,7 @@ describe('LiveKitService', () => {
     (LoggerService.getInstance as jest.Mock).mockReturnValue(mockLogger);
     (RoomServiceClient as jest.Mock).mockReturnValue(mockRoomService);
     (AgentDispatchClient as jest.Mock).mockReturnValue(mockAgentService);
+    (EgressClient as jest.Mock).mockReturnValue(mockEgressService);
     (AccessToken as jest.Mock).mockReturnValue(mockAccessToken);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -609,6 +627,62 @@ describe('LiveKitService', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         `Failed to dispatch agent to room ${roomName}: Failed to dispatch agent`,
+      );
+    });
+  });
+
+  describe('initializeEgressService', () => {
+    it('should initialize egress service with valid configuration', () => {
+      expect(EgressClient).toHaveBeenCalledWith(
+        mockLiveKitConfig.serverUrl,
+        mockLiveKitConfig.apiKey,
+        mockLiveKitConfig.apiSecret,
+      );
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'LiveKit egress service initialized',
+      );
+    });
+  });
+
+  describe('startRoomCompositeEgress', () => {
+    it('should start room composite egress successfully', async () => {
+      const mockEgressInfo = { egressId: 'egress-123' };
+      mockEgressService.startRoomCompositeEgress.mockResolvedValue(
+        mockEgressInfo,
+      );
+
+      const result = await service.startRoomCompositeEgress({
+        roomName: 'test-room',
+        filepath: 'recordings/2025/01/01/test-room.ogg',
+        bucket: 'test-bucket',
+        region: 'us-east-1',
+        accessKey: 'access-key',
+        secret: 'secret-key',
+      });
+
+      expect(result).toEqual(mockEgressInfo);
+      expect(mockEgressService.startRoomCompositeEgress).toHaveBeenCalledWith(
+        'test-room',
+        expect.any(Object),
+        { audioOnly: true },
+      );
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Room composite egress started: egress-123 for room test-room',
+      );
+    });
+  });
+
+  describe('stopEgress', () => {
+    it('should stop egress successfully', async () => {
+      const mockEgressInfo = { egressId: 'egress-123' };
+      mockEgressService.stopEgress.mockResolvedValue(mockEgressInfo);
+
+      const result = await service.stopEgress('egress-123');
+
+      expect(result).toEqual(mockEgressInfo);
+      expect(mockEgressService.stopEgress).toHaveBeenCalledWith('egress-123');
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Egress stopped: egress-123',
       );
     });
   });

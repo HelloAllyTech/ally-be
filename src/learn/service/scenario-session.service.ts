@@ -103,6 +103,7 @@ import { SCENARIO_SESSION_REFLECTION_PROMPTS } from '../constants/scenario-sessi
 import { ScenariosRepository } from '../repository/scenario.repository';
 import { getSessionDurationInSeconds } from 'src/review/util/review.util';
 import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
+import { ScenarioSessionRecordingService } from './scenario-session-recording.service';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -140,6 +141,7 @@ export class ScenarioSessionService {
     private scenarioBehaviorInstructionTranslationRepository: ScenarioBehaviorInstructionTranslationRepository,
     private scenarioEventsRepository: ScenarioEventsRepository,
     private scenariosRepository: ScenariosRepository,
+    private scenarioSessionRecordingService: ScenarioSessionRecordingService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -771,6 +773,10 @@ export class ScenarioSessionService {
       });
     }
 
+    await this.scenarioSessionRecordingService.stopScenarioSessionRecording(
+      scenarioSessionId,
+    );
+
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
       startedAt,
@@ -818,6 +824,10 @@ export class ScenarioSessionService {
         scenarioSession.tenantId,
       );
     }
+
+    await this.scenarioSessionRecordingService.stopScenarioSessionRecording(
+      scenarioSessionId,
+    );
 
     const startedAt = scenarioSession.startedAt ?? new Date();
     const endedAt = scenarioSession.endedAt ?? new Date();

@@ -1,9 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import {
+  EncodedFileOutput,
+  EncodedFileType,
+  S3Upload,
+} from '@livekit/protocol';
+import {
   AccessToken,
   AgentDispatchClient,
+  EgressClient,
   RoomServiceClient,
 } from 'livekit-server-sdk';
+import type { EgressInfo } from 'livekit-server-sdk';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import {
@@ -12,16 +19,23 @@ import {
 } from '../constants/livekit.constants';
 import { CreateRoomDto } from '../dto/create-room.dto';
 import { JoinRoomDto } from '../dto/join-room.dto';
+import {
+  BuildS3FileOutputParams,
+  StartRoomCompositeEgressParams,
+} from '../type/livekit.type';
 
 @Injectable()
 export class LiveKitService {
   private readonly logger: LoggerService;
   private roomService!: RoomServiceClient;
   private agentService!: AgentDispatchClient;
+  private egressService!: EgressClient;
+
   constructor(private readonly configService: AppConfigService) {
     this.logger = LoggerService.getInstance(LiveKitService.name);
     this.initializeRoomService();
     this.initializeAgentService();
+    this.initializeEgressService();
   }
 
   initializeRoomService() {
@@ -47,6 +61,18 @@ export class LiveKitService {
     }
     this.agentService = new AgentDispatchClient(serverUrl, apiKey, apiSecret);
     this.logger.debug('LiveKit agent service initialized');
+  }
+
+  initializeEgressService() {
+    const { serverUrl, apiKey, apiSecret } = this.configService.livekit;
+    if (!serverUrl || !apiKey || !apiSecret) {
+      this.logger.warn(
+        'LiveKit configuration missing. Egress service will not be available.',
+      );
+      return;
+    }
+    this.egressService = new EgressClient(serverUrl, apiKey, apiSecret);
+    this.logger.debug('LiveKit egress service initialized');
   }
 
   async createRoom(createRoomDto: CreateRoomDto) {
@@ -182,6 +208,71 @@ export class LiveKitService {
       this.logger.error(
         `Failed to dispatch agent to room ${roomName}: ${error.message}`,
       );
+      throw error;
+    }
+  }
+
+  private buildS3FileOutput(
+    params: BuildS3FileOutputParams,
+  ): EncodedFileOutput {
+    const { filepath, bucket, region, accessKey, secret, fileType } = params;
+    return new EncodedFileOutput({
+      fileType,
+      filepath,
+      disableManifest: true,
+      output: {
+        case: 's3',
+        value: new S3Upload({ bucket, region, accessKey, secret }),
+      },
+    });
+  }
+
+  async startRoomCompositeEgress(
+    params: StartRoomCompositeEgressParams,
+  ): Promise<EgressInfo> {
+    const {
+      filepath,
+      roomName,
+      bucket,
+      region,
+      accessKey,
+      secret,
+      audioOnly = true,
+      fileType = EncodedFileType.OGG,
+    } = params;
+    try {
+      const output = this.buildS3FileOutput({
+        filepath,
+        fileType,
+        bucket,
+        region,
+        accessKey,
+        secret,
+      });
+      const response = await this.egressService.startRoomCompositeEgress(
+        roomName,
+        output,
+        { audioOnly },
+      );
+      this.logger.debug(
+        `Room composite egress started: ${response.egressId} for room ${roomName}`,
+      );
+      return response;
+    } catch (error) {
+      this.logger.error(
+        `Failed to start room composite egress for ${roomName}: ${error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  async stopEgress(egressId: string): Promise<EgressInfo> {
+    try {
+      const info = await this.egressService.stopEgress(egressId);
+      this.logger.debug(`Egress stopped: ${egressId}`);
+      return info;
+    } catch (error) {
+      this.logger.error(`Failed to stop egress ${egressId}: ${error.message}`);
       throw error;
     }
   }

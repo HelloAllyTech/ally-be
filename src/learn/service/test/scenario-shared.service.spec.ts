@@ -26,6 +26,8 @@ import { ALLY_AI_LEARN_PROMPT_PREFIX } from '../../constants/scenario-session.co
 import { CompetencyService } from '../competency.service';
 import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
+import { ScenarioSessionRecordingRepository } from '../../repository/scenario-session-recording.repository';
+import { ScenarioSessionRecording } from '../../entity/scenario-session-recording.entity';
 
 describe('ScenarioSharedService', () => {
   let service: ScenarioSharedService;
@@ -42,6 +44,7 @@ describe('ScenarioSharedService', () => {
   let scenarioBehaviorInstructionBehaviorRepository: jest.Mocked<ScenarioBehaviorInstructionBehaviorRepository>;
   let behaviorRepository: jest.Mocked<BehaviorRepository>;
   let promptSharedService: jest.Mocked<PromptSharedService>;
+  let scenarioSessionRecordingRepository: jest.Mocked<ScenarioSessionRecordingRepository>;
 
   const mockScenarios: Scenarios[] = [
     { id: 1, title: 'Scenario 1', status: ScenarioStatus.ACTIVE } as Scenarios,
@@ -107,6 +110,11 @@ describe('ScenarioSharedService', () => {
         const key = path.replace(/^\//, '');
         return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
       }),
+    };
+
+    const mockScenarioSessionRecordingRepository = {
+      create: jest.fn(),
+      save: jest.fn(),
     };
 
     const mockScenarioTranslationsRepository = {
@@ -218,6 +226,10 @@ describe('ScenarioSharedService', () => {
           provide: S3Service,
           useValue: mockS3Service,
         },
+        {
+          provide: ScenarioSessionRecordingRepository,
+          useValue: mockScenarioSessionRecordingRepository,
+        },
       ],
     }).compile();
 
@@ -245,6 +257,9 @@ describe('ScenarioSharedService', () => {
     );
     behaviorRepository = module.get(BehaviorRepository);
     promptSharedService = module.get(PromptSharedService);
+    scenarioSessionRecordingRepository = module.get(
+      ScenarioSessionRecordingRepository,
+    );
 
     jest.clearAllMocks();
   });
@@ -1085,6 +1100,56 @@ describe('ScenarioSharedService', () => {
           prompt: 'Second value',
           availableVariables: [],
         },
+      });
+    });
+  });
+
+  describe('saveScenarioSessionRecording', () => {
+    it('should create and save a scenario session recording', async () => {
+      const scenarioSessionId = 'session-123';
+      const storageKey = 'recordings/2025/01/01/test-room.ogg';
+      const tenantId = 'tenant-1';
+      const egressId = 'egress-abc';
+
+      scenarioSessionRecordingRepository.create.mockImplementation(
+        (data) => data as ScenarioSessionRecording,
+      );
+      const persisted: ScenarioSessionRecording = {
+        id: 'rec-1',
+        scenarioSessionId,
+        storageKey,
+        egressId,
+        tenantId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      scenarioSessionRecordingRepository.save.mockResolvedValue(persisted);
+
+      const result = await service.saveScenarioSessionRecording({
+        scenarioSessionId,
+        storageKey,
+        tenantId,
+        egressId,
+      });
+
+      expect(scenarioSessionRecordingRepository.create).toHaveBeenCalledWith({
+        scenarioSessionId,
+        storageKey,
+        tenantId,
+        egressId,
+      });
+      expect(scenarioSessionRecordingRepository.save).toHaveBeenCalledWith({
+        scenarioSessionId,
+        storageKey,
+        tenantId,
+        egressId,
+      });
+      expect(result).toMatchObject({
+        id: 'rec-1',
+        scenarioSessionId,
+        storageKey,
+        egressId,
+        tenantId,
       });
     });
   });
