@@ -449,6 +449,36 @@ describe('ScenarioPathSessionService', () => {
         NotFoundException,
       );
     });
+
+    it('should throw NotFoundException when scenario path is not found', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+      scenarioPathSharedService.getActiveScenarioPathById.mockResolvedValue(
+        null,
+      );
+
+      await expect(service.getUserScenarioPathItems('path-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should pass languageCode to scenarioPathSharedService when provided', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+      scenarioPathSharedService.getActiveScenarioPathById.mockResolvedValue(
+        mockActiveScenarioPath,
+      );
+      scenarioPathSharedService.getScenarioPathWithScenarios.mockResolvedValue(
+        mockScenarioPathWithScenarios,
+      );
+      repository.findOne.mockResolvedValue(null);
+
+      await service.getUserScenarioPathItems('path-1', 'es');
+
+      expect(
+        scenarioPathSharedService.getScenarioPathWithScenarios,
+      ).toHaveBeenCalledWith('path-1', 'tenant-1', 'es');
+    });
   });
 
   // describe('getUserScenarioPathItems', () => {

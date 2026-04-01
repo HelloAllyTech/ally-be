@@ -49,6 +49,7 @@ export class ScenarioPathSharedService {
   async getScenarioPathWithScenarios(
     scenarioPathId: string,
     tenantId?: string,
+    languageCode?: string,
   ): Promise<GetScenarioPathResponseDto> {
     const result = await this.scenarioPathRepository.findOne({
       where: { id: scenarioPathId },
@@ -91,18 +92,32 @@ export class ScenarioPathSharedService {
         messageTitle: item.messageTitle,
         messageContent: item.messageContent,
         minimumScore: item.minimumScore ?? 0,
-        title: scenarioData?.title,
-        description: scenarioData?.description,
+        title:
+          languageCode && scenarioData?.translations?.[languageCode]?.title
+            ? scenarioData?.translations?.[languageCode]?.title
+            : scenarioData?.title,
+        description:
+          languageCode &&
+          scenarioData?.translations?.[languageCode]?.description
+            ? scenarioData?.translations?.[languageCode]?.description
+            : scenarioData?.description,
         coverImageUrl: scenarioData?.coverImageUrl,
         coverVideoUrl: scenarioData?.coverVideoUrl,
         triggerWarnings: scenarioData?.triggerWarnings,
+        translations: scenarioData?.translations,
       };
     });
 
     return {
       id: result.id,
-      title: result.title,
-      description: result.description,
+      title:
+        languageCode && result.translations?.[languageCode]?.title
+          ? result.translations?.[languageCode]?.title
+          : result.title,
+      description:
+        languageCode && result.translations?.[languageCode]?.description
+          ? result.translations?.[languageCode]?.description
+          : result.description,
       coverImageUrl: result.coverImageUrl,
       status: result.status,
       isGlobal: result.isGlobal,
