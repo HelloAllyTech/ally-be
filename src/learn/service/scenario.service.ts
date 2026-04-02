@@ -1964,7 +1964,8 @@ export class ScenarioService {
     if (!metadata || typeof metadata !== 'object') {
       return metadata;
     }
-    const { openingStatements: _drop, ...rest } = metadata;
+    const rest = { ...metadata };
+    delete rest.openingStatements;
     return rest;
   }
 
