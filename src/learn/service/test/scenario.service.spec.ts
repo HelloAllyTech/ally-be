@@ -1847,7 +1847,9 @@ describe('ScenarioService', () => {
 
       expect(result.presignedUrl).toBe('');
       expect(result.coverImageUrl).toBe('https://example.com/mock-cover.png');
-      expect(mockS3Service.getPresignedUrlForImageUpload).not.toHaveBeenCalled();
+      expect(
+        mockS3Service.getPresignedUrlForImageUpload,
+      ).not.toHaveBeenCalled();
 
       mockConfigService.isMockScenarioCoverImageUpload = false;
     });
@@ -4155,9 +4157,7 @@ describe('ScenarioService', () => {
           }, {}),
       );
 
-      sharedLanguageService.getLanguagesByIds = jest
-        .fn()
-        .mockResolvedValue([]);
+      sharedLanguageService.getLanguagesByIds = jest.fn().mockResolvedValue([]);
 
       dataSource.getRepository = jest.fn().mockReturnValue({
         update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -4361,15 +4361,15 @@ describe('ScenarioService', () => {
         },
       ] as any);
 
-      (service as any).buildTranslatedMetadataForLanguageCodes.mockResolvedValue(
-        {
-          hi: {
-            title: 'T-hi',
-            description: 'D-hi',
-            openingStatements: ['should not be persisted from auto-translate'],
-          },
+      (
+        service as any
+      ).buildTranslatedMetadataForLanguageCodes.mockResolvedValue({
+        hi: {
+          title: 'T-hi',
+          description: 'D-hi',
+          openingStatements: ['should not be persisted from auto-translate'],
         },
-      );
+      });
 
       scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
         [

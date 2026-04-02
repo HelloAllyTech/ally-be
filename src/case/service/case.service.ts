@@ -38,6 +38,7 @@ import { SuccessResponse } from 'src/common/type/common.type';
 import { DuplicateCaseResponseDto } from '../dto/duplicate-case.dto';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { ELIGBLE_APP_LANGUAGES } from 'src/common/constants/translation.constants';
 
 @Injectable()
 export class CaseService {
@@ -521,10 +522,14 @@ export class CaseService {
       return;
     }
 
-    const languageCodes =
+    let languageCodes =
       await this.sharedLanguageService.getValidLanguageCodes(
         validLanguagesCodes,
       );
+
+    languageCodes = languageCodes?.filter((languageCode) => {
+      return ELIGBLE_APP_LANGUAGES.includes(languageCode);
+    });
 
     if (!languageCodes || languageCodes.length === 0) {
       return;
@@ -561,5 +566,31 @@ export class CaseService {
     }
 
     return false;
+  }
+
+  async makeTranslationsForCases() {
+    const cases = await this.caseRepository.find({
+      select: ['id', 'title', 'description'],
+    });
+
+    for (const caseData of cases) {
+      const translations =
+        await this.openaiTranslationsService.translateObjectToLanguages(
+          {
+            title: caseData.title,
+            description: caseData.description,
+          },
+          ELIGBLE_APP_LANGUAGES,
+          'openai_translation_speech_reexpression_user',
+        );
+
+      if (translations) {
+        await this.caseRepository.update(caseData.id, {
+          translations,
+        } as any);
+      }
+    }
+
+    return true;
   }
 }

@@ -493,151 +493,154 @@ export class ScenarioService {
       await this.permissionsService.isMultiTenantAdmin(userId);
 
     try {
-      const savedScenarios = await this.dataSource.transaction(async (entityManager) => {
-        const scenariosRepo = entityManager.getRepository(Scenarios);
-        const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
-        const scenarios = scenariosRepo.create(createScenarioDtos);
-        const savedScenarios = await scenariosRepo.save(scenarios);
+      const savedScenarios = await this.dataSource.transaction(
+        async (entityManager) => {
+          const scenariosRepo = entityManager.getRepository(Scenarios);
+          const scenarioEventsRepo =
+            entityManager.getRepository(ScenarioEvents);
+          const scenarios = scenariosRepo.create(createScenarioDtos);
+          const savedScenarios = await scenariosRepo.save(scenarios);
 
-        if (isMultiTenantAdmin) {
-          savedScenarios.forEach((scenario) => {
-            this.auditLogService.log({
-              eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SCENARIO,
-              details: {
-                action: AUDIT_ACTIONS.CREATE_SCENARIO,
-                scenarioId: scenario.id,
-                userId,
-              },
+          if (isMultiTenantAdmin) {
+            savedScenarios.forEach((scenario) => {
+              this.auditLogService.log({
+                eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SCENARIO,
+                details: {
+                  action: AUDIT_ACTIONS.CREATE_SCENARIO,
+                  scenarioId: scenario.id,
+                  userId,
+                },
+              });
             });
-          });
-        }
-
-        const globalScenarios = savedScenarios.filter(
-          (scenario) => scenario.isGlobal,
-        );
-
-        if (globalScenarios.length > 0) {
-          const tenants = await this.tenantService.findAll();
-          const tenantIds = tenants.map((tenant) => tenant.id);
-
-          for (const globalScenario of globalScenarios) {
-            const scenarioTenantRepository =
-              entityManager.getRepository(ScenarioTenants);
-            const scenarioTenant = tenantIds.map((tenantId) =>
-              scenarioTenantRepository.create({
-                scenarioId: globalScenario.id,
-                tenantId,
-              }),
-            );
-            await scenarioTenantRepository.save(scenarioTenant);
           }
-        }
-        const autoTerminationEventList = formatAutoTerminationEventsList(
-          createScenariosDto,
-          savedScenarios,
-        );
 
-        const scenarioTerminationEvents = scenarioEventsRepo.create(
-          autoTerminationEventList,
-        );
-
-        if (scenarioTerminationEvents.length > 0) {
-          await scenarioEventsRepo.save(scenarioTerminationEvents);
-          this.createUpdateScenarioEventsTranslations(
-            scenarioTerminationEvents,
-          );
-        }
-        const triggerWarningList = formatScenarioTriggerWarningsList(
-          createScenariosDto,
-          savedScenarios,
-        );
-        if (triggerWarningList.length > 0) {
-          const scenarioTriggerWarningsRepo = entityManager.getRepository(
-            ScenarioTriggerWarnings,
-          );
-          const scenarioTriggerWarnings =
-            scenarioTriggerWarningsRepo.create(triggerWarningList);
-          await scenarioTriggerWarningsRepo.save(scenarioTriggerWarnings);
-        }
-
-        // Create behavior instructions for each scenario
-        const scenarioBehaviorInstructionList: ScenarioBehaviorInstructionRequest[] =
-          createScenariosDto.scenarios
-            ?.map((scenario, index) => ({
-              scenarioId: savedScenarios[index].id,
-              // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove map and keep behaviorInstructions: scenario.behaviorInstructions
-              behaviorInstructions:
-                scenario.behaviorInstructions?.map((item) =>
-                  item?.stateInstructions
-                    ? item
-                    : {
-                        ...item,
-                        stateInstructions: scenario.stateInstructions?.map(
-                          (stateInstruction) => ({
-                            stateId: stateInstruction.stateId,
-                            instruction: stateInstruction.instruction,
-                          }),
-                        ),
-                      },
-                ) ?? [],
-            }))
-            ?.filter(
-              (item): item is ScenarioBehaviorInstructionRequest =>
-                item.behaviorInstructions.length > 0,
-            ) ?? [];
-
-        if (
-          scenarioBehaviorInstructionList &&
-          scenarioBehaviorInstructionList?.length > 0
-        )
-          await this.scenarioBehaviorInstructionService.createBehaviorInstructions(
-            scenarioBehaviorInstructionList,
-            entityManager,
+          const globalScenarios = savedScenarios.filter(
+            (scenario) => scenario.isGlobal,
           );
 
-        // Persist translations for active scenarios
-        const activeScenarios = savedScenarios.filter(
-          (scenario) => scenario.status == ScenarioStatus.ACTIVE,
-        );
+          if (globalScenarios.length > 0) {
+            const tenants = await this.tenantService.findAll();
+            const tenantIds = tenants.map((tenant) => tenant.id);
 
-        if (activeScenarios.length > 0) {
-          for (const scenario of activeScenarios) {
-            const translationConsiderableData: TranslationConsiderableData = {
-              currentLocation: scenario.metadata?.currentLocation,
-              lifeHistory: scenario.metadata?.lifeHistory,
-              personality: scenario.metadata?.personality,
-              coreMemories: scenario.metadata?.coreMemories,
-              profession: scenario.metadata?.profession,
-              context: scenario.metadata?.context,
-              age: scenario.metadata?.age,
-              gender: scenario.metadata?.gender,
-            };
-
-            this.persistTranslationsForScenarios(
-              [scenario],
-              () =>
-                this.sanitizeMetadata({
-                  title: scenario.title,
-                  description: scenario.description,
-                  tone: scenario.metadata?.tone,
-                  personality: scenario.metadata?.personality,
-                  context: scenario.metadata?.context,
-                  sexualOrientation: scenario.metadata?.sexualOrientation,
-                  genderIdentity: scenario.metadata?.genderIdentity,
-                  customFields: scenario.metadata?.customFields,
-                  // Phase 2: opening dialogues are not auto-translated; primary stays in
-                  // scenario.metadata.openingStatements, others in scenario_translations (upsert).
-                  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions field
-                  stateInstructions: scenario.metadata?.stateInstructions,
-                  knowledgeSources: scenario.metadata?.knowledgeSources,
+            for (const globalScenario of globalScenarios) {
+              const scenarioTenantRepository =
+                entityManager.getRepository(ScenarioTenants);
+              const scenarioTenant = tenantIds.map((tenantId) =>
+                scenarioTenantRepository.create({
+                  scenarioId: globalScenario.id,
+                  tenantId,
                 }),
-              translationConsiderableData,
+              );
+              await scenarioTenantRepository.save(scenarioTenant);
+            }
+          }
+          const autoTerminationEventList = formatAutoTerminationEventsList(
+            createScenariosDto,
+            savedScenarios,
+          );
+
+          const scenarioTerminationEvents = scenarioEventsRepo.create(
+            autoTerminationEventList,
+          );
+
+          if (scenarioTerminationEvents.length > 0) {
+            await scenarioEventsRepo.save(scenarioTerminationEvents);
+            this.createUpdateScenarioEventsTranslations(
+              scenarioTerminationEvents,
             );
           }
-        }
+          const triggerWarningList = formatScenarioTriggerWarningsList(
+            createScenariosDto,
+            savedScenarios,
+          );
+          if (triggerWarningList.length > 0) {
+            const scenarioTriggerWarningsRepo = entityManager.getRepository(
+              ScenarioTriggerWarnings,
+            );
+            const scenarioTriggerWarnings =
+              scenarioTriggerWarningsRepo.create(triggerWarningList);
+            await scenarioTriggerWarningsRepo.save(scenarioTriggerWarnings);
+          }
 
-        return savedScenarios;
-      });
+          // Create behavior instructions for each scenario
+          const scenarioBehaviorInstructionList: ScenarioBehaviorInstructionRequest[] =
+            createScenariosDto.scenarios
+              ?.map((scenario, index) => ({
+                scenarioId: savedScenarios[index].id,
+                // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove map and keep behaviorInstructions: scenario.behaviorInstructions
+                behaviorInstructions:
+                  scenario.behaviorInstructions?.map((item) =>
+                    item?.stateInstructions
+                      ? item
+                      : {
+                          ...item,
+                          stateInstructions: scenario.stateInstructions?.map(
+                            (stateInstruction) => ({
+                              stateId: stateInstruction.stateId,
+                              instruction: stateInstruction.instruction,
+                            }),
+                          ),
+                        },
+                  ) ?? [],
+              }))
+              ?.filter(
+                (item): item is ScenarioBehaviorInstructionRequest =>
+                  item.behaviorInstructions.length > 0,
+              ) ?? [];
+
+          if (
+            scenarioBehaviorInstructionList &&
+            scenarioBehaviorInstructionList?.length > 0
+          )
+            await this.scenarioBehaviorInstructionService.createBehaviorInstructions(
+              scenarioBehaviorInstructionList,
+              entityManager,
+            );
+
+          // Persist translations for active scenarios
+          const activeScenarios = savedScenarios.filter(
+            (scenario) => scenario.status == ScenarioStatus.ACTIVE,
+          );
+
+          if (activeScenarios.length > 0) {
+            for (const scenario of activeScenarios) {
+              const translationConsiderableData: TranslationConsiderableData = {
+                currentLocation: scenario.metadata?.currentLocation,
+                lifeHistory: scenario.metadata?.lifeHistory,
+                personality: scenario.metadata?.personality,
+                coreMemories: scenario.metadata?.coreMemories,
+                profession: scenario.metadata?.profession,
+                context: scenario.metadata?.context,
+                age: scenario.metadata?.age,
+                gender: scenario.metadata?.gender,
+              };
+
+              this.persistTranslationsForScenarios(
+                [scenario],
+                () =>
+                  this.sanitizeMetadata({
+                    title: scenario.title,
+                    description: scenario.description,
+                    tone: scenario.metadata?.tone,
+                    personality: scenario.metadata?.personality,
+                    context: scenario.metadata?.context,
+                    sexualOrientation: scenario.metadata?.sexualOrientation,
+                    genderIdentity: scenario.metadata?.genderIdentity,
+                    customFields: scenario.metadata?.customFields,
+                    // Phase 2: opening dialogues are not auto-translated; primary stays in
+                    // scenario.metadata.openingStatements, others in scenario_translations (upsert).
+                    // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions field
+                    stateInstructions: scenario.metadata?.stateInstructions,
+                    knowledgeSources: scenario.metadata?.knowledgeSources,
+                  }),
+                translationConsiderableData,
+              );
+            }
+          }
+
+          return savedScenarios;
+        },
+      );
       for (let i = 0; i < savedScenarios.length; i++) {
         const dto = createScenariosDto.scenarios[i];
         if (
@@ -1039,165 +1042,172 @@ export class ScenarioService {
     await this.checkForInProgressScenarioReports(scenario.id);
 
     try {
-      const success = await this.dataSource.transaction(async (entityManager) => {
-        const updateData = mapUpdateScenarioRequestToEntity(
-          updateScenarioDto,
-          scenario,
-          userId,
-        );
-
-        const scenarioRepository = entityManager.getRepository(Scenarios);
-        const updated = await scenarioRepository.update(id, updateData);
-        if (scenario.status == ScenarioStatus.ACTIVE) {
-          const translationConsiderableData: TranslationConsiderableData = {
-            currentLocation: scenario.metadata?.currentLocation,
-            lifeHistory: scenario.metadata?.lifeHistory,
-            personality: scenario.metadata?.personality,
-            coreMemories: scenario.metadata?.coreMemories,
-            profession: scenario.metadata?.profession,
-            context: scenario.metadata?.context,
-            age: scenario.metadata?.age,
-            gender: scenario.metadata?.gender,
-          };
-          this.persistTranslationsForScenarios(
-            [scenario], // single-item array so helper can reuse same logic
-            () =>
-              this.sanitizeMetadata({
-                title: updateScenarioDto.title,
-                description: updateScenarioDto.description,
-                tone: updateScenarioDto.tone,
-                personality: updateScenarioDto.personality,
-                sexualOrientation: updateScenarioDto.sexualOrientation,
-                genderIdentity: updateScenarioDto.genderIdentity,
-                customFields: updateScenarioDto?.customFields,
-                // Opening dialogues: not part of bulk auto-translate (see create path).
-                stateInstructions: updateScenarioDto?.stateInstructions,
-                knowledgeSources: updateScenarioDto?.knowledgeSources,
-              }),
-            translationConsiderableData,
-            (s) =>
-              updateScenarioDto.languageVoices ?? s.metadata?.languageVoices,
+      const success = await this.dataSource.transaction(
+        async (entityManager) => {
+          const updateData = mapUpdateScenarioRequestToEntity(
+            updateScenarioDto,
+            scenario,
+            userId,
           );
-        }
-        await this.updateScenarioTerminationEvents(
-          id,
-          updateScenarioDto?.terminationEvents || [],
-          entityManager,
-        );
 
-        // Update behavior instructions
-        if (
-          updateScenarioDto.behaviorInstructions &&
-          updateScenarioDto.behaviorInstructions?.length > 0
-        ) {
-          await this.scenarioBehaviorInstructionService.updateBehaviorInstructions(
-            {
-              scenarioId: id,
-              // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Replace with behaviorInstructions: updateScenarioDto.behaviorInstructions
-              behaviorInstructions: updateScenarioDto.behaviorInstructions?.map(
-                (item) =>
-                  item?.stateInstructions
-                    ? item
-                    : {
-                        ...item,
-                        stateInstructions:
-                          updateScenarioDto?.stateInstructions?.map(
-                            (stateInstruction) => ({
-                              stateId: stateInstruction.stateId,
-                              instruction: stateInstruction.instruction,
-                            }),
-                          ),
-                      },
-              ),
-            },
+          const scenarioRepository = entityManager.getRepository(Scenarios);
+          const updated = await scenarioRepository.update(id, updateData);
+          if (scenario.status == ScenarioStatus.ACTIVE) {
+            const translationConsiderableData: TranslationConsiderableData = {
+              currentLocation: scenario.metadata?.currentLocation,
+              lifeHistory: scenario.metadata?.lifeHistory,
+              personality: scenario.metadata?.personality,
+              coreMemories: scenario.metadata?.coreMemories,
+              profession: scenario.metadata?.profession,
+              context: scenario.metadata?.context,
+              age: scenario.metadata?.age,
+              gender: scenario.metadata?.gender,
+            };
+            this.persistTranslationsForScenarios(
+              [scenario], // single-item array so helper can reuse same logic
+              () =>
+                this.sanitizeMetadata({
+                  title: updateScenarioDto.title,
+                  description: updateScenarioDto.description,
+                  tone: updateScenarioDto.tone,
+                  personality: updateScenarioDto.personality,
+                  sexualOrientation: updateScenarioDto.sexualOrientation,
+                  genderIdentity: updateScenarioDto.genderIdentity,
+                  customFields: updateScenarioDto?.customFields,
+                  // Opening dialogues: not part of bulk auto-translate (see create path).
+                  stateInstructions: updateScenarioDto?.stateInstructions,
+                  knowledgeSources: updateScenarioDto?.knowledgeSources,
+                }),
+              translationConsiderableData,
+              (s) =>
+                updateScenarioDto.languageVoices ?? s.metadata?.languageVoices,
+            );
+          }
+          await this.updateScenarioTerminationEvents(
+            id,
+            updateScenarioDto?.terminationEvents || [],
             entityManager,
           );
-        }
 
-        if (updated.affected === 0) return false;
-
-        const updatedScenario = await scenarioRepository.findOne({
-          where: { id },
-        });
-        if (
-          updateScenarioDto.isGlobal !== undefined &&
-          updatedScenario?.isGlobal !== scenario.isGlobal
-        ) {
-          const tenants = await this.tenantService.findAll();
-          const tenantIds = tenants.map((tenant) => tenant.id);
-          const scenarioTenantRepo =
-            entityManager.getRepository(ScenarioTenants);
-
-          if (updateScenarioDto.isGlobal) {
-            await scenarioTenantRepo.delete({ scenarioId: id });
-            const scenarioTenantMappings = tenantIds.map((tenantId) => ({
-              scenarioId: id,
-              tenantId: tenantId,
-            }));
-            await scenarioTenantRepo.save(
-              scenarioTenantRepo.create(scenarioTenantMappings),
+          // Update behavior instructions
+          if (
+            updateScenarioDto.behaviorInstructions &&
+            updateScenarioDto.behaviorInstructions?.length > 0
+          ) {
+            await this.scenarioBehaviorInstructionService.updateBehaviorInstructions(
+              {
+                scenarioId: id,
+                // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Replace with behaviorInstructions: updateScenarioDto.behaviorInstructions
+                behaviorInstructions:
+                  updateScenarioDto.behaviorInstructions?.map((item) =>
+                    item?.stateInstructions
+                      ? item
+                      : {
+                          ...item,
+                          stateInstructions:
+                            updateScenarioDto?.stateInstructions?.map(
+                              (stateInstruction) => ({
+                                stateId: stateInstruction.stateId,
+                                instruction: stateInstruction.instruction,
+                              }),
+                            ),
+                        },
+                  ),
+              },
+              entityManager,
             );
-          } else {
-            await scenarioTenantRepo.delete({
-              scenarioId: id,
-              tenantId: In(tenantIds),
+          }
+
+          if (updated.affected === 0) return false;
+
+          const updatedScenario = await scenarioRepository.findOne({
+            where: { id },
+          });
+          if (
+            updateScenarioDto.isGlobal !== undefined &&
+            updatedScenario?.isGlobal !== scenario.isGlobal
+          ) {
+            const tenants = await this.tenantService.findAll();
+            const tenantIds = tenants.map((tenant) => tenant.id);
+            const scenarioTenantRepo =
+              entityManager.getRepository(ScenarioTenants);
+
+            if (updateScenarioDto.isGlobal) {
+              await scenarioTenantRepo.delete({ scenarioId: id });
+              const scenarioTenantMappings = tenantIds.map((tenantId) => ({
+                scenarioId: id,
+                tenantId: tenantId,
+              }));
+              await scenarioTenantRepo.save(
+                scenarioTenantRepo.create(scenarioTenantMappings),
+              );
+            } else {
+              await scenarioTenantRepo.delete({
+                scenarioId: id,
+                tenantId: In(tenantIds),
+              });
+            }
+          }
+          const scenarioTriggerWarningsRepo = entityManager.getRepository(
+            ScenarioTriggerWarnings,
+          );
+          const existingTriggerWarnings =
+            await scenarioTriggerWarningsRepo.find({
+              where: { scenarioId: id },
+            });
+          const existingTriggerWarningIds = existingTriggerWarnings?.map(
+            (warning) => warning.triggerWarningId,
+          );
+          // Getting triggerWarnings that need to be added
+          const newTriggerWarningIds = [
+            ...new Set(
+              !existingTriggerWarningIds
+                ? updateScenarioDto?.triggerWarningIds
+                : updateScenarioDto?.triggerWarningIds?.filter(
+                    (id) => !existingTriggerWarningIds?.includes(id),
+                  ),
+            ),
+          ];
+          if (newTriggerWarningIds && newTriggerWarningIds.length > 0) {
+            const scenarioTriggerWarningList = newTriggerWarningIds.map(
+              (triggerWarningId) =>
+                scenarioTriggerWarningsRepo.create({
+                  scenarioId: id,
+                  triggerWarningId,
+                }),
+            );
+            await scenarioTriggerWarningsRepo.save(scenarioTriggerWarningList);
+          }
+
+          // Getting triggerWranings that need to be deleted
+          const triggerWarningListToDelete = existingTriggerWarnings
+            ?.filter(
+              ({ triggerWarningId }) =>
+                !updateScenarioDto.triggerWarningIds?.includes(
+                  triggerWarningId,
+                ),
+            )
+            ?.map(({ id }) => id);
+          if (triggerWarningListToDelete.length > 0) {
+            await scenarioTriggerWarningsRepo.delete(
+              triggerWarningListToDelete,
+            );
+          }
+
+          if (isMultiTenantAdmin) {
+            this.auditLogService.log({
+              eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SCENARIO,
+              details: {
+                action: AUDIT_ACTIONS.UPDATE_SCENARIO,
+                scenarioId: id,
+                userId,
+              },
             });
           }
-        }
-        const scenarioTriggerWarningsRepo = entityManager.getRepository(
-          ScenarioTriggerWarnings,
-        );
-        const existingTriggerWarnings = await scenarioTriggerWarningsRepo.find({
-          where: { scenarioId: id },
-        });
-        const existingTriggerWarningIds = existingTriggerWarnings?.map(
-          (warning) => warning.triggerWarningId,
-        );
-        // Getting triggerWarnings that need to be added
-        const newTriggerWarningIds = [
-          ...new Set(
-            !existingTriggerWarningIds
-              ? updateScenarioDto?.triggerWarningIds
-              : updateScenarioDto?.triggerWarningIds?.filter(
-                  (id) => !existingTriggerWarningIds?.includes(id),
-                ),
-          ),
-        ];
-        if (newTriggerWarningIds && newTriggerWarningIds.length > 0) {
-          const scenarioTriggerWarningList = newTriggerWarningIds.map(
-            (triggerWarningId) =>
-              scenarioTriggerWarningsRepo.create({
-                scenarioId: id,
-                triggerWarningId,
-              }),
-          );
-          await scenarioTriggerWarningsRepo.save(scenarioTriggerWarningList);
-        }
 
-        // Getting triggerWranings that need to be deleted
-        const triggerWarningListToDelete = existingTriggerWarnings
-          ?.filter(
-            ({ triggerWarningId }) =>
-              !updateScenarioDto.triggerWarningIds?.includes(triggerWarningId),
-          )
-          ?.map(({ id }) => id);
-        if (triggerWarningListToDelete.length > 0) {
-          await scenarioTriggerWarningsRepo.delete(triggerWarningListToDelete);
-        }
-
-        if (isMultiTenantAdmin) {
-          this.auditLogService.log({
-            eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SCENARIO,
-            details: {
-              action: AUDIT_ACTIONS.UPDATE_SCENARIO,
-              scenarioId: id,
-              userId,
-            },
-          });
-        }
-
-        return true;
-      });
+          return true;
+        },
+      );
 
       if (
         success &&
@@ -1926,9 +1936,7 @@ export class ScenarioService {
     }
 
     const languageIds = Object.entries(languageVoices)
-      .filter(
-        ([, voiceId]) => voiceId != null && String(voiceId).trim() !== '',
-      )
+      .filter(([, voiceId]) => voiceId != null && String(voiceId).trim() !== '')
       .map(([langId]) => Number(langId))
       .filter((id) => Number.isFinite(id));
 
@@ -1936,9 +1944,8 @@ export class ScenarioService {
       return [];
     }
 
-    const rows = await this.sharedLanguageService.getLanguagesByIds(
-      languageIds,
-    );
+    const rows =
+      await this.sharedLanguageService.getLanguagesByIds(languageIds);
 
     const isEnglishTranslationTarget = (code: string): boolean => {
       const c = code.trim().toLowerCase();
@@ -2012,7 +2019,8 @@ export class ScenarioService {
         }
 
         const languageVoices =
-          resolveLanguageVoices?.(scenario) ?? scenario.metadata?.languageVoices;
+          resolveLanguageVoices?.(scenario) ??
+          scenario.metadata?.languageVoices;
         const languagesFiltered =
           await this.getTranslationTargetLanguagesFromLanguageVoices(
             languageVoices,
@@ -2085,7 +2093,8 @@ export class ScenarioService {
             languageId: t.languageId,
             metadata: mergedMetadata,
           };
-          if (existingLanguageIdSet.has(Number(t.languageId))) toUpdate.push(entry);
+          if (existingLanguageIdSet.has(Number(t.languageId)))
+            toUpdate.push(entry);
           else toCreate.push(entry);
         }
 

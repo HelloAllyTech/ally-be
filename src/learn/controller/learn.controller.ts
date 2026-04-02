@@ -1070,4 +1070,11 @@ export class LearnController {
       scenarioId,
     );
   }
+
+  @ApiOperation({ summary: 'Make translations for trigger warnings' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('trigger-warnings/make-translations')
+  async makeTranslationsForTriggerWarnings(): Promise<boolean> {
+    return this.triggerWarningService.makeTranslationsForTriggerWarnings();
+  }
 }

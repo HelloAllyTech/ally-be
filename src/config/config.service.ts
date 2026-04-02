@@ -120,9 +120,7 @@ export class AppConfigService {
   }
 
   get mockScenarioCoverImageUrl(): string {
-    const url = this.configService.get<string>(
-      'MOCK_SCENARIO_COVER_IMAGE_URL',
-    );
+    const url = this.configService.get<string>('MOCK_SCENARIO_COVER_IMAGE_URL');
     if (url?.trim()) {
       return url.trim();
     }

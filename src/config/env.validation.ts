@@ -38,7 +38,9 @@ export const validationSchema = Joi.object({
   AWS_ENDPOINT_URL: Joi.string().optional(),
 
   /** When `true`, cover-image presign skips S3 and returns a placeholder URL (local dev only). */
-  MOCK_SCENARIO_COVER_IMAGE_UPLOAD: Joi.string().valid('true', 'false').optional(),
+  MOCK_SCENARIO_COVER_IMAGE_UPLOAD: Joi.string()
+    .valid('true', 'false')
+    .optional(),
   /** Optional URL for mock cover image; defaults to placehold.co if unset. */
   MOCK_SCENARIO_COVER_IMAGE_URL: Joi.string().uri().optional(),
 

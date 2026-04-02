@@ -44,6 +44,7 @@ import { UpdateScenarioPathItemDto } from '../dto/update-scenario-path-item.dto'
 import { ScenarioStatus } from 'src/learn/type/scenario.type';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { ELIGBLE_APP_LANGUAGES } from 'src/common/constants/translation.constants';
 
 @Injectable()
 export class ScenarioPathService {
@@ -558,10 +559,14 @@ export class ScenarioPathService {
       return;
     }
 
-    const languageCodes =
+    let languageCodes =
       await this.sharedLanguageService.getValidLanguageCodes(
         validLanguagesCodes,
       );
+
+    languageCodes = languageCodes?.filter((languageCode) => {
+      return ELIGBLE_APP_LANGUAGES.includes(languageCode);
+    });
 
     if (!languageCodes || languageCodes.length === 0) {
       return;
@@ -598,5 +603,31 @@ export class ScenarioPathService {
     }
 
     return false;
+  }
+
+  async makeTranslationsForScenarioPathItems() {
+    const scenarioPathItems = await this.scenarioPathRepository.find({
+      select: ['id', 'title', 'description'],
+    });
+
+    for (const scenarioPathItem of scenarioPathItems) {
+      const translations =
+        await this.openaiTranslationsService.translateObjectToLanguages(
+          {
+            title: scenarioPathItem.title,
+            description: scenarioPathItem.description,
+          },
+          ELIGBLE_APP_LANGUAGES,
+          'openai_translation_speech_reexpression_user',
+        );
+
+      if (translations) {
+        await this.scenarioPathRepository.update(scenarioPathItem.id, {
+          translations,
+        } as any);
+      }
+    }
+
+    return true;
   }
 }

@@ -48,6 +48,7 @@ import { OpenAITranslationsService } from 'src/common/service/openai-translation
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { BadgeTranslatableFields } from '../type/badge.type';
+import { ELIGBLE_APP_LANGUAGES } from 'src/common/constants/translation.constants';
 
 @Injectable()
 export class BadgeService {
@@ -862,8 +863,12 @@ export class BadgeService {
       return;
     }
 
-    const languageCodes =
+    let languageCodes =
       await this.sharedLanguageService.getValidLanguageCodes(validLanguageIds);
+
+    languageCodes = languageCodes?.filter((languageCode) => {
+      return ELIGBLE_APP_LANGUAGES.includes(languageCode);
+    });
 
     if (!languageCodes || languageCodes.length === 0) {
       return;
@@ -881,5 +886,31 @@ export class BadgeService {
         translations: translated,
       } as any);
     }
+  }
+
+  async makeTranslationsForBadges() {
+    const badges = await this.badgeRepository.find({
+      select: ['id', 'name', 'description'],
+    });
+
+    for (const badge of badges) {
+      const translations =
+        await this.openaiTranslationsService.translateObjectToLanguages(
+          {
+            name: badge.name,
+            description: badge.description,
+          },
+          ELIGBLE_APP_LANGUAGES,
+          'openai_translation_speech_reexpression_user',
+        );
+
+      if (translations) {
+        await this.badgeRepository.update(badge.id, {
+          translations,
+        } as any);
+      }
+    }
+
+    return true;
   }
 }
