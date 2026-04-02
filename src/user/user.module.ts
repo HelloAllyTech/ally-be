@@ -13,6 +13,7 @@ import { AdminTenantRepository } from './repository/admin-tenant.repository';
 import { AdminTenantService } from './service/admin-tenant.service';
 import { UserPreferencesRepository } from './repository/user-prefernces.repository';
 import { AwsModule } from 'src/aws/aws.module';
+import { SettingsModule } from 'src/settings/settings.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AwsModule } from 'src/aws/aws.module';
     forwardRef(() => TenantModule),
     AuthorizationModule,
     AwsModule,
+    forwardRef(() => SettingsModule),
   ],
   providers: [
     UserService,

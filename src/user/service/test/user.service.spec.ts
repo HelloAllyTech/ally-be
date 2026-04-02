@@ -23,6 +23,8 @@ import { S3Service } from 'src/aws/service/s3.service';
 import { ProfileImageUploadContentType } from 'src/user/enum/user.enum';
 import { AdminTenantService } from '../admin-tenant.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { SettingsService } from 'src/settings/service/settings.service';
+import { ChatTypes } from 'src/common/constants/chat.constants';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -55,6 +57,7 @@ describe('UserService', () => {
   let mockS3Service: any;
   let mockAdminTenantService: any;
   let mockPermissionsService: any;
+  let mockSettingsService: any;
 
   const mockUser: User = {
     id: 1,
@@ -184,6 +187,10 @@ describe('UserService', () => {
       isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
     };
 
+    mockSettingsService = {
+      getHiddenChatTypesForEntity: jest.fn().mockResolvedValue([]),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
@@ -208,6 +215,7 @@ describe('UserService', () => {
         { provide: S3Service, useValue: mockS3Service },
         { provide: AdminTenantService, useValue: mockAdminTenantService },
         { provide: PermissionsService, useValue: mockPermissionsService },
+        { provide: SettingsService, useValue: mockSettingsService },
       ],
     }).compile();
 
@@ -303,6 +311,53 @@ describe('UserService', () => {
       ]);
       const result = await service.getMinimalUserInfo(mockUser);
       expect(result && result.role).toBe(UserRole.CLIENT);
+    });
+
+    it('should include MICROPHONE_CHAT and DICTATION_MODE in availableChatTypes when both modes are enabled', async () => {
+      mockGroupService.getUserRolesByUserId.mockResolvedValue([
+        { id: 1, name: UserRole.COUNSELOR },
+      ]);
+      mockSettingsService.getHiddenChatTypesForEntity.mockResolvedValue([]);
+      const result = await service.getMinimalUserInfo(mockUser);
+      expect(result && result.availableChatTypes).toEqual(
+        expect.arrayContaining([ChatTypes.MICROPHONE_CHAT, ChatTypes.DICTATION_MODE]),
+      );
+    });
+
+    it('should exclude MICROPHONE_CHAT from availableChatTypes when enableMicrophoneMode is false', async () => {
+      mockGroupService.getUserRolesByUserId.mockResolvedValue([
+        { id: 1, name: UserRole.COUNSELOR },
+      ]);
+      mockSettingsService.getHiddenChatTypesForEntity.mockResolvedValue([
+        ChatTypes.MICROPHONE_CHAT,
+      ]);
+      const result = await service.getMinimalUserInfo(mockUser);
+      expect(result && result.availableChatTypes).not.toContain(ChatTypes.MICROPHONE_CHAT);
+      expect(result && result.availableChatTypes).toContain(ChatTypes.DICTATION_MODE);
+    });
+
+    it('should exclude DICTATION_MODE from availableChatTypes when enableDictationMode is false', async () => {
+      mockGroupService.getUserRolesByUserId.mockResolvedValue([
+        { id: 1, name: UserRole.COUNSELOR },
+      ]);
+      mockSettingsService.getHiddenChatTypesForEntity.mockResolvedValue([
+        ChatTypes.DICTATION_MODE,
+      ]);
+      const result = await service.getMinimalUserInfo(mockUser);
+      expect(result && result.availableChatTypes).toContain(ChatTypes.MICROPHONE_CHAT);
+      expect(result && result.availableChatTypes).not.toContain(ChatTypes.DICTATION_MODE);
+    });
+
+    it('should return empty availableChatTypes when all chat modes are disabled', async () => {
+      mockGroupService.getUserRolesByUserId.mockResolvedValue([
+        { id: 1, name: UserRole.COUNSELOR },
+      ]);
+      mockSettingsService.getHiddenChatTypesForEntity.mockResolvedValue([
+        ChatTypes.MICROPHONE_CHAT,
+        ChatTypes.DICTATION_MODE,
+      ]);
+      const result = await service.getMinimalUserInfo(mockUser);
+      expect(result && result.availableChatTypes).toEqual([]);
     });
   });
 

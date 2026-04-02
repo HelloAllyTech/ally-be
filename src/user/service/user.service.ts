@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { User } from '../entity/user.entity';
 import { QueueService } from '../../queue/service/queue.service';
 import { Chat } from '../../chat/entity/chat.entity';
-import { UserRole } from '../../common/constants/user.constants';
+import { UserRole, PreferenceRelatedEntity } from '../../common/constants/user.constants';
 import { UserStatus } from '../constants/user-status.constants';
 import { RedisService } from '../../redis/service/redis.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
@@ -52,6 +52,8 @@ import { LoggerService } from 'src/logger/logger.service';
 import { ProfileImageUploadDto } from '../dto/profile-image-upload.dto';
 import { AdminTenantService } from './admin-tenant.service';
 import { PermissionsService } from '../../authorization/service/permissions.service';
+import { ChatTypes } from '../../common/constants/chat.constants';
+import { SettingsService } from '../../settings/service/settings.service';
 
 @Injectable()
 export class UserService {
@@ -75,6 +77,7 @@ export class UserService {
     private s3Service: S3Service,
     private permissionsService: PermissionsService,
     private readonly adminTenantService: AdminTenantService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async get(id: number): Promise<User | null> {
@@ -159,6 +162,19 @@ export class UserService {
     // TO DO : Remove the role field from the api once mobile forceupdate is done after permissions integration
     const roles = await this.groupService.getUserRolesByUserId(user.id);
     const role = this.determineUserRole(roles);
+
+    const hiddenChatTypes = await this.settingsService.getHiddenChatTypesForEntity(
+      user.tenantId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+    const availableChatTypes: string[] = [];
+    if (!hiddenChatTypes.includes(ChatTypes.MICROPHONE_CHAT)) {
+      availableChatTypes.push(ChatTypes.MICROPHONE_CHAT);
+    }
+    if (!hiddenChatTypes.includes(ChatTypes.DICTATION_MODE)) {
+      availableChatTypes.push(ChatTypes.DICTATION_MODE);
+    }
+
     return {
       id: user.id,
       userId: user.id,
@@ -169,6 +185,7 @@ export class UserService {
       phone: user.phone,
       status: user.status,
       profileImageUrl: user.profileImageUrl,
+      availableChatTypes,
     };
   }
 
