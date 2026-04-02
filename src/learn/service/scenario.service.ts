@@ -1253,7 +1253,7 @@ export class ScenarioService {
         const behaviorInstructionsToCreate = originalBehaviorInstructions.map(
           (instruction) => ({
             category: instruction.category,
-            instructions: instruction.instructions,
+            stateInstructions: instruction.stateInstructions,
             behaviors: instruction.behaviors.map((behavior) => behavior.id),
           }),
         );

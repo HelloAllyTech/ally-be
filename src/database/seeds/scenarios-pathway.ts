@@ -151,14 +151,7 @@ const createScenariosData = async (
       behaviorInstructions: [
         {
           category: 'SHOULD_DO',
-          behaviors: behaviorIds.slice(0, 2), // Use first 2 behaviors
-          // Legacy column is still NOT NULL in DB; keep instructions during transition
-          instructions: [
-            'Use an open, warm greeting to build rapport',
-            'Reflect feelings about stress and workload',
-            'Ask one open-ended question to deepen understanding',
-            'Summarize key concern and validate effort',
-          ],
+          behaviors: behaviorIds.slice(0, 2),
           stateInstructions: [
             {
               stateId: b0,

@@ -159,7 +159,7 @@ export class ScenariosRepository extends Repository<Scenarios> {
       .addSelect((subQuery) => {
         return subQuery
           .select(
-            `COALESCE(json_agg(json_build_object('id', scenarioBehaviorInstruction.id, 'category', scenarioBehaviorInstruction.category, 'instructions', scenarioBehaviorInstruction.instructions)), '[]')`,
+            `COALESCE(json_agg(json_build_object('id', scenarioBehaviorInstruction.id, 'category', scenarioBehaviorInstruction.category, 'stateInstructions', scenarioBehaviorInstruction."stateInstructions")), '[]')`,
           )
           .from(ScenarioBehaviorInstruction, 'scenarioBehaviorInstruction')
           .where('scenarioBehaviorInstruction.scenarioId = scenario.id');

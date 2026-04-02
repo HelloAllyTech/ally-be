@@ -1545,9 +1545,6 @@ export class ScenarioSessionService {
     scenario.behaviorInstructions = scenario.behaviorInstructions.map(
       (instruction: any) => ({
         ...instruction,
-        instructions:
-          instructionTranslationMap.get(instruction.id)?.instructions ??
-          instruction.instructions,
         behaviors: instruction.behaviors.map((behavior: any) => ({
           ...behavior,
           name: behaviorTranslationMap.get(behavior.id)?.name ?? behavior.name,

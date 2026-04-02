@@ -18,14 +18,7 @@ export class BehaviorInstructionWithBehaviorsDto {
   category!: BehaviorInstructionCategory;
 
   @ApiProperty({
-    description: 'Array of instruction strings',
-    example: ['Listen actively', 'Show empathy'],
-    type: [String],
-  })
-  instructions?: string[];
-
-  @ApiProperty({
-    description: 'State instructions',
+    description: 'Per-phase state instructions',
   })
   stateInstructions?: BehaviorStateInstruction[];
 
