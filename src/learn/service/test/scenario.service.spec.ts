@@ -1657,7 +1657,10 @@ describe('ScenarioService', () => {
         {
           id: 'instruction-1',
           category: BehaviorInstructionCategory.SHOULD_DO,
-          instructions: ['Listen actively', 'Show empathy'],
+          stateInstructions: [
+            { stateId: '1', instruction: 'Listen actively' },
+            { stateId: '2', instruction: 'Show empathy' },
+          ],
           behaviors: [
             {
               id: 'behavior-1',
@@ -1672,7 +1675,9 @@ describe('ScenarioService', () => {
         {
           id: 'instruction-2',
           category: BehaviorInstructionCategory.SHOULD_NOT_DO,
-          instructions: ['Interrupt the client'],
+          stateInstructions: [
+            { stateId: '1', instruction: 'Interrupt the client' },
+          ],
           behaviors: [
             {
               id: 'behavior-3',
@@ -3581,7 +3586,10 @@ describe('ScenarioService', () => {
           {
             id: 'instruction-1',
             category: BehaviorInstructionCategory.SHOULD_DO,
-            instructions: ['Listen actively', 'Show empathy'],
+            stateInstructions: [
+              { stateId: '1', instruction: 'Listen actively' },
+              { stateId: '2', instruction: 'Show empathy' },
+            ],
             behaviors: [
               { id: 'behavior-1', name: 'Active Listening' },
               { id: 'behavior-2', name: 'Empathy' },
@@ -3590,7 +3598,10 @@ describe('ScenarioService', () => {
           {
             id: 'instruction-2',
             category: BehaviorInstructionCategory.SHOULD_NOT_DO,
-            instructions: ['Do not interrupt', 'Avoid judgmental language'],
+            stateInstructions: [
+              { stateId: '1', instruction: 'Do not interrupt' },
+              { stateId: '2', instruction: 'Avoid judgmental language' },
+            ],
             behaviors: [{ id: 'behavior-3', name: 'Non-judgmental' }],
           },
         ];
@@ -3752,14 +3763,20 @@ describe('ScenarioService', () => {
               behaviorInstructions: [
                 {
                   category: BehaviorInstructionCategory.SHOULD_DO,
-                  instructions: ['Listen actively', 'Show empathy'],
+                  stateInstructions: [
+                    { stateId: '1', instruction: 'Listen actively' },
+                    { stateId: '2', instruction: 'Show empathy' },
+                  ],
                   behaviors: ['behavior-1', 'behavior-2'],
                 },
                 {
                   category: BehaviorInstructionCategory.SHOULD_NOT_DO,
-                  instructions: [
-                    'Do not interrupt',
-                    'Avoid judgmental language',
+                  stateInstructions: [
+                    { stateId: '1', instruction: 'Do not interrupt' },
+                    {
+                      stateId: '2',
+                      instruction: 'Avoid judgmental language',
+                    },
                   ],
                   behaviors: ['behavior-3'],
                 },
