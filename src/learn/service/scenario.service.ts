@@ -319,6 +319,17 @@ export class ScenarioService {
 
     if (languageCode) {
       applyScenarioTranslations(scenario, languageCode);
+      scenario.triggerWarnings?.forEach((triggerWarning) => {
+        if (
+          triggerWarning.translations &&
+          triggerWarning.translations[languageCode]
+        ) {
+          triggerWarning.name =
+            triggerWarning.translations[languageCode].name ||
+            triggerWarning.name;
+        }
+        delete triggerWarning.translations;
+      });
     }
     return scenario;
   }
