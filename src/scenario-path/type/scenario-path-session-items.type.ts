@@ -5,6 +5,7 @@ export interface ScenarioPathSessionFilterOptions {
   offset?: number;
   sortBy?: ScenarioPathSessionSortBy;
   order?: SortOrder;
+  languageCode?: string;
 }
 
 export enum ScenarioPathSessionSortBy {

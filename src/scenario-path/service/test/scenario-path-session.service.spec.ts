@@ -175,6 +175,78 @@ describe('ScenarioPathSessionService', () => {
       });
     });
 
+    it('should return translated title and description when languageCode is provided and translations exist', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+
+      const mockPathsWithTranslations = {
+        data: [
+          {
+            id: 'path-1',
+            title: 'Original Title',
+            description: 'Original Description',
+            coverImageUrl: 'https://example.com/image.jpg',
+            totalScenarios: 5,
+            session: { completedScenarios: 2 },
+            translations: {
+              es: {
+                title: 'Titulo Traducido',
+                description: 'Descripcion Traducida',
+              },
+            },
+          },
+        ] as any,
+        count: 1,
+      };
+
+      scenarioPathSharedService.getScenarioPathsWithSession.mockResolvedValue(
+        mockPathsWithTranslations,
+      );
+
+      const result = await service.getUserScenarioPaths({
+        languageCode: 'es',
+      });
+
+      expect(result.data[0].title).toBe('Titulo Traducido');
+      expect(result.data[0].description).toBe('Descripcion Traducida');
+    });
+
+    it('should return original title and description when languageCode is provided but translations for that language do not exist', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');
+
+      const mockPathsWithOtherTranslations = {
+        data: [
+          {
+            id: 'path-1',
+            title: 'Original Title',
+            description: 'Original Description',
+            coverImageUrl: 'https://example.com/image.jpg',
+            totalScenarios: 5,
+            session: { completedScenarios: 2 },
+            translations: {
+              fr: {
+                title: 'Titre Traduit',
+                description: 'Description Traduite',
+              },
+            },
+          },
+        ] as any,
+        count: 1,
+      };
+
+      scenarioPathSharedService.getScenarioPathsWithSession.mockResolvedValue(
+        mockPathsWithOtherTranslations,
+      );
+
+      const result = await service.getUserScenarioPaths({
+        languageCode: 'es',
+      });
+
+      expect(result.data[0].title).toBe('Original Title');
+      expect(result.data[0].description).toBe('Original Description');
+    });
+
     it('should throw UnauthorizedException when user is not authenticated', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue(null);
       (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('tenant-1');

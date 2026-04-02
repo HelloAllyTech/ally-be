@@ -30,10 +30,8 @@ import {
   MAX_KNOWLEDGE_SOURCES_COUNT,
 } from '../constants/scenario.constants';
 import { TerminationEventsDto } from './termination-events.dto';
-import { StateInstructionsDto } from './state-instructions.dto';
 import { BehaviorInstructionDto } from './behavior-instruction.dto';
 import { MAX_BEHAVIOR_INSTRUCTIONS_COUNT } from '../constants/scenario-behavior-instuctions.constants';
-import { MAX_SCENARIO_STATE_INSTRUCTIONS } from '../constants/scenario-state-instructions.constants';
 import { KnowledgeSourceDto } from './knowledge-source.dto';
 
 export class UpdateScenarioDto {
