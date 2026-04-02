@@ -59,14 +59,29 @@ export class ScenarioPathSessionService {
 
     const { data, count } = scenarioPaths;
 
-    const formattedData = data.map((scenarioPath) => ({
-      id: scenarioPath.id,
-      title: scenarioPath.title,
-      description: scenarioPath.description,
-      coverImageUrl: scenarioPath.coverImageUrl,
-      totalScenarios: scenarioPath.totalScenarios,
-      completedScenarios: scenarioPath.session?.completedScenarios,
-    }));
+    const formattedData = data.map((scenarioPath) => {
+      let { title, description } = scenarioPath;
+
+      if (
+        filters?.languageCode &&
+        scenarioPath.translations &&
+        scenarioPath.translations[filters?.languageCode]
+      ) {
+        title = scenarioPath.translations[filters?.languageCode].title || title;
+        description =
+          scenarioPath.translations[filters?.languageCode].description ||
+          description;
+      }
+
+      return {
+        id: scenarioPath.id,
+        title,
+        description,
+        coverImageUrl: scenarioPath.coverImageUrl,
+        totalScenarios: scenarioPath.totalScenarios,
+        completedScenarios: scenarioPath.session?.completedScenarios,
+      };
+    });
 
     return {
       data: formattedData,
@@ -94,6 +109,7 @@ export class ScenarioPathSessionService {
     scenarioPathId: string,
     languageCode?: string,
   ) {
+    console.log(languageCode, 'languageCode');
     const userId = ExecutionManager.getUserId();
     if (!userId) {
       throw new UnauthorizedException('Unauthorized access');

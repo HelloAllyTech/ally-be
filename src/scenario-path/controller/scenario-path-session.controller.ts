@@ -71,12 +71,14 @@ export class ScenarioPathSessionController {
     @Query('sortBy')
     sortBy: ScenarioPathSessionSortBy = ScenarioPathSessionSortBy.UPDATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
+    @Query('languageCode') languageCode?: string,
   ): Promise<ScenarioPathSessionsResponseDto> {
     return this.scenarioPathSessionService.getUserScenarioPaths({
       offset,
       limit,
       sortBy,
       order,
+      languageCode,
     });
   }
 
