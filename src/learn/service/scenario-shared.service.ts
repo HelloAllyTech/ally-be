@@ -62,6 +62,50 @@ import { S3Service } from 'src/aws/service/s3.service';
 import { ScenarioSessionRecordingRepository } from '../repository/scenario-session-recording.repository';
 import { ScenarioSessionRecording } from '../entity/scenario-session-recording.entity';
 
+/**
+ * scenario_translations.metadata.openingStatements may be string[] (current) or a legacy /
+ * externally-written string. Session merge accepts both; admin must normalize so tabs hydrate.
+ */
+function normalizeTranslationOpeningStatementsLines(raw: unknown): string[] {
+  if (raw == null) {
+    return [];
+  }
+  if (Array.isArray(raw)) {
+    return raw.map((l) => String(l).trim()).filter((l) => l.length > 0);
+  }
+  if (typeof raw === 'string') {
+    return raw
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+  }
+  return [];
+}
+
+function parseScenarioTranslationMetadata(
+  metadata: unknown,
+): Record<string, unknown> {
+  if (metadata == null) {
+    return {};
+  }
+  if (typeof metadata === 'string') {
+    try {
+      const parsed = JSON.parse(metadata) as unknown;
+      return typeof parsed === 'object' &&
+        parsed !== null &&
+        !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof metadata === 'object' && !Array.isArray(metadata)) {
+    return metadata as Record<string, unknown>;
+  }
+  return {};
+}
+
 @Injectable()
 export class ScenarioSharedService {
   private readonly logger = LoggerService.getInstance(
@@ -708,14 +752,12 @@ export class ScenarioSharedService {
       );
     const translationOpeningStatements: Record<string, string[]> = {};
     for (const row of translationRows ?? []) {
-      const lines = row.metadata?.openingStatements;
-      if (Array.isArray(lines)) {
-        const cleaned = lines
-          .map((l) => String(l).trim())
-          .filter((l) => l.length > 0);
-        if (cleaned.length > 0) {
-          translationOpeningStatements[String(row.languageId)] = cleaned;
-        }
+      const meta = parseScenarioTranslationMetadata(row.metadata);
+      const cleaned = normalizeTranslationOpeningStatementsLines(
+        meta.openingStatements,
+      );
+      if (cleaned.length > 0) {
+        translationOpeningStatements[String(row.languageId)] = cleaned;
       }
     }
     (result as GetAdminScenarioDto).translationOpeningStatements =

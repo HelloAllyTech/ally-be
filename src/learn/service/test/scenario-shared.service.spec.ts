@@ -685,6 +685,35 @@ describe('ScenarioSharedService', () => {
         sessionEventSharedService.findSessionEventById,
       ).not.toHaveBeenCalled();
     });
+
+    it('should map translationOpeningStatements when stored as newline-separated string (session/admin parity)', async () => {
+      const scenarioResult = {
+        id: 1,
+        title: 'Test',
+        terminationEvents: [],
+      };
+      scenariosRepository.getAdminScenarioById.mockResolvedValue(
+        scenarioResult as any,
+      );
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
+        [
+          {
+            scenarioId: 1,
+            languageId: 7,
+            metadata: { openingStatements: 'Hola\n¿Qué tal?' },
+          },
+        ] as any,
+      );
+      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue({
+        id: 1,
+      } as any);
+
+      const result = await service.getAdminScenario(1);
+
+      expect(result.translationOpeningStatements).toEqual({
+        '7': ['Hola', '¿Qué tal?'],
+      });
+    });
   });
 
   describe('getPreviousScenarioSessionByCaseSessionItemId', () => {
