@@ -48,8 +48,7 @@ describe('BehaviorInstructionProcessor', () => {
     id: 'bi-123',
     scenarioId: 1,
     category: 'SHOULD_DO',
-    instructions: ['Do something'],
-  } as ScenarioBehaviorInstruction;
+  } as unknown as ScenarioBehaviorInstruction;
 
   const mockBehaviorInstructionData: LearnMessageAndEventMessage = {
     message_type: 'behavior_instruction',

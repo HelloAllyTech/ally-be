@@ -926,7 +926,7 @@ describe('ScenarioSharedService', () => {
           id: 'inst-1',
           scenarioId: 1,
           category: 'SHOULD_DO',
-          instructions: ['Listen actively'],
+          stateInstructions: [{ stateId: '1', instruction: 'Listen actively' }],
         },
       ] as any;
       const behaviorMappings = [
@@ -951,7 +951,7 @@ describe('ScenarioSharedService', () => {
       expect(result![0]).toMatchObject({
         id: 'inst-1',
         category: 'SHOULD_DO',
-        instructions: ['Listen actively'],
+        stateInstructions: [{ stateId: '1', instruction: 'Listen actively' }],
         behaviors: [{ id: 'beh-1', name: 'Reflection' }],
       });
       expect(
@@ -991,7 +991,7 @@ describe('ScenarioSharedService', () => {
           },
           terminationEvents: [],
           behaviorInstructions: [],
-          difficultyLevel: 'BEGINNER',
+          difficultyLevel: 'EASY',
         } as any,
         sessionEvents: [],
         languageDetails: null as any,
@@ -1030,7 +1030,7 @@ describe('ScenarioSharedService', () => {
           },
           terminationEvents: [],
           behaviorInstructions: [],
-          difficultyLevel: 'BEGINNER',
+          difficultyLevel: 'EASY',
         } as any,
         sessionEvents: [],
         languageDetails: null as any,

@@ -22,7 +22,6 @@ import {
 } from '../constants/scenario-session.constants';
 import { AppConfigService } from 'src/config/config.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
-import { ScenarioStateInstruction } from '../type/scenario-state.type';
 import { getScenarioStateConfigByDifficultyLevel } from '../util/scenario-state.util';
 import {
   CreateRoomMetadataOptions,
@@ -158,9 +157,7 @@ export class ScenarioSharedService {
 
   hasAllActiveScenarioMandatoryFields(item: any): boolean {
     const metadata = item.scenario_metadata ?? item.metadata ?? {};
-    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
-      this.configService.featureFlag.scenarioBehaviorStateInstructions,
-    );
+    const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields();
 
     const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter((field) => {
       if (field === 'behaviorInstructions') {
@@ -521,34 +518,12 @@ export class ScenarioSharedService {
 
     const stateConfig = getScenarioStateConfigByDifficultyLevel(
       scenario.difficultyLevel as ScenarioDifficultyLevel,
-      this.configService.featureFlag?.scenarioBehaviorStateInstructions ??
-        false,
     );
-    let formattedStateInstructions;
-
-    if (this.configService.featureFlag?.scenarioBehaviorStateInstructions) {
-      formattedStateInstructions = stateConfig.map((state) => ({
-        stateId: state.stateId,
-        scoreUpper: state.scoreRange.max,
-        scoreLower: state.scoreRange.min,
-      }));
-    } else {
-      formattedStateInstructions = metadata?.stateInstructions?.map(
-        (stateItem: ScenarioStateInstruction) => {
-          const stateConfigInfo = stateConfig.find(
-            (state) => state?.stateId === stateItem.stateId,
-          );
-          return {
-            stateId: stateItem.stateId,
-            name: stateItem?.name,
-            instruction: stateItem?.instruction,
-            dialogues: stateItem?.dialogues,
-            scoreUpper: stateConfigInfo?.scoreRange?.max,
-            scoreLower: stateConfigInfo?.scoreRange?.min,
-          };
-        },
-      );
-    }
+    const formattedStateInstructions = stateConfig.map((state) => ({
+      stateId: state.stateId,
+      scoreUpper: state.scoreRange.max,
+      scoreLower: state.scoreRange.min,
+    }));
 
     const guardrails =
       await this.conversationalGuardrailsService.getRandomGuardrailsForSession(

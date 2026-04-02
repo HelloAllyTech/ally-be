@@ -105,14 +105,12 @@ import { SessionEventSharedService } from 'src/session-event/service/session-eve
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
-import { StateInstructionsDto } from '../dto/state-instructions.dto';
 import { OpenAIAutofillService } from './openai-autofil-service';
 import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
 import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
 import {
   MAX_SCENARIO_STATE_INSTRUCTIONS,
   supportedStateInstructionStateIds,
-  supportedStateInstructionStateIdsOld,
 } from '../constants/scenario-state-instructions.constants';
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
@@ -575,29 +573,10 @@ export class ScenarioService {
 
           // Create behavior instructions for each scenario
           const scenarioBehaviorInstructionList: ScenarioBehaviorInstructionRequest[] =
-            createScenariosDto.scenarios
-              ?.map((scenario, index) => ({
-                scenarioId: savedScenarios[index].id,
-                // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove map and keep behaviorInstructions: scenario.behaviorInstructions
-                behaviorInstructions:
-                  scenario.behaviorInstructions?.map((item) =>
-                    item?.stateInstructions
-                      ? item
-                      : {
-                          ...item,
-                          stateInstructions: scenario.stateInstructions?.map(
-                            (stateInstruction) => ({
-                              stateId: stateInstruction.stateId,
-                              instruction: stateInstruction.instruction,
-                            }),
-                          ),
-                        },
-                  ) ?? [],
-              }))
-              ?.filter(
-                (item): item is ScenarioBehaviorInstructionRequest =>
-                  item.behaviorInstructions.length > 0,
-              ) ?? [];
+            createScenariosDto.scenarios?.map((scenario, index) => ({
+              scenarioId: savedScenarios[index].id,
+              behaviorInstructions: scenario.behaviorInstructions,
+            }));
 
           if (
             scenarioBehaviorInstructionList &&
@@ -778,9 +757,8 @@ export class ScenarioService {
 
     // Validate ACTIVE: all required fields must be present
     if (status === ScenarioStatus.ACTIVE) {
-      const ACTIVE_SCENARIO_MANDATORY_FIELDS = getActiveScenarioMandatoryFields(
-        this.configService.featureFlag.scenarioBehaviorStateInstructions,
-      );
+      const ACTIVE_SCENARIO_MANDATORY_FIELDS =
+        getActiveScenarioMandatoryFields();
       const missingFields = ACTIVE_SCENARIO_MANDATORY_FIELDS.filter(
         (field) => !data[field as keyof typeof data],
       );
@@ -791,15 +769,7 @@ export class ScenarioService {
         );
       }
 
-      // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions validation as there wont be stateInstructions anymore
-      if (!this.configService.featureFlag.scenarioBehaviorStateInstructions) {
-        this.validateStateInstructions(data?.stateInstructions);
-      }
-
-      if (
-        this.configService.featureFlag.scenarioBehaviorStateInstructions &&
-        data?.behaviorInstructions
-      ) {
+      if (data?.behaviorInstructions) {
         this.validateBehaviorInstructionsStructure(data?.behaviorInstructions);
       }
     }
@@ -812,10 +782,8 @@ export class ScenarioService {
       throw new BadRequestException('Behavior instructions are required');
     }
 
-    const supportedStateInstructionStateIdList = this.configService.featureFlag
-      .scenarioBehaviorStateInstructions
-      ? supportedStateInstructionStateIds
-      : supportedStateInstructionStateIdsOld;
+    const supportedStateInstructionStateIdList =
+      supportedStateInstructionStateIds;
     const invalidBehaviorInstructions = behaviorInstructions?.filter(
       (instruction) =>
         !instruction.category ||
@@ -833,39 +801,6 @@ export class ScenarioService {
     this.logger.error(JSON.stringify(invalidBehaviorInstructions));
     if (invalidBehaviorInstructions.length > 0) {
       throw new BadRequestException('Invalid behavior instructions');
-    }
-  }
-
-  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove this method as there wont be stateInstructions anymore
-  private validateStateInstructions(
-    stateInstructions: StateInstructionsDto[] = [],
-  ) {
-    if (!stateInstructions) {
-      throw new BadRequestException('State instructions are required');
-    }
-    const validStateInstructions = stateInstructions.filter(
-      (instruction) =>
-        instruction.stateId &&
-        instruction.instruction &&
-        instruction.dialogues &&
-        instruction.dialogues.length > 0 &&
-        instruction.dialogues.every((dialogue) => dialogue.trim()?.length > 0),
-    );
-    if (validStateInstructions.length !== stateInstructions.length) {
-      throw new BadRequestException('State instructions are required');
-    }
-    if (validStateInstructions.length !== MAX_SCENARIO_STATE_INSTRUCTIONS) {
-      throw new BadRequestException(
-        `State instructions must be ${MAX_SCENARIO_STATE_INSTRUCTIONS}`,
-      );
-    }
-    if (
-      validStateInstructions.some(
-        (instruction) =>
-          !supportedStateInstructionStateIdsOld.includes(instruction.stateId),
-      )
-    ) {
-      throw new BadRequestException('Invalid state instruction state ID');
     }
   }
 
@@ -1085,8 +1020,6 @@ export class ScenarioService {
                   sexualOrientation: updateScenarioDto.sexualOrientation,
                   genderIdentity: updateScenarioDto.genderIdentity,
                   customFields: updateScenarioDto?.customFields,
-                  // Opening dialogues: not part of bulk auto-translate (see create path).
-                  stateInstructions: updateScenarioDto?.stateInstructions,
                   knowledgeSources: updateScenarioDto?.knowledgeSources,
                 }),
               translationConsiderableData,
@@ -1108,22 +1041,7 @@ export class ScenarioService {
             await this.scenarioBehaviorInstructionService.updateBehaviorInstructions(
               {
                 scenarioId: id,
-                // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Replace with behaviorInstructions: updateScenarioDto.behaviorInstructions
-                behaviorInstructions:
-                  updateScenarioDto.behaviorInstructions?.map((item) =>
-                    item?.stateInstructions
-                      ? item
-                      : {
-                          ...item,
-                          stateInstructions:
-                            updateScenarioDto?.stateInstructions?.map(
-                              (stateInstruction) => ({
-                                stateId: stateInstruction.stateId,
-                                instruction: stateInstruction.instruction,
-                              }),
-                            ),
-                        },
-                  ),
+                behaviorInstructions: updateScenarioDto.behaviorInstructions,
               },
               entityManager,
             );

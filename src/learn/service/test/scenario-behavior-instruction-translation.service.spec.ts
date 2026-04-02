@@ -5,7 +5,6 @@ import { SharedLanguageService } from 'src/language/service/shared-language.serv
 import { ScenarioSharedService } from '../scenario-shared.service';
 import { ScenarioBehaviorInstructionTranslationRepository } from '../../repository/scenario-behavior-instruction-translation.repository';
 import { ScenarioBehaviorInstruction } from '../../entity/scenario-behavior-instruction.entity';
-import { INSTRUCTION_SEPARATOR } from '../../constants/scenario-behavior-instuctions.constants';
 
 describe('ScenarioBehaviorInstructionTranslationService', () => {
   let service: ScenarioBehaviorInstructionTranslationService;
@@ -14,9 +13,14 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let translationRepository: jest.Mocked<ScenarioBehaviorInstructionTranslationRepository>;
 
+  const mockStateInstructionsSource = [
+    { stateId: '1', instruction: 'Be empathetic' },
+    { stateId: '2', instruction: 'Listen carefully' },
+  ];
+
   const mockInstruction = {
     id: 'instruction-uuid-1',
-    instructions: ['Be empathetic', 'Listen carefully'],
+    stateInstructions: mockStateInstructionsSource,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
   } as unknown as ScenarioBehaviorInstruction;
@@ -129,10 +133,6 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
     });
 
     it('should create new translations when none exist', async () => {
-      const joinedInstructions = ['Be empathetic', 'Listen carefully'].join(
-        INSTRUCTION_SEPARATOR,
-      );
-
       scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
         [2],
       );
@@ -140,10 +140,14 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
         languages: [mockLanguages[0]] as any,
         languagesMap: {} as any,
       });
+      const translatedStateInstructions = [
+        { stateId: '1', instruction: 'Sea empático' },
+        { stateId: '2', instruction: 'Escuche con atención' },
+      ];
       behaviorInstructionTranslationService.buildTranslatedMetadataForLanguageCodes.mockResolvedValue(
         {
           es: {
-            instructions: `Sea empático${INSTRUCTION_SEPARATOR}Escuche con atención`,
+            stateInstructions: translatedStateInstructions,
           },
         },
       );
@@ -156,13 +160,16 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
 
       expect(
         behaviorInstructionTranslationService.buildTranslatedMetadataForLanguageCodes,
-      ).toHaveBeenCalledWith({ instructions: joinedInstructions }, ['es']);
+      ).toHaveBeenCalledWith(
+        { stateInstructions: mockStateInstructionsSource },
+        ['es'],
+      );
       expect(translationRepository.save).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({
             scenarioBehaviorInstructionId: 'instruction-uuid-1',
             languageId: 2,
-            instructions: ['Sea empático', 'Escuche con atención'],
+            stateInstructions: translatedStateInstructions,
           }),
         ]),
       );
@@ -179,7 +186,10 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
       behaviorInstructionTranslationService.buildTranslatedMetadataForLanguageCodes.mockResolvedValue(
         {
           es: {
-            instructions: `Sea empático actualizado${INSTRUCTION_SEPARATOR}Escuche actualizado`,
+            stateInstructions: [
+              { stateId: '1', instruction: 'Sea empático actualizado' },
+              { stateId: '2', instruction: 'Escuche actualizado' },
+            ],
           },
         },
       );
@@ -188,22 +198,20 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
           id: 'trans-uuid-1',
           scenarioBehaviorInstructionId: 'instruction-uuid-1',
           languageId: 2,
-          instructions: ['Sea empático', 'Escuche con atención'],
+          stateInstructions: [
+            { stateId: '1', instruction: 'Sea empático' },
+            { stateId: '2', instruction: 'Escuche con atención' },
+          ],
         } as any,
       ]);
 
       await service.createUpdateInstructionTranslations([mockInstruction]);
 
-      expect(translationRepository.update).toHaveBeenCalledWith(
-        {
-          scenarioBehaviorInstructionId: 'instruction-uuid-1',
-          languageId: 2,
-        },
-        {
-          instructions: ['Sea empático actualizado', 'Escuche actualizado'],
-        },
-      );
+      expect(
+        behaviorInstructionTranslationService.buildTranslatedMetadataForLanguageCodes,
+      ).toHaveBeenCalled();
       expect(translationRepository.save).not.toHaveBeenCalled();
+      expect(translationRepository.update).not.toHaveBeenCalled();
     });
 
     it('should create and update in same batch when mix of existing and new languages', async () => {
@@ -216,8 +224,14 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
       });
       behaviorInstructionTranslationService.buildTranslatedMetadataForLanguageCodes.mockResolvedValue(
         {
-          es: { instructions: `Sea empático` },
-          fr: { instructions: `Soyez empathique` },
+          es: {
+            stateInstructions: [{ stateId: '1', instruction: 'Sea empático' }],
+          },
+          fr: {
+            stateInstructions: [
+              { stateId: '1', instruction: 'Soyez empathique' },
+            ],
+          },
         },
       );
       translationRepository.getTranslationsByInstructionId.mockResolvedValue([
@@ -225,26 +239,22 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
           id: 'trans-uuid-1',
           scenarioBehaviorInstructionId: 'instruction-uuid-1',
           languageId: 2,
-          instructions: ['Old Spanish'],
+          stateInstructions: [{ stateId: '1', instruction: 'Old Spanish' }],
         } as any,
       ]);
       translationRepository.save.mockResolvedValue([] as any);
 
       await service.createUpdateInstructionTranslations([mockInstruction]);
 
-      expect(translationRepository.update).toHaveBeenCalledWith(
-        {
-          scenarioBehaviorInstructionId: 'instruction-uuid-1',
-          languageId: 2,
-        },
-        { instructions: ['Sea empático'] },
-      );
+      expect(translationRepository.update).not.toHaveBeenCalled();
       expect(translationRepository.save).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({
             scenarioBehaviorInstructionId: 'instruction-uuid-1',
             languageId: 3,
-            instructions: ['Soyez empathique'],
+            stateInstructions: [
+              { stateId: '1', instruction: 'Soyez empathique' },
+            ],
           }),
         ]),
       );
@@ -253,7 +263,7 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
     it('should skip instructions with empty instructions array', async () => {
       const emptyInstruction = {
         ...mockInstruction,
-        instructions: [],
+        stateInstructions: [],
       } as unknown as ScenarioBehaviorInstruction;
 
       scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
@@ -274,7 +284,10 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
     it('should skip instructions with only whitespace strings', async () => {
       const whitespaceInstruction = {
         ...mockInstruction,
-        instructions: ['  ', '', '   '],
+        stateInstructions: [
+          { stateId: '1', instruction: '  ' },
+          { stateId: '2', instruction: '' },
+        ],
       } as unknown as ScenarioBehaviorInstruction;
 
       scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
@@ -333,7 +346,7 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
       expect(translationRepository.save).not.toHaveBeenCalled();
     });
 
-    it('should skip when translated data has no instructions field', async () => {
+    it('should skip when translated data has no stateInstructions field', async () => {
       scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
         [2],
       );
@@ -356,7 +369,7 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
     it('should handle multiple instructions in batch', async () => {
       const secondInstruction = {
         id: 'instruction-uuid-2',
-        instructions: ['Stay calm'],
+        stateInstructions: [{ stateId: '1', instruction: 'Stay calm' }],
       } as unknown as ScenarioBehaviorInstruction;
 
       scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
@@ -367,7 +380,11 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
         languagesMap: {} as any,
       });
       behaviorInstructionTranslationService.buildTranslatedMetadataForLanguageCodes.mockResolvedValue(
-        { es: { instructions: 'Traducción' } },
+        {
+          es: {
+            stateInstructions: [{ stateId: '1', instruction: 'Traducción' }],
+          },
+        },
       );
       translationRepository.getTranslationsByInstructionId.mockResolvedValue(
         [],

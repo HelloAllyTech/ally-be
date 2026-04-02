@@ -345,18 +345,6 @@ export class UpdateScenarioDto {
   @IsBoolean()
   optGuardrails?: boolean;
 
-  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions field
-  @ApiProperty({
-    description: 'State instructions',
-    type: [StateInstructionsDto],
-  })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @ArrayMaxSize(MAX_SCENARIO_STATE_INSTRUCTIONS)
-  @Type(() => StateInstructionsDto)
-  stateInstructions?: StateInstructionsDto[];
-
   @ApiProperty({
     description: 'Behavior instructions',
     type: [BehaviorInstructionDto],

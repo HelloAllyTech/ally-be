@@ -116,8 +116,6 @@ export class OpenAIAutofillService {
         const items: Array<{
           category: string;
           helper_behavior_ids: number[];
-          // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove actore_response and all the related ones even from prompt
-          actor_response: string;
           stateInstructions?: Array<{
             stateId: string | number;
             instruction?: string;
@@ -142,7 +140,6 @@ export class OpenAIAutofillService {
           return {
             category: item.category as BehaviorInstructionCategory,
             behaviors,
-            instructions: [item.actor_response],
             stateInstructions,
           };
         }) as BehaviorInstructionItem[];

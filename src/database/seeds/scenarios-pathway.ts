@@ -29,16 +29,18 @@ if (existsSync(allyBeEnv)) {
 const API_BASE_URL = process.env.SEED_API_BASE_URL || 'http://localhost:8001';
 
 /**
- * Must match learn validation (scenario.service validateBehaviorInstructionsStructure):
- * - FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS=false → ['1','2','3','4']
- * - FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS=true  → ['-1','1','2','3']
+ * Must match BehaviorInstructionDto nested stateInstructions:
+ * @IsIn(supportedStateInstructionStateIds) → always ['-1','1','2','3'].
  */
 function behaviorInstructionPhaseStateIds(): [string, string, string, string] {
-  const newModel =
-    process.env.FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS === 'true';
-  if (newModel) {
-    return ['-1', '1', '2', '3'];
-  }
+  return ['-1', '1', '2', '3'];
+}
+
+/**
+ * Top-level scenario `stateInstructions` (with dialogues) — APIs often still
+ * validate these as legacy phases 1–4 only; using -1 here can fail validation.
+ */
+function scenarioMetadataPhaseStateIds(): [string, string, string, string] {
   return ['1', '2', '3', '4'];
 }
 
@@ -99,9 +101,10 @@ const createScenariosData = async (
   const triggerWarningIds = await getTriggerWarnings(client, accessToken);
   const competencyId = await getOrCreateCompetency(client, accessToken);
   const behaviorIds = await getOrCreateBehaviors(client, accessToken);
-  const [bi0, bi1, bi2, bi3] = behaviorInstructionPhaseStateIds();
+  const [b0, b1, b2, b3] = behaviorInstructionPhaseStateIds();
+  const [s0, s1, s2, s3] = scenarioMetadataPhaseStateIds();
   logStep(
-    `[scenarios-pathway] Phase stateIds for seed: ${bi0}, ${bi1}, ${bi2}, ${bi3} (FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS=${process.env.FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS ?? 'unset'})`,
+    `[scenarios-pathway] behaviorInstructions stateIds: ${b0}, ${b1}, ${b2}, ${b3}; scenario stateInstructions stateIds: ${s0}, ${s1}, ${s2}, ${s3}`,
   );
 
   const scenarios = [
@@ -135,16 +138,6 @@ const createScenariosData = async (
         'Everything feels like it is piling up.',
       ],
       agentDialogues: ['I hear you', 'Tell me more', 'That sounds tough'],
-      stateInstructions: [
-        { stateId: bi0, instruction: 'Start', dialogues: ['I hear you'] },
-        { stateId: bi1, instruction: 'Middle', dialogues: ['Tell me more'] },
-        {
-          stateId: bi2,
-          instruction: 'Middle 2',
-          dialogues: ['That sounds tough'],
-        },
-        { stateId: bi3, instruction: 'End', dialogues: ['I understand'] },
-      ],
       // Termination settings
       terminationEvents,
       triggerWarningIds,
@@ -168,20 +161,20 @@ const createScenariosData = async (
           ],
           stateInstructions: [
             {
-              stateId: bi0,
+              stateId: b0,
               instruction: 'Use an open, warm greeting to build rapport',
             },
             {
-              stateId: bi1,
+              stateId: b1,
               instruction: 'Reflect feelings about stress and workload',
             },
             {
-              stateId: bi2,
+              stateId: b2,
               instruction:
                 'Ask one open-ended question to deepen understanding',
             },
             {
-              stateId: bi3,
+              stateId: b3,
               instruction: 'Summarize key concern and validate effort',
             },
           ],
@@ -219,24 +212,6 @@ const createScenariosData = async (
         'Even small tasks are starting to feel stressful.',
       ],
       agentDialogues: ['I hear you', 'Tell me more', 'That sounds tough'],
-      stateInstructions: [
-        {
-          stateId: bi0,
-          instruction: 'Start',
-          dialogues: ['That sounds overwhelming.'],
-        },
-        {
-          stateId: bi1,
-          instruction: 'Middle',
-          dialogues: ['Can you tell me more about that?'],
-        },
-        {
-          stateId: bi2,
-          instruction: 'Middle 2',
-          dialogues: ['I am listening.'],
-        },
-        { stateId: bi3, instruction: 'End', dialogues: ['I see.'] },
-      ],
       triggerWarningIds,
       experienceMode: ExperienceMode.FEEDBACK,
       timerMode: false,
@@ -249,28 +224,21 @@ const createScenariosData = async (
         {
           category: 'SHOULD_DO',
           behaviors: behaviorIds.slice(0, 2), // Use first 2 behaviors
-          // Legacy column is still NOT NULL in DB; keep instructions during transition
-          instructions: [
-            'Offer brief validation to reduce immediate tension',
-            'Invite specifics about triggers and contexts',
-            'Reflect patterns and name one emerging theme',
-            'Summarize strengths and set one small next step',
-          ],
           stateInstructions: [
             {
-              stateId: bi0,
+              stateId: b0,
               instruction: 'Offer brief validation to reduce immediate tension',
             },
             {
-              stateId: bi1,
+              stateId: b1,
               instruction: 'Invite specifics about triggers and contexts',
             },
             {
-              stateId: bi2,
+              stateId: b2,
               instruction: 'Reflect patterns and name one emerging theme',
             },
             {
-              stateId: bi3,
+              stateId: b3,
               instruction: 'Summarize strengths and set one small next step',
             },
           ],

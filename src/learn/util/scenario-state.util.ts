@@ -1,7 +1,4 @@
-import {
-  SCENARIO_DIFFICULTY_STATE_MAP,
-  SCENARIO_DIFFICULTY_STATE_MAP_OLD,
-} from '../constants/scenario-states.constants';
+import { SCENARIO_DIFFICULTY_STATE_MAP } from '../constants/scenario-states.constants';
 import { ScenarioStateConfig } from '../type/scenario-state.type';
 import { ScenarioDifficultyLevel } from '../type/scenario.type';
 
@@ -13,9 +10,4 @@ import { ScenarioDifficultyLevel } from '../type/scenario.type';
  */
 export const getScenarioStateConfigByDifficultyLevel = (
   difficulty: ScenarioDifficultyLevel,
-  scenarioBehaviorStateInstructionsFeatureFlag: boolean,
-): ScenarioStateConfig[] => {
-  return scenarioBehaviorStateInstructionsFeatureFlag
-    ? SCENARIO_DIFFICULTY_STATE_MAP[difficulty]
-    : SCENARIO_DIFFICULTY_STATE_MAP_OLD[difficulty];
-};
+): ScenarioStateConfig[] => SCENARIO_DIFFICULTY_STATE_MAP[difficulty];
