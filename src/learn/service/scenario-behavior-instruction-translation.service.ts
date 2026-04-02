@@ -7,7 +7,6 @@ import { ScenarioBehaviorInstructionTranslationRepository } from '../repository/
 import { ScenarioBehaviorInstruction } from '../entity/scenario-behavior-instruction.entity';
 import { CreateScenarioBehaviorInstructionTranslation } from '../interface/scenario-behavior-instruction-translation.interface';
 import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from '../constants/scenario-session.constants';
-import { INSTRUCTION_SEPARATOR } from '../constants/scenario-behavior-instuctions.constants';
 import { BehaviorInstructionTranslationService } from './behavior-instruction-translation.service';
 
 @Injectable()
@@ -49,10 +48,6 @@ export class ScenarioBehaviorInstructionTranslationService {
   ) {
     for (const instruction of instructions) {
       try {
-        const instructionsArray = instruction.instructions?.filter(
-          (str) => str && str.trim(),
-        );
-
         const stateInstructionsArray = instruction.stateInstructions?.filter(
           (stateInstruction) =>
             stateInstruction &&
@@ -60,11 +55,7 @@ export class ScenarioBehaviorInstructionTranslationService {
             stateInstruction.instruction.trim(),
         );
 
-        // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove instructionArray field
-        if (
-          (!instructionsArray || instructionsArray.length === 0) &&
-          (!stateInstructionsArray || stateInstructionsArray.length === 0)
-        ) {
+        if (!stateInstructionsArray || stateInstructionsArray.length === 0) {
           this.logger?.debug?.(
             `[persistInstructionTranslations] ${instruction.id}: no instructions to translate, skipping`,
           );
@@ -91,7 +82,6 @@ export class ScenarioBehaviorInstructionTranslationService {
         );
 
         const metadataObj = {
-          instructions: instructionsArray?.join(INSTRUCTION_SEPARATOR),
           stateInstructions: stateInstructionsArray,
         };
 
@@ -107,19 +97,11 @@ export class ScenarioBehaviorInstructionTranslationService {
         for (const language of languagesFiltered) {
           const code = language.translationCode.trim();
           const translatedData = translatedMap[code];
-          if (!translatedData || !translatedData.instructions) continue;
-
-          const translatedInstructions = (translatedData.instructions as string)
-            .split(INSTRUCTION_SEPARATOR)
-            .map((part: string) => part.trim())
-            .filter(Boolean);
-
-          if (translatedInstructions.length === 0) continue;
+          if (!translatedData || !translatedData.stateInstructions) continue;
 
           translatedList.push({
             scenarioBehaviorInstructionId: instruction.id,
             languageId: Number(language.id),
-            instructions: translatedInstructions,
             stateInstructions: translatedData.stateInstructions,
           });
         }
@@ -157,19 +139,6 @@ export class ScenarioBehaviorInstructionTranslationService {
           await this.scenarioBehaviorInstructionTranslationRepository.save(
             toCreate,
           );
-        }
-
-        if (toUpdate.length) {
-          for (const updateItem of toUpdate) {
-            await this.scenarioBehaviorInstructionTranslationRepository.update(
-              {
-                scenarioBehaviorInstructionId:
-                  updateItem.scenarioBehaviorInstructionId,
-                languageId: updateItem.languageId,
-              },
-              { instructions: updateItem.instructions },
-            );
-          }
         }
       } catch (outerErr) {
         this.logger?.error?.(

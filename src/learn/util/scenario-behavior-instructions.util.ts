@@ -48,8 +48,6 @@ export const formattedScenarioBehaviorInstructionsResponse = ({
       return {
         id: instruction.id,
         category: instruction.category,
-        // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove instructions field
-        instructions: instruction.instructions,
         behaviors: behaviorsForInstruction,
         stateInstructions: instruction.stateInstructions,
       };
@@ -71,8 +69,6 @@ export const formatBehaviorInstructionsForLivekitMetadata = (
       category: instruction.category,
       behaviors: instruction.behaviors.map((behavior) => behavior.name),
       score,
-      // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove actorsResponse field
-      actorsResponses: instruction.instructions,
       behaviorInstructionId: instruction.id,
       stateMatchedInstructions: instruction.stateInstructions,
     };

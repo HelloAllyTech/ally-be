@@ -24,12 +24,6 @@ export class ScenarioBehaviorInstruction extends BaseWithoutTenantEntity {
   })
   category!: BehaviorInstructionCategory;
 
-  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove instructions column - as of now deprecated
-  @Column({ type: 'text', array: true })
-  @IsOptional()
-  instructions?: string[];
-
-  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Make stateInstructions column mandatory
   @Column({ type: 'jsonb', nullable: true })
   @IsOptional()
   stateInstructions?: BehaviorStateInstruction[];

@@ -62,17 +62,6 @@ export class BehaviorInstructionDto {
   @IsOptional()
   behaviors?: string[];
 
-  // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove instructions field
-  @ApiProperty({
-    description: 'Array of instruction strings',
-    example: ['Listen actively', 'Show empathy'],
-    type: [String],
-  })
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  instructions?: string[];
-
   @ApiProperty({
     description: 'State instructions',
     type: [BehaviorStateInstructionDto],

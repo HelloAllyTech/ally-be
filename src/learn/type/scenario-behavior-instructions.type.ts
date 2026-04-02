@@ -3,7 +3,7 @@ import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 
 export type ScenarioBehaviorInstructionRequest = {
   scenarioId: number;
-  behaviorInstructions: BehaviorInstructionDto[];
+  behaviorInstructions?: BehaviorInstructionDto[];
 };
 
 export interface FormattedBehaviorInstructionForLivekit {

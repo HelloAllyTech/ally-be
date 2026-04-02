@@ -2326,7 +2326,6 @@ describe('ScenarioService', () => {
             gender: 'Male',
             currentLocation: 'NY',
             openingStatements: ['Hi'],
-            stateInstructions: mockStateInstructions,
             terminationEvents: [
               { id: 'event-1', message: 'Termination message 1' },
               { id: 'event-2', message: 'Termination message 2' },
@@ -2384,12 +2383,13 @@ describe('ScenarioService', () => {
 
       expect(result).toHaveLength(1);
 
-      // Verify create was called with stateInstructions in metadata
       expect(mockScenariosRepo.create).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({
+            title: 'Test',
             metadata: expect.objectContaining({
-              stateInstructions: mockStateInstructions,
+              name: 'Test',
+              openingStatements: ['Hi'],
             }),
           }),
         ]),
@@ -2611,27 +2611,9 @@ describe('ScenarioService', () => {
 
   describe('updateScenario', () => {
     it('should update scenario successfully', async () => {
-      const mockStateInstructions = [
-        {
-          stateId: '1',
-          name: 'Resistant',
-          instruction: 'Express mild doubt about if talking is helping',
-          dialogues: [
-            'I highly doubt if this is helping',
-            'I think we should stop talking',
-          ],
-        },
-        {
-          stateId: '2',
-          name: 'Engaged',
-          instruction: 'Show more engagement',
-          dialogues: ['Tell me more', 'I understand'],
-        },
-      ];
       const updateDto: UpdateScenarioDto = {
         title: 'Updated Title',
         name: 'Updated Name',
-        stateInstructions: mockStateInstructions,
       };
       const existingScenario = { ...mockScenario, isGlobal: false };
       scenariosRepository.findOne.mockResolvedValue(existingScenario);
@@ -2682,12 +2664,12 @@ describe('ScenarioService', () => {
       const result = await service.updateScenario(1, updateDto, 1);
 
       expect(result).toBe(true);
-      // Verify update was called with stateInstructions in metadata
       expect(mockScenariosRepo.update).toHaveBeenCalledWith(
         1,
         expect.objectContaining({
+          title: 'Updated Title',
           metadata: expect.objectContaining({
-            stateInstructions: mockStateInstructions,
+            name: 'Updated Name',
           }),
         }),
       );

@@ -523,17 +523,11 @@ describe('OpenAIAutofillService', () => {
             { id: 'uuid-aaa', name: 'Active Listening' },
             { id: 'uuid-ccc', name: 'Open-ended Questioning' },
           ],
-          instructions: [
-            'I feel like you truly understand what I am going through.',
-          ],
           stateInstructions: mockBehaviorStateInstructions,
         },
         {
           category: BehaviorInstructionCategory.SHOULD_NOT_DO,
           behaviors: [{ id: 'uuid-bbb', name: 'Reflective Responding' }],
-          instructions: [
-            'I feel dismissed and unheard when you respond that way.',
-          ],
           stateInstructions: mockBehaviorStateInstructions,
         },
       ]);
@@ -565,7 +559,6 @@ describe('OpenAIAutofillService', () => {
         {
           category: BehaviorInstructionCategory.SHOULD_DO,
           behaviors: [{ id: 'uuid-aaa', name: 'Active Listening' }],
-          instructions: ['I feel supported by your approach.'],
           stateInstructions: mockBehaviorStateInstructions,
         },
       ]);

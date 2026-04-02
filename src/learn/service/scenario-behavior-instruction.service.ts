@@ -100,7 +100,7 @@ export class ScenarioBehaviorInstructionService {
 
     // Validate all behavior IDs exist before proceeding
     await this.validateBehaviorInstructionsBehaviors(
-      req.flatMap((item) => item.behaviorInstructions),
+      req.flatMap((item) => item?.behaviorInstructions ?? []),
     );
 
     const instructionRepo = em
@@ -112,18 +112,17 @@ export class ScenarioBehaviorInstructionService {
 
     // Flatten and format instructions from all scenarios into a single array
     // Each instruction includes its scenarioId and associated behaviors
-    const formattedBehaviorInstructions = req.flatMap((item) =>
-      item.behaviorInstructions.map((behaviorInstructionItem) => ({
-        scenarioId: item.scenarioId,
-        category: behaviorInstructionItem.category,
-        // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove instructions field
-        instructions: behaviorInstructionItem.instructions,
-        stateInstructions: behaviorInstructionItem.stateInstructions,
-        createdBy: userIdNumber,
-        updatedBy: userIdNumber,
-        behaviors: behaviorInstructionItem.behaviors,
-      })),
-    );
+    const formattedBehaviorInstructions =
+      req.flatMap((item) =>
+        item?.behaviorInstructions?.map((behaviorInstructionItem) => ({
+          scenarioId: item.scenarioId,
+          category: behaviorInstructionItem.category,
+          stateInstructions: behaviorInstructionItem.stateInstructions,
+          createdBy: userIdNumber,
+          updatedBy: userIdNumber,
+          behaviors: behaviorInstructionItem.behaviors,
+        })),
+      ) ?? [];
 
     this.logger.debug(
       `Formatted ${formattedBehaviorInstructions.length} instruction(s) for creation`,
@@ -132,12 +131,11 @@ export class ScenarioBehaviorInstructionService {
     // Create instruction entities (without behavior mappings)
     const instructionEntities = instructionRepo.create(
       formattedBehaviorInstructions.map((item) => ({
-        scenarioId: item.scenarioId,
-        category: item.category,
-        instructions: item.instructions,
-        stateInstructions: item.stateInstructions,
-        createdBy: item.createdBy,
-        updatedBy: item.updatedBy,
+        scenarioId: item?.scenarioId,
+        category: item?.category,
+        stateInstructions: item?.stateInstructions,
+        createdBy: item?.createdBy,
+        updatedBy: item?.updatedBy,
       })),
     );
 
@@ -199,7 +197,10 @@ export class ScenarioBehaviorInstructionService {
    * @throws NotFoundException if any behavior ID doesn't exist (from validation)
    */
   async updateBehaviorInstructions(
-    { scenarioId, behaviorInstructions }: ScenarioBehaviorInstructionRequest,
+    {
+      scenarioId,
+      behaviorInstructions = [],
+    }: ScenarioBehaviorInstructionRequest,
     em?: EntityManager,
   ): Promise<void> {
     this.logger.info(
@@ -244,14 +245,14 @@ export class ScenarioBehaviorInstructionService {
     const instructionIdsToRemove: string[] = existingInstructions
       .filter(
         (instructionItem) =>
-          !behaviorInstructions.some(
+          !behaviorInstructions?.some(
             (instruction) => instruction.id === instructionItem.id,
           ),
       )
       .map((item) => item.id);
 
     // Separate new instructions from updates based on whether they have matching IDs
-    for (const instruction of behaviorInstructions) {
+    for (const instruction of behaviorInstructions ?? []) {
       if (instruction.id && existingInstructionIds.has(instruction.id)) {
         instructionsToUpdate.push(instruction);
       } else {
@@ -273,7 +274,6 @@ export class ScenarioBehaviorInstructionService {
         instructionsToCreate.map((instruction) => ({
           scenarioId,
           category: instruction.category,
-          instructions: instruction.instructions,
           stateInstructions: instruction.stateInstructions,
           createdBy: userIdNumber,
         })),
@@ -295,7 +295,6 @@ export class ScenarioBehaviorInstructionService {
         (item) => ({
           id: item.id,
           category: item.category,
-          instructions: item.instructions,
           stateInstructions: item.stateInstructions,
           updatedBy: userIdNumber,
         }),

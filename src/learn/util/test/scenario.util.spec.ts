@@ -84,7 +84,6 @@ describe('Scenario Util', () => {
           timerMode: true,
           maxTimeValue: '1:30:00',
           optGuardrails: scenario.optGuardrails,
-          stateInstructions: scenario.stateInstructions,
           knowledgeSources: scenario.knowledgeSources,
           currentState: scenario.currentState,
         },
