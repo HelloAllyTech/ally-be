@@ -198,4 +198,11 @@ export class CaseController {
       deleteCaseTenantDto,
     );
   }
+
+  @ApiOperation({ summary: 'Make translations for cases' })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_CASE])
+  @Post('make-translations')
+  async makeTranslationsForCases(): Promise<boolean> {
+    return this.caseService.makeTranslationsForCases();
+  }
 }

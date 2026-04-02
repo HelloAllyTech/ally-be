@@ -213,4 +213,11 @@ export class ScenarioPathController {
       deleteScenarioPathTenantDto,
     );
   }
+
+  @ApiOperation({ summary: 'Make translations for scenario paths' })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_SCENARIO_PATH])
+  @Post('scenario-paths/make-translations')
+  async makeTranslationsForScenarioPaths(): Promise<boolean> {
+    return this.scenarioPathService.makeTranslationsForScenarioPathItems();
+  }
 }

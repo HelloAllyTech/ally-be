@@ -11,6 +11,7 @@ import { OpenAITranslationsService } from 'src/common/service/openai-translation
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { TriggerWarningTranslatableFields } from '../type/scenario-translation-metadata.type';
+import { ELIGBLE_APP_LANGUAGES } from 'src/common/constants/translation.constants';
 
 @Injectable()
 export class TriggerWarningsService {
@@ -80,8 +81,12 @@ export class TriggerWarningsService {
       return;
     }
 
-    const languageCodes =
+    let languageCodes =
       await this.sharedLanguageService.getValidLanguageCodes(validLanguageIds);
+
+    languageCodes = languageCodes?.filter((languageCode) => {
+      return ELIGBLE_APP_LANGUAGES.includes(languageCode);
+    });
 
     if (!languageCodes || languageCodes.length === 0) {
       return;
@@ -99,5 +104,30 @@ export class TriggerWarningsService {
         translations: translated,
       } as any);
     }
+  }
+
+  async makeTranslationsForTriggerWarnings() {
+    const triggerWarnings = await this.triggerWarningsRepository.find({
+      select: ['id', 'name'],
+    });
+
+    for (const triggerWarning of triggerWarnings) {
+      const translations =
+        await this.openaiTranslationsService.translateObjectToLanguages(
+          {
+            name: triggerWarning.name,
+          },
+          ELIGBLE_APP_LANGUAGES,
+          'openai_translation_speech_reexpression_user',
+        );
+
+      if (translations) {
+        await this.triggerWarningsRepository.update(triggerWarning.id, {
+          translations,
+        } as any);
+      }
+    }
+
+    return true;
   }
 }

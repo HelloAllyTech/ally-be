@@ -427,4 +427,11 @@ export class BadgeController {
   ): Promise<boolean> {
     return this.badgeService.deleteBadge(badgeId);
   }
+
+  @ApiOperation({ summary: 'Make translations for badges' })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @Post('make-translations')
+  async makeTranslationsForBadges(): Promise<boolean> {
+    return this.badgeService.makeTranslationsForBadges();
+  }
 }

@@ -249,3 +249,5 @@ export const SUPPORTED_INDIAN_LANGUAGES = {
   PUNJLISH: { code: 'pa', iso: 'pa-IN', name: 'Punjlish' },
   ODLISH: { code: 'or', iso: 'or-IN', name: 'Odlish' },
 };
+
+export const ELIGBLE_APP_LANGUAGES = ['hi', 'mr', 'ta', 'kn'];
