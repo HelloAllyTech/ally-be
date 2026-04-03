@@ -126,8 +126,22 @@ const BEHAVIOR_INSTRUCTIONS_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
           additionalProperties: false,
         },
       },
+      state_names: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            stateId: { type: 'string', enum: ['-1', '1', '2', '3'] },
+            name: { type: 'string' },
+          },
+          required: ['stateId', 'name'],
+          additionalProperties: false,
+        },
+        minItems: 4,
+        maxItems: 4,
+      },
     },
-    required: ['instructions'],
+    required: ['instructions', 'state_names'],
     additionalProperties: false,
   },
 };

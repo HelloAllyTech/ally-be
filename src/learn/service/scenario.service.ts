@@ -622,6 +622,7 @@ export class ScenarioService {
                     // FEATURE_CLEANUP(FEATURE_SCENARIO_BEHAVIOR_STATE_INSTRUCTIONS): Remove stateInstructions field
                     stateInstructions: scenario.metadata?.stateInstructions,
                     knowledgeSources: scenario.metadata?.knowledgeSources,
+                    stateNames: scenario.metadata?.stateNames,
                   }),
                 translationConsiderableData,
               );
@@ -1021,6 +1022,7 @@ export class ScenarioService {
                   genderIdentity: updateScenarioDto.genderIdentity,
                   customFields: updateScenarioDto?.customFields,
                   knowledgeSources: updateScenarioDto?.knowledgeSources,
+                  stateNames: updateScenarioDto?.stateNames,
                 }),
               translationConsiderableData,
               (s) =>

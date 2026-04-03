@@ -69,11 +69,12 @@ export class GenerateScenarioFieldResponseDto {
 
   @ApiProperty({
     description:
-      'Generated content. String for characterProfileText/description, string[] for openingStatements or linguisticStyleSamples/allowedFillerWords, StateInstructionItem[] for stateInstructions, BehaviorInstructionItem[] for behaviorInstructions (each item includes stateInstructions for phases 1–4).',
+      'Generated content. String for characterProfileText/description, string[] for openingStatements or linguisticStyleSamples/allowedFillerWords, StateInstructionItem[] for stateInstructions, BehaviorInstructionItem[] for behaviorInstructions (each item includes stateInstructions for phases 1–4). (legacy/simpler), or an object { instructions, stateNames } for behaviorInstructions.',
   })
   content!:
     | string
     | string[]
     | StateInstructionItem[]
-    | BehaviorInstructionItem[];
+    | BehaviorInstructionItem[]
+    | any;
 }

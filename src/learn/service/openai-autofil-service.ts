@@ -21,6 +21,7 @@ import { BehaviorResponseDto } from '../dto/behavior-response.dto';
 import {
   BehaviorIdMapping,
   GeneratedContent,
+  BehaviorInstructionsWithStateNames,
 } from '../type/generatable-fields.type';
 import { PREFERRED_AUTOFILL_MODELS } from '../constants/autofill-models.constants';
 
@@ -122,7 +123,7 @@ export class OpenAIAutofillService {
           }>;
         }> = parsed.instructions.slice(0, MAX_BEHAVIOR_INSTRUCTIONS_COUNT);
 
-        return items.map((item) => {
+        const instructions = items.map((item) => {
           const behaviors = item.helper_behavior_ids
             .map((seqId) => behaviorIdMapping?.get(seqId))
             .filter(
@@ -143,6 +144,18 @@ export class OpenAIAutofillService {
             stateInstructions,
           };
         }) as BehaviorInstructionItem[];
+
+        const stateNames = (parsed.state_names ?? []).map(
+          (sn: { stateId: string; name: string }) => ({
+            stateId: sn.stateId,
+            name: sn.name,
+          }),
+        );
+
+        return {
+          instructions,
+          stateNames,
+        } as BehaviorInstructionsWithStateNames;
       }
 
       case GeneratableField.LINGUISTIC_STYLE_SAMPLES: {

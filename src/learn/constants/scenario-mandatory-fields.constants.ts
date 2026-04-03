@@ -16,4 +16,5 @@ export const SCENARIO_MANDATORY_FIELDS: (keyof CreateScenarioDto)[] = [
   'behaviorInstructions',
   'characterProfileText',
   'competencyId',
+  'stateNames',
 ];

@@ -5152,7 +5152,10 @@ describe('ScenarioService', () => {
           .map((b, i) => `${i + 1}. ${b.name}`)
           .join('\n'),
       });
-      openAIAutofillService.generateFieldContent.mockResolvedValue([]);
+      openAIAutofillService.generateFieldContent.mockResolvedValue({
+        instructions: [],
+        stateNames: [],
+      });
 
       await service.generateField(dto);
 
@@ -5201,7 +5204,10 @@ describe('ScenarioService', () => {
         mapping,
         formattedList: fullList,
       });
-      openAIAutofillService.generateFieldContent.mockResolvedValue([]);
+      openAIAutofillService.generateFieldContent.mockResolvedValue({
+        instructions: [],
+        stateNames: [],
+      });
 
       await service.generateField(dto);
 
@@ -5253,7 +5259,10 @@ describe('ScenarioService', () => {
           .map((b, i) => `${i + 1}. ${b.name}`)
           .join('\n'),
       });
-      openAIAutofillService.generateFieldContent.mockResolvedValue([]);
+      openAIAutofillService.generateFieldContent.mockResolvedValue({
+        instructions: [],
+        stateNames: [],
+      });
 
       await service.generateField(dto);
 

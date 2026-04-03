@@ -62,6 +62,7 @@ export const mapCreateScenarioRequestToEntity = (
         title: knowledgeSource.title,
         content: knowledgeSource.content,
       })),
+      stateNames: scenario.stateNames,
     },
   };
 };
@@ -155,6 +156,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'showScoreMeter',
     'currentState',
     'knowledgeSources',
+    'stateNames',
   ];
 
   // Handle metadata fields - merge with existing metadata

@@ -16,6 +16,10 @@ export type MetadataShape = {
     useInDefaultPrompt?: boolean;
   }[];
   stateInstructions?: ScenarioStateInstruction[];
+  stateNames?: {
+    stateId: string;
+    name: string;
+  }[];
 };
 
 export type TranslationConsiderableData = {

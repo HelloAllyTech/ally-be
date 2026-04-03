@@ -1510,14 +1510,14 @@ export class ScenarioSessionService {
   ): Promise<void> {
     if (!scenario.behaviorInstructions?.length) return;
 
-    const instructionIds = scenario.behaviorInstructions.map(
-      (instruction: any) => instruction.id,
-    );
-    const instructionTranslations =
-      await this.scenarioBehaviorInstructionTranslationRepository.getTranslationsForInstructions(
-        instructionIds,
-        languageId,
-      );
+    // const instructionIds = scenario.behaviorInstructions.map(
+    //   (instruction: any) => instruction.id,
+    // );
+    // const instructionTranslations =
+    //   await this.scenarioBehaviorInstructionTranslationRepository.getTranslationsForInstructions(
+    //     instructionIds,
+    //     languageId,
+    //   );
 
     const behaviorIds = scenario.behaviorInstructions.flatMap(
       (instruction: any) =>
@@ -1529,12 +1529,12 @@ export class ScenarioSessionService {
         languageId,
       );
 
-    const instructionTranslationMap = new Map(
-      instructionTranslations.map((translation) => [
-        translation.scenarioBehaviorInstructionId,
-        translation,
-      ]),
-    );
+    // const instructionTranslationMap = new Map(
+    //   instructionTranslations.map((translation) => [
+    //     translation.scenarioBehaviorInstructionId,
+    //     translation,
+    //   ]),
+    // );
     const behaviorTranslationMap = new Map(
       behaviorTranslations.map((translation) => [
         translation.behaviorId,

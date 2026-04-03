@@ -7,11 +7,17 @@ import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 
 export type BehaviorIdMapping = Map<number, BehaviorResponseDto>;
 
+export interface BehaviorInstructionsWithStateNames {
+  instructions: BehaviorInstructionItem[];
+  stateNames: { stateId: string; name: string }[];
+}
+
 export type GeneratedContent =
   | string
   | string[]
   | StateInstructionItem[]
-  | BehaviorInstructionItem[];
+  | BehaviorInstructionItem[]
+  | BehaviorInstructionsWithStateNames;
 
 export interface BehaviorInstructionPreset {
   category: BehaviorInstructionCategory;
