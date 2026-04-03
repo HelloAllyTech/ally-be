@@ -2203,9 +2203,9 @@ describe('ScenarioSessionService', () => {
     });
   });
 
-  describe('getStateInstructions', () => {
+  describe('getStateNames', () => {
     it('should return empty array when currentState is false', () => {
-      const stateInstructions = service.getStateInstructions(
+      const stateInstructions = service.getStateNames(
         false,
         mockScenario.metadata.stateInstructions,
       );
@@ -2213,12 +2213,12 @@ describe('ScenarioSessionService', () => {
     });
 
     it('should return empty array when stateInstructions is empty', () => {
-      const stateInstructions = service.getStateInstructions(true, []);
+      const stateInstructions = service.getStateNames(true, []);
       expect(stateInstructions).toEqual([]);
     });
 
     it('should return stateInstructions when currentState is true and stateInstructions is not empty', () => {
-      const stateInstructions = service.getStateInstructions(
+      const stateInstructions = service.getStateNames(
         true,
         mockScenario.metadata?.stateInstructions,
       );

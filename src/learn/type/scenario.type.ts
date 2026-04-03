@@ -47,7 +47,7 @@ export interface ChecklistItem {
   name: string;
   message?: string;
 }
-export interface StateInstructions {
+export interface StateNames {
   name: string;
   stateId: string;
 }
