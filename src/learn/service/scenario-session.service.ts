@@ -63,7 +63,7 @@ import {
   ChecklistItem,
   ExperienceMode,
   ScenarioStatus,
-  StateInstructions,
+  StateNames,
 } from '../type/scenario.type';
 import { ScenarioTenantService } from './scenario-tenant.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
@@ -546,9 +546,9 @@ export class ScenarioSessionService {
       }
 
       // Preparing state instructions for simulation room, only if currentState is present for scenario
-      const stateInstructions: StateInstructions[] = this.getStateInstructions(
+      const stateNames: StateNames[] = this.getStateNames(
         scenario?.metadata?.currentState,
-        scenario?.metadata?.stateInstructions,
+        scenario?.metadata?.stateNames,
       );
       // Create LiveKit room
       await this.livekitService.createRoom({
@@ -579,7 +579,7 @@ export class ScenarioSessionService {
         maxTimeValue: scenario?.metadata?.maxTimeValue,
         checklistEvents,
         showScoreMeter: scenario?.metadata?.showScoreMeter,
-        stateInstructions,
+        stateNames,
         metadata: {
           name: scenario?.metadata?.name,
           title: scenario?.metadata?.title,
@@ -1387,9 +1387,9 @@ export class ScenarioSessionService {
     }
 
     // Preparing state instructions for simulation room, only if currentState is present for scenario
-    const stateInstructions: StateInstructions[] = this.getStateInstructions(
+    const stateNames: StateNames[] = this.getStateNames(
       scenario?.metadata?.currentState,
-      scenario?.metadata?.stateInstructions,
+      scenario?.metadata?.stateNames,
     );
 
     await this.livekitService.createRoom({
@@ -1412,7 +1412,7 @@ export class ScenarioSessionService {
       accessToken,
       scenario,
       checklistEvents,
-      stateInstructions,
+      stateNames,
       useDirectAgentDispatch: this.configService.allowDirectAgentDispatch,
     };
   }
@@ -1597,15 +1597,12 @@ export class ScenarioSessionService {
     return { eventChecklist: eventChecklistDto };
   }
 
-  getStateInstructions(
-    currentState?: boolean,
-    stateInstructions?: StateInstructions[],
-  ) {
-    if (currentState && stateInstructions?.length) {
-      return stateInstructions.map((stateInstruction: StateInstructions) => {
+  getStateNames(currentState?: boolean, stateNames?: StateNames[]) {
+    if (currentState && stateNames?.length) {
+      return stateNames.map((stateName: StateNames) => {
         return {
-          name: stateInstruction.name,
-          stateId: stateInstruction.stateId,
+          name: stateName.name,
+          stateId: stateName.stateId,
         };
       });
     }
