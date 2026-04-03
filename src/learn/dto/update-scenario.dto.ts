@@ -33,6 +33,7 @@ import { TerminationEventsDto } from './termination-events.dto';
 import { BehaviorInstructionDto } from './behavior-instruction.dto';
 import { MAX_BEHAVIOR_INSTRUCTIONS_COUNT } from '../constants/scenario-behavior-instuctions.constants';
 import { KnowledgeSourceDto } from './knowledge-source.dto';
+import { StateNamesDto } from './state-names.dto';
 
 export class UpdateScenarioDto {
   @ApiProperty({
@@ -415,4 +416,21 @@ export class UpdateScenarioDto {
   @ValidateNested({ each: true })
   @Type(() => KnowledgeSourceDto)
   knowledgeSources?: KnowledgeSourceDto[];
+
+  @ApiProperty({
+    description: 'State names map',
+    example: [
+      {
+        stateId: '1',
+        name: 'name for state 1',
+      },
+    ],
+    type: [StateNamesDto],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => StateNamesDto)
+  stateNames?: StateNamesDto[];
 }

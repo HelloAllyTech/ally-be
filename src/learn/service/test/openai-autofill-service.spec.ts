@@ -413,6 +413,12 @@ describe('OpenAIAutofillService', () => {
             stateInstructions: mockBehaviorStateInstructions,
           },
         ],
+        state_names: [
+          { stateId: '-1', name: 'Calm' },
+          { stateId: '1', name: 'Worried' },
+          { stateId: '2', name: 'Escalated' },
+          { stateId: '3', name: 'Crisis' },
+        ],
       };
       mockCreate.mockResolvedValue({
         choices: [{ message: { content: JSON.stringify(behaviorResponse) } }],
@@ -504,19 +510,25 @@ describe('OpenAIAutofillService', () => {
             stateInstructions: mockBehaviorStateInstructions,
           },
         ],
+        state_names: [
+          { stateId: '-1', name: 'Calm' },
+          { stateId: '1', name: 'Worried' },
+          { stateId: '2', name: 'Escalated' },
+          { stateId: '3', name: 'Crisis' },
+        ],
       };
       mockCreate.mockResolvedValue({
         choices: [{ message: { content: JSON.stringify(rawResponse) } }],
       });
 
-      const result = await service.generateFieldContent(
+      const result = (await service.generateFieldContent(
         GeneratableField.BEHAVIOR_INSTRUCTIONS,
         'CODE',
         scenarioContext,
         mapping,
-      );
+      )) as any;
 
-      expect(result).toEqual([
+      expect(result.instructions).toEqual([
         {
           category: BehaviorInstructionCategory.SHOULD_DO,
           behaviors: [
@@ -531,6 +543,12 @@ describe('OpenAIAutofillService', () => {
           stateInstructions: mockBehaviorStateInstructions,
         },
       ]);
+      expect(result.stateNames).toEqual([
+        { stateId: '-1', name: 'Calm' },
+        { stateId: '1', name: 'Worried' },
+        { stateId: '2', name: 'Escalated' },
+        { stateId: '3', name: 'Crisis' },
+      ]);
     });
 
     it('should filter out invalid sequential IDs that are not in the mapping', async () => {
@@ -543,24 +561,36 @@ describe('OpenAIAutofillService', () => {
             stateInstructions: mockBehaviorStateInstructions,
           },
         ],
+        state_names: [
+          { stateId: '-1', name: 'Calm' },
+          { stateId: '1', name: 'Worried' },
+          { stateId: '2', name: 'Escalated' },
+          { stateId: '3', name: 'Crisis' },
+        ],
       };
       mockCreate.mockResolvedValue({
         choices: [{ message: { content: JSON.stringify(rawResponse) } }],
       });
 
-      const result = await service.generateFieldContent(
+      const result = (await service.generateFieldContent(
         GeneratableField.BEHAVIOR_INSTRUCTIONS,
         'CODE',
         scenarioContext,
         mapping,
-      );
+      )) as any;
 
-      expect(result).toEqual([
+      expect(result.instructions).toEqual([
         {
           category: BehaviorInstructionCategory.SHOULD_DO,
           behaviors: [{ id: 'uuid-aaa', name: 'Active Listening' }],
           stateInstructions: mockBehaviorStateInstructions,
         },
+      ]);
+      expect(result.stateNames).toEqual([
+        { stateId: '-1', name: 'Calm' },
+        { stateId: '1', name: 'Worried' },
+        { stateId: '2', name: 'Escalated' },
+        { stateId: '3', name: 'Crisis' },
       ]);
     });
 

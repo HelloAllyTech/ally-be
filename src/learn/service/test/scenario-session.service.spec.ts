@@ -1416,6 +1416,7 @@ describe('ScenarioSessionService', () => {
           stateInstructions: mockStateInstructions,
           behaviorInstructions: [],
           characterProfileText: 'Test character profile',
+          stateNames: [],
         },
         isGlobal: false,
         isPublic: false,
@@ -1512,6 +1513,7 @@ describe('ScenarioSessionService', () => {
           stateInstructions: mockStateInstructions,
           behaviorInstructions: [],
           characterProfileText: 'Test character profile',
+          stateNames: [],
         },
       };
 
@@ -1597,6 +1599,7 @@ describe('ScenarioSessionService', () => {
           experienceMode: ExperienceMode.FEEDBACK,
           behaviorInstructions: [],
           characterProfileText: 'Test character profile',
+          stateNames: [],
           stateInstructions: [{ stateId: '1', instruction: 'Test' }],
         },
         isGlobal: true,
