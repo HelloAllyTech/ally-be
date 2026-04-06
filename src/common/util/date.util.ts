@@ -35,5 +35,9 @@ export const subtractDurationFromDate = ({
   return dayjs(date).subtract(duration, unit).toDate();
 };
 
+export const convertTimestampNsToDate = (timestampNs: bigint): Date => {
+  return new Date(Number(timestampNs / 1_000_000n));
+};
+
 // Export the configured dayjs instance
 export default dayjs;
