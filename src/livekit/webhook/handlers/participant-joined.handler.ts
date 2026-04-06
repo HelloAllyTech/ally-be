@@ -61,23 +61,52 @@ export class ParticipantJoinedHandler {
 
       const roomName = event.room.name;
 
-      let metadata: any = {};
-      const participantIdentity = 'Agent';
-
-      if (event.room.metadata && event.room.metadata.trim() !== '') {
-        metadata = JSON.parse(event.room.metadata);
-        this.logger.info(`Parsed metadata: ${JSON.stringify(metadata)}`);
-      } else {
-        this.logger.info(
-          'Room metadata is empty or null, using default values',
-        );
-      }
-
-      let scenarioSessionStartedAt = new Date();
-
       if (event.participant.kind === ParticipantInfo_Kind.AGENT) {
         // Agent joined the room - clean up the in-progress set
         ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
+      }
+
+      if (event.participant.kind !== ParticipantInfo_Kind.AGENT) {
+        // If human joins, check if we should dispatch an agent
+
+        // 1. Check local "in progress" set to avoid rapid-fire double dispatches (race condition fix)
+        if (ParticipantJoinedHandler.dispatchesInProgress.has(roomName)) {
+          this.logger.info(
+            `Agent dispatch already in progress for room ${roomName}, skipping.`,
+          );
+          return;
+        }
+
+        // 2. Check if agent is already present in the room as a participant
+        try {
+          const participants =
+            await this.liveKitService.listParticipants(roomName);
+          const hasAgent = participants.some(
+            (p) => p.kind === ParticipantInfo_Kind.AGENT,
+          );
+
+          if (hasAgent) {
+            this.logger.info(
+              `Agent already present in room ${roomName}, skipping dispatch`,
+            );
+            return;
+          }
+        } catch (listError) {
+          this.logger.error(
+            `Failed to check existing participants in room ${roomName}: ${listError.message}`,
+          );
+          // Proceed with dispatch as fallback if check fails
+        }
+
+        // Mark dispatch as in-progress BEFORE awaiting the dispatch call
+        ParticipantJoinedHandler.dispatchesInProgress.add(roomName);
+
+        // Set a safety timeout to eventually clear it if the agent fails to join
+        setTimeout(() => {
+          ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
+        }, 30000); // 30s safety window
+
+        let scenarioSessionStartedAt = new Date();
 
         const scenarioSession =
           await this.scenarioSessionService.getScenarioSessionByRoomId(
@@ -142,47 +171,27 @@ export class ParticipantJoinedHandler {
             },
           );
         }
-      }
 
-      if (event.participant.kind !== ParticipantInfo_Kind.AGENT) {
-        // If human joins, check if we should dispatch an agent
+        let metadata: any = {};
+        const participantIdentity = 'Agent';
 
-        // 1. Check local "in progress" set to avoid rapid-fire double dispatches (race condition fix)
-        if (ParticipantJoinedHandler.dispatchesInProgress.has(roomName)) {
+        if (event.room.metadata && event.room.metadata.trim() !== '') {
+          metadata = JSON.parse(event.room.metadata);
+        } else {
           this.logger.info(
-            `Agent dispatch already in progress for room ${roomName}, skipping.`,
+            'Room metadata is empty or null, using default values',
           );
-          return;
         }
 
-        // 2. Check if agent is already present in the room as a participant
-        try {
-          const participants =
-            await this.liveKitService.listParticipants(roomName);
-          const hasAgent = participants.some(
-            (p) => p.kind === ParticipantInfo_Kind.AGENT,
-          );
+        const conversationStartedAt = new Date(
+          scenarioSession.startedAt ?? scenarioSessionStartedAt,
+        ).toISOString();
 
-          if (hasAgent) {
-            this.logger.info(
-              `Agent already present in room ${roomName}, skipping dispatch`,
-            );
-            return;
-          }
-        } catch (listError) {
-          this.logger.error(
-            `Failed to check existing participants in room ${roomName}: ${listError.message}`,
-          );
-          // Proceed with dispatch as fallback if check fails
+        if (!metadata.scenarioSession) {
+          metadata.scenarioSession = {};
         }
-
-        // Mark dispatch as in-progress BEFORE awaiting the dispatch call
-        ParticipantJoinedHandler.dispatchesInProgress.add(roomName);
-
-        // Set a safety timeout to eventually clear it if the agent fails to join
-        setTimeout(() => {
-          ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
-        }, 30000); // 30s safety window
+        metadata.scenarioSession.conversationStartedAt = conversationStartedAt;
+        this.logger.info(`Parsed metadata: ${JSON.stringify(metadata)}`);
 
         try {
           await this.liveKitService.agentDispatch(
