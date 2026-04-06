@@ -167,20 +167,38 @@ describe('ParticipantJoinedHandler', () => {
       expect(mockLogger.info).toHaveBeenCalledWith(
         `Processing participant_joined event ${JSON.stringify(mockParticipantJoinedEvent)} for ${mockParticipantJoinedEvent.participant.identity} in room ${mockParticipantJoinedEvent.room.name}`,
       );
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        `Parsed metadata: ${JSON.stringify({ scenarioId: 123, type: 'training' })}`,
+      const parsedMetadataLog = mockLogger.info.mock.calls.find(
+        (call) =>
+          typeof call[0] === 'string' &&
+          (call[0] as string).startsWith('Parsed metadata: '),
       );
+      expect(parsedMetadataLog).toBeDefined();
+      const logged = JSON.parse(
+        (parsedMetadataLog![0] as string).replace(/^Parsed metadata: /, ''),
+      );
+      expect(logged).toMatchObject({
+        scenarioId: 123,
+        type: 'training',
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
         'Agent',
-        JSON.stringify({ scenarioId: 123, type: 'training' }),
+        expect.any(String),
       );
+      expect(
+        JSON.parse(liveKitService.agentDispatch.mock.calls[0][2] as string),
+      ).toMatchObject({
+        scenarioId: 123,
+        type: 'training',
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
       expect(mockLogger.info).toHaveBeenCalledWith(
         'Successfully dispatched agent for participant Agent in room test-room',
       );
     });
 
-    it('should add startedAt value if joined participant is Agent and scenario session startedAt is null', async () => {
+    it('should skip human dispatch flow when joined participant is Agent', async () => {
       const agentEvent: ParticipantJoinedEvent = {
         ...mockParticipantJoinedEvent,
         participant: {
@@ -189,56 +207,20 @@ describe('ParticipantJoinedHandler', () => {
         },
       };
 
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
-        id: 'session-123',
-        tenantId: 'tenant-1',
-        startedAt: null,
-      } as any);
-      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
-      liveKitService.agentDispatch.mockResolvedValue(undefined);
-
       await handler.handle(agentEvent);
 
       expect(
         scenarioSessionService.getScenarioSessionByRoomId,
-      ).toHaveBeenCalledWith('test-room');
-      expect(scenarioSessionService.updateScenarioSession).toHaveBeenCalledWith(
-        'session-123',
-        expect.objectContaining({
-          startedAt: expect.any(Date),
-        }),
-      );
-    });
-
-    it('shouldnot add startedAt value if joined participant is Agent and scenario session startedAt is not null', async () => {
-      const agentEvent: ParticipantJoinedEvent = {
-        ...mockParticipantJoinedEvent,
-        participant: {
-          ...mockParticipantJoinedEvent.participant,
-          kind: ParticipantInfo_Kind.AGENT,
-        },
-      };
-
-      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
-        id: 'session-123',
-        tenantId: 'tenant-1',
-        startedAt: new Date(),
-      } as any);
-      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
-      liveKitService.agentDispatch.mockResolvedValue(undefined);
-
-      await handler.handle(agentEvent);
-
-      expect(
-        scenarioSessionService.getScenarioSessionByRoomId,
-      ).toHaveBeenCalledWith('test-room');
+      ).not.toHaveBeenCalled();
       expect(
         scenarioSessionService.updateScenarioSession,
       ).not.toHaveBeenCalled();
+      expect(liveKitService.listParticipants).not.toHaveBeenCalled();
+      expect(liveKitService.agentDispatch).not.toHaveBeenCalled();
     });
 
-    it('shouldnot add startedAt value if joined participant is non-Agent', async () => {
-      const agentEvent: ParticipantJoinedEvent = {
+    it('should update scenario session startedAt when non-Agent joins and startedAt is null', async () => {
+      const humanEvent: ParticipantJoinedEvent = {
         ...mockParticipantJoinedEvent,
         participant: {
           ...mockParticipantJoinedEvent.participant,
@@ -253,11 +235,14 @@ describe('ParticipantJoinedHandler', () => {
       scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
       liveKitService.agentDispatch.mockResolvedValue(undefined);
 
-      await handler.handle(agentEvent);
+      await handler.handle(humanEvent);
 
-      expect(
-        scenarioSessionService.updateScenarioSession,
-      ).not.toHaveBeenCalled();
+      expect(scenarioSessionService.updateScenarioSession).toHaveBeenCalledWith(
+        'session-123',
+        expect.objectContaining({
+          startedAt: expect.any(Date),
+        }),
+      );
     });
 
     it('should handle participant joined event with empty metadata', async () => {
@@ -284,8 +269,13 @@ describe('ParticipantJoinedHandler', () => {
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
         'Agent',
-        JSON.stringify({}),
+        expect.any(String),
       );
+      expect(
+        JSON.parse(liveKitService.agentDispatch.mock.calls[0][2] as string),
+      ).toMatchObject({
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
     });
 
     it('should handle participant joined event with null metadata', async () => {
@@ -312,8 +302,13 @@ describe('ParticipantJoinedHandler', () => {
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
         'Agent',
-        JSON.stringify({}),
+        expect.any(String),
       );
+      expect(
+        JSON.parse(liveKitService.agentDispatch.mock.calls[0][2] as string),
+      ).toMatchObject({
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
     });
 
     it('should handle participant joined event with whitespace-only metadata', async () => {
@@ -340,8 +335,13 @@ describe('ParticipantJoinedHandler', () => {
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
         'Agent',
-        JSON.stringify({}),
+        expect.any(String),
       );
+      expect(
+        JSON.parse(liveKitService.agentDispatch.mock.calls[0][2] as string),
+      ).toMatchObject({
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
     });
 
     it('should handle participant joined event with invalid JSON metadata', async () => {
@@ -415,14 +415,30 @@ describe('ParticipantJoinedHandler', () => {
 
       await handler.handle(eventWithComplexMetadata);
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        `Parsed metadata: ${JSON.stringify(complexMetadata)}`,
+      const parsedMetadataLog = mockLogger.info.mock.calls.find(
+        (call) =>
+          typeof call[0] === 'string' &&
+          (call[0] as string).startsWith('Parsed metadata: '),
       );
+      expect(parsedMetadataLog).toBeDefined();
+      const logged = JSON.parse(
+        (parsedMetadataLog![0] as string).replace(/^Parsed metadata: /, ''),
+      );
+      expect(logged).toMatchObject({
+        ...complexMetadata,
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
         'Agent',
-        JSON.stringify(complexMetadata),
+        expect.any(String),
       );
+      expect(
+        JSON.parse(liveKitService.agentDispatch.mock.calls[0][2] as string),
+      ).toMatchObject({
+        ...complexMetadata,
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
     });
 
     it('should handle different room names', async () => {
@@ -446,8 +462,15 @@ describe('ParticipantJoinedHandler', () => {
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'scenario-room-456',
         'Agent',
-        JSON.stringify({ scenarioId: 123, type: 'training' }),
+        expect.any(String),
       );
+      expect(
+        JSON.parse(liveKitService.agentDispatch.mock.calls[0][2] as string),
+      ).toMatchObject({
+        scenarioId: 123,
+        type: 'training',
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
       expect(mockLogger.info).toHaveBeenCalledWith(
         'Successfully dispatched agent for participant Agent in room scenario-room-456',
       );
@@ -478,8 +501,15 @@ describe('ParticipantJoinedHandler', () => {
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
         'Agent',
-        JSON.stringify({ scenarioId: 123, type: 'training' }),
+        expect.any(String),
       );
+      expect(
+        JSON.parse(liveKitService.agentDispatch.mock.calls[0][2] as string),
+      ).toMatchObject({
+        scenarioId: 123,
+        type: 'training',
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
     });
 
     it('should handle minimal event data', async () => {
@@ -528,8 +558,13 @@ describe('ParticipantJoinedHandler', () => {
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'minimal-room',
         'Agent',
-        JSON.stringify({}),
+        expect.any(String),
       );
+      expect(
+        JSON.parse(liveKitService.agentDispatch.mock.calls[0][2] as string),
+      ).toMatchObject({
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
     });
 
     it('should handle numeric metadata values', async () => {
@@ -560,16 +595,22 @@ describe('ParticipantJoinedHandler', () => {
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
         'Agent',
-        JSON.stringify(numericMetadata),
+        expect.any(String),
       );
+      expect(
+        JSON.parse(liveKitService.agentDispatch.mock.calls[0][2] as string),
+      ).toMatchObject({
+        ...numericMetadata,
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
     });
 
-    it('should start audio recording and create recording entry when agent joins and room is not recording', async () => {
-      const agentEvent: ParticipantJoinedEvent = {
+    it('should start audio recording and create recording entry when human joins and room is not recording', async () => {
+      const humanEvent: ParticipantJoinedEvent = {
         ...mockParticipantJoinedEvent,
         participant: {
           ...mockParticipantJoinedEvent.participant,
-          kind: ParticipantInfo_Kind.AGENT,
+          kind: ParticipantInfo_Kind.STANDARD,
         },
       };
 
@@ -579,10 +620,11 @@ describe('ParticipantJoinedHandler', () => {
         startedAt: null,
       } as any);
       scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
 
       mockAppConfigService.featureFlag.scenarioSessionAudioRecording = true;
 
-      await handler.handle(agentEvent);
+      await handler.handle(humanEvent);
 
       expect(liveKitService.startRoomCompositeEgress).toHaveBeenCalledWith(
         expect.objectContaining({
