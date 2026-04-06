@@ -104,6 +104,7 @@ import { ScenariosRepository } from '../repository/scenario.repository';
 import { getSessionDurationInSeconds } from 'src/review/util/review.util';
 import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
 import { ScenarioSessionRecordingService } from './scenario-session-recording.service';
+import { convertTimestampNsToDate } from 'src/common/util/date.util';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -755,7 +756,19 @@ export class ScenarioSessionService {
 
     let callDuration = 0;
     const startedAt = scenarioSession.startedAt ?? new Date();
-    const endedAt = scenarioSession.endedAt ?? new Date();
+    let endedAt = new Date();
+
+    const egressInfo =
+      await this.scenarioSessionRecordingService.stopScenarioSessionRecording(
+        scenarioSessionId,
+      );
+
+    if (scenarioSession.endedAt) {
+      endedAt = scenarioSession.endedAt;
+    } else if (egressInfo?.endedAt) {
+      endedAt = convertTimestampNsToDate(egressInfo.endedAt);
+    }
+
     if (startedAt && endedAt) {
       callDuration = endedAt.getTime() - startedAt.getTime() || 0;
     }
@@ -772,10 +785,6 @@ export class ScenarioSessionService {
         callDuration,
       });
     }
-
-    await this.scenarioSessionRecordingService.stopScenarioSessionRecording(
-      scenarioSessionId,
-    );
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
@@ -825,12 +834,19 @@ export class ScenarioSessionService {
       );
     }
 
-    await this.scenarioSessionRecordingService.stopScenarioSessionRecording(
-      scenarioSessionId,
-    );
-
     const startedAt = scenarioSession.startedAt ?? new Date();
-    const endedAt = scenarioSession.endedAt ?? new Date();
+    let endedAt = new Date();
+
+    const egressInfo =
+      await this.scenarioSessionRecordingService.stopScenarioSessionRecording(
+        scenarioSessionId,
+      );
+
+    if (scenarioSession.endedAt) {
+      endedAt = scenarioSession.endedAt;
+    } else if (egressInfo?.endedAt) {
+      endedAt = convertTimestampNsToDate(egressInfo.endedAt);
+    }
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,

@@ -6,6 +6,7 @@ import { ScenarioSessionService } from 'src/learn/service/scenario-session.servi
 import { AppConfigService } from 'src/config/config.service';
 import { generateAudioStorageKey } from 'src/common/util/audio.util';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
+import { convertTimestampNsToDate } from 'src/common/util/date.util';
 
 export interface ParticipantJoinedEvent {
   event: 'participant_joined';
@@ -51,10 +52,6 @@ export class ParticipantJoinedHandler {
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly configService: AppConfigService,
   ) {}
-
-  private egressTimestampNsToDate(timestampNs: bigint): Date {
-    return new Date(Number(timestampNs / 1_000_000n));
-  }
 
   async handle(event: ParticipantJoinedEvent): Promise<void> {
     try {
@@ -114,7 +111,7 @@ export class ParticipantJoinedHandler {
               this.logger.info(`Audio recording started for room ${roomName}`);
 
               if (egressInfo.startedAt) {
-                scenarioSessionStartedAt = this.egressTimestampNsToDate(
+                scenarioSessionStartedAt = convertTimestampNsToDate(
                   egressInfo.startedAt,
                 );
               }

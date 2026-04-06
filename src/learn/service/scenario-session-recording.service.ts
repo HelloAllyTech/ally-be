@@ -14,6 +14,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { LoggerService } from 'src/logger/logger.service';
+import { EgressInfo } from 'livekit-server-sdk';
 
 @Injectable()
 export class ScenarioSessionRecordingService {
@@ -78,13 +79,15 @@ export class ScenarioSessionRecordingService {
       bucket: this.configService.scenarioSessionAudioStorage.bucket!,
       key: recording.storageKey,
       operation: 'get',
-      expiresIn: 1800, // 30 minutes
+      expiresIn: 2400, // 40 minutes
     });
 
     return { presignedUrl };
   }
 
-  async stopScenarioSessionRecording(scenarioSessionId: string) {
+  async stopScenarioSessionRecording(
+    scenarioSessionId: string,
+  ): Promise<EgressInfo | undefined> {
     const scenarioSessionRecording =
       await this.scenarioSessionRecordingRepository.findOne({
         where: {
@@ -104,7 +107,9 @@ export class ScenarioSessionRecordingService {
 
     if (scenarioSessionRecording) {
       try {
-        await this.livekitService.stopEgress(scenarioSessionRecording.egressId);
+        return await this.livekitService.stopEgress(
+          scenarioSessionRecording.egressId,
+        );
       } catch (error) {
         this.logger.error(
           `Failed to stop scenario session recording for scenario session ${scenarioSessionId}: ${error.message}`,
