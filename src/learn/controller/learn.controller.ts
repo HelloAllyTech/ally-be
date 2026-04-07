@@ -466,6 +466,12 @@ export class LearnController {
     enum: SortOrder,
     description: 'Sort order',
   })
+  @ApiQuery({
+    name: 'languageCode',
+    required: false,
+    type: String,
+    description: 'Filter by language code',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO_SESSION])
   @Get('admin-scenario-sessions')
   async getAdminScenarioSessions(
@@ -474,13 +480,17 @@ export class LearnController {
     @Query('sortBy')
     sortBy: ScenarioSessionSortBy = ScenarioSessionSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
+    @Query('languageCode') languageCode?: string,
   ) {
-    return this.scenarioSessionService.getAdminScenarioSessions({
-      limit,
-      offset,
-      sortBy,
-      order,
-    });
+    return this.scenarioSessionService.getAdminScenarioSessions(
+      {
+        limit,
+        offset,
+        sortBy,
+        order,
+      },
+      languageCode,
+    );
   }
 
   @ApiQuery({
