@@ -410,6 +410,12 @@ export class LearnController {
     enum: SortOrder,
     description: 'Sort order',
   })
+  @ApiQuery({
+    name: 'languageCode',
+    required: false,
+    type: String,
+    description: 'Filter by language code',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_SESSION])
   @Get('scenario-sessions')
   async getScenarioSessions(
@@ -420,6 +426,7 @@ export class LearnController {
     @Query('sortBy')
     sortBy: ScenarioSessionSortBy = ScenarioSessionSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
+    @Query('languageCode') languageCode?: string,
   ) {
     return this.scenarioSessionService.getScenarioSessions(
       tokenUser.id,
@@ -430,6 +437,7 @@ export class LearnController {
         order,
       },
       statuses,
+      languageCode,
     );
   }
 
@@ -481,6 +489,12 @@ export class LearnController {
     type: Boolean,
     description: 'Enable recommendations',
   })
+  @ApiQuery({
+    name: 'languageCode',
+    required: false,
+    type: String,
+    description: 'Language code',
+  })
   @ApiOperation({ summary: 'Get a scenario session by id' })
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_SESSION_DETAILS])
   @Get('scenario-session/:id')
@@ -488,11 +502,13 @@ export class LearnController {
     @CurrentUser() tokenUser: TokenUser,
     @Param('id') id: string,
     @Query('enableRecommendations') enableRecommendations?: boolean,
+    @Query('languageCode') languageCode?: string,
   ) {
     return this.scenarioSessionService.getScenarioSession(
       id,
       tokenUser.id,
       enableRecommendations,
+      languageCode,
     );
   }
 

@@ -584,12 +584,53 @@ describe('LearnController', () => {
     it('should return scenario sessions for user with default parameters', async () => {
       const mockSessions = { data: [mockScenarioSessionResponse] };
       scenarioSessionService.getScenarioSessions.mockResolvedValue(
-        mockSessions,
+        mockSessions as any,
       );
 
       const result = await controller.getScenarioSessions(mockTokenUser);
 
       expect(result).toEqual(mockSessions);
+      expect(scenarioSessionService.getScenarioSessions).toHaveBeenCalledWith(
+        mockTokenUser.id,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: 'createdAt',
+          order: 'DESC',
+        },
+        undefined,
+        undefined,
+      );
+    });
+
+    it('should pass languageCode when provided', async () => {
+      const mockSessions = { data: [mockScenarioSessionResponse] };
+      scenarioSessionService.getScenarioSessions.mockResolvedValue(
+        mockSessions as any,
+      );
+
+      const result = await controller.getScenarioSessions(
+        mockTokenUser,
+        'ENDED',
+        10,
+        0,
+        undefined,
+        undefined,
+        'mr',
+      );
+
+      expect(result).toEqual(mockSessions);
+      expect(scenarioSessionService.getScenarioSessions).toHaveBeenCalledWith(
+        mockTokenUser.id,
+        {
+          limit: 10,
+          offset: 0,
+          sortBy: 'createdAt',
+          order: 'DESC',
+        },
+        'ENDED',
+        'mr',
+      );
     });
   });
 
@@ -597,12 +638,20 @@ describe('LearnController', () => {
     it('should return admin scenario sessions with default parameters', async () => {
       const mockSessions = { data: [mockScenarioSessionResponse] };
       scenarioSessionService.getAdminScenarioSessions.mockResolvedValue(
-        mockSessions,
+        mockSessions as any,
       );
 
       const result = await controller.getAdminScenarioSessions();
 
       expect(result).toEqual(mockSessions);
+      expect(
+        scenarioSessionService.getAdminScenarioSessions,
+      ).toHaveBeenCalledWith({
+        limit: undefined,
+        offset: undefined,
+        sortBy: 'createdAt',
+        order: 'DESC',
+      });
     });
   });
 
@@ -622,9 +671,17 @@ describe('LearnController', () => {
       const result = await controller.getScenarioSession(
         mockTokenUser,
         sessionId,
+        true,
+        'mr',
       );
 
       expect(result).toEqual(mockSession);
+      expect(scenarioSessionService.getScenarioSession).toHaveBeenCalledWith(
+        sessionId,
+        mockTokenUser.id,
+        true,
+        'mr',
+      );
     });
   });
 
