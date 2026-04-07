@@ -280,6 +280,7 @@ export class ScenarioSessionService {
     counselorId: number,
     options: Pagination,
     statuses?: string,
+    languageCode?: string,
   ) {
     const scenarioSessions: ScenarioSessions[] =
       await this.scenarioSessionRepository.getScenarioSessions(
@@ -289,8 +290,21 @@ export class ScenarioSessionService {
       );
 
     scenarioSessions.forEach((scenarioSession) => {
+      if (
+        languageCode &&
+        (scenarioSession as any).scenario.translations &&
+        (scenarioSession as any).scenario.translations[languageCode]
+      ) {
+        (scenarioSession as any).scenario.title =
+          (scenarioSession as any).scenario.translations[languageCode].title ||
+          (scenarioSession as any).scenario.title;
+        (scenarioSession as any).scenario.description =
+          (scenarioSession as any).scenario.translations[languageCode]
+            .description || (scenarioSession as any).scenario.description;
+      }
       delete (scenarioSession as any).scenario.prompt;
       delete (scenarioSession as any).scenario.metadata;
+      delete (scenarioSession as any).scenario.translations;
     });
 
     return { data: scenarioSessions };
@@ -315,6 +329,7 @@ export class ScenarioSessionService {
     scenarioSessionId: string,
     counselorId: number,
     enableRecommendations = false,
+    languageCode?: string,
   ) {
     const hasAdminAccess =
       await this.permissionValidatorService.validatePermissions(counselorId, [
@@ -384,7 +399,15 @@ export class ScenarioSessionService {
           scenario.metadata?.experienceMode ?? ExperienceMode.FEEDBACK,
         name: scenario.metadata?.name,
       };
+      if (languageCode && scenario.translations?.[languageCode]) {
+        scenario.title =
+          scenario.translations[languageCode].title || scenario.title;
+        scenario.description =
+          scenario.translations[languageCode].description ||
+          scenario.description;
+      }
       delete scenario.prompt;
+      delete scenario.translations;
     }
 
     return {
