@@ -568,6 +568,7 @@ describe('ScenarioSessionService', () => {
       expect(result.data).toHaveLength(1);
       expect(result.data[0]).not.toHaveProperty('scenario.prompt');
       expect(result.data[0]).not.toHaveProperty('scenario.metadata');
+      expect(result.data[0]).not.toHaveProperty('scenario.translations');
       expect(
         scenarioSessionRepository.getScenarioSessions,
       ).toHaveBeenCalledWith(
@@ -577,11 +578,25 @@ describe('ScenarioSessionService', () => {
       );
     });
 
-    it('should return scenario sessions with custom status', async () => {
+    it('should return scenario sessions with custom status and apply translations when languageCode is provided', async () => {
       const mockSessions = [
-        { ...mockScenarioSession, scenario: { ...mockScenario } },
+        {
+          ...mockScenarioSession,
+          scenario: {
+            ...mockScenario,
+            title: 'English Title',
+            description: 'English Description',
+            translations: {
+              mr: {
+                title: 'Marathi Title',
+                description: 'Marathi Description',
+              },
+            },
+          },
+        },
       ];
       const customStatus = ScenarioSessionStatus.ACTIVE;
+      const languageCode = 'mr';
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue(
         mockSessions as any,
       );
@@ -590,14 +605,55 @@ describe('ScenarioSessionService', () => {
         mockCounselorId,
         mockPagination,
         customStatus,
+        languageCode,
       );
 
       expect(result.data).toHaveLength(1);
-      expect(result.data[0]).not.toHaveProperty('scenario.prompt');
-      expect(result.data[0]).not.toHaveProperty('scenario.metadata');
+      const scenario = (result.data[0] as any).scenario;
+      expect(scenario.title).toBe('Marathi Title');
+      expect(scenario.description).toBe('Marathi Description');
+      expect(scenario).not.toHaveProperty('prompt');
+      expect(scenario).not.toHaveProperty('metadata');
+      expect(scenario).not.toHaveProperty('translations');
       expect(
         scenarioSessionRepository.getScenarioSessions,
       ).toHaveBeenCalledWith(mockCounselorId, mockPagination, customStatus);
+    });
+
+    it('should fallback to default title/description if translation for languageCode is missing one field', async () => {
+      const mockSessions = [
+        {
+          ...mockScenarioSession,
+          scenario: {
+            ...mockScenario,
+            title: 'English Title',
+            description: 'English Description',
+            translations: {
+              mr: {
+                title: 'Marathi Title',
+                // description is missing
+              },
+            },
+          },
+        },
+      ];
+      const customStatus = ScenarioSessionStatus.ACTIVE;
+      const languageCode = 'mr';
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue(
+        mockSessions as any,
+      );
+
+      const result = await service.getScenarioSessions(
+        mockCounselorId,
+        mockPagination,
+        customStatus,
+        languageCode,
+      );
+
+      expect(result.data).toHaveLength(1);
+      const scenario = (result.data[0] as any).scenario;
+      expect(scenario.title).toBe('Marathi Title');
+      expect(scenario.description).toBe('English Description');
     });
   });
 
@@ -663,6 +719,42 @@ describe('ScenarioSessionService', () => {
         mockCounselorId,
         true,
       );
+    });
+
+    it('should apply translations to scenario when languageCode is provided', async () => {
+      const mockSessionWithTranslations = {
+        ...mockScenarioSession,
+        scenario: {
+          ...mockScenario,
+          title: 'English Title',
+          description: 'English Description',
+          translations: {
+            mr: {
+              title: 'Marathi Title',
+              description: 'Marathi Description',
+            },
+          },
+        },
+      };
+
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        mockSessionWithTranslations as any,
+      );
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+        false,
+        'mr',
+      );
+
+      const scenario = (result as any).scenario;
+      expect(scenario.title).toBe('Marathi Title');
+      expect(scenario.description).toBe('Marathi Description');
+      expect(scenario).not.toHaveProperty('prompt');
+      expect(scenario).not.toHaveProperty('translations');
     });
 
     it('should strip areas_of_improvement and populate improvements when enableRecommendations is false', async () => {
