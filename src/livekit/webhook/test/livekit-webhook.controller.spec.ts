@@ -6,7 +6,6 @@ import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ParticipantJoinedHandler } from '../handlers/participant-joined.handler';
 import { RoomFinishedHandler } from '../handlers/room-finished.handler';
-import { EgressStartedHandler } from '../handlers/egress-started.handler';
 import { WebhookReceiver } from 'livekit-server-sdk';
 
 // Mock livekit-server-sdk
@@ -32,7 +31,6 @@ describe('LivekitWebhookController', () => {
   let controller: LivekitWebhookController;
   let participantJoinedHandler: jest.Mocked<ParticipantJoinedHandler>;
   let roomFinishedHandler: jest.Mocked<RoomFinishedHandler>;
-  let egressStartedHandler: jest.Mocked<EgressStartedHandler>;
   let mockLogger: jest.Mocked<any>;
   let mockWebhookReceiver: jest.Mocked<WebhookReceiver>;
   let mockRequest: Partial<Request>;
@@ -54,10 +52,6 @@ describe('LivekitWebhookController', () => {
     };
 
     const mockRoomFinishedHandler = {
-      handle: jest.fn(),
-    };
-
-    const mockEgressStartedHandler = {
       handle: jest.fn(),
     };
 
@@ -105,17 +99,12 @@ describe('LivekitWebhookController', () => {
           provide: RoomFinishedHandler,
           useValue: mockRoomFinishedHandler,
         },
-        {
-          provide: EgressStartedHandler,
-          useValue: mockEgressStartedHandler,
-        },
       ],
     }).compile();
 
     controller = module.get<LivekitWebhookController>(LivekitWebhookController);
     participantJoinedHandler = module.get(ParticipantJoinedHandler);
     roomFinishedHandler = module.get(RoomFinishedHandler);
-    egressStartedHandler = module.get(EgressStartedHandler);
   });
 
   afterEach(() => {
@@ -148,7 +137,6 @@ describe('LivekitWebhookController', () => {
         incompleteConfig as any,
         participantJoinedHandler,
         roomFinishedHandler,
-        egressStartedHandler,
       );
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -216,32 +204,6 @@ describe('LivekitWebhookController', () => {
       expect(mockResponse.send).toHaveBeenCalledWith();
     });
 
-    it('should handle egress_started event successfully', async () => {
-      const mockEvent = {
-        event: 'egress_started',
-        egressInfo: {
-          egressId: 'eg_1',
-          roomName: 'test-room',
-          startedAt: 1700000000000000000n,
-        },
-      };
-
-      mockWebhookReceiver.receive.mockResolvedValue(mockEvent as any);
-      egressStartedHandler.handle.mockResolvedValue(undefined);
-
-      await controller.handleWebhook(
-        mockRequest as Request,
-        mockResponse as Response,
-      );
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Received LiveKit webhook event: egress_started',
-      );
-      expect(egressStartedHandler.handle).toHaveBeenCalledWith(mockEvent);
-      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.OK);
-      expect(mockResponse.send).toHaveBeenCalledWith();
-    });
-
     it('should handle unknown event type', async () => {
       const mockEvent = {
         event: 'unknown_event',
@@ -262,7 +224,6 @@ describe('LivekitWebhookController', () => {
       );
       expect(participantJoinedHandler.handle).not.toHaveBeenCalled();
       expect(roomFinishedHandler.handle).not.toHaveBeenCalled();
-      expect(egressStartedHandler.handle).not.toHaveBeenCalled();
       expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.OK);
       expect(mockResponse.send).toHaveBeenCalledWith();
     });
@@ -280,7 +241,6 @@ describe('LivekitWebhookController', () => {
         incompleteConfig as any,
         participantJoinedHandler,
         roomFinishedHandler,
-        egressStartedHandler,
       );
 
       await controllerWithoutReceiver.handleWebhook(
