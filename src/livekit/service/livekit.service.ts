@@ -10,7 +10,7 @@ import {
   EgressClient,
   RoomServiceClient,
 } from 'livekit-server-sdk';
-import type { EgressInfo } from 'livekit-server-sdk';
+import type { EgressInfo, Room } from 'livekit-server-sdk';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import {
@@ -156,6 +156,22 @@ export class LiveKitService {
       return rooms;
     } catch (error) {
       this.logger.error(`Failed to list rooms: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getRoomById(name: string): Promise<Room | null> {
+    try {
+      const rooms = await this.roomService.listRooms([name]);
+      const room = rooms[0];
+      if (room) {
+        this.logger.debug(`Fetched room: ${name}`);
+      }
+      return room ?? null;
+    } catch (error) {
+      this.logger.error(
+        `Failed to get room ${name}: ${JSON.stringify(error.message)}`,
+      );
       throw error;
     }
   }

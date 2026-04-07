@@ -13,6 +13,7 @@ import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ParticipantJoinedHandler } from './handlers/participant-joined.handler';
 import { RoomFinishedHandler } from './handlers/room-finished.handler';
+import { EgressStartedHandler } from './handlers/egress-started.handler';
 
 @ApiTags('LiveKit Webhook')
 @Controller('v1/webhook/livekit')
@@ -26,6 +27,7 @@ export class LivekitWebhookController {
     private readonly configService: AppConfigService,
     private readonly participantJoinedHandler: ParticipantJoinedHandler,
     private readonly roomFinishedHandler: RoomFinishedHandler,
+    private readonly egressStartedHandler: EgressStartedHandler,
   ) {
     this.initializeWebhookReceiver();
   }
@@ -96,6 +98,9 @@ export class LivekitWebhookController {
         case 'room_finished':
           await this.handleRoomFinished(event);
           break;
+        case 'egress_started':
+          await this.handleEgressStarted(event);
+          break;
       }
     } catch (error) {
       this.logger.error(`Error processing event ${event.event}:`, error);
@@ -124,6 +129,18 @@ export class LivekitWebhookController {
       await this.roomFinishedHandler.handle(event);
     } catch (error) {
       this.logger.error(`Error in room_finished handler: ${error.message}`);
+    }
+  }
+
+  private async handleEgressStarted(event: any) {
+    this.logger.debug(
+      `Egress started for egress id: ${event.egressInfo?.egress_id} and room: ${event.egressInfo?.room_name}`,
+    );
+
+    try {
+      await this.egressStartedHandler.handle(event);
+    } catch (error) {
+      this.logger.error(`Error in egress_started handler: ${error.message}`);
     }
   }
 }
