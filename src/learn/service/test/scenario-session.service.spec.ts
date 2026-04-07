@@ -658,7 +658,7 @@ describe('ScenarioSessionService', () => {
   });
 
   describe('getAdminScenarioSessions', () => {
-    it('should return admin scenario sessions', async () => {
+    it('should return admin scenario sessions and delete internal fields including translations', async () => {
       const mockSessions = [
         { ...mockScenarioSession, scenario: { ...mockScenario } },
       ];
@@ -671,6 +671,46 @@ describe('ScenarioSessionService', () => {
       expect(result.data).toHaveLength(1);
       expect(result.data[0]).not.toHaveProperty('scenario.prompt');
       expect(result.data[0]).not.toHaveProperty('scenario.metadata');
+      expect(result.data[0]).not.toHaveProperty('scenario.translations');
+      expect(
+        scenarioSessionRepository.getAdminScenarioSessions,
+      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED);
+    });
+
+    it('should apply translations to admin scenario sessions when languageCode is provided', async () => {
+      const mockSessions = [
+        {
+          ...mockScenarioSession,
+          scenario: {
+            ...mockScenario,
+            title: 'English Title',
+            description: 'English Description',
+            translations: {
+              mr: {
+                title: 'Marathi Title',
+                description: 'Marathi Description',
+              },
+            },
+          },
+        },
+      ];
+      const languageCode = 'mr';
+      scenarioSessionRepository.getAdminScenarioSessions.mockResolvedValue(
+        mockSessions as any,
+      );
+
+      const result = await service.getAdminScenarioSessions(
+        mockPagination,
+        languageCode,
+      );
+
+      expect(result.data).toHaveLength(1);
+      const scenario = (result.data[0] as any).scenario;
+      expect(scenario.title).toBe('Marathi Title');
+      expect(scenario.description).toBe('Marathi Description');
+      expect(scenario).not.toHaveProperty('prompt');
+      expect(scenario).not.toHaveProperty('metadata');
+      expect(scenario).not.toHaveProperty('translations');
       expect(
         scenarioSessionRepository.getAdminScenarioSessions,
       ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED);

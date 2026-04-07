@@ -646,12 +646,43 @@ describe('LearnController', () => {
       expect(result).toEqual(mockSessions);
       expect(
         scenarioSessionService.getAdminScenarioSessions,
-      ).toHaveBeenCalledWith({
-        limit: undefined,
-        offset: undefined,
-        sortBy: 'createdAt',
-        order: 'DESC',
-      });
+      ).toHaveBeenCalledWith(
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: 'createdAt',
+          order: 'DESC',
+        },
+        undefined,
+      );
+    });
+
+    it('should pass languageCode when provided for admin scenario sessions', async () => {
+      const mockSessions = { data: [mockScenarioSessionResponse] };
+      scenarioSessionService.getAdminScenarioSessions.mockResolvedValue(
+        mockSessions as any,
+      );
+
+      const result = await controller.getAdminScenarioSessions(
+        10,
+        0,
+        undefined,
+        undefined,
+        'mr',
+      );
+
+      expect(result).toEqual(mockSessions);
+      expect(
+        scenarioSessionService.getAdminScenarioSessions,
+      ).toHaveBeenCalledWith(
+        {
+          limit: 10,
+          offset: 0,
+          sortBy: 'createdAt',
+          order: 'DESC',
+        },
+        'mr',
+      );
     });
   });
 

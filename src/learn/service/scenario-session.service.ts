@@ -310,7 +310,7 @@ export class ScenarioSessionService {
     return { data: scenarioSessions };
   }
 
-  async getAdminScenarioSessions(options: Pagination) {
+  async getAdminScenarioSessions(options: Pagination, languageCode?: string) {
     const scenarioSessions: ScenarioSessions[] =
       await this.scenarioSessionRepository.getAdminScenarioSessions(
         options,
@@ -318,8 +318,21 @@ export class ScenarioSessionService {
       );
 
     scenarioSessions.forEach((scenarioSession) => {
+      if (
+        languageCode &&
+        (scenarioSession as any).scenario.translations &&
+        (scenarioSession as any).scenario.translations[languageCode]
+      ) {
+        (scenarioSession as any).scenario.title =
+          (scenarioSession as any).scenario.translations[languageCode].title ||
+          (scenarioSession as any).scenario.title;
+        (scenarioSession as any).scenario.description =
+          (scenarioSession as any).scenario.translations[languageCode]
+            .description || (scenarioSession as any).scenario.description;
+      }
       delete (scenarioSession as any).scenario.prompt;
       delete (scenarioSession as any).scenario.metadata;
+      delete (scenarioSession as any).scenario.translations;
     });
 
     return { data: scenarioSessions };
