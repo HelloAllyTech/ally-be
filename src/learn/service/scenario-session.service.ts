@@ -105,6 +105,7 @@ import { getSessionDurationInSeconds } from 'src/review/util/review.util';
 import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
 import { ScenarioSessionRecordingService } from './scenario-session-recording.service';
 import { convertTimestampNsToDate } from 'src/common/util/date.util';
+import { EgressInfo } from 'livekit-server-sdk';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -774,6 +775,28 @@ export class ScenarioSessionService {
     }
   }
 
+  private async getUpdatedMetadataForScenarioSession(
+    scenarioSession: ScenarioSessions,
+    egressInfo?: EgressInfo,
+  ): Promise<Record<string, any> | null> {
+    if (scenarioSession.metadata?.recordingStartedAt) {
+      return null;
+    }
+    const recordingStartedAtNs = egressInfo?.fileResults?.[0]?.startedAt;
+
+    if (!recordingStartedAtNs) {
+      return null;
+    }
+    const recordingStartedAt = convertTimestampNsToDate(recordingStartedAtNs);
+
+    const scenarioSessionMetadata: Record<string, any> = {
+      ...scenarioSession.metadata,
+      recordingStartedAt,
+    };
+
+    return scenarioSessionMetadata;
+  }
+
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async handleEndScenarioSessionEvent(
     scenarioSession: ScenarioSessions,
@@ -822,12 +845,19 @@ export class ScenarioSessionService {
       });
     }
 
+    const scenarioSessionMetadata =
+      await this.getUpdatedMetadataForScenarioSession(
+        scenarioSession,
+        egressInfo,
+      );
+
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
       startedAt,
       endedAt,
       score,
       eventStatus: ScenarioSessionEventStatus.COMPLETED,
+      ...(scenarioSessionMetadata ? { metadata: scenarioSessionMetadata } : {}),
     });
     this.logger.info(
       `Updated scenario ${scenarioSessionId} eventStatus to COMPLETED`,
@@ -884,10 +914,17 @@ export class ScenarioSessionService {
       endedAt = convertTimestampNsToDate(egressInfo.endedAt);
     }
 
+    const scenarioSessionMetadata =
+      await this.getUpdatedMetadataForScenarioSession(
+        scenarioSession,
+        egressInfo,
+      );
+
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
       endedAt,
       startedAt,
+      ...(scenarioSessionMetadata ? { metadata: scenarioSessionMetadata } : {}),
     });
     this.logger.info(`Updated scenario ${scenarioSessionId} status to ENDED`);
 
