@@ -52,7 +52,6 @@ export class LivekitWebhookController {
   })
   async handleWebhook(@Req() req: Request, @Res() res: Response) {
     try {
-      this.logger.info(`${JSON.stringify(req)},'handleWebhook`);
       if (!this.webhookReceiver) {
         this.logger.error('Webhook receiver not initialized');
         return res
@@ -64,7 +63,9 @@ export class LivekitWebhookController {
 
       // Get raw body data for webhook verification
       const rawBody = await this.getRawBody(req);
+      this.logger.info(`${rawBody},'rawBody handleWebhook`);
       const event = await this.webhookReceiver.receive(rawBody, authHeader);
+      this.logger.info(`${event},'event handleWebhook`);
 
       this.logger.debug(`Received LiveKit webhook event: ${event.event}`);
 
