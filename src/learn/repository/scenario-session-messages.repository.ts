@@ -62,4 +62,35 @@ export class ScenarioSessionMessagesRepository extends Repository<ScenarioSessio
       query.offset(pagination.offset);
     }
   }
+
+  async updateTranscriptTimestamps(
+    scenarioSessionId: string,
+    tenantId: string,
+    transcriptVariationOffset: number,
+  ) {
+    await this.createQueryBuilder()
+      .update()
+      .set({
+        startSeconds: () => `
+          CASE 
+            WHEN "startSeconds" IS NULL THEN NULL 
+            ELSE GREATEST("startSeconds" - :offset, 0)
+          END
+        `,
+        endSeconds: () => `
+          CASE 
+            WHEN "endSeconds" IS NULL THEN NULL 
+            ELSE GREATEST("endSeconds" - :offset, 0)
+          END
+        `,
+      })
+      .where('scenarioSessionId = :scenarioSessionId', {
+        scenarioSessionId: scenarioSessionId,
+      })
+      .andWhere('tenantId = :tenantId', {
+        tenantId: tenantId,
+      })
+      .setParameter('offset', transcriptVariationOffset)
+      .execute();
+  }
 }

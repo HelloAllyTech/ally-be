@@ -775,19 +775,23 @@ export class ScenarioSessionService {
     }
   }
 
+  private getEgressRecordingStartedAt(egressInfo?: EgressInfo) {
+    const recordingStartedAtNs = egressInfo?.fileResults?.[0]?.startedAt;
+    if (!recordingStartedAtNs) {
+      return null;
+    }
+    return convertTimestampNsToDate(recordingStartedAtNs);
+  }
+
   private async getUpdatedMetadataForScenarioSession(
     scenarioSession: ScenarioSessions,
     egressInfo?: EgressInfo,
   ): Promise<Record<string, any> | null> {
-    if (scenarioSession.metadata?.recordingStartedAt) {
-      return null;
-    }
-    const recordingStartedAtNs = egressInfo?.fileResults?.[0]?.startedAt;
+    const recordingStartedAt = this.getEgressRecordingStartedAt(egressInfo);
 
-    if (!recordingStartedAtNs) {
+    if (!recordingStartedAt) {
       return null;
     }
-    const recordingStartedAt = convertTimestampNsToDate(recordingStartedAtNs);
 
     const scenarioSessionMetadata: Record<string, any> = {
       ...scenarioSession.metadata,
@@ -795,6 +799,27 @@ export class ScenarioSessionService {
     };
 
     return scenarioSessionMetadata;
+  }
+
+  private async updateTranscriptTimestamps(
+    scenarioSession: ScenarioSessions,
+    egressInfo?: EgressInfo,
+  ) {
+    const recordingStartedAt = this.getEgressRecordingStartedAt(egressInfo);
+
+    if (!recordingStartedAt || !scenarioSession.startedAt) {
+      return null;
+    }
+
+    const transcriptVariationOffset =
+      (new Date(recordingStartedAt).getTime() -
+        new Date(scenarioSession.startedAt).getTime()) /
+      1000;
+    await this.scenarioSessionMessagesRepository.updateTranscriptTimestamps(
+      scenarioSession.id,
+      scenarioSession.tenantId,
+      transcriptVariationOffset,
+    );
   }
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
@@ -843,6 +868,11 @@ export class ScenarioSessionService {
         score,
         callDuration,
       });
+    }
+
+    // Update transcript timestamps if recording started at is not in the metadata
+    if (!scenarioSession?.metadata?.recordingStartedAt) {
+      await this.updateTranscriptTimestamps(scenarioSession, egressInfo);
     }
 
     const scenarioSessionMetadata =
@@ -912,6 +942,11 @@ export class ScenarioSessionService {
       endedAt = scenarioSession.endedAt;
     } else if (egressInfo?.endedAt) {
       endedAt = convertTimestampNsToDate(egressInfo.endedAt);
+    }
+
+    // Update transcript timestamps if recording started at is not in the metadata
+    if (!scenarioSession?.metadata?.recordingStartedAt) {
+      await this.updateTranscriptTimestamps(scenarioSession, egressInfo);
     }
 
     const scenarioSessionMetadata =
