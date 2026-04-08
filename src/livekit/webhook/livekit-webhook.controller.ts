@@ -64,6 +64,18 @@ export class LivekitWebhookController {
       // Get raw body data for webhook verification
       const rawBody = await this.getRawBody(req);
       this.logger.info(`${rawBody},'rawBody handleWebhook`);
+      const parsedBody = this.parseJsonBody(rawBody);
+      this.logger.info(`${parsedBody},'parsedBody handleWebhook`);
+
+      if (
+        parsedBody &&
+        typeof parsedBody === 'object' &&
+        parsedBody.metadata &&
+        typeof parsedBody.metadata === 'object'
+      ) {
+        this.logger.debug('Webhook payload includes a metadata object');
+      }
+
       const event = await this.webhookReceiver.receive(rawBody, authHeader);
       this.logger.info(`${event},'event handleWebhook`);
 
@@ -87,6 +99,17 @@ export class LivekitWebhookController {
     }
 
     return Buffer.concat(chunks).toString('utf8');
+  }
+
+  private parseJsonBody(rawBody: string): Record<string, unknown> | null {
+    try {
+      const parsed = JSON.parse(rawBody) as unknown;
+      return typeof parsed === 'object' && parsed !== null
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   private async processWebhookEvent(event: any) {
