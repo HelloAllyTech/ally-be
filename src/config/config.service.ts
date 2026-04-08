@@ -245,6 +245,7 @@ export class AppConfigService {
       apiKey: this.configService.get<string>('LIVEKIT_API_KEY'),
       apiSecret: this.configService.get<string>('LIVEKIT_API_SECRET'),
       serverUrl: this.configService.get<string>('LIVEKIT_URL'),
+      environment: this.configService.get<string>('LIVEKIT_ENVIRONMENT'),
     };
   }
 

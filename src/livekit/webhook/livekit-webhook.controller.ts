@@ -63,17 +63,14 @@ export class LivekitWebhookController {
 
       // Get raw body data for webhook verification
       const rawBody = await this.getRawBody(req);
-      this.logger.info(`${rawBody},'rawBody handleWebhook`);
+      this.logger.info(`'rawBody handleWebhook '${rawBody}`);
       const parsedBody = this.parseJsonBody(rawBody);
-      this.logger.info(`${parsedBody},'parsedBody handleWebhook`);
+      const roomMetadata = this.parseMetadata(parsedBody?.room?.metadata);
 
       if (
-        parsedBody &&
-        typeof parsedBody === 'object' &&
-        parsedBody.metadata &&
-        typeof parsedBody.metadata === 'object'
+        roomMetadata?.environment !== this.configService.livekit.environment
       ) {
-        this.logger.debug('Webhook payload includes a metadata object');
+        return res.status(HttpStatus.OK).send();
       }
 
       const event = await this.webhookReceiver.receive(rawBody, authHeader);
@@ -101,15 +98,32 @@ export class LivekitWebhookController {
     return Buffer.concat(chunks).toString('utf8');
   }
 
-  private parseJsonBody(rawBody: string): Record<string, unknown> | null {
+  private parseJsonBody(rawBody: string): Record<string, any> | null {
     try {
       const parsed = JSON.parse(rawBody) as unknown;
       return typeof parsed === 'object' && parsed !== null
-        ? (parsed as Record<string, unknown>)
+        ? (parsed as Record<string, any>)
         : null;
     } catch {
       return null;
     }
+  }
+
+  private parseMetadata(metadata: unknown): Record<string, any> | null {
+    if (typeof metadata === 'string') {
+      try {
+        const parsed = JSON.parse(metadata) as unknown;
+        return typeof parsed === 'object' && parsed !== null
+          ? (parsed as Record<string, any>)
+          : null;
+      } catch {
+        return null;
+      }
+    }
+
+    return typeof metadata === 'object' && metadata !== null
+      ? (metadata as Record<string, any>)
+      : null;
   }
 
   private async processWebhookEvent(event: any) {
