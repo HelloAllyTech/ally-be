@@ -52,6 +52,7 @@ export class LivekitWebhookController {
   })
   async handleWebhook(@Req() req: Request, @Res() res: Response) {
     try {
+      this.logger.info(`${req},'handleWebhook`);
       if (!this.webhookReceiver) {
         this.logger.error('Webhook receiver not initialized');
         return res

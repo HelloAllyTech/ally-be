@@ -101,6 +101,7 @@ describe('ScenarioSharedService', () => {
     };
 
     const mockAppConfigService = {
+      nodeEnv: 'development',
       s3: { assetsBucket: 'test-assets-bucket' },
       aws: { region: 'us-east-1' },
     };
@@ -1044,6 +1045,40 @@ describe('ScenarioSharedService', () => {
       expect(
         (result.scenario.promptData as any).allowedFillers,
       ).toBeUndefined();
+    });
+
+    it('should include the current environment in room metadata', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+
+      const result = await service.createRoomMetadata({
+        scenario: {
+          id: 1,
+          title: 'Test Scenario',
+          description: 'Test Description',
+          prompt: 'Act only as the client.',
+          metadata: {
+            voiceId: 'voice-1',
+            name: 'Alex',
+            age: 28,
+            gender: 'Male',
+            currentLocation: 'NYC',
+            openingStatements: ['Hi'],
+          },
+          terminationEvents: [],
+          behaviorInstructions: [],
+          difficultyLevel: 'EASY',
+        } as any,
+        sessionEvents: [],
+        languageDetails: null as any,
+        previousMemory: null,
+      });
+
+      expect(result.environment).toBe('development');
     });
   });
 

@@ -536,6 +536,7 @@ export class ScenarioSharedService {
     return {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
+      environment: this.configService.nodeEnv,
       scenario: {
         ...scenarioData,
         voice: scenarioVoice,
