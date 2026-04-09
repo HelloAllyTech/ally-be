@@ -101,7 +101,7 @@ describe('ScenarioSharedService', () => {
     };
 
     const mockAppConfigService = {
-      nodeEnv: 'development',
+      livekit: { environment: 'development' },
       s3: { assetsBucket: 'test-assets-bucket' },
       aws: { region: 'us-east-1' },
     };
