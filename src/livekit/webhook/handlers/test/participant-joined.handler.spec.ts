@@ -567,6 +567,39 @@ describe('ParticipantJoinedHandler', () => {
       });
     });
 
+    it('should skip scenario session lookup for preview rooms', async () => {
+      const previewEvent: ParticipantJoinedEvent = {
+        ...mockParticipantJoinedEvent,
+        room: {
+          ...mockParticipantJoinedEvent.room,
+          name: 'preview-test-room',
+        },
+      };
+
+      liveKitService.agentDispatch.mockResolvedValue(undefined);
+
+      await handler.handle(previewEvent);
+
+      expect(
+        scenarioSessionService.getScenarioSessionByRoomId,
+      ).not.toHaveBeenCalled();
+      expect(
+        scenarioSessionService.updateScenarioSession,
+      ).not.toHaveBeenCalled();
+      expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
+        'preview-test-room',
+        'Agent',
+        expect.any(String),
+      );
+      expect(
+        JSON.parse(liveKitService.agentDispatch.mock.calls[0][2] as string),
+      ).toMatchObject({
+        scenarioId: 123,
+        type: 'training',
+        scenarioSession: { conversationStartedAt: expect.any(String) },
+      });
+    });
+
     it('should handle numeric metadata values', async () => {
       const numericMetadata = {
         scenarioId: 999,
