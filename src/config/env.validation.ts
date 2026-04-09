@@ -83,6 +83,7 @@ export const validationSchema = Joi.object({
   LIVEKIT_API_KEY: Joi.string().required(),
   LIVEKIT_API_SECRET: Joi.string().required(),
   LIVEKIT_URL: Joi.string().required(),
+  LIVEKIT_ENVIRONMENT: Joi.string().required(),
 
   SIMULATION_SESSION_SECONDS_PER_CREDIT: Joi.number().required(),
 
