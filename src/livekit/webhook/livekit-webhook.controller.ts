@@ -63,7 +63,6 @@ export class LivekitWebhookController {
 
       // Get raw body data for webhook verification
       const rawBody = await this.getRawBody(req);
-      this.logger.info(`'rawBody handleWebhook '${rawBody}`);
       const parsedBody = this.parseJsonBody(rawBody);
       const roomMetadata = this.parseMetadata(parsedBody?.room?.metadata);
 
@@ -74,7 +73,6 @@ export class LivekitWebhookController {
       }
 
       const event = await this.webhookReceiver.receive(rawBody, authHeader);
-      this.logger.info(`${event},'event handleWebhook`);
 
       this.logger.debug(`Received LiveKit webhook event: ${event.event}`);
 
