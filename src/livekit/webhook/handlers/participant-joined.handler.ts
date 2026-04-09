@@ -107,12 +107,17 @@ export class ParticipantJoinedHandler {
         }, 30000); // 30s safety window
 
         let scenarioSessionStartedAt = new Date();
+        const isPreviewRoom = roomName.startsWith('preview');
+        const scenarioSession = isPreviewRoom
+          ? null
+          : await this.scenarioSessionService.getScenarioSessionByRoomId(
+              roomName,
+            );
 
-        const scenarioSession =
-          await this.scenarioSessionService.getScenarioSessionByRoomId(
-            roomName,
-          );
-        if (this.configService.featureFlag.scenarioSessionAudioRecording) {
+        if (
+          scenarioSession &&
+          this.configService.featureFlag.scenarioSessionAudioRecording
+        ) {
           const { bucket, region, accessKey, secret } =
             this.configService.scenarioSessionAudioStorage;
           if (!bucket || !region || !accessKey || !secret) {
@@ -163,7 +168,7 @@ export class ParticipantJoinedHandler {
           }
         }
 
-        if (!scenarioSession.startedAt) {
+        if (scenarioSession && !scenarioSession.startedAt) {
           await this.scenarioSessionService.updateScenarioSession(
             scenarioSession.id,
             {
@@ -184,7 +189,7 @@ export class ParticipantJoinedHandler {
         }
 
         const conversationStartedAt = new Date(
-          scenarioSession.startedAt ?? scenarioSessionStartedAt,
+          scenarioSession?.startedAt ?? scenarioSessionStartedAt,
         ).toISOString();
 
         if (!metadata.scenarioSession) {
