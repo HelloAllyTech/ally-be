@@ -840,19 +840,7 @@ export class ScenarioSessionService {
 
     let callDuration = 0;
     const startedAt = scenarioSession.startedAt ?? new Date();
-    let endedAt = new Date();
-
-    const egressInfo =
-      await this.scenarioSessionRecordingService.stopScenarioSessionRecording(
-        scenarioSessionId,
-      );
-
-    if (scenarioSession.endedAt) {
-      endedAt = scenarioSession.endedAt;
-    } else if (egressInfo?.endedAt) {
-      endedAt = convertTimestampNsToDate(egressInfo.endedAt);
-    }
-
+    const endedAt = scenarioSession.endedAt ?? new Date();
     if (startedAt && endedAt) {
       callDuration = endedAt.getTime() - startedAt.getTime() || 0;
     }
@@ -870,24 +858,12 @@ export class ScenarioSessionService {
       });
     }
 
-    // Update transcript timestamps if recording started at is not in the metadata
-    if (!scenarioSession?.metadata?.recordingStartedAt) {
-      await this.updateTranscriptTimestamps(scenarioSession, egressInfo);
-    }
-
-    const scenarioSessionMetadata =
-      await this.getUpdatedMetadataForScenarioSession(
-        scenarioSession,
-        egressInfo,
-      );
-
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
       startedAt,
       endedAt,
       score,
       eventStatus: ScenarioSessionEventStatus.COMPLETED,
-      ...(scenarioSessionMetadata ? { metadata: scenarioSessionMetadata } : {}),
     });
     this.logger.info(
       `Updated scenario ${scenarioSessionId} eventStatus to COMPLETED`,
@@ -930,18 +906,38 @@ export class ScenarioSessionService {
       );
     }
 
-    const startedAt = scenarioSession.startedAt ?? new Date();
-    let endedAt = new Date();
+    // Mark as ENDED before deleting the room to prevent re-entry: deleteRoom
+    // triggers a room_finished webhook which calls endScenarioSession again.
+    // The webhook handler skips sessions already in ENDED status.
+    await this.scenarioSessionRepository.update(scenarioSessionId, {
+      status: ScenarioSessionStatus.ENDED,
+    });
+    this.logger.info(`Updated scenario ${scenarioSessionId} status to ENDED`);
 
     const egressInfo =
       await this.scenarioSessionRecordingService.stopScenarioSessionRecording(
         scenarioSessionId,
       );
 
+    try {
+      await this.livekitService.deleteRoom(scenarioSession.roomId);
+    } catch (error) {
+      this.logger.debug(
+        `Failed to end session: ${JSON.stringify(error.message)}`,
+      );
+    }
+
+    const startedAt = scenarioSession.startedAt ?? new Date();
+    let endedAt = new Date();
+
     if (scenarioSession.endedAt) {
       endedAt = scenarioSession.endedAt;
-    } else if (egressInfo?.endedAt) {
-      endedAt = convertTimestampNsToDate(egressInfo.endedAt);
+    } else {
+      const egressEndedAt =
+        egressInfo?.fileResults?.[0]?.endedAt || egressInfo?.endedAt;
+      endedAt = egressEndedAt
+        ? convertTimestampNsToDate(egressEndedAt)
+        : endedAt;
     }
 
     // Update transcript timestamps if recording started at is not in the metadata
@@ -956,12 +952,10 @@ export class ScenarioSessionService {
       );
 
     await this.scenarioSessionRepository.update(scenarioSessionId, {
-      status: ScenarioSessionStatus.ENDED,
       endedAt,
       startedAt,
       ...(scenarioSessionMetadata ? { metadata: scenarioSessionMetadata } : {}),
     });
-    this.logger.info(`Updated scenario ${scenarioSessionId} status to ENDED`);
 
     await this.createReflectionPromptRecordsForSession(
       scenarioSessionId,
@@ -980,21 +974,13 @@ export class ScenarioSessionService {
       previousMemory =
         await this.caseSharedService.getPreviousCaseMemory(caseSessionItemId);
     }
-    try {
-      this.getScenarioSessionSummaryFromAI(
-        scenarioSessionId,
-        needMemory,
-        callDuration,
-        previousMemory,
-        endScenarioSessionRequestBodyDto?.enableRecommendations,
-      );
-
-      await this.livekitService.deleteRoom(scenarioSession.roomId);
-    } catch (error) {
-      this.logger.debug(
-        `Failed to end session: ${JSON.stringify(error.message)}`,
-      );
-    }
+    this.getScenarioSessionSummaryFromAI(
+      scenarioSessionId,
+      needMemory,
+      callDuration,
+      previousMemory,
+      endScenarioSessionRequestBodyDto?.enableRecommendations,
+    );
 
     await this.consumeSimulationCredits(
       scenarioSession.counselorId,
