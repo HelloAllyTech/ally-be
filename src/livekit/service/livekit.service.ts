@@ -199,7 +199,8 @@ export class LiveKitService {
     participantIdentity?: string,
     metadata?: string,
   ) {
-    const identity = participantIdentity || this.configService.livekit.agentName;
+    const identity =
+      participantIdentity || this.configService.livekit.agentName;
     try {
       await this.agentService.createDispatch(roomName, identity, {
         metadata,

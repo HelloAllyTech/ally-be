@@ -690,7 +690,10 @@ describe('ParticipantJoinedHandler', () => {
 
       // Mock listParticipants to return an existing agent
       liveKitService.listParticipants.mockResolvedValue([
-        { identity: mockAppConfigService.livekit.agentName, kind: ParticipantInfo_Kind.AGENT },
+        {
+          identity: mockAppConfigService.livekit.agentName,
+          kind: ParticipantInfo_Kind.AGENT,
+        },
         { identity: 'existing-user', kind: ParticipantInfo_Kind.STANDARD },
       ] as any);
 

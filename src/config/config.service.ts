@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { TIME } from '../common/constants/time.constants';
 @Injectable()
 export class AppConfigService {
-  constructor(private configService: ConfigService) { }
+  constructor(private configService: ConfigService) {}
 
   get port(): number {
     return this.configService.get<number>('PORT', 8001);
