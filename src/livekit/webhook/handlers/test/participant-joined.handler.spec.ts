@@ -34,6 +34,7 @@ describe('ParticipantJoinedHandler', () => {
       secret: string;
     };
     featureFlag: { scenarioSessionAudioRecording: boolean };
+    livekit: { agentName: string };
   };
 
   const mockParticipantJoinedEvent: ParticipantJoinedEvent = {
@@ -102,6 +103,9 @@ describe('ParticipantJoinedHandler', () => {
       scenarioSessionAudioStorage: mockAudioStorageConfig,
       featureFlag: {
         scenarioSessionAudioRecording: false,
+      },
+      livekit: {
+        agentName: 'Agent',
       },
     };
 
@@ -183,7 +187,7 @@ describe('ParticipantJoinedHandler', () => {
       });
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
-        'Agent',
+        mockAppConfigService.livekit.agentName,
         expect.any(String),
       );
       expect(
@@ -194,7 +198,7 @@ describe('ParticipantJoinedHandler', () => {
         scenarioSession: { conversationStartedAt: expect.any(String) },
       });
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Successfully dispatched agent for participant Agent in room test-room',
+        `Successfully dispatched agent for participant ${mockAppConfigService.livekit.agentName} in room test-room`,
       );
     });
 
@@ -268,7 +272,7 @@ describe('ParticipantJoinedHandler', () => {
       );
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
-        'Agent',
+        mockAppConfigService.livekit.agentName,
         expect.any(String),
       );
       expect(
@@ -301,7 +305,7 @@ describe('ParticipantJoinedHandler', () => {
       );
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
-        'Agent',
+        mockAppConfigService.livekit.agentName,
         expect.any(String),
       );
       expect(
@@ -334,7 +338,7 @@ describe('ParticipantJoinedHandler', () => {
       );
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
-        'Agent',
+        mockAppConfigService.livekit.agentName,
         expect.any(String),
       );
       expect(
@@ -430,7 +434,7 @@ describe('ParticipantJoinedHandler', () => {
       });
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
-        'Agent',
+        mockAppConfigService.livekit.agentName,
         expect.any(String),
       );
       expect(
@@ -461,7 +465,7 @@ describe('ParticipantJoinedHandler', () => {
 
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'scenario-room-456',
-        'Agent',
+        mockAppConfigService.livekit.agentName,
         expect.any(String),
       );
       expect(
@@ -472,7 +476,7 @@ describe('ParticipantJoinedHandler', () => {
         scenarioSession: { conversationStartedAt: expect.any(String) },
       });
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Successfully dispatched agent for participant Agent in room scenario-room-456',
+        `Successfully dispatched agent for participant ${mockAppConfigService.livekit.agentName} in room scenario-room-456`,
       );
     });
 
@@ -500,7 +504,7 @@ describe('ParticipantJoinedHandler', () => {
       );
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
-        'Agent',
+        mockAppConfigService.livekit.agentName,
         expect.any(String),
       );
       expect(
@@ -557,7 +561,7 @@ describe('ParticipantJoinedHandler', () => {
 
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'minimal-room',
-        'Agent',
+        mockAppConfigService.livekit.agentName,
         expect.any(String),
       );
       expect(
@@ -588,7 +592,7 @@ describe('ParticipantJoinedHandler', () => {
       ).not.toHaveBeenCalled();
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'preview-test-room',
-        'Agent',
+        mockAppConfigService.livekit.agentName,
         expect.any(String),
       );
       expect(
@@ -627,7 +631,7 @@ describe('ParticipantJoinedHandler', () => {
 
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         'test-room',
-        'Agent',
+        mockAppConfigService.livekit.agentName,
         expect.any(String),
       );
       expect(
@@ -686,7 +690,7 @@ describe('ParticipantJoinedHandler', () => {
 
       // Mock listParticipants to return an existing agent
       liveKitService.listParticipants.mockResolvedValue([
-        { identity: 'Agent', kind: ParticipantInfo_Kind.AGENT },
+        { identity: mockAppConfigService.livekit.agentName, kind: ParticipantInfo_Kind.AGENT },
         { identity: 'existing-user', kind: ParticipantInfo_Kind.STANDARD },
       ] as any);
 
