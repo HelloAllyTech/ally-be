@@ -16,7 +16,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 @ApiSecurity('access-token')
 @Controller('v1/livekit')
 export class LiveKitController {
-  constructor(private readonly liveKitService: LiveKitService) { }
+  constructor(private readonly liveKitService: LiveKitService) {}
 
   @Post('token')
   @AuthPermissions([PERMISSIONS.EDIT_LIVEKIT])

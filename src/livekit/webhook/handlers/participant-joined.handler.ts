@@ -51,7 +51,7 @@ export class ParticipantJoinedHandler {
     private readonly scenarioSessionService: ScenarioSessionService,
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly configService: AppConfigService,
-  ) { }
+  ) {}
 
   async handle(event: ParticipantJoinedEvent): Promise<void> {
     try {
@@ -111,8 +111,8 @@ export class ParticipantJoinedHandler {
         const scenarioSession = isPreviewRoom
           ? null
           : await this.scenarioSessionService.getScenarioSessionByRoomId(
-            roomName,
-          );
+              roomName,
+            );
 
         if (
           scenarioSession &&

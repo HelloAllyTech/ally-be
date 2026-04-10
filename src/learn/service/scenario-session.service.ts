@@ -472,12 +472,12 @@ export class ScenarioSessionService {
     // If language is not English, get translated session events
     sessionEvents = isOtherLanguage
       ? await this.sessionEventSharedService.getSessionEventsTranslationsByScenarioId(
-        startScenarioSessionDto.scenarioId,
-        languageId,
-      )
+          startScenarioSessionDto.scenarioId,
+          languageId,
+        )
       : await this.sessionEventSharedService.getSessionEventsByScenarioId(
-        startScenarioSessionDto.scenarioId,
-      );
+          startScenarioSessionDto.scenarioId,
+        );
 
     if (isOtherLanguage) {
       await this.overlayBehaviorInstructionTranslations(scenario, languageId);
@@ -766,7 +766,7 @@ export class ScenarioSessionService {
       this.configService.simulationCredits.lifespanSecondsPerCredit ?? 60;
     if (
       credits.consumedCredits +
-      DEFAULT_SCENARIO_SESSION_TTL_SECONDS / lifespanSecondsPerCredit >
+        DEFAULT_SCENARIO_SESSION_TTL_SECONDS / lifespanSecondsPerCredit >
       credits.creditLimit
     ) {
       throw new BadRequestException(
@@ -1064,17 +1064,17 @@ export class ScenarioSessionService {
 
         const aiResult = useEvaluation
           ? await this.aiService.getScenarioSessionEvaluation(
-            messages as ScenarioEvaluationChatMessage[],
-            needMemory,
-            previousMemory,
-            undefined,
-            enableRecommendations,
-          )
+              messages as ScenarioEvaluationChatMessage[],
+              needMemory,
+              previousMemory,
+              undefined,
+              enableRecommendations,
+            )
           : await this.aiService.getScenarioSessionSummary(
-            messages as MessageRequest[],
-            needMemory,
-            previousMemory,
-          );
+              messages as MessageRequest[],
+              needMemory,
+              previousMemory,
+            );
 
         if (useEvaluation && aiResult && 'emotional_movement' in aiResult) {
           const messageStartSecondsByMessageId = new Map(
@@ -1405,12 +1405,12 @@ export class ScenarioSessionService {
     // If language is not English, get translated session events
     const sessionEvents = isOtherLanguage
       ? await this.sessionEventSharedService.getSessionEventsTranslationsByScenarioId(
-        scenarioId,
-        languageId,
-      )
+          scenarioId,
+          languageId,
+        )
       : await this.sessionEventSharedService.getSessionEventsByScenarioId(
-        scenarioId,
-      );
+          scenarioId,
+        );
 
     if (isOtherLanguage) {
       await this.overlayBehaviorInstructionTranslations(scenario, languageId);
