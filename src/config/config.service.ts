@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { TIME } from '../common/constants/time.constants';
 @Injectable()
 export class AppConfigService {
-  constructor(private configService: ConfigService) {}
+  constructor(private configService: ConfigService) { }
 
   get port(): number {
     return this.configService.get<number>('PORT', 8001);
@@ -246,6 +246,7 @@ export class AppConfigService {
       apiSecret: this.configService.get<string>('LIVEKIT_API_SECRET'),
       serverUrl: this.configService.get<string>('LIVEKIT_URL'),
       environment: this.configService.get<string>('LIVEKIT_ENVIRONMENT'),
+      agentName: this.configService.get<string>('LIVEKIT_AGENT_NAME', 'Agent'),
     };
   }
 

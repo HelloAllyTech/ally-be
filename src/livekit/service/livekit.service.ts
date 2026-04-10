@@ -196,11 +196,12 @@ export class LiveKitService {
 
   async agentDispatch(
     roomName: string,
-    participantIdentity: string,
+    participantIdentity?: string,
     metadata?: string,
   ) {
+    const identity = participantIdentity || this.configService.livekit.agentName;
     try {
-      await this.agentService.createDispatch(roomName, participantIdentity, {
+      await this.agentService.createDispatch(roomName, identity, {
         metadata,
       });
       this.logger.debug(`Agent dispatched to room: ${roomName}`);

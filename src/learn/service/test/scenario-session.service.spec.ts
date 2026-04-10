@@ -348,6 +348,9 @@ describe('ScenarioSessionService', () => {
       simulationConcurrency: {
         maxConcurrentSimulations: 100,
       },
+      livekit: {
+        agentName: 'Agent',
+      },
     };
 
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);

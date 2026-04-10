@@ -16,7 +16,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 @ApiSecurity('access-token')
 @Controller('v1/livekit')
 export class LiveKitController {
-  constructor(private readonly liveKitService: LiveKitService) {}
+  constructor(private readonly liveKitService: LiveKitService) { }
 
   @Post('token')
   @AuthPermissions([PERMISSIONS.EDIT_LIVEKIT])
@@ -69,7 +69,7 @@ export class LiveKitController {
   @ApiOperation({ summary: 'Dispatch agent to LiveKit room' })
   async agentDispatch(
     @Param('roomName') roomName: string,
-    @Param('participantIdentity') participantIdentity: string = 'Agent',
+    @Param('participantIdentity') participantIdentity?: string,
   ) {
     return this.liveKitService.agentDispatch(roomName, participantIdentity);
   }

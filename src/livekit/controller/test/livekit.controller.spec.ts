@@ -429,7 +429,7 @@ describe('LiveKitController', () => {
 
       expect(liveKitService.agentDispatch).toHaveBeenCalledWith(
         roomName,
-        'Agent',
+        undefined,
       );
       expect(result).toBeUndefined();
     });
