@@ -44,6 +44,19 @@ function scenarioMetadataPhaseStateIds(): [string, string, string, string] {
   return ['1', '2', '3', '4'];
 }
 
+/**
+ * Display labels for dialog states; stateIds match behaviorInstructions.stateInstructions
+ * (see migration AddStateNamesToScenarioMetadata1775202144374).
+ */
+function defaultStateNames(): { stateId: string; name: string }[] {
+  return [
+    { stateId: '-1', name: 'State -1' },
+    { stateId: '1', name: 'State 1' },
+    { stateId: '2', name: 'State 2' },
+    { stateId: '3', name: 'State 3' },
+  ];
+}
+
 /** Ten client utterances per language ID (ACTIVE scenarios require linguistic style samples). */
 function buildLinguisticStyleSamples(
   languageVoices: Record<string, string>,
@@ -146,6 +159,7 @@ const createScenariosData = async (
       showScoreMeter: false,
       // Required fields for ACTIVE scenarios
       competencyId,
+      stateNames: defaultStateNames(),
       characterProfileText:
         'Alex is a 25-year-old software engineer from Kochi, India. He is struggling with work-life balance and stress management. He tends to be casual in communication and is open to discussing his challenges. Alex is looking for support in managing his workload and finding healthier ways to cope with stress.',
       behaviorInstructions: [
@@ -211,6 +225,7 @@ const createScenariosData = async (
       showScoreMeter: false,
       // Required fields for ACTIVE scenarios
       competencyId,
+      stateNames: defaultStateNames(),
       characterProfileText:
         'Priya is a 29-year-old product manager from Bengaluru, India. She is experiencing anxiety due to high expectations and fear of underperforming at work. She has a thoughtful communication style and is willing to explore her feelings about workplace stress. Priya seeks help in managing her anxiety and building confidence in her professional role.',
       behaviorInstructions: [

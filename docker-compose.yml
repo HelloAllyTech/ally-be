@@ -90,8 +90,11 @@ services:
     networks:
       - app-network
 
+  # Pin image: :latest (2026.3.0+) requires LOCALSTACK_AUTH_TOKEN; the temporary
+  # LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT bypass ended 2026-04-06. This tag
+  # matches the classic community image (SQS-only here) without login.
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack:3.8.1
     container_name: localstack
     ports:
       - "4566:4566"
@@ -101,7 +104,6 @@ services:
       - SERVICES=sqs
       - DEBUG=1
       - LOCALSTACK_HOSTNAME=localstack
-      - LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT=1
     networks:
       - app-network
     healthcheck:
