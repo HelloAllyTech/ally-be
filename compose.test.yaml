@@ -35,7 +35,7 @@ services:
 
   # LocalStack for AWS services (SQS, S3, etc.)
   localstack-test:
-    image: localstack/localstack:latest
+    image: localstack/localstack:3.8.1
     environment:
       - SERVICES=sqs,s3,ses,logs
       - DEBUG=0
