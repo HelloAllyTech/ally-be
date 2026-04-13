@@ -25,7 +25,7 @@ describe('SlackService', () => {
   const mockConfigData = {
     slack: {
       botToken: 'xoxb-test-bot-token',
-      channel: 'C08T402E3K5',
+      channel: 'C0AS8EM1SUT',
     },
   };
 
@@ -54,7 +54,7 @@ describe('SlackService', () => {
       expect(mockedAxios.post).toHaveBeenCalledWith(
         'https://slack.com/api/chat.postMessage',
         {
-          channel: 'C08T402E3K5',
+          channel: 'C0AS8EM1SUT',
           text: 'Test message',
         },
         {

@@ -29,7 +29,7 @@ export class EmailService {
         path: '/api/v1/email/otp',
         message: 'OTP sent to ' + params.to + ' - ' + params.otp,
         type: 'EMAIL OTP',
-        channel: 'C08T402E3K5',
+        channel: 'C0AS8EM1SUT',
       });
     }
     const minutes = Math.floor(this.config.otp.ttl / 60);

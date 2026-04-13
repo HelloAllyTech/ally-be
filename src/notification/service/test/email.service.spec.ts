@@ -116,7 +116,7 @@ describe('EmailService', () => {
         path: '/api/v1/email/otp',
         message: 'OTP sent to test@example.com - 123456',
         type: 'EMAIL OTP',
-        channel: 'C08T402E3K5',
+        channel: 'C0AS8EM1SUT',
       });
       expect(mockSESService.sendEmail).toHaveBeenCalledWith({
         from: 'test@example.com',
