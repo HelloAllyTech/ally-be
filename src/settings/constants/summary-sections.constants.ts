@@ -22,6 +22,7 @@ export const SUMMARY_SECTIONS: readonly SummarySection[] = [
       { id: 'callType', label: 'Call Type' },
       { id: 'callQuality', label: 'Call Quality' },
       { id: 'newCallFollowUp', label: 'New Call Follow-up' },
+      { id: 'mode', label: 'Mode' },
     ],
   },
   {
