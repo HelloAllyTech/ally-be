@@ -14,6 +14,7 @@ import { ExecutionManager } from '../../../common/execution/execution-manager';
 import {
   AudioChatProvider,
   AudioChatPlatform,
+  ScribeSessionMode,
 } from '../../../common/constants/chat.constants';
 import { ForbiddenException } from '../../../exception/custom.exception';
 import { TIME } from '../../../common/constants/time.constants';
@@ -61,6 +62,7 @@ describe('CallDetailsService', () => {
     callInfo: {
       provider: AudioChatProvider.WEBRTC,
       platform: AudioChatPlatform.WEB,
+      mode: ScribeSessionMode.SCRIBE,
       pauseChat: false,
     },
     summary: {
@@ -371,6 +373,9 @@ describe('CallDetailsService', () => {
       };
 
       jest.spyOn(service, 'generateSummary').mockResolvedValue(mockSummary);
+      jest
+        .spyOn(callDetailsRepository, 'findOne')
+        .mockResolvedValue(mockCallDetails as any);
       jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
 
       await service.updateSummaryAndTags(mockChat);
@@ -385,6 +390,7 @@ describe('CallDetailsService', () => {
         {
           summary: {
             ...mockSummary,
+            mode: ScribeSessionMode.SCRIBE,
             sessionSummary: 'encrypted_Test summary',
           },
         },
@@ -393,13 +399,16 @@ describe('CallDetailsService', () => {
 
     it('should handle empty summary', async () => {
       jest.spyOn(service, 'generateSummary').mockResolvedValue(undefined);
+      jest
+        .spyOn(callDetailsRepository, 'findOne')
+        .mockResolvedValue(mockCallDetails as any);
       jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
 
       await service.updateSummaryAndTags(mockChat);
 
       expect(callDetailsRepository.update).toHaveBeenCalledWith(
         { chatId: 1 },
-        { summary: {} },
+        { summary: { mode: ScribeSessionMode.SCRIBE } },
       );
     });
   });
@@ -514,6 +523,30 @@ describe('CallDetailsService', () => {
             wordCountByLanguage: { english: 50, hindi: 30 },
           }),
         }),
+      );
+    });
+
+    it('should format dictation mode transcript as a single paragraph', async () => {
+      jest.spyOn(messageService, 'getMessageByChatId').mockResolvedValue({
+        messages: mockMessages as any,
+        count: mockMessages.length,
+      });
+      jest.spyOn(callDetailsRepository, 'findOne').mockResolvedValue({
+        ...mockCallDetails,
+        callInfo: {
+          ...mockCallDetails.callInfo,
+          mode: ScribeSessionMode.DICTATION,
+        },
+      } as any);
+      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
+      jest.spyOn(cache, 'hgetAll').mockResolvedValue({});
+      jest.spyOn(cache, 'del').mockResolvedValue(undefined);
+
+      await service.updateMessageStatistics(mockChat);
+
+      expect(cryptoService.encrypt).toHaveBeenCalledWith(
+        'Hello, I need help How can I assist you?',
+        'test-key',
       );
     });
 

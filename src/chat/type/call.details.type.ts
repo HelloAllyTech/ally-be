@@ -109,6 +109,7 @@ export type FlattenedSummaryNotePayload = {
   open_ended_questions_asked: number;
   emotional_lift: string;
   call_quality: number;
+  mode?: string | null;
 };
 
 export type FlattenedSummaryNotePayloadCamelCase = {
@@ -145,6 +146,7 @@ export type FlattenedSummaryNotePayloadCamelCase = {
   emotionalLift: string;
   callQuality: number;
   newCallFollowUp: string;
+  mode?: string | null;
 
   // Intake section fields
   intakeNotes?: string | null;

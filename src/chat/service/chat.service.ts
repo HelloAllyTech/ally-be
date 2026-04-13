@@ -13,6 +13,7 @@ import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import {
   AudioChatPlatform,
   AudioChatProvider,
+  ScribeSessionMode,
 } from '../../common/constants/chat.constants';
 import { CallDetails } from '../entity/call.details.entity';
 import { Pagination, SuccessResponse } from '../../common/type/common.type';
@@ -128,6 +129,7 @@ export class ChatService {
       tenantId?: string;
       provider?: AudioChatProvider;
       platform?: AudioChatPlatform;
+      mode?: ScribeSessionMode;
       externalId?: string;
       status?: ChatStatus;
       startedAt?: Date;
@@ -142,6 +144,7 @@ export class ChatService {
       tenantId,
       provider,
       platform,
+      mode,
       externalId,
       status,
       startedAt,
@@ -178,6 +181,7 @@ export class ChatService {
       callInfo: {
         provider,
         platform,
+        mode: mode || ScribeSessionMode.SCRIBE,
         summaryName: ChatUtil.getSummaryName(chat),
       },
     });
@@ -192,6 +196,7 @@ export class ChatService {
       counselorId: number;
       provider?: AudioChatProvider;
       platform?: AudioChatPlatform;
+      mode?: ScribeSessionMode;
       externalId?: string;
       status?: ChatStatus;
       startedAt?: Date;

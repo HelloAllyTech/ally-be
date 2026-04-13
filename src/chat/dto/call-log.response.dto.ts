@@ -4,6 +4,7 @@ import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type'
 import {
   AudioChatPlatform,
   AudioChatProvider,
+  ScribeSessionMode,
 } from '../../common/constants/chat.constants';
 import { SummaryFeedback } from '../entity/summary-feedback.entity';
 
@@ -61,6 +62,9 @@ export class CallInfo {
 
   @ApiProperty({ required: false })
   isSummaryFeedbackAdded?: boolean;
+
+  @ApiProperty({ required: false, enum: ScribeSessionMode })
+  mode?: ScribeSessionMode;
 }
 
 export class CallDetails {

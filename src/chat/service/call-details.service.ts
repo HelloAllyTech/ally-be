@@ -13,7 +13,10 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { CallInfoDto } from '../dto/chat.response.dto';
 import { ChatUtil } from '../util/chat.util';
 import { StringUtil } from '../../common/util/string.util';
-import { AudioChatProvider } from '../../common/constants/chat.constants';
+import {
+  AudioChatProvider,
+  ScribeSessionMode,
+} from '../../common/constants/chat.constants';
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
 import { TIME } from '../../common/constants/time.constants';
 import { ForbiddenException } from '../../exception/custom.exception';
@@ -81,7 +84,11 @@ export class CallDetailsService {
   }
 
   async updateSummaryAndTags(chat: Chat) {
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId: chat.id, tenantId: ExecutionManager.getTenantId() },
+    });
     const summary: any = (await this.generateSummary(chat.id)) || {};
+    summary.mode = callDetails?.callInfo?.mode ?? ScribeSessionMode.SCRIBE;
 
     if (summary && summary.sessionSummary) {
       summary.sessionSummary = await this.cryptoService.encrypt(
@@ -205,6 +212,15 @@ export class CallDetailsService {
       let transcript = '';
       let currentStage = '';
 
+      if (!callDetails) {
+        callDetails = await this.callDetailsRepository.findOne({
+          where: { chatId, tenantId: ExecutionManager.getTenantId() },
+        });
+      }
+
+      const mode = callDetails?.callInfo?.mode ?? ScribeSessionMode.SCRIBE;
+      const isDictationMode = mode === ScribeSessionMode.DICTATION;
+
       messages.forEach((message) => {
         if (message.type === MessageType.NUDGE) {
           noOfNudges++;
@@ -221,12 +237,19 @@ export class CallDetailsService {
         }
         if (message.senderId == chat.clientId) {
           clientWordCount += StringUtil.wordCount(message.content);
-          transcript += `Client: ${message.content}\n`;
+          transcript += isDictationMode
+            ? `${message.content} `
+            : `Client: ${message.content}\n`;
         } else {
           counselorWordCount += StringUtil.wordCount(message.content);
-          transcript += `Counselor: ${message.content}\n`;
+          transcript += isDictationMode
+            ? `${message.content} `
+            : `Counselor: ${message.content}\n`;
         }
       });
+      if (isDictationMode) {
+        transcript = transcript.replace(/\s+/g, ' ').trim();
+      }
       const clientTalkingPercentage =
         clientWordCount > 0
           ? parseFloat(
@@ -245,12 +268,6 @@ export class CallDetailsService {
               ).toFixed(3),
             )
           : 0;
-
-      if (!callDetails) {
-        callDetails = await this.callDetailsRepository.findOne({
-          where: { chatId, tenantId: ExecutionManager.getTenantId() },
-        });
-      }
 
       const existingCallInfo = callDetails?.callInfo || {};
 
@@ -321,8 +338,15 @@ export class CallDetailsService {
         sortBy: 'createdAt',
         order: 'ASC',
       });
-    const aiResponse =
-      await this.aiService.generateSummaryAndTags(messageRequests);
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+    const mode = callDetails?.callInfo?.mode;
+
+    const aiResponse = await this.aiService.generateSummaryAndTags(
+      messageRequests,
+      mode,
+    );
     const convertedResponse = this.convertToCamelCase(
       aiResponse,
     ) as FlattenedSummaryNotePayloadCamelCase;

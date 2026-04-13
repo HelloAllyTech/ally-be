@@ -20,6 +20,11 @@ export enum AudioChatPlatform {
   MOBILE = 'MOBILE',
 }
 
+export enum ScribeSessionMode {
+  SCRIBE = 'SCRIBE',
+  DICTATION = 'DICTATION',
+}
+
 // Chat types that can be hidden via preferences
 export enum ChatTypes {
   MICROPHONE_CHAT = 'MICROPHONE_CHAT',

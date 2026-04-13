@@ -259,6 +259,7 @@ describe('StreamFileProcessorService', () => {
           provide: ChatService,
           useValue: {
             createChatForAnonymousClient: jest.fn(),
+            getChatWithCallDetails: jest.fn(),
             updateChat: jest.fn(),
             updateCallMetadata: jest.fn(),
           },
@@ -283,6 +284,7 @@ describe('StreamFileProcessorService', () => {
     dataSource = module.get(DataSource);
     chatService = module.get(ChatService);
     aiEventService = module.get(AiEventService);
+    chatService.getChatWithCallDetails.mockResolvedValue({} as any);
 
     jest.clearAllMocks();
   });

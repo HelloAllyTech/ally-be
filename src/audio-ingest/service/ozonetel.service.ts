@@ -217,11 +217,15 @@ export class OzonetelService {
           this.logger.debug(
             `Audio file is ready for processing for AgentId: ${AgentID} | monitorUCID: ${monitorUCID} | chatId: ${chat.id}`,
           );
+          const { callDetails } = await this.chatService.getChatWithCallDetails(
+            chat.id,
+          );
           this.aiEventService.publishTranscribeAudioEvent({
             message_type: 'transcribe_and_summarize_request',
             timestamp: Date.now(),
             audio_url: AudioFile,
             chat_id: chat.id,
+            mode: callDetails?.callInfo?.mode,
           });
           this.auditLogger.log({
             eventType: AUDIT_EVENTS.AUDIO_TRANSCRIPT_REQUEST_SENT,

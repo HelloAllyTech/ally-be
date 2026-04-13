@@ -12,6 +12,7 @@ import { ChatAudioUploadStatus } from '../entity/chat-audio-uploads.entity';
 import {
   AudioChatProvider,
   AudioChatPlatform,
+  ScribeSessionMode,
 } from '../../common/constants/chat.constants';
 import { S3Service } from '../../aws/service/s3.service';
 import { ChatService } from '../../chat/service/chat.service';
@@ -102,6 +103,7 @@ export class StreamFileProcessorService {
       counselorId: number;
       provider: AudioChatProvider;
       platform?: AudioChatPlatform;
+      mode?: ScribeSessionMode;
       sampleRate?: number;
     },
     onChatCreated: (chatId: number) => void,
@@ -121,6 +123,7 @@ export class StreamFileProcessorService {
             counselorId: chatData.counselorId,
             provider: chatData.provider,
             platform: chatData.platform,
+            mode: chatData.mode,
           },
           entityManager,
         );
@@ -682,6 +685,8 @@ export class StreamFileProcessorService {
           provider,
         },
       });
+      const { callDetails } =
+        await this.chatService.getChatWithCallDetails(chatId);
 
       this.aiEventService.publishTranscribeAudioEvent({
         message_type: 'transcribe_and_summarize_request',
@@ -689,6 +694,7 @@ export class StreamFileProcessorService {
         audio_url: audioUrl,
         chat_id: chatId,
         sample_rate: sampleRate!,
+        mode: callDetails?.callInfo?.mode,
       });
 
       this.auditLogger.log({

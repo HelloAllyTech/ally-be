@@ -27,6 +27,7 @@ import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { UserService } from 'src/user/service/user.service';
 import { NotificationService } from 'src/notification/service/notification.service';
+import { ScribeSessionMode } from '../../common/constants/chat.constants';
 
 @Injectable()
 export class ChatAiService {
@@ -68,6 +69,10 @@ export class ChatAiService {
       const convertedResponse = CommonUtil.convertToCamelCase(
         summary,
       ) as FlattenedSummaryNotePayloadCamelCase;
+      const { callDetails } =
+        await this.chatService.getChatWithCallDetails(chatId);
+      convertedResponse.mode =
+        callDetails?.callInfo?.mode ?? ScribeSessionMode.SCRIBE;
       if (convertedResponse.sessionSummary) {
         convertedResponse.sessionSummary = await this.cryptoService.encrypt(
           convertedResponse.sessionSummary,
@@ -98,9 +103,6 @@ export class ChatAiService {
         this.logger.error(`Counselor not found for chatId: ${chatId}`);
         return true;
       }
-
-      const { callDetails } =
-        await this.chatService.getChatWithCallDetails(chatId);
 
       await this.notificationService.sendEmailSummaryNotification({
         to: counselor.email,
