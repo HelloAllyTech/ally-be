@@ -130,6 +130,7 @@ describe('OzonetelService', () => {
   beforeEach(async () => {
     const mockChatService = {
       getChatByExternalId: jest.fn(),
+      getChatWithCallDetails: jest.fn(),
       createChatForAnonymousClient: jest.fn(),
       endChat: jest.fn(),
       updateCallMetadata: jest.fn(),
@@ -238,6 +239,7 @@ describe('OzonetelService', () => {
       );
       userService.getUserByExternalId.mockResolvedValue(mockCounselor);
       chatService.getChatByExternalId.mockResolvedValue(mockChat);
+      chatService.getChatWithCallDetails.mockResolvedValue({} as any);
       mockedCheckAudioFileReady.mockResolvedValue(true);
       permissionValidatorService.validatePermissions.mockResolvedValue(true);
     });
@@ -262,6 +264,7 @@ describe('OzonetelService', () => {
         timestamp: expect.any(Number),
         audio_url: 'https://example.com/audio.wav',
         chat_id: 1,
+        mode: undefined,
       });
     });
 
@@ -897,6 +900,7 @@ describe('OzonetelService', () => {
 
       // Then, process call detail
       chatService.getChatByExternalId.mockResolvedValue(mockChat);
+      chatService.getChatWithCallDetails.mockResolvedValue({} as any);
       mockedCheckAudioFileReady.mockResolvedValue(true);
 
       await service.processOzonetelCallDetail(mockCallDetail, 'TEST_CODE');

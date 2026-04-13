@@ -13,6 +13,7 @@ import { ChatService } from '../service/chat.service';
 import {
   AudioChatPlatform,
   AudioChatProvider,
+  ScribeSessionMode,
 } from '../../common/constants/chat.constants';
 import {
   PLACEHOLDER_CHAT_ID,
@@ -239,10 +240,12 @@ export class MicrophoneChatGateway
     {
       isLinear16Encoded,
       platform,
+      mode,
       sampleRate,
     }: {
       isLinear16Encoded?: boolean;
       platform: AudioChatPlatform;
+      mode?: ScribeSessionMode;
       sampleRate?: number;
     },
   ) {
@@ -284,6 +287,7 @@ export class MicrophoneChatGateway
           counselorId: session.userId,
           provider: AudioChatProvider.MICROPHONE,
           platform,
+          mode,
           sampleRate,
         },
         (chatId: number) => {

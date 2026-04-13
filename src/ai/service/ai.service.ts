@@ -44,6 +44,7 @@ import {
   TranscribeAudioResponse,
   UpdateReferenceDocumentResponse,
 } from '../dto/ai.response.dto';
+import { ScribeSessionMode } from 'src/common/constants/chat.constants';
 
 @Injectable()
 export class AiService {
@@ -118,11 +119,15 @@ export class AiService {
   }
 
   @RetryOnFail(3, 1000)
-  async generateSummaryAndTags(messages: MessageRequest[]) {
+  async generateSummaryAndTags(
+    messages: MessageRequest[],
+    mode?: ScribeSessionMode,
+  ) {
     const prompts = await this.getPromptOverrides();
     const request: GenerateSummaryRequest = {
       chat_history: messages,
       prompts,
+      mode,
     };
     let response: GenerateSummaryResponse;
     try {

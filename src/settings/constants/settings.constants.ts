@@ -41,6 +41,7 @@ export const DEFAULT_AI_SUMMARY_FIELDS_ARRAY =
     'clientId',
     'counsellor',
     'callType',
+    'mode',
     'age',
     'gender',
     'profession',

@@ -136,6 +136,7 @@ export class ChatSummaryService {
       clientId: chat.clientId?.toString() ?? defaultVal,
       counsellor: counselor?.name ?? defaultVal,
       callType: summaryInfo.callType ?? defaultVal,
+      mode: summaryInfo.mode ?? defaultVal,
       age: summaryInfo.age?.toString() ?? defaultVal,
       gender: summaryInfo.gender ?? defaultVal,
       profession: summaryInfo.profession ?? defaultVal,

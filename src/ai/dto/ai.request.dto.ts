@@ -1,3 +1,5 @@
+import { ScribeSessionMode } from 'src/common/constants/chat.constants';
+
 export type PromptOverride =
   | string
   | {
@@ -8,6 +10,7 @@ export type PromptOverride =
 export type GenerateSummaryRequest = {
   chat_history: MessageRequest[];
   prompts?: Record<string, PromptOverride>;
+  mode?: ScribeSessionMode;
 };
 
 export type MessageRequest = {
@@ -79,6 +82,7 @@ export interface TranscribeAudioRequest {
   chat_id: number;
   sample_rate: number;
   prompts?: Record<string, PromptOverride>;
+  mode?: ScribeSessionMode;
 }
 
 export interface ScenarioReportGenerateRequest {

@@ -17,6 +17,7 @@ import { FlattenedSummaryNotePayload } from 'src/chat/type/call.details.type';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { NotificationService } from 'src/notification/service/notification.service';
 import { UserService } from 'src/user/service/user.service';
+import { ScribeSessionMode } from 'src/common/constants/chat.constants';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -101,6 +102,7 @@ describe('ChatAiService', () => {
   const mockCallDetails = {
     callInfo: {
       summaryName: 'test-call-1',
+      mode: ScribeSessionMode.DICTATION,
     },
   };
 
@@ -289,6 +291,7 @@ describe('ChatAiService', () => {
             counsellor: 'Jane Smith',
             sessionSummary: 'Test summary',
             callQuality: 5,
+            mode: ScribeSessionMode.DICTATION,
             tags: [{ tag: 'urgent', positivity_rating: 0.2 }],
           }),
         },
@@ -318,6 +321,9 @@ describe('ChatAiService', () => {
     it('should handle missing counselor gracefully', async () => {
       mockCallDetailsRepository.update.mockResolvedValue({});
       mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        callDetails: mockCallDetails,
+      });
       mockUserService.get.mockResolvedValue(null);
 
       const result = await service.addSummary(1, mockSummary);
@@ -374,7 +380,7 @@ describe('ChatAiService', () => {
       expect(result).toBe(true);
       expect(mockCallDetailsRepository.update).toHaveBeenCalledWith(
         { chatId: 1 },
-        { summary: {} },
+        { summary: { mode: ScribeSessionMode.DICTATION } },
       );
     });
   });
