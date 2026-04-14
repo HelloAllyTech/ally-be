@@ -398,7 +398,17 @@ export class ChatService {
       throw new HttpException('Chat not found', 404);
     }
 
-    return this.messageService.getMessages(chatId, userId, chat, options);
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+
+    return this.messageService.getMessages(
+      chatId,
+      userId,
+      chat,
+      options,
+      callDetails?.callInfo?.mode,
+    );
   }
 
   async handleChatEnded(chat: Chat) {

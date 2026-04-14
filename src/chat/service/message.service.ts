@@ -15,6 +15,7 @@ import { MessageWithFeedback } from '../type/chat.type';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { MessageType, Message } from '../entity/message.entity';
 import { MessageFilter } from '../type/message.type';
+import { ScribeSessionMode } from '../../common/constants/chat.constants';
 
 @Injectable()
 export class MessageService {
@@ -72,6 +73,7 @@ export class MessageService {
       sortBy?: string;
       sortOrder?: 'ASC' | 'DESC';
     },
+    mode?: ScribeSessionMode,
   ) {
     const {
       limit = 10,
@@ -112,9 +114,14 @@ export class MessageService {
       },
     });
 
+    if (mode === ScribeSessionMode.DICTATION && messages.length > 0) {
+      return this.concatenateMessages(messages);
+    }
+
     return {
       data: messages.map((message) => this.formatMessage(message)),
       count,
+      mode: mode || ScribeSessionMode.SCRIBE,
     };
   }
 
@@ -139,6 +146,30 @@ export class MessageService {
       }),
     );
     return messageRequests;
+  }
+
+  private concatenateMessages(messages: any[]) {
+    const sortedMessages = [...messages].sort(
+      (a, b) => (a.startSeconds || 0) - (b.startSeconds || 0),
+    );
+    const concatenatedContent = sortedMessages
+      .map((message) => message.content)
+      .join(' ');
+
+    const firstMessage = sortedMessages[0];
+    const lastMessage = sortedMessages[sortedMessages.length - 1];
+
+    return {
+      data: [
+        {
+          ...this.formatMessage(firstMessage),
+          content: concatenatedContent,
+          endSeconds: lastMessage.endSeconds,
+        },
+      ],
+      count: 1,
+      mode: ScribeSessionMode.DICTATION,
+    };
   }
 
   private async decryptMessages(messages: Message[]) {

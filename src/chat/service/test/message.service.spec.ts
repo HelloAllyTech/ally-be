@@ -13,6 +13,7 @@ import { PERMISSIONS } from '../../../authorization/constants/permissions.consta
 import { ANONYMOUS_CLIENT_ID } from '../../../common/constants/user.constants';
 import { UserRole } from '../../../common/constants/user.constants';
 import { Message, MessageType } from 'src/chat/entity/message.entity';
+import { ScribeSessionMode } from 'src/common/constants/chat.constants';
 
 describe('MessageService', () => {
   let service: MessageService;
@@ -333,6 +334,43 @@ describe('MessageService', () => {
       const result = await service.getMessages(1, 200, mockChat, {});
 
       expect(result).toBeDefined();
+    });
+
+    it('should concatenate messages in DICTATION mode', async () => {
+      const mockMessages = [
+        {
+          ...mockMessage,
+          id: 1,
+          content: 'First message',
+          startSeconds: 0,
+          endSeconds: 5,
+        },
+        {
+          ...mockMessage,
+          id: 2,
+          content: 'Second message',
+          startSeconds: 5,
+          endSeconds: 10,
+        },
+      ];
+      messageRepository.getMessagesByChatIdQuery.mockResolvedValue({
+        messages: mockMessages as any,
+        count: 2,
+      });
+      permissionValidator.validatePermissions.mockResolvedValue(true);
+
+      const result = await service.getMessages(
+        1,
+        100,
+        mockChat,
+        {},
+        ScribeSessionMode.DICTATION,
+      );
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].content).toBe('First message Second message');
+      expect(result.data[0].endSeconds).toBe(10);
+      expect(result.count).toBe(1);
     });
   });
 
