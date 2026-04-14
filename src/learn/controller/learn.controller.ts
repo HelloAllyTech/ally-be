@@ -740,6 +740,12 @@ export class LearnController {
     enum: SortOrder,
     description: 'Sort order',
   })
+  @ApiQuery({
+    name: 'languageCode',
+    required: false,
+    type: String,
+    description: 'Language code',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_SESSION_SCENARIO_SUMMARY])
   @Get('scenario-session/:scenarioSessionId/event-checklist')
   async getScenarioSessionEventChecklist(
@@ -749,6 +755,7 @@ export class LearnController {
     @Query('offset') offset?: number,
     @Query('sortBy') sortBy?: string,
     @Query('order') order?: SortOrder,
+    @Query('languageCode') languageCode?: string,
   ): Promise<ScenarioSessionEventChecklistResponseDto> {
     return this.scenarioSessionService.getScenarioSessionEventChecklist(
       scenarioSessionId,
@@ -759,6 +766,7 @@ export class LearnController {
         sortBy,
         order,
       },
+      languageCode,
     );
   }
 
