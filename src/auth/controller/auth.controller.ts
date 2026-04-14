@@ -23,7 +23,6 @@ import { LoggerService } from '../../logger/logger.service';
 import { ApiBody, ApiTags } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
-import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { GoogleSignInDto } from '../dto/google-token.dto';
 import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
 
@@ -34,10 +33,7 @@ import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
 @ApiTags('Auth')
 export class AuthController {
   private logger = LoggerService.getInstance(AuthController.name);
-  constructor(
-    private authService: AuthService,
-    private permissionsService: PermissionsService,
-  ) {}
+  constructor(private authService: AuthService) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -89,6 +85,15 @@ export class AuthController {
       ...tokens,
       tokenType: 'bearer',
     };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('impersonate')
+  @Version('1')
+  @HttpCode(HttpStatus.OK)
+  async impersonate(@Body() email: string) {
+    const data = await this.authService.impersonate(email);
+    return { message: data.message, data: data.data };
   }
 
   @UseGuards(JwtAuthGuard)

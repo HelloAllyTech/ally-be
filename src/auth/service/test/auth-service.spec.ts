@@ -24,6 +24,7 @@ import { AuthUtil } from 'src/auth/util/auth.util';
 import { LoggerService } from 'src/logger/logger.service';
 import { GroupService } from 'src/authorization/service/group.service';
 import { AuthProvider } from 'src/auth/type/auth.types';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
 
 // Mock bcrypt at the module level
 jest.mock('bcrypt', () => ({
@@ -170,6 +171,12 @@ describe('AuthService', () => {
           useValue: {
             getUserRolesByUserId: jest.fn(),
             getUserGroupNames: jest.fn(),
+          },
+        },
+        {
+          provide: PermissionsService,
+          useValue: {
+            hasPermission: jest.fn(),
           },
         },
       ],
