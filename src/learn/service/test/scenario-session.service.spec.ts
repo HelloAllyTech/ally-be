@@ -94,6 +94,7 @@ describe('ScenarioSessionService', () => {
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let scenarioEventsRepository: jest.Mocked<ScenarioEventsRepository>;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
+  let sharedLanguageService: jest.Mocked<SharedLanguageService>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -524,6 +525,7 @@ describe('ScenarioSessionService', () => {
     scenarioSharedService = module.get(ScenarioSharedService);
     scenarioEventsRepository = module.get(ScenarioEventsRepository);
     scenariosRepository = module.get(ScenariosRepository) as any;
+    sharedLanguageService = module.get(SharedLanguageService);
   });
 
   afterEach(() => {
@@ -2304,6 +2306,145 @@ describe('ScenarioSessionService', () => {
         mockScenarioId,
         {},
       );
+    });
+
+    it('should use translated event name when languageCode is provided and translation exists', async () => {
+      setupSessionAndScenarioMocks(ExperienceMode.CHECKLIST);
+      scenarioEventsRepository.getEventChecklist.mockResolvedValue([
+        {
+          eventId: 'event-1',
+          checklistVisibilityStatus: true,
+          events: { id: 'event-1', name: 'Empathy Check' },
+          scenarioSessionEvent: [{ id: 'sse-1' }],
+        },
+        {
+          eventId: 'event-2',
+          checklistVisibilityStatus: true,
+          events: { id: 'event-2', name: 'Greeting' },
+          scenarioSessionEvent: [],
+        },
+      ] as any);
+
+      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue({
+        id: 5,
+        value: 'mr',
+      } as any);
+
+      sessionEventTranslationService.getSessionEventsTranslationsByScenarioId.mockResolvedValue(
+        [
+          { id: 'event-1', name: 'सहानुभूती तपासणी' },
+          { id: 'event-2', name: 'अभिवादन' },
+        ] as any,
+      );
+
+      const result = await service.getScenarioSessionEventChecklist(
+        mockScenarioSessionId,
+        mockCounselorId,
+        {},
+        'mr',
+      );
+
+      expect(result.eventChecklist).toHaveLength(2);
+      expect(result.eventChecklist[0]).toEqual({
+        id: 'event-1',
+        name: 'सहानुभूती तपासणी',
+        hasOccurred: true,
+      });
+      expect(result.eventChecklist[1]).toEqual({
+        id: 'event-2',
+        name: 'अभिवादन',
+        hasOccurred: false,
+      });
+      expect(
+        sharedLanguageService.getLanguageByLanguageCode,
+      ).toHaveBeenCalledWith('mr');
+      expect(
+        sessionEventTranslationService.getSessionEventsTranslationsByScenarioId,
+      ).toHaveBeenCalledWith(mockScenarioId, 5);
+    });
+
+    it('should fall back to original name when no translation exists for an event', async () => {
+      setupSessionAndScenarioMocks(ExperienceMode.CHECKLIST);
+      scenarioEventsRepository.getEventChecklist.mockResolvedValue([
+        {
+          eventId: 'event-1',
+          checklistVisibilityStatus: true,
+          events: { id: 'event-1', name: 'Empathy Check' },
+          scenarioSessionEvent: [],
+        },
+        {
+          eventId: 'event-3',
+          checklistVisibilityStatus: true,
+          events: { id: 'event-3', name: 'Closing' },
+          scenarioSessionEvent: [],
+        },
+      ] as any);
+
+      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue({
+        id: 5,
+        value: 'mr',
+      } as any);
+
+      // Only event-1 has a translation; event-3 does not
+      sessionEventTranslationService.getSessionEventsTranslationsByScenarioId.mockResolvedValue(
+        [{ id: 'event-1', name: 'सहानुभूती तपासणी' }] as any,
+      );
+
+      const result = await service.getScenarioSessionEventChecklist(
+        mockScenarioSessionId,
+        mockCounselorId,
+        {},
+        'mr',
+      );
+
+      expect(result.eventChecklist[0].name).toBe('सहानुभूती तपासणी');
+      expect(result.eventChecklist[1].name).toBe('Closing');
+    });
+
+    it('should throw BadRequestException when languageCode is provided but language is not found', async () => {
+      setupSessionAndScenarioMocks(ExperienceMode.CHECKLIST);
+      scenarioEventsRepository.getEventChecklist.mockResolvedValue([]);
+
+      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(null);
+
+      await expect(
+        service.getScenarioSessionEventChecklist(
+          mockScenarioSessionId,
+          mockCounselorId,
+          {},
+          'xx',
+        ),
+      ).rejects.toThrow(new BadRequestException('Language not found'));
+
+      expect(
+        sessionEventTranslationService.getSessionEventsTranslationsByScenarioId,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should not call translation service when languageCode is not provided', async () => {
+      setupSessionAndScenarioMocks(ExperienceMode.CHECKLIST);
+      scenarioEventsRepository.getEventChecklist.mockResolvedValue([
+        {
+          eventId: 'event-1',
+          checklistVisibilityStatus: true,
+          events: { id: 'event-1', name: 'Empathy Check' },
+          scenarioSessionEvent: [],
+        },
+      ] as any);
+
+      const result = await service.getScenarioSessionEventChecklist(
+        mockScenarioSessionId,
+        mockCounselorId,
+        {},
+      );
+
+      expect(
+        sharedLanguageService.getLanguageByLanguageCode,
+      ).not.toHaveBeenCalled();
+      expect(
+        sessionEventTranslationService.getSessionEventsTranslationsByScenarioId,
+      ).not.toHaveBeenCalled();
+      expect(result.eventChecklist[0].name).toBe('Empathy Check');
     });
   });
 

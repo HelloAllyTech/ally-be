@@ -106,6 +106,8 @@ import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-re
 import { ScenarioSessionRecordingService } from './scenario-session-recording.service';
 import { convertTimestampNsToDate } from 'src/common/util/date.util';
 import { EgressInfo } from 'livekit-server-sdk';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -144,6 +146,8 @@ export class ScenarioSessionService {
     private scenarioEventsRepository: ScenarioEventsRepository,
     private scenariosRepository: ScenariosRepository,
     private scenarioSessionRecordingService: ScenarioSessionRecordingService,
+    private sharedLanguageService: SharedLanguageService,
+    private sessionEventTranslationService: SessionEventTranslationService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -1667,6 +1671,7 @@ export class ScenarioSessionService {
     scenarioSessionId: string,
     counselorId: number,
     options: Pagination,
+    languageCode?: string,
   ): Promise<ScenarioSessionEventChecklistResponseDto> {
     const scenarioSession = await this.scenarioSessionRepository.findOne({
       where: { id: scenarioSessionId },
@@ -1696,9 +1701,31 @@ export class ScenarioSessionService {
         options,
       );
 
+    let translatedEventMap = new Map();
+    if (languageCode) {
+      const languageDetails =
+        await this.sharedLanguageService.getLanguageByLanguageCode(
+          languageCode,
+        );
+
+      if (!languageDetails) {
+        throw new BadRequestException('Language not found');
+      }
+
+      const scenarioTranslation =
+        await this.sessionEventTranslationService.getSessionEventsTranslationsByScenarioId(
+          scenarioSession.scenarioId,
+          languageDetails.id,
+        );
+
+      translatedEventMap = new Map(
+        scenarioTranslation.map((t) => [t.id, t.name]),
+      );
+    }
+
     const eventChecklistDto = eventChecklist.map((event) => ({
       id: event.eventId,
-      name: event?.events?.name,
+      name: translatedEventMap.get(event.eventId) ?? event?.events?.name,
       hasOccurred:
         Array.isArray(event.scenarioSessionEvent) &&
         event.scenarioSessionEvent.length > 0,
