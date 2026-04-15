@@ -101,7 +101,7 @@ export class AuthService {
     this.auditLogger.log({
       eventType: AUDIT_EVENTS.SUPER_ADMIN_IMPERSONATE,
       details: {
-        purpose: 'Audio transcript request sent to AI service',
+        purpose: 'Super admin impersonated a user',
         userDetails: user,
       },
     });
