@@ -16,6 +16,7 @@ const mockAuthService = {
   refreshTokens: jest.fn(),
   logout: jest.fn(),
   getUserPermissions: jest.fn(),
+  impersonate: jest.fn(),
 };
 
 const mockPermissionsService = {
@@ -117,6 +118,25 @@ describe('AuthController', () => {
       accessToken: 'token',
       refreshToken: 'refresh',
       user: { id: 1, email: 'test@example.com' },
+    });
+  });
+
+  describe('impersonate', () => {
+    it('should call impersonate method and return tokens', async () => {
+      mockAuthService.impersonate.mockResolvedValue({
+        message: 'Impersonation successful',
+        data: { accessToken: 'token', refreshToken: 'refresh' },
+      });
+      const result = await controller.impersonate({
+        email: 'test@example.com',
+      } as any);
+      expect(result).toEqual({
+        message: 'Impersonation successful',
+        data: { accessToken: 'token', refreshToken: 'refresh' },
+      });
+      expect(mockAuthService.impersonate).toHaveBeenCalledWith({
+        email: 'test@example.com',
+      });
     });
   });
 });
