@@ -23,9 +23,12 @@ import { LoggerService } from '../../logger/logger.service';
 import { ApiBody, ApiTags } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
-import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { GoogleSignInDto } from '../dto/google-token.dto';
 import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from '../decorators/auth-permissions.decorator';
+import { ImpersonateDto } from '../dto/impersonate.dto';
 
 @Controller({
   path: 'auth',
@@ -89,6 +92,16 @@ export class AuthController {
       ...tokens,
       tokenType: 'bearer',
     };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('impersonate')
+  @AuthPermissions([PERMISSIONS.IMPERSONATE_USER])
+  @Version('1')
+  @HttpCode(HttpStatus.OK)
+  async impersonate(@Body() ImpersonateDto: ImpersonateDto) {
+    const data = await this.authService.impersonate(ImpersonateDto);
+    return { message: data.message, data: data.data };
   }
 
   @UseGuards(JwtAuthGuard)

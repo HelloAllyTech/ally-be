@@ -33,6 +33,8 @@ import { GoogleSignInDto } from '../dto/google-token.dto';
 import * as crypto from 'crypto';
 import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
 import { CachedAuthAttempt } from '../interface/cached-auth-attempt.interface';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { Impersonate } from '../interface/impersonate.interface';
 
 @Injectable()
 export class AuthService {
@@ -49,6 +51,7 @@ export class AuthService {
     private eventEmitter: EventEmitter2,
     private readonly cache: RedisService,
     private readonly groupService: GroupService,
+    private permissionsService: PermissionsService,
   ) {
     this.userRepository = this.dataSource.getRepository(User);
     this.refreshTokenRepository = this.dataSource.getRepository(RefreshToken);
@@ -76,6 +79,25 @@ export class AuthService {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...result } = user;
     return result;
+  }
+
+  async impersonate(ImpersonateData: Impersonate) {
+    const userEmail = ImpersonateData.email;
+
+    const user = await this.userRepository.findOne({
+      where: { email: userEmail, status: UserStatus.ACTIVE },
+      select: ['id', 'username', 'password', 'tenantId'],
+    });
+
+    const isMultitenantAdmin = await this.permissionsService.isMultiTenantAdmin(
+      Number(user?.id),
+    );
+
+    if (isMultitenantAdmin)
+      return { message: 'Multi-tenant admin cannot be impersonated.' };
+
+    const tokens = await this.generateTokens(user as User);
+    return { message: 'Impersonation successful', data: tokens };
   }
 
   async generateTokens(
