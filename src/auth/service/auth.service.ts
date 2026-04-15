@@ -97,6 +97,14 @@ export class AuthService {
       return { message: 'Multi-tenant admin cannot be impersonated.' };
 
     const tokens = await this.generateTokens(user as User);
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.SUPER_ADMIN_IMPERSONATE,
+      details: {
+        purpose: 'Audio transcript request sent to AI service',
+        userDetails: user,
+      },
+    });
     return { message: 'Impersonation successful', data: tokens };
   }
 
