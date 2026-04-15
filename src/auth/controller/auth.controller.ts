@@ -25,6 +25,10 @@ import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 import { GoogleSignInDto } from '../dto/google-token.dto';
 import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from '../decorators/auth-permissions.decorator';
+import { ImpersonateDto } from '../dto/impersonate.dto';
 
 @Controller({
   path: 'auth',
@@ -33,7 +37,10 @@ import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
 @ApiTags('Auth')
 export class AuthController {
   private logger = LoggerService.getInstance(AuthController.name);
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private permissionsService: PermissionsService,
+  ) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -89,10 +96,11 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('impersonate')
+  @AuthPermissions([PERMISSIONS.IMPERSONATE_USER])
   @Version('1')
   @HttpCode(HttpStatus.OK)
-  async impersonate(@Body() email: string) {
-    const data = await this.authService.impersonate(email);
+  async impersonate(@Body() ImpersonateDto: ImpersonateDto) {
+    const data = await this.authService.impersonate(ImpersonateDto);
     return { message: data.message, data: data.data };
   }
 
