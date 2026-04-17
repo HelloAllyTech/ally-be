@@ -183,9 +183,54 @@ export class ScenarioService {
     if (!tenantId) {
       throw new BadRequestException('Tenant ID is required');
     }
-    const { data, count } = await this.scenariosRepository.getScenarios({
-      tenantId,
-      ...(languageCode && { languageCode }),
+    const { data: fetchedData, count } =
+      await this.scenariosRepository.getScenarios({
+        tenantId,
+        ...(languageCode && { languageCode }),
+      });
+    let data = fetchedData;
+
+    const languageIds = [
+      ...new Set(
+        data.flatMap((scenario: any) =>
+          Object.keys(scenario?.metadata?.languageVoices ?? {})
+            .map((languageId) => Number(languageId))
+            .filter((languageId) => Number.isInteger(languageId)),
+        ),
+      ),
+    ];
+
+    const languages = languageIds.length
+      ? await this.sharedLanguageService.getLanguagesByIds(languageIds)
+      : [];
+
+    const availableLanguagesMap = new Map(
+      languages.map((language) => [
+        language.id,
+        {
+          language_id: language.id,
+          label: language.label,
+          value: language.value,
+        },
+      ]),
+    );
+
+    data = data.map((scenario: any) => {
+      const languageVoiceIds = Object.keys(
+        scenario?.metadata?.languageVoices ?? {},
+      )
+        .map((languageId) => Number(languageId))
+        .filter((languageId) => Number.isInteger(languageId));
+
+      delete scenario?.metadata;
+      return {
+        ...scenario,
+        availableLanguages: languageVoiceIds.length
+          ? languageVoiceIds
+              .map((languageId) => availableLanguagesMap.get(languageId))
+              .filter(Boolean)
+          : null,
+      };
     });
 
     if (languageCode) {

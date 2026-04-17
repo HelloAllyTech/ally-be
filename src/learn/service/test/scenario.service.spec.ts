@@ -1481,20 +1481,55 @@ describe('ScenarioService', () => {
   describe('getScenariosV2', () => {
     it('should return paginated scenarios filtered by tenant', async () => {
       const mockScenarios = [
-        { ...mockScenario, status: ScenarioStatus.ACTIVE },
+        {
+          ...mockScenario,
+          status: ScenarioStatus.ACTIVE,
+          metadata: {
+            ...mockScenario.metadata,
+            languageVoices: {
+              '1': ['voice-1'],
+              '2': ['voice-2'],
+            },
+          },
+        },
       ];
       const mockResponse = {
         data: mockScenarios,
         count: mockScenarios.length,
       };
+      sharedLanguageService.getLanguagesByIds.mockResolvedValue([
+        { id: 1, label: 'English (India)', value: 'en-IN' },
+        { id: 2, label: 'Spanish (Argentina)', value: 'es-AR' },
+      ] as any);
       scenariosRepository.getScenarios.mockResolvedValue(mockResponse);
 
       const result = await service.getScenariosV2();
 
-      expect(result).toEqual(mockResponse);
+      expect(result).toEqual({
+        data: [
+          expect.objectContaining({
+            availableLanguages: [
+              {
+                language_id: 1,
+                label: 'English (India)',
+                value: 'en-IN',
+              },
+              {
+                language_id: 2,
+                label: 'Spanish (Argentina)',
+                value: 'es-AR',
+              },
+            ],
+          }),
+        ],
+        count: mockScenarios.length,
+      });
       expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
         tenantId: mockTenantId,
       });
+      expect(sharedLanguageService.getLanguagesByIds).toHaveBeenCalledWith([
+        1, 2,
+      ]);
     });
 
     it('should apply translations when languageCode is provided', async () => {
@@ -1502,6 +1537,12 @@ describe('ScenarioService', () => {
         {
           ...mockScenario,
           status: ScenarioStatus.ACTIVE,
+          metadata: {
+            ...mockScenario.metadata,
+            languageVoices: {
+              '2': ['voice-2'],
+            },
+          },
           translations: { mr: { title: 'Marathi Title' } },
         },
       ];
@@ -1509,11 +1550,21 @@ describe('ScenarioService', () => {
         data: mockScenarios,
         count: mockScenarios.length,
       };
+      sharedLanguageService.getLanguagesByIds.mockResolvedValue([
+        { id: 2, label: 'Marathi', value: 'mr-IN' },
+      ] as any);
       scenariosRepository.getScenarios.mockResolvedValue(mockResponse as any);
 
       const result = await service.getScenariosV2('mr');
 
       expect(result.data[0].title).toEqual('Marathi Title');
+      expect((result.data[0] as any).availableLanguages).toEqual([
+        {
+          language_id: 2,
+          label: 'Marathi',
+          value: 'mr-IN',
+        },
+      ]);
       expect((result.data[0] as any).translations).toBeUndefined();
       expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
         tenantId: mockTenantId,

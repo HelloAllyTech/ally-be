@@ -72,6 +72,7 @@ export class ScenariosRepository extends Repository<Scenarios> {
       'scenario.coverVideoUrl',
       'scenario.status',
       'scenario.isPublic',
+      'scenario.metadata',
     ];
 
     if (filters?.languageCode) {
