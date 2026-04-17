@@ -33,6 +33,11 @@ export class GetAdminScenarioDto extends Scenarios {
 
 export class GetScenarioDto extends Scenarios {
   triggerWarnings?: TriggerWarnings[];
+  availableLanguages?: Array<{
+    language_id: number;
+    label: string;
+    value: string;
+  }> | null;
 }
 
 export class GetScenarioDtoWithPagination {

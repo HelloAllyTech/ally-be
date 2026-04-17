@@ -506,19 +506,8 @@ export class ScenarioSessionService {
       scenario.terminationEvents = terminationEvents;
     }
 
-    // Determine voiceId from scenario metadata languageVoices if languageId is provided or from metadata voiceId if languageId is not provided
-    let voiceId = languageId
-      ? scenario?.metadata?.languageVoices?.[languageId]
-      : false;
-
-    // If voiceId is not found, get fallback voice for language and gender
-    if (!voiceId) {
-      const voiceDetails = await this.getFallbackVoiceForLanguageGender(
-        languageId,
-        scenario?.metadata?.gender,
-      );
-      voiceId = voiceDetails?.id;
-    }
+    // Determine voiceId from scenario metadata languageVoices
+    const voiceId = scenario?.metadata?.languageVoices?.[languageId];
 
     if (!voiceId) {
       throw new BadRequestException('Voice not found');
@@ -1443,23 +1432,8 @@ export class ScenarioSessionService {
       scenario.terminationEvents = terminationEvents;
     }
 
-    // Determine voiceId from scenario metadata languageVoices if languageId is provided or from metadata voiceId if languageId is not provided
-    let voiceId = languageId
-      ? scenario?.metadata?.languageVoices?.[languageId]
-      : false;
-
-    // Resolve effective languageId
-    const effectiveLanguageId =
-      languageId || (!voiceId && enLanguageDetails?.id);
-
-    // Fetch fallback voice only if needed
-    if (!voiceId && effectiveLanguageId) {
-      const voiceDetails = await this.getFallbackVoiceForLanguageGender(
-        effectiveLanguageId,
-        scenario?.metadata?.gender,
-      );
-      voiceId = voiceDetails?.id;
-    }
+    // Determine voiceId from scenario metadata languageVoices
+    const voiceId = scenario?.metadata?.languageVoices?.[languageId];
 
     if (!voiceId) {
       throw new BadRequestException('Voice ID not found for scenario');

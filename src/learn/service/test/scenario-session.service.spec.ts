@@ -90,7 +90,6 @@ describe('ScenarioSessionService', () => {
   let reviewSharedService: jest.Mocked<ScenarioSessionReviewSharedService>;
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let mockConfigService: any;
-  let scenarioVoicesRepository: jest.Mocked<ScenarioVoicesRepository>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let scenarioEventsRepository: jest.Mocked<ScenarioEventsRepository>;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
@@ -297,6 +296,7 @@ describe('ScenarioSessionService', () => {
     const mockScenarioVoicesRepository = {
       getFallbackVoice: jest.fn().mockResolvedValue([]),
     };
+
     const mockReviewSharedService = {
       getReviewByScenarioSessionId: jest.fn().mockResolvedValue(null),
     };
@@ -520,7 +520,6 @@ describe('ScenarioSessionService', () => {
     scenarioPathSessionService = module.get(ScenarioPathSessionService);
     scenarioPathSharedService = module.get(ScenarioPathSharedService);
     sessionEventTranslationService = module.get(SessionEventTranslationService);
-    scenarioVoicesRepository = module.get(ScenarioVoicesRepository);
     reviewSharedService = module.get(ScenarioSessionReviewSharedService);
     scenarioSharedService = module.get(ScenarioSharedService);
     scenarioEventsRepository = module.get(ScenarioEventsRepository);
@@ -1660,18 +1659,6 @@ describe('ScenarioSessionService', () => {
         serverUrl: 'https://livekit.example.com',
       };
 
-      const mockFallbackVoice = {
-        id: 'voice-123',
-        name: 'Test Voice',
-        config: {
-          age: 'adult',
-          name: 'priyanka',
-          model: 'aura-2-luna-en',
-          gender: 'female',
-          voiceId: 'aura-2-luna-en',
-        },
-      };
-
       const mockPreviewDto = { scenarioId: mockScenarioId, languageId: 1 };
 
       scenarioService.getAdminScenario.mockResolvedValue(
@@ -1684,9 +1671,6 @@ describe('ScenarioSessionService', () => {
 
       sessionEventTranslationService.getSessionEventsTranslationsByScenarioId.mockResolvedValue(
         mockSessionEvents,
-      );
-      scenarioVoicesRepository.getFallbackVoice.mockResolvedValue(
-        mockFallbackVoice as any,
       );
 
       livekitService.createRoom.mockResolvedValue({} as any);
@@ -1874,6 +1858,7 @@ describe('ScenarioSessionService', () => {
       const startDto = {
         scenarioId: mockScenarioId,
         ttl: 3600,
+        languageId: 1,
       };
       const mockStateInstructions = [
         {
@@ -1921,6 +1906,7 @@ describe('ScenarioSessionService', () => {
           title: 'Test Scenario',
           description: 'Test Description',
           voiceId: 'test-voice',
+          languageVoices: { 1: 'voice-123' },
           stateInstructions: mockStateInstructions,
         },
         isGlobal: false,
@@ -1941,18 +1927,6 @@ describe('ScenarioSessionService', () => {
         roomName: 'new-room-id',
         serverUrl: 'https://livekit.example.com',
       };
-      const mockFallbackVoice = {
-        id: 'voice-123',
-        name: 'Test Voice',
-        config: {
-          age: 'adult',
-          name: 'priyanka',
-          model: 'aura-2-luna-en',
-          gender: 'female',
-          voiceId: 'aura-2-luna-en',
-        },
-      };
-
       scenarioService.getAdminScenario.mockResolvedValue(
         mockScenarioWithMetadata as any,
       );
@@ -1967,9 +1941,6 @@ describe('ScenarioSessionService', () => {
       );
       sessionEventTranslationService.getSessionEventsTranslationsByScenarioId.mockResolvedValue(
         mockSessionEvents,
-      );
-      scenarioVoicesRepository.getFallbackVoice.mockResolvedValue(
-        mockFallbackVoice as any,
       );
       sessionEventSharedService.findByIds.mockResolvedValue([]);
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
@@ -2014,11 +1985,13 @@ describe('ScenarioSessionService', () => {
       const startDto = {
         scenarioId: mockScenarioId,
         ttl: 3600,
+        languageId: 1,
       };
       const mockScenarioWithMetadata = {
         ...mockScenario,
         metadata: {
           voiceId: 'voice-123',
+          languageVoices: { 1: 'voice-123' },
           name: 'Test Client',
           age: 25,
           gender: 'female',
@@ -2040,17 +2013,6 @@ describe('ScenarioSessionService', () => {
         roomId: 'new-room-id',
       };
 
-      const mockFallbackVoice = {
-        id: 'voice-123',
-        name: 'Test Voice',
-        config: {
-          age: 'adult',
-          name: 'priyanka',
-          model: 'aura-2-luna-en',
-          gender: 'female',
-          voiceId: 'aura-2-luna-en',
-        },
-      };
       const roomError = new Error('Room creation failed');
 
       scenarioService.getAdminScenario.mockResolvedValue(
@@ -2064,9 +2026,6 @@ describe('ScenarioSessionService', () => {
       } as any);
       sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
         mockSessionEvents,
-      );
-      scenarioVoicesRepository.getFallbackVoice.mockResolvedValue(
-        mockFallbackVoice as any,
       );
       sessionEventSharedService.findByIds.mockResolvedValue([]);
       scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);

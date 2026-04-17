@@ -125,6 +125,7 @@ describe('ScenariosRepository', () => {
         'scenario.coverVideoUrl',
         'scenario.status',
         'scenario.isPublic',
+        'scenario.metadata',
       ]);
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
         'scenario.status IN (:...statuses)',
@@ -167,6 +168,7 @@ describe('ScenariosRepository', () => {
         'scenario.coverVideoUrl',
         'scenario.status',
         'scenario.isPublic',
+        'scenario.metadata',
         'scenario.translations',
       ]);
     });
