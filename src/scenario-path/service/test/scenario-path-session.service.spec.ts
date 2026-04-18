@@ -16,6 +16,7 @@ import { ScenarioPathSessionItem } from '../../entity/scenario-path-session-item
 import { ScenarioPathStatus } from '../../type/scenario-paths.type';
 import { AppConfigService } from 'src/config/config.service';
 import { SessionItemStatus } from 'src/common/type/common.type';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -68,6 +69,10 @@ describe('ScenarioPathSessionService', () => {
     },
   };
 
+  const mockSharedLanguageService = {
+    getLanguagesByIds: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -88,6 +93,10 @@ describe('ScenarioPathSessionService', () => {
         {
           provide: AppConfigService,
           useValue: mockConfigService,
+        },
+        {
+          provide: SharedLanguageService,
+          useValue: mockSharedLanguageService,
         },
       ],
     }).compile();
@@ -490,11 +499,13 @@ describe('ScenarioPathSessionService', () => {
             ...mockScenarioPathWithScenarios.scenarios[0],
             sessionId: null,
             status: SessionItemStatus.UNLOCKED,
+            availableLanguages: null,
           },
           {
             ...mockScenarioPathWithScenarios.scenarios[1],
             sessionId: null,
             status: SessionItemStatus.LOCKED,
+            availableLanguages: null,
           },
         ],
       });

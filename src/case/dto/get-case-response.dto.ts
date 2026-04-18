@@ -31,6 +31,15 @@ export class GetCaseItemDto {
 
   @ApiProperty({ description: 'Cover video URL of the scenario' })
   coverVideoUrl?: string;
+
+  @ApiProperty({
+    description: 'Scenario metadata',
+    required: false,
+    type: Object,
+  })
+  metadata?: {
+    languageVoices?: Record<string, string>;
+  };
 }
 
 export class GetCaseItemResponseDto {

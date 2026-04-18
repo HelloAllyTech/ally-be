@@ -21,6 +21,12 @@ import { AppConfigService } from 'src/config/config.service';
 import { GetUpcomingScenarioPathItemResponseDto } from '../dto/get-scenario-path.dto';
 import { LoggerService } from 'src/logger/logger.service';
 import { SessionItemStatus } from 'src/common/type/common.type';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import {
+  buildAvailableLanguagesMap,
+  getDistinctScenarioLanguageIds,
+  getLanguageVoiceIds,
+} from 'src/common/util/language-availability.util';
 
 @Injectable()
 export class ScenarioPathSessionService {
@@ -33,6 +39,7 @@ export class ScenarioPathSessionService {
     private readonly scenarioPathSessionItemRepository: ScenarioPathSessionItemRepository,
     private readonly dataSource: DataSource,
     private readonly configService: AppConfigService,
+    private readonly sharedLanguageService: SharedLanguageService,
   ) {}
 
   async getUserScenarioPaths(
@@ -109,7 +116,6 @@ export class ScenarioPathSessionService {
     scenarioPathId: string,
     languageCode?: string,
   ) {
-    console.log(languageCode, 'languageCode');
     const userId = ExecutionManager.getUserId();
     if (!userId) {
       throw new UnauthorizedException('Unauthorized access');
@@ -133,6 +139,16 @@ export class ScenarioPathSessionService {
         languageCode,
       );
 
+    const languageIds = getDistinctScenarioLanguageIds(
+      scenarioPathWithScenarios.scenarios,
+    );
+
+    const languages = languageIds.length
+      ? await this.sharedLanguageService.getLanguagesByIds(languageIds)
+      : [];
+
+    const availableLanguagesMap = buildAvailableLanguagesMap(languages);
+
     const scenarioPathSession =
       await this.scenarioPathSessionRepository.findOne({
         where: { scenarioPathId, userId: Number(userId) },
@@ -144,14 +160,26 @@ export class ScenarioPathSessionService {
         completedScenarios: 0,
         completedAt: null,
         scenarioPathSessionId: null,
-        scenarios: scenarioPathWithScenarios.scenarios.map((scenario) => ({
-          ...scenario,
-          sessionId: null,
-          status:
-            scenario.order > 1
-              ? SessionItemStatus.LOCKED
-              : SessionItemStatus.UNLOCKED,
-        })),
+        scenarios: scenarioPathWithScenarios.scenarios.map((scenario) => {
+          const languageVoiceIds = getLanguageVoiceIds(
+            scenario?.metadata?.languageVoices,
+          );
+
+          delete scenario?.metadata;
+          return {
+            ...scenario,
+            availableLanguages: languageVoiceIds.length
+              ? languageVoiceIds
+                  .map((languageId) => availableLanguagesMap.get(languageId))
+                  .filter(Boolean)
+              : null,
+            sessionId: null,
+            status:
+              scenario.order > 1
+                ? SessionItemStatus.LOCKED
+                : SessionItemStatus.UNLOCKED,
+          };
+        }),
       };
     }
 

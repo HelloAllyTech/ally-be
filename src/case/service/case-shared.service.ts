@@ -103,6 +103,9 @@ export class CaseSharedService {
         coverImageUrl: scenarioData?.coverImageUrl,
         coverVideoUrl: scenarioData?.coverVideoUrl,
         triggerWarnings: scenarioData?.triggerWarnings,
+        metadata: {
+          languageVoices: scenarioData?.metadata?.languageVoices,
+        },
       };
     });
 

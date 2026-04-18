@@ -117,6 +117,11 @@ import { BehaviorService } from './behavior.service';
 import { GeneratableField } from '../enum/generatable-field.enum';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import {
+  buildAvailableLanguagesMap,
+  getDistinctScenarioLanguageIds,
+  getLanguageVoiceIds,
+} from 'src/common/util/language-availability.util';
+import {
   isValidTimeFormatHHMMSS,
   parseTimeToSeconds,
 } from 'src/common/util/time.util';
@@ -190,37 +195,18 @@ export class ScenarioService {
       });
     let data = fetchedData;
 
-    const languageIds = [
-      ...new Set(
-        data.flatMap((scenario: any) =>
-          Object.keys(scenario?.metadata?.languageVoices ?? {})
-            .map((languageId) => Number(languageId))
-            .filter((languageId) => Number.isInteger(languageId)),
-        ),
-      ),
-    ];
+    const languageIds = getDistinctScenarioLanguageIds(data);
 
     const languages = languageIds.length
       ? await this.sharedLanguageService.getLanguagesByIds(languageIds)
       : [];
 
-    const availableLanguagesMap = new Map(
-      languages.map((language) => [
-        language.id,
-        {
-          language_id: language.id,
-          label: language.label,
-          value: language.value,
-        },
-      ]),
-    );
+    const availableLanguagesMap = buildAvailableLanguagesMap(languages);
 
     data = data.map((scenario: any) => {
-      const languageVoiceIds = Object.keys(
-        scenario?.metadata?.languageVoices ?? {},
-      )
-        .map((languageId) => Number(languageId))
-        .filter((languageId) => Number.isInteger(languageId));
+      const languageVoiceIds = getLanguageVoiceIds(
+        scenario?.metadata?.languageVoices,
+      );
 
       delete scenario?.metadata;
       return {
