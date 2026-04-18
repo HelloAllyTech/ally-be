@@ -283,6 +283,10 @@ describe('ScenarioPathSharedService', () => {
             description: 'Description 1',
             coverImageUrl: 'https://example.com/scenario1.jpg',
             coverVideoUrl: 'https://example.com/scenario1.mp4',
+            triggerWarnings: undefined,
+            metadata: {
+              languageVoices: undefined,
+            },
           },
           {
             id: 'item-2',
@@ -295,6 +299,10 @@ describe('ScenarioPathSharedService', () => {
             description: 'Description 2',
             coverImageUrl: 'https://example.com/scenario2.jpg',
             coverVideoUrl: undefined,
+            triggerWarnings: undefined,
+            metadata: {
+              languageVoices: undefined,
+            },
           },
         ],
       });
@@ -342,6 +350,10 @@ describe('ScenarioPathSharedService', () => {
             description: 'Description 1',
             coverImageUrl: 'https://example.com/scenario1.jpg',
             coverVideoUrl: 'https://example.com/scenario1.mp4',
+            triggerWarnings: undefined,
+            metadata: {
+              languageVoices: undefined,
+            },
           },
           {
             id: 'item-2',
@@ -354,6 +366,10 @@ describe('ScenarioPathSharedService', () => {
             description: 'Description 2',
             coverImageUrl: 'https://example.com/scenario2.jpg',
             coverVideoUrl: undefined,
+            triggerWarnings: undefined,
+            metadata: {
+              languageVoices: undefined,
+            },
           },
         ],
       });

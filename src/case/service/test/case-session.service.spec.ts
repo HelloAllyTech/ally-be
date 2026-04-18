@@ -8,6 +8,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SessionItemStatus } from 'src/common/type/common.type';
 import { CaseStatus } from '../../type/cases.type';
 import { AppConfigService } from 'src/config/config.service';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
 
 jest.mock('src/logger/logger.service', () => ({
   LoggerService: {
@@ -68,6 +69,10 @@ describe('CaseSessionService', () => {
       },
     };
 
+    const mockSharedLanguageService = {
+      getLanguagesByIds: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CaseSessionService,
@@ -79,6 +84,7 @@ describe('CaseSessionService', () => {
         },
         { provide: DataSource, useValue: mockDataSource },
         { provide: AppConfigService, useValue: mockConfigService },
+        { provide: SharedLanguageService, useValue: mockSharedLanguageService },
       ],
     }).compile();
 

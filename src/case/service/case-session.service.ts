@@ -18,6 +18,12 @@ import { CaseSession } from '../entity/case-session.entity';
 import { CaseSessionItem } from '../entity/case-session-item.entity';
 import { GetUpcomingCaseItemResponseDto } from '../dto/get-case.dto';
 import { AppConfigService } from 'src/config/config.service';
+import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import {
+  buildAvailableLanguagesMap,
+  getDistinctScenarioLanguageIds,
+  getLanguageVoiceIds,
+} from 'src/common/util/language-availability.util';
 
 @Injectable()
 export class CaseSessionService {
@@ -28,6 +34,7 @@ export class CaseSessionService {
     private readonly caseSessionItemRepository: CaseSessionItemRepository,
     private readonly dataSource: DataSource,
     private readonly configService: AppConfigService,
+    private readonly sharedLanguageService: SharedLanguageService,
   ) {}
 
   async getUserCases(
@@ -103,6 +110,16 @@ export class CaseSessionService {
       languageCode,
     );
 
+    const languageIds = getDistinctScenarioLanguageIds(
+      caseWithScenarios.scenarios,
+    );
+
+    const languages = languageIds.length
+      ? await this.sharedLanguageService.getLanguagesByIds(languageIds)
+      : [];
+
+    const availableLanguagesMap = buildAvailableLanguagesMap(languages);
+
     const caseSession = await this.caseSessionRepository.findOne({
       where: { caseId, userId: Number(userId) },
     });
@@ -113,14 +130,24 @@ export class CaseSessionService {
         completedScenarios: 0,
         completedAt: null,
         caseSessionId: null,
-        scenarios: caseWithScenarios.scenarios.map((scenario) => ({
-          ...scenario,
-          sessionId: null,
-          status:
-            scenario.order > 1
-              ? SessionItemStatus.LOCKED
-              : SessionItemStatus.UNLOCKED,
-        })),
+        scenarios: caseWithScenarios.scenarios.map((scenario) => {
+          const languageVoiceIds = getLanguageVoiceIds(
+            scenario?.metadata?.languageVoices,
+          );
+          return {
+            ...scenario,
+            sessionId: null,
+            status:
+              scenario.order > 1
+                ? SessionItemStatus.LOCKED
+                : SessionItemStatus.UNLOCKED,
+            availableLanguages: languageVoiceIds.length
+              ? languageVoiceIds
+                  .map((languageId) => availableLanguagesMap.get(languageId))
+                  .filter(Boolean)
+              : null,
+          };
+        }),
       };
     }
 

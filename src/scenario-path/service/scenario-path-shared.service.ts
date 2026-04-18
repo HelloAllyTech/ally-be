@@ -104,7 +104,9 @@ export class ScenarioPathSharedService {
         coverImageUrl: scenarioData?.coverImageUrl,
         coverVideoUrl: scenarioData?.coverVideoUrl,
         triggerWarnings: scenarioData?.triggerWarnings,
-        translations: scenarioData?.translations,
+        metadata: {
+          languageVoices: scenarioData?.metadata?.languageVoices,
+        },
       };
     });
 
