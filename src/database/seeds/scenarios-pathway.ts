@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { config } from 'dotenv';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { logStep } from './seed-utils';
 import {
@@ -9,15 +9,13 @@ import {
   ScenarioResponseLength,
   ScenarioStatus,
 } from '../../learn/type/scenario.type';
+import {
+  ScenarioPathSeedRecord,
+  ScenarioPathwaySeedData,
+  ScenarioSeedRecord,
+} from './scenarios-pathway.seed-data';
+import { ScenarioPathStatus } from '../../scenario-path/type/scenario-paths.type';
 
-type TriggerWarnings = {
-  createdAt: string;
-  updatedAt: string;
-  id: string;
-  name: string;
-};
-
-// Load ally-be/.env from this file's location so FEATURE_* flags match the API even if cwd differs.
 const allyBeEnv = resolve(__dirname, '../../../.env');
 if (existsSync(allyBeEnv)) {
   config({ path: allyBeEnv });
@@ -25,29 +23,19 @@ if (existsSync(allyBeEnv)) {
   config();
 }
 
-// Use SEED_API_BASE_URL only — API_BASE_URL in .env is often a placeholder and breaks axios.
 const API_BASE_URL = process.env.SEED_API_BASE_URL || 'http://localhost:8001';
+const SCENARIO_DATA_FILE = resolve(__dirname, './data/scenarios-pathway.json');
 
-/**
- * Must match BehaviorInstructionDto nested stateInstructions:
- * @IsIn(supportedStateInstructionStateIds) → always ['-1','1','2','3'].
- */
-function behaviorInstructionPhaseStateIds(): [string, string, string, string] {
-  return ['-1', '1', '2', '3'];
-}
+const adminCredentials = {
+  username: process.env.SEED_ADMIN_EMAIL || 'admin@example.com',
+  password: process.env.SEED_ADMIN_PASSWORD || 'Password123!',
+};
 
-/**
- * Top-level scenario `stateInstructions` (with dialogues) — APIs often still
- * validate these as legacy phases 1–4 only; using -1 here can fail validation.
- */
-function scenarioMetadataPhaseStateIds(): [string, string, string, string] {
-  return ['1', '2', '3', '4'];
-}
+const learnerCredentials = {
+  username: process.env.SEED_LEARNER_EMAIL || 'learner@example.com',
+  password: process.env.SEED_LEARNER_PASSWORD || 'Password123!',
+};
 
-/**
- * Display labels for dialog states; stateIds match behaviorInstructions.stateInstructions
- * (see migration AddStateNamesToScenarioMetadata1775202144374).
- */
 function defaultStateNames(): { stateId: string; name: string }[] {
   return [
     { stateId: '-1', name: 'State -1' },
@@ -57,9 +45,8 @@ function defaultStateNames(): { stateId: string; name: string }[] {
   ];
 }
 
-/** Ten client utterances per language ID (ACTIVE scenarios require linguistic style samples). */
-function buildLinguisticStyleSamples(
-  languageVoices: Record<string, string>,
+function fallbackLinguisticStyleSamples(
+  languageIds: number[],
 ): Record<string, string[]> {
   const samples = [
     'I am not sure where to start, but things have felt overwhelming.',
@@ -67,72 +54,37 @@ function buildLinguisticStyleSamples(
     'Some days I cope fine; other days not so much.',
     'I keep replaying things in my head after work.',
     'I do not want to sound dramatic, but it has been hard.',
-    'Maybe I am overreacting—I honestly do not know.',
+    'Maybe I am overreacting, I honestly do not know.',
     'Even small tasks feel like too much lately.',
     'I have tried to just push through, but it is tiring.',
     'Talking about it feels a bit awkward, if I am honest.',
     'I hope I can sort this out with a bit of support.',
   ];
-  const out: Record<string, string[]> = {};
-  for (const langId of Object.keys(languageVoices)) {
-    out[langId] = [...samples];
-  }
-  return out;
+
+  return Object.fromEntries(
+    languageIds.map((id) => [String(id), [...samples]]),
+  );
 }
 
-// Admin credentials for authentication
-const adminCredentials = {
-  username: process.env.SEED_ADMIN_EMAIL || 'admin@example.com',
-  password: process.env.SEED_ADMIN_PASSWORD || 'Password123!',
-};
-
-// Shared prompt template for scenarios
-const SHARED_PROMPT = `You are an AI roleplay assistant for counselor training. In this simulation, you must act ONLY as the client in a therapy session. Stay fully in character, provide realistic dialogue, and do not switch roles unless explicitly instructed.
-
-Important Instructions:
-- Prefer first-person phrasing (e.g., "I feel...", "I have been struggling with...").
-- Allow the counselor to guide the conversation.
-- If the counselor is silent or open-ended, share one thought, feeling, or small story, then stop.
-- Maintain consistency with your life history but allow natural variation in tone and detail.
-- Respond naturally, as a real client would.
-- Keep answers concise (2-6 sentences), unless a longer response is natural.
-- Reveal information gradually, not all at once.
-- Start with few details and open up more as the counselor asks questions.
-- Show authentic emotions and natural hesitations.
-- Do not give therapy advice or act as the counselor.
-- If sensitive topics arise, respond realistically but without graphic detail.
-- Keep each reply under ~120 words.`;
-
-// Function to create scenarios data with voiceId
-const createScenariosData = async (
-  client: AxiosInstance,
-  accessToken: string,
-) => {
-  const languageVoices = await mapLanguagesVoices(client, accessToken);
-  const linguisticStyleSamples = buildLinguisticStyleSamples(languageVoices);
-  const terminationEvents = await getTerminationEventData(client, accessToken);
-  const triggerWarningIds = await getTriggerWarnings(client, accessToken);
-  const competencyId = await getOrCreateCompetency(client, accessToken);
-  const behaviorIds = await getOrCreateBehaviors(client, accessToken);
-  const [b0, b1, b2, b3] = behaviorInstructionPhaseStateIds();
-  const [s0, s1, s2, s3] = scenarioMetadataPhaseStateIds();
-  logStep(
-    `[scenarios-pathway] behaviorInstructions stateIds: ${b0}, ${b1}, ${b2}, ${b3}; scenario stateInstructions stateIds: ${s0}, ${s1}, ${s2}, ${s3}`,
-  );
-
-  const scenarios = [
+const fallbackSeedData: ScenarioPathwaySeedData = {
+  source: {
+    generatedAt: new Date(0).toISOString(),
+    database: 'fallback',
+    scenarioCount: 2,
+    pathCount: 1,
+  },
+  scenarios: [
     {
-      isGlobal: true,
-      isPublic: true,
+      seedKey: 'scenario-1',
       title: 'Active Listening Basics',
-      coverImageUrl: 'https://placehold.co/400x300/png?text=Active+Listening',
-      coverVideoUrl: null,
       description:
         'Practice listening skills with Alex, a young professional feeling overwhelmed.',
-      difficultyLevel: ScenarioDifficultyLevel.EASY,
+      coverImageUrl: 'https://placehold.co/400x300/png?text=Active+Listening',
       status: ScenarioStatus.ACTIVE,
+      isGlobal: true,
+      isPublic: true,
+      difficultyLevel: ScenarioDifficultyLevel.EASY,
       responseLength: ScenarioResponseLength.VERY_BRIEF,
-      // Client profile (shown to counselor)
       name: 'Alex Johnson',
       age: 25,
       gender: 'male',
@@ -140,48 +92,40 @@ const createScenariosData = async (
       sexualOrientation: 'Heterosexual (straight)',
       profession: 'Software Engineer',
       currentLocation: 'Kochi, India',
-      context: 'Struggling with work-life balance and stress',
       tone: 'Casual',
-      // Voice and dialogue
-      languageVoices,
-      linguisticStyleSamples,
-      prompt: SHARED_PROMPT,
+      selectedLanguageIds: [1],
+      prompt:
+        'You are an AI roleplay assistant for counselor training. Stay fully in character as the client in a therapy session.',
       openingStatements: [
         'I am not sure where to start...',
         'Everything feels like it is piling up.',
       ],
-      agentDialogues: ['I hear you', 'Tell me more', 'That sounds tough'],
-      // Termination settings
-      terminationEvents,
-      triggerWarningIds,
       experienceMode: ExperienceMode.FEEDBACK,
       timerMode: false,
       showScoreMeter: false,
-      // Required fields for ACTIVE scenarios
-      competencyId,
-      stateNames: defaultStateNames(),
+      competencyName: 'Counseling Fundamentals',
       characterProfileText:
-        'Alex is a 25-year-old software engineer from Kochi, India. He is struggling with work-life balance and stress management. He tends to be casual in communication and is open to discussing his challenges. Alex is looking for support in managing his workload and finding healthier ways to cope with stress.',
+        'Alex is a 25-year-old software engineer from Kochi, India struggling with work-life balance and stress.',
       behaviorInstructions: [
         {
           category: 'SHOULD_DO',
-          behaviors: behaviorIds.slice(0, 2),
+          behaviors: ['Active Listening', 'Empathy'],
           stateInstructions: [
             {
-              stateId: b0,
+              stateId: '-1',
               instruction: 'Use an open, warm greeting to build rapport',
             },
             {
-              stateId: b1,
+              stateId: '1',
               instruction: 'Reflect feelings about stress and workload',
             },
             {
-              stateId: b2,
+              stateId: '2',
               instruction:
                 'Ask one open-ended question to deepen understanding',
             },
             {
-              stateId: b3,
+              stateId: '3',
               instruction: 'Summarize key concern and validate effort',
             },
           ],
@@ -189,17 +133,16 @@ const createScenariosData = async (
       ],
     },
     {
-      isGlobal: true,
-      isPublic: true,
+      seedKey: 'scenario-2',
       title: 'Managing Workplace Anxiety',
-      coverImageUrl: 'https://placehold.co/400x300/png?text=Workplace+Anxiety',
-      coverVideoUrl: null,
       description:
         'Practice empathetic responses with Priya, a mid-level professional experiencing anxiety at work.',
-      difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+      coverImageUrl: 'https://placehold.co/400x300/png?text=Workplace+Anxiety',
       status: ScenarioStatus.ACTIVE,
+      isGlobal: true,
+      isPublic: true,
+      difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
       responseLength: ScenarioResponseLength.VERY_BRIEF,
-      // Client profile (shown to counselor)
       name: 'Priya Nair',
       age: 29,
       gender: 'female',
@@ -207,177 +150,562 @@ const createScenariosData = async (
       sexualOrientation: 'Heterosexual (straight)',
       profession: 'Product Manager',
       currentLocation: 'Bengaluru, India',
-      context:
-        'Experiencing anxiety due to high expectations and fear of underperforming at work',
       tone: 'Thoughtful',
-      // Voice and dialogue
-      languageVoices,
-      linguisticStyleSamples,
-      prompt: SHARED_PROMPT,
+      selectedLanguageIds: [1],
+      prompt:
+        'You are an AI roleplay assistant for counselor training. Stay fully in character as the client in a therapy session.',
       openingStatements: [
         'I have been feeling on edge at work lately.',
         'Even small tasks are starting to feel stressful.',
       ],
-      agentDialogues: ['I hear you', 'Tell me more', 'That sounds tough'],
-      triggerWarningIds,
       experienceMode: ExperienceMode.FEEDBACK,
       timerMode: false,
       showScoreMeter: false,
-      // Required fields for ACTIVE scenarios
-      competencyId,
-      stateNames: defaultStateNames(),
+      competencyName: 'Counseling Fundamentals',
       characterProfileText:
-        'Priya is a 29-year-old product manager from Bengaluru, India. She is experiencing anxiety due to high expectations and fear of underperforming at work. She has a thoughtful communication style and is willing to explore her feelings about workplace stress. Priya seeks help in managing her anxiety and building confidence in her professional role.',
+        'Priya is a 29-year-old product manager from Bengaluru, India who is experiencing anxiety due to workplace pressure.',
       behaviorInstructions: [
         {
           category: 'SHOULD_DO',
-          behaviors: behaviorIds.slice(0, 2), // Use first 2 behaviors
+          behaviors: ['Active Listening', 'Empathy'],
           stateInstructions: [
             {
-              stateId: b0,
+              stateId: '-1',
               instruction: 'Offer brief validation to reduce immediate tension',
             },
             {
-              stateId: b1,
+              stateId: '1',
               instruction: 'Invite specifics about triggers and contexts',
             },
             {
-              stateId: b2,
+              stateId: '2',
               instruction: 'Reflect patterns and name one emerging theme',
             },
             {
-              stateId: b3,
+              stateId: '3',
               instruction: 'Summarize strengths and set one small next step',
             },
           ],
         },
       ],
     },
-  ];
-
-  return scenarios;
+  ],
+  paths: [
+    {
+      title: 'Counseling Fundamentals Path',
+      description:
+        'A learning path covering basic counseling skills from active listening to handling emotional situations.',
+      status: ScenarioPathStatus.ACTIVE,
+      isGlobal: true,
+      coverImageUrl: 'https://placehold.co/400x300/png?text=Learning+Path',
+      scenarios: [
+        {
+          scenarioSeedKey: 'scenario-1',
+          order: 1,
+          minimumScore: 70,
+          messageTitle: 'Great Start!',
+          messageContent: 'You have completed the first scenario. Keep going!',
+        },
+        {
+          scenarioSeedKey: 'scenario-2',
+          order: 2,
+          minimumScore: 70,
+          messageTitle: 'Well Done!',
+          messageContent: 'Congratulations on completing this scenario!',
+        },
+      ],
+    },
+  ],
 };
 
-// Scenario path configuration (will be populated with created scenario IDs)
-const createScenarioPathData = (scenarioIds: number[]) => ({
-  title: 'Counseling Fundamentals Path',
-  description:
-    'A learning path covering basic counseling skills from active listening to handling emotional situations.',
-  status: 'ACTIVE',
-  isGlobal: true,
-  coverImageUrl: 'https://placehold.co/400x300/png?text=Learning+Path',
-  scenarios: scenarioIds.map((scenarioId, index) => ({
-    scenarioId,
-    order: index + 1,
-    minimumScore: 70,
-    messageTitle: index === 0 ? 'Great Start!' : 'Well Done!',
-    messageContent:
-      index === 0
-        ? 'You have completed the first scenario. Keep going!'
-        : 'Congratulations on completing this scenario!',
-  })),
-});
+function loadScenarioSeedData(): ScenarioPathwaySeedData {
+  if (!existsSync(SCENARIO_DATA_FILE)) {
+    logStep(
+      `[scenarios-pathway] Seed data file not found at ${SCENARIO_DATA_FILE}. Falling back to built-in scenario data.`,
+    );
+    return fallbackSeedData;
+  }
+
+  const raw = readFileSync(SCENARIO_DATA_FILE, 'utf8');
+  const parsed = JSON.parse(raw) as ScenarioPathwaySeedData;
+  logStep(
+    `[scenarios-pathway] Loaded scenario dataset from ${SCENARIO_DATA_FILE} (${parsed.scenarios.length} scenarios / ${parsed.paths.length} paths)`,
+  );
+  return parsed;
+}
 
 async function login(
   client: AxiosInstance,
+  credentials: { username: string; password: string },
 ): Promise<{ accessToken: string; refreshToken: string }> {
-  try {
-    const response = await client.post('/api/v1/auth/login', adminCredentials);
-    logStep('[scenarios-pathway] Login successful');
-    return {
-      accessToken: response.data.accessToken,
-      refreshToken: response.data.refreshToken,
-    };
-  } catch (error: any) {
-    console.error(
-      '[scenarios-pathway] Login failed:',
-      error.response?.data?.message || error.message,
-    );
-    throw error;
-  }
+  const response = await client.post('/api/v1/auth/login', credentials);
+  return {
+    accessToken: response.data.accessToken,
+    refreshToken: response.data.refreshToken,
+  };
 }
 
-async function loginAsLearner(
+async function mapAvailableVoicesByLanguage(
   client: AxiosInstance,
-): Promise<{ accessToken: string; refreshToken: string }> {
-  try {
-    const response = await client.post('/api/v1/auth/login', {
-      username: 'learner@example.com',
-      password: 'Password123!',
-    });
-    logStep('[scenarios-pathway] Learner Login successful');
-    return {
-      accessToken: response.data.accessToken,
-      refreshToken: response.data.refreshToken,
-    };
-  } catch (error: any) {
-    console.error(
-      '[scenarios-pathway] Learner Login failed:',
-      error.response?.data?.message || error.message,
-    );
-    throw error;
+  accessToken: string,
+): Promise<Record<string, string>> {
+  const response = await client.get('/api/v1/learn/scenario-voices', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  const voicesByLanguage: Record<string, string> = {};
+  for (const voice of response.data || []) {
+    const key = String(voice.languageId);
+    if (!voicesByLanguage[key] && voice.id) {
+      voicesByLanguage[key] = voice.id;
+    }
   }
+
+  return voicesByLanguage;
+}
+
+async function getSessionEventsByCode(
+  client: AxiosInstance,
+  accessToken: string,
+): Promise<Map<string, { id: string; name: string }>> {
+  const response = await client.get(
+    '/api/v1/session-events?offset=0&limit=1000&searchName=',
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  return new Map(
+    (response.data?.data || []).map((event: any) => [
+      event.eventCode,
+      { id: event.id, name: event.name },
+    ]),
+  );
+}
+
+async function getTriggerWarningsByName(
+  client: AxiosInstance,
+  accessToken: string,
+): Promise<Map<string, string>> {
+  const response = await client.get(
+    '/api/v1/learn/trigger-warnings?name=&offset=0&limit=1000',
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  return new Map(
+    (response.data || []).map((warning: any) => [warning.name, warning.id]),
+  );
+}
+
+async function getTenantsByCode(
+  client: AxiosInstance,
+  accessToken: string,
+): Promise<Map<string, string>> {
+  const response = await client.get('/api/v1/tenants?offset=0&limit=1000', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  return new Map(
+    (response.data?.data || []).map((tenant: any) => [tenant.code, tenant.id]),
+  );
+}
+
+async function getOrCreateCompetencyId(
+  client: AxiosInstance,
+  accessToken: string,
+  competencyName: string,
+  cache: Map<string, string>,
+): Promise<string> {
+  const cached = cache.get(competencyName);
+  if (cached) {
+    return cached;
+  }
+
+  try {
+    const response = await client.get(
+      `/api/v1/learn/competencies?name=${encodeURIComponent(competencyName)}&offset=0&limit=1`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
+
+    if (response.data?.data?.length > 0) {
+      const id = response.data.data[0].id;
+      cache.set(competencyName, id);
+      return id;
+    }
+  } catch {
+    // fall through to create
+  }
+
+  const createResponse = await client.post(
+    '/api/v1/learn/competencies',
+    { name: competencyName },
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  cache.set(competencyName, createResponse.data.id);
+  return createResponse.data.id;
+}
+
+async function getOrCreateBehaviorIdsByName(
+  client: AxiosInstance,
+  accessToken: string,
+  names: string[],
+): Promise<Map<string, string>> {
+  const response = await client.get(
+    '/api/v1/learn/scenario-behaviors?offset=0&limit=1000',
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  const existing = new Map<string, string>(
+    (response.data?.data || []).map((behavior: any) => [
+      behavior.name,
+      behavior.id,
+    ]),
+  );
+
+  const missingNames = names.filter((name) => !existing.has(name));
+  if (missingNames.length > 0) {
+    const createResponse = await client.post(
+      '/api/v1/learn/scenario-behaviors/bulk-insertions',
+      {
+        behaviors: missingNames.map((name) => ({ name })),
+      },
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
+
+    for (const behavior of createResponse.data?.behaviors || []) {
+      existing.set(behavior.name, behavior.id);
+    }
+  }
+
+  return existing;
+}
+
+function buildLanguageVoicesForScenario(
+  availableVoicesByLanguage: Record<string, string>,
+  scenario: ScenarioSeedRecord,
+): Record<string, string> {
+  const selectedLanguageIds =
+    scenario.selectedLanguageIds && scenario.selectedLanguageIds.length > 0
+      ? scenario.selectedLanguageIds
+      : Object.keys(availableVoicesByLanguage).map((id) => Number(id));
+
+  const languageVoices: Record<string, string> = {};
+  for (const languageId of selectedLanguageIds) {
+    const voiceId = availableVoicesByLanguage[String(languageId)];
+    if (voiceId) {
+      languageVoices[String(languageId)] = voiceId;
+    }
+  }
+  return languageVoices;
+}
+
+async function buildScenarioPayloads(
+  client: AxiosInstance,
+  accessToken: string,
+  seedData: ScenarioPathwaySeedData,
+): Promise<Array<{ seedKey: string; payload: Record<string, any> }>> {
+  const availableVoicesByLanguage = await mapAvailableVoicesByLanguage(
+    client,
+    accessToken,
+  );
+  const sessionEventsByCode = await getSessionEventsByCode(client, accessToken);
+  const triggerWarningsByName = await getTriggerWarningsByName(
+    client,
+    accessToken,
+  );
+  const competencyCache = new Map<string, string>();
+
+  const allBehaviorNames = [
+    ...new Set(
+      seedData.scenarios.flatMap((scenario) =>
+        (scenario.behaviorInstructions || []).flatMap(
+          (instruction) => instruction.behaviors || [],
+        ),
+      ),
+    ),
+  ];
+  const behaviorIdsByName = await getOrCreateBehaviorIdsByName(
+    client,
+    accessToken,
+    allBehaviorNames,
+  );
+
+  return Promise.all(
+    seedData.scenarios.map(async (scenario) => {
+      const languageVoices = buildLanguageVoicesForScenario(
+        availableVoicesByLanguage,
+        scenario,
+      );
+      const selectedLanguageIds = Object.keys(languageVoices).map((id) =>
+        Number(id),
+      );
+
+      const terminationEvents =
+        scenario.terminationEvents
+          ?.map((event) => {
+            const resolved = sessionEventsByCode.get(event.eventCode);
+            if (!resolved) {
+              logStep(
+                `[scenarios-pathway] Termination event code "${event.eventCode}" not found for scenario "${scenario.title}". Skipping it.`,
+              );
+              return null;
+            }
+            return {
+              id: resolved.id,
+              message:
+                event.message || `Auto-termination event from ${resolved.name}`,
+            };
+          })
+          .filter(Boolean) || [];
+
+      const triggerWarningIds =
+        scenario.triggerWarningNames
+          ?.map((name) => {
+            const id = triggerWarningsByName.get(name);
+            if (!id) {
+              logStep(
+                `[scenarios-pathway] Trigger warning "${name}" not found for scenario "${scenario.title}". Skipping it.`,
+              );
+            }
+            return id;
+          })
+          .filter((id): id is string => Boolean(id)) || [];
+
+      const competencyId = scenario.competencyName
+        ? await getOrCreateCompetencyId(
+            client,
+            accessToken,
+            scenario.competencyName,
+            competencyCache,
+          )
+        : undefined;
+
+      const behaviorInstructions =
+        scenario.behaviorInstructions?.map((instruction) => ({
+          category: instruction.category,
+          stateInstructions: instruction.stateInstructions,
+          behaviors: instruction.behaviors
+            .map((name) => behaviorIdsByName.get(name))
+            .filter((id): id is string => Boolean(id)),
+        })) || [];
+
+      const payload = {
+        title: scenario.title,
+        description: scenario.description,
+        coverImageUrl: scenario.coverImageUrl || undefined,
+        coverVideoUrl: scenario.coverVideoUrl || undefined,
+        status: scenario.status,
+        isPublic: scenario.isPublic,
+        isGlobal: scenario.isGlobal,
+        prompt: scenario.prompt,
+        difficultyLevel: scenario.difficultyLevel,
+        responseLength: scenario.responseLength,
+        name: scenario.name,
+        age: scenario.age,
+        gender: scenario.gender,
+        genderIdentity: scenario.genderIdentity,
+        sexualOrientation: scenario.sexualOrientation,
+        currentLocation: scenario.currentLocation,
+        profession: scenario.profession,
+        personality: scenario.personality,
+        tone: scenario.tone,
+        openingStatements: scenario.openingStatements,
+        translationOpeningStatements: scenario.translationOpeningStatements,
+        languageVoices,
+        linguisticStyleSamples:
+          scenario.linguisticStyleSamples ||
+          fallbackLinguisticStyleSamples(selectedLanguageIds),
+        allowedFillerWords: scenario.allowedFillerWords,
+        competencyId,
+        terminationEvents,
+        triggerWarningIds,
+        customFields: scenario.customFields,
+        experienceMode: scenario.experienceMode,
+        checklistType: scenario.checklistType,
+        timerMode: scenario.timerMode,
+        maxTimeValue: scenario.maxTimeValue,
+        optGuardrails: scenario.optGuardrails,
+        behaviorInstructions,
+        characterProfileText: scenario.characterProfileText,
+        showScoreMeter: scenario.showScoreMeter,
+        currentState: scenario.currentState,
+        knowledgeSources: scenario.knowledgeSources,
+        stateNames: scenario.stateNames || defaultStateNames(),
+      };
+
+      return {
+        seedKey: scenario.seedKey,
+        payload,
+      };
+    }),
+  );
 }
 
 async function createScenarios(
   client: AxiosInstance,
   accessToken: string,
-): Promise<number[]> {
-  try {
-    const scenariosData: any[] = await createScenariosData(client, accessToken);
+  scenarioPayloads: Array<{ seedKey: string; payload: Record<string, any> }>,
+): Promise<Map<string, number>> {
+  const scenarioIdBySeedKey = new Map<string, number>();
 
+  for (const scenario of scenarioPayloads) {
     const response = await client.post(
       '/api/v1/learn/scenarios',
-      { scenarios: scenariosData },
+      { scenarios: [scenario.payload] },
       {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers: { Authorization: `Bearer ${accessToken}` },
       },
     );
+    const createdScenario = response.data?.[0];
+    if (createdScenario?.id) {
+      scenarioIdBySeedKey.set(scenario.seedKey, createdScenario.id);
+      logStep(
+        `[scenarios-pathway] Created scenario ${createdScenario.title} (${createdScenario.id})`,
+      );
+    }
+  }
 
-    const scenarioIds = response.data.map((scenario: any) => scenario.id);
-    logStep(`[scenarios-pathway] Created ${scenarioIds.length} scenarios:`);
-    response.data.forEach((scenario: any) => {
-      logStep(`[scenarios-pathway]   ✓ ${scenario.title} (ID: ${scenario.id})`);
-    });
+  return scenarioIdBySeedKey;
+}
 
-    return scenarioIds;
-  } catch (error: any) {
-    console.error(
-      '[scenarios-pathway] Failed to create scenarios:',
-      error.response?.data?.message || error.message,
-    );
-    throw error;
+async function assignScenariosToTenants(
+  client: AxiosInstance,
+  accessToken: string,
+  seedData: ScenarioPathwaySeedData,
+  scenarioIdBySeedKey: Map<string, number>,
+): Promise<void> {
+  const tenantIdsByCode = await getTenantsByCode(client, accessToken);
+
+  for (const scenario of seedData.scenarios) {
+    const scenarioId = scenarioIdBySeedKey.get(scenario.seedKey);
+    if (!scenarioId || scenario.isGlobal || !scenario.tenantCodes?.length) {
+      continue;
+    }
+
+    for (const tenantCode of scenario.tenantCodes) {
+      const tenantId = tenantIdsByCode.get(tenantCode);
+      if (!tenantId) {
+        logStep(
+          `[scenarios-pathway] Tenant "${tenantCode}" not found for scenario "${scenario.title}". Skipping tenant assignment.`,
+        );
+        continue;
+      }
+
+      await client.post(
+        `/api/v1/learn/scenario/tenant/${tenantId}`,
+        { scenarioIds: [scenarioId] },
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+      );
+    }
   }
 }
 
-async function createScenarioPath(
+async function createScenarioPaths(
   client: AxiosInstance,
   accessToken: string,
-  scenarioIds: number[],
-): Promise<void> {
-  try {
-    const pathData = createScenarioPathData(scenarioIds);
+  paths: ScenarioPathSeedRecord[],
+  scenarioIdBySeedKey: Map<string, number>,
+): Promise<Map<string, string>> {
+  const pathIdByTitle = new Map<string, string>();
+
+  for (const path of paths) {
+    const scenarios = path.scenarios
+      .map((item) => {
+        const scenarioId = scenarioIdBySeedKey.get(item.scenarioSeedKey);
+        if (!scenarioId) {
+          return null;
+        }
+
+        return {
+          scenarioId,
+          order: item.order,
+          minimumScore: item.minimumScore,
+          messageTitle: item.messageTitle,
+          messageContent: item.messageContent,
+        };
+      })
+      .filter(Boolean);
+
+    if (scenarios.length === 0) {
+      logStep(
+        `[scenarios-pathway] No scenarios resolved for path "${path.title}". Skipping path creation.`,
+      );
+      continue;
+    }
+
     const response = await client.post(
       '/api/v1/learn/admin/scenario-paths',
-      pathData,
       {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+        title: path.title,
+        description: path.description,
+        coverImageUrl: path.coverImageUrl || undefined,
+        isGlobal: path.isGlobal,
+        status: path.status,
+        scenarios,
+      },
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
       },
     );
 
-    logStep(
-      `[scenarios-pathway] Created scenario path: ${pathData.title} (ID: ${response.data.id})`,
-    );
-  } catch (error: any) {
-    console.error(
-      '[scenarios-pathway] Failed to create scenario path:',
-      error.response?.data?.message || error.message,
-    );
-    throw error;
+    if (response.data?.id && path.title) {
+      pathIdByTitle.set(path.title, response.data.id);
+      logStep(
+        `[scenarios-pathway] Created scenario path ${path.title} (${response.data.id})`,
+      );
+    }
+  }
+
+  return pathIdByTitle;
+}
+
+async function assignPathsToTenants(
+  client: AxiosInstance,
+  accessToken: string,
+  paths: ScenarioPathSeedRecord[],
+  pathIdByTitle: Map<string, string>,
+): Promise<void> {
+  const tenantIdsByCode = await getTenantsByCode(client, accessToken);
+
+  for (const path of paths) {
+    if (path.isGlobal || !path.tenantCodes?.length || !path.title) {
+      continue;
+    }
+
+    const pathId = pathIdByTitle.get(path.title);
+    if (!pathId) {
+      continue;
+    }
+
+    for (const tenantCode of path.tenantCodes) {
+      const tenantId = tenantIdsByCode.get(tenantCode);
+      if (!tenantId) {
+        logStep(
+          `[scenarios-pathway] Tenant "${tenantCode}" not found for path "${path.title}". Skipping tenant assignment.`,
+        );
+        continue;
+      }
+
+      await client.post(
+        `/api/v1/learn/admin/scenario-paths/tenant/${tenantId}`,
+        { scenarioPathIds: [pathId] },
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+      );
+    }
   }
 }
 
@@ -386,33 +714,23 @@ async function createScenarioSessions(
   accessToken: string,
   scenarioIds: number[],
 ): Promise<void> {
-  logStep(`[scenarios-pathway] Creating scenario sessions for scenarios...`);
-  try {
-    for (const scenarioId of scenarioIds) {
-      const response = await client.post(
+  for (const scenarioId of scenarioIds) {
+    try {
+      await client.post(
         '/api/v1/learn/scenario-session-start',
         {
           scenarioId,
           languageId: 1,
         },
         {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+          headers: { Authorization: `Bearer ${accessToken}` },
         },
       );
-      const sessionId =
-        response.data?.id || response.data?.scenarioSession?.id || 'unknown';
+    } catch (error: any) {
       logStep(
-        `[scenarios-pathway]   ✓ Scenario session created for scenario ${scenarioId} (Session ID: ${sessionId})`,
+        `[scenarios-pathway] Failed to create learner session for scenario ${scenarioId}: ${error.response?.data?.message || error.message}`,
       );
     }
-  } catch (error: any) {
-    console.error(
-      '[scenarios-pathway] Failed to create scenario session:',
-      error.response?.data?.message || error.message,
-    );
-    // Don't throw error here to allow path creation even if session creation fails
   }
 }
 
@@ -421,27 +739,61 @@ async function seedScenariosAndPath() {
 
   const client = axios.create({
     baseURL: API_BASE_URL,
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     timeout: 30000,
   });
 
   try {
-    // Login to get access token
-    const { accessToken } = await login(client);
+    const seedData = loadScenarioSeedData();
 
-    // Create scenarios with the voice ID
-    const scenarioIds = await createScenarios(client, accessToken);
+    const { accessToken } = await login(client, adminCredentials);
+    logStep('[scenarios-pathway] Admin login successful');
 
-    // Login as learner to create sessions (admin lacks EDIT_SCENARIO_SESSION)
-    const { accessToken: learnerToken } = await loginAsLearner(client);
+    const scenarioPayloads = await buildScenarioPayloads(
+      client,
+      accessToken,
+      seedData,
+    );
+    const scenarioIdBySeedKey = await createScenarios(
+      client,
+      accessToken,
+      scenarioPayloads,
+    );
 
-    // Create scenario sessions
-    await createScenarioSessions(client, learnerToken, scenarioIds);
+    await assignScenariosToTenants(
+      client,
+      accessToken,
+      seedData,
+      scenarioIdBySeedKey,
+    );
 
-    // Create scenario path using admin token
-    await createScenarioPath(client, accessToken, scenarioIds);
+    try {
+      const { accessToken: learnerToken } = await login(
+        client,
+        learnerCredentials,
+      );
+      logStep('[scenarios-pathway] Learner login successful');
+      await createScenarioSessions(client, learnerToken, [
+        ...scenarioIdBySeedKey.values(),
+      ]);
+    } catch (error: any) {
+      logStep(
+        `[scenarios-pathway] Learner login failed, skipping session creation: ${error.response?.data?.message || error.message}`,
+      );
+    }
+
+    const pathIdByTitle = await createScenarioPaths(
+      client,
+      accessToken,
+      seedData.paths,
+      scenarioIdBySeedKey,
+    );
+    await assignPathsToTenants(
+      client,
+      accessToken,
+      seedData.paths,
+      pathIdByTitle,
+    );
 
     logStep('[scenarios-pathway] ✅ Scenario seeding completed successfully!');
   } catch (error: any) {
@@ -451,277 +803,6 @@ async function seedScenariosAndPath() {
       error.message;
     console.error('[scenarios-pathway] ❌ Error during seeding:', detail);
     process.exit(1);
-  }
-}
-
-async function mapLanguagesVoices(
-  client: AxiosInstance,
-  accessToken: string,
-): Promise<Record<string, string>> {
-  const headers = { Authorization: `Bearer ${accessToken}` };
-
-  // Try to get existing voices first
-  try {
-    const response = await client.get('/api/v1/learn/scenario-voices', {
-      headers,
-    });
-    const uniqueLanguages = new Set(
-      response.data.map((voice: any) => voice.languageId),
-    );
-
-    const languageVoices: Record<string, string> = {};
-    uniqueLanguages.forEach((languageId: any) => {
-      const voiceForLanguage = response.data.find(
-        (voice: any) => voice.languageId === languageId,
-      );
-      if (voiceForLanguage) {
-        languageVoices[languageId] = voiceForLanguage.id;
-      }
-    });
-
-    logStep(
-      `[scenarios-pathway] Got available language voices: ${Object.keys(languageVoices).length}`,
-    );
-    return languageVoices;
-  } catch (error: any) {
-    logStep('[scenarios-pathway] No existing voices found');
-    throw error;
-  }
-}
-
-async function getTerminationEventData(
-  client: AxiosInstance,
-  accessToken: string,
-): Promise<Array<{ id: string; message: string }>> {
-  const headers = { Authorization: `Bearer ${accessToken}` };
-
-  try {
-    const response = await client.get(
-      '/api/v1/session-events?offset=0&limit=1&searchName=',
-      {
-        headers,
-      },
-    );
-
-    if (response.data.data.length === 0) {
-      throw new Error('No session events found');
-    }
-    const terminationEvent = response.data.data[0];
-
-    if (!terminationEvent) {
-      throw new Error('Termination event not found');
-    }
-
-    logStep(
-      `[scenarios-pathway] Found termination event: ${terminationEvent.name}`,
-    );
-
-    return [
-      {
-        id: terminationEvent.id,
-        message: 'Your problem is important to me.',
-      },
-    ];
-  } catch (error: any) {
-    console.error(
-      '[scenarios-pathway] Failed to fetch termination events:',
-      error.response?.data?.message || error.message,
-    );
-    throw error;
-  }
-}
-
-async function getTriggerWarnings(
-  client: AxiosInstance,
-  accessToken: string,
-): Promise<string[]> {
-  const headers = { Authorization: `Bearer ${accessToken}` };
-
-  try {
-    const response = await client.get(
-      '/api/v1/learn/trigger-warnings?name=&offset=0&limit=20',
-      {
-        headers,
-      },
-    );
-
-    if (response.data.length === 0) {
-      logStep('[scenarios-pathway] No trigger warnings found');
-      return [];
-    }
-
-    const triggerWarnings = response.data;
-
-    const triggerWarningIds = triggerWarnings.map(
-      (tw: TriggerWarnings) => tw.id,
-    );
-    logStep(
-      `[scenarios-pathway] Fetched ${triggerWarningIds.length} trigger warnings`,
-    );
-    return triggerWarningIds;
-  } catch (error: any) {
-    console.error(
-      '[scenarios-pathway] Failed to fetch trigger warnings:',
-      error.response?.data?.message || error.message,
-    );
-    throw error;
-  }
-}
-
-async function getOrCreateCompetency(
-  client: AxiosInstance,
-  accessToken: string,
-  competencyName: string = 'Counseling Fundamentals',
-): Promise<string> {
-  const headers = { Authorization: `Bearer ${accessToken}` };
-
-  // Try to get existing competency first
-  try {
-    const response = await client.get(
-      `/api/v1/learn/competencies?name=${encodeURIComponent(competencyName)}&offset=0&limit=1`,
-      {
-        headers,
-      },
-    );
-
-    if (response.data.data.length > 0) {
-      const competency = response.data.data[0];
-      logStep(
-        `[scenarios-pathway] Using existing competency: ${competency.name} (${competency.id})`,
-      );
-      return competency.id;
-    }
-  } catch {
-    logStep(
-      '[scenarios-pathway] Error fetching competencies, will create new one',
-    );
-  }
-
-  // Create new competency if not found
-  try {
-    const response = await client.post(
-      '/api/v1/learn/competencies',
-      { name: competencyName },
-      {
-        headers,
-      },
-    );
-    logStep(
-      `[scenarios-pathway] Created new competency: ${response.data.name} (${response.data.id})`,
-    );
-    return response.data.id;
-  } catch (error: any) {
-    console.error(
-      '[scenarios-pathway] Failed to create competency:',
-      error.response?.data?.message || error.message,
-    );
-    throw error;
-  }
-}
-
-async function getOrCreateBehaviors(
-  client: AxiosInstance,
-  accessToken: string,
-  behaviorNames: string[] = [
-    'Active Listening',
-    'Empathy',
-    'Reflection',
-    'Open-ended Questions',
-  ],
-): Promise<string[]> {
-  const headers = { Authorization: `Bearer ${accessToken}` };
-  const behaviorIds: string[] = [];
-
-  // Try to get existing behaviors first
-  try {
-    const response = await client.get(
-      '/api/v1/learn/scenario-behaviors?offset=0&limit=100',
-      {
-        headers,
-      },
-    );
-
-    const existingBehaviors = response.data.data || [];
-    const existingBehaviorMap = new Map(
-      existingBehaviors.map((b: any) => [b.name.toLowerCase(), b.id]),
-    );
-
-    // Find which behaviors exist and which need to be created
-    const behaviorsToCreate: string[] = [];
-    for (const name of behaviorNames) {
-      // Skip empty or invalid names
-      if (!name || typeof name !== 'string' || name.trim().length === 0) {
-        continue;
-      }
-
-      const existingId = existingBehaviorMap.get(name.toLowerCase().trim());
-      if (existingId && typeof existingId === 'string') {
-        behaviorIds.push(existingId);
-        logStep(
-          `[scenarios-pathway] Using existing behavior: ${name} (${existingId})`,
-        );
-      } else {
-        behaviorsToCreate.push(name.trim());
-      }
-    }
-
-    // Create missing behaviors
-    if (behaviorsToCreate.length > 0) {
-      // Filter out any empty strings and ensure all names are valid
-      const validBehaviorsToCreate = behaviorsToCreate
-        .filter(
-          (name) => name && typeof name === 'string' && name.trim().length > 0,
-        )
-        .map((name) => {
-          const trimmedName = name.trim();
-          if (!trimmedName) {
-            throw new Error(`Invalid behavior name: "${name}"`);
-          }
-          return { name: trimmedName };
-        });
-
-      if (validBehaviorsToCreate.length === 0) {
-        logStep(
-          '[scenarios-pathway] No valid behaviors to create after filtering',
-        );
-      } else {
-        logStep(
-          `[scenarios-pathway] Creating ${validBehaviorsToCreate.length} new behaviors: ${validBehaviorsToCreate.map((b) => b.name).join(', ')}`,
-        );
-        const createResponse = await client.post(
-          '/api/v1/learn/scenario-behaviors/bulk-insertions',
-          {
-            behaviors: validBehaviorsToCreate,
-          },
-          {
-            headers,
-          },
-        );
-
-        const createdBehaviors = createResponse.data.behaviors || [];
-        for (const behavior of createdBehaviors) {
-          behaviorIds.push(behavior.id);
-          logStep(
-            `[scenarios-pathway] Created new behavior: ${behavior.name} (${behavior.id})`,
-          );
-        }
-      }
-    }
-
-    if (behaviorIds.length === 0) {
-      throw new Error('No behaviors available after creation attempt');
-    }
-
-    logStep(
-      `[scenarios-pathway] Total behaviors available: ${behaviorIds.length}`,
-    );
-    return behaviorIds;
-  } catch (error: any) {
-    console.error(
-      '[scenarios-pathway] Failed to get or create behaviors:',
-      error.response?.data?.message || error.message,
-    );
-    throw error;
   }
 }
 

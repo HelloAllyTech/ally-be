@@ -1,0 +1,380 @@
+{
+  "source": {
+    "generatedAt": "2026-04-19T15:54:18.536Z",
+    "database": "ally_local",
+    "tenantCount": 2,
+    "userCount": 24
+  },
+  "tenants": [
+    {
+      "code": "DEV_TENANT_1",
+      "name": "DEV Tenant1",
+      "description": "DEV tenant 1 ",
+      "logoUrl": "https://ally-dev-s3-assets.s3.ap-southeast-1.amazonaws.com/org-logos/111-dab96f55-917e-46c7-8151-f0cbe9cc537f-aspect-ration-image-1to1.jpg",
+      "metadata": null,
+      "settings": {
+        "hideRankInCommunity": false,
+        "hideRankInLeaderboard": false
+      }
+    },
+    {
+      "code": "ally",
+      "name": "Ally Test Tenantnss",
+      "description": "Default tenant for seeding",
+      "logoUrl": "",
+      "metadata": null,
+      "settings": {
+        "hideRankInCommunity": true
+      }
+    }
+  ],
+  "users": [
+    {
+      "email": "multi-tenant-admin1@example.com",
+      "name": "Bhoite",
+      "username": "multi-tenant-admin1@example.com",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "ally",
+      "roles": [
+        "MULTI_TENANT_ADMIN"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": [
+        "ally"
+      ]
+    },
+    {
+      "email": "aaa+100@keyvalue.systems",
+      "name": "ann",
+      "username": "aaa+100@keyvalue.systems",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "ADMIN",
+        "COUNSELOR",
+        "LEARNER",
+        "SIMULATION_REVIEWER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "aaa+101@keyvalue.systems",
+      "name": "aaa11",
+      "username": "aaa+101@keyvalue.systems",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "ADMIN",
+        "COUNSELOR",
+        "LEARNER",
+        "SIMULATION_REVIEWER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "aaa+102@keyvalue.systems",
+      "name": "AAA",
+      "username": "aaa+102@keyvalue.systems",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "ADMIN",
+        "COUNSELOR",
+        "LEARNER",
+        "SIMULATION_REVIEWER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "aaa+103@keyvalue.systems",
+      "name": "AAA1",
+      "username": "aaa+103@keyvalue.systems",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "ADMIN",
+        "COUNSELOR",
+        "LEARNER",
+        "SIMULATION_REVIEWER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "aaa+104@keyvalue.systems",
+      "name": "AAA3",
+      "username": "aaa+104@keyvalue.systems",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "SIMULATION_REVIEWER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "aaa+105@keyvalue.systems",
+      "name": "aAA105",
+      "username": "aaa+105@keyvalue.systems",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "ADMIN",
+        "COUNSELOR",
+        "LEARNER",
+        "SIMULATION_REVIEWER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "aarathy_23@keyvalue.systems",
+      "name": "Aarathy",
+      "username": "aarathy_23@keyvalue.systems",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "ADMIN",
+        "COUNSELOR",
+        "LEARNER",
+        "SCRIBE_REVIEWER",
+        "SIMULATION_REVIEWER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "aarathy@keyvalue.system",
+      "name": "Aarathy",
+      "username": "aarathy@keyvalue.system",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "COUNSELOR"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "aarathym96@gmail.com",
+      "name": "Aarathy",
+      "username": "aarathym96@gmail.com",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "COUNSELOR"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "abc@test.com",
+      "name": "ABC",
+      "username": "abc@test.com",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "LEARNER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "abhay@keyvalue.systems",
+      "name": "Abhay",
+      "username": "abhay@keyvalue.systems",
+      "phone": "+919142426264",
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "COUNSELOR"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "abhay+02@keyvalue.systems",
+      "name": "ABHAY 02 jhadf ajhdfk kjajhghjhgjgjgjhsdfkj ajhsg",
+      "username": "abhay+02@keyvalue.systems",
+      "phone": null,
+      "externalId": "TEL002",
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "ADMIN",
+        "CLIENT",
+        "COUNSELOR",
+        "LEARNER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "abhay+03@keyvalue.systems",
+      "name": "ABHAY 03",
+      "username": "abhay+03@keyvalue.systems",
+      "phone": null,
+      "externalId": "TEL003",
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "COUNSELOR"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "abhay+cl@keyvalue.systems",
+      "name": "abhayCL",
+      "username": "abhay+cl@keyvalue.systems",
+      "phone": "+1234567884",
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "ADMIN",
+        "COUNSELOR",
+        "LEARNER",
+        "SCRIBE_REVIEWER",
+        "SIMULATION_REVIEWER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "abhay+learner@keyvalue.systems",
+      "name": "Abhay Learner",
+      "username": "abhay+learner@keyvalue.systems",
+      "phone": "+1234567887",
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "LEARNER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "abhaybadge@keyvalue.systems",
+      "name": "AbhayBadge",
+      "username": "abhaybadge@keyvalue.systems",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "SIMULATION_REVIEWER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "abheda+cl@keyvalue.systems",
+      "name": "Abheda KP",
+      "username": "abheda+cl@keyvalue.systems",
+      "phone": "+1234567112",
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "ADMIN",
+        "COUNSELOR",
+        "LEARNER",
+        "SCRIBE_REVIEWER",
+        "SIMULATION_REVIEWER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "abheda+counselor@keyvalue.systems",
+      "name": "Abheda KP",
+      "username": "abheda+counselor@keyvalue.systems",
+      "phone": "+1234567111",
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "COUNSELOR"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "abhedatest@abcd.com",
+      "name": "abhedatestt",
+      "username": "abhedatest@abcd.com",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "COUNSELOR",
+        "LEARNER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "admin-dev-tenant1@gmail.com",
+      "name": "admin-dev-tenant1",
+      "username": "admin-dev-tenant1@gmail.com",
+      "phone": "+917777777777",
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "ADMIN"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "afnasalam1997@gmail.com",
+      "name": "Afna Client",
+      "username": "afnasalam1997@gmail.com",
+      "phone": "+918075578582",
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "CLIENT"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "DEVTENANT@KEYVALUE.SYSTEMS",
+      "name": "qa",
+      "username": "DEVTENANT@KEYVALUE.SYSTEMS",
+      "phone": null,
+      "externalId": "TEL005",
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "COUNSELOR",
+        "LEARNER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    },
+    {
+      "email": "Mariabadge@keyvalue.systems",
+      "name": "Mariabadge",
+      "username": "Mariabadge@keyvalue.systems",
+      "phone": null,
+      "externalId": null,
+      "tenantCode": "DEV_TENANT_1",
+      "roles": [
+        "LEARNER",
+        "SIMULATION_REVIEWER"
+      ],
+      "status": "ACTIVE",
+      "adminTenantCodes": []
+    }
+  ]
+}

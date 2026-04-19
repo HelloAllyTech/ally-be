@@ -46,7 +46,7 @@ function readJsonFile<T>(filePath: string): T {
   return JSON.parse(raw) as T;
 }
 
-const API_BASE_URL = 'http://localhost:8001';
+const API_BASE_URL = process.env.SEED_API_BASE_URL || 'http://localhost:8001';
 
 // Admin credentials for authentication
 const adminCredentials = {
