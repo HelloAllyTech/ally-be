@@ -31,10 +31,9 @@ const adminCredentials = {
   password: process.env.SEED_ADMIN_PASSWORD || 'Password123!',
 };
 
-const learnerCredentials = {
-  username: process.env.SEED_LEARNER_EMAIL || 'learner@example.com',
-  password: process.env.SEED_LEARNER_PASSWORD || 'Password123!',
-};
+const MIN_TIMER_SECONDS = 5 * 60;
+const MAX_TIMER_SECONDS = 2 * 60 * 60;
+const DEFAULT_PATH_MINIMUM_SCORE = 70;
 
 function defaultStateNames(): { stateId: string; name: string }[] {
   return [
@@ -63,6 +62,142 @@ function fallbackLinguisticStyleSamples(
 
   return Object.fromEntries(
     languageIds.map((id) => [String(id), [...samples]]),
+  );
+}
+
+function parseTimeToSeconds(value?: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/^(\d{2}):(\d{2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const [, hours, minutes, seconds] = match;
+  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
+}
+
+function formatSecondsAsTime(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600)
+    .toString()
+    .padStart(2, '0');
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+    .toString()
+    .padStart(2, '0');
+  const seconds = Math.floor(totalSeconds % 60)
+    .toString()
+    .padStart(2, '0');
+
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+function normalizeTimerSettings(scenario: ScenarioSeedRecord): {
+  timerMode: boolean | undefined;
+  maxTimeValue: string | undefined;
+} {
+  if (!scenario.timerMode) {
+    return {
+      timerMode: scenario.timerMode,
+      maxTimeValue: undefined,
+    };
+  }
+
+  const parsedSeconds = parseTimeToSeconds(scenario.maxTimeValue);
+  if (parsedSeconds === null) {
+    logStep(
+      `[scenarios-pathway] Invalid timer value "${scenario.maxTimeValue}" for "${scenario.title}". Using 00:05:00 instead.`,
+    );
+    return {
+      timerMode: true,
+      maxTimeValue: formatSecondsAsTime(MIN_TIMER_SECONDS),
+    };
+  }
+
+  const clampedSeconds = Math.max(
+    MIN_TIMER_SECONDS,
+    Math.min(MAX_TIMER_SECONDS, parsedSeconds),
+  );
+
+  if (clampedSeconds !== parsedSeconds) {
+    logStep(
+      `[scenarios-pathway] Adjusted timer value for "${scenario.title}" from ${scenario.maxTimeValue} to ${formatSecondsAsTime(clampedSeconds)}.`,
+    );
+  }
+
+  return {
+    timerMode: true,
+    maxTimeValue: formatSecondsAsTime(clampedSeconds),
+  };
+}
+
+function resolveScenarioLanguageIds(
+  scenario: ScenarioSeedRecord,
+  availableVoicesByLanguage: Record<string, string>,
+): number[] {
+  const selectedLanguageIds = (scenario.selectedLanguageIds || []).filter(
+    (id) => Boolean(availableVoicesByLanguage[String(id)]),
+  );
+  const sampleLanguageIds = Object.keys(scenario.linguisticStyleSamples || {})
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id))
+    .filter((id) => Boolean(availableVoicesByLanguage[String(id)]));
+
+  if (selectedLanguageIds.length > 0 && sampleLanguageIds.length > 0) {
+    const intersection = selectedLanguageIds.filter((id) =>
+      sampleLanguageIds.includes(id),
+    );
+    if (intersection.length > 0) {
+      return intersection;
+    }
+  }
+
+  if (sampleLanguageIds.length > 0) {
+    return sampleLanguageIds;
+  }
+
+  if (selectedLanguageIds.includes(1)) {
+    return [1];
+  }
+
+  if (selectedLanguageIds.length > 0) {
+    return [selectedLanguageIds[0]];
+  }
+
+  if (availableVoicesByLanguage['1']) {
+    return [1];
+  }
+
+  const fallbackLanguageId = Object.keys(availableVoicesByLanguage)
+    .map((id) => Number(id))
+    .find((id) => Number.isFinite(id));
+
+  return fallbackLanguageId ? [fallbackLanguageId] : [];
+}
+
+function buildLinguisticStyleSamplesForScenario(
+  scenario: ScenarioSeedRecord,
+  languageIds: number[],
+): Record<string, string[]> {
+  const existing = scenario.linguisticStyleSamples || {};
+  const fallback = fallbackLinguisticStyleSamples(languageIds);
+
+  return Object.fromEntries(
+    languageIds.map((languageId) => {
+      const key = String(languageId);
+      const existingSamples = Array.isArray(existing[key])
+        ? existing[key].filter(
+            (sample): sample is string =>
+              typeof sample === 'string' && sample.trim().length > 0,
+          )
+        : [];
+
+      return [
+        key,
+        existingSamples.length > 0 ? existingSamples : fallback[key],
+      ];
+    }),
   );
 }
 
@@ -394,10 +529,10 @@ function buildLanguageVoicesForScenario(
   availableVoicesByLanguage: Record<string, string>,
   scenario: ScenarioSeedRecord,
 ): Record<string, string> {
-  const selectedLanguageIds =
-    scenario.selectedLanguageIds && scenario.selectedLanguageIds.length > 0
-      ? scenario.selectedLanguageIds
-      : Object.keys(availableVoicesByLanguage).map((id) => Number(id));
+  const selectedLanguageIds = resolveScenarioLanguageIds(
+    scenario,
+    availableVoicesByLanguage,
+  );
 
   const languageVoices: Record<string, string> = {};
   for (const languageId of selectedLanguageIds) {
@@ -498,6 +633,11 @@ async function buildScenarioPayloads(
             .map((name) => behaviorIdsByName.get(name))
             .filter((id): id is string => Boolean(id)),
         })) || [];
+      const timerSettings = normalizeTimerSettings(scenario);
+      const linguisticStyleSamples = buildLinguisticStyleSamplesForScenario(
+        scenario,
+        selectedLanguageIds,
+      );
 
       const payload = {
         title: scenario.title,
@@ -522,9 +662,7 @@ async function buildScenarioPayloads(
         openingStatements: scenario.openingStatements,
         translationOpeningStatements: scenario.translationOpeningStatements,
         languageVoices,
-        linguisticStyleSamples:
-          scenario.linguisticStyleSamples ||
-          fallbackLinguisticStyleSamples(selectedLanguageIds),
+        linguisticStyleSamples,
         allowedFillerWords: scenario.allowedFillerWords,
         competencyId,
         terminationEvents,
@@ -532,8 +670,8 @@ async function buildScenarioPayloads(
         customFields: scenario.customFields,
         experienceMode: scenario.experienceMode,
         checklistType: scenario.checklistType,
-        timerMode: scenario.timerMode,
-        maxTimeValue: scenario.maxTimeValue,
+        timerMode: timerSettings.timerMode,
+        maxTimeValue: timerSettings.maxTimeValue,
         optGuardrails: scenario.optGuardrails,
         behaviorInstructions,
         characterProfileText: scenario.characterProfileText,
@@ -631,7 +769,7 @@ async function createScenarioPaths(
         return {
           scenarioId,
           order: item.order,
-          minimumScore: item.minimumScore,
+          minimumScore: item.minimumScore ?? DEFAULT_PATH_MINIMUM_SCORE,
           messageTitle: item.messageTitle,
           messageContent: item.messageContent,
         };
@@ -709,31 +847,6 @@ async function assignPathsToTenants(
   }
 }
 
-async function createScenarioSessions(
-  client: AxiosInstance,
-  accessToken: string,
-  scenarioIds: number[],
-): Promise<void> {
-  for (const scenarioId of scenarioIds) {
-    try {
-      await client.post(
-        '/api/v1/learn/scenario-session-start',
-        {
-          scenarioId,
-          languageId: 1,
-        },
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        },
-      );
-    } catch (error: any) {
-      logStep(
-        `[scenarios-pathway] Failed to create learner session for scenario ${scenarioId}: ${error.response?.data?.message || error.message}`,
-      );
-    }
-  }
-}
-
 async function seedScenariosAndPath() {
   logStep(`[scenarios-pathway] Connecting to API at: ${API_BASE_URL}`);
 
@@ -766,21 +879,6 @@ async function seedScenariosAndPath() {
       seedData,
       scenarioIdBySeedKey,
     );
-
-    try {
-      const { accessToken: learnerToken } = await login(
-        client,
-        learnerCredentials,
-      );
-      logStep('[scenarios-pathway] Learner login successful');
-      await createScenarioSessions(client, learnerToken, [
-        ...scenarioIdBySeedKey.values(),
-      ]);
-    } catch (error: any) {
-      logStep(
-        `[scenarios-pathway] Learner login failed, skipping session creation: ${error.response?.data?.message || error.message}`,
-      );
-    }
 
     const pathIdByTitle = await createScenarioPaths(
       client,
