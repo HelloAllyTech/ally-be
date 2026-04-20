@@ -37,22 +37,22 @@ The system is organized as a modular NestJS monolith with the following key laye
 
 ### Technology Stack
 
-| Component        | Tech Used                              |
-| ---------------- | -------------------------------------- |
-| Backend          | NestJS (Node.js v24)                   |
-| Database         | PostgreSQL + TypeORM                   |
-| Caching          | Redis                                  |
-| Real-time Comm   | WebSocket (Socket.io) + LiveKit        |
-| Authentication   | JWT, OTP, Google OAuth, Magic Link     |
-| AI / LLM         | OpenAI (streaming), Deepgram (STT)     |
-| TTS              | ElevenLabs, Deepgram, Sarvam, Google, Hume |
-| Cloud Storage    | AWS S3 (multipart, presigned URLs)     |
-| Messaging        | AWS SQS + Redis message broker         |
-| Email            | AWS SES                                |
-| Audit Logging    | AWS CloudWatch (HIPAA-compliant)       |
-| Analytics        | PostgreSQL + Metabase                  |
-| Observability    | Winston Logger + Slack alerts          |
-| Documentation    | Swagger/OpenAPI                        |
+| Component      | Tech Used                                  |
+| -------------- | ------------------------------------------ |
+| Backend        | NestJS (Node.js v24)                       |
+| Database       | PostgreSQL + TypeORM                       |
+| Caching        | Redis                                      |
+| Real-time Comm | WebSocket (Socket.io) + LiveKit            |
+| Authentication | JWT, OTP, Google OAuth, Magic Link         |
+| AI / LLM       | OpenAI (streaming), Deepgram (STT)         |
+| TTS            | ElevenLabs, Deepgram, Sarvam, Google, Hume |
+| Cloud Storage  | AWS S3 (multipart, presigned URLs)         |
+| Messaging      | AWS SQS + Redis message broker             |
+| Email          | AWS SES                                    |
+| Audit Logging  | AWS CloudWatch (HIPAA-compliant)           |
+| Analytics      | PostgreSQL + Metabase                      |
+| Observability  | Winston Logger + Slack alerts              |
+| Documentation  | Swagger/OpenAPI                            |
 
 ## Codebase Directory Structure
 
@@ -241,13 +241,13 @@ Seed scripts are located in `src/database/seeds/` and populate the database with
 
 #### Available Seeds
 
-| Seed File                   | Description                                                           | Dependencies                                      |
-| --------------------------- | --------------------------------------------------------------------- | ------------------------------------------------- |
-| `admin-user.ts`             | Creates an admin user with SUPER_ADMIN role                           | Requires `groups` table to have SUPER_ADMIN group |
-| `user-tenant.ts`            | Creates a tenant and sample users (Counselor, Learner, Admin) via API | Requires app to be running, admin user to exist   |
-| `scenarios-pathway.ts`      | Creates sample scenarios and a learning pathway via API               | Requires app to be running, admin user to exist   |
-| `seed-voices-and-events.ts` | Seeds scenario voices and session events data                         | Requires app to be running                        |
-| `seed-badges.ts`            | Seeds badge definitions                                               | Requires app to be running                        |
+| Seed File                   | Description                                                                               | Dependencies                                      |
+| --------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `admin-user.ts`             | Creates an admin user with SUPER_ADMIN role                                               | Requires `groups` table to have SUPER_ADMIN group |
+| `user-tenant.ts`            | Creates tenants and users from `src/database/seeds/data/user-tenant.json` via API         | Requires app to be running, admin user to exist   |
+| `scenarios-pathway.ts`      | Creates scenarios and paths from `src/database/seeds/data/scenarios-pathway.json` via API | Requires app to be running, admin user to exist   |
+| `seed-voices-and-events.ts` | Seeds scenario voices and session events from `src/database/seeds/data/*.json`            | Requires app to be running                        |
+| `seed-badges.ts`            | Seeds badges from `src/database/seeds/data/badges.json`                                   | Requires app to be running                        |
 
 #### API URL for API-based seeds
 
@@ -279,6 +279,20 @@ npm run seed:scenarios
 npm run seed:all
 ```
 
+To refresh all checked-in seed datasets from your current development database as a compact representative seed set:
+
+```bash
+npm run seed:export-all
+```
+
+If you only want the user and tenant snapshot, you can still run:
+
+```bash
+npm run seed:export-users
+```
+
+The export intentionally skips SUPER_ADMIN bootstrap users and password hashes. During seeding, each exported user is created with `SEED_USER_DEFAULT_PASSWORD` or `Password123!` by default.
+
 ## 📚 API Documentation
 
 Once the application is running, access the interactive API documentation:
@@ -307,21 +321,21 @@ The platform supports multiple authentication methods:
 
 ### Key API Endpoints
 
-| Endpoint                          | Description                        |
-| --------------------------------- | ---------------------------------- |
-| `POST /api/v1/auth/login`         | User login                         |
-| `POST /api/v1/auth/refresh`       | Refresh access token               |
-| `POST /api/v1/auth/generate-otp`  | Generate OTP (v2)                  |
-| `POST /api/v1/auth/verify-otp`    | Verify OTP (v2)                    |
-| `POST /api/v1/auth/google`        | Google OAuth sign-in               |
-| `POST /api/v1/auth/magic-link/verify` | Magic link verification        |
-| `GET /api/v1/users/me`            | Get current user profile           |
-| `GET /api/v1/health`              | Health check endpoint              |
-| `GET /api/v1/badges/me`           | Get current user's badges          |
-| `GET /api/v1/community`           | Community leaderboard              |
-| `GET /api/v1/community/my-rank`   | Current user's rank                |
-| `GET /api/analytics/*`            | Analytics dashboards               |
-| `GET /api/tenant-analytics/*`     | Tenant-specific analytics          |
+| Endpoint                              | Description               |
+| ------------------------------------- | ------------------------- |
+| `POST /api/v1/auth/login`             | User login                |
+| `POST /api/v1/auth/refresh`           | Refresh access token      |
+| `POST /api/v1/auth/generate-otp`      | Generate OTP (v2)         |
+| `POST /api/v1/auth/verify-otp`        | Verify OTP (v2)           |
+| `POST /api/v1/auth/google`            | Google OAuth sign-in      |
+| `POST /api/v1/auth/magic-link/verify` | Magic link verification   |
+| `GET /api/v1/users/me`                | Get current user profile  |
+| `GET /api/v1/health`                  | Health check endpoint     |
+| `GET /api/v1/badges/me`               | Get current user's badges |
+| `GET /api/v1/community`               | Community leaderboard     |
+| `GET /api/v1/community/my-rank`       | Current user's rank       |
+| `GET /api/analytics/*`                | Analytics dashboards      |
+| `GET /api/tenant-analytics/*`         | Tenant-specific analytics |
 
 **Prompts API (dashboard and sync):** See [docs/prompts-api.md](docs/prompts-api.md). Prompt folder (naming, meta JSON): [docs/prompts-folder.md](docs/prompts-folder.md).
 
@@ -425,12 +439,12 @@ npm run format
 
 Configure log level via `LOG_LEVEL` environment variable:
 
-| Level   | Description                          |
-| ------- | ------------------------------------ |
-| `error` | Only errors                          |
-| `warn`  | Warnings and errors (default)        |
-| `info`  | Info, warnings, and errors           |
-| `debug` | All logs including debug messages    |
+| Level   | Description                       |
+| ------- | --------------------------------- |
+| `error` | Only errors                       |
+| `warn`  | Warnings and errors (default)     |
+| `info`  | Info, warnings, and errors        |
+| `debug` | All logs including debug messages |
 
 ### Monitoring
 

@@ -1,22 +1,143 @@
 [
   {
+    "name": "Abhilash (Male, Adult)",
+    "provider": "SARVAM",
+    "config": {
+      "age": "adult",
+      "name": "abhilash",
+      "model": "bulbul:v2",
+      "gender": "male",
+      "speaker": "abhilash"
+    },
+    "languageId": 1,
+    "active": true
+  },
+  {
+    "name": "Abhilash (male, Adult)",
+    "provider": "SARVAM",
+    "config": {
+      "age": "adult",
+      "model": "bulbul:v2",
+      "gender": "male",
+      "speaker": "abhilash",
+      "voice_name": "abhilash"
+    },
+    "languageId": 2,
+    "active": true
+  },
+  {
     "name": "Achernar (female)",
     "provider": "GOOGLE",
     "config": {
       "gender": "female",
-      "voice_name": "en-IN-Chirp3-HD-Achernar",
-      "languageCode": "en-IN"
+      "voice_name": "bn-IN-Chirp3-HD-Achernar",
+      "languageCode": "bn-IN"
     },
-    "languageId": 1
+    "languageId": 3,
+    "active": true
   },
   {
-    "name": "Achird (male)",
-    "provider": "GOOGLE",
+    "name": "Abhilash (male, Adult)",
+    "provider": "SARVAM",
     "config": {
+      "age": "adult",
+      "model": "bulbul:v2",
       "gender": "male",
-      "voice_name": "en-IN-Chirp3-HD-Achird",
-      "languageCode": "en-IN"
+      "speaker": "abhilash",
+      "voice_name": "abhilash"
     },
-    "languageId": 1
+    "languageId": 4,
+    "active": true
+  },
+  {
+    "name": "Abhilash (male, Adult)",
+    "provider": "SARVAM",
+    "config": {
+      "age": "adult",
+      "model": "bulbul:v2",
+      "gender": "male",
+      "speaker": "abhilash",
+      "voice_name": "abhilash"
+    },
+    "languageId": 5,
+    "active": true
+  },
+  {
+    "name": "Abhilash (male, Adult)",
+    "provider": "SARVAM",
+    "config": {
+      "age": "adult",
+      "model": "bulbul:v2",
+      "gender": "male",
+      "speaker": "abhilash",
+      "voice_name": "abhilash"
+    },
+    "languageId": 6,
+    "active": true
+  },
+  {
+    "name": "Abhilash (male, Adult)",
+    "provider": "SARVAM",
+    "config": {
+      "age": "adult",
+      "model": "bulbul:v2",
+      "gender": "male",
+      "speaker": "abhilash",
+      "voice_name": "abhilash"
+    },
+    "languageId": 7,
+    "active": true
+  },
+  {
+    "name": "Abhilash (male, Adult)",
+    "provider": "SARVAM",
+    "config": {
+      "age": "adult",
+      "model": "bulbul:v2",
+      "gender": "male",
+      "speaker": "abhilash",
+      "voice_name": "abhilash"
+    },
+    "languageId": 8,
+    "active": true
+  },
+  {
+    "name": "Abhilash (male, Adult)",
+    "provider": "SARVAM",
+    "config": {
+      "age": "adult",
+      "model": "bulbul:v2",
+      "gender": "male",
+      "speaker": "abhilash",
+      "voice_name": "abhilash"
+    },
+    "languageId": 9,
+    "active": true
+  },
+  {
+    "name": "Abhilash (male, Adult)",
+    "provider": "SARVAM",
+    "config": {
+      "age": "adult",
+      "model": "bulbul:v2",
+      "gender": "male",
+      "speaker": "abhilash",
+      "voice_name": "abhilash"
+    },
+    "languageId": 10,
+    "active": true
+  },
+  {
+    "name": "Abhilash (male, Adult)",
+    "provider": "SARVAM",
+    "config": {
+      "age": "adult",
+      "model": "bulbul:v2",
+      "gender": "male",
+      "speaker": "abhilash",
+      "voice_name": "abhilash"
+    },
+    "languageId": 11,
+    "active": true
   }
 ]
