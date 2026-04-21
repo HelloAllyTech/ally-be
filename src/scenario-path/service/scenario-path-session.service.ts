@@ -202,6 +202,7 @@ export class ScenarioPathSessionService {
         const languageVoiceIds = getLanguageVoiceIds(
           scenario?.metadata?.languageVoices,
         );
+        delete scenario?.metadata;
         return {
           ...scenario,
           availableLanguages: languageVoiceIds.length
