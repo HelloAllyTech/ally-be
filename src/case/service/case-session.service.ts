@@ -134,6 +134,7 @@ export class CaseSessionService {
           const languageVoiceIds = getLanguageVoiceIds(
             scenario?.metadata?.languageVoices,
           );
+          delete scenario?.metadata?.languageVoices;
           return {
             ...scenario,
             sessionId: null,
@@ -166,8 +167,17 @@ export class CaseSessionService {
       caseSessionId: caseSession.id,
       scenarios: caseWithScenarios.scenarios.map((scenario) => {
         const caseSessionItem = sessionItemsMap.get(scenario.id);
+        const languageVoiceIds = getLanguageVoiceIds(
+          scenario?.metadata?.languageVoices,
+        );
+        delete scenario?.metadata?.languageVoices;
         return {
           ...scenario,
+          availableLanguages: languageVoiceIds.length
+            ? languageVoiceIds
+                .map((languageId) => availableLanguagesMap.get(languageId))
+                .filter(Boolean)
+            : null,
           sessionId: caseSessionItem?.id,
           status: caseSessionItem?.status || SessionItemStatus.LOCKED,
         };

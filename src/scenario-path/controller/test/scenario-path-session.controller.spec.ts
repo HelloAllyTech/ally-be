@@ -127,6 +127,7 @@ describe('ScenarioPathSessionController', () => {
           description: 'Scenario Description',
           coverImageUrl: 'https://example.com/scenario.jpg',
           coverVideoUrl: 'https://example.com/scenario.mp4',
+          availableLanguages: null,
           sessionId: 'session-item-1',
           status: 'COMPLETED' as any,
         },

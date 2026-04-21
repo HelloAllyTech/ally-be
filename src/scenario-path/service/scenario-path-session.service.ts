@@ -199,8 +199,16 @@ export class ScenarioPathSessionService {
       scenarioPathSessionId: scenarioPathSession.id,
       scenarios: scenarioPathWithScenarios.scenarios.map((scenario) => {
         const scenarioPathSessionItem = sessionItemsMap.get(scenario.id);
+        const languageVoiceIds = getLanguageVoiceIds(
+          scenario?.metadata?.languageVoices,
+        );
         return {
           ...scenario,
+          availableLanguages: languageVoiceIds.length
+            ? languageVoiceIds
+                .map((languageId) => availableLanguagesMap.get(languageId))
+                .filter(Boolean)
+            : null,
           sessionId: scenarioPathSessionItem?.id,
           status: scenarioPathSessionItem?.status || SessionItemStatus.LOCKED,
         };
