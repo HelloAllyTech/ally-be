@@ -457,11 +457,13 @@ describe('ScenarioPathSessionService', () => {
         scenarios: [
           {
             ...mockScenarioPathWithScenarios.scenarios[0],
+            availableLanguages: null,
             sessionId: 'session-item-1',
             status: SessionItemStatus.COMPLETED,
           },
           {
             ...mockScenarioPathWithScenarios.scenarios[1],
+            availableLanguages: null,
             sessionId: undefined,
             status: SessionItemStatus.LOCKED,
           },
