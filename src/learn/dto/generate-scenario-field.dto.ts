@@ -160,10 +160,20 @@ export class GenerateScenarioFieldDto {
 
   @ApiProperty({
     description:
-      'OpenAI model override for generation (e.g. gpt-4o, gpt-4o-mini)',
+      'Model override for generation (e.g. gpt-4o, claude-sonnet-4-6)',
     required: false,
   })
   @IsString()
   @IsOptional()
   model?: string;
+
+  @ApiProperty({
+    description: 'AI provider to use for generation',
+    enum: ['openai', 'anthropic'],
+    required: false,
+    default: 'openai',
+  })
+  @IsEnum(['openai', 'anthropic'])
+  @IsOptional()
+  provider?: 'openai' | 'anthropic';
 }

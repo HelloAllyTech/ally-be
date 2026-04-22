@@ -349,6 +349,16 @@ export class AppConfigService {
     };
   }
 
+  get anthropic() {
+    return {
+      apiKey: this.configService.get<string>('ANTHROPIC_API_KEY'),
+      autofillModel: this.configService.get<string>(
+        'ANTHROPIC_AUTOFILL_MODEL',
+        'claude-sonnet-4-6',
+      ),
+    };
+  }
+
   get aiChat() {
     return {
       defaultProvider: this.configService.get<string>(

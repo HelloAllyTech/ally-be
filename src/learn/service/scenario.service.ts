@@ -106,6 +106,8 @@ import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruct
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { OpenAIAutofillService } from './openai-autofil-service';
+import { AnthropicAutofillService } from './anthropic-autofill.service';
+import { buildBehaviorIdMapping } from '../util/autofill-shared.util';
 import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
 import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
 import {
@@ -163,6 +165,7 @@ export class ScenarioService {
     private scenarioBehaviorInstructionService: ScenarioBehaviorInstructionService,
     private competencyService: CompetencyService,
     private openAIAutofillService: OpenAIAutofillService,
+    private anthropicAutofillService: AnthropicAutofillService,
     private behaviorService: BehaviorService,
     private permissionsService: PermissionsService,
     private readonly auditLogService: AuditLogService,
@@ -2313,14 +2316,37 @@ export class ScenarioService {
     return dynamicBranchShortcuts;
   }
 
-  async getAvailableModels(): Promise<{ value: string; label: string }[]> {
-    return this.openAIAutofillService.getAvailableModels();
+  async getAvailableModels(): Promise<
+    { value: string; label: string; provider: string }[]
+  > {
+    const [openaiModels, anthropicModels] = await Promise.all([
+      this.openAIAutofillService.getAvailableModels(),
+      this.anthropicAutofillService.getAvailableModels(),
+    ]);
+    return [...openaiModels, ...anthropicModels];
   }
 
   async generateField(
     generateScenarioFieldDto: GenerateScenarioFieldDto,
   ): Promise<GenerateScenarioFieldResponseDto> {
-    const { fieldName, scenarioContext, model } = generateScenarioFieldDto;
+    const { fieldName, scenarioContext, model, provider } =
+      generateScenarioFieldDto;
+    const autofillServiceRegistry = new Map<
+      string,
+      OpenAIAutofillService | AnthropicAutofillService
+    >([
+      ['openai', this.openAIAutofillService],
+      ['anthropic', this.anthropicAutofillService],
+    ]);
+    const resolvedProvider = provider ?? 'openai';
+    if (provider && !autofillServiceRegistry.has(provider)) {
+      this.logger.warn(
+        `Unrecognized autofill provider "${provider}", falling back to openai`,
+      );
+    }
+    const autofillService =
+      autofillServiceRegistry.get(resolvedProvider) ??
+      this.openAIAutofillService;
 
     let promptCode = getPromptCodeForScenarioField(fieldName);
 
@@ -2361,8 +2387,7 @@ export class ScenarioService {
       }
 
       const { data: behaviors } = await this.behaviorService.getBehaviors();
-      const result =
-        this.openAIAutofillService.buildBehaviorIdMapping(behaviors);
+      const result = buildBehaviorIdMapping(behaviors);
       behaviorIdMapping = result.mapping;
 
       this.logger.info(
@@ -2498,7 +2523,7 @@ export class ScenarioService {
       };
     }
 
-    const content = await this.openAIAutofillService.generateFieldContent(
+    const content = await autofillService.generateFieldContent(
       fieldName,
       promptCode,
       contextToUse,

@@ -13,3 +13,13 @@ export const PREFERRED_AUTOFILL_MODELS = [
   'o1',
   'o1-mini',
 ] as const;
+
+/**
+ * Anthropic models available for autofill. Hardcoded since Anthropic has no list-models endpoint.
+ * Order determines display priority.
+ */
+export const PREFERRED_ANTHROPIC_AUTOFILL_MODELS = [
+  'claude-opus-4-7',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5',
+] as const;
