@@ -237,61 +237,40 @@ npm run migration:show
 
 ### Database Seeding
 
-Seed scripts are located in `src/database/seeds/` and populate the database with initial data.
+Seeds live in `src/database/seeds/` and insert the minimum dataset needed for local development directly via TypeORM (no running server required). The fixture data is inline TypeScript in [`fixtures.ts`](src/database/seeds/fixtures.ts) — edit it there if you need to add/change seeded records.
 
-#### Available Seeds
+What gets seeded:
 
-| Seed File                   | Description                                                                               | Dependencies                                      |
-| --------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `admin-user.ts`             | Creates an admin user with SUPER_ADMIN role                                               | Requires `groups` table to have SUPER_ADMIN group |
-| `user-tenant.ts`            | Creates tenants and users from `src/database/seeds/data/user-tenant.json` via API         | Requires app to be running, admin user to exist   |
-| `scenarios-pathway.ts`      | Creates scenarios and paths from `src/database/seeds/data/scenarios-pathway.json` via API | Requires app to be running, admin user to exist   |
-| `seed-voices-and-events.ts` | Seeds scenario voices and session events from `src/database/seeds/data/*.json`            | Requires app to be running                        |
-| `seed-badges.ts`            | Seeds badges from `src/database/seeds/data/badges.json`                                   | Requires app to be running                        |
+- 1 tenant (`ally`)
+- 4 test users: `admin@example.com` (SUPER_ADMIN), `org-admin@example.com` (ADMIN), `learner@example.com` (LEARNER+COUNSELOR), `multi-tenant-admin1@example.com` (MULTI_TENANT_ADMIN)
+- 2 scenario voices, 3 session events, 2 scenarios, 1 pathway, 4 badges
 
-#### API URL for API-based seeds
-
-Seeds that call the HTTP API (e.g. `scenarios-pathway.ts`) use **`SEED_API_BASE_URL`** (default `http://localhost:8001`). Do not use generic **`API_BASE_URL`** from `.env` for these scripts if it is not a full `http(s)://` URL.
-
-**Docker:** Optional **`AUTO_SEED=true`** in `.env` runs `npm run seed:all` once after migrations (see `docker-compose.yml`). Or run manually: `docker compose exec app npm run seed:all`.
-
-#### Seed Execution Order
-
-For a fresh database, run seeds in this order:
+#### Commands
 
 ```bash
-# 1. Create admin user (direct DB access)
-npm run seed:admin
+# Seed the DB (idempotent — safe to re-run; existing rows are matched by unique key and skipped)
+npm run seed
 
-# 2. Seed voices and session events (requires app running)
-npm run seed:voices
-
-# 3. Create tenant and users (requires app running)
-npm run seed:users
-
-# 4. Create scenarios and pathway (requires app running)
-npm run seed:scenarios
+# Truncate all seeded tables, then re-seed from scratch
+npm run seed:reset -- --confirm && npm run seed
 ```
 
-**Or run all seeds at once:**
+`seed:reset` refuses to run without `--confirm` (or `SEED_RESET_CONFIRM=1`) and refuses entirely when `NODE_ENV=production`. It uses `TRUNCATE ... CASCADE` across the 14 seeded tables, so rows in other tables with foreign keys to these will also be deleted — run against a dev DB only.
+
+#### Login credentials
+
+All seeded users share the same password and OTP:
+
+- **Password**: `Password123!` (override with `SEED_DEFAULT_PASSWORD`)
+- **OTP**: `1234` (override with `SEED_DEFAULT_OTP`; also needs matching entry in `TEST_ACCOUNTS` in `.env` for OTP login to work)
+
+#### Docker
+
+Set `AUTO_SEED=true` in `.env` to run `npm run seed` once after migrations on container start (see [`docker-compose.yml`](docker-compose.yml)). Or run manually:
 
 ```bash
-npm run seed:all
+docker compose exec app npm run seed
 ```
-
-To refresh all checked-in seed datasets from your current development database as a compact representative seed set:
-
-```bash
-npm run seed:export-all
-```
-
-If you only want the user and tenant snapshot, you can still run:
-
-```bash
-npm run seed:export-users
-```
-
-The export intentionally skips SUPER_ADMIN bootstrap users and password hashes. During seeding, each exported user is created with `SEED_USER_DEFAULT_PASSWORD` or `Password123!` by default.
 
 ## 📚 API Documentation
 
