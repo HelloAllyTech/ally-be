@@ -270,10 +270,12 @@ export class LearnController {
     return this.scenarioService.deleteCoverVideo(deleteCoverVideoDto);
   }
 
-  @ApiOperation({ summary: 'Get available OpenAI models for autofill' })
+  @ApiOperation({ summary: 'Get available models for autofill' })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
   @Get('models')
-  async getAvailableModels(): Promise<{ value: string; label: string }[]> {
+  async getAvailableModels(): Promise<
+    { value: string; label: string; provider: string }[]
+  > {
     return this.scenarioService.getAvailableModels();
   }
 

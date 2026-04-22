@@ -42,6 +42,7 @@ import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
 import { CompetencyService } from '../competency.service';
 import { OpenAIAutofillService } from '../openai-autofil-service';
+import { AnthropicAutofillService } from '../anthropic-autofill.service';
 import { BehaviorService } from '../behavior.service';
 import { GeneratableField } from 'src/learn/enum/generatable-field.enum';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
@@ -75,6 +76,7 @@ describe('ScenarioService', () => {
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let triggerWarningsService: jest.Mocked<TriggerWarningsService>;
   let openAIAutofillService: jest.Mocked<OpenAIAutofillService>;
+  let anthropicAutofillService: jest.Mocked<AnthropicAutofillService>;
   let behaviorService: jest.Mocked<BehaviorService>;
   let scenarioBehaviorInstructionService: jest.Mocked<ScenarioBehaviorInstructionService>;
 
@@ -289,6 +291,13 @@ describe('ScenarioService', () => {
     const mockOpenAIAutofillService = {
       generateFieldContent: jest.fn(),
       buildBehaviorIdMapping: jest.fn(),
+      getAvailableModels: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockAnthropicAutofillService = {
+      generateFieldContent: jest.fn(),
+      buildBehaviorIdMapping: jest.fn(),
+      getAvailableModels: jest.fn().mockResolvedValue([]),
     };
 
     const mockBehaviorService = {
@@ -402,6 +411,10 @@ describe('ScenarioService', () => {
           useValue: mockOpenAIAutofillService,
         },
         {
+          provide: AnthropicAutofillService,
+          useValue: mockAnthropicAutofillService,
+        },
+        {
           provide: BehaviorService,
           useValue: mockBehaviorService,
         },
@@ -426,6 +439,7 @@ describe('ScenarioService', () => {
     scenarioSharedService = module.get(ScenarioSharedService);
     triggerWarningsService = module.get(TriggerWarningsService);
     openAIAutofillService = module.get(OpenAIAutofillService);
+    anthropicAutofillService = module.get(AnthropicAutofillService);
     behaviorService = module.get(BehaviorService);
     scenarioBehaviorInstructionService = module.get(
       ScenarioBehaviorInstructionService,
@@ -5858,6 +5872,136 @@ describe('ScenarioService', () => {
           sanitizedDifferent,
         ),
       ).toBe(true);
+    });
+  });
+
+  describe('getAvailableModels', () => {
+    it('should merge OpenAI and Anthropic models into a single list', async () => {
+      const openaiModels = [
+        { value: 'gpt-4o', label: 'gpt-4o', provider: 'openai' },
+        { value: 'gpt-4o-mini', label: 'gpt-4o-mini', provider: 'openai' },
+      ];
+      const anthropicModels = [
+        {
+          value: 'claude-sonnet-4-6',
+          label: 'claude-sonnet-4-6',
+          provider: 'anthropic',
+        },
+      ];
+
+      openAIAutofillService.getAvailableModels.mockResolvedValue(openaiModels);
+      anthropicAutofillService.getAvailableModels.mockResolvedValue(
+        anthropicModels,
+      );
+
+      const result = await service.getAvailableModels();
+
+      expect(result).toEqual([...openaiModels, ...anthropicModels]);
+    });
+
+    it('should preserve provider tags from each service', async () => {
+      openAIAutofillService.getAvailableModels.mockResolvedValue([
+        { value: 'gpt-4o', label: 'gpt-4o', provider: 'openai' },
+      ]);
+      anthropicAutofillService.getAvailableModels.mockResolvedValue([
+        {
+          value: 'claude-sonnet-4-6',
+          label: 'claude-sonnet-4-6',
+          provider: 'anthropic',
+        },
+      ]);
+
+      const result = await service.getAvailableModels();
+
+      expect(result.find((m) => m.value === 'gpt-4o')?.provider).toBe('openai');
+      expect(
+        result.find((m) => m.value === 'claude-sonnet-4-6')?.provider,
+      ).toBe('anthropic');
+    });
+
+    it('should return only OpenAI models when Anthropic returns empty list', async () => {
+      const openaiModels = [
+        { value: 'gpt-4o', label: 'gpt-4o', provider: 'openai' },
+      ];
+      openAIAutofillService.getAvailableModels.mockResolvedValue(openaiModels);
+      anthropicAutofillService.getAvailableModels.mockResolvedValue([]);
+
+      const result = await service.getAvailableModels();
+
+      expect(result).toEqual(openaiModels);
+    });
+  });
+
+  describe('generateField - provider routing', () => {
+    const scenarioContext = { title: 'Test', name: 'John', age: 30 };
+
+    it('should route to OpenAIAutofillService when provider is openai', async () => {
+      openAIAutofillService.generateFieldContent.mockResolvedValue(
+        'openai result',
+      );
+
+      await service.generateField({
+        fieldName: GeneratableField.DESCRIPTION,
+        scenarioContext,
+        provider: 'openai',
+      });
+
+      expect(openAIAutofillService.generateFieldContent).toHaveBeenCalled();
+      expect(
+        anthropicAutofillService.generateFieldContent,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should route to AnthropicAutofillService when provider is anthropic', async () => {
+      anthropicAutofillService.generateFieldContent.mockResolvedValue(
+        'anthropic result',
+      );
+
+      await service.generateField({
+        fieldName: GeneratableField.DESCRIPTION,
+        scenarioContext,
+        provider: 'anthropic',
+      });
+
+      expect(anthropicAutofillService.generateFieldContent).toHaveBeenCalled();
+      expect(openAIAutofillService.generateFieldContent).not.toHaveBeenCalled();
+    });
+
+    it('should default to OpenAIAutofillService when provider is not specified', async () => {
+      openAIAutofillService.generateFieldContent.mockResolvedValue(
+        'default result',
+      );
+
+      await service.generateField({
+        fieldName: GeneratableField.DESCRIPTION,
+        scenarioContext,
+      });
+
+      expect(openAIAutofillService.generateFieldContent).toHaveBeenCalled();
+      expect(
+        anthropicAutofillService.generateFieldContent,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should pass model override to AnthropicAutofillService', async () => {
+      anthropicAutofillService.generateFieldContent.mockResolvedValue('result');
+
+      await service.generateField({
+        fieldName: GeneratableField.DESCRIPTION,
+        scenarioContext,
+        provider: 'anthropic',
+        model: 'claude-haiku-4-5',
+      });
+
+      expect(
+        anthropicAutofillService.generateFieldContent,
+      ).toHaveBeenCalledWith(
+        GeneratableField.DESCRIPTION,
+        expect.any(String),
+        scenarioContext,
+        undefined,
+        'claude-haiku-4-5',
+      );
     });
   });
 });

@@ -3,41 +3,38 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import OpenAI from 'openai';
-import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import Anthropic from '@anthropic-ai/sdk';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { ScenarioFieldContextDto } from '../dto/generate-scenario-field.dto';
 import { GeneratableField } from '../enum/generatable-field.enum';
 import { BehaviorResponseDto } from '../dto/behavior-response.dto';
-import { STRUCTURED_OUTPUT_SCHEMAS } from '../constants/autofill-structured-output.constants';
 import {
   BehaviorIdMapping,
   GeneratedContent,
 } from '../type/generatable-fields.type';
-import { PREFERRED_AUTOFILL_MODELS } from '../constants/autofill-models.constants';
+import { PREFERRED_ANTHROPIC_AUTOFILL_MODELS } from '../constants/autofill-models.constants';
 import {
   AUTOFILL_CACHE_TTL_MS,
   buildBehaviorIdMapping,
+  buildJsonSchemaSuffix,
   buildTemplateVariables,
   extractContent,
   renderTemplate,
+  stripMarkdownFences,
 } from '../util/autofill-shared.util';
+import { AutofillModelInfo } from './openai-autofil-service';
 
-export interface AutofillModelInfo {
-  value: string;
-  label: string;
-  provider: string;
-}
+const ANTHROPIC_MAX_TOKENS = 4096;
 
 @Injectable()
-export class OpenAIAutofillService {
+export class AnthropicAutofillService {
   private readonly logger = LoggerService.getInstance(
-    OpenAIAutofillService.name,
+    AnthropicAutofillService.name,
   );
 
-  private readonly client: OpenAI;
+  private readonly client: Anthropic;
   private readonly model: string;
 
   private modelsCache: { models: AutofillModelInfo[] } | null = null;
@@ -47,8 +44,10 @@ export class OpenAIAutofillService {
     private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
   ) {
-    this.client = new OpenAI({ apiKey: this.configService.openai.apiKey });
-    this.model = this.configService.openai.autofillModel;
+    this.client = new Anthropic({
+      apiKey: this.configService.anthropic.apiKey,
+    });
+    this.model = this.configService.anthropic.autofillModel;
   }
 
   buildBehaviorIdMapping(
@@ -69,22 +68,29 @@ export class OpenAIAutofillService {
         apiModelIds.add(model.id);
       }
 
-      const result: AutofillModelInfo[] = [];
-      for (const modelId of PREFERRED_AUTOFILL_MODELS) {
-        if (apiModelIds.has(modelId)) {
-          result.push({ value: modelId, label: modelId, provider: 'openai' });
-        }
-      }
+      const apiModelIdList = [...apiModelIds].sort((a, b) =>
+        b.localeCompare(a),
+      );
+      const result: AutofillModelInfo[] =
+        PREFERRED_ANTHROPIC_AUTOFILL_MODELS.map((prefix) =>
+          apiModelIdList.find((id) => id.startsWith(prefix)),
+        )
+          .filter((id): id is string => id !== undefined)
+          .map((id) => ({ value: id, label: id, provider: 'anthropic' }));
 
       this.modelsCache = { models: result };
       this.modelsCacheExpiry = now + AUTOFILL_CACHE_TTL_MS;
       return result;
     } catch (error) {
       this.logger.error(
-        'Failed to fetch available OpenAI models',
+        'Failed to fetch available Anthropic models, falling back to preferred list',
         error as any,
       );
-      throw error;
+      return PREFERRED_ANTHROPIC_AUTOFILL_MODELS.map((id) => ({
+        value: id,
+        label: id,
+        provider: 'anthropic',
+      }));
     }
   }
 
@@ -106,34 +112,30 @@ export class OpenAIAutofillService {
 
     const templateVariables = buildTemplateVariables(scenarioContext);
     const renderedPrompt = renderTemplate(promptTemplate, templateVariables);
+    const jsonSuffix = buildJsonSchemaSuffix(fieldName);
+    const fullPrompt = renderedPrompt + jsonSuffix;
 
     try {
-      const messages: ChatCompletionMessageParam[] = [
-        { role: 'user', content: renderedPrompt },
-      ];
-
-      const jsonSchema = STRUCTURED_OUTPUT_SCHEMAS[fieldName];
-
-      const response = await this.client.chat.completions.create({
+      const response = await this.client.messages.create({
         model: modelOverride ?? this.model,
-        messages,
-        ...(jsonSchema && {
-          response_format: {
-            type: 'json_schema',
-            json_schema: jsonSchema,
-          },
-        }),
+        max_tokens: ANTHROPIC_MAX_TOKENS,
+        messages: [{ role: 'user', content: fullPrompt }],
       });
 
-      const content = response.choices?.[0]?.message?.content ?? '';
+      const block = response.content[0];
+      const content = block?.type === 'text' ? block.text.trim() : '';
 
-      if (!content || content.trim() === '') {
+      if (!content) {
         throw new InternalServerErrorException(
-          `Empty response from OpenAI for prompt code: ${promptCode}`,
+          `Empty response from Anthropic for prompt code: ${promptCode}`,
         );
       }
 
-      return extractContent(fieldName, content.trim(), behaviorIdMapping);
+      return extractContent(
+        fieldName,
+        stripMarkdownFences(content),
+        behaviorIdMapping,
+      );
     } catch (error) {
       this.logger.error(
         `Error generating content for prompt code: ${promptCode}`,

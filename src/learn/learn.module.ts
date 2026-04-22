@@ -89,6 +89,7 @@ import { BehaviorTranslationService } from './service/behavior-translation.servi
 import { ScenarioBehaviorInstructionTranslationService } from './service/scenario-behavior-instruction-translation.service';
 import { BehaviorInstructionTranslationService } from './service/behavior-instruction-translation.service';
 import { OpenAIAutofillService } from './service/openai-autofil-service';
+import { AnthropicAutofillService } from './service/anthropic-autofill.service';
 
 import { AuditModule } from 'src/audit/audit.module';
 import { ScenarioSessionRecording } from './entity/scenario-session-recording.entity';
@@ -199,6 +200,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     BehaviorTranslationService,
     ScenarioBehaviorInstructionTranslationService,
     OpenAIAutofillService,
+    AnthropicAutofillService,
     ScenarioSessionRecordingRepository,
     ScenarioSessionRecordingService,
   ],
