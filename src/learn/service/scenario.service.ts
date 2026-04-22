@@ -267,9 +267,21 @@ export class ScenarioService {
       },
       options,
     );
+
+    const languageIds = getDistinctScenarioLanguageIds(scenarios);
+
+    const languages = languageIds.length
+      ? await this.sharedLanguageService.getLanguagesByIds(languageIds)
+      : [];
+
+    const availableLanguagesMap = buildAvailableLanguagesMap(languages);
     const mappedData = scenarios.map((item) => {
       const isPreviewEnabled =
         this.scenarioSharedService.hasAllActiveScenarioMandatoryFields(item);
+
+      const languageVoiceIds = getLanguageVoiceIds(
+        item?.scenario_metadata?.languageVoices,
+      );
 
       return {
         id: item.scenario_id,
@@ -288,6 +300,11 @@ export class ScenarioService {
         triggerWarnings: item.triggerWarnings,
         isPreviewEnabled,
         isPublic: item.scenario_isPublic,
+        availableLanguages: languageVoiceIds.length
+          ? languageVoiceIds
+              .map((languageId) => availableLanguagesMap.get(languageId))
+              .filter(Boolean)
+          : null,
       };
     });
 

@@ -8,6 +8,9 @@ interface ScenarioWithLanguageMetadata {
   metadata?: {
     languageVoices?: Record<string, unknown>;
   };
+  scenario_metadata?: {
+    languageVoices?: Record<string, unknown>;
+  };
 }
 
 export interface AvailableLanguageItem {
@@ -28,7 +31,10 @@ export const getDistinctScenarioLanguageIds = (
 ): number[] => [
   ...new Set(
     scenarios.flatMap((scenario) =>
-      getLanguageVoiceIds(scenario?.metadata?.languageVoices),
+      getLanguageVoiceIds(
+        scenario?.metadata?.languageVoices ||
+          scenario?.scenario_metadata?.languageVoices,
+      ),
     ),
   ),
 ];
