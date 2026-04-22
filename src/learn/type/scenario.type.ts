@@ -34,6 +34,7 @@ export enum ExperienceMode {
 export enum ChecklistType {
   GUIDED = 'GUIDED',
   UNGUIDED = 'UNGUIDED',
+  LIST = 'LIST',
 }
 
 export interface ScenarioExperienceMetadata {
