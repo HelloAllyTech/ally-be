@@ -243,7 +243,7 @@ What gets seeded:
 
 - 1 tenant (`ally`)
 - 4 test users: `admin@example.com` (SUPER_ADMIN), `org-admin@example.com` (ADMIN), `learner@example.com` (LEARNER+COUNSELOR), `multi-tenant-admin1@example.com` (MULTI_TENANT_ADMIN)
-- 2 scenario voices, 3 session events, 2 scenarios, 1 pathway, 4 badges
+- 2 scenario voices, 3 session events, 2 scenarios, 1 pathway, 1 case, 4 badges
 
 #### Commands
 

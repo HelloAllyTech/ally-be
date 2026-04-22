@@ -13,6 +13,7 @@ import {
   ScenarioStatus,
 } from '../../learn/type/scenario.type';
 import { ScenarioPathStatus } from '../../scenario-path/type/scenario-paths.type';
+import { CaseStatus } from '../../case/type/cases.type';
 import { SessionEventDetectionType } from '../../session-event/enum/session-event-detection.enum';
 import { SessionEventVisibilityType } from '../../session-event/enum/session-event-visibility-type.enum';
 import { TENANT_CODE, TENANT_NAME, ADMIN_EMAIL } from './config';
@@ -66,6 +67,12 @@ export interface BadgeFixture {
   category: BadgeCategory;
   count: number;
   groupNames: UserRole[];
+}
+
+export interface CaseFixture {
+  title: string;
+  description: string;
+  scenarioKeys: string[];
 }
 
 export const tenant: TenantFixture = {
@@ -224,6 +231,15 @@ export const pathways: PathwayFixture[] = [
   },
 ];
 
+export const cases: CaseFixture[] = [
+  {
+    title: 'Early-Career Counseling',
+    description:
+      'Sample case covering common early-career client presentations.',
+    scenarioKeys: ['active-listening', 'workplace-anxiety'],
+  },
+];
+
 export const badges: BadgeFixture[] = [
   {
     name: 'Simulation Starter',
@@ -259,6 +275,7 @@ export const defaults = {
   scenarioStatus: ScenarioStatus.ACTIVE,
   scenarioDifficulty: ScenarioDifficultyLevel.EASY,
   pathStatus: ScenarioPathStatus.ACTIVE,
+  caseStatus: CaseStatus.ACTIVE,
   badgeStatus: BadgeStatus.ACTIVE,
   badgeVisibility: BadgeVisibilityType.PUBLIC,
   eventVisibility: SessionEventVisibilityType.ACTIVE,

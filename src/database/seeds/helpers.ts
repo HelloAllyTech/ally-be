@@ -21,6 +21,9 @@ import { ScenarioPathTenant } from '../../scenario-path/entity/scenario-path-ten
 import { Badge } from '../../badge/entity/badge.entity';
 import { BadgeGroup } from '../../badge/entity/badge-group.entity';
 import { BadgeTenant } from '../../badge/entity/badge-tenant.entity';
+import { Case } from '../../case/entity/case.entity';
+import { CaseItem } from '../../case/entity/case-item.entity';
+import { CaseTenant } from '../../case/entity/case-tenant.entity';
 
 export const SEED_ENTITIES = [
   Tenant,
@@ -37,6 +40,9 @@ export const SEED_ENTITIES = [
   Badge,
   BadgeGroup,
   BadgeTenant,
+  Case,
+  CaseItem,
+  CaseTenant,
 ];
 
 export function createSeedDataSource(): DataSource {
