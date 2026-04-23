@@ -26,6 +26,8 @@ import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 import { GoogleSignInDto } from '../dto/google-token.dto';
 import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { AuthPermissions } from '../decorators/auth-permissions.decorator';
 import { ImpersonateDto } from '../dto/impersonate.dto';
 
 @Controller({
@@ -91,7 +93,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('impersonate')
-  // @AuthPermissions([PERMISSIONS.IMPERSONATE_USER])
+  @AuthPermissions([PERMISSIONS.IMPERSONATE_USER])
   @Version('1')
   @HttpCode(HttpStatus.OK)
   async impersonate(@Body() impersonateDto: ImpersonateDto, @Req() req: any) {
