@@ -27,9 +27,9 @@ on:
         options:
           - dev
           - prd
-  push:
-    branches:
-      - master
+  # push:
+  #   branches:
+  #     - master
 
 jobs:
   prepare-env:
