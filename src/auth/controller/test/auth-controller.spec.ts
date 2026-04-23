@@ -122,21 +122,23 @@ describe('AuthController', () => {
   });
 
   describe('impersonate', () => {
-    it('should call impersonate method and return tokens', async () => {
+    it('should call impersonate method and return message and data', async () => {
       mockAuthService.impersonate.mockResolvedValue({
         message: 'Impersonation successful',
-        data: { accessToken: 'token', refreshToken: 'refresh' },
+        authCode: '12345',
       });
-      const result = await controller.impersonate({
-        email: 'test@example.com',
-      } as any);
+      const result = await controller.impersonate(
+        { email: 'test@example.com' } as any,
+        { user: { id: 1 } },
+      );
       expect(result).toEqual({
         message: 'Impersonation successful',
-        data: { accessToken: 'token', refreshToken: 'refresh' },
+        data: '12345',
       });
-      expect(mockAuthService.impersonate).toHaveBeenCalledWith({
-        email: 'test@example.com',
-      });
+      expect(mockAuthService.impersonate).toHaveBeenCalledWith(
+        { email: 'test@example.com' },
+        1,
+      );
     });
   });
 });

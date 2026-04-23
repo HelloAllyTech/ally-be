@@ -142,3 +142,13 @@ export class AuthenticationResponseDto {
     username: string;
   };
 }
+
+export class ImpersonationExchangeDto {
+  @ApiProperty({
+    description: 'The authentication code for impersonation exchange',
+    example: 'abcdef123456',
+  })
+  @IsString()
+  @IsNotEmpty()
+  authCode!: string;
+}

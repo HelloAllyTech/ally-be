@@ -46,6 +46,7 @@ describe('AuthService', () => {
   let redisService: jest.Mocked<RedisService>;
   let dataSource: jest.Mocked<DataSource>;
   let groupService: jest.Mocked<GroupService>;
+  let permissionsService: jest.Mocked<PermissionsService>;
 
   const mockLogger = {
     info: jest.fn(),
@@ -177,6 +178,7 @@ describe('AuthService', () => {
           provide: PermissionsService,
           useValue: {
             hasPermission: jest.fn(),
+            isMultiTenantAdmin: jest.fn(),
           },
         },
       ],
@@ -187,6 +189,7 @@ describe('AuthService', () => {
     jwtService = module.get(JwtService);
     redisService = module.get(RedisService);
     groupService = module.get(GroupService);
+    permissionsService = module.get(PermissionsService);
 
     userRepository = dataSource.getRepository(User) as jest.Mocked<
       Repository<User>
@@ -924,6 +927,74 @@ describe('AuthService', () => {
         `auth_attempt:magic:${tokenHash}`,
       );
       expect(refreshTokenRepository.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('impersonate', () => {
+    it('should return an auth code on successful impersonation', async () => {
+      userRepository.findOne.mockResolvedValue(mockUser);
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(false);
+
+      const result = await authService.impersonate(
+        { email: mockUser.email } as any,
+        1,
+      );
+
+      expect(result).toHaveProperty('message', 'Impersonation successful');
+      expect(result).toHaveProperty('authCode');
+      expect(redisService.set).toHaveBeenCalledWith(
+        expect.stringContaining('auth_code:'),
+        expect.any(String),
+        60,
+      );
+    });
+
+    it('should prevent multi-tenant admins from being impersonated', async () => {
+      userRepository.findOne.mockResolvedValue(mockUser);
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+
+      const result = await authService.impersonate(
+        { email: mockUser.email } as any,
+        1,
+      );
+
+      expect(result).toEqual({
+        message: 'Multi-tenant admin cannot be impersonated.',
+      });
+    });
+  });
+
+  describe('exchangeImpersonationCode', () => {
+    it('should exchange code successfully and return structured tokens including admin context', async () => {
+      const authCode = 'fake-auth-code';
+      const payload = {
+        targetUserId: mockUser.id,
+        adminUserId: 100,
+        tenantId: 1,
+      };
+
+      redisService.get.mockResolvedValue(JSON.stringify(payload));
+      userRepository.findOne.mockResolvedValue(mockUser);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-refresh-token');
+      jwtService.signAsync
+        .mockResolvedValueOnce('access-token')
+        .mockResolvedValueOnce('refresh-token');
+
+      const result = await authService.exchangeImpersonationCode({
+        authCode,
+      } as any);
+
+      expect(redisService.del).toHaveBeenCalledWith(`auth_code:${authCode}`);
+      expect(result).toHaveProperty('user');
+      expect(result.user).toEqual({ id: 100, username: 'admin_user' });
+      expect(result.accessToken).toBe('access-token');
+    });
+
+    it('should throw UnauthorizedException if code is invalid', async () => {
+      redisService.get.mockResolvedValue(null);
+      await expect(
+        authService.exchangeImpersonationCode({ authCode: 'bad' } as any),
+      ).rejects.toThrow();
     });
   });
 });

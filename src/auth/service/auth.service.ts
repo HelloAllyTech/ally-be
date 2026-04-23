@@ -26,6 +26,7 @@ import {
   GenerateOtpV2ResponseDto,
   VerifyOtpV2Dto,
 } from '../dto/login.dto';
+import { ImpersonationExchangeDto } from '../dto';
 import { UserSuspendedException } from '../exception/login.exception';
 import { UserRole } from 'src/common/constants/user.constants';
 import { AuthProvider, GoogleTokenPayload } from '../type/auth.types';
@@ -81,7 +82,7 @@ export class AuthService {
     return result;
   }
 
-  async impersonate(ImpersonateData: Impersonate) {
+  async impersonate(ImpersonateData: Impersonate, adminUserId: any) {
     const userEmail = ImpersonateData.email;
 
     const user = await this.userRepository.findOne({
@@ -96,8 +97,51 @@ export class AuthService {
     if (isMultitenantAdmin)
       return { message: 'Multi-tenant admin cannot be impersonated.' };
 
-    const tokens = await this.generateTokens(user as User);
+    const auth_code = await this.generateAuthCode(user as User, adminUserId);
 
+    return { message: 'Impersonation successful', authCode: auth_code };
+  }
+
+  async generateAuthCode(targetUser: User, adminUserId: number) {
+    const authCode = crypto.randomBytes(32).toString('hex');
+    const payload = {
+      targetUserId: targetUser.id,
+      adminUserId,
+      tenantId: targetUser.tenantId,
+    };
+
+    await this.cache.set(`auth_code:${authCode}`, JSON.stringify(payload), 60);
+
+    return authCode;
+  }
+
+  async exchangeImpersonationCode(
+    ImpersonationExchangeDto: ImpersonationExchangeDto,
+  ): Promise<AuthenticationResponseDto> {
+    const key = `auth_code:${ImpersonationExchangeDto.authCode}`;
+    const payloadStr = await this.cache.get(key);
+
+    if (!payloadStr) {
+      this.logger.error('Invalid or expired impersonation code');
+      throw new UnauthorizedException('Invalid or expired impersonation code');
+    }
+
+    const payload = JSON.parse(payloadStr);
+    const { targetUserId, adminUserId } = payload;
+
+    await this.cache.del(key);
+
+    const user = await this.userRepository.findOne({
+      where: { id: targetUserId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Target user not found');
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      throw new UserSuspendedException();
+    }
     this.auditLogger.log({
       eventType: AUDIT_EVENTS.SUPER_ADMIN_IMPERSONATE,
       details: {
@@ -105,7 +149,16 @@ export class AuthService {
         userDetails: user,
       },
     });
-    return { message: 'Impersonation successful', data: tokens };
+
+    const tokens = await this.generateTokens(user);
+    return {
+      user: {
+        id: adminUserId,
+        username: 'admin_user',
+      },
+      ...tokens,
+      tokenType: 'bearer',
+    };
   }
 
   async generateTokens(

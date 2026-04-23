@@ -17,6 +17,7 @@ import {
   GenerateOtpV2ResponseDto,
   VerifyOtpV2Dto,
   AuthenticationResponseDto,
+  ImpersonationExchangeDto,
 } from '../dto';
 import { JwtRefreshAuthGuard } from '../guards/jwt-refresh-auth.guard';
 import { LoggerService } from '../../logger/logger.service';
@@ -25,9 +26,6 @@ import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 import { GoogleSignInDto } from '../dto/google-token.dto';
 import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
-import { PermissionsService } from 'src/authorization/service/permissions.service';
-import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { AuthPermissions } from '../decorators/auth-permissions.decorator';
 import { ImpersonateDto } from '../dto/impersonate.dto';
 
 @Controller({
@@ -37,10 +35,7 @@ import { ImpersonateDto } from '../dto/impersonate.dto';
 @ApiTags('Auth')
 export class AuthController {
   private logger = LoggerService.getInstance(AuthController.name);
-  constructor(
-    private authService: AuthService,
-    private permissionsService: PermissionsService,
-  ) {}
+  constructor(private authService: AuthService) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -96,12 +91,25 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('impersonate')
-  @AuthPermissions([PERMISSIONS.IMPERSONATE_USER])
+  // @AuthPermissions([PERMISSIONS.IMPERSONATE_USER])
   @Version('1')
   @HttpCode(HttpStatus.OK)
-  async impersonate(@Body() ImpersonateDto: ImpersonateDto) {
-    const data = await this.authService.impersonate(ImpersonateDto);
-    return { message: data.message, data: data.data };
+  async impersonate(@Body() impersonateDto: ImpersonateDto, @Req() req: any) {
+    const adminUserId = req.user.id;
+    const data = await this.authService.impersonate(
+      impersonateDto,
+      adminUserId,
+    );
+    return { message: data.message, data: data.authCode };
+  }
+
+  @Post('impersonate/exchange')
+  @Version('1')
+  @HttpCode(HttpStatus.OK)
+  async exchangeImpersonationCode(
+    @Body() ImpersonationExchangeDto: ImpersonationExchangeDto,
+  ) {
+    return this.authService.exchangeImpersonationCode(ImpersonationExchangeDto);
   }
 
   @UseGuards(JwtAuthGuard)
