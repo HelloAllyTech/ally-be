@@ -104,12 +104,8 @@ services:
       # SQS URLs for tests
       - SQS_TRANSCRIPTION_REQUEST_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-queue
       - SQS_TRANSCRIPTION_REQUEST_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-dlq
-      - SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-queue
-      - SQS_TRANSCRIPTION_RESPONSE_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-dlq
       - SQS_AUDIO_FILE_RETRY_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue
       - SQS_AUDIO_FILE_RETRY_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue-dlq
-      - SQS_AUDIO_UPLOAD_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue
-      - SQS_AUDIO_UPLOAD_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue-dlq
       - SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-learn-message-and-event-queue
       # JWT and other secrets for tests
       - JWT_SECRET=test-secret-key-for-testing-only
@@ -155,12 +151,8 @@ services:
       - AWS_REGION=us-east-1
       - SQS_TRANSCRIPTION_REQUEST_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-queue
       - SQS_TRANSCRIPTION_REQUEST_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-dlq
-      - SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-queue
-      - SQS_TRANSCRIPTION_RESPONSE_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-dlq
       - SQS_AUDIO_FILE_RETRY_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue
       - SQS_AUDIO_FILE_RETRY_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue-dlq
-      - SQS_AUDIO_UPLOAD_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue
-      - SQS_AUDIO_UPLOAD_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue-dlq
       - SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-learn-message-and-event-queue
       - JWT_SECRET=test-secret-key-for-testing-only
       - JWT_EXPIRATION=3600
@@ -205,12 +197,8 @@ services:
       - AWS_REGION=us-east-1
       - SQS_TRANSCRIPTION_REQUEST_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-queue
       - SQS_TRANSCRIPTION_REQUEST_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-request-dlq
-      - SQS_TRANSCRIPTION_RESPONSE_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-queue
-      - SQS_TRANSCRIPTION_RESPONSE_DLQ_URL=http://localstack-test:4566/000000000000/sqs-ai-transcription-response-dlq
       - SQS_AUDIO_FILE_RETRY_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue
       - SQS_AUDIO_FILE_RETRY_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-file-retry-queue-dlq
-      - SQS_AUDIO_UPLOAD_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue
-      - SQS_AUDIO_UPLOAD_DLQ_URL=http://localstack-test:4566/000000000000/sqs-audio-upload-queue-dlq
       - SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL=http://localstack-test:4566/000000000000/sqs-learn-message-and-event-queue
       - JWT_SECRET=test-secret-key-for-testing-only
       - JWT_EXPIRATION=3600
