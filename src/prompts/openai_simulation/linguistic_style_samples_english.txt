@@ -23,7 +23,8 @@ Generate 10 sample CLIENT utterances for a counseling scenario. These are things
 
 3. REGIONAL ENGLISH VARIETY
 - For English India (en-IN): Use Indian English patterns, vocabulary, and rhythm typical of {{location}}.
-- For English Global (en-US, en-GB, etc.): Use the appropriate regional variety.
+- For English US (en-US): Use American English patterns, vocabulary, and rhythm.
+- For English UK (en-GB): Use British English patterns, vocabulary, and rhythm.
 
 4. SPOKEN STYLE
 - Use fragments, repetitions, and natural hesitations.

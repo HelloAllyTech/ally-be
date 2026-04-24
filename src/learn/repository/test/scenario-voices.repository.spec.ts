@@ -256,7 +256,7 @@ describe('ScenarioVoicesRepository', () => {
         {
           language_id: '2',
           value: 'en-US',
-          label: 'English Global',
+          label: 'English (US)',
           translationCode: 'en-US',
           voices: JSON.stringify([]),
         },
@@ -290,7 +290,7 @@ describe('ScenarioVoicesRepository', () => {
         translationCode: 'en-GB',
         voices: [],
       });
-      expect(result[1].label).toBe('English Global');
+      expect(result[1].label).toBe('English (US)');
     });
 
     it('should return languages with voices and voices detail when voicesNeeded is true', async () => {
