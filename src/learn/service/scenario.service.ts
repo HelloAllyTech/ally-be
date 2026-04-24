@@ -2541,7 +2541,7 @@ export class ScenarioService {
       en: 'English',
       'en-IN': 'English (India)',
       'en-US': 'English (United States)',
-      'en-GB': 'English (Global)',
+      'en-GB': 'English (UK)',
       ml: 'Malayalam',
       'ml-IN': 'Malayalam',
       hi: 'Hindi',

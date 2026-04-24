@@ -155,6 +155,15 @@ export const LANGUAGE_LLM_PROVIDER_CONFIG: Record<
       },
     },
   },
+
+  [LanguageCode.EN_US]: {
+    llm: {
+      provider: 'openai',
+      config: {
+        model: 'gpt-4o-mini',
+      },
+    },
+  },
 };
 
 export const LANGUAGE_STT_PROVIDER_CONFIG: Record<
@@ -280,6 +289,15 @@ export const LANGUAGE_STT_PROVIDER_CONFIG: Record<
   },
 
   [LanguageCode.EN_GB]: {
+    stt: {
+      provider: 'deepgram',
+      config: {
+        model: 'nova-3',
+      },
+    },
+  },
+
+  [LanguageCode.EN_US]: {
     stt: {
       provider: 'deepgram',
       config: {
