@@ -26,6 +26,8 @@ describe('SettingsController', () => {
     updateChatTypes: jest.fn(),
     getHiddenSummaryFields: jest.fn(),
     getHiddenChatTypesForEntity: jest.fn(),
+    getEnabledCustomFieldTypes: jest.fn(),
+    updateEnabledCustomFieldTypes: jest.fn(),
   } as any;
 
   const allowGuard: CanActivate = { canActivate: () => true };
@@ -392,6 +394,73 @@ describe('SettingsController', () => {
       await expect(
         controller.updateHiddenChatTypes(requestBody),
       ).rejects.toThrow(error);
+    });
+  });
+
+  describe('getEnabledCustomFieldTypes', () => {
+    it('should return all types when no tenantId provided', async () => {
+      service.getEnabledCustomFieldTypes.mockResolvedValue([
+        'SINGLE_SELECT',
+        'DATE',
+      ]);
+
+      const result = await controller.getEnabledCustomFieldTypes();
+
+      expect(service.getEnabledCustomFieldTypes).toHaveBeenCalledWith(
+        undefined,
+      );
+      expect(result).toEqual(['SINGLE_SELECT', 'DATE']);
+    });
+
+    it('should pass tenantId to service when provided', async () => {
+      service.getEnabledCustomFieldTypes.mockResolvedValue(['DATE']);
+
+      const result = await controller.getEnabledCustomFieldTypes('tenant-id');
+
+      expect(service.getEnabledCustomFieldTypes).toHaveBeenCalledWith(
+        'tenant-id',
+      );
+      expect(result).toEqual(['DATE']);
+    });
+
+    it('should handle service errors', async () => {
+      service.getEnabledCustomFieldTypes.mockRejectedValue(
+        new Error('Service error'),
+      );
+
+      await expect(controller.getEnabledCustomFieldTypes()).rejects.toThrow(
+        'Service error',
+      );
+    });
+  });
+
+  describe('updateEnabledCustomFieldTypes', () => {
+    it('should update enabled types and return success', async () => {
+      service.updateEnabledCustomFieldTypes.mockResolvedValue({
+        success: true,
+      });
+      const body = { tenantId: 'tenant-id', enabledTypes: ['SINGLE_SELECT'] };
+
+      const result = await controller.updateEnabledCustomFieldTypes(body);
+
+      expect(service.updateEnabledCustomFieldTypes).toHaveBeenCalledWith(
+        'tenant-id',
+        ['SINGLE_SELECT'],
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should handle service errors for invalid types', async () => {
+      service.updateEnabledCustomFieldTypes.mockRejectedValue(
+        new Error('Invalid field types: INVALID'),
+      );
+
+      await expect(
+        controller.updateEnabledCustomFieldTypes({
+          tenantId: 'tenant-id',
+          enabledTypes: ['INVALID'],
+        }),
+      ).rejects.toThrow('Invalid field types');
     });
   });
 });

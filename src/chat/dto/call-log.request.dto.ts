@@ -41,6 +41,7 @@ export interface CallLogFilters {
   maxQualityScore?: number;
   tags?: string;
   archive?: string;
+  callName?: string;
 }
 
 export class CallLogRequestDto {

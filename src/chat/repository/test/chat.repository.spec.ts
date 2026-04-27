@@ -680,5 +680,31 @@ describe('ChatRepository', () => {
         { tags: ['anxiety', 'support'] },
       );
     });
+
+    it('should apply callName filter using ILIKE on callInfo summaryName JSONB field', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await repository.getAdminCallLogsQuery(mockTenantId, {
+        callName: 'Crisis Call',
+      });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        `details.callInfo->>'summaryName' ILIKE :callName`,
+        { callName: '%Crisis Call%' },
+      );
+    });
+
+    it('should not add callName filter when callName is not provided', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await repository.getAdminCallLogsQuery(mockTenantId, {});
+
+      const andWhereCalls = (mockQueryBuilder.andWhere as jest.Mock).mock.calls;
+      const callNameCall = andWhereCalls.find(
+        (args) =>
+          typeof args[0] === 'string' && args[0].includes('summaryName'),
+      );
+      expect(callNameCall).toBeUndefined();
+    });
   });
 });

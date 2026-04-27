@@ -158,6 +158,71 @@ export class SettingsController {
     return this.service.getChatTypes(query || {});
   }
 
+  @Get('custom-field-types')
+  @ApiOperation({ summary: 'Get enabled custom field types for the org' })
+  @ApiQuery({ name: 'tenantId', required: false, type: String })
+  @ApiResponse({ status: 200 })
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_CUSTOM_FIELD_TYPES])
+  getEnabledCustomFieldTypes(@Query('tenantId') tenantId?: string) {
+    return this.service.getEnabledCustomFieldTypes(tenantId);
+  }
+
+  @Get('custom-fields-enabled')
+  @ApiOperation({
+    summary: 'Get whether the custom fields feature is enabled for the org',
+  })
+  @ApiQuery({ name: 'tenantId', required: false, type: String })
+  @ApiResponse({ status: 200 })
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_CUSTOM_FIELD_TYPES])
+  getCustomFieldsEnabled(@Query('tenantId') tenantId?: string) {
+    return this.service.getCustomFieldsEnabled(tenantId);
+  }
+
+  @Put('custom-fields-enabled')
+  @ApiOperation({
+    summary: 'Enable or disable the custom fields feature (superadmin only)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        tenantId: { type: 'string' },
+        enabled: { type: 'boolean' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200 })
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_CUSTOM_FIELD_TYPES])
+  updateCustomFieldsEnabled(
+    @Body() body: { tenantId: string; enabled: boolean },
+  ) {
+    return this.service.updateCustomFieldsEnabled(body.tenantId, body.enabled);
+  }
+
+  @Put('custom-field-types')
+  @ApiOperation({
+    summary: 'Update enabled custom field types (superadmin only)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        tenantId: { type: 'string' },
+        enabledTypes: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  @ApiResponse({ status: 200 })
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_CUSTOM_FIELD_TYPES])
+  updateEnabledCustomFieldTypes(
+    @Body() body: { tenantId: string; enabledTypes: string[] },
+  ) {
+    return this.service.updateEnabledCustomFieldTypes(
+      body.tenantId,
+      body.enabledTypes,
+    );
+  }
+
   @Put('chat-types')
   @ApiOperation({ summary: 'Update hidden chat types' })
   @ApiBody({

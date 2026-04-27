@@ -38,6 +38,7 @@ import {
   AUDIT_ACTIONS,
   AUDIT_EVENTS,
 } from '../../../audit/constants/audit-event.constants';
+import { DataSource } from 'typeorm';
 
 describe('SettingsService', () => {
   let service: SettingsService;
@@ -126,6 +127,10 @@ describe('SettingsService', () => {
         {
           provide: AdminTenantService,
           useValue: { getTenantsForAdmin: jest.fn() },
+        },
+        {
+          provide: DataSource,
+          useValue: { query: jest.fn() },
         },
       ],
     }).compile();
@@ -1048,6 +1053,215 @@ describe('SettingsService', () => {
         undefined,
       );
       expect(result).toEqual(mockChatTypesPreference);
+    });
+  });
+
+  describe('getCustomFieldsEnabled', () => {
+    const mockEnabledPreference = {
+      id: mockPreferenceId,
+      name: PreferenceName.CUSTOM_FIELDS_ENABLED,
+      relatedId: mockTenantId,
+      relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+      value: { enabled: true },
+      tenantId: mockTenantId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    beforeEach(() => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+    });
+
+    it('should return false by default when no preference exists', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      const result = await service.getCustomFieldsEnabled();
+
+      expect(result).toBe(false);
+    });
+
+    it('should return true when preference has enabled=true', async () => {
+      preferenceService.getPreference.mockResolvedValue(mockEnabledPreference);
+
+      const result = await service.getCustomFieldsEnabled();
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false when preference has enabled=false', async () => {
+      preferenceService.getPreference.mockResolvedValue({
+        ...mockEnabledPreference,
+        value: { enabled: false },
+      });
+
+      const result = await service.getCustomFieldsEnabled();
+
+      expect(result).toBe(false);
+    });
+
+    it('should throw BadRequestException when userId is missing', async () => {
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
+
+      await expect(service.getCustomFieldsEnabled()).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('getEnabledCustomFieldTypes', () => {
+    const mockCustomFieldTypesPreference = {
+      id: mockPreferenceId,
+      name: PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
+      relatedId: mockTenantId,
+      relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+      value: ['SINGLE_SELECT'],
+      tenantId: mockTenantId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    it('should return stored enabled types when preference exists', async () => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+      preferenceService.getPreference.mockResolvedValue(
+        mockCustomFieldTypesPreference,
+      );
+
+      const result = await service.getEnabledCustomFieldTypes();
+
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
+        mockTenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
+      expect(result).toEqual(['SINGLE_SELECT']);
+    });
+
+    it('should return all CustomFieldType values as default when no preference exists', async () => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      const result = await service.getEnabledCustomFieldTypes();
+
+      expect(result).toEqual(expect.arrayContaining(['SINGLE_SELECT', 'DATE']));
+      expect(result.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('should use provided tenantId when caller is super admin', async () => {
+      const otherTenantId = 'other-tenant-id';
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      await service.getEnabledCustomFieldTypes(otherTenantId);
+
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
+        otherTenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
+    });
+
+    it('should ignore provided tenantId and use execution context when not super admin', async () => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      await service.getEnabledCustomFieldTypes('should-be-ignored');
+
+      expect(preferenceService.getPreference).toHaveBeenCalledWith(
+        PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
+        mockTenantId,
+        PreferenceRelatedEntity.ORGANIZATION,
+      );
+    });
+
+    it('should throw BadRequestException when userId is missing', async () => {
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
+
+      await expect(service.getEnabledCustomFieldTypes()).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('updateEnabledCustomFieldTypes', () => {
+    const mockCustomFieldTypesPreference = {
+      id: mockPreferenceId,
+      name: PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
+      relatedId: mockTenantId,
+      relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+      value: ['SINGLE_SELECT', 'DATE'],
+      tenantId: mockTenantId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    it('should update existing preference and return success', async () => {
+      preferenceService.getPreference.mockResolvedValue(
+        mockCustomFieldTypesPreference,
+      );
+      preferenceService.updatePreference.mockResolvedValue(
+        mockCustomFieldTypesPreference,
+      );
+
+      const result = await service.updateEnabledCustomFieldTypes(mockTenantId, [
+        'SINGLE_SELECT',
+      ]);
+
+      expect(preferenceService.updatePreference).toHaveBeenCalledWith(
+        mockPreferenceId,
+        ['SINGLE_SELECT'],
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should create new preference when none exists', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+      preferenceService.createPreference.mockResolvedValue(
+        mockCustomFieldTypesPreference,
+      );
+
+      const result = await service.updateEnabledCustomFieldTypes(mockTenantId, [
+        'DATE',
+      ]);
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
+          relatedId: mockTenantId,
+          relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+          value: ['DATE'],
+        }),
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should throw BadRequestException for invalid field type', async () => {
+      await expect(
+        service.updateEnabledCustomFieldTypes(mockTenantId, ['INVALID_TYPE']),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should accept empty array (disabling all types)', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+      preferenceService.createPreference.mockResolvedValue(
+        mockCustomFieldTypesPreference,
+      );
+
+      const result = await service.updateEnabledCustomFieldTypes(
+        mockTenantId,
+        [],
+      );
+
+      expect(result).toEqual({ success: true });
     });
   });
 });

@@ -25,11 +25,16 @@ export type HiddenSectionsPreferenceValue = {
   sections: Array<string>;
 };
 
+export type CustomFieldsEnabledPreferenceValue = {
+  enabled: boolean;
+};
+
 export type PreferenceValue =
   | SummaryPreferenceValue
   | NudgePreferenceValue
   | HiddenChatTypesPreferenceValue
-  | HiddenSectionsPreferenceValue;
+  | HiddenSectionsPreferenceValue
+  | CustomFieldsEnabledPreferenceValue;
 
 export type RequestWithUser = Request & {
   user?: {
