@@ -17,6 +17,7 @@ import {
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import {
+  CustomFieldsEnabledPreferenceValue,
   HiddenSectionsPreferenceValue,
   SummaryPreferenceValue,
 } from '../../common/type/common.type';
@@ -27,7 +28,7 @@ import {
   SUMMARY_SECTION_IDS,
   SUMMARY_SECTIONS,
 } from '../constants/summary-sections.constants';
-import { EntityManager } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import * as _ from 'lodash';
 import { ChatTypes } from '../../common/constants/chat.constants';
 import {
@@ -39,6 +40,7 @@ import { GetChatTypesDto, UpdateChatTypesDto } from '../dto/chat-types.dto';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { AdminTenantService } from 'src/user/service/admin-tenant.service';
+import { CustomFieldType } from '../../custom-fields/entity/custom-field-definition.entity';
 import {
   AUDIT_ACTIONS,
   AUDIT_EVENTS,
@@ -52,7 +54,21 @@ export class SettingsService {
     private readonly auditLogService: AuditLogService,
     private permissionsService: PermissionsService,
     private readonly adminTenantService: AdminTenantService,
+    private readonly dataSource: DataSource,
   ) {}
+
+  private async resolveTenantCode(tenantId: string): Promise<string> {
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        tenantId,
+      );
+    if (!isUuid) return tenantId;
+    const row = await this.dataSource.query(
+      `SELECT code FROM tenants WHERE id = $1 LIMIT 1`,
+      [tenantId],
+    );
+    return row?.[0]?.code ?? tenantId;
+  }
 
   async getSummaryFieldsConfig(getSummaryFieldsDto?: GetSummaryFieldsDto) {
     const { tenantId: selectedTenantId } = getSummaryFieldsDto || {};
@@ -479,6 +495,132 @@ export class SettingsService {
 
     const hiddenChatTypes = preference.value as string[];
     return Array.isArray(hiddenChatTypes) ? hiddenChatTypes : [];
+  }
+
+  async getEnabledCustomFieldTypes(tenantId?: string): Promise<string[]> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    const rawTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    if (!rawTenantId) throw new BadRequestException('Tenant ID is required');
+    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+
+    const preference = await this.preferenceService.getPreference(
+      PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
+      resolvedTenantId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+
+    const allTypes = Object.values(CustomFieldType);
+    if (!preference?.value) {
+      return allTypes;
+    }
+    const enabled = preference.value as string[];
+    return Array.isArray(enabled) ? enabled : allTypes;
+  }
+
+  async getCustomFieldsEnabled(tenantId?: string): Promise<boolean> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    const rawTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    if (!rawTenantId) throw new BadRequestException('Tenant ID is required');
+    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+
+    const preference = await this.preferenceService.getPreference(
+      PreferenceName.CUSTOM_FIELDS_ENABLED,
+      resolvedTenantId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+
+    if (!preference?.value) return false;
+    return (
+      (preference.value as CustomFieldsEnabledPreferenceValue).enabled ?? false
+    );
+  }
+
+  async updateCustomFieldsEnabled(
+    tenantId: string,
+    enabled: boolean,
+  ): Promise<{ success: boolean }> {
+    const resolvedId = await this.resolveTenantCode(tenantId);
+    const existing = await this.preferenceService.getPreference(
+      PreferenceName.CUSTOM_FIELDS_ENABLED,
+      resolvedId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+    if (existing) {
+      await this.preferenceService.updatePreference(existing.id, { enabled });
+    } else {
+      await this.preferenceService.createPreference({
+        name: PreferenceName.CUSTOM_FIELDS_ENABLED,
+        relatedId: resolvedId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled },
+        tenantId: ExecutionManager.getTenantId(),
+      });
+    }
+    return { success: true };
+  }
+
+  async updateEnabledCustomFieldTypes(
+    tenantId: string,
+    enabledTypes: string[],
+  ): Promise<{ success: boolean }> {
+    const allTypes = Object.values(CustomFieldType);
+    const invalid = enabledTypes.filter(
+      (t) => !allTypes.includes(t as CustomFieldType),
+    );
+    if (invalid.length > 0) {
+      throw new BadRequestException(
+        `Invalid field types: ${invalid.join(', ')}`,
+      );
+    }
+
+    const resolvedId = await this.resolveTenantCode(tenantId);
+
+    const existing = await this.preferenceService.getPreference(
+      PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
+      resolvedId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+    if (existing) {
+      const updated = await this.preferenceService.updatePreference(
+        existing.id,
+        enabledTypes,
+      );
+      if (!updated) {
+        // Row was deleted externally but still cached — create fresh
+        await this.preferenceService.createPreference({
+          name: PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
+          relatedId: resolvedId,
+          relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+          value: enabledTypes,
+          tenantId: ExecutionManager.getTenantId(),
+        });
+      }
+    } else {
+      await this.preferenceService.createPreference({
+        name: PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
+        relatedId: resolvedId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: enabledTypes,
+        tenantId: ExecutionManager.getTenantId(),
+      });
+    }
+    return { success: true };
   }
 
   async updateChatTypes(

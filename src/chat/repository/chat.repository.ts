@@ -137,6 +137,11 @@ export class ChatRepository extends Repository<Chat> {
         counselorName: `%${filters.counselorName}%`,
       });
     }
+    if (filters.callName) {
+      query.andWhere(`details.callInfo->>'summaryName' ILIKE :callName`, {
+        callName: `%${filters.callName}%`,
+      });
+    }
   }
 
   private applyIdFilters(

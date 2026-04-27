@@ -267,6 +267,7 @@ export class ChatController {
     @Query('maxQualityScore') maxQualityScore?: string,
     @Query('tags') tags?: string,
     @Query('archive') archive?: 'true' | 'false',
+    @Query('callName') callName?: string,
   ) {
     const parsedMinDuration = minDuration ? parseFloat(minDuration) : undefined;
     const parsedMaxDuration = maxDuration ? parseFloat(maxDuration) : undefined;
@@ -292,6 +293,7 @@ export class ChatController {
       maxQualityScore: parsedMaxQualityScore,
       tags,
       archive,
+      callName,
     });
   }
 
