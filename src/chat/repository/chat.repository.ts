@@ -38,6 +38,12 @@ export class ChatRepository extends Repository<Chat> {
         User,
         'client',
         'client.id = chat.clientId',
+      )
+      .leftJoinAndMapMany(
+        'chat.customFieldValues',
+        'chat_custom_field_values',
+        'cfv',
+        'cfv.chatId = chat.id',
       );
 
     query.where('chat.counselorId = :counselorId', {
