@@ -9,6 +9,7 @@ import { AppConfigModule } from '../config/config.module';
 
 @Module({
   imports: [
+    AppConfigModule,
     ThrottlerModule.forRootAsync({
       imports: [AppConfigModule, RedisModule],
       inject: [AppConfigService, RedisService],

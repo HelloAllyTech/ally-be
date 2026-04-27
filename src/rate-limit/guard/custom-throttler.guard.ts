@@ -8,6 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { RATE_LIMIT_KEY } from '../constants/rate.limit.constants';
 import { RateLimitOptions } from '../decorator/rate-limit.decorator';
+import { AppConfigService } from '../../config/config.service';
 
 @Injectable()
 export class CustomThrottlerGuard extends ThrottlerGuard {
@@ -15,10 +16,14 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     options: ThrottlerModuleOptions,
     storageService: ThrottlerStorage,
     reflector: Reflector,
+    private readonly appConfigService: AppConfigService,
   ) {
     super(options, storageService, reflector);
   }
   canActivate(context: ExecutionContext): Promise<boolean> {
+    if (this.appConfigService.isLocal) {
+      return Promise.resolve(true);
+    }
     const req = context.switchToHttp().getRequest();
     req._context = context; // store context for access in getTracker()
     return super.canActivate(context);

@@ -25,6 +25,10 @@ export class AppConfigService {
     return this.nodeEnv === 'development';
   }
 
+  get isLocal(): boolean {
+    return this.nodeEnv === 'local';
+  }
+
   get database() {
     const config = {
       host: this.configService.get<string>('DB_HOST'),
