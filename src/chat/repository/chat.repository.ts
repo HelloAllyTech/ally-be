@@ -16,7 +16,6 @@ import {
   SortOrder,
 } from '../dto/call-log.request.dto';
 import { CallLogsParams } from '../type/call.details.type';
-import { ChatCustomFieldValue } from 'src/custom-fields/entity/chat-custom-field-value.entity';
 
 @Injectable()
 export class ChatRepository extends Repository<Chat> {
@@ -98,7 +97,7 @@ export class ChatRepository extends Repository<Chat> {
       )
       .leftJoinAndMapMany(
         'chat.customFieldValues',
-        ChatCustomFieldValue,
+        'chat_custom_field_values',
         'cfv',
         'cfv.chatId = chat.id',
       );
