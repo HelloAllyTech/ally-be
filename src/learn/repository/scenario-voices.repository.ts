@@ -16,8 +16,10 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     providers: string | undefined,
     languageIds: string | undefined,
     options: Pagination,
-  ): Promise<ScenarioVoices[]> {
-    const query = this.createQueryBuilder('scenarioVoice');
+  ): Promise<(ScenarioVoices & { languageLabel: string | null })[]> {
+    const query = this.createQueryBuilder('scenarioVoice')
+      .leftJoin('languages', 'la', 'la.id = scenarioVoice.languageId')
+      .addSelect('la.label', 'languageLabel');
 
     if (searchName) {
       query
@@ -44,7 +46,12 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     }
     this.applySorting(query, options);
     this.applyPagination(query, options);
-    return query.getMany();
+
+    const rows = await query.getRawAndEntities();
+    return rows.entities.map((entity, i) => ({
+      ...entity,
+      languageLabel: rows.raw[i]?.languageLabel ?? null,
+    }));
   }
 
   private applySorting(

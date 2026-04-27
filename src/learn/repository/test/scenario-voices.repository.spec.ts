@@ -18,6 +18,7 @@ describe('ScenarioVoicesRepository', () => {
       offset: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       getMany: jest.fn(),
+      getRawAndEntities: jest.fn(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       groupBy: jest.fn().mockReturnThis(),
@@ -82,14 +83,19 @@ describe('ScenarioVoicesRepository', () => {
         },
       ];
 
-      queryBuilder.getMany.mockResolvedValue(mockVoices as any);
+      queryBuilder.getRawAndEntities.mockResolvedValue({
+        entities: mockVoices,
+        raw: mockVoices.map(() => ({ languageLabel: 'English (UK)' })),
+      } as any);
 
       const result = await repository.getScenarioVoices('', '', '', {
         limit: 10,
         offset: 0,
       });
 
-      expect(result).toEqual(mockVoices);
+      expect(result).toEqual(
+        mockVoices.map((v) => ({ ...v, languageLabel: 'English (UK)' })),
+      );
       expect(repository.createQueryBuilder).toHaveBeenCalledWith(
         'scenarioVoice',
       );
@@ -99,7 +105,7 @@ describe('ScenarioVoicesRepository', () => {
       );
       expect(queryBuilder.offset).not.toHaveBeenCalled();
       expect(queryBuilder.limit).toHaveBeenCalledWith(10);
-      expect(queryBuilder.getMany).toHaveBeenCalled();
+      expect(queryBuilder.getRawAndEntities).toHaveBeenCalled();
     });
 
     it('should apply custom sort by name in descending order', async () => {
@@ -115,7 +121,10 @@ describe('ScenarioVoicesRepository', () => {
         },
       ];
 
-      queryBuilder.getMany.mockResolvedValue(mockVoices as any);
+      queryBuilder.getRawAndEntities.mockResolvedValue({
+        entities: mockVoices,
+        raw: mockVoices.map(() => ({ languageLabel: null })),
+      } as any);
 
       const result = await repository.getScenarioVoices('', '', '', {
         limit: 5,
@@ -124,7 +133,9 @@ describe('ScenarioVoicesRepository', () => {
         order: SortOrder.DESC,
       });
 
-      expect(result).toEqual(mockVoices);
+      expect(result).toEqual(
+        mockVoices.map((v) => ({ ...v, languageLabel: null })),
+      );
       expect(queryBuilder.orderBy).toHaveBeenCalledWith(
         'scenarioVoice.name',
         SortOrder.DESC,
@@ -132,9 +143,10 @@ describe('ScenarioVoicesRepository', () => {
     });
 
     it('should apply custom pagination with offset', async () => {
-      const mockVoices: ScenarioVoices[] = [];
-
-      queryBuilder.getMany.mockResolvedValue(mockVoices);
+      queryBuilder.getRawAndEntities.mockResolvedValue({
+        entities: [],
+        raw: [],
+      } as any);
 
       await repository.getScenarioVoices('', '', '', {
         limit: 20,
@@ -146,9 +158,10 @@ describe('ScenarioVoicesRepository', () => {
     });
 
     it('should handle empty result set', async () => {
-      const mockVoices: ScenarioVoices[] = [];
-
-      queryBuilder.getMany.mockResolvedValue(mockVoices);
+      queryBuilder.getRawAndEntities.mockResolvedValue({
+        entities: [],
+        raw: [],
+      } as any);
 
       const result = await repository.getScenarioVoices('', '', '', {
         limit: 10,
@@ -156,7 +169,7 @@ describe('ScenarioVoicesRepository', () => {
       });
 
       expect(result).toEqual([]);
-      expect(queryBuilder.getMany).toHaveBeenCalled();
+      expect(queryBuilder.getRawAndEntities).toHaveBeenCalled();
     });
 
     it('should apply sort by provider', async () => {
@@ -174,7 +187,10 @@ describe('ScenarioVoicesRepository', () => {
         } as ScenarioVoices,
       ];
 
-      queryBuilder.getMany.mockResolvedValue(mockVoices as any);
+      queryBuilder.getRawAndEntities.mockResolvedValue({
+        entities: mockVoices,
+        raw: mockVoices.map(() => ({ languageLabel: null })),
+      } as any);
 
       await repository.getScenarioVoices('', '', '', {
         limit: 10,
@@ -190,9 +206,10 @@ describe('ScenarioVoicesRepository', () => {
     });
 
     it('should apply sort by created_at', async () => {
-      const mockVoices: ScenarioVoices[] = [];
-
-      queryBuilder.getMany.mockResolvedValue(mockVoices);
+      queryBuilder.getRawAndEntities.mockResolvedValue({
+        entities: [],
+        raw: [],
+      } as any);
 
       await repository.getScenarioVoices('', '', '', {
         limit: 10,
@@ -208,7 +225,10 @@ describe('ScenarioVoicesRepository', () => {
     });
 
     it('should not apply limit when not provided', async () => {
-      queryBuilder.getMany.mockResolvedValue([]);
+      queryBuilder.getRawAndEntities.mockResolvedValue({
+        entities: [],
+        raw: [],
+      } as any);
 
       await repository.getScenarioVoices('', '', '', {
         offset: 0,
@@ -216,11 +236,14 @@ describe('ScenarioVoicesRepository', () => {
 
       expect(queryBuilder.limit).not.toHaveBeenCalled();
       expect(queryBuilder.offset).not.toHaveBeenCalled();
-      expect(queryBuilder.getMany).toHaveBeenCalled();
+      expect(queryBuilder.getRawAndEntities).toHaveBeenCalled();
     });
 
     it('should apply offset even when value is 0', async () => {
-      queryBuilder.getMany.mockResolvedValue([]);
+      queryBuilder.getRawAndEntities.mockResolvedValue({
+        entities: [],
+        raw: [],
+      } as any);
 
       await repository.getScenarioVoices('', '', '', {
         limit: 10,
@@ -232,7 +255,10 @@ describe('ScenarioVoicesRepository', () => {
     });
 
     it('should not apply offset when not provided', async () => {
-      queryBuilder.getMany.mockResolvedValue([]);
+      queryBuilder.getRawAndEntities.mockResolvedValue({
+        entities: [],
+        raw: [],
+      } as any);
 
       await repository.getScenarioVoices('', '', '', {
         limit: 10,
