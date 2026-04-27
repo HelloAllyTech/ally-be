@@ -29,6 +29,7 @@ describe('ChatRepository', () => {
       execute: jest.fn(),
       innerJoin: jest.fn().mockReturnThis(),
       leftJoinAndMapOne: jest.fn().mockReturnThis(),
+      leftJoinAndMapMany: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       groupBy: jest.fn().mockReturnThis(),
