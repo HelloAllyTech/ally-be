@@ -881,7 +881,9 @@ export class ScenarioService {
 
   /**
    * For ACTIVE scenarios, linguisticStyleSamples must contain at least one
-   * non-empty sample per selected language in languageVoices.
+   * non-empty sample per active language in languageVoices. Deactivated
+   * languages are skipped — the admin UI hides them, so samples can't be
+   * provided for them and a stale languageVoices entry shouldn't block publish.
    */
   private async validateLinguisticStyleSamples(
     languageVoices?: Record<string, string>,
@@ -899,19 +901,19 @@ export class ScenarioService {
       return;
     }
 
-    const languages =
+    const activeLanguages =
       await this.sharedLanguageService.getLanguagesByIds(languageIds);
 
     const samples = linguisticStyleSamples ?? {};
     const missing: string[] = [];
-    for (const langId of languageIds.map((id) => String(id))) {
+    for (const lang of activeLanguages) {
+      const langId = String(lang.id);
       const langSamples = samples[langId];
       const hasContent =
         Array.isArray(langSamples) &&
         langSamples.some((s) => typeof s === 'string' && s.trim().length > 0);
       if (!hasContent) {
-        const lang = languages.find((l) => String(l.id) === langId);
-        missing.push(lang?.label ?? langId);
+        missing.push(lang.label);
       }
     }
 
