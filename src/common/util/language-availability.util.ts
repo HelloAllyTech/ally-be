@@ -22,8 +22,9 @@ export interface AvailableLanguageItem {
 export const getLanguageVoiceIds = (
   languageVoices?: Record<string, unknown> | null,
 ): number[] =>
-  Object.keys(languageVoices ?? {})
-    .map((languageId) => Number(languageId))
+  Object.entries(languageVoices ?? {})
+    .filter(([, voice]) => voice !== null && voice !== undefined)
+    .map(([languageId]) => Number(languageId))
     .filter((languageId) => Number.isInteger(languageId));
 
 export const getDistinctScenarioLanguageIds = (
