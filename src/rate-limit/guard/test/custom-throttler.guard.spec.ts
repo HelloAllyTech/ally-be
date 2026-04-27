@@ -3,12 +3,14 @@ import { ThrottlerLimitDetail } from '@nestjs/throttler';
 import { RATE_LIMIT_KEY } from '../../constants/rate.limit.constants';
 import { RateLimitOptions } from '../../decorator/rate-limit.decorator';
 import { ExecutionContext } from '@nestjs/common';
+import { AppConfigService } from '../../../config/config.service';
 
 describe('CustomThrottlerGuard', () => {
   let guard: CustomThrottlerGuard;
   let mockReflector: any;
   let mockStorageService: any;
   let mockOptions: any;
+  let mockAppConfigService: Partial<AppConfigService>;
 
   const mockExecutionContext: ExecutionContext = {
     switchToHttp: jest.fn(() => ({
@@ -43,15 +45,26 @@ describe('CustomThrottlerGuard', () => {
         },
       ],
     };
+    mockAppConfigService = { isLocal: false };
 
     guard = new CustomThrottlerGuard(
       mockOptions,
       mockStorageService,
       mockReflector,
+      mockAppConfigService as AppConfigService,
     );
   });
 
   describe('canActivate', () => {
+    it('should bypass throttling in local environment', async () => {
+      Object.defineProperty(mockAppConfigService, 'isLocal', {
+        get: () => true,
+        configurable: true,
+      });
+      const result = await guard.canActivate(mockExecutionContext);
+      expect(result).toBe(true);
+    });
+
     it('should store context in request and call parent canActivate', async () => {
       const mockReq = { ...mockRequest };
       const mockSwitchToHttp = jest.fn(() => ({
