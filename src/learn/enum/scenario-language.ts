@@ -11,6 +11,7 @@ export enum LanguageCode {
   PA_IN = 'pa-IN',
   OR_IN = 'or-IN',
   EN_GB = 'en-GB',
+  EN_US = 'en-US',
 }
 
 export enum LLMProvider {

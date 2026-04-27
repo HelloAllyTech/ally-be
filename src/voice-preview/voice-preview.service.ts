@@ -42,7 +42,7 @@ export class VoicePreviewService {
       LANGUAGE_SAMPLE_TEXT[rawLanguageCode] ||
       DEFAULT_SAMPLE_TEXT;
 
-    // Normalize for providers (e.g. en-GLOBAL → en-GB) - Google, Deepgram, etc. don't support en-GLOBAL
+    // Normalize language code for providers (e.g. or-IN → od-IN for Sarvam)
     const effectiveLanguageCode =
       normalizeLanguageCodeForProviders(rawLanguageCode);
 

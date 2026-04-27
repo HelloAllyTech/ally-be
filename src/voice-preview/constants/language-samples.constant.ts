@@ -4,7 +4,6 @@ export const LANGUAGE_SAMPLE_TEXT: Record<string, string> = {
   'en-US': DEFAULT_SAMPLE_TEXT,
   'en-IN': DEFAULT_SAMPLE_TEXT,
   'en-GB': DEFAULT_SAMPLE_TEXT,
-  'en-GLOBAL': DEFAULT_SAMPLE_TEXT,
   'hi-IN': 'नमस्ते, यह मेरी आवाज़ का एक प्रीव्यू है।',
   'bn-IN': 'নমস্কার, এটি আমার কণ্ঠস্বরের একটি প্রিভিউ।',
   'kn-IN': 'ನಮಸ್ಕಾರ, ಇದು ನನ್ನ ಧ್ವನಿಯ ಮುನ್ನೋಟ.',
