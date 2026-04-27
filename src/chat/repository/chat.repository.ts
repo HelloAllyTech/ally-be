@@ -16,6 +16,7 @@ import {
   SortOrder,
 } from '../dto/call-log.request.dto';
 import { CallLogsParams } from '../type/call.details.type';
+import { ChatCustomFieldValue } from 'src/custom-fields/entity/chat-custom-field-value.entity';
 
 @Injectable()
 export class ChatRepository extends Repository<Chat> {
@@ -94,6 +95,12 @@ export class ChatRepository extends Repository<Chat> {
         User,
         'counselor',
         'counselor.id = chat.counselorId',
+      )
+      .leftJoinAndMapMany(
+        'chat.customFieldValues',
+        ChatCustomFieldValue,
+        'cfv',
+        'cfv.chatId = chat.id',
       );
 
     // Only show ENDED calls for admin call logs
