@@ -12,7 +12,7 @@ export class AddCustomFieldPermissions1776500000000 implements MigrationInterfac
   public async up(queryRunner: QueryRunner): Promise<void> {
     for (const name of this.permissionNames) {
       await queryRunner.query(
-        `INSERT INTO "permissions" ("name") SELECT $1 WHERE NOT EXISTS (SELECT 1 FROM "permissions" WHERE "name" = $1)`,
+        `INSERT INTO "permissions" ("name") SELECT $1::varchar WHERE NOT EXISTS (SELECT 1 FROM "permissions" WHERE "name" = $1::varchar)`,
         [name],
       );
     }
