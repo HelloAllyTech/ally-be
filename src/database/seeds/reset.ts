@@ -13,6 +13,8 @@ const TABLES_IN_ORDER = [
   'scenario_path_tenants',
   'scenario_path_items',
   'scenario_paths',
+  'scenario_session_messages',
+  'scenario_sessions',
   'scenario_tenants',
   'scenarios',
   'session_events',

@@ -243,7 +243,8 @@ What gets seeded:
 
 - 1 tenant (`ally`)
 - 4 test users: `admin@example.com` (SUPER_ADMIN), `org-admin@example.com` (ADMIN), `learner@example.com` (LEARNER+COUNSELOR), `multi-tenant-admin1@example.com` (MULTI_TENANT_ADMIN)
-- 2 scenario voices, 3 session events, 2 scenarios, 1 pathway, 1 case, 4 badges
+- One scenario voice per active language (13 by default), 3 session events, 2 scenarios, 1 pathway, 1 case, 4 badges
+- 3 scenario sessions (2 completed with sample transcripts, 1 active) so scribe-reviewer and admin dashboards have data to read
 
 #### Commands
 

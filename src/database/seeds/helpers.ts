@@ -14,6 +14,9 @@ import { UserGroup } from '../../authorization/entity/user-group.entity';
 import { Scenarios } from '../../learn/entity/scenarios.entity';
 import { ScenarioTenants } from '../../learn/entity/scenario-tenants.entity';
 import { ScenarioVoices } from '../../learn/entity/scenario-voices.entity';
+import { ScenarioSessions } from '../../learn/entity/scenario-sessions.entity';
+import { ScenarioSessionMessages } from '../../learn/entity/scenario-session-messages.entity';
+import { Languages } from '../../language/entity/languages.entity';
 import { SessionEvents } from '../../session-event/entity/session-events.entity';
 import { ScenarioPath } from '../../scenario-path/entity/scenario-path.entity';
 import { ScenarioPathItem } from '../../scenario-path/entity/scenario-path-item.entity';
@@ -33,6 +36,9 @@ export const SEED_ENTITIES = [
   Scenarios,
   ScenarioTenants,
   ScenarioVoices,
+  ScenarioSessions,
+  ScenarioSessionMessages,
+  Languages,
   SessionEvents,
   ScenarioPath,
   ScenarioPathItem,

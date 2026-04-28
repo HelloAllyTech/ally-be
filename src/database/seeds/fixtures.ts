@@ -14,6 +14,10 @@ import {
 } from '../../learn/type/scenario.type';
 import { ScenarioPathStatus } from '../../scenario-path/type/scenario-paths.type';
 import { CaseStatus } from '../../case/type/cases.type';
+import {
+  ScenarioSessionEventStatus,
+  ScenarioSessionStatus,
+} from '../../learn/enum/scenario-session-status.enum';
 import { SessionEventDetectionType } from '../../session-event/enum/session-event-detection.enum';
 import { SessionEventVisibilityType } from '../../session-event/enum/session-event-visibility-type.enum';
 import { TENANT_CODE, TENANT_NAME, ADMIN_EMAIL } from './config';
@@ -34,7 +38,6 @@ export interface VoiceFixture {
   name: string;
   provider: string;
   config: Record<string, any>;
-  languageId: number;
 }
 
 export interface SessionEventFixture {
@@ -75,6 +78,15 @@ export interface CaseFixture {
   scenarioKeys: string[];
 }
 
+export interface SessionFixture {
+  scenarioKey: string;
+  status: ScenarioSessionStatus;
+  eventStatus: ScenarioSessionEventStatus;
+  score?: number;
+  durationMinutes: number;
+  transcript: Array<{ from: 'counselor' | 'client'; content: string }>;
+}
+
 export const tenant: TenantFixture = {
   code: TENANT_CODE,
   name: TENANT_NAME,
@@ -104,29 +116,53 @@ export const users: UserFixture[] = [
   },
 ];
 
-export const voices: VoiceFixture[] = [
-  {
-    name: 'English (Default)',
-    provider: 'GOOGLE',
-    config: {
-      gender: 'female',
-      voice_name: 'en-US-Chirp3-HD-Achernar',
-      languageCode: 'en-US',
-    },
-    languageId: 1,
+// Default voice per language `value` (e.g. 'en-IN'). Seeder pulls the
+// active languages table and creates one voice for each match.
+const sarvamAbhilash: Omit<VoiceFixture, 'name'> = {
+  provider: 'SARVAM',
+  config: {
+    age: 'adult',
+    model: 'bulbul:v2',
+    gender: 'male',
+    speaker: 'abhilash',
   },
-  {
-    name: 'Hindi (Default)',
-    provider: 'SARVAM',
-    config: {
-      age: 'adult',
-      model: 'bulbul:v2',
-      gender: 'male',
-      speaker: 'abhilash',
-    },
-    languageId: 2,
+};
+
+const googleChirp = (
+  voiceName: string,
+  languageCode: string,
+): Omit<VoiceFixture, 'name'> => ({
+  provider: 'GOOGLE',
+  config: { gender: 'female', voice_name: voiceName, languageCode },
+});
+
+export const voiceByLanguageValue: Record<string, VoiceFixture> = {
+  'en-IN': {
+    name: 'English (India) - Achernar',
+    ...googleChirp('en-IN-Chirp3-HD-Achernar', 'en-IN'),
   },
-];
+  'en-GB': {
+    name: 'English (UK) - Achernar',
+    ...googleChirp('en-GB-Chirp3-HD-Achernar', 'en-GB'),
+  },
+  'en-US': {
+    name: 'English (US) - Achernar',
+    ...googleChirp('en-US-Chirp3-HD-Achernar', 'en-US'),
+  },
+  'bn-IN': {
+    name: 'Bengali - Achernar',
+    ...googleChirp('bn-IN-Chirp3-HD-Achernar', 'bn-IN'),
+  },
+  'hi-IN': { name: 'Hindi - Abhilash', ...sarvamAbhilash },
+  'te-IN': { name: 'Telugu - Abhilash', ...sarvamAbhilash },
+  'mr-IN': { name: 'Marathi - Abhilash', ...sarvamAbhilash },
+  'ta-IN': { name: 'Tamil - Abhilash', ...sarvamAbhilash },
+  'gu-IN': { name: 'Gujarati - Abhilash', ...sarvamAbhilash },
+  'kn-IN': { name: 'Kannada - Abhilash', ...sarvamAbhilash },
+  'ml-IN': { name: 'Malayalam - Abhilash', ...sarvamAbhilash },
+  'pa-IN': { name: 'Punjabi - Abhilash', ...sarvamAbhilash },
+  'or-IN': { name: 'Odia - Abhilash', ...sarvamAbhilash },
+};
 
 export const sessionEvents: SessionEventFixture[] = [
   {
@@ -237,6 +273,64 @@ export const cases: CaseFixture[] = [
     description:
       'Sample case covering common early-career client presentations.',
     scenarioKeys: ['active-listening', 'workplace-anxiety'],
+  },
+];
+
+export const sessions: SessionFixture[] = [
+  {
+    scenarioKey: 'active-listening',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    score: 78,
+    durationMinutes: 12,
+    transcript: [
+      { from: 'client', content: 'I am not sure where to start...' },
+      {
+        from: 'counselor',
+        content: 'Take your time. Whatever feels right to share first.',
+      },
+      {
+        from: 'client',
+        content: 'Work has been piling up and I am not sleeping well.',
+      },
+      {
+        from: 'counselor',
+        content: 'That sounds exhausting. How long has it been like this?',
+      },
+    ],
+  },
+  {
+    scenarioKey: 'workplace-anxiety',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    score: 64,
+    durationMinutes: 9,
+    transcript: [
+      {
+        from: 'client',
+        content: 'I have been feeling on edge at work lately.',
+      },
+      {
+        from: 'counselor',
+        content: 'Tell me what that looks like for you day to day.',
+      },
+      {
+        from: 'client',
+        content: 'Even small tasks are starting to feel stressful.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'That sounds really hard. What feels most overwhelming right now?',
+      },
+    ],
+  },
+  {
+    scenarioKey: 'active-listening',
+    status: ScenarioSessionStatus.ACTIVE,
+    eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+    durationMinutes: 0,
+    transcript: [],
   },
 ];
 
