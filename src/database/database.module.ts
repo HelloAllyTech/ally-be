@@ -11,6 +11,7 @@ import { dataSourceOptions } from './data-source';
         const config = {
           ...dataSourceOptions,
           synchronize: false,
+          migrationsRun: true,
         };
         return config;
       },
