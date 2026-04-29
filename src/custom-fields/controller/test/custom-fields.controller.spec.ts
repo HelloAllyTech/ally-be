@@ -89,7 +89,16 @@ describe('CustomFieldsController', () => {
 
       const result = await controller.getDefinitions();
 
-      expect(service.getDefinitions).toHaveBeenCalledTimes(1);
+      expect(service.getDefinitions).toHaveBeenCalledWith(undefined);
+      expect(result).toEqual([mockDefinition]);
+    });
+
+    it('should forward tenantId query param to service (super-admin path)', async () => {
+      service.getDefinitions.mockResolvedValue([mockDefinition]);
+
+      const result = await controller.getDefinitions('target-tenant-id');
+
+      expect(service.getDefinitions).toHaveBeenCalledWith('target-tenant-id');
       expect(result).toEqual([mockDefinition]);
     });
 
@@ -171,9 +180,12 @@ describe('CustomFieldsController', () => {
     it('should return success response', async () => {
       service.deleteDefinition.mockResolvedValue({ success: true });
 
-      const result = await controller.deleteDefinition('def-uuid-1');
+      const result = await controller.deleteDefinition('def-uuid-1', undefined);
 
-      expect(service.deleteDefinition).toHaveBeenCalledWith('def-uuid-1');
+      expect(service.deleteDefinition).toHaveBeenCalledWith(
+        'def-uuid-1',
+        undefined,
+      );
       expect(result).toEqual({ success: true });
     });
 

@@ -10,6 +10,7 @@ import { Chat } from '../../chat/entity/chat.entity';
 import {
   CustomFieldDefinition,
   CustomFieldEditPermission,
+  CustomFieldFillMode,
   CustomFieldType,
 } from '../entity/custom-field-definition.entity';
 import { ChatCustomFieldValue } from '../entity/chat-custom-field-value.entity';
@@ -59,9 +60,14 @@ export class CustomFieldsService {
     private readonly permissionValidator: PermissionValidator,
   ) {}
 
-  async getDefinitions() {
-    const tenantId = ExecutionManager.getTenantId();
+  private resolveTenantId(override?: string): string {
+    const tenantId = override ?? ExecutionManager.getTenantId();
     if (!tenantId) throw new BadRequestException('Tenant ID is required');
+    return tenantId;
+  }
+
+  async getDefinitions(overrideTenantId?: string) {
+    const tenantId = this.resolveTenantId(overrideTenantId);
 
     return this.definitionRepo.find({
       where: { tenantId, isActive: true },
@@ -69,12 +75,19 @@ export class CustomFieldsService {
     });
   }
 
+  async getAiDefinitions(tenantId: string): Promise<CustomFieldDefinition[]> {
+    return this.definitionRepo.find({
+      where: { tenantId, isActive: true, fillMode: CustomFieldFillMode.AI },
+      order: { displayOrder: 'ASC', createdAt: 'ASC' },
+    });
+  }
+
   static readonly MAX_DEFINITIONS_PER_TENANT = 3;
 
   async createDefinition(dto: CreateCustomFieldDefinitionDto) {
-    const tenantId = ExecutionManager.getTenantId();
+    const { tenantId: dtoTenantId, ...fieldDto } = dto;
+    const tenantId = this.resolveTenantId(dtoTenantId);
     const userId = ExecutionManager.getUserId();
-    if (!tenantId) throw new BadRequestException('Tenant ID is required');
     if (!userId) throw new BadRequestException('User ID is required');
 
     const existingCount = await this.definitionRepo.count({
@@ -86,28 +99,28 @@ export class CustomFieldsService {
       );
     }
 
-    if (BUILT_IN_FIELD_LABELS_LOWER.has(dto.name.toLowerCase())) {
+    if (BUILT_IN_FIELD_LABELS_LOWER.has(fieldDto.name.toLowerCase())) {
       throw new BadRequestException(
-        `"${dto.name}" is a built-in field name and cannot be used for a custom field`,
+        `"${fieldDto.name}" is a built-in field name and cannot be used for a custom field`,
       );
     }
 
     const duplicate = await this.definitionRepo
       .createQueryBuilder('d')
       .where('d.tenantId = :tenantId', { tenantId })
-      .andWhere('LOWER(d.name) = LOWER(:name)', { name: dto.name })
+      .andWhere('LOWER(d.name) = LOWER(:name)', { name: fieldDto.name })
       .andWhere('d.isActive = true')
       .getOne();
     if (duplicate) {
       throw new BadRequestException(
-        `A custom field named "${dto.name}" already exists`,
+        `A custom field named "${fieldDto.name}" already exists`,
       );
     }
 
     if (
-      (dto.fieldType === CustomFieldType.SINGLE_SELECT ||
-        dto.fieldType === CustomFieldType.MULTI_SELECT) &&
-      (!dto.options || dto.options.length === 0)
+      (fieldDto.fieldType === CustomFieldType.SINGLE_SELECT ||
+        fieldDto.fieldType === CustomFieldType.MULTI_SELECT) &&
+      (!fieldDto.options || fieldDto.options.length === 0)
     ) {
       throw new BadRequestException(
         'At least one option is required for Single Select and Multi Select fields',
@@ -115,13 +128,13 @@ export class CustomFieldsService {
     }
 
     const definition = this.definitionRepo.create({
-      ...dto,
+      ...fieldDto,
       options:
-        dto.fieldType === CustomFieldType.SINGLE_SELECT ||
-        dto.fieldType === CustomFieldType.MULTI_SELECT
-          ? dto.options
+        fieldDto.fieldType === CustomFieldType.SINGLE_SELECT ||
+        fieldDto.fieldType === CustomFieldType.MULTI_SELECT
+          ? fieldDto.options
           : undefined,
-      displayOrder: dto.displayOrder ?? 0,
+      displayOrder: fieldDto.displayOrder ?? 0,
       tenantId,
       createdBy: parseInt(userId),
       updatedBy: parseInt(userId),
@@ -159,9 +172,9 @@ export class CustomFieldsService {
   }
 
   async updateDefinition(id: string, dto: UpdateCustomFieldDefinitionDto) {
-    const tenantId = ExecutionManager.getTenantId();
+    const { tenantId: dtoTenantId, ...fieldDto } = dto;
+    const tenantId = this.resolveTenantId(dtoTenantId);
     const userId = ExecutionManager.getUserId();
-    if (!tenantId) throw new BadRequestException('Tenant ID is required');
     if (!userId) throw new BadRequestException('User ID is required');
 
     const definition = await this.definitionRepo.findOne({
@@ -169,38 +182,40 @@ export class CustomFieldsService {
     });
     if (!definition) throw new NotFoundException('Custom field not found');
 
-    if (dto.name && dto.name.toLowerCase() !== definition.name.toLowerCase()) {
-      if (BUILT_IN_FIELD_LABELS_LOWER.has(dto.name.toLowerCase())) {
+    if (
+      fieldDto.name &&
+      fieldDto.name.toLowerCase() !== definition.name.toLowerCase()
+    ) {
+      if (BUILT_IN_FIELD_LABELS_LOWER.has(fieldDto.name.toLowerCase())) {
         throw new BadRequestException(
-          `"${dto.name}" is a built-in field name and cannot be used for a custom field`,
+          `"${fieldDto.name}" is a built-in field name and cannot be used for a custom field`,
         );
       }
 
       const duplicate = await this.definitionRepo
         .createQueryBuilder('d')
         .where('d.tenantId = :tenantId', { tenantId })
-        .andWhere('LOWER(d.name) = LOWER(:name)', { name: dto.name })
+        .andWhere('LOWER(d.name) = LOWER(:name)', { name: fieldDto.name })
         .andWhere('d.isActive = true')
         .getOne();
       if (duplicate) {
         throw new BadRequestException(
-          `A custom field named "${dto.name}" already exists`,
+          `A custom field named "${fieldDto.name}" already exists`,
         );
       }
     }
 
     Object.assign(definition, {
-      ...dto,
+      ...fieldDto,
       updatedBy: parseInt(userId),
     });
 
     return this.definitionRepo.save(definition);
   }
 
-  async deleteDefinition(id: string) {
-    const tenantId = ExecutionManager.getTenantId();
+  async deleteDefinition(id: string, overrideTenantId?: string) {
+    const tenantId = this.resolveTenantId(overrideTenantId);
     const userId = ExecutionManager.getUserId();
-    if (!tenantId) throw new BadRequestException('Tenant ID is required');
     if (!userId) throw new BadRequestException('User ID is required');
 
     const definition = await this.definitionRepo.findOne({
@@ -330,5 +345,46 @@ export class CustomFieldsService {
 
     await this.valueRepo.save(toSave);
     return { success: true };
+  }
+
+  async upsertValuesInternal(
+    chatId: number,
+    tenantId: string,
+    values: Array<{ fieldDefinitionId: string; value: string }>,
+  ): Promise<void> {
+    if (values.length === 0) return;
+
+    const definitionIds = values.map((v) => v.fieldDefinitionId);
+    const validDefinitions = await this.definitionRepo
+      .createQueryBuilder('d')
+      .where('d.id IN (:...ids)', { ids: definitionIds })
+      .andWhere('d.tenantId = :tenantId', { tenantId })
+      .andWhere('d.isActive = true')
+      .getMany();
+
+    const validIds = new Set(validDefinitions.map((d) => d.id));
+    const safeValues = values.filter((v) => validIds.has(v.fieldDefinitionId));
+
+    if (safeValues.length === 0) return;
+
+    const existing = await this.valueRepo.find({
+      where: { tenantId, chatId },
+    });
+    const existingMap = new Map(existing.map((v) => [v.fieldDefinitionId, v]));
+
+    const toSave = safeValues.map((entry) => {
+      const record =
+        existingMap.get(entry.fieldDefinitionId) ??
+        this.valueRepo.create({
+          chatId,
+          fieldDefinitionId: entry.fieldDefinitionId,
+          tenantId,
+        });
+      record.value = entry.value;
+      record.updatedBy = 0;
+      return record;
+    });
+
+    await this.valueRepo.save(toSave);
   }
 }
