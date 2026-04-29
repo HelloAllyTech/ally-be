@@ -453,8 +453,13 @@ export class ChatService {
     );
   }
 
-  async getCallLogs(user: TokenUser, options: Pagination, archive?: string) {
-    return this.callLogService.getCallLogs(user, options, archive);
+  async getCallLogs(
+    user: TokenUser,
+    options: Pagination,
+    archive?: string,
+    callName?: string,
+  ) {
+    return this.callLogService.getCallLogs(user, options, archive, callName);
   }
 
   async updateArchiveStatus(

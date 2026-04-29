@@ -73,6 +73,11 @@ export class ChatRepository extends Repository<Chat> {
         query.andWhere('chat.archivedAt IS NULL');
       }
     }
+    if (params.callName) {
+      query.andWhere(`details."callInfo"->>'summaryName' ILIKE :callName`, {
+        callName: `%${params.callName}%`,
+      });
+    }
 
     const [data, count] = await query.getManyAndCount();
     return { data, count };
@@ -150,7 +155,7 @@ export class ChatRepository extends Repository<Chat> {
       });
     }
     if (filters.callName) {
-      query.andWhere(`details.callInfo->>'summaryName' ILIKE :callName`, {
+      query.andWhere(`details."callInfo"->>'summaryName' ILIKE :callName`, {
         callName: `%${filters.callName}%`,
       });
     }

@@ -7,6 +7,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   ValidateIf,
   ValidateNested,
@@ -14,6 +15,7 @@ import {
 import { Type } from 'class-transformer';
 import {
   CustomFieldEditPermission,
+  CustomFieldFillMode,
   CustomFieldType,
 } from '../entity/custom-field-definition.entity';
 
@@ -46,7 +48,11 @@ export class CreateCustomFieldDefinitionDto {
   fieldType!: CustomFieldType;
 
   @ApiPropertyOptional({ type: [SingleSelectOptionDto] })
-  @ValidateIf((o) => o.fieldType === CustomFieldType.SINGLE_SELECT)
+  @ValidateIf(
+    (o) =>
+      o.fieldType === CustomFieldType.SINGLE_SELECT ||
+      o.fieldType === CustomFieldType.MULTI_SELECT,
+  )
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SingleSelectOptionDto)
@@ -61,6 +67,17 @@ export class CreateCustomFieldDefinitionDto {
   @IsEnum(CustomFieldEditPermission)
   editPermission!: CustomFieldEditPermission;
 
+  @ApiPropertyOptional({ enum: CustomFieldFillMode })
+  @IsOptional()
+  @IsEnum(CustomFieldFillMode)
+  fillMode?: CustomFieldFillMode;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  aiInstruction?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()
@@ -70,10 +87,18 @@ export class CreateCustomFieldDefinitionDto {
   @IsOptional()
   @IsBoolean()
   showInTable?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  tenantId?: string;
 }
 
 export class ReorderCustomFieldDefinitionsDto {
-  @ApiProperty({ type: [String], description: 'All active definition IDs in the desired display order' })
+  @ApiProperty({
+    type: [String],
+    description: 'All active definition IDs in the desired display order',
+  })
   @IsArray()
   @IsString({ each: true })
   ids!: string[];
@@ -119,4 +144,20 @@ export class UpdateCustomFieldDefinitionDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ enum: CustomFieldFillMode })
+  @IsOptional()
+  @IsEnum(CustomFieldFillMode)
+  fillMode?: CustomFieldFillMode;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  aiInstruction?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  tenantId?: string;
 }

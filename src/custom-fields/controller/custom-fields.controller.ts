@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -42,8 +43,8 @@ export class CustomFieldsController {
   })
   @ApiResponse({ status: 200 })
   @AuthPermissions([PERMISSIONS.VIEW_CUSTOM_FIELD_DEFINITIONS])
-  getDefinitions() {
-    return this.service.getDefinitions();
+  getDefinitions(@Query('tenantId') tenantId?: string) {
+    return this.service.getDefinitions(tenantId);
   }
 
   @Post('definitions')
@@ -77,8 +78,11 @@ export class CustomFieldsController {
   @ApiOperation({ summary: 'Soft-delete a custom field definition' })
   @ApiResponse({ status: 200 })
   @AuthPermissions([PERMISSIONS.MANAGE_CUSTOM_FIELD_DEFINITIONS])
-  deleteDefinition(@Param('id') id: string) {
-    return this.service.deleteDefinition(id);
+  deleteDefinition(
+    @Param('id') id: string,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.service.deleteDefinition(id, tenantId);
   }
 
   @Get('values/:chatId')

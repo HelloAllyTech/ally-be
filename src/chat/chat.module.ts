@@ -37,6 +37,7 @@ import { ChatFeedbackService } from './service/chat-feedback.service';
 import { ChatTranscriptService } from './service/chat-transcript.service';
 import { ChatSharedService } from './service/chat-shared.service';
 import { ScribeSessionReviewModule } from 'src/scribe-session-review/scribe-session-review.module';
+import { CustomFieldsModule } from '../custom-fields/custom-fields.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { ScribeSessionReviewModule } from 'src/scribe-session-review/scribe-sess
     AwsModule,
     NotificationModule,
     ScribeSessionReviewModule,
+    forwardRef(() => CustomFieldsModule),
   ],
   controllers: [ChatController, AudioUploadController],
   providers: [

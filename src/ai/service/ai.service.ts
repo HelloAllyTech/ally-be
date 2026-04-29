@@ -122,12 +122,16 @@ export class AiService {
   async generateSummaryAndTags(
     messages: MessageRequest[],
     mode?: ScribeSessionMode,
+    keys?: string[],
+    keyDescriptions?: Record<string, string>,
   ) {
     const prompts = await this.getPromptOverrides();
     const request: GenerateSummaryRequest = {
       chat_history: messages,
       prompts,
       mode,
+      ...(keys && { keys }),
+      ...(keyDescriptions && { key_descriptions: keyDescriptions }),
     };
     let response: GenerateSummaryResponse;
     try {

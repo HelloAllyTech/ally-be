@@ -59,6 +59,9 @@ export class CustomFieldDefinition extends BaseEntity {
   })
   fillMode!: CustomFieldFillMode;
 
+  @Column({ type: 'text', nullable: true })
+  aiInstruction?: string;
+
   @Column({ default: 0 })
   displayOrder!: number;
 

@@ -9,7 +9,11 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Chat, CustomFieldDefinition, ChatCustomFieldValue]),
+    TypeOrmModule.forFeature([
+      Chat,
+      CustomFieldDefinition,
+      ChatCustomFieldValue,
+    ]),
     AuthorizationModule,
   ],
   providers: [CustomFieldsService],
