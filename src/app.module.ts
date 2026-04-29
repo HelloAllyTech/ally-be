@@ -35,6 +35,7 @@ import { LanguageModule } from './language/language.module';
 import { ScenarioSessionReviewModule } from './scenario-session-review/scenario-session-review.module';
 import { ScribeSessionReviewModule } from './scribe-session-review/scribe-session-review.module';
 import { BadgeModule } from './badge/badge.module';
+import { TooltipModule } from './tooltip/tooltip.module';
 import { CommunityModule } from './community/community.module';
 import { ScenarioCharacterModule } from './scenario-character/scenario-character.module';
 import { PromptModule } from './prompt/prompt.module';
@@ -86,6 +87,7 @@ import { CustomFieldsModule } from './custom-fields/custom-fields.module';
     ScenarioSessionReviewModule,
     ScribeSessionReviewModule,
     BadgeModule,
+    TooltipModule,
     CommunityModule,
     ScenarioCharacterModule,
     PromptModule,
