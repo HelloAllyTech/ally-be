@@ -116,10 +116,14 @@ export class CallDetailsService {
       if (aiDefinitions.length === 0) return;
 
       const messageRequests =
-        await this.messageService.getChatHistoryForAIService(chat.id, {
-          sortBy: 'createdAt',
-          order: 'ASC',
-        });
+        await this.messageService.getChatHistoryForAIService(
+          chat.id,
+          {
+            sortBy: 'createdAt',
+            order: 'ASC',
+          },
+          tenantId,
+        );
 
       const keys = aiDefinitions.map((d) => `custom_${d.id}`);
       const keyDescriptions: Record<string, string> = {};
