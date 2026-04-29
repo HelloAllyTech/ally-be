@@ -125,10 +125,14 @@ export class MessageService {
     };
   }
 
-  async getChatHistoryForAIService(chatId: number, pagination?: Pagination) {
+  async getChatHistoryForAIService(
+    chatId: number,
+    pagination?: Pagination,
+    tenantId?: string,
+  ) {
     const messages = await this.messageRepository.getChatHistoryQuery(
       chatId,
-      ExecutionManager.getTenantId()!,
+      tenantId ?? ExecutionManager.getTenantId()!,
       pagination,
     );
 
