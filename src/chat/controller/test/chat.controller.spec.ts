@@ -225,6 +225,7 @@ describe('ChatController', () => {
           order: SortOrder.DESC,
         },
         undefined,
+        undefined,
       );
     });
 
@@ -242,6 +243,7 @@ describe('ChatController', () => {
           sortBy: CallLogSortBy.CREATED_AT,
           order: SortOrder.DESC,
         },
+        undefined,
         undefined,
       );
     });

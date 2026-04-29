@@ -73,7 +73,10 @@ export class CreateCustomFieldDefinitionDto {
 }
 
 export class ReorderCustomFieldDefinitionsDto {
-  @ApiProperty({ type: [String], description: 'All active definition IDs in the desired display order' })
+  @ApiProperty({
+    type: [String],
+    description: 'All active definition IDs in the desired display order',
+  })
   @IsArray()
   @IsString({ each: true })
   ids!: string[];
