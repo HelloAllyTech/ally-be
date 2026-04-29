@@ -18,7 +18,12 @@ export class CallLogService {
     private userService: UserService,
   ) {}
 
-  async getCallLogs(user: TokenUser, options: Pagination, archive?: string) {
+  async getCallLogs(
+    user: TokenUser,
+    options: Pagination,
+    archive?: string,
+    callName?: string,
+  ) {
     const { data: callLogs, count } =
       await this.chatRepository.getCallLogsQuery({
         counselorId: user.id,
@@ -28,6 +33,7 @@ export class CallLogService {
         sortBy: options.sortBy,
         order: options.order,
         archive,
+        callName,
       });
 
     const decryptedCallLogs = await Promise.all(

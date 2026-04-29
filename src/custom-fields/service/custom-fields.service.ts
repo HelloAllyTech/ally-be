@@ -298,7 +298,8 @@ export class CustomFieldsService {
 
       const canEdit =
         def.editPermission === CustomFieldEditPermission.BOTH ||
-        (isAdmin && def.editPermission === CustomFieldEditPermission.ADMIN_ONLY) ||
+        (isAdmin &&
+          def.editPermission === CustomFieldEditPermission.ADMIN_ONLY) ||
         (isCounsellorForCall &&
           def.editPermission === CustomFieldEditPermission.COUNSELLOR_ONLY);
 

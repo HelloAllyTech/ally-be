@@ -140,6 +140,7 @@ export class ChatController {
     @Query('sortBy') sortBy: CallLogSortBy = CallLogSortBy.CREATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
     @Query('archive') archive?: 'true' | 'false',
+    @Query('callName') callName?: string,
   ) {
     return this.service.getCallLogs(
       tokenUser,
@@ -150,6 +151,7 @@ export class ChatController {
         order,
       },
       archive,
+      callName,
     );
   }
 

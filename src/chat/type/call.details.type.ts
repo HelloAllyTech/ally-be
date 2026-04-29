@@ -187,4 +187,5 @@ export interface CallLogsParams extends Pagination {
   counselorId: number;
   tenantId: string;
   archive?: string;
+  callName?: string;
 }

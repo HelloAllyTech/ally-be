@@ -690,7 +690,7 @@ describe('ChatRepository', () => {
       });
 
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        `details.callInfo->>'summaryName' ILIKE :callName`,
+        `details."callInfo"->>'summaryName' ILIKE :callName`,
         { callName: '%Crisis Call%' },
       );
     });
