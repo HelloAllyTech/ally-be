@@ -26,6 +26,7 @@ import {
 import { MessageType } from 'src/chat/entity/message.entity';
 import { FlattenedSummaryNotePayloadCamelCase } from 'src/chat/type/call.details.type';
 import { CallDetails } from 'src/chat/entity/call.details.entity';
+import { CustomFieldsService } from '../../../custom-fields/service/custom-fields.service';
 
 describe('CallDetailsService', () => {
   let service: CallDetailsService;
@@ -219,6 +220,13 @@ describe('CallDetailsService', () => {
           provide: StreamFileProcessorService,
           useValue: {
             endCallStream: jest.fn(),
+          },
+        },
+        {
+          provide: CustomFieldsService,
+          useValue: {
+            getAiDefinitions: jest.fn().mockResolvedValue([]),
+            upsertValuesInternal: jest.fn(),
           },
         },
       ],

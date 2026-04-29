@@ -26,6 +26,7 @@ import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type'
 import { CallInfo } from '../dto/call-log.response.dto';
 import { CallDetails } from '../entity/call.details.entity';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
+import { CustomFieldsService } from '../../custom-fields/service/custom-fields.service';
 
 @Injectable()
 export class CallDetailsService {
@@ -41,6 +42,7 @@ export class CallDetailsService {
     private readonly cache: RedisService,
     private broadcastMessageService: BroadcastMessageService,
     private streamFileProcessorService: StreamFileProcessorService,
+    private customFieldsService: CustomFieldsService,
   ) {}
 
   async handleChatEnded(chat: Chat) {
@@ -84,8 +86,9 @@ export class CallDetailsService {
   }
 
   async updateSummaryAndTags(chat: Chat) {
+    const tenantId = ExecutionManager.getTenantId();
     const callDetails = await this.callDetailsRepository.findOne({
-      where: { chatId: chat.id, tenantId: ExecutionManager.getTenantId() },
+      where: { chatId: chat.id, tenantId },
     });
     const summary: any = (await this.generateSummary(chat.id)) || {};
     summary.mode = callDetails?.callInfo?.mode ?? ScribeSessionMode.SCRIBE;
@@ -103,6 +106,58 @@ export class CallDetailsService {
         summary,
       },
     );
+
+    if (tenantId) {
+      await this.fillAiCustomFields(chat, tenantId);
+    }
+  }
+
+  private async fillAiCustomFields(chat: Chat, tenantId: string) {
+    try {
+      const aiDefinitions =
+        await this.customFieldsService.getAiDefinitions(tenantId);
+      if (aiDefinitions.length === 0) return;
+
+      const messageRequests =
+        await this.messageService.getChatHistoryForAIService(chat.id, {
+          sortBy: 'createdAt',
+          order: 'ASC',
+        });
+
+      const keys = aiDefinitions.map((d) => `custom_${d.id}`);
+      const keyDescriptions: Record<string, string> = {};
+      for (const d of aiDefinitions) {
+        keyDescriptions[`custom_${d.id}`] = d.aiInstruction
+          ? `${d.name}. ${d.aiInstruction}`
+          : d.name;
+      }
+
+      const aiResponse = await this.aiService.generateSummaryAndTags(
+        messageRequests,
+        undefined,
+        keys,
+        keyDescriptions,
+      );
+
+      if (!aiResponse || !('fields' in aiResponse)) return;
+
+      const values = aiDefinitions
+        .filter((d) => (aiResponse as any).fields[`custom_${d.id}`] != null)
+        .map((d) => ({
+          fieldDefinitionId: d.id,
+          value: String((aiResponse as any).fields[`custom_${d.id}`]),
+        }));
+
+      await this.customFieldsService.upsertValuesInternal(
+        chat.id,
+        tenantId,
+        values,
+      );
+    } catch (error) {
+      this.logger.error(
+        `fillAiCustomFields failed for chatId ${chat.id}: ${error.message}`,
+      );
+    }
   }
 
   async addNoteToSession(
