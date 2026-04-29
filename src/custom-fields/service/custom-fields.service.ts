@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Chat } from '../../chat/entity/chat.entity';
 import {
   CustomFieldDefinition,
   CustomFieldEditPermission,
@@ -14,6 +15,7 @@ import {
 import { ChatCustomFieldValue } from '../entity/chat-custom-field-value.entity';
 import {
   CreateCustomFieldDefinitionDto,
+  ReorderCustomFieldDefinitionsDto,
   UpdateCustomFieldDefinitionDto,
 } from '../dto/custom-field-definition.dto';
 import {
@@ -48,6 +50,8 @@ const BUILT_IN_FIELD_LABELS_LOWER = new Set([
 @Injectable()
 export class CustomFieldsService {
   constructor(
+    @InjectRepository(Chat)
+    private readonly chatRepo: Repository<Chat>,
     @InjectRepository(CustomFieldDefinition)
     private readonly definitionRepo: Repository<CustomFieldDefinition>,
     @InjectRepository(ChatCustomFieldValue)
@@ -124,6 +128,34 @@ export class CustomFieldsService {
     });
 
     return this.definitionRepo.save(definition);
+  }
+
+  async reorderDefinitions(dto: ReorderCustomFieldDefinitionsDto) {
+    const tenantId = ExecutionManager.getTenantId();
+    const userId = ExecutionManager.getUserId();
+    if (!tenantId) throw new BadRequestException('Tenant ID is required');
+    if (!userId) throw new BadRequestException('User ID is required');
+
+    const definitions = await this.definitionRepo.find({
+      where: { tenantId, isActive: true },
+    });
+    const definitionMap = new Map(definitions.map((d) => [d.id, d]));
+
+    for (const id of dto.ids) {
+      if (!definitionMap.has(id)) {
+        throw new BadRequestException(`Custom field ${id} not found`);
+      }
+    }
+
+    const toSave = dto.ids.map((id, i) => {
+      const definition = definitionMap.get(id)!;
+      definition.displayOrder = i;
+      definition.updatedBy = parseInt(userId);
+      return definition;
+    });
+
+    await this.definitionRepo.save(toSave);
+    return { success: true };
   }
 
   async updateDefinition(id: string, dto: UpdateCustomFieldDefinitionDto) {
@@ -225,10 +257,26 @@ export class CustomFieldsService {
     if (!tenantId) throw new BadRequestException('Tenant ID is required');
     if (!userId) throw new BadRequestException('User ID is required');
 
-    const isAdmin = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.MANAGE_CUSTOM_FIELD_DEFINITIONS],
-    );
+    const userIdInt = parseInt(userId);
+
+    const [isAdmin, chat] = await Promise.all([
+      this.permissionValidator.validatePermissions(userIdInt, [
+        PERMISSIONS.MANAGE_CUSTOM_FIELD_DEFINITIONS,
+      ]),
+      this.chatRepo.findOne({ where: { id: chatId, tenantId } }),
+    ]);
+
+    if (!chat) {
+      throw new NotFoundException(`Chat ${chatId} not found`);
+    }
+
+    const isCounsellorForCall = chat.counselorId === userIdInt;
+
+    if (!isAdmin && !isCounsellorForCall) {
+      throw new ForbiddenException(
+        'You can only edit custom fields for calls you counsel',
+      );
+    }
 
     const definitionIds = dto.values.map((v) => v.fieldDefinitionId);
     const definitions = await this.definitionRepo
@@ -250,9 +298,8 @@ export class CustomFieldsService {
 
       const canEdit =
         def.editPermission === CustomFieldEditPermission.BOTH ||
-        (isAdmin &&
-          def.editPermission === CustomFieldEditPermission.ADMIN_ONLY) ||
-        (!isAdmin &&
+        (isAdmin && def.editPermission === CustomFieldEditPermission.ADMIN_ONLY) ||
+        (isCounsellorForCall &&
           def.editPermission === CustomFieldEditPermission.COUNSELLOR_ONLY);
 
       if (!canEdit) {
@@ -276,7 +323,7 @@ export class CustomFieldsService {
           tenantId,
         });
       record.value = entry.value;
-      record.updatedBy = parseInt(userId);
+      record.updatedBy = userIdInt;
       return record;
     });
 
