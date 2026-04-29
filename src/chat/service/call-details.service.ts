@@ -113,6 +113,9 @@ export class CallDetailsService {
     try {
       const aiDefinitions =
         await this.customFieldsService.getAiDefinitions(tenantId);
+      this.logger.info(
+        `fillAiCustomFields: chatId=${chat.id} tenantId=${tenantId} aiDefinitions=${aiDefinitions.length}`,
+      );
       if (aiDefinitions.length === 0) return;
 
       const messageRequests =
@@ -124,6 +127,9 @@ export class CallDetailsService {
           },
           tenantId,
         );
+      this.logger.info(
+        `fillAiCustomFields: chatId=${chat.id} messages=${messageRequests.length}`,
+      );
 
       const keys = aiDefinitions.map((d) => `custom_${d.id}`);
       const keyDescriptions: Record<string, string> = {};
@@ -139,8 +145,16 @@ export class CallDetailsService {
         keys,
         keyDescriptions,
       );
+      this.logger.info(
+        `fillAiCustomFields: chatId=${chat.id} aiResponse=${JSON.stringify(aiResponse)}`,
+      );
 
-      if (!aiResponse || !('fields' in aiResponse)) return;
+      if (!aiResponse || !('fields' in aiResponse)) {
+        this.logger.info(
+          `fillAiCustomFields: chatId=${chat.id} no fields in response`,
+        );
+        return;
+      }
 
       const values = aiDefinitions
         .filter((d) => (aiResponse as any).fields[`custom_${d.id}`] != null)
@@ -148,11 +162,17 @@ export class CallDetailsService {
           fieldDefinitionId: d.id,
           value: String((aiResponse as any).fields[`custom_${d.id}`]),
         }));
+      this.logger.info(
+        `fillAiCustomFields: chatId=${chat.id} saving ${values.length} values`,
+      );
 
       await this.customFieldsService.upsertValuesInternal(
         chat.id,
         tenantId,
         values,
+      );
+      this.logger.info(
+        `fillAiCustomFields: chatId=${chat.id} saved successfully`,
       );
     } catch (error) {
       this.logger.error(
