@@ -86,9 +86,8 @@ export class CallDetailsService {
   }
 
   async updateSummaryAndTags(chat: Chat) {
-    const tenantId = ExecutionManager.getTenantId();
     const callDetails = await this.callDetailsRepository.findOne({
-      where: { chatId: chat.id, tenantId },
+      where: { chatId: chat.id, tenantId: ExecutionManager.getTenantId() },
     });
     const summary: any = (await this.generateSummary(chat.id)) || {};
     summary.mode = callDetails?.callInfo?.mode ?? ScribeSessionMode.SCRIBE;
@@ -107,9 +106,7 @@ export class CallDetailsService {
       },
     );
 
-    if (tenantId) {
-      await this.fillAiCustomFields(chat, tenantId);
-    }
+    await this.fillAiCustomFields(chat, chat.tenantId);
   }
 
   private async fillAiCustomFields(chat: Chat, tenantId: string) {
