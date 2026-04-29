@@ -109,7 +109,7 @@ export class CallDetailsService {
     await this.fillAiCustomFields(chat, chat.tenantId);
   }
 
-  private async fillAiCustomFields(chat: Chat, tenantId: string) {
+  async fillAiCustomFields(chat: Chat, tenantId: string) {
     try {
       const aiDefinitions =
         await this.customFieldsService.getAiDefinitions(tenantId);

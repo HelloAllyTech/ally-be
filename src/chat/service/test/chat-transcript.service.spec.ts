@@ -7,6 +7,7 @@ import { ChatService } from '../chat.service';
 import { AppConfigService } from 'src/config/config.service';
 import { Chat, ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
 import { FailedDependencyException } from 'src/exception/custom.exception';
+import { CallDetailsService } from '../call-details.service';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -55,6 +56,12 @@ describe('ChatTranscriptService', () => {
           provide: AppConfigService,
           useValue: {
             isDevelopment: false,
+          },
+        },
+        {
+          provide: CallDetailsService,
+          useValue: {
+            fillAiCustomFields: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
