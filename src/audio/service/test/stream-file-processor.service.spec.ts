@@ -49,12 +49,7 @@ jest.mock('../../../audio/entity/chat-audio-uploads.entity', () => ({
 
 // Mock TypeORM with decorators and Repository
 jest.mock('typeorm', () => {
-  const dualDecorator = (maybeOpts?: any) => {
-    if (typeof maybeOpts === 'function') {
-      return undefined;
-    }
-    return () => {}; // Fixed: removed unused _args parameter
-  };
+  const dualDecorator = () => () => {};
 
   class FakeEntityManager {}
   class FakeDataSource {

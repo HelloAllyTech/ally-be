@@ -11,6 +11,8 @@ export type GenerateSummaryRequest = {
   chat_history: MessageRequest[];
   prompts?: Record<string, PromptOverride>;
   mode?: ScribeSessionMode;
+  keys?: string[];
+  key_descriptions?: Record<string, string>;
 };
 
 export type MessageRequest = {
