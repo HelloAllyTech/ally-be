@@ -21,6 +21,7 @@ describe('CustomFieldsController', () => {
   const mockService: jest.Mocked<Partial<CustomFieldsService>> = {
     getDefinitions: jest.fn(),
     createDefinition: jest.fn(),
+    reorderDefinitions: jest.fn(),
     updateDefinition: jest.fn(),
     deleteDefinition: jest.fn(),
     getValues: jest.fn(),
@@ -121,6 +122,26 @@ describe('CustomFieldsController', () => {
       service.createDefinition.mockRejectedValue(new Error('Validation error'));
 
       await expect(controller.createDefinition(dto)).rejects.toThrow();
+    });
+  });
+
+  describe('reorderDefinitions', () => {
+    it('should delegate to service and return success', async () => {
+      service.reorderDefinitions.mockResolvedValue({ success: true });
+      const dto = { ids: ['def-uuid-2', 'def-uuid-1'] };
+
+      const result = await controller.reorderDefinitions(dto);
+
+      expect(service.reorderDefinitions).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should propagate service errors', async () => {
+      service.reorderDefinitions.mockRejectedValue(new Error('Bad id'));
+
+      await expect(
+        controller.reorderDefinitions({ ids: ['unknown'] }),
+      ).rejects.toThrow('Bad id');
     });
   });
 

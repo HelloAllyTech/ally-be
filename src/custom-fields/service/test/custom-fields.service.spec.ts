@@ -14,11 +14,13 @@ import {
   CustomFieldType,
 } from '../../entity/custom-field-definition.entity';
 import { ChatCustomFieldValue } from '../../entity/chat-custom-field-value.entity';
+import { Chat } from '../../../chat/entity/chat.entity';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
 
 describe('CustomFieldsService', () => {
   let service: CustomFieldsService;
+  let chatRepo: jest.Mocked<Repository<Chat>>;
   let definitionRepo: jest.Mocked<Repository<CustomFieldDefinition>>;
   let valueRepo: jest.Mocked<Repository<ChatCustomFieldValue>>;
   let permissionValidator: jest.Mocked<PermissionValidator>;
@@ -63,6 +65,10 @@ describe('CustomFieldsService', () => {
       getOne: jest.fn().mockResolvedValue(null),
     };
 
+    chatRepo = {
+      findOne: jest.fn(),
+    } as any;
+
     definitionRepo = {
       find: jest.fn(),
       findOne: jest.fn(),
@@ -80,6 +86,10 @@ describe('CustomFieldsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CustomFieldsService,
+        {
+          provide: getRepositoryToken(Chat),
+          useValue: chatRepo,
+        },
         {
           provide: getRepositoryToken(CustomFieldDefinition),
           useValue: definitionRepo,
@@ -446,6 +456,64 @@ describe('CustomFieldsService', () => {
     });
   });
 
+  // ─── reorderDefinitions ──────────────────────────────────────────────────
+
+  describe('reorderDefinitions', () => {
+    const defA: CustomFieldDefinition = { ...mockDefinition, id: 'def-a', displayOrder: 0 } as any;
+    const defB: CustomFieldDefinition = { ...mockDefinition, id: 'def-b', displayOrder: 0 } as any;
+    const defC: CustomFieldDefinition = { ...mockDefinition, id: 'def-c', displayOrder: 0 } as any;
+
+    beforeEach(() => {
+      definitionRepo.find.mockResolvedValue([defA, defB, defC]);
+      definitionRepo.save.mockResolvedValue([] as any);
+    });
+
+    it('should assign sequential displayOrder matching the provided id order', async () => {
+      await service.reorderDefinitions({ ids: ['def-c', 'def-a', 'def-b'] });
+
+      const saved: CustomFieldDefinition[] = (definitionRepo.save as jest.Mock).mock.calls[0][0];
+      expect(saved).toHaveLength(3);
+      expect(saved.find(d => d.id === 'def-c')!.displayOrder).toBe(0);
+      expect(saved.find(d => d.id === 'def-a')!.displayOrder).toBe(1);
+      expect(saved.find(d => d.id === 'def-b')!.displayOrder).toBe(2);
+    });
+
+    it('should set updatedBy on every saved definition', async () => {
+      await service.reorderDefinitions({ ids: ['def-a', 'def-b', 'def-c'] });
+
+      const saved: CustomFieldDefinition[] = (definitionRepo.save as jest.Mock).mock.calls[0][0];
+      expect(saved.every(d => d.updatedBy === parseInt(mockUserId))).toBe(true);
+    });
+
+    it('should return { success: true }', async () => {
+      const result = await service.reorderDefinitions({ ids: ['def-a', 'def-b', 'def-c'] });
+
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should throw BadRequestException when an id does not belong to the tenant', async () => {
+      await expect(
+        service.reorderDefinitions({ ids: ['def-a', 'unknown-id'] }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when tenantId is missing', async () => {
+      jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(undefined);
+
+      await expect(
+        service.reorderDefinitions({ ids: ['def-a'] }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when userId is missing', async () => {
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
+
+      await expect(
+        service.reorderDefinitions({ ids: ['def-a'] }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
   // ─── upsertValues ────────────────────────────────────────────────────────
 
   describe('upsertValues', () => {
@@ -462,17 +530,22 @@ describe('CustomFieldsService', () => {
       updatedBy: 1,
     } as any;
 
+    // Chat owned by mockUserId (42)
+    const mockChatOwnedByUser = { id: mockChatId, counselorId: 42, tenantId: mockTenantId } as any;
+    // Chat owned by a different counsellor
+    const mockChatOwnedByOther = { id: mockChatId, counselorId: 99, tenantId: mockTenantId } as any;
+
     beforeEach(() => {
+      // Default: user is the counsellor for the call, BOTH permission field
+      chatRepo.findOne.mockResolvedValue(mockChatOwnedByUser);
       mockQb.getMany.mockResolvedValue([mockDefinition]);
       valueRepo.find.mockResolvedValue([]);
       valueRepo.create.mockImplementation((data) => data as any);
       valueRepo.save.mockResolvedValue([] as any);
     });
 
-    it('should upsert values and return success when user has BOTH permission', async () => {
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(false);
+    it('should upsert values when counsellor edits a BOTH field on their own call', async () => {
+      jest.spyOn(permissionValidator, 'validatePermissions').mockResolvedValue(false);
 
       const result = await service.upsertValues(mockChatId, upsertDto);
 
@@ -481,69 +554,69 @@ describe('CustomFieldsService', () => {
     });
 
     it('should allow admin to edit ADMIN_ONLY field', async () => {
-      const adminOnlyDef = {
-        ...mockDefinition,
-        editPermission: CustomFieldEditPermission.ADMIN_ONLY,
-      };
+      const adminOnlyDef = { ...mockDefinition, editPermission: CustomFieldEditPermission.ADMIN_ONLY };
+      chatRepo.findOne.mockResolvedValue(mockChatOwnedByOther);
       mockQb.getMany.mockResolvedValue([adminOnlyDef]);
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(true);
+      jest.spyOn(permissionValidator, 'validatePermissions').mockResolvedValue(true);
 
       const result = await service.upsertValues(mockChatId, upsertDto);
 
       expect(result).toEqual({ success: true });
     });
 
-    it('should throw ForbiddenException when counsellor tries to edit ADMIN_ONLY field', async () => {
-      const adminOnlyDef = {
-        ...mockDefinition,
-        editPermission: CustomFieldEditPermission.ADMIN_ONLY,
-      };
+    it('should throw ForbiddenException when counsellor tries to edit ADMIN_ONLY field on their own call', async () => {
+      const adminOnlyDef = { ...mockDefinition, editPermission: CustomFieldEditPermission.ADMIN_ONLY };
       mockQb.getMany.mockResolvedValue([adminOnlyDef]);
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(false);
+      jest.spyOn(permissionValidator, 'validatePermissions').mockResolvedValue(false);
 
-      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(ForbiddenException);
     });
 
-    it('should allow counsellor to edit COUNSELLOR_ONLY field', async () => {
-      const counsellorOnlyDef = {
-        ...mockDefinition,
-        editPermission: CustomFieldEditPermission.COUNSELLOR_ONLY,
-      };
+    it('should allow counsellor to edit COUNSELLOR_ONLY field on their own call', async () => {
+      const counsellorOnlyDef = { ...mockDefinition, editPermission: CustomFieldEditPermission.COUNSELLOR_ONLY };
       mockQb.getMany.mockResolvedValue([counsellorOnlyDef]);
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(false);
+      jest.spyOn(permissionValidator, 'validatePermissions').mockResolvedValue(false);
 
       const result = await service.upsertValues(mockChatId, upsertDto);
 
       expect(result).toEqual({ success: true });
     });
 
-    it('should throw ForbiddenException when admin tries to edit COUNSELLOR_ONLY field', async () => {
-      const counsellorOnlyDef = {
-        ...mockDefinition,
-        editPermission: CustomFieldEditPermission.COUNSELLOR_ONLY,
-      };
+    it('should throw ForbiddenException when pure admin tries to edit COUNSELLOR_ONLY field', async () => {
+      const counsellorOnlyDef = { ...mockDefinition, editPermission: CustomFieldEditPermission.COUNSELLOR_ONLY };
+      chatRepo.findOne.mockResolvedValue(mockChatOwnedByOther);
       mockQb.getMany.mockResolvedValue([counsellorOnlyDef]);
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(true);
+      jest.spyOn(permissionValidator, 'validatePermissions').mockResolvedValue(true);
 
-      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should allow dual-role user (admin + counsellor for call) to edit COUNSELLOR_ONLY field', async () => {
+      const counsellorOnlyDef = { ...mockDefinition, editPermission: CustomFieldEditPermission.COUNSELLOR_ONLY };
+      mockQb.getMany.mockResolvedValue([counsellorOnlyDef]);
+      jest.spyOn(permissionValidator, 'validatePermissions').mockResolvedValue(true); // isAdmin=true
+
+      const result = await service.upsertValues(mockChatId, upsertDto); // chat.counselorId=42=userId
+
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should throw ForbiddenException when counsellor tries to edit a call they do not own', async () => {
+      chatRepo.findOne.mockResolvedValue(mockChatOwnedByOther);
+      jest.spyOn(permissionValidator, 'validatePermissions').mockResolvedValue(false);
+
+      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw NotFoundException when chat does not exist', async () => {
+      chatRepo.findOne.mockResolvedValue(null);
+      jest.spyOn(permissionValidator, 'validatePermissions').mockResolvedValue(false);
+
+      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(NotFoundException);
     });
 
     it('should update existing value record when one exists for chatId+fieldDefinitionId', async () => {
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(false);
+      jest.spyOn(permissionValidator, 'validatePermissions').mockResolvedValue(false);
       valueRepo.find.mockResolvedValue([mockExistingValue]);
 
       await service.upsertValues(mockChatId, upsertDto);
@@ -554,52 +627,34 @@ describe('CustomFieldsService', () => {
     });
 
     it('should create new value record when none exists', async () => {
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(false);
-      valueRepo.find.mockResolvedValue([]);
-      const newRecord = {
-        chatId: mockChatId,
-        fieldDefinitionId: mockDefinitionId,
-        tenantId: mockTenantId,
-      };
+      jest.spyOn(permissionValidator, 'validatePermissions').mockResolvedValue(false);
+      const newRecord = { chatId: mockChatId, fieldDefinitionId: mockDefinitionId, tenantId: mockTenantId };
       valueRepo.create.mockReturnValue(newRecord as any);
 
       await service.upsertValues(mockChatId, upsertDto);
 
       expect(valueRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          chatId: mockChatId,
-          fieldDefinitionId: mockDefinitionId,
-        }),
+        expect.objectContaining({ chatId: mockChatId, fieldDefinitionId: mockDefinitionId }),
       );
     });
 
     it('should throw BadRequestException when fieldDefinitionId is not found in tenant', async () => {
       mockQb.getMany.mockResolvedValue([]);
-      jest
-        .spyOn(permissionValidator, 'validatePermissions')
-        .mockResolvedValue(false);
+      jest.spyOn(permissionValidator, 'validatePermissions').mockResolvedValue(false);
 
-      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException when tenantId is missing', async () => {
       jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(undefined);
 
-      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException when userId is missing', async () => {
       jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
 
-      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(BadRequestException);
     });
   });
 });

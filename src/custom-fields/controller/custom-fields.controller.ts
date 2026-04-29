@@ -19,6 +19,7 @@ import {
 import { CustomFieldsService } from '../service/custom-fields.service';
 import {
   CreateCustomFieldDefinitionDto,
+  ReorderCustomFieldDefinitionsDto,
   UpdateCustomFieldDefinitionDto,
 } from '../dto/custom-field-definition.dto';
 import {
@@ -51,6 +52,14 @@ export class CustomFieldsController {
   @AuthPermissions([PERMISSIONS.MANAGE_CUSTOM_FIELD_DEFINITIONS])
   createDefinition(@Body() dto: CreateCustomFieldDefinitionDto) {
     return this.service.createDefinition(dto);
+  }
+
+  @Patch('definitions/reorder')
+  @ApiOperation({ summary: 'Reorder all custom field definitions' })
+  @ApiResponse({ status: 200 })
+  @AuthPermissions([PERMISSIONS.MANAGE_CUSTOM_FIELD_DEFINITIONS])
+  reorderDefinitions(@Body() dto: ReorderCustomFieldDefinitionsDto) {
+    return this.service.reorderDefinitions(dto);
   }
 
   @Patch('definitions/:id')
