@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 
 import { AppConfigService } from 'src/config/config.service';
 import { ChatAiService } from './chat-ai-service';
@@ -9,6 +9,7 @@ import axios from 'axios';
 import { FailedDependencyException } from 'src/exception/custom.exception';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { FlattenedSummaryNotePayload } from '../type/call.details.type';
+import { CallDetailsService } from './call-details.service';
 
 @Injectable()
 export class ChatTranscriptService {
@@ -18,6 +19,8 @@ export class ChatTranscriptService {
     private readonly chatAiService: ChatAiService,
     private readonly chatService: ChatService,
     private readonly config: AppConfigService,
+    @Inject(forwardRef(() => CallDetailsService))
+    private readonly callDetailsService: CallDetailsService,
   ) {}
 
   async processTranscribeResult(params: {
@@ -63,6 +66,7 @@ export class ChatTranscriptService {
         await this.chatAiService.addTranscript(chat, transcription);
 
         await this.chatAiService.addSummary(chatId, summary);
+        await this.callDetailsService.fillAiCustomFields(chat, chat.tenantId);
       } else if (downloadPresignedUrl) {
         // Download the result from S3
         const s3Result = await this.downloadFromS3(downloadPresignedUrl);
@@ -72,6 +76,7 @@ export class ChatTranscriptService {
 
         // Add the summary to the chat
         await this.chatAiService.addSummary(chatId, s3Result.summary);
+        await this.callDetailsService.fillAiCustomFields(chat, chat.tenantId);
       }
 
       if (!this.config.isDevelopment && deletePresignedUrl) {
