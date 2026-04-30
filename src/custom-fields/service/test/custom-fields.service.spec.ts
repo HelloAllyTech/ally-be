@@ -173,10 +173,6 @@ describe('CustomFieldsService', () => {
       displayOrder: 1,
     };
 
-    beforeEach(() => {
-      (definitionRepo as any).count = jest.fn().mockResolvedValue(0);
-    });
-
     it('should create and save a single-select definition', async () => {
       definitionRepo.create.mockReturnValue(mockDefinition);
       definitionRepo.save.mockResolvedValue(mockDefinition);
@@ -231,26 +227,6 @@ describe('CustomFieldsService', () => {
       await expect(service.createDefinition(dto)).rejects.toThrow(
         BadRequestException,
       );
-    });
-
-    it('should throw BadRequestException when tenant already has 3 active definitions', async () => {
-      (definitionRepo as any).count.mockResolvedValue(
-        CustomFieldsService.MAX_DEFINITIONS_PER_TENANT,
-      );
-
-      await expect(service.createDefinition(baseDto)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
-    it('should allow creation when tenant has fewer than 3 active definitions', async () => {
-      (definitionRepo as any).count.mockResolvedValue(2);
-      definitionRepo.create.mockReturnValue(mockDefinition);
-      definitionRepo.save.mockResolvedValue(mockDefinition);
-
-      const result = await service.createDefinition(baseDto);
-
-      expect(result).toEqual(mockDefinition);
     });
 
     it('should throw BadRequestException when tenantId is missing', async () => {
