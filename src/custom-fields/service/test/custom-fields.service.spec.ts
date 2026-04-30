@@ -121,7 +121,7 @@ describe('CustomFieldsService', () => {
   // ─── getDefinitions ───────────────────────────────────────────────────────
 
   describe('getDefinitions', () => {
-    it('should return only ORG_ADMIN-scoped definitions on the in-app path', async () => {
+    it('should return all definitions on the in-app path (no scope filter)', async () => {
       definitionRepo.find.mockResolvedValue([mockDefinition]);
 
       const result = await service.getDefinitions();
@@ -130,7 +130,6 @@ describe('CustomFieldsService', () => {
         where: {
           tenantId: mockTenantId,
           isActive: true,
-          scope: CustomFieldScope.ORG_ADMIN,
         },
         order: { displayOrder: 'ASC', createdAt: 'ASC' },
       });
