@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AuditLog } from '../entity/audit-log.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { AUDIT_EVENTS } from '../constants/audit-event.constants';
@@ -54,5 +54,22 @@ export class AuditLogService {
     } catch (error) {
       this.logger.error('Failed to save admin audit log to DB', error);
     }
+  }
+
+  async listByEventTypes(
+    eventTypes: Array<keyof typeof AUDIT_EVENTS>,
+    limit = 50,
+    offset = 0,
+  ): Promise<AuditLog[]> {
+    return this.auditLogRepository.find({
+      where: {
+        eventType: In(eventTypes),
+      },
+      order: {
+        loggedAt: 'DESC',
+      },
+      take: limit,
+      skip: offset,
+    });
   }
 }

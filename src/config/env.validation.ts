@@ -129,6 +129,11 @@ export const validationSchema = Joi.object({
   AI_CHAT_TEMPERATURE: Joi.number().min(0).max(2).default(0.7),
   AI_CHAT_MAX_CONTEXT_TOKENS: Joi.number().default(100000),
 
+  // Runtime i18n static file publishing
+  I18N_ROOT_DIR: Joi.string().default('/var/www/i18n'),
+  I18N_SOURCE_DIR: Joi.string().optional(),
+  I18N_VERSION_RETENTION: Joi.number().integer().min(1).default(5),
+
   // Local dev: when true, allow frontend to trigger agent dispatch (bypasses webhook)
   ALLOW_DIRECT_AGENT_DISPATCH: Joi.boolean().default(false),
 
