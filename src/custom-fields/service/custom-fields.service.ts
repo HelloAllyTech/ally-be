@@ -116,22 +116,11 @@ export class CustomFieldsService {
     });
   }
 
-  static readonly MAX_DEFINITIONS_PER_TENANT = 3;
-
   async createDefinition(dto: CreateCustomFieldDefinitionDto) {
     const { tenantId: dtoTenantId, ...fieldDto } = dto;
     const tenantId = await this.resolveTenantIdWithSystemCheck(dtoTenantId);
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
-
-    const existingCount = await this.definitionRepo.count({
-      where: { tenantId, isActive: true },
-    });
-    if (existingCount >= CustomFieldsService.MAX_DEFINITIONS_PER_TENANT) {
-      throw new BadRequestException(
-        `Cannot exceed ${CustomFieldsService.MAX_DEFINITIONS_PER_TENANT} custom fields per organization`,
-      );
-    }
 
     if (BUILT_IN_FIELD_LABELS_LOWER.has(fieldDto.name.toLowerCase())) {
       throw new BadRequestException(
