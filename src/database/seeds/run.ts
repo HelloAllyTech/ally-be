@@ -15,8 +15,8 @@ async function main(): Promise<void> {
   const started = Date.now();
 
   await withDataSource(async (ds) => {
-    await seedTenant(ds);
-    await seedUsers(ds);
+    const tenant = await seedTenant(ds);
+    await seedUsers(ds, tenant);
 
     const admin = await ds
       .getRepository(User)
