@@ -31,21 +31,68 @@ import { LoggerService } from 'src/logger/logger.service';
 @Injectable()
 export class S3Service {
   private readonly s3: S3Client;
+  private readonly presignS3: S3Client;
+  private readonly internalPresignS3: S3Client;
   private readonly logger = LoggerService.getInstance(S3Service.name);
 
   constructor(private readonly config: AppConfigService) {
     const { region, accessKeyId, secretAccessKey, sessionToken } = config.aws;
-    const s3Config: S3ClientConfig = {
-      region,
-    };
+    const baseConfig: S3ClientConfig = { region };
     if (accessKeyId && secretAccessKey) {
-      s3Config.credentials = {
+      baseConfig.credentials = {
         accessKeyId,
         secretAccessKey,
         ...(sessionToken && { sessionToken }),
       };
     }
-    this.s3 = new S3Client(s3Config);
+    // When AWS_ENDPOINT_URL is set we're talking to a custom endpoint
+    // (LocalStack in dev). Force path-style addressing so direct S3 calls
+    // hit `<endpoint>/<bucket>/<key>` instead of the virtual-host
+    // `<bucket>.<endpoint>/<key>` form, which fails DNS lookup against
+    // hostnames like "localstack".
+    const usingCustomEndpoint = !!config.aws.endpointUrl;
+    this.s3 = new S3Client({
+      ...baseConfig,
+      ...(usingCustomEndpoint && { forcePathStyle: true }),
+    });
+
+    // For local dev: AWS_ENDPOINT_URL points at localstack inside the docker
+    // network, but presigned URLs returned to the browser need a host the
+    // browser can resolve. AWS_S3_PRESIGN_ENDPOINT_URL overrides just the
+    // presign endpoint when set; otherwise the default S3 client is reused.
+    // requestChecksumCalculation=WHEN_REQUIRED disables AWS SDK v3's default
+    // CRC32 checksum auto-injection — its placeholder value is signed into
+    // the URL and then never matches the actual upload body, breaking PUTs.
+    const presignEndpoint = process.env.AWS_S3_PRESIGN_ENDPOINT_URL;
+    this.presignS3 = presignEndpoint
+      ? new S3Client({
+          ...baseConfig,
+          endpoint: presignEndpoint,
+          forcePathStyle: true,
+          requestChecksumCalculation: 'WHEN_REQUIRED',
+        })
+      : new S3Client({
+          ...baseConfig,
+          requestChecksumCalculation: 'WHEN_REQUIRED',
+        });
+
+    // Service-to-service presigned URLs (e.g. audio_url sent to ally-ai via
+    // SQS) need a host the *consuming container* can reach. In dev, the
+    // browser-facing presign endpoint (localhost:4566) doesn't resolve from
+    // inside another container. AWS_S3_INTERNAL_PRESIGN_ENDPOINT_URL lets us
+    // hand out a different hostname (host.docker.internal:4566) for that
+    // audience. Falls back to the browser-facing presign client when unset,
+    // so prod (where neither var is set) signs against the default S3 host.
+    const internalPresignEndpoint =
+      process.env.AWS_S3_INTERNAL_PRESIGN_ENDPOINT_URL;
+    this.internalPresignS3 = internalPresignEndpoint
+      ? new S3Client({
+          ...baseConfig,
+          endpoint: internalPresignEndpoint,
+          forcePathStyle: true,
+          requestChecksumCalculation: 'WHEN_REQUIRED',
+        })
+      : this.presignS3;
   }
 
   uploadStream(params: PutObjectCommandInput): Promise<PutObjectCommandOutput> {
@@ -63,6 +110,13 @@ export class S3Service {
     expiresIn?: number; // seconds, default 600 (10 minutes)
     contentType?: string;
     metadata?: Record<string, string>;
+    /**
+     * Who consumes the URL. 'browser' (default) — returned to a frontend
+     * client. 'internal' — consumed by another backend service (e.g. an
+     * audio_url forwarded to ally-ai via SQS). In dev these may sign over
+     * different hostnames; in prod both resolve to the same default S3 host.
+     */
+    audience?: 'browser' | 'internal';
   }): Promise<string> {
     const {
       bucket,
@@ -71,6 +125,7 @@ export class S3Service {
       expiresIn = 600,
       contentType,
       metadata,
+      audience = 'browser',
     } = params;
 
     const command =
@@ -83,8 +138,11 @@ export class S3Service {
             ...(metadata && { Metadata: metadata }),
           });
 
+    const signer =
+      audience === 'internal' ? this.internalPresignS3 : this.presignS3;
+
     try {
-      const presignedUrl = await getSignedUrl(this.s3, command, {
+      const presignedUrl = await getSignedUrl(signer, command, {
         expiresIn,
       });
 

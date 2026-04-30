@@ -71,8 +71,12 @@ describe('S3Service', () => {
   });
 
   describe('constructor', () => {
+    // S3Service constructs multiple S3Clients (default, presign, internal
+    // presign). These tests assert the *first* call — the default client —
+    // since presign clients carry extra options (checksum mode, optional
+    // endpoint override) that aren't relevant to credential plumbing.
     it('should initialize S3Client with credentials when provided', () => {
-      expect(S3Client).toHaveBeenCalledWith({
+      expect(S3Client).toHaveBeenNthCalledWith(1, {
         region: 'us-east-1',
         credentials: {
           accessKeyId: 'test-access-key',
@@ -91,6 +95,7 @@ describe('S3Service', () => {
         },
       };
 
+      (S3Client as jest.MockedClass<typeof S3Client>).mockClear();
       await Test.createTestingModule({
         providers: [
           S3Service,
@@ -101,7 +106,7 @@ describe('S3Service', () => {
         ],
       }).compile();
 
-      expect(S3Client).toHaveBeenLastCalledWith({
+      expect(S3Client).toHaveBeenNthCalledWith(1, {
         region: 'us-west-2',
       });
     });
@@ -115,6 +120,7 @@ describe('S3Service', () => {
         },
       };
 
+      (S3Client as jest.MockedClass<typeof S3Client>).mockClear();
       await Test.createTestingModule({
         providers: [
           S3Service,
@@ -125,7 +131,7 @@ describe('S3Service', () => {
         ],
       }).compile();
 
-      expect(S3Client).toHaveBeenLastCalledWith({
+      expect(S3Client).toHaveBeenNthCalledWith(1, {
         region: 'eu-west-1',
       });
     });
