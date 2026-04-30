@@ -47,6 +47,7 @@ import { AppVersionModule } from './app-version/app-version.module';
 import { VoicePreviewModule } from './voice-preview/voice-preview.module';
 import { AuditModule } from './audit/audit.module';
 import { CustomFieldsModule } from './custom-fields/custom-fields.module';
+import { DynamicI18nModule } from './dynamic-i18n/dynamic-i18n.module';
 
 @Module({
   imports: [
@@ -97,6 +98,7 @@ import { CustomFieldsModule } from './custom-fields/custom-fields.module';
     VoicePreviewModule,
     AuditModule,
     CustomFieldsModule,
+    DynamicI18nModule,
   ],
   controllers: [],
   providers: [

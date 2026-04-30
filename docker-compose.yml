@@ -5,12 +5,12 @@ services:
       dockerfile: Dockerfile.dev
     ports:
       # Map container port to host based on app PORT (.env). Default PORT=8001.
-      - "8001:8001"
+      - '8001:8001'
     env_file:
       - .env
     environment:
       # First-time dev: set AUTO_SEED=true in .env to run npm run seed after migrations, then set false.
-      AUTO_SEED: "${AUTO_SEED:-false}"
+      AUTO_SEED: '${AUTO_SEED:-false}'
       # Docker networking note:
       # Containers talk to each other via Docker DNS using service names, not localhost.
       # These values deliberately override any .env values to ensure the app connects
@@ -18,12 +18,12 @@ services:
       # - Inside Docker: use 'redis' and 'postgres' (service names)
       # - Outside Docker (local dev): you might use 'localhost' — keep that in .env only
       # Change only if you rename the services or run Redis/Postgres elsewhere.
-      REDIS_HOST: "redis"
-      REDIS_PORT: "6379"
-      DB_HOST: "postgres"
-      DB_PORT: "5432"
+      REDIS_HOST: 'redis'
+      REDIS_PORT: '6379'
+      DB_HOST: 'postgres'
+      DB_PORT: '5432'
       # When running inside docker-compose, point AWS/SQS endpoints to localstack service
-      AWS_ENDPOINT_URL: "http://localstack:4566"
+      AWS_ENDPOINT_URL: 'http://localstack:4566'
       # These SQS URLs use "http://localstack:4566" instead of the DNS-style regional
       # hostnames (e.g., sqs.us-east-1.localhost.localstack.cloud) because:
       #
@@ -41,11 +41,15 @@ services:
       #
       # This setup keeps the configuration simple, reliable inside Docker, and consistent with
       # how the AWS SDK resolves regions.
-      SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-request-queue"
-      SQS_TRANSCRIPTION_REQUEST_DLQ_URL: "http://localstack:4566/000000000000/sqs-ai-transcription-request-dlq"
-      SQS_AUDIO_FILE_RETRY_QUEUE_URL: "http://localstack:4566/000000000000/sqs-audio-file-retry-queue"
-      SQS_AUDIO_FILE_RETRY_DLQ_URL: "http://localstack:4566/000000000000/sqs-audio-file-retry-queue-dlq"
-      SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: "http://localstack:4566/000000000000/sqs-learn-message-and-event-queue"
+      SQS_TRANSCRIPTION_REQUEST_QUEUE_URL: 'http://localstack:4566/000000000000/sqs-ai-transcription-request-queue'
+      SQS_TRANSCRIPTION_REQUEST_DLQ_URL: 'http://localstack:4566/000000000000/sqs-ai-transcription-request-dlq'
+      SQS_AUDIO_FILE_RETRY_QUEUE_URL: 'http://localstack:4566/000000000000/sqs-audio-file-retry-queue'
+      SQS_AUDIO_FILE_RETRY_DLQ_URL: 'http://localstack:4566/000000000000/sqs-audio-file-retry-queue-dlq'
+      SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: 'http://localstack:4566/000000000000/sqs-learn-message-and-event-queue'
+      # Dynamic i18n: backend writes drafts/published versions here.
+      # Caddy on the host serves the same folder at https://locale.helloally.dev.
+      I18N_ROOT_DIR: '/var/www/i18n'
+      I18N_VERSION_RETENTION: '5'
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,10 +66,12 @@ services:
       - .:/app
       # 2) Keep container's node_modules (Linux) instead of host's
       - /app/node_modules
+      # 3) Persistent i18n storage shared with Caddy on the host
+      - /var/www/i18n:/var/www/i18n
   postgres:
     image: postgres:14-alpine
     ports:
-      - "5477:5432"
+      - '5477:5432'
     env_file:
       - docker.env
     volumes:
@@ -73,7 +79,7 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ally_local"]
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d ally_local']
       interval: 2s
       timeout: 5s
       retries: 10
@@ -82,7 +88,7 @@ services:
   redis:
     image: redis:latest
     ports:
-      - "6379:6379"
+      - '6379:6379'
     networks:
       - app-network
 
@@ -93,7 +99,7 @@ services:
     image: localstack/localstack:3.8.1
     container_name: localstack
     ports:
-      - "4566:4566"
+      - '4566:4566'
     env_file:
       - docker.env
     environment:
@@ -103,7 +109,7 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:4566/_localstack/health']
       interval: 10s
       timeout: 5s
       retries: 5

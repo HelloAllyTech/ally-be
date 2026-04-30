@@ -382,6 +382,17 @@ export class AppConfigService {
     };
   }
 
+  get i18n() {
+    return {
+      rootDir: this.configService.get<string>('I18N_ROOT_DIR', '/var/www/i18n'),
+      sourceDir: this.configService.get<string>('I18N_SOURCE_DIR'),
+      versionRetention: this.configService.get<number>(
+        'I18N_VERSION_RETENTION',
+        5,
+      ),
+    };
+  }
+
   get voicePreview() {
     return {
       deepgramApiKey: this.configService.get<string>('DEEPGRAM_API_KEY'),
