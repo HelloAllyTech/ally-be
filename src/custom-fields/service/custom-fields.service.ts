@@ -93,16 +93,18 @@ export class CustomFieldsService {
     const tenantId =
       await this.resolveTenantIdWithSystemCheck(overrideTenantId);
 
-    // Scope split: scribe-settings traffic (super admin path; identified by
-    // overrideTenantId being supplied) sees SUPER_ADMIN-managed definitions;
-    // in-app traffic (org admin / counsellor) sees ORG_ADMIN ones. The two
-    // surfaces never see each other's fields.
-    const scope = overrideTenantId
-      ? CustomFieldScope.SUPER_ADMIN
-      : CustomFieldScope.ORG_ADMIN;
-
+    // Scribe settings (super admin path; identified by overrideTenantId) sees
+    // only SUPER_ADMIN-scoped fields — those are what they manage there.
+    // The in-app path returns BOTH scopes: counsellors and admins need to see
+    // every field on the calls table and call-detail page so that values for
+    // super-admin-managed fields render too. The frontend hides SUPER_ADMIN
+    // entries from the in-app "Manage custom fields" dialog itself.
+    const where: Record<string, unknown> = { tenantId, isActive: true };
+    if (overrideTenantId) {
+      where.scope = CustomFieldScope.SUPER_ADMIN;
+    }
     return this.definitionRepo.find({
-      where: { tenantId, isActive: true, scope },
+      where,
       order: { displayOrder: 'ASC', createdAt: 'ASC' },
     });
   }
