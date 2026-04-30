@@ -66,8 +66,31 @@ export class CustomFieldsService {
     return tenantId;
   }
 
+  private async resolveTenantIdWithSystemCheck(
+    override?: string,
+  ): Promise<string> {
+    if (override) {
+      const userId = ExecutionManager.getUserId();
+      if (!userId) throw new BadRequestException('User ID is required');
+      const hasSystemAccess =
+        await this.permissionValidator.validatePermissions(parseInt(userId), [
+          PERMISSIONS.SYSTEM_ACCESS,
+        ]);
+      if (!hasSystemAccess) {
+        throw new ForbiddenException(
+          'You do not have permission to access another tenant',
+        );
+      }
+      return override;
+    }
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) throw new BadRequestException('Tenant ID is required');
+    return tenantId;
+  }
+
   async getDefinitions(overrideTenantId?: string) {
-    const tenantId = this.resolveTenantId(overrideTenantId);
+    const tenantId =
+      await this.resolveTenantIdWithSystemCheck(overrideTenantId);
 
     return this.definitionRepo.find({
       where: { tenantId, isActive: true },
@@ -86,7 +109,7 @@ export class CustomFieldsService {
 
   async createDefinition(dto: CreateCustomFieldDefinitionDto) {
     const { tenantId: dtoTenantId, ...fieldDto } = dto;
-    const tenantId = this.resolveTenantId(dtoTenantId);
+    const tenantId = await this.resolveTenantIdWithSystemCheck(dtoTenantId);
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
 
@@ -173,7 +196,7 @@ export class CustomFieldsService {
 
   async updateDefinition(id: string, dto: UpdateCustomFieldDefinitionDto) {
     const { tenantId: dtoTenantId, ...fieldDto } = dto;
-    const tenantId = this.resolveTenantId(dtoTenantId);
+    const tenantId = await this.resolveTenantIdWithSystemCheck(dtoTenantId);
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
 
@@ -214,7 +237,8 @@ export class CustomFieldsService {
   }
 
   async deleteDefinition(id: string, overrideTenantId?: string) {
-    const tenantId = this.resolveTenantId(overrideTenantId);
+    const tenantId =
+      await this.resolveTenantIdWithSystemCheck(overrideTenantId);
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
 
