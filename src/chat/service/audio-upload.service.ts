@@ -253,6 +253,7 @@ export class AudioUploadService {
         key: s3Key,
         operation: 'get',
         expiresIn: 3600, // 1 hour
+        audience: 'internal',
       });
 
       this.auditLogger.log({

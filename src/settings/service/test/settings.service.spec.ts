@@ -1204,6 +1204,15 @@ describe('SettingsService', () => {
       updatedAt: new Date(),
     };
 
+    // updateEnabledCustomFieldTypes requires SYSTEM_ACCESS permission. The
+    // outer beforeEach defaults SYSTEM_ACCESS to false (counselor role), so
+    // override it here to true for this block.
+    beforeEach(() => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+    });
+
     it('should update existing preference and return success', async () => {
       preferenceService.getPreference.mockResolvedValue(
         mockCustomFieldTypesPreference,

@@ -376,10 +376,12 @@ describe('MessageService', () => {
 
   describe('getChatHistoryForAIService', () => {
     it('should get chat history and transform to message requests', async () => {
+      // Non-anonymous senderId resolves to COUNSELOR — User entity has no
+      // role column, so we can't derive client/counselor from sender.role.
       const mockMessages = [
         {
           ...mockEncryptedMessage,
-          sender: { id: 100, role: UserRole.CLIENT },
+          sender: { id: 100 },
         },
       ];
       messageRepository.getChatHistoryQuery.mockResolvedValue(
@@ -395,7 +397,7 @@ describe('MessageService', () => {
       );
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
-        role: UserRole.CLIENT,
+        role: 'COUNSELOR',
         content: 'Test message',
         start_time: undefined,
         end_time: undefined,

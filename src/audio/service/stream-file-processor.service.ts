@@ -675,6 +675,7 @@ export class StreamFileProcessorService {
         bucket: this.config.s3.audioBucket!,
         key: activeCallStream.key,
         operation: 'get',
+        audience: 'internal',
       });
 
       this.auditLogger.log({

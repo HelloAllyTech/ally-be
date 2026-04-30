@@ -555,6 +555,17 @@ export class SettingsService {
     tenantId: string,
     enabled: boolean,
   ): Promise<{ success: boolean }> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    if (!hasSystemAccess) {
+      throw new ForbiddenException(
+        'Only system administrators can modify custom fields settings for a tenant',
+      );
+    }
     const resolvedId = await this.resolveTenantCode(tenantId);
     const existing = await this.preferenceService.getPreference(
       PreferenceName.CUSTOM_FIELDS_ENABLED,
@@ -579,6 +590,17 @@ export class SettingsService {
     tenantId: string,
     enabledTypes: string[],
   ): Promise<{ success: boolean }> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    if (!hasSystemAccess) {
+      throw new ForbiddenException(
+        'Only system administrators can modify custom field types for a tenant',
+      );
+    }
     const allTypes = Object.values(CustomFieldType);
     const invalid = enabledTypes.filter(
       (t) => !allTypes.includes(t as CustomFieldType),

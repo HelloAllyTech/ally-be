@@ -11,6 +11,7 @@ import {
   CustomFieldDefinition,
   CustomFieldEditPermission,
   CustomFieldFillMode,
+  CustomFieldScope,
   CustomFieldType,
 } from '../../entity/custom-field-definition.entity';
 import { ChatCustomFieldValue } from '../../entity/chat-custom-field-value.entity';
@@ -38,6 +39,7 @@ describe('CustomFieldsService', () => {
     sectionKey: 'intake',
     editPermission: CustomFieldEditPermission.BOTH,
     fillMode: CustomFieldFillMode.MANUAL,
+    scope: CustomFieldScope.ORG_ADMIN,
     displayOrder: 0,
     isActive: true,
     createdBy: 42,
@@ -119,16 +121,35 @@ describe('CustomFieldsService', () => {
   // ─── getDefinitions ───────────────────────────────────────────────────────
 
   describe('getDefinitions', () => {
-    it('should return active definitions ordered by displayOrder', async () => {
+    it('should return all definitions on the in-app path (no scope filter)', async () => {
       definitionRepo.find.mockResolvedValue([mockDefinition]);
 
       const result = await service.getDefinitions();
 
       expect(definitionRepo.find).toHaveBeenCalledWith({
-        where: { tenantId: mockTenantId, isActive: true },
+        where: {
+          tenantId: mockTenantId,
+          isActive: true,
+        },
         order: { displayOrder: 'ASC', createdAt: 'ASC' },
       });
       expect(result).toEqual([mockDefinition]);
+    });
+
+    it('should return only SUPER_ADMIN-scoped definitions on the scribe-settings path', async () => {
+      permissionValidator.validatePermissions.mockResolvedValue(true);
+      definitionRepo.find.mockResolvedValue([mockDefinition]);
+
+      await service.getDefinitions(mockTenantId);
+
+      expect(definitionRepo.find).toHaveBeenCalledWith({
+        where: {
+          tenantId: mockTenantId,
+          isActive: true,
+          scope: CustomFieldScope.SUPER_ADMIN,
+        },
+        order: { displayOrder: 'ASC', createdAt: 'ASC' },
+      });
     });
 
     it('should throw BadRequestException when tenantId is missing', async () => {
@@ -285,6 +306,29 @@ describe('CustomFieldsService', () => {
         service.createDefinition({ ...baseDto, name: 'Test Field' }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('should mark in-app definitions as ORG_ADMIN scope', async () => {
+      definitionRepo.create.mockReturnValue(mockDefinition);
+      definitionRepo.save.mockResolvedValue(mockDefinition);
+
+      await service.createDefinition(baseDto);
+
+      expect(definitionRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: CustomFieldScope.ORG_ADMIN }),
+      );
+    });
+
+    it('should mark scribe-settings definitions as SUPER_ADMIN scope', async () => {
+      permissionValidator.validatePermissions.mockResolvedValue(true);
+      definitionRepo.create.mockReturnValue(mockDefinition);
+      definitionRepo.save.mockResolvedValue(mockDefinition);
+
+      await service.createDefinition({ ...baseDto, tenantId: mockTenantId });
+
+      expect(definitionRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: CustomFieldScope.SUPER_ADMIN }),
+      );
+    });
   });
 
   // ─── updateDefinition ────────────────────────────────────────────────────
@@ -346,6 +390,32 @@ describe('CustomFieldsService', () => {
         service.updateDefinition(mockDefinitionId, { name: 'Counsellor' }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('should reject editing a SUPER_ADMIN definition via the in-app path', async () => {
+      definitionRepo.findOne.mockResolvedValue({
+        ...mockDefinition,
+        scope: CustomFieldScope.SUPER_ADMIN,
+      });
+
+      await expect(
+        service.updateDefinition(mockDefinitionId, { name: 'X' }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should reject editing an ORG_ADMIN definition via the scribe-settings path', async () => {
+      permissionValidator.validatePermissions.mockResolvedValue(true);
+      definitionRepo.findOne.mockResolvedValue({
+        ...mockDefinition,
+        scope: CustomFieldScope.ORG_ADMIN,
+      });
+
+      await expect(
+        service.updateDefinition(mockDefinitionId, {
+          tenantId: mockTenantId,
+          name: 'X',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   // ─── deleteDefinition ────────────────────────────────────────────────────
@@ -377,6 +447,17 @@ describe('CustomFieldsService', () => {
 
       await expect(service.deleteDefinition(mockDefinitionId)).rejects.toThrow(
         BadRequestException,
+      );
+    });
+
+    it('should reject deleting a SUPER_ADMIN definition via the in-app path', async () => {
+      definitionRepo.findOne.mockResolvedValue({
+        ...mockDefinition,
+        scope: CustomFieldScope.SUPER_ADMIN,
+      });
+
+      await expect(service.deleteDefinition(mockDefinitionId)).rejects.toThrow(
+        ForbiddenException,
       );
     });
   });

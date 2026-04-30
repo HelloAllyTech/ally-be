@@ -11,6 +11,7 @@ import {
   CustomFieldDefinition,
   CustomFieldEditPermission,
   CustomFieldFillMode,
+  CustomFieldScope,
   CustomFieldType,
 } from '../entity/custom-field-definition.entity';
 import { ChatCustomFieldValue } from '../entity/chat-custom-field-value.entity';
@@ -66,11 +67,44 @@ export class CustomFieldsService {
     return tenantId;
   }
 
-  async getDefinitions(overrideTenantId?: string) {
-    const tenantId = this.resolveTenantId(overrideTenantId);
+  private async resolveTenantIdWithSystemCheck(
+    override?: string,
+  ): Promise<string> {
+    if (override) {
+      const userId = ExecutionManager.getUserId();
+      if (!userId) throw new BadRequestException('User ID is required');
+      const hasSystemAccess =
+        await this.permissionValidator.validatePermissions(parseInt(userId), [
+          PERMISSIONS.SYSTEM_ACCESS,
+        ]);
+      if (!hasSystemAccess) {
+        throw new ForbiddenException(
+          'You do not have permission to access another tenant',
+        );
+      }
+      return override;
+    }
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) throw new BadRequestException('Tenant ID is required');
+    return tenantId;
+  }
 
+  async getDefinitions(overrideTenantId?: string) {
+    const tenantId =
+      await this.resolveTenantIdWithSystemCheck(overrideTenantId);
+
+    // Scribe settings (super admin path; identified by overrideTenantId) sees
+    // only SUPER_ADMIN-scoped fields — those are what they manage there.
+    // The in-app path returns BOTH scopes: counsellors and admins need to see
+    // every field on the calls table and call-detail page so that values for
+    // super-admin-managed fields render too. The frontend hides SUPER_ADMIN
+    // entries from the in-app "Manage custom fields" dialog itself.
+    const where: Record<string, unknown> = { tenantId, isActive: true };
+    if (overrideTenantId) {
+      where.scope = CustomFieldScope.SUPER_ADMIN;
+    }
     return this.definitionRepo.find({
-      where: { tenantId, isActive: true },
+      where,
       order: { displayOrder: 'ASC', createdAt: 'ASC' },
     });
   }
@@ -86,7 +120,7 @@ export class CustomFieldsService {
 
   async createDefinition(dto: CreateCustomFieldDefinitionDto) {
     const { tenantId: dtoTenantId, ...fieldDto } = dto;
-    const tenantId = this.resolveTenantId(dtoTenantId);
+    const tenantId = await this.resolveTenantIdWithSystemCheck(dtoTenantId);
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
 
@@ -135,6 +169,12 @@ export class CustomFieldsService {
           ? fieldDto.options
           : undefined,
       displayOrder: fieldDto.displayOrder ?? 0,
+      // An explicit dtoTenantId means the caller went through the super-admin
+      // override path (validated above) — that's the scribe-settings flow.
+      // Without it we're on the in-app tenant-scoped flow.
+      scope: dtoTenantId
+        ? CustomFieldScope.SUPER_ADMIN
+        : CustomFieldScope.ORG_ADMIN,
       tenantId,
       createdBy: parseInt(userId),
       updatedBy: parseInt(userId),
@@ -173,7 +213,7 @@ export class CustomFieldsService {
 
   async updateDefinition(id: string, dto: UpdateCustomFieldDefinitionDto) {
     const { tenantId: dtoTenantId, ...fieldDto } = dto;
-    const tenantId = this.resolveTenantId(dtoTenantId);
+    const tenantId = await this.resolveTenantIdWithSystemCheck(dtoTenantId);
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
 
@@ -181,6 +221,8 @@ export class CustomFieldsService {
       where: { id, tenantId },
     });
     if (!definition) throw new NotFoundException('Custom field not found');
+
+    this.assertScopeMatchesPath(definition, dtoTenantId);
 
     if (
       fieldDto.name &&
@@ -213,8 +255,30 @@ export class CustomFieldsService {
     return this.definitionRepo.save(definition);
   }
 
+  /**
+   * Reject cross-scope writes: a SUPER_ADMIN definition can only be edited
+   * via the super-admin path (caller supplies an overrideTenantId), and an
+   * ORG_ADMIN definition only via the in-app path (no overrideTenantId).
+   */
+  private assertScopeMatchesPath(
+    definition: CustomFieldDefinition,
+    overrideTenantId: string | undefined,
+  ): void {
+    const callerScope = overrideTenantId
+      ? CustomFieldScope.SUPER_ADMIN
+      : CustomFieldScope.ORG_ADMIN;
+    if (definition.scope !== callerScope) {
+      throw new ForbiddenException(
+        definition.scope === CustomFieldScope.SUPER_ADMIN
+          ? 'This custom field is managed by the super admin in scribe settings'
+          : 'This custom field is managed in the organization settings',
+      );
+    }
+  }
+
   async deleteDefinition(id: string, overrideTenantId?: string) {
-    const tenantId = this.resolveTenantId(overrideTenantId);
+    const tenantId =
+      await this.resolveTenantIdWithSystemCheck(overrideTenantId);
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
 
@@ -222,6 +286,8 @@ export class CustomFieldsService {
       where: { id, tenantId },
     });
     if (!definition) throw new NotFoundException('Custom field not found');
+
+    this.assertScopeMatchesPath(definition, overrideTenantId);
 
     definition.isActive = false;
     definition.updatedBy = parseInt(userId);
