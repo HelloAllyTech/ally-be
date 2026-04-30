@@ -2,14 +2,18 @@ import { DataSource } from 'typeorm';
 import { User } from '../../../user/entity/user.entity';
 import { Group } from '../../../authorization/entity/group.entity';
 import { UserGroup } from '../../../authorization/entity/user-group.entity';
+import { AdminTenant } from '../../../user/entity/admin-tenant.entity';
+import { Tenant } from '../../../tenant/entity/tenant.entity';
+import { UserRole } from '../../../common/constants/user.constants';
 import { getRepo, hashPassword, log, upsert } from '../helpers';
 import { users, defaults } from '../fixtures';
-import { DEFAULT_PASSWORD, TENANT_CODE } from '../config';
+import { DEFAULT_PASSWORD } from '../config';
 
-export async function seedUsers(ds: DataSource): Promise<void> {
+export async function seedUsers(ds: DataSource, tenant: Tenant): Promise<void> {
   const userRepo = getRepo(ds, User);
   const groupRepo = getRepo(ds, Group);
   const userGroupRepo = getRepo(ds, UserGroup);
+  const adminTenantRepo = getRepo(ds, AdminTenant);
 
   const groups = await groupRepo.find();
   const groupIdByName = new Map(groups.map((g) => [g.name, g.id]));
@@ -25,7 +29,7 @@ export async function seedUsers(ds: DataSource): Promise<void> {
         username: fixture.email,
         password: hashedPassword,
         status: defaults.userStatus,
-        tenantId: TENANT_CODE,
+        tenantId: tenant.id,
         termsAndAgreementApproved: true,
         termsAndAgreementApprovedAt: new Date(),
       },
@@ -42,6 +46,21 @@ export async function seedUsers(ds: DataSource): Promise<void> {
         { userId: user.id, groupId },
         { userId: user.id, groupId },
       );
+    }
+
+    if (fixture.roles.includes(UserRole.MULTI_TENANT_ADMIN)) {
+      const existing = await adminTenantRepo.findOne({
+        where: { userId: user.id, tenantId: tenant.id },
+        withDeleted: true,
+      });
+      if (!existing) {
+        await adminTenantRepo.save({ userId: user.id, tenantId: tenant.id });
+      } else if (existing.deletedAt) {
+        await adminTenantRepo.update(
+          { id: existing.id },
+          { deletedAt: null as unknown as Date },
+        );
+      }
     }
 
     log(`user ${user.email} (id=${user.id}, roles=${fixture.roles.join(',')})`);

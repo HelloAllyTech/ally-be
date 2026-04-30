@@ -9,6 +9,7 @@ import { DB } from './config';
 
 import { Tenant } from '../../tenant/entity/tenant.entity';
 import { User } from '../../user/entity/user.entity';
+import { AdminTenant } from '../../user/entity/admin-tenant.entity';
 import { Group } from '../../authorization/entity/group.entity';
 import { UserGroup } from '../../authorization/entity/user-group.entity';
 import { Scenarios } from '../../learn/entity/scenarios.entity';
@@ -31,6 +32,7 @@ import { CaseTenant } from '../../case/entity/case-tenant.entity';
 export const SEED_ENTITIES = [
   Tenant,
   User,
+  AdminTenant,
   Group,
   UserGroup,
   Scenarios,
