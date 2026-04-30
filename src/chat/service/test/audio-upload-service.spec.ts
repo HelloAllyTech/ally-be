@@ -299,6 +299,7 @@ describe('AudioUploadService', () => {
         key: s3Key,
         operation: 'get',
         expiresIn: 3600,
+        audience: 'internal',
       });
       expect(aiEventService.publishTranscribeAudioEvent).toHaveBeenCalledWith({
         message_type: 'transcribe_and_summarize_request',

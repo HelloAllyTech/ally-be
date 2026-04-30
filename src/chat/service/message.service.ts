@@ -140,10 +140,11 @@ export class MessageService {
 
     const messageRequests: MessageRequest[] = decryptedMessages.map(
       (message: any) => ({
-        role:
-          message.senderId === ANONYMOUS_CLIENT_ID
-            ? 'CLIENT'
-            : message.sender?.role,
+        // Sender role on the User entity doesn't exist as a column (roles are
+        // resolved via UserGroup), so we can't read it from the join. In the
+        // scribe/audio flow there are only two participants — anonymous client
+        // and counselor — so any non-anonymous senderId is the counselor.
+        role: message.senderId === ANONYMOUS_CLIENT_ID ? 'CLIENT' : 'COUNSELOR',
         content: message.content,
         start_time: message.startSeconds,
         end_time: message.endSeconds,

@@ -24,6 +24,13 @@ services:
       DB_PORT: "5432"
       # When running inside docker-compose, point AWS/SQS endpoints to localstack service
       AWS_ENDPOINT_URL: "http://localstack:4566"
+      # Presigned URLs are returned to the browser, which can't resolve "localstack".
+      # Override only the S3 presign endpoint to a host-reachable URL.
+      AWS_S3_PRESIGN_ENDPOINT_URL: "http://localhost:4566"
+      # Presigned URLs forwarded to other containers (e.g. ally-ai via SQS) need
+      # a hostname those containers can resolve. host.docker.internal works from
+      # any container on Docker Desktop and is also reachable from this one.
+      AWS_S3_INTERNAL_PRESIGN_ENDPOINT_URL: "http://host.docker.internal:4566"
       # These SQS URLs use "http://localstack:4566" instead of the DNS-style regional
       # hostnames (e.g., sqs.us-east-1.localhost.localstack.cloud) because:
       #
@@ -97,7 +104,7 @@ services:
     env_file:
       - docker.env
     environment:
-      - SERVICES=sqs
+      - SERVICES=sqs,s3
       - DEBUG=1
       - LOCALSTACK_HOSTNAME=localstack
     networks:
@@ -121,6 +128,13 @@ services:
       sh -c "
         echo '🚀 Waiting for LocalStack...' &&
         sleep 5 &&
+        echo '🪣 Creating S3 buckets...' &&
+        aws --endpoint-url=http://localstack:4566 s3 mb s3://audio-storage-s3-bucket || true &&
+        aws --endpoint-url=http://localstack:4566 s3 mb s3://learn-media-public-s3-bucket || true &&
+        aws --endpoint-url=http://localstack:4566 s3 mb s3://s3_bucket || true &&
+        aws --endpoint-url=http://localstack:4566 s3 mb s3://local-dev-scenario-session-audio || true &&
+        echo '🔓 Configuring bucket CORS for browser uploads...' &&
+        for B in audio-storage-s3-bucket learn-media-public-s3-bucket local-dev-scenario-session-audio; do aws --endpoint-url=http://localstack:4566 s3api put-bucket-cors --bucket $$B --cors-configuration '{\"CORSRules\":[{\"AllowedOrigins\":[\"*\"],\"AllowedMethods\":[\"GET\",\"PUT\",\"POST\",\"HEAD\",\"DELETE\"],\"AllowedHeaders\":[\"*\"],\"ExposeHeaders\":[\"ETag\"],\"MaxAgeSeconds\":3000}]}' || true; done &&
         echo '📦 Creating SQS queues...' &&
         aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-request-queue &&
         aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name sqs-ai-transcription-response-queue &&
