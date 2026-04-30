@@ -21,6 +21,18 @@ export enum CustomFieldFillMode {
   AI = 'AI',
 }
 
+/**
+ * Who owns this custom field definition.
+ * - SUPER_ADMIN: created from the scribe-settings flow (super admin tenant
+ *   override); only super admins can manage it.
+ * - ORG_ADMIN: created from the in-app "manage custom fields" flow within a
+ *   tenant; the org admin / counsellor manages it.
+ */
+export enum CustomFieldScope {
+  SUPER_ADMIN = 'SUPER_ADMIN',
+  ORG_ADMIN = 'ORG_ADMIN',
+}
+
 export interface SingleSelectOption {
   id: string;
   label: string;
@@ -61,6 +73,13 @@ export class CustomFieldDefinition extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   aiInstruction?: string;
+
+  @Column({
+    type: 'enum',
+    enum: CustomFieldScope,
+    default: CustomFieldScope.ORG_ADMIN,
+  })
+  scope!: CustomFieldScope;
 
   @Column({ default: 0 })
   displayOrder!: number;
