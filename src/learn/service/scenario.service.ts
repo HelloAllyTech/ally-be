@@ -893,8 +893,12 @@ export class ScenarioService {
       return;
     }
 
-    const languageIds = Object.keys(languageVoices)
-      .map((id) => parseInt(id, 10))
+    const languageIds = Object.entries(languageVoices)
+      .filter(
+        ([, voiceId]) =>
+          typeof voiceId === 'string' && voiceId.trim().length > 0,
+      )
+      .map(([id]) => parseInt(id, 10))
       .filter((id) => !Number.isNaN(id));
 
     if (languageIds.length === 0) {
