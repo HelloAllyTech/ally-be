@@ -155,6 +155,7 @@ describe('ScenarioSharedService', () => {
       getValidLanguages: jest.fn(),
       getLanguagesByIds: jest.fn(),
       getLanguageByLanguageCode: jest.fn(),
+      getLanguageByValue: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -576,7 +577,7 @@ describe('ScenarioSharedService', () => {
   describe('getLanguageDetailsForScenarioSession', () => {
     it('should return enLanguageDetails and null languageDetails when languageId is undefined', async () => {
       const enDetails = { id: 1, value: 'en' };
-      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(
+      sharedLanguageService.getLanguageByValue.mockResolvedValue(
         enDetails as any,
       );
 
@@ -593,7 +594,7 @@ describe('ScenarioSharedService', () => {
     it('should return languageDetails when languageId provided and found', async () => {
       const enDetails = { id: 1, value: 'en' };
       const langDetails = { id: 2, value: 'es-ES' };
-      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(
+      sharedLanguageService.getLanguageByValue.mockResolvedValue(
         enDetails as any,
       );
       sharedLanguageService.getLanguagesByIds.mockResolvedValue([
@@ -609,7 +610,7 @@ describe('ScenarioSharedService', () => {
 
     it('should return null languageDetails when getLanguagesByIds returns empty', async () => {
       const enDetails = { id: 1, value: 'en' };
-      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(
+      sharedLanguageService.getLanguageByValue.mockResolvedValue(
         enDetails as any,
       );
       sharedLanguageService.getLanguagesByIds.mockResolvedValue([]);
@@ -647,7 +648,7 @@ describe('ScenarioSharedService', () => {
       sessionEventSharedService.findSessionEventById
         .mockResolvedValueOnce({ id: 'evt-1', name: 'Termination 1' } as any)
         .mockResolvedValueOnce({ id: 'evt-2', name: 'Termination 2' } as any);
-      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue({
+      sharedLanguageService.getLanguageByValue.mockResolvedValue({
         id: 1,
       } as any);
 
@@ -673,7 +674,7 @@ describe('ScenarioSharedService', () => {
       scenariosRepository.getAdminScenarioById.mockResolvedValue(
         scenarioResult as any,
       );
-      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(null);
+      sharedLanguageService.getLanguageByValue.mockResolvedValue(null);
 
       const result = await service.getAdminScenario(1);
 
@@ -705,7 +706,7 @@ describe('ScenarioSharedService', () => {
           },
         ] as any,
       );
-      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue({
+      sharedLanguageService.getLanguageByValue.mockResolvedValue({
         id: 1,
       } as any);
 
@@ -757,7 +758,7 @@ describe('ScenarioSharedService', () => {
       const roomMetadata = { version: '1.0', scenario: {} };
 
       scenariosRepository.getAdminScenarioById.mockResolvedValue(scenario);
-      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(
+      sharedLanguageService.getLanguageByValue.mockResolvedValue(
         enDetails as any,
       );
       sharedLanguageService.getLanguagesByIds.mockResolvedValue([
@@ -795,7 +796,7 @@ describe('ScenarioSharedService', () => {
       const roomMetadata = { version: '1.0', scenario: {} };
 
       scenariosRepository.getAdminScenarioById.mockResolvedValue(scenario);
-      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(
+      sharedLanguageService.getLanguageByValue.mockResolvedValue(
         enDetails as any,
       );
       sharedLanguageService.getLanguagesByIds.mockResolvedValue([
@@ -841,7 +842,7 @@ describe('ScenarioSharedService', () => {
       scenariosRepository.getAdminScenarioById.mockResolvedValue({
         ...scenario,
       });
-      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(
+      sharedLanguageService.getLanguageByValue.mockResolvedValue(
         enDetails as any,
       );
       sharedLanguageService.getLanguagesByIds.mockResolvedValue([
@@ -884,7 +885,7 @@ describe('ScenarioSharedService', () => {
         [],
       );
       scenariosRepository.getAdminScenarioById.mockResolvedValue(scenario);
-      sharedLanguageService.getLanguageByLanguageCode.mockResolvedValue(
+      sharedLanguageService.getLanguageByValue.mockResolvedValue(
         enDetails as any,
       );
       sharedLanguageService.getLanguagesByIds.mockResolvedValue([

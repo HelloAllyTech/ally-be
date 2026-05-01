@@ -20,6 +20,10 @@ export class LanguagesRepository extends Repository<Languages> {
     return this.findOne({ where: { translationCode: languageCode } });
   }
 
+  getLanguageByValue(value: string): Promise<Languages | null> {
+    return this.findOne({ where: { value } });
+  }
+
   getLanguages(
     searchName?: string,
     options?: Pagination,

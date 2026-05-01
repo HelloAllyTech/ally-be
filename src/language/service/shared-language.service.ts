@@ -41,6 +41,10 @@ export class SharedLanguageService {
     return this.languagesRepository.getLanguageByLanguageCode(languageCode);
   }
 
+  async getLanguageByValue(value: string): Promise<Languages | null> {
+    return this.languagesRepository.getLanguageByValue(value);
+  }
+
   async getValidLanguageCodes(languageIds: number[]) {
     const { languages } = await this.getValidLanguages(languageIds);
 

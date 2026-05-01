@@ -28,6 +28,7 @@ import {
   ScenarioDifficultyLevel,
 } from '../type/scenario.type';
 import { LanguageCode } from '../type/scenario-language-voice.type';
+import { LanguageCode as LanguageValueCode } from '../enum/scenario-language';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { ScenarioVoices } from '../entity/scenario-voices.entity';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
@@ -36,7 +37,6 @@ import { extractEventIds } from 'src/session-event/util/session-event.util';
 import { MAX_COMBINATION_EVENT_DEPTH } from 'src/session-event/constants/event.constant';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { DEFAULT_LANGUAGE_CODE } from 'src/language/constants/language.constant';
-import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from '../constants/scenario-session.constants';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
 import { ScenarioBehaviorInstructionRepository } from '../repository/scenario-behavior-instruction.repository';
 import { ScenarioBehaviorInstructionBehaviorRepository } from '../repository/scenario-behavior-instruction-behavior.repository';
@@ -661,9 +661,14 @@ export class ScenarioSharedService {
   }
 
   async getLanguageDetailsForScenarioSession(languageId: number | undefined) {
+    // Pin the canonical English row to en-IN by `value` (unique). Looking up
+    // by translationCode='en' is ambiguous now that en-IN, en-GB, and en-US
+    // all share that code — Postgres heap order would decide the winner and
+    // mis-classify en-IN sessions as "non-English" when the wrong row is
+    // returned.
     const enLanguageDetails =
-      await this.sharedLanguageService.getLanguageByLanguageCode(
-        DEFAULT_LANGUAGE_CODE,
+      await this.sharedLanguageService.getLanguageByValue(
+        LanguageValueCode.EN_IN,
       );
 
     if (!languageId) {
@@ -750,10 +755,15 @@ export class ScenarioSharedService {
     if (metadata?.defaultLanguageId != null) {
       return Number(metadata.defaultLanguageId);
     }
-    const en = await this.sharedLanguageService.getLanguageByLanguageCode(
-      DEFAULT_LANGUAGE_TRANSLATION_CODE,
+    // Old scenarios (no defaultLanguageId in metadata) had their primary
+    // openingStatements authored under English (India). Pin the fallback to
+    // en-IN by `value` — looking up by translationCode='en' is ambiguous now
+    // that en-IN, en-GB, and en-US all share that code, and which row wins
+    // depends on Postgres heap order.
+    const enIn = await this.sharedLanguageService.getLanguageByValue(
+      LanguageValueCode.EN_IN,
     );
-    return en?.id ?? null;
+    return enIn?.id ?? null;
   }
 
   /**
