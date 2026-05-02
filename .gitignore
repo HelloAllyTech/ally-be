@@ -36,5 +36,22 @@ lerna-debug.log*
 
 # Environment variables
 .env
+.env.local
+.env.production
+.env.staging
+.env.development
 docker.env
 gcloud/
+
+# Secrets / certs / dumps (never commit)
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.dump
+*.sql
+*.swp
+scan_report.*
+.secrets/

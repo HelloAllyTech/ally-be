@@ -1,0 +1,44 @@
+title = "HelloAllyTech gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "aws-subnet-id"
+description = "Hardcoded AWS subnet ID"
+regex = '''subnet-[0-9a-f]{8,17}'''
+tags = ["aws", "infra"]
+
+[[rules]]
+id = "aws-security-group-id"
+description = "Hardcoded AWS security group ID"
+regex = '''sg-[0-9a-f]{8,17}'''
+tags = ["aws", "infra"]
+
+[[rules]]
+id = "aws-vpc-id"
+description = "Hardcoded AWS VPC ID"
+regex = '''vpc-[0-9a-f]{8,17}'''
+tags = ["aws", "infra"]
+
+[[rules]]
+id = "internal-domain"
+description = "Internal HelloAllyTech infra domain"
+regex = '''(?i)(clawstation\.ai|helloally\.dev|dm\.helloally|app01\.|infra01\.)'''
+tags = ["infra"]
+
+[allowlist]
+description = "Known false positives and placeholders"
+paths = [
+  '''(?i)(^|/)\.env\.example$''',
+  '''(?i)(^|/)env_sample$''',
+  '''(?i)(^|/)\.gitleaks\.toml$''',
+  '''(?i)(^|/)pre-commit-config\.yaml$''',
+  '''(?i)(^|/)pull_request_template\.md$''',
+]
+regexes = [
+  '''your_[A-Za-z0-9_]+_here''',
+  '''your-[A-Za-z0-9-]+-name''',
+  '''scenario-\d+''',
+  '''ya29\.a0AfH6SMBxxxx''',
+]

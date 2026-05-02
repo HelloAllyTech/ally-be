@@ -153,8 +153,8 @@ jobs:
           echo "ECR_REPOSITORY=PRD_ECR_REPOSITORY" >> $GITHUB_OUTPUT
           echo "PROJECT_PREFIX=ally-prd" >> $GITHUB_OUTPUT
           echo "PROJECT_REGION=mb" >> $GITHUB_OUTPUT
-          echo "SUBNETS=[\"subnet-0803b15022d8454d1\", \"subnet-0a9aebefcd504a6eb\"]" >> $GITHUB_OUTPUT
-          echo "SECURITY_GROUPS=[\"sg-0802e74f0bf59122d\"]" >> $GITHUB_OUTPUT
+          echo "SUBNETS=${{ vars.PRD_SUBNETS }}" >> $GITHUB_OUTPUT
+          echo "SECURITY_GROUPS=${{ vars.PRD_SECURITY_GROUPS }}" >> $GITHUB_OUTPUT
           echo "ENV=$ENV" >> $GITHUB_OUTPUT
           echo ":rocket: Environment - $ENV" >> $GITHUB_STEP_SUMMARY
           
