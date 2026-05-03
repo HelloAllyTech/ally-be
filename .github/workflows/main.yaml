@@ -80,8 +80,8 @@ jobs:
             echo "ECR_REPOSITORY=PRD_ECR_REPOSITORY" >> $GITHUB_OUTPUT
             echo "PROJECT_PREFIX=ally-prd" >> $GITHUB_OUTPUT
             echo "PROJECT_REGION=mb" >> $GITHUB_OUTPUT
-            echo "SUBNETS=${{ vars.PRD_SUBNETS }}" >> $GITHUB_OUTPUT
-            echo "SECURITY_GROUPS=${{ vars.PRD_SECURITY_GROUPS }}" >> $GITHUB_OUTPUT
+            echo "SUBNETS=${{ secrets.PRD_SUBNETS }}" >> $GITHUB_OUTPUT
+            echo "SECURITY_GROUPS=${{ secrets.PRD_SECURITY_GROUPS }}" >> $GITHUB_OUTPUT
           elif [ $ENV == 'stg' ]
           then
             echo "AWS_ROLE=STG_AWS_ROLE" >> $GITHUB_OUTPUT
@@ -89,8 +89,8 @@ jobs:
             echo "ECR_REPOSITORY=STG_ECR_REPOSITORY" >> $GITHUB_OUTPUT
             echo "PROJECT_PREFIX=life-stg" >> $GITHUB_OUTPUT
             echo "PROJECT_REGION=mb" >> $GITHUB_OUTPUT
-            echo "SUBNETS=${{ vars.STG_SUBNETS }}" >> $GITHUB_OUTPUT
-            echo "SECURITY_GROUPS=${{ vars.STG_SECURITY_GROUPS }}" >> $GITHUB_OUTPUT
+            echo "SUBNETS=${{ secrets.STG_SUBNETS }}" >> $GITHUB_OUTPUT
+            echo "SECURITY_GROUPS=${{ secrets.STG_SECURITY_GROUPS }}" >> $GITHUB_OUTPUT
           elif [ $ENV == 'dev' ]
           then
             echo "AWS_ROLE=DEV_AWS_ROLE" >> $GITHUB_OUTPUT
@@ -98,8 +98,8 @@ jobs:
             echo "ECR_REPOSITORY=DEV_ECR_REPOSITORY" >> $GITHUB_OUTPUT
             echo "PROJECT_PREFIX=ally-dev" >> $GITHUB_OUTPUT
             echo "PROJECT_REGION=sg" >> $GITHUB_OUTPUT
-            echo "SUBNETS=${{ vars.DEV_SUBNETS }}" >> $GITHUB_OUTPUT
-            echo "SECURITY_GROUPS=${{ vars.DEV_SECURITY_GROUPS }}" >> $GITHUB_OUTPUT
+            echo "SUBNETS=${{ secrets.DEV_SUBNETS }}" >> $GITHUB_OUTPUT
+            echo "SECURITY_GROUPS=${{ secrets.DEV_SECURITY_GROUPS }}" >> $GITHUB_OUTPUT
           else
             echo "Branch not configured!"
             exit 1
@@ -159,7 +159,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars[env.AWS_ROLE] }}
+          role-to-assume: ${{ secrets[env.AWS_ROLE] }}
           aws-region: ${{ vars[env.AWS_REGION] }}
 
       - name: Login to Amazon ECR
@@ -196,12 +196,12 @@ jobs:
       - name: Build and Push Docker image
         id: build-push
         run: |
-          echo ${{ vars[env.ECR_REPOSITORY] }}
+          echo ${{ secrets[env.ECR_REPOSITORY] }}
           ECR_IMAGE_TAG="${ECR_IMAGE}:${GITHUB_SHA::7}-$GITHUB_RUN_NUMBER"
           docker build -t $ECR_IMAGE_TAG .
-          docker tag $ECR_IMAGE_TAG ${{ vars[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG
-          docker push ${{ vars[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG
-          echo "APP_IMAGE=${{ vars[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker tag $ECR_IMAGE_TAG ${{ secrets[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG
+          docker push ${{ secrets[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG
+          echo "APP_IMAGE=${{ secrets[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG" >> $GITHUB_OUTPUT
 
   run-db-migration:
     name: Run the DB migration
@@ -226,7 +226,7 @@ jobs:
         uses: ./.github/actions/run-migration
         with:
           aws-region: ${{ vars[env.AWS_REGION] }}
-          aws-role: ${{ vars[env.AWS_ROLE] }}
+          aws-role: ${{ secrets[env.AWS_ROLE] }}
           task-definition: "${{ needs.prepare-env.outputs.TASK_DEFINITION }}-dbmigrate"
           container-name: "${{ needs.prepare-env.outputs.CONTAINER_NAME }}-dbmigrate"
           ecs-cluster: ${{ needs.prepare-env.outputs.ECS_CLUSTER }}
@@ -253,14 +253,14 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars[env.AWS_ROLE] }}
+          role-to-assume: ${{ secrets[env.AWS_ROLE] }}
           aws-region: ${{ vars[env.AWS_REGION] }}
 
       - name: Update ECS Task Definition
         run: |
           ECR_IMAGE_TAG="${ECR_IMAGE}:${GITHUB_SHA::7}-$GITHUB_RUN_NUMBER"
           TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition "${TASK_DEFINITION}")
-          echo "$TASK_DEFINITION" | jq --arg IMAGE "${{ vars[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG" \
+          echo "$TASK_DEFINITION" | jq --arg IMAGE "${{ secrets[env.ECR_REPOSITORY] }}/$ECR_IMAGE_TAG" \
             '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > taskDefinition.json
       - name: Deploy to Amazon ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2

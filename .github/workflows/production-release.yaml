@@ -153,8 +153,8 @@ jobs:
           echo "ECR_REPOSITORY=PRD_ECR_REPOSITORY" >> $GITHUB_OUTPUT
           echo "PROJECT_PREFIX=ally-prd" >> $GITHUB_OUTPUT
           echo "PROJECT_REGION=mb" >> $GITHUB_OUTPUT
-          echo "SUBNETS=${{ vars.PRD_SUBNETS }}" >> $GITHUB_OUTPUT
-          echo "SECURITY_GROUPS=${{ vars.PRD_SECURITY_GROUPS }}" >> $GITHUB_OUTPUT
+          echo "SUBNETS=${{ secrets.PRD_SUBNETS }}" >> $GITHUB_OUTPUT
+          echo "SECURITY_GROUPS=${{ secrets.PRD_SECURITY_GROUPS }}" >> $GITHUB_OUTPUT
           echo "ENV=$ENV" >> $GITHUB_OUTPUT
           echo ":rocket: Environment - $ENV" >> $GITHUB_STEP_SUMMARY
           
@@ -220,7 +220,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars[env.AWS_ROLE] }}
+          role-to-assume: ${{ secrets[env.AWS_ROLE] }}
           aws-region: ${{ vars[env.AWS_REGION] }}
 
       - name: Login to Amazon ECR
@@ -247,7 +247,7 @@ jobs:
           docker build -t $ECR_IMAGE .
           
           # Tag with multiple version tags
-          ECR_REPO=${{ vars[env.ECR_REPOSITORY] }}
+          ECR_REPO=${{ secrets[env.ECR_REPOSITORY] }}
           docker tag $ECR_IMAGE $ECR_REPO/$ECR_IMAGE:$VERSION
           docker tag $ECR_IMAGE $ECR_REPO/$ECR_IMAGE:$MAJOR.$MINOR
           docker tag $ECR_IMAGE $ECR_REPO/$ECR_IMAGE:$MAJOR
@@ -296,7 +296,7 @@ jobs:
         uses: ./.github/actions/run-migration
         with:
           aws-region: ${{ vars[env.AWS_REGION] }}
-          aws-role: ${{ vars[env.AWS_ROLE] }}
+          aws-role: ${{ secrets[env.AWS_ROLE] }}
           task-definition: "${{ needs.prepare-env.outputs.TASK_DEFINITION }}-dbmigrate"
           container-name: "${{ needs.prepare-env.outputs.CONTAINER_NAME }}-dbmigrate"
           ecs-cluster: ${{ needs.prepare-env.outputs.ECS_CLUSTER }}
@@ -323,7 +323,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars[env.AWS_ROLE] }}
+          role-to-assume: ${{ secrets[env.AWS_ROLE] }}
           aws-region: ${{ vars[env.AWS_REGION] }}
 
       - name: Update ECS Task Definition
