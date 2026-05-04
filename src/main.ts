@@ -5,7 +5,9 @@ import {
   VersioningType,
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { Request, Response } from 'express';
 import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -14,7 +16,7 @@ import { AppConfigService } from './config/config.service';
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   try {
-    const app = await NestFactory.create(AppModule, {
+    const app = await NestFactory.create<NestExpressApplication>(AppModule, {
       bufferLogs: true,
     });
     const appConfigService = app.get(AppConfigService);
@@ -48,6 +50,23 @@ async function bootstrap() {
     // Add body parser configuration for larger payloads
     app.use(express.json({ limit: '1mb' }));
     app.use(express.urlencoded({ limit: '1mb', extended: true }));
+
+    // Serve dynamic-i18n published files at /i18n/* (manifest + versioned bundles).
+    // Drafts are private and must never be publicly accessible.
+    const i18nRoot = appConfigService.i18n.rootDir;
+    app.use('/i18n/.drafts', (_req: Request, res: Response) => {
+      res.status(404).end();
+    });
+    app.useStaticAssets(i18nRoot, {
+      prefix: '/i18n/',
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('manifest.json')) {
+          res.setHeader('Cache-Control', 'public, max-age=30, must-revalidate');
+        } else if (/[/\\]v\d+[/\\]/.test(filePath)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    });
 
     app.setGlobalPrefix('api');
     app.enableVersioning({

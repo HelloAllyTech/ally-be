@@ -54,7 +54,7 @@ services:
       SQS_AUDIO_FILE_RETRY_DLQ_URL: 'http://localstack:4566/000000000000/sqs-audio-file-retry-queue-dlq'
       SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL: 'http://localstack:4566/000000000000/sqs-learn-message-and-event-queue'
       # Dynamic i18n: backend writes drafts/published versions here.
-      # Mount this folder behind your CDN/web server to serve translations.
+      # Caddy on the host serves the same folder at https://locale.helloally.dev.
       I18N_ROOT_DIR: '/var/www/i18n'
       I18N_VERSION_RETENTION: '5'
     depends_on:
