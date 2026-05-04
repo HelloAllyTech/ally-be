@@ -133,8 +133,6 @@ jobs:
       ENV: ${{ steps.vars.outputs.ENV }}
       PROJECT_PREFIX: ${{ steps.vars.outputs.PROJECT_PREFIX }}
       PROJECT_REGION: ${{ steps.vars.outputs.PROJECT_REGION }}
-      SUBNETS: ${{ steps.vars.outputs.SUBNETS }}
-      SECURITY_GROUPS: ${{ steps.vars.outputs.SECURITY_GROUPS }}
       ECS_CLUSTER: ${{ steps.set_env.outputs.ECS_CLUSTER }}
       ECS_SERVICE: ${{ steps.set_env.outputs.ECS_SERVICE }}
       ECR_IMAGE: ${{ steps.set_env.outputs.ECR_IMAGE }}
@@ -153,8 +151,6 @@ jobs:
           echo "ECR_REPOSITORY=PRD_ECR_REPOSITORY" >> $GITHUB_OUTPUT
           echo "PROJECT_PREFIX=ally-prd" >> $GITHUB_OUTPUT
           echo "PROJECT_REGION=mb" >> $GITHUB_OUTPUT
-          echo "SUBNETS=${{ secrets.PRD_SUBNETS }}" >> $GITHUB_OUTPUT
-          echo "SECURITY_GROUPS=${{ secrets.PRD_SECURITY_GROUPS }}" >> $GITHUB_OUTPUT
           echo "ENV=$ENV" >> $GITHUB_OUTPUT
           echo ":rocket: Environment - $ENV" >> $GITHUB_STEP_SUMMARY
           
@@ -208,8 +204,6 @@ jobs:
       AWS_REGION: ${{ needs.prepare-env.outputs.AWS_REGION }}
       ECR_IMAGE: ${{ needs.prepare-env.outputs.ECR_IMAGE }}
       ECR_REPOSITORY: ${{ needs.prepare-env.outputs.ECR_REPOSITORY }}
-    outputs:
-      APP_IMAGE: ${{ steps.build-push.outputs.APP_IMAGE }}
 
     steps:
       - name: Checkout
@@ -260,9 +254,7 @@ jobs:
           docker push $ECR_REPO/$ECR_IMAGE:$MAJOR
           docker push $ECR_REPO/$ECR_IMAGE:latest
           docker push $ECR_REPO/$ECR_IMAGE:${GITHUB_SHA::7}-$GITHUB_RUN_NUMBER
-          
-          echo "APP_IMAGE=$ECR_REPO/$ECR_IMAGE:$VERSION" >> $GITHUB_OUTPUT
-          
+
           echo "## :package: Docker Images Pushed" >> $GITHUB_STEP_SUMMARY
           echo "- \`$ECR_REPO/$ECR_IMAGE:$VERSION\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`$ECR_REPO/$ECR_IMAGE:$MAJOR.$MINOR\`" >> $GITHUB_STEP_SUMMARY
@@ -300,9 +292,9 @@ jobs:
           task-definition: "${{ needs.prepare-env.outputs.TASK_DEFINITION }}-dbmigrate"
           container-name: "${{ needs.prepare-env.outputs.CONTAINER_NAME }}-dbmigrate"
           ecs-cluster: ${{ needs.prepare-env.outputs.ECS_CLUSTER }}
-          image: ${{ needs.build.outputs.APP_IMAGE }}
-          subnets: ${{ needs.prepare-env.outputs.SUBNETS }}
-          security-groups: ${{ needs.prepare-env.outputs.SECURITY_GROUPS }}
+          image: ${{ secrets.PRD_ECR_REPOSITORY }}/${{ needs.prepare-env.outputs.ECR_IMAGE }}:${{ needs.validate-and-tag.outputs.VERSION }}
+          subnets: ${{ secrets.PRD_SUBNETS }}
+          security-groups: ${{ secrets.PRD_SECURITY_GROUPS }}
 
   deploy:
     needs:
@@ -329,7 +321,7 @@ jobs:
       - name: Update ECS Task Definition
         run: |
           TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition "${TASK_DEFINITION}")
-          echo "$TASK_DEFINITION" | jq --arg IMAGE "${{ needs.build.outputs.APP_IMAGE }}" \
+          echo "$TASK_DEFINITION" | jq --arg IMAGE "${{ secrets.PRD_ECR_REPOSITORY }}/${{ needs.prepare-env.outputs.ECR_IMAGE }}:${{ needs.validate-and-tag.outputs.VERSION }}" \
             '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > taskDefinition.json
             
       - name: Deploy to Amazon ECS
@@ -412,7 +404,7 @@ jobs:
             - **Branch**: master
             - **ECS Cluster**: ${{ needs.prepare-env.outputs.ECS_CLUSTER }}
             - **ECS Service**: ${{ needs.prepare-env.outputs.ECS_SERVICE }}
-            - **Docker Image**: ${{ needs.build.outputs.APP_IMAGE }}
+            - **Docker Image**: ${{ secrets.PRD_ECR_REPOSITORY }}/${{ needs.prepare-env.outputs.ECR_IMAGE }}:${{ needs.validate-and-tag.outputs.VERSION }}
             
             ${{ steps.changelog.outputs.CHANGELOG }}
             
