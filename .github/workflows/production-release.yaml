@@ -269,6 +269,7 @@ jobs:
       pull-requests: write
       contents: read
     needs:
+      - validate-and-tag
       - prepare-env
       - test
       - build
@@ -298,6 +299,7 @@ jobs:
 
   deploy:
     needs:
+      - validate-and-tag
       - build
       - prepare-env
       - run-db-migration
