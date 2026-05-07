@@ -727,13 +727,6 @@ export class ScenarioService {
       await this.validateLanguageVoices(createScenarioDto.languageVoices);
     }
 
-    if (createScenarioDto.status === ScenarioStatus.ACTIVE) {
-      await this.validateLinguisticStyleSamples(
-        createScenarioDto.languageVoices,
-        createScenarioDto.linguisticStyleSamples,
-      );
-    }
-
     if (
       createScenarioDto.triggerWarningIds &&
       createScenarioDto.triggerWarningIds.length > 0
@@ -1412,18 +1405,6 @@ export class ScenarioService {
         );
       }
       await this.validateScenarioStatus(updateScenarioDto);
-
-      if (updateScenarioDto.status === ScenarioStatus.ACTIVE) {
-        const languageVoices =
-          updateScenarioDto.languageVoices ?? scenario.metadata?.languageVoices;
-        const linguisticStyleSamples =
-          updateScenarioDto.linguisticStyleSamples ??
-          scenario.metadata?.linguisticStyleSamples;
-        await this.validateLinguisticStyleSamples(
-          languageVoices,
-          linguisticStyleSamples,
-        );
-      }
     }
 
     if (updateScenarioDto.languageVoices) {

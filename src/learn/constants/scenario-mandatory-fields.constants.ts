@@ -9,12 +9,9 @@ export const SCENARIO_MANDATORY_FIELDS: (keyof CreateScenarioDto)[] = [
   'age',
   'gender',
   'currentLocation',
-  'prompt',
   'openingStatements',
   'languageVoices',
   'experienceMode',
-  'behaviorInstructions',
-  'characterProfileText',
   'competencyId',
   'stateNames',
 ];

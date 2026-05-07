@@ -1345,4 +1345,78 @@ describe('ScenarioSharedService', () => {
       ]);
     });
   });
+
+  describe('hasAllActiveScenarioMandatoryFields', () => {
+    const baseScenario = {
+      scenario_title: 'Test',
+      scenario_description: 'Desc',
+      scenario_coverImageUrl: 'https://img.png',
+      scenario_difficultyLevel: 'medium',
+      scenario_metadata: {
+        name: 'Jane',
+        age: 30,
+        gender: 'Female',
+        currentLocation: 'NY',
+        openingStatements: ['Hello'],
+        experienceMode: 'CONVERSATION',
+        competencyId: 1,
+        stateNames: ['state1'],
+        languageVoices: { '1': 'voice-1' },
+      },
+    };
+
+    it('returns true when all required fields are present', () => {
+      expect(service.hasAllActiveScenarioMandatoryFields(baseScenario)).toBe(
+        true,
+      );
+    });
+
+    it('returns true when optional fields (prompt, characterProfileText, behaviorInstructions, linguisticStyleSamples) are absent', () => {
+      const scenario = { ...baseScenario };
+      expect(service.hasAllActiveScenarioMandatoryFields(scenario)).toBe(true);
+    });
+
+    it('returns true when prompt is empty string', () => {
+      const scenario = {
+        ...baseScenario,
+        scenario_prompt: '',
+      };
+      expect(service.hasAllActiveScenarioMandatoryFields(scenario)).toBe(true);
+    });
+
+    it('returns true when characterProfileText is null', () => {
+      const scenario = {
+        ...baseScenario,
+        scenario_metadata: {
+          ...baseScenario.scenario_metadata,
+          characterProfileText: null,
+        },
+      };
+      expect(service.hasAllActiveScenarioMandatoryFields(scenario)).toBe(true);
+    });
+
+    it('returns true when behaviorInstructions is undefined', () => {
+      const scenario = { ...baseScenario };
+      expect(service.hasAllActiveScenarioMandatoryFields(scenario)).toBe(true);
+    });
+
+    it('returns false when a truly required field (title) is missing', () => {
+      const scenario = {
+        ...baseScenario,
+        scenario_title: '',
+      };
+      expect(service.hasAllActiveScenarioMandatoryFields(scenario)).toBe(false);
+    });
+
+    it('returns false when languageVoices is missing', () => {
+      const scenario = {
+        ...baseScenario,
+        scenario_metadata: {
+          ...baseScenario.scenario_metadata,
+          languageVoices: undefined,
+        },
+      };
+      expect(service.hasAllActiveScenarioMandatoryFields(scenario)).toBe(false);
+    });
+  });
 });

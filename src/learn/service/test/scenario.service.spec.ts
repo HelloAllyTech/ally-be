@@ -21,7 +21,11 @@ import { UpdateScenarioDto } from 'src/learn/dto/update-scenario.dto';
 import { CreateScenarioDto } from 'src/learn/dto/create-scenario.dto';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
-import { ScenarioStatus } from 'src/learn/type/scenario.type';
+import {
+  ScenarioStatus,
+  ScenarioDifficultyLevel,
+  ExperienceMode,
+} from 'src/learn/type/scenario.type';
 import { ScenarioEventsRepository } from 'src/learn/repository/scenario-events.repository';
 import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
 import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
@@ -2360,6 +2364,147 @@ describe('ScenarioService', () => {
       await expect(service.validateCreateScenario(createDto)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('should not throw when ACTIVE scenario omits prompt', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.ACTIVE,
+        isGlobal: false,
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        openingStatements: ['Hi'],
+        coverImageUrl: 'https://img.png',
+        difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+        experienceMode: ExperienceMode.FEEDBACK,
+        competencyId: '1',
+        stateNames: [{ stateId: '1', name: 'state1' }],
+        profession: 'Doctor',
+        languageVoices: { '1': 'voice-1' },
+      };
+      scenarioSharedService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      await expect(
+        service.validateCreateScenario(createDto),
+      ).resolves.not.toThrow();
+    });
+
+    it('should not throw when ACTIVE scenario omits characterProfileText', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.ACTIVE,
+        isGlobal: false,
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        openingStatements: ['Hi'],
+        coverImageUrl: 'https://img.png',
+        difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+        experienceMode: ExperienceMode.FEEDBACK,
+        competencyId: '1',
+        stateNames: [{ stateId: '1', name: 'state1' }],
+        profession: 'Doctor',
+        languageVoices: { '1': 'voice-1' },
+      };
+      scenarioSharedService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      await expect(
+        service.validateCreateScenario(createDto),
+      ).resolves.not.toThrow();
+    });
+
+    it('should not throw when ACTIVE scenario omits behaviorInstructions', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.ACTIVE,
+        isGlobal: false,
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        openingStatements: ['Hi'],
+        coverImageUrl: 'https://img.png',
+        difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+        experienceMode: ExperienceMode.FEEDBACK,
+        competencyId: '1',
+        stateNames: [{ stateId: '1', name: 'state1' }],
+        profession: 'Doctor',
+        languageVoices: { '1': 'voice-1' },
+      };
+      scenarioSharedService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      await expect(
+        service.validateCreateScenario(createDto),
+      ).resolves.not.toThrow();
+    });
+
+    it('should not throw when ACTIVE scenario omits linguisticStyleSamples', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.ACTIVE,
+        isGlobal: false,
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        openingStatements: ['Hi'],
+        coverImageUrl: 'https://img.png',
+        difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+        experienceMode: ExperienceMode.FEEDBACK,
+        competencyId: '1',
+        stateNames: [{ stateId: '1', name: 'state1' }],
+        profession: 'Doctor',
+        languageVoices: { '1': 'voice-1' },
+      };
+      scenarioSharedService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      await expect(
+        service.validateCreateScenario(createDto),
+      ).resolves.not.toThrow();
+    });
+
+    it('should not throw when ACTIVE scenario has linguisticStyleSamples for only some languages', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.ACTIVE,
+        isGlobal: false,
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        openingStatements: ['Hi'],
+        coverImageUrl: 'https://img.png',
+        difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+        experienceMode: ExperienceMode.FEEDBACK,
+        competencyId: '1',
+        stateNames: [{ stateId: '1', name: 'state1' }],
+        profession: 'Doctor',
+        languageVoices: { '1': 'voice-1', '2': 'voice-2' },
+        linguisticStyleSamples: { '1': ['sample one'] },
+      };
+      scenarioSharedService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      await expect(
+        service.validateCreateScenario(createDto),
+      ).resolves.not.toThrow();
     });
   });
 
