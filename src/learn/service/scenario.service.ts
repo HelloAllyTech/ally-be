@@ -695,6 +695,16 @@ export class ScenarioService {
             savedScenarios[i].metadata,
           );
         }
+        if (
+          dto.translationDescription &&
+          Object.keys(dto.translationDescription).length > 0
+        ) {
+          await this.upsertTranslationDescription(
+            savedScenarios[i].id,
+            dto.translationDescription,
+            savedScenarios[i].metadata,
+          );
+        }
       }
 
       return savedScenarios;
@@ -1199,16 +1209,26 @@ export class ScenarioService {
 
       if (
         success &&
-        updateScenarioDto.translationOpeningStatements !== undefined
+        (updateScenarioDto.translationOpeningStatements !== undefined ||
+          updateScenarioDto.translationDescription !== undefined)
       ) {
         const fresh = await this.scenariosRepository.findOne({
           where: { id },
         });
-        await this.upsertTranslationOpeningStatements(
-          id,
-          updateScenarioDto.translationOpeningStatements,
-          fresh?.metadata,
-        );
+        if (updateScenarioDto.translationOpeningStatements !== undefined) {
+          await this.upsertTranslationOpeningStatements(
+            id,
+            updateScenarioDto.translationOpeningStatements,
+            fresh?.metadata,
+          );
+        }
+        if (updateScenarioDto.translationDescription !== undefined) {
+          await this.upsertTranslationDescription(
+            id,
+            updateScenarioDto.translationDescription,
+            fresh?.metadata,
+          );
+        }
       }
 
       return success;
@@ -1849,6 +1869,56 @@ export class ScenarioService {
       }
     }
     return false;
+  }
+
+  private async upsertTranslationDescription(
+    scenarioId: number,
+    translationDescription: Record<string, string>,
+    metadataForPrimaryResolution?: Record<string, any> | null,
+  ): Promise<void> {
+    const primaryId =
+      await this.scenarioSharedService.resolveOpeningDialoguePrimaryLanguageId(
+        metadataForPrimaryResolution,
+      );
+
+    const existing =
+      await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
+        scenarioId,
+      );
+
+    const toCreate: CreateScenarioTranslation[] = [];
+    const toUpdate: UpdateScenarioTranslation[] = [];
+
+    for (const [langIdStr, raw] of Object.entries(translationDescription)) {
+      const languageId = Number(langIdStr);
+      if (!Number.isFinite(languageId)) continue;
+      if (primaryId != null && languageId === primaryId) continue;
+
+      const row = existing?.find((r) => Number(r.languageId) === languageId);
+      const normalized = typeof raw === 'string' ? raw.trim() : '';
+
+      const mergedMetadata = {
+        ...(row?.metadata ?? {}),
+        description: normalized,
+      };
+
+      if (row) {
+        toUpdate.push({ scenarioId, languageId, metadata: mergedMetadata });
+      } else {
+        toCreate.push({ scenarioId, languageId, metadata: mergedMetadata });
+      }
+    }
+
+    if (toCreate.length) {
+      await this.scenarioTranslationsRepository.createScenarioTranslations(
+        toCreate,
+      );
+    }
+    if (toUpdate.length) {
+      await this.scenarioTranslationsRepository.updateScenarioTranslations(
+        toUpdate,
+      );
+    }
   }
 
   private async upsertTranslationOpeningStatements(
@@ -2496,7 +2566,8 @@ export class ScenarioService {
     }
 
     if (
-      fieldName === GeneratableField.OPENING_STATEMENTS &&
+      (fieldName === GeneratableField.OPENING_STATEMENTS ||
+        fieldName === GeneratableField.DESCRIPTION) &&
       scenarioContext.languageId
     ) {
       const id = Number(scenarioContext.languageId);
@@ -2519,7 +2590,7 @@ export class ScenarioService {
         this.getLanguageNameFromCode(code);
       if (!code) {
         throw new BadRequestException(
-          'Could not resolve language code for opening statement generation',
+          'Could not resolve language code for field generation',
         );
       }
       contextToUse = {

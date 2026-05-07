@@ -732,6 +732,7 @@ export class ScenarioSharedService {
         id,
       );
     const translationOpeningStatements: Record<string, string[]> = {};
+    const translationDescription: Record<string, string> = {};
     for (const row of translationRows ?? []) {
       const meta = parseScenarioTranslationMetadata(row.metadata);
       const cleaned = normalizeTranslationOpeningStatementsLines(
@@ -740,11 +741,21 @@ export class ScenarioSharedService {
       if (cleaned.length > 0) {
         translationOpeningStatements[String(row.languageId)] = cleaned;
       }
+      const desc = meta.description;
+      if (typeof desc === 'string' && desc.trim().length > 0) {
+        translationDescription[String(row.languageId)] = desc;
+      }
     }
+    const primaryLanguageId =
+      await this.resolveOpeningDialoguePrimaryLanguageId(result.metadata);
     (result as GetAdminScenarioDto).translationOpeningStatements =
       translationOpeningStatements;
     (result as GetAdminScenarioDto).openingDialoguePrimaryLanguageId =
-      await this.resolveOpeningDialoguePrimaryLanguageId(result.metadata);
+      primaryLanguageId;
+    (result as GetAdminScenarioDto).translationDescription =
+      translationDescription;
+    (result as GetAdminScenarioDto).challengeDescriptionPrimaryLanguageId =
+      primaryLanguageId;
 
     return result;
   }

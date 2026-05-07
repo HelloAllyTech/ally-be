@@ -29,6 +29,20 @@ export class GetAdminScenarioDto extends Scenarios {
       'Language id whose opening dialogues are stored on scenario metadata (primary / English path)',
   })
   openingDialoguePrimaryLanguageId?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Challenge description per non-primary language (scenario_translations.metadata.description), keyed by languageId string',
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
+  translationDescription?: Record<string, string>;
+
+  @ApiPropertyOptional({
+    description:
+      'Language id whose challenge description is the primary (stored on scenarios.description). Mirrors openingDialoguePrimaryLanguageId resolution.',
+  })
+  challengeDescriptionPrimaryLanguageId?: number | null;
 }
 
 export class GetScenarioDto extends Scenarios {

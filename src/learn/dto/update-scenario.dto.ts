@@ -240,6 +240,16 @@ export class UpdateScenarioDto {
   translationOpeningStatements?: Record<string, string[]>;
 
   @ApiProperty({
+    description:
+      'Challenge description text for non-primary languages (persisted to scenario_translations.metadata.description), keyed by languageId string',
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
+  @IsObject()
+  @IsOptional()
+  translationDescription?: Record<string, string>;
+
+  @ApiProperty({
     description: 'AutoTermination status',
     example: true,
   })

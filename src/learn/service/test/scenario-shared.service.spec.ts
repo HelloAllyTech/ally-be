@@ -682,6 +682,8 @@ describe('ScenarioSharedService', () => {
         ...scenarioResult,
         translationOpeningStatements: {},
         openingDialoguePrimaryLanguageId: null,
+        translationDescription: {},
+        challengeDescriptionPrimaryLanguageId: null,
       });
       expect(
         sessionEventSharedService.findSessionEventById,
@@ -714,6 +716,74 @@ describe('ScenarioSharedService', () => {
 
       expect(result.translationOpeningStatements).toEqual({
         '7': ['Hola', '¿Qué tal?'],
+      });
+    });
+
+    it('should map translationDescription from scenario_translations.metadata.description', async () => {
+      const scenarioResult = {
+        id: 1,
+        title: 'Test',
+        terminationEvents: [],
+      };
+      scenariosRepository.getAdminScenarioById.mockResolvedValue(
+        scenarioResult as any,
+      );
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
+        [
+          {
+            scenarioId: 1,
+            languageId: 7,
+            metadata: { description: 'Descripción en español' },
+          },
+          {
+            scenarioId: 1,
+            languageId: 9,
+            metadata: { description: '   ' },
+          },
+        ] as any,
+      );
+      sharedLanguageService.getLanguageByValue.mockResolvedValue({
+        id: 1,
+      } as any);
+
+      const result = await service.getAdminScenario(1);
+
+      expect(result.translationDescription).toEqual({
+        '7': 'Descripción en español',
+      });
+      expect(result.challengeDescriptionPrimaryLanguageId).toBe(1);
+    });
+
+    it('should expose both translationDescription and translationOpeningStatements from same row when both metadata fields are present', async () => {
+      const scenarioResult = {
+        id: 1,
+        title: 'Test',
+        terminationEvents: [],
+      };
+      scenariosRepository.getAdminScenarioById.mockResolvedValue(
+        scenarioResult as any,
+      );
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
+        [
+          {
+            scenarioId: 1,
+            languageId: 7,
+            metadata: {
+              openingStatements: ['Hola'],
+              description: 'Descripción en español',
+            },
+          },
+        ] as any,
+      );
+      sharedLanguageService.getLanguageByValue.mockResolvedValue({
+        id: 1,
+      } as any);
+
+      const result = await service.getAdminScenario(1);
+
+      expect(result.translationOpeningStatements).toEqual({ '7': ['Hola'] });
+      expect(result.translationDescription).toEqual({
+        '7': 'Descripción en español',
       });
     });
   });
