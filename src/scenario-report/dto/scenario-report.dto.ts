@@ -92,6 +92,14 @@ export class UpdateScenarioReportDto {
   @ValidateNested({ each: true })
   @Type(() => UpdateScenarioReportTranscriptDto)
   transcripts?: UpdateScenarioReportTranscriptDto[];
+
+  @ApiProperty({
+    description: 'Full markdown evaluation report from the LLM judge',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  report_markdown?: string;
 }
 
 export class ScenarioReportDto {
@@ -135,6 +143,12 @@ export class ScenarioReportDto {
     },
   })
   metrics?: Record<string, number>;
+
+  @ApiProperty({
+    description: 'Full markdown evaluation report from the LLM judge',
+    required: false,
+  })
+  reportMarkdown?: string;
 
   @ApiProperty({
     description: 'Metadata',

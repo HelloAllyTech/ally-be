@@ -410,6 +410,8 @@ export class ScenarioReportService {
     } else {
       const updatePayload: Partial<ScenarioReport> = {};
       if (dto.metrics !== undefined) updatePayload.metrics = dto.metrics;
+      if (dto.report_markdown !== undefined)
+        updatePayload.reportMarkdown = dto.report_markdown;
       if (dto.status !== undefined) {
         updatePayload.status = dto.status;
         if (SCENARIO_REPORT_END_STATUSES.includes(dto.status)) {
