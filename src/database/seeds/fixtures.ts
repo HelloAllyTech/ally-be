@@ -20,6 +20,7 @@ import {
 } from '../../learn/enum/scenario-session-status.enum';
 import { SessionEventDetectionType } from '../../session-event/enum/session-event-detection.enum';
 import { SessionEventVisibilityType } from '../../session-event/enum/session-event-visibility-type.enum';
+import { BehaviorInstructionCategory } from '../../learn/enum/behavior-instruction.enum';
 import { TENANT_CODE, TENANT_NAME, ADMIN_EMAIL } from './config';
 
 export interface TenantFixture {
@@ -51,11 +52,20 @@ export interface SessionEventFixture {
   detectionData: Record<string, any>;
 }
 
+export interface ScenarioBehaviorInstructionFixture {
+  category: BehaviorInstructionCategory;
+  behaviorNames: string[];
+  stateInstructions: Array<{ stateId: string; instruction: string }>;
+}
+
 export interface ScenarioFixture {
   key: string;
   title: string;
   description: string;
+  competencyName: string;
+  coverImageUrl: string;
   metadata: Record<string, any>;
+  behaviorInstructions: ScenarioBehaviorInstructionFixture[];
 }
 
 export interface PathwayFixture {
@@ -197,14 +207,35 @@ export const sessionEvents: SessionEventFixture[] = [
   },
 ];
 
+export const SEED_SCENARIO_PROMPT = `You are an AI roleplay assistant for counselor training. In this simulation, you must act ONLY as the client in a therapy session. Stay fully in character, provide realistic dialogue, and do not switch roles unless explicitly instructed.
+
+Important Instructions:
+- Prefer first-person phrasing (e.g., "I feel…", "I've been struggling with…").
+- Allow the counselor to guide the conversation.
+- If the counselor is silent or open-ended, share one thought, feeling, or small story, then stop.
+- Maintain consistency with your life history but allow natural variation in tone and detail.
+- Respond naturally, as a real client would.
+- Keep answers concise (2–6 sentences), unless a longer response is natural.
+- Reveal information gradually, not all at once.
+- Start with few details and open up more as the counsellor asks questions.
+- Show authentic emotions and natural hesitations.
+- Do not give therapy advice or act as the counselor.
+- If sensitive topics arise, respond realistically but without graphic detail.
+- Keep each reply under ~120 words.`;
+
 const sharedScenarioMetadata = {
-  prompt:
-    'You are an AI roleplay assistant for counselor training. Stay fully in character as the client in a therapy session.',
+  prompt: SEED_SCENARIO_PROMPT,
   selectedLanguageIds: [1],
   experienceMode: ExperienceMode.FEEDBACK,
   responseLength: ScenarioResponseLength.VERY_BRIEF,
   timerMode: false,
   showScoreMeter: false,
+  linguisticStyleSamples: {
+    '1': [
+      'I just want things to feel a bit lighter, you know?',
+      "It's like my mind keeps running and I can't slow it down.",
+    ],
+  },
   stateNames: [
     { stateId: '-1', name: 'State -1' },
     { stateId: '1', name: 'State 1' },
@@ -219,6 +250,9 @@ export const scenarios: ScenarioFixture[] = [
     title: 'Active Listening Basics',
     description:
       'Practice active listening with Alex, a young professional feeling overwhelmed.',
+    competencyName: 'Verbal Communication',
+    coverImageUrl:
+      'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=800&q=80',
     metadata: {
       ...sharedScenarioMetadata,
       name: 'Alex Johnson',
@@ -234,12 +268,42 @@ export const scenarios: ScenarioFixture[] = [
       characterProfileText:
         'Alex is a 25-year-old software engineer struggling with work-life balance.',
     },
+    behaviorInstructions: [
+      {
+        category: BehaviorInstructionCategory.SHOULD_DO,
+        behaviorNames: [
+          'Uses open-ended questions',
+          'Summarises and paraphrases',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Stay open and curious. Invite the client to share what feels most pressing.',
+          },
+        ],
+      },
+      {
+        category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+        behaviorNames: ['Interrupts client', 'Gives premature advice'],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Avoid jumping to solutions before the client has finished sharing.',
+          },
+        ],
+      },
+    ],
   },
   {
     key: 'workplace-anxiety',
     title: 'Managing Workplace Anxiety',
     description:
       'Practice empathetic responses with Priya, who is experiencing anxiety at work.',
+    competencyName: 'Empathy, Warmth & Genuineness',
+    coverImageUrl:
+      'https://images.unsplash.com/photo-1573164713988-8665fc963095?w=800&q=80',
     metadata: {
       ...sharedScenarioMetadata,
       name: 'Priya Nair',
@@ -255,6 +319,36 @@ export const scenarios: ScenarioFixture[] = [
       characterProfileText:
         'Priya is a 29-year-old product manager experiencing anxiety due to workplace pressure.',
     },
+    behaviorInstructions: [
+      {
+        category: BehaviorInstructionCategory.SHOULD_DO,
+        behaviorNames: [
+          'Demonstrates warmth and genuineness',
+          'Shows consistent concern and care',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Acknowledge how heavy the workload feels and validate the emotional response.',
+          },
+        ],
+      },
+      {
+        category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+        behaviorNames: [
+          'Dismissive of concerns',
+          "Critical of client's concerns",
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Do not minimise stress or push the client to "just relax".',
+          },
+        ],
+      },
+    ],
   },
 ];
 

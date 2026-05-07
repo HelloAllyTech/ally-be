@@ -29,6 +29,9 @@ import { Case } from '../../case/entity/case.entity';
 import { CaseItem } from '../../case/entity/case-item.entity';
 import { CaseTenant } from '../../case/entity/case-tenant.entity';
 import { ScenarioCoverImageLibrary } from '../../scenario-cover-image-library/entity/scenario-cover-image-library.entity';
+import { Competency } from '../../learn/entity/competency.entity';
+import { Behavior } from '../../learn/entity/behavior.entity';
+import { ScenarioBehaviorInstruction } from '../../learn/entity/scenario-behavior-instruction.entity';
 
 export const SEED_ENTITIES = [
   Tenant,
@@ -53,6 +56,9 @@ export const SEED_ENTITIES = [
   CaseItem,
   CaseTenant,
   ScenarioCoverImageLibrary,
+  Competency,
+  Behavior,
+  ScenarioBehaviorInstruction,
 ];
 
 export function createSeedDataSource(): DataSource {
