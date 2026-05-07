@@ -8,6 +8,7 @@ import { seedScenarios } from './seeders/scenario.seeder';
 import { seedCases } from './seeders/case.seeder';
 import { seedSessions } from './seeders/session.seeder';
 import { seedBadges } from './seeders/badge.seeder';
+import { seedScenarioCoverImageLibrary } from './seeders/scenario-cover-image-library.seeder';
 import { User } from '../../user/entity/user.entity';
 import { ADMIN_EMAIL, DEFAULT_OTP, DEFAULT_PASSWORD } from './config';
 
@@ -28,6 +29,7 @@ async function main(): Promise<void> {
     await seedCases(ds, admin.id);
     await seedSessions(ds);
     await seedBadges(ds, admin.id);
+    await seedScenarioCoverImageLibrary(ds, admin.id);
   });
 
   log(`done in ${Math.round((Date.now() - started) / 1000)}s`);

@@ -2134,6 +2134,19 @@ describe('ScenarioSessionService', () => {
       expect(scenarioEventsRepository.getEventChecklist).not.toHaveBeenCalled();
     });
 
+    it('should return empty checklist when experience mode is NONE', async () => {
+      setupSessionAndScenarioMocks(ExperienceMode.NONE);
+
+      const result = await service.getScenarioSessionEventChecklist(
+        mockScenarioSessionId,
+        mockCounselorId,
+        {},
+      );
+
+      expect(result).toEqual({ eventChecklist: [] });
+      expect(scenarioEventsRepository.getEventChecklist).not.toHaveBeenCalled();
+    });
+
     it('should return checklist with hasOccurred=true for events that occurred in the session', async () => {
       setupSessionAndScenarioMocks(ExperienceMode.CHECKLIST);
       scenarioEventsRepository.getEventChecklist.mockResolvedValue([

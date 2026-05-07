@@ -233,6 +233,24 @@ describe('Scenario Util', () => {
       expect(result.metadata.checklistType).toBeUndefined();
     });
 
+    it('should not include checklistType when experienceMode is NONE', () => {
+      const userId = 205;
+      const scenario: CreateScenarioDto = {
+        title: 'Scenario with NONE experience mode',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        experienceMode: ExperienceMode.NONE,
+        checklistType: ChecklistType.GUIDED,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.experienceMode).toBe(ExperienceMode.NONE);
+      expect(result.metadata.checklistType).toBeUndefined();
+    });
+
     it('should handle explicit FEEDBACK mode with all fields', () => {
       const userId = 204;
       const scenario: CreateScenarioDto = {

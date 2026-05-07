@@ -365,6 +365,21 @@ export const badges: BadgeFixture[] = [
   },
 ];
 
+export const scenarioCoverImages: string[] = [
+  'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=800&q=80',
+  'https://images.unsplash.com/photo-1573164713988-8665fc963095?w=800&q=80',
+  'https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&q=80',
+  'https://images.unsplash.com/photo-1521737711867-e3b97375f902?w=800&q=80',
+  'https://images.unsplash.com/photo-1552581234-26160f608093?w=800&q=80',
+  'https://images.unsplash.com/photo-1573497019418-b400bb3ab074?w=800&q=80',
+  'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=800&q=80',
+  'https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=800&q=80',
+  'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=800&q=80',
+  'https://images.unsplash.com/photo-1573497620053-ea5300f94f21?w=800&q=80',
+  'https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=800&q=80',
+  'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&q=80',
+];
+
 export const defaults = {
   scenarioStatus: ScenarioStatus.ACTIVE,
   scenarioDifficulty: ScenarioDifficultyLevel.EASY,
