@@ -50,11 +50,15 @@ export class ChatRepository extends Repository<Chat> {
       counselorId: params.counselorId,
     });
 
+    // Use take/skip (not limit/offset) so pagination counts unique chats. The
+    // leftJoinAndMapMany on customFieldValues produces N rows per chat; raw
+    // SQL LIMIT would cap at N rows then dedup, returning fewer than the
+    // requested page size and hiding chats from later pages.
     if (params.limit) {
-      query.limit(params.limit);
+      query.take(params.limit);
     }
     if (params.offset) {
-      query.offset(params.offset);
+      query.skip(params.offset);
     }
     if (params.sortBy) {
       const sortOrder =
@@ -132,8 +136,9 @@ export class ChatRepository extends Repository<Chat> {
 
     query.andWhere('chat.tenant_id = :tenantId', { tenantId });
 
-    if (filters.limit) query.limit(filters.limit);
-    if (filters.offset) query.offset(filters.offset);
+    // See getCallLogsQuery for why take/skip instead of limit/offset.
+    if (filters.limit) query.take(filters.limit);
+    if (filters.offset) query.skip(filters.offset);
 
     this.applySorting(
       query,
