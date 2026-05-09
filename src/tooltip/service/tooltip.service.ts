@@ -9,6 +9,7 @@ import { CreateTooltipDto } from '../dto/create-tooltip.dto';
 import { UpdateTooltipDto } from '../dto/update-tooltip.dto';
 import { Tooltip } from '../entity/tooltip.entity';
 import { TooltipRepository } from '../repository/tooltip.repository';
+import { TooltipTranslationService } from './tooltip-translation.service';
 
 interface TooltipQueryOptions {
   limit?: number;
@@ -19,7 +20,10 @@ interface TooltipQueryOptions {
 
 @Injectable()
 export class TooltipService {
-  constructor(private readonly tooltipRepository: TooltipRepository) {}
+  constructor(
+    private readonly tooltipRepository: TooltipRepository,
+    private readonly translationService: TooltipTranslationService,
+  ) {}
 
   async createTooltip(createDto: CreateTooltipDto): Promise<Tooltip> {
     const userId = parseInt(ExecutionManager.getUserId() || '0', 10);
@@ -29,7 +33,9 @@ export class TooltipService {
       updatedBy: userId,
     });
     try {
-      return await this.tooltipRepository.save(tooltip);
+      const saved = await this.tooltipRepository.save(tooltip);
+      this.translationService.createUpdateTooltipTranslations([saved]);
+      return saved;
     } catch (error) {
       if (isDuplicateKeyException(error)) {
         throw new ConflictException(
@@ -53,6 +59,10 @@ export class TooltipService {
         ...updateDto,
         updatedBy: userId,
       });
+      if ((result.affected ?? 0) > 0) {
+        const updated = { ...existing, ...updateDto } as Tooltip;
+        this.translationService.createUpdateTooltipTranslations([updated]);
+      }
       return (result.affected ?? 0) > 0;
     } catch (error) {
       if (isDuplicateKeyException(error)) {

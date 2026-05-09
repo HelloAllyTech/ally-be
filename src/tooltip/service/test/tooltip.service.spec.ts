@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
 import { TooltipService } from '../tooltip.service';
+import { TooltipTranslationService } from '../tooltip-translation.service';
 import { TooltipRepository } from '../../repository/tooltip.repository';
 import { Tooltip } from '../../entity/tooltip.entity';
 import { CreateTooltipDto } from '../../dto/create-tooltip.dto';
@@ -11,6 +12,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 describe('TooltipService', () => {
   let service: TooltipService;
   let tooltipRepository: jest.Mocked<TooltipRepository>;
+  let translationService: jest.Mocked<TooltipTranslationService>;
 
   const mockTooltip: Tooltip = {
     id: 'tooltip-uuid-1',
@@ -38,11 +40,18 @@ describe('TooltipService', () => {
             getTooltips: jest.fn(),
           },
         },
+        {
+          provide: TooltipTranslationService,
+          useValue: {
+            createUpdateTooltipTranslations: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<TooltipService>(TooltipService);
     tooltipRepository = module.get(TooltipRepository);
+    translationService = module.get(TooltipTranslationService);
 
     jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('42');
   });
