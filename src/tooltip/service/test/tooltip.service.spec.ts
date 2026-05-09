@@ -84,6 +84,23 @@ describe('TooltipService', () => {
       expect(result).toEqual(mockTooltip);
     });
 
+    it('should trigger translation service after successful create', async () => {
+      tooltipRepository.create.mockReturnValue(mockTooltip);
+      tooltipRepository.save.mockResolvedValue(mockTooltip);
+
+      await service.createTooltip(createDto);
+
+      expect(translationService.createUpdateTooltipTranslations).toHaveBeenCalledWith([mockTooltip]);
+    });
+
+    it('should not trigger translation service when save throws', async () => {
+      tooltipRepository.create.mockReturnValue(mockTooltip);
+      tooltipRepository.save.mockRejectedValue(new Error('DB error'));
+
+      await expect(service.createTooltip(createDto)).rejects.toThrow('DB error');
+      expect(translationService.createUpdateTooltipTranslations).not.toHaveBeenCalled();
+    });
+
     it('should throw ConflictException when location already exists (duplicate key)', async () => {
       tooltipRepository.create.mockReturnValue(mockTooltip);
       const duplicateError = Object.assign(new Error('duplicate key'), {
@@ -133,6 +150,17 @@ describe('TooltipService', () => {
       expect(result).toBe(true);
     });
 
+    it('should trigger translation service when update affects rows', async () => {
+      tooltipRepository.findOne.mockResolvedValue(mockTooltip);
+      tooltipRepository.update.mockResolvedValue({ affected: 1 } as any);
+
+      await service.updateTooltip(tooltipId, updateDto);
+
+      expect(translationService.createUpdateTooltipTranslations).toHaveBeenCalledWith([
+        { ...mockTooltip, ...updateDto },
+      ]);
+    });
+
     it('should return false when update affects no rows', async () => {
       tooltipRepository.findOne.mockResolvedValue(mockTooltip);
       tooltipRepository.update.mockResolvedValue({ affected: 0 } as any);
@@ -140,6 +168,15 @@ describe('TooltipService', () => {
       const result = await service.updateTooltip(tooltipId, updateDto);
 
       expect(result).toBe(false);
+    });
+
+    it('should not trigger translation service when update affects no rows', async () => {
+      tooltipRepository.findOne.mockResolvedValue(mockTooltip);
+      tooltipRepository.update.mockResolvedValue({ affected: 0 } as any);
+
+      await service.updateTooltip(tooltipId, updateDto);
+
+      expect(translationService.createUpdateTooltipTranslations).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when tooltip does not exist', async () => {
