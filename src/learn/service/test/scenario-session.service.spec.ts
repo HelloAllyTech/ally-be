@@ -1055,6 +1055,12 @@ describe('ScenarioSessionService', () => {
         mockCounselorId,
         3,
       );
+      expect(scenarioSessionRepository.update).toHaveBeenCalledWith(
+        mockScenarioSessionId,
+        expect.objectContaining({
+          metadata: expect.objectContaining({ creditsUsed: 3 }),
+        }),
+      );
 
       global.Date = originalDate;
     });

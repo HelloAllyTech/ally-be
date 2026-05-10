@@ -938,16 +938,27 @@ export class ScenarioSessionService {
       await this.updateTranscriptTimestamps(scenarioSession, egressInfo);
     }
 
+    let callDuration = 0;
+    if (startedAt && endedAt) {
+      callDuration = endedAt.getTime() - startedAt.getTime() || 0;
+    }
+    const creditsUsed = this.calculateCreditsToConsume(callDuration);
+
     const scenarioSessionMetadata =
       await this.getUpdatedMetadataForScenarioSession(
         scenarioSession,
         egressInfo,
       );
 
+    const updatedMetadata: Record<string, any> = {
+      ...(scenarioSessionMetadata ?? scenarioSession.metadata),
+      creditsUsed,
+    };
+
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       endedAt,
       startedAt,
-      ...(scenarioSessionMetadata ? { metadata: scenarioSessionMetadata } : {}),
+      metadata: updatedMetadata,
     });
 
     await this.createReflectionPromptRecordsForSession(
@@ -955,10 +966,6 @@ export class ScenarioSessionService {
       scenarioSession.tenantId,
     );
 
-    let callDuration = 0;
-    if (startedAt && endedAt) {
-      callDuration = endedAt.getTime() - startedAt.getTime() || 0;
-    }
     const caseSessionItemId = scenarioSession.caseSessionItemId;
     let previousMemory: string | null = null;
     let needMemory: boolean = false;
@@ -983,7 +990,7 @@ export class ScenarioSessionService {
     return { message: 'Scenario session ended successfully' };
   }
 
-  private async consumeSimulationCredits(userId: number, callDuration: number) {
+  private calculateCreditsToConsume(callDuration: number): number {
     const callDurationInSeconds = callDuration / 1000;
     const secondsPerCredit =
       this.configService.simulationCredits.lifespanSecondsPerCredit ?? 60;
@@ -994,7 +1001,11 @@ export class ScenarioSessionService {
 
     // If remaining seconds >= 30, charge 1 additional credit, otherwise 0
     const additionalCredit = remainingSeconds >= 30 ? 1 : 0;
-    const totalCreditsToConsume = fullCredits + additionalCredit;
+    return Math.max(0, fullCredits + additionalCredit);
+  }
+
+  private async consumeSimulationCredits(userId: number, callDuration: number) {
+    const totalCreditsToConsume = this.calculateCreditsToConsume(callDuration);
 
     if (totalCreditsToConsume <= 0) return;
     await this.simulationCreditsService.consumeCredits(
