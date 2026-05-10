@@ -421,6 +421,7 @@ describe('ScenarioSessionRepository', () => {
           sessionName: 'SS-1-2024-01-01',
           voiceId: mockVoiceId,
           languageId: mockLanguageId,
+          platform: 'unknown',
         },
       });
 
@@ -437,6 +438,7 @@ describe('ScenarioSessionRepository', () => {
           sessionName: 'SS-1-2024-01-01',
           voiceId: mockVoiceId,
           languageId: mockLanguageId,
+          platform: 'unknown',
         },
       });
       expect(repository.save).toHaveBeenCalled();
@@ -472,6 +474,7 @@ describe('ScenarioSessionRepository', () => {
           sessionName: 'SS-undefined-2024-01-01',
           voiceId: mockVoiceId,
           languageId: mockLanguageId,
+          platform: 'unknown',
         },
       };
 
@@ -492,6 +495,7 @@ describe('ScenarioSessionRepository', () => {
           sessionName: 'SS-undefined-2024-01-01',
           voiceId: mockVoiceId,
           languageId: mockLanguageId,
+          platform: 'unknown',
         },
       });
 
