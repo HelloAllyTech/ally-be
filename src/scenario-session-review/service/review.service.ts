@@ -37,6 +37,7 @@ import {
   CreateScenarioSessionReviewResponseDto,
 } from '../dto/create-review.dto';
 import { GetScenarioSessionReviewResponseDto } from '../dto/get-review-response.dto';
+import { ScenarioSessionRecordingService } from 'src/learn/service/scenario-session-recording.service';
 
 @Injectable()
 export class ScenarioSessionReviewService extends BaseReviewService<
@@ -57,6 +58,7 @@ export class ScenarioSessionReviewService extends BaseReviewService<
     protected readonly reviewAccessValidator: ScenarioReviewAccessValidator,
     protected readonly reviewReadStatusRepository: ScenarioSessionReviewReadStatusRepository,
     protected readonly permissionValidator: PermissionValidator,
+    private readonly scenarioSessionRecordingService: ScenarioSessionRecordingService,
   ) {
     super();
   }
@@ -121,11 +123,18 @@ export class ScenarioSessionReviewService extends BaseReviewService<
       (review: ScenarioSessionReviews) => review.id,
     );
 
-    const [reactions, comments] = await Promise.all([
+    const scenarioSessionIds = result.reviews
+      .map((review: ScenarioSessionReviews) => review.scenarioSessionId)
+      .filter((id): id is string => !!id);
+
+    const [reactions, comments, audioUrlsBySessionId] = await Promise.all([
       this.reviewReactionRepository.getReactionsByReviewIds(reviewIds),
       this.reviewThreadRepository.getCommentsCountByReviewIds(
         reviewIds,
         userId,
+      ),
+      this.scenarioSessionRecordingService.getRecordingUrlsForSessions(
+        scenarioSessionIds,
       ),
     ]);
 
@@ -137,6 +146,7 @@ export class ScenarioSessionReviewService extends BaseReviewService<
         comments,
       },
       options?.languageCode,
+      audioUrlsBySessionId,
     );
     return { data, count: result.count };
   }
@@ -186,6 +196,7 @@ export class ScenarioSessionReviewService extends BaseReviewService<
       reactions,
       myReaction,
       generalCommentsThread,
+      audioUrl,
     ] = await Promise.all([
       this.userService.get(review.createdBy),
       this.scenarioSharedService.getScenarioById(scenarioSession.scenarioId),
@@ -204,6 +215,9 @@ export class ScenarioSessionReviewService extends BaseReviewService<
           selection: IsNull(),
         },
       }),
+      this.scenarioSessionRecordingService.getRecordingUrlForSession(
+        scenarioSession.id,
+      ),
     ]);
 
     const updatedReactions = reactions.reduce(
@@ -236,6 +250,7 @@ export class ScenarioSessionReviewService extends BaseReviewService<
           scenarioSession.endedAt!,
         ),
         createdAt: scenarioSession.createdAt,
+        audioUrl: audioUrl ?? null,
       },
       commentsCount: comments.length > 0 ? Number(comments[0].count) : 0,
       createdBy: formatCreatedUserDetails(user!),
@@ -253,6 +268,7 @@ export class ScenarioSessionReviewService extends BaseReviewService<
   private formatReviewListResponse(
     result: GetScenarioSessionReviews,
     languageCode?: string,
+    audioUrlsBySessionId?: Map<string, string>,
   ) {
     const reactionsByReviewId: Record<string, Record<string, number>> = {};
     const commentsByReviewId: Record<string, number> = {};
@@ -296,6 +312,8 @@ export class ScenarioSessionReviewService extends BaseReviewService<
               review.scenarioSession.startedAt!,
               review.scenarioSession.endedAt!,
             ),
+            audioUrl:
+              audioUrlsBySessionId?.get(review.scenarioSession.id) ?? null,
           }
         : {},
       commentsCount: commentsByReviewId[review.id] ?? 0,

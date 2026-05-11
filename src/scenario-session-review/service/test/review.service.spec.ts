@@ -11,6 +11,7 @@ import { UserService } from '../../../user/service/user.service';
 import { ScenarioReviewAccessValidator } from '../../util/scenario-review-access-validator';
 import { ScenarioSessionReviewReadStatusRepository } from '../../repository/read-status.repository';
 import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
+import { ScenarioSessionRecordingService } from '../../../learn/service/scenario-session-recording.service';
 
 jest.mock('src/review/util/review.util', () => ({
   getSessionDurationInSeconds: jest.fn(() => 120),
@@ -41,6 +42,13 @@ describe('formatReviewListResponse', () => {
         { provide: ScenarioReviewAccessValidator, useValue: {} },
         { provide: ScenarioSessionReviewReadStatusRepository, useValue: {} },
         { provide: PermissionValidator, useValue: {} },
+        {
+          provide: ScenarioSessionRecordingService,
+          useValue: {
+            getRecordingUrlForSession: jest.fn().mockResolvedValue(null),
+            getRecordingUrlsForSessions: jest.fn().mockResolvedValue(new Map()),
+          },
+        },
       ],
     }).compile();
 
@@ -160,6 +168,45 @@ describe('formatReviewListResponse', () => {
     expect(formattedData[0].scenario).toEqual({});
     expect(formattedData[0].scenarioSession).toEqual({});
   });
+
+  it('attaches audioUrl from the audio url map when the session has a recording', () => {
+    const result = {
+      reviews: [baseReview as any],
+      count: 1,
+      reactions: [],
+      comments: [],
+    };
+    const audioUrlsBySessionId = new Map<string, string>([
+      ['session-1', 'https://signed.example/session-1'],
+    ]);
+
+    const formattedData = (service as any).formatReviewListResponse(
+      result,
+      undefined,
+      audioUrlsBySessionId,
+    );
+
+    expect(formattedData[0].scenarioSession.audioUrl).toEqual(
+      'https://signed.example/session-1',
+    );
+  });
+
+  it('sets audioUrl to null when the session has no recording in the map', () => {
+    const result = {
+      reviews: [baseReview as any],
+      count: 1,
+      reactions: [],
+      comments: [],
+    };
+
+    const formattedData = (service as any).formatReviewListResponse(
+      result,
+      undefined,
+      new Map<string, string>(),
+    );
+
+    expect(formattedData[0].scenarioSession.audioUrl).toBeNull();
+  });
 });
 
 describe('getReviewById', () => {
@@ -178,6 +225,10 @@ describe('getReviewById', () => {
   const reviewReactionRepository = {
     getReactionsByReviewIds: jest.fn(),
     findOne: jest.fn(),
+  };
+  const recordingService = {
+    getRecordingUrlForSession: jest.fn(),
+    getRecordingUrlsForSessions: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -209,8 +260,15 @@ describe('getReviewById', () => {
         },
         { provide: ScenarioSessionReviewReadStatusRepository, useValue: {} },
         { provide: PermissionValidator, useValue: {} },
+        {
+          provide: ScenarioSessionRecordingService,
+          useValue: recordingService,
+        },
       ],
     }).compile();
+
+    recordingService.getRecordingUrlForSession.mockResolvedValue(null);
+    recordingService.getRecordingUrlsForSessions.mockResolvedValue(new Map());
 
     service = module.get<ScenarioSessionReviewService>(
       ScenarioSessionReviewService,
@@ -316,5 +374,67 @@ describe('getReviewById', () => {
 
     expect(result.scenario.title).toEqual('English Title');
     expect(result.scenario.description).toEqual('English Description');
+  });
+
+  const mockBaseHappyPath = () => {
+    reviewRepository.findOne.mockResolvedValue({
+      id: 'review-1',
+      status: 'IN_REVIEW',
+      createdBy: 1,
+      scenarioSessionId: 'session-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      note: 'test',
+    });
+    reviewAccessValidator.validateAccess.mockResolvedValue(true);
+    scenarioSharedService.getScenarioSessionById.mockResolvedValue({
+      id: 'session-1',
+      scenarioId: 1,
+      startedAt: new Date(),
+      endedAt: new Date(),
+      createdAt: new Date(),
+    });
+    userService.get.mockResolvedValue({
+      id: 1,
+      name: 'User 1',
+      status: 'ACTIVE',
+    });
+    scenarioSharedService.getScenarioById.mockResolvedValue({
+      id: 1,
+      title: 'English Title',
+      description: 'English Description',
+      createdAt: new Date(),
+    });
+    reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue([
+      { count: '0' },
+    ]);
+    reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue([]);
+    reviewReactionRepository.findOne.mockResolvedValue(null);
+    reviewThreadRepository.findOne.mockResolvedValue(null);
+  };
+
+  it('includes the recording audioUrl on the scenarioSession when one is available', async () => {
+    mockBaseHappyPath();
+    recordingService.getRecordingUrlForSession.mockResolvedValue(
+      'https://signed.example/session-1',
+    );
+
+    const result = await service.getReviewById('review-1');
+
+    expect(recordingService.getRecordingUrlForSession).toHaveBeenCalledWith(
+      'session-1',
+    );
+    expect(result.scenarioSession.audioUrl).toEqual(
+      'https://signed.example/session-1',
+    );
+  });
+
+  it('returns audioUrl as null when the session has no recording', async () => {
+    mockBaseHappyPath();
+    recordingService.getRecordingUrlForSession.mockResolvedValue(null);
+
+    const result = await service.getReviewById('review-1');
+
+    expect(result.scenarioSession.audioUrl).toBeNull();
   });
 });

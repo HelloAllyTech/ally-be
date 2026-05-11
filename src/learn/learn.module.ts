@@ -213,6 +213,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     ScenarioSharedService,
     ScenarioService,
     ScenarioTenantService,
+    ScenarioSessionRecordingService,
   ],
 })
 export class LearnModule {}
