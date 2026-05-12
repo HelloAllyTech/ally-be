@@ -43,7 +43,9 @@ describe('TooltipService', () => {
         {
           provide: TooltipTranslationService,
           useValue: {
-            createUpdateTooltipTranslations: jest.fn().mockResolvedValue(undefined),
+            createUpdateTooltipTranslations: jest
+              .fn()
+              .mockResolvedValue(undefined),
           },
         },
       ],
@@ -90,15 +92,21 @@ describe('TooltipService', () => {
 
       await service.createTooltip(createDto);
 
-      expect(translationService.createUpdateTooltipTranslations).toHaveBeenCalledWith([mockTooltip]);
+      expect(
+        translationService.createUpdateTooltipTranslations,
+      ).toHaveBeenCalledWith([mockTooltip]);
     });
 
     it('should not trigger translation service when save throws', async () => {
       tooltipRepository.create.mockReturnValue(mockTooltip);
       tooltipRepository.save.mockRejectedValue(new Error('DB error'));
 
-      await expect(service.createTooltip(createDto)).rejects.toThrow('DB error');
-      expect(translationService.createUpdateTooltipTranslations).not.toHaveBeenCalled();
+      await expect(service.createTooltip(createDto)).rejects.toThrow(
+        'DB error',
+      );
+      expect(
+        translationService.createUpdateTooltipTranslations,
+      ).not.toHaveBeenCalled();
     });
 
     it('should throw ConflictException when location already exists (duplicate key)', async () => {
@@ -156,9 +164,9 @@ describe('TooltipService', () => {
 
       await service.updateTooltip(tooltipId, updateDto);
 
-      expect(translationService.createUpdateTooltipTranslations).toHaveBeenCalledWith([
-        { ...mockTooltip, ...updateDto },
-      ]);
+      expect(
+        translationService.createUpdateTooltipTranslations,
+      ).toHaveBeenCalledWith([{ ...mockTooltip, ...updateDto }]);
     });
 
     it('should return false when update affects no rows', async () => {
@@ -176,7 +184,9 @@ describe('TooltipService', () => {
 
       await service.updateTooltip(tooltipId, updateDto);
 
-      expect(translationService.createUpdateTooltipTranslations).not.toHaveBeenCalled();
+      expect(
+        translationService.createUpdateTooltipTranslations,
+      ).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when tooltip does not exist', async () => {
@@ -248,7 +258,10 @@ describe('TooltipService', () => {
       const filtered = [mockTooltip];
       tooltipRepository.getTooltips.mockResolvedValue(filtered);
 
-      const result = await service.getTooltips('login', { limit: 30, offset: 0 });
+      const result = await service.getTooltips('login', {
+        limit: 30,
+        offset: 0,
+      });
 
       expect(tooltipRepository.getTooltips).toHaveBeenCalledWith('login', {
         limit: 30,

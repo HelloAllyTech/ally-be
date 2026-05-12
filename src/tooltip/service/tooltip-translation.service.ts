@@ -9,11 +9,16 @@ import { LoggerService } from 'src/logger/logger.service';
 import { OPENAI_TOOLTIP_TRANSLATION_PROMPT_CODE } from '../constants/tooltip.constants';
 import { Tooltip } from '../entity/tooltip.entity';
 import { TooltipTranslationsRepository } from '../repository/tooltip-translations.repository';
-import { CreateTooltipTranslation, TooltipMetadata } from '../types/tooltip-translation.types';
+import {
+  CreateTooltipTranslation,
+  TooltipMetadata,
+} from '../types/tooltip-translation.types';
 
 @Injectable()
 export class TooltipTranslationService {
-  private readonly logger = LoggerService.getInstance(TooltipTranslationService.name);
+  private readonly logger = LoggerService.getInstance(
+    TooltipTranslationService.name,
+  );
 
   constructor(
     private readonly sharedLanguageService: SharedLanguageService,
@@ -49,16 +54,21 @@ export class TooltipTranslationService {
       .map((c) => (typeof c === 'string' ? c.trim() : ''))
       .filter(Boolean);
 
-    if (!codes.length || !metadataObj || Object.keys(metadataObj).length === 0) {
+    if (
+      !codes.length ||
+      !metadataObj ||
+      Object.keys(metadataObj).length === 0
+    ) {
       return {};
     }
 
     try {
-      const translated = await this.openAITranslationService.translateObjectToLanguages(
-        metadataObj,
-        codes,
-        OPENAI_TOOLTIP_TRANSLATION_PROMPT_CODE,
-      );
+      const translated =
+        await this.openAITranslationService.translateObjectToLanguages(
+          metadataObj,
+          codes,
+          OPENAI_TOOLTIP_TRANSLATION_PROMPT_CODE,
+        );
       return translated ?? {};
     } catch (err) {
       this.logger?.error?.(
@@ -91,19 +101,23 @@ export class TooltipTranslationService {
 
         if (!languagesFiltered.length) continue;
 
-        const languageCodes = languagesFiltered.map((l: any) => l.translationCode.trim());
-
-        const translatedMap = await this.buildTranslatedMetadataForLanguageCodes(
-          sanitized as Partial<TooltipMetadata>,
-          languageCodes,
+        const languageCodes = languagesFiltered.map((l: any) =>
+          l.translationCode.trim(),
         );
+
+        const translatedMap =
+          await this.buildTranslatedMetadataForLanguageCodes(
+            sanitized as Partial<TooltipMetadata>,
+            languageCodes,
+          );
 
         const translatedList: CreateTooltipTranslation[] = [];
 
         for (const language of languagesFiltered) {
           const code = language.translationCode.trim();
           const translatedData = translatedMap[code];
-          if (!translatedData || Object.keys(translatedData).length === 0) continue;
+          if (!translatedData || Object.keys(translatedData).length === 0)
+            continue;
           translatedList.push({
             tooltipId: tooltip.id,
             languageId: Number(language.id),
@@ -114,7 +128,9 @@ export class TooltipTranslationService {
         if (!translatedList.length) continue;
 
         const existingTranslations =
-          await this.translationsRepository.getTranslationsByTooltipId(tooltip.id);
+          await this.translationsRepository.getTranslationsByTooltipId(
+            tooltip.id,
+          );
 
         const existingLanguageIdSet = new Set(
           (existingTranslations ?? []).map((r) => Number(r.languageId)),
@@ -135,7 +151,10 @@ export class TooltipTranslationService {
         if (toUpdate.length) {
           for (const updateItem of toUpdate) {
             await this.translationsRepository.update(
-              { tooltipId: updateItem.tooltipId, languageId: updateItem.languageId },
+              {
+                tooltipId: updateItem.tooltipId,
+                languageId: updateItem.languageId,
+              },
               { tipText: updateItem.tipText },
             );
           }
@@ -149,7 +168,9 @@ export class TooltipTranslationService {
     }
   }
 
-  private sanitizeMetadata(data?: TooltipMetadata | null): Partial<TooltipMetadata> {
+  private sanitizeMetadata(
+    data?: TooltipMetadata | null,
+  ): Partial<TooltipMetadata> {
     if (!data) return {};
     const cleaned: Partial<TooltipMetadata> = {};
     for (const [key, value] of Object.entries(data)) {
@@ -163,14 +184,18 @@ export class TooltipTranslationService {
     return cleaned;
   }
 
-  async getTooltipsWithTranslations(tooltips: Tooltip[], languageId: number): Promise<Tooltip[]> {
+  async getTooltipsWithTranslations(
+    tooltips: Tooltip[],
+    languageId: number,
+  ): Promise<Tooltip[]> {
     if (!tooltips.length || !languageId) return tooltips;
 
     const tooltipIds = tooltips.map((t) => t.id);
-    const translations = await this.translationsRepository.getTranslationsForTooltips(
-      tooltipIds,
-      languageId,
-    );
+    const translations =
+      await this.translationsRepository.getTranslationsForTooltips(
+        tooltipIds,
+        languageId,
+      );
 
     const translationMap = new Map(translations.map((t) => [t.tooltipId, t]));
 

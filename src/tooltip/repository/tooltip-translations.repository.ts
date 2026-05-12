@@ -7,7 +7,9 @@ import { TooltipTranslations } from '../entity/tooltip-translations.entity';
 
 @Injectable()
 export class TooltipTranslationsRepository extends Repository<TooltipTranslations> {
-  private readonly logger = LoggerService.getInstance(TooltipTranslationsRepository.name);
+  private readonly logger = LoggerService.getInstance(
+    TooltipTranslationsRepository.name,
+  );
 
   constructor(private dataSource: DataSource) {
     super(TooltipTranslations, dataSource.createEntityManager());
