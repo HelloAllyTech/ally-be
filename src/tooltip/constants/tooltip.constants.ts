@@ -1,0 +1,2 @@
+export const OPENAI_TOOLTIP_TRANSLATION_PROMPT_CODE =
+  'openai_translation_tooltip_translation';

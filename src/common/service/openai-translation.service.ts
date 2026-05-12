@@ -18,6 +18,7 @@ import {
   DEFAULT_OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_TEXT_TRANSLATION_PROMPT_TEMPLATE,
+  DEFAULT_OPENAI_TOOLTIP_TRANSLATION_PROMPT_TEMPLATE,
 } from 'src/common/constants/openai-translations.constants';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 
@@ -62,6 +63,10 @@ export class OpenAITranslationsService {
   private readonly TEXT_TRANSLATION_PROMPT_CODE = toPromptCode(
     'openai_translation',
     'general_text_translation',
+  );
+  private readonly TOOLTIP_TRANSLATION_PROMPT_CODE = toPromptCode(
+    'openai_translation',
+    'tooltip_translation',
   );
 
   private renderTemplate(
@@ -424,6 +429,8 @@ IMPORTANT:
         DEFAULT_OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_TEMPLATE,
       [this.TEXT_TRANSLATION_PROMPT_CODE]:
         DEFAULT_OPENAI_TEXT_TRANSLATION_PROMPT_TEMPLATE,
+      [this.TOOLTIP_TRANSLATION_PROMPT_CODE]:
+        DEFAULT_OPENAI_TOOLTIP_TRANSLATION_PROMPT_TEMPLATE,
     };
     return fallbackPromptMap[promptCode];
   }

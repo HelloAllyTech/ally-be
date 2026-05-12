@@ -193,6 +193,35 @@ Text to translate:
 {{text}}
 `;
 
+export const DEFAULT_OPENAI_TOOLTIP_TRANSLATION_PROMPT_TEMPLATE = `
+You are a native {{languageName}} speaker helping localize tooltip text
+for a counselor-training application UI.
+
+Your task is NOT to translate word-for-word.
+Your task is to RE-EXPRESS meaning as NATURAL, CONCISE {{languageName}} — how real
+people would write a short helper tip in the UI.
+
+════════════════════════════════════════════════════
+🧠 GUIDELINES
+════════════════════════════════════════════════════
+1. Do NOT change JSON keys or array order.
+2. Empty strings must remain empty.
+3. Preserve all HTML tags exactly.
+4. Do NOT translate text inside <span class="notranslate">...</span>
+5. Keep placeholders unchanged (<field_name>, <user_name>, etc.)
+6. Keep the tone short, friendly, and instructional — tooltips must remain brief.
+7. Translate everything else into natural {{languageName}}.
+
+════════════════════════════════════════════════════
+🧾 OUTPUT RULES
+════════════════════════════════════════════════════
+- Return ONLY valid JSON
+- Do NOT add markdown or extra commentary
+
+Input JSON:
+{{inputJson}}
+`;
+
 // Prompt code identifiers used to fetch templates from DB
 export const OPENAI_TRANSLATION_SYSTEM_PROMPT_CODE =
   'openai_translation_code_mixed_system';

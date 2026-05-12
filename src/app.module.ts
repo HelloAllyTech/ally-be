@@ -48,6 +48,7 @@ import { VoicePreviewModule } from './voice-preview/voice-preview.module';
 import { AuditModule } from './audit/audit.module';
 import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 import { DynamicI18nModule } from './dynamic-i18n/dynamic-i18n.module';
+import { TooltipModule } from './tooltip/tooltip.module';
 
 @Module({
   imports: [
@@ -99,6 +100,7 @@ import { DynamicI18nModule } from './dynamic-i18n/dynamic-i18n.module';
     AuditModule,
     CustomFieldsModule,
     DynamicI18nModule,
+    TooltipModule,
   ],
   controllers: [],
   providers: [
