@@ -388,6 +388,12 @@ export class ScenarioSharedService {
     // active language's string[] only (see create-scenario DTO allowedFillerWords).
     delete promptData.allowedFillerWords;
 
+    // Human-readable language name (e.g. "Tamil (India)") — gives the LLM a far
+    // stronger dialect signal than the bare BCP-47 code alone.
+    if (languageDetails?.label) {
+      promptData.languageLabel = languageDetails.label;
+    }
+
     if (metadata?.languageId) {
       const samples =
         metadata?.linguisticStyleSamples?.[String(metadata.languageId)];
