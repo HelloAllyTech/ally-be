@@ -15,6 +15,7 @@ import { PermissionValidator } from 'src/authorization/service/permission-valida
 import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { EgressInfo } from 'livekit-server-sdk';
+import { In } from 'typeorm';
 
 @Injectable()
 export class ScenarioSessionRecordingService {
@@ -29,6 +30,52 @@ export class ScenarioSessionRecordingService {
     private readonly permissionValidatorService: PermissionValidator,
     private readonly livekitService: LiveKitService,
   ) {}
+
+  async getRecordingUrlForSession(
+    scenarioSessionId: string,
+  ): Promise<string | null> {
+    const recording = await this.scenarioSessionRecordingRepository.findOne({
+      where: { scenarioSessionId },
+    });
+
+    if (!recording) {
+      return null;
+    }
+
+    return this.s3Service.generatePresignedUrl({
+      bucket: this.configService.scenarioSessionAudioStorage.bucket!,
+      key: recording.storageKey,
+      operation: 'get',
+      expiresIn: 2400,
+    });
+  }
+
+  async getRecordingUrlsForSessions(
+    scenarioSessionIds: string[],
+  ): Promise<Map<string, string>> {
+    if (scenarioSessionIds.length === 0) {
+      return new Map();
+    }
+
+    const recordings = await this.scenarioSessionRecordingRepository.find({
+      where: { scenarioSessionId: In(scenarioSessionIds) },
+    });
+
+    const bucket = this.configService.scenarioSessionAudioStorage.bucket!;
+    const entries = await Promise.all(
+      recordings.map(async (recording) => {
+        const url = await this.s3Service.generatePresignedUrl({
+          bucket,
+          key: recording.storageKey,
+          operation: 'get',
+          expiresIn: 2400,
+        });
+        return [recording.scenarioSessionId, url] as const;
+      }),
+    );
+
+    return new Map(entries);
+  }
 
   async getScenarioSessionRecording(scenarioSessionId: string) {
     const scenarioSession =

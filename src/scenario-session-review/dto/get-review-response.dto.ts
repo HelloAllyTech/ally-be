@@ -24,6 +24,8 @@ export class ScenarioSessionDto {
   duration!: number;
   @ApiProperty()
   createdAt?: Date;
+  @ApiProperty({ required: false, nullable: true, type: String })
+  audioUrl?: string | null;
 }
 
 export class GetScenarioSessionReviewResponseDto {

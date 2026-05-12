@@ -5,13 +5,21 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  Unique,
 } from 'typeorm';
 import { BaseEntity } from '../../common/entity/base.entity';
 import { CustomFieldDefinition } from './custom-field-definition.entity';
 
 @Entity('chat_custom_field_values')
-@Index(['tenantId', 'chatId'])
-@Index(['tenantId', 'fieldDefinitionId'])
+@Index('idx_chat_custom_field_values_tenant_chat', ['tenantId', 'chatId'])
+@Index('idx_chat_custom_field_values_tenant_field', [
+  'tenantId',
+  'fieldDefinitionId',
+])
+@Unique('uq_chat_custom_field_values_chat_field', [
+  'chatId',
+  'fieldDefinitionId',
+])
 export class ChatCustomFieldValue extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -23,7 +31,10 @@ export class ChatCustomFieldValue extends BaseEntity {
   fieldDefinitionId!: string;
 
   @ManyToOne(() => CustomFieldDefinition, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'fieldDefinitionId' })
+  @JoinColumn({
+    name: 'fieldDefinitionId',
+    foreignKeyConstraintName: 'fk_chat_custom_field_values_definition',
+  })
   fieldDefinition?: CustomFieldDefinition;
 
   @Column({ nullable: true })

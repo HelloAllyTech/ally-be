@@ -145,6 +145,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         sessionName: `SS-${sessionId}-${date}`,
         languageId: createScenarioSessionDto?.languageId,
         voiceId: createScenarioSessionDto.voiceId,
+        platform: createScenarioSessionDto.platform ?? 'unknown',
       },
     });
 

@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber, Max, IsString, IsOptional } from 'class-validator';
+import { IsNumber, Max, IsString, IsOptional, IsEnum } from 'class-validator';
 import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from '../constants/scenario-session.constants';
+import { SessionPlatform } from '../enum/session-platform.enum';
 
 export class StartScenarioSessionRequestDto {
   @ApiProperty({
@@ -42,4 +43,14 @@ export class StartScenarioSessionRequestDto {
   @IsOptional()
   @IsNumber()
   languageId!: number;
+
+  @ApiProperty({
+    description: 'Client platform that initiated the session',
+    enum: SessionPlatform,
+    example: SessionPlatform.WEB,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(SessionPlatform)
+  platform?: SessionPlatform;
 }
