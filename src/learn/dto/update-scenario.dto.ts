@@ -14,7 +14,7 @@ import {
   IsNotEmpty,
   MaxLength,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 import {
   ScenarioDifficultyLevel,
@@ -34,6 +34,7 @@ import { BehaviorInstructionDto } from './behavior-instruction.dto';
 import { MAX_BEHAVIOR_INSTRUCTIONS_COUNT } from '../constants/scenario-behavior-instuctions.constants';
 import { KnowledgeSourceDto } from './knowledge-source.dto';
 import { StateNamesDto } from './state-names.dto';
+import { sanitizeDescriptionHtml } from 'src/common/util/sanitize-html.util';
 
 export class UpdateScenarioDto {
   @ApiProperty({
@@ -45,11 +46,12 @@ export class UpdateScenarioDto {
   title?: string;
 
   @ApiProperty({
-    description: 'Description of the scenario',
-    example: 'Description 1',
+    description: 'Description of the scenario (supports HTML formatting)',
+    example: '<p>Description 1</p>',
   })
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? sanitizeDescriptionHtml(value) : value))
   description?: string;
 
   @ApiProperty({
