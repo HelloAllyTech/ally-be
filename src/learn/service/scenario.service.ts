@@ -629,10 +629,14 @@ export class ScenarioService {
               behaviorInstructions: scenario.behaviorInstructions,
             }));
 
-          if (
-            scenarioBehaviorInstructionList &&
-            scenarioBehaviorInstructionList?.length > 0
-          )
+          const hasAnyBehaviorInstruction =
+            scenarioBehaviorInstructionList?.some(
+              (item) =>
+                item.behaviorInstructions &&
+                item.behaviorInstructions.length > 0,
+            );
+
+          if (hasAnyBehaviorInstruction)
             await this.scenarioBehaviorInstructionService.createBehaviorInstructions(
               scenarioBehaviorInstructionList,
               entityManager,

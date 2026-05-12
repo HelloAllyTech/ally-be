@@ -110,10 +110,13 @@ export class ScenarioBehaviorInstructionService {
       ? em.getRepository(ScenarioBehaviorInstructionBehavior)
       : this.scenarioBehaviorInstructionBehaviorRepository;
 
-    // Flatten and format instructions from all scenarios into a single array
-    // Each instruction includes its scenarioId and associated behaviors
-    const formattedBehaviorInstructions =
-      req.flatMap((item) =>
+    // Flatten and format instructions from all scenarios into a single array.
+    // The inner `?? []` is required: when a scenario has no behaviorInstructions,
+    // the optional chain returns undefined, and flatMap preserves undefined in its
+    // output (rather than flattening it away). Without the fallback, downstream code
+    // would receive `[undefined, …]` and try to insert rows with null scenarioId.
+    const formattedBehaviorInstructions = req.flatMap(
+      (item) =>
         item?.behaviorInstructions?.map((behaviorInstructionItem) => ({
           scenarioId: item.scenarioId,
           category: behaviorInstructionItem.category,
@@ -121,8 +124,13 @@ export class ScenarioBehaviorInstructionService {
           createdBy: userIdNumber,
           updatedBy: userIdNumber,
           behaviors: behaviorInstructionItem.behaviors,
-        })),
-      ) ?? [];
+        })) ?? [],
+    );
+
+    if (formattedBehaviorInstructions.length === 0) {
+      this.logger.debug('No behavior instructions to create; skipping');
+      return;
+    }
 
     this.logger.debug(
       `Formatted ${formattedBehaviorInstructions.length} instruction(s) for creation`,
