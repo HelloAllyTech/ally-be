@@ -828,8 +828,11 @@ export class ScenarioService {
         );
       }
 
-      if (data?.behaviorInstructions) {
-        this.validateBehaviorInstructionsStructure(data?.behaviorInstructions);
+      // Behavior instructions are optional. Only validate structure when the
+      // caller actually provided one or more entries — an empty array means
+      // "no BI" and should be accepted, same as omitting the field entirely.
+      if (data?.behaviorInstructions && data.behaviorInstructions.length > 0) {
+        this.validateBehaviorInstructionsStructure(data.behaviorInstructions);
       }
     }
   }
@@ -837,10 +840,9 @@ export class ScenarioService {
   private validateBehaviorInstructionsStructure(
     behaviorInstructions: BehaviorInstructionDto[],
   ) {
-    if (behaviorInstructions?.length === 0) {
-      throw new BadRequestException('Behavior instructions are required');
-    }
-
+    // Callers gate on non-empty input; this method only validates the structure
+    // of each provided entry. The "BI required" check has been removed because
+    // behavior instructions are now optional for ACTIVE scenarios.
     const supportedStateInstructionStateIdList =
       supportedStateInstructionStateIds;
     const invalidBehaviorInstructions = behaviorInstructions?.filter(
@@ -1099,11 +1101,12 @@ export class ScenarioService {
             entityManager,
           );
 
-          // Update behavior instructions
-          if (
-            updateScenarioDto.behaviorInstructions &&
-            updateScenarioDto.behaviorInstructions?.length > 0
-          ) {
+          // Update behavior instructions when the caller explicitly sent an
+          // array (including `[]`, which means "remove all existing BIs").
+          // An omitted field (undefined) means "no change to BIs"; the
+          // updateBehaviorInstructions service does a full sync — creating,
+          // updating, and soft-deleting as needed.
+          if (Array.isArray(updateScenarioDto.behaviorInstructions)) {
             await this.scenarioBehaviorInstructionService.updateBehaviorInstructions(
               {
                 scenarioId: id,
