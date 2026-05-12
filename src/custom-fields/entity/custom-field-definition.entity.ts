@@ -40,7 +40,7 @@ export interface SingleSelectOption {
 }
 
 @Entity('custom_field_definitions')
-@Index(['tenantId', 'isActive'])
+@Index('idx_custom_field_definitions_tenant_active', ['tenantId', 'isActive'])
 export class CustomFieldDefinition extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -48,7 +48,11 @@ export class CustomFieldDefinition extends BaseEntity {
   @Column()
   name!: string;
 
-  @Column({ type: 'enum', enum: CustomFieldType })
+  @Column({
+    type: 'enum',
+    enum: CustomFieldType,
+    enumName: 'custom_field_type_enum',
+  })
   fieldType!: CustomFieldType;
 
   @Column({ type: 'jsonb', nullable: true })
@@ -60,6 +64,7 @@ export class CustomFieldDefinition extends BaseEntity {
   @Column({
     type: 'enum',
     enum: CustomFieldEditPermission,
+    enumName: 'custom_field_edit_permission_enum',
     default: CustomFieldEditPermission.BOTH,
   })
   editPermission!: CustomFieldEditPermission;
@@ -67,6 +72,7 @@ export class CustomFieldDefinition extends BaseEntity {
   @Column({
     type: 'enum',
     enum: CustomFieldFillMode,
+    enumName: 'custom_field_fill_mode_enum',
     default: CustomFieldFillMode.MANUAL,
   })
   fillMode!: CustomFieldFillMode;
