@@ -384,9 +384,10 @@ export class ScenarioSharedService {
       promptData.competency = scenario.competency?.name;
     }
 
-    // Drop per-language map; learn payload uses same key as scenario API for the
-    // active language's string[] only (see create-scenario DTO allowedFillerWords).
+    // Drop per-language maps; learn payload uses same key as scenario API but
+    // carries the active language's value only (see create-scenario DTO).
     delete promptData.allowedFillerWords;
+    delete promptData.languageCharacteristics;
 
     // Human-readable language name (e.g. "Tamil (India)") — gives the LLM a far
     // stronger dialect signal than the bare BCP-47 code alone.
@@ -409,6 +410,19 @@ export class ScenarioSharedService {
           .filter((f) => f.length > 0);
         if (cleaned.length > 0) {
           promptData.allowedFillerWords = cleaned;
+        }
+      }
+
+      // Free-text per-language style guidance for this scenario, authored in
+      // studio (e.g. "Speaks simple, colloquial Chennai Tamil; code-mixes with
+      // English"). Optional; defaults to blank. Shape mirrors the sibling maps
+      // above — keyed by languageId, scoped to the active language only.
+      const characteristics =
+        metadata?.languageCharacteristics?.[String(metadata.languageId)];
+      if (typeof characteristics === 'string') {
+        const trimmed = characteristics.trim();
+        if (trimmed.length > 0) {
+          promptData.languageCharacteristics = trimmed;
         }
       }
     }

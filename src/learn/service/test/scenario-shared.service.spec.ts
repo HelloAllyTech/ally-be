@@ -1156,6 +1156,87 @@ describe('ScenarioSharedService', () => {
       expect((result.scenario.promptData as any).languageLabel).toBeUndefined();
     });
 
+    it('should put active language characteristics on promptData.languageCharacteristics (trimmed string)', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+
+      const result = await service.createRoomMetadata({
+        scenario: {
+          id: 1,
+          title: 'Test Scenario',
+          description: 'Test Description',
+          prompt: 'Act only as the client.',
+          metadata: {
+            voiceId: 'voice-1',
+            languageId: 1,
+            language: 'en',
+            name: 'Alex',
+            age: 28,
+            gender: 'Male',
+            currentLocation: 'NYC',
+            openingStatements: ['Hi'],
+            languageCharacteristics: {
+              '1': '  Speaks Chennai-style Tamil with English code-mixing.  ',
+              '2': 'Different scenario, different language.',
+            },
+          },
+          terminationEvents: [],
+          behaviorInstructions: [],
+          difficultyLevel: 'EASY',
+        } as any,
+        sessionEvents: [],
+        languageDetails: null as any,
+        previousMemory: null,
+      });
+
+      expect((result.scenario.promptData as any).languageCharacteristics).toBe(
+        'Speaks Chennai-style Tamil with English code-mixing.',
+      );
+    });
+
+    it('should leave languageCharacteristics unset when blank or missing for active language', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+
+      const result = await service.createRoomMetadata({
+        scenario: {
+          id: 1,
+          title: 'Test Scenario',
+          description: 'Test Description',
+          prompt: 'Act only as the client.',
+          metadata: {
+            voiceId: 'voice-1',
+            languageId: 1,
+            language: 'en',
+            name: 'Alex',
+            age: 28,
+            gender: 'Male',
+            currentLocation: 'NYC',
+            openingStatements: ['Hi'],
+            languageCharacteristics: { '1': '   ' },
+          },
+          terminationEvents: [],
+          behaviorInstructions: [],
+          difficultyLevel: 'EASY',
+        } as any,
+        sessionEvents: [],
+        languageDetails: null as any,
+        previousMemory: null,
+      });
+
+      expect(
+        (result.scenario.promptData as any).languageCharacteristics,
+      ).toBeUndefined();
+    });
+
     it('should put active language allowed fillers on promptData.allowedFillerWords (string[])', async () => {
       scenarioVoiceRepository.findOne.mockResolvedValue({
         id: 'voice-1',

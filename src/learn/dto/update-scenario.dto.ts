@@ -85,6 +85,19 @@ export class UpdateScenarioDto {
   allowedFillerWords?: Record<string, string[]>;
 
   @ApiProperty({
+    description:
+      'Free-text per-language style guidance for this scenario (e.g. dialect, register, code-mixing norms). Keyed by languageId.',
+    example: {
+      '1': 'Speaks simple, colloquial Chennai Tamil; code-mixes with English.',
+    },
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
+  @IsObject()
+  @IsOptional()
+  languageCharacteristics?: Record<string, string>;
+
+  @ApiProperty({
     description: 'Cover image URL of the scenario',
     example: 'https://example.com/cover-image.png',
   })
