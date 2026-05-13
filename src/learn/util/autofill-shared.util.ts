@@ -53,7 +53,7 @@ export function buildBehaviorIdMapping(behaviors: BehaviorResponseDto[]): {
 
 export function stripMarkdownFences(text: string): string {
   return text
-    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/^```[\w-]*\s*/i, '')
     .replace(/\s*```\s*$/, '')
     .trim();
 }

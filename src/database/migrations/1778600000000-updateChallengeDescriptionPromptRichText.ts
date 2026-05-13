@@ -1,7 +1,9 @@
-You are generating a "Challenge Description" for a mental health role-play simulation, formatted as rich HTML for display in a rich text editor.
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+const CHALLENGE_DESCRIPTION_TEMPLATE_V3 = `You are generating a "Challenge Description" for a mental health role-play simulation, formatted as rich HTML for display in a rich text editor.
 
 Output Format:
-Return HTML only. Do NOT wrap the response in markdown code fences (no ```html, no ```). Do NOT include any preamble or explanation. Use ONLY the following HTML tags, exactly as written:
+Return HTML only. Do NOT wrap the response in markdown code fences (no \`\`\`html, no \`\`\`). Do NOT include any preamble or explanation. Use ONLY the following HTML tags, exactly as written:
 - <p> for paragraphs
 - <strong> for bold (key terms, important emotional cues)
 - <em> for italics (subtle emphasis, internal feelings)
@@ -54,4 +56,38 @@ Professional, emotionally grounded, and therapeutic.
 
 The output should read like a precise description of the counselling challenge - not a story.
 
-Now generate the Challenge Description in {{languageName}} as valid HTML using only the allowed tags. Output the HTML directly, with no surrounding fences, comments, or explanation.
+Now generate the Challenge Description in {{languageName}} as valid HTML using only the allowed tags. Output the HTML directly, with no surrounding fences, comments, or explanation.`;
+
+const PROMPT_CODE = 'openai_simulation_challenge_description';
+const NEW_VERSION = 3;
+const PREVIOUS_VERSION = 2;
+
+export class UpdateChallengeDescriptionPromptRichText1778600000000 implements MigrationInterface {
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `INSERT INTO "prompts_versions" ("promptId", "version", "prompt", "createdBy", "updatedBy")
+       SELECT p."id", $1, $2, 0, 0 FROM "prompts" p WHERE p."promptCode" = $3
+       ON CONFLICT ("promptId", "version") DO NOTHING`,
+      [NEW_VERSION, CHALLENGE_DESCRIPTION_TEMPLATE_V3, PROMPT_CODE],
+    );
+
+    await queryRunner.query(
+      `UPDATE "prompts" SET "currentVersion" = $1 WHERE "promptCode" = $2`,
+      [NEW_VERSION, PROMPT_CODE],
+    );
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `UPDATE "prompts" SET "currentVersion" = $1 WHERE "promptCode" = $2`,
+      [PREVIOUS_VERSION, PROMPT_CODE],
+    );
+
+    await queryRunner.query(
+      `DELETE FROM "prompts_versions" pv
+       USING "prompts" p
+       WHERE pv."promptId" = p."id" AND p."promptCode" = $1 AND pv."version" = $2`,
+      [PROMPT_CODE, NEW_VERSION],
+    );
+  }
+}

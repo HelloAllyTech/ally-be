@@ -51,7 +51,9 @@ export class CreateScenarioDto {
   })
   @IsString()
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' ? sanitizeDescriptionHtml(value) : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' ? sanitizeDescriptionHtml(value) : value,
+  )
   description?: string;
 
   @ApiProperty({
@@ -254,12 +256,25 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
-      'Challenge description text for non-primary languages (scenario_translations.metadata.description), keyed by languageId string',
+      'Challenge description text for non-primary languages (scenario_translations.metadata.description), keyed by languageId string. Supports the same HTML formatting allow-list as the primary description.',
     type: 'object',
     additionalProperties: { type: 'string' },
   })
   @IsObject()
   @IsOptional()
+  @Transform(({ value }) => {
+    if (!value || typeof value !== 'object') return value;
+    const sanitized: Record<string, string> = {};
+    for (const [lang, html] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      sanitized[lang] =
+        typeof html === 'string'
+          ? sanitizeDescriptionHtml(html)
+          : (html as string);
+    }
+    return sanitized;
+  })
   translationDescription?: Record<string, string>;
 
   @ApiProperty({

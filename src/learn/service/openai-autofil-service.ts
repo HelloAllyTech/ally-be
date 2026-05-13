@@ -23,6 +23,7 @@ import {
   buildTemplateVariables,
   extractContent,
   renderTemplate,
+  stripMarkdownFences,
 } from '../util/autofill-shared.util';
 
 export interface AutofillModelInfo {
@@ -133,7 +134,11 @@ export class OpenAIAutofillService {
         );
       }
 
-      return extractContent(fieldName, content.trim(), behaviorIdMapping);
+      return extractContent(
+        fieldName,
+        stripMarkdownFences(content),
+        behaviorIdMapping,
+      );
     } catch (error) {
       this.logger.error(
         `Error generating content for prompt code: ${promptCode}`,
