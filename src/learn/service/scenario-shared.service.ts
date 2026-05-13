@@ -58,6 +58,7 @@ import {
 import { formatBehaviorInstructionsForLivekitMetadata } from '../util/scenario-behavior-instructions.util';
 import { CompetencyService } from './competency.service';
 import { S3Service } from 'src/aws/service/s3.service';
+import { htmlToPlainText } from 'src/common/util/sanitize-html.util';
 import { ScenarioSessionRecordingRepository } from '../repository/scenario-session-recording.repository';
 import { ScenarioSessionRecording } from '../entity/scenario-session-recording.entity';
 
@@ -427,11 +428,22 @@ export class ScenarioSharedService {
       }
     }
 
+    const translatedDescription =
+      scenarioDataWithoutMetadata?.translationDescription?.[
+        metadata?.languageId
+      ];
+    promptData.description =
+      translatedDescription != null
+        ? htmlToPlainText(translatedDescription)
+        : scenarioDataWithoutMetadata.description;
+    delete scenarioDataWithoutMetadata.translationDescription;
+
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
       // Ensure we have values even if not translated
       title: promptData?.title || scenario.title,
-      description: promptData?.description || scenario.description,
+      description:
+        promptData?.description || scenarioDataWithoutMetadata.description,
       promptData: promptData,
     };
     const scenarioVoice = await this.getScenarioVoice(voiceId);
