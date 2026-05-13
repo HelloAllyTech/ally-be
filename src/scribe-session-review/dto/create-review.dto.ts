@@ -20,11 +20,11 @@ export class CreateScribeSessionReviewDto {
     description: 'Optional note to provide context for reviewers',
     example: 'I struggled with the empathy section and would like feedback.',
     required: false,
-    maxLength: 250,
+    maxLength: 1000,
   })
   @IsOptional()
   @IsString()
-  @MaxLength(250)
+  @MaxLength(1000)
   note?: string;
 }
 
