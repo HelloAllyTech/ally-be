@@ -1,7 +1,9 @@
 import { DataSource } from 'typeorm';
 import { ScenarioSessions } from '../../../learn/entity/scenario-sessions.entity';
 import { ScenarioSessionMessages } from '../../../learn/entity/scenario-session-messages.entity';
+import { ScenarioSessionEvents } from '../../../learn/entity/scenario-session-events.entity';
 import { Scenarios } from '../../../learn/entity/scenarios.entity';
+import { SessionEvents } from '../../../session-event/entity/session-events.entity';
 import { User } from '../../../user/entity/user.entity';
 import { ScenarioSessionMessageType } from '../../../learn/enum/scenario-session-message.type.enum';
 import { ANONYMOUS_CLIENT_ID } from '../../../common/constants/user.constants';
@@ -12,7 +14,9 @@ import { TENANT_CODE } from '../config';
 export async function seedSessions(ds: DataSource): Promise<void> {
   const sessionRepo = getRepo(ds, ScenarioSessions);
   const messageRepo = getRepo(ds, ScenarioSessionMessages);
+  const sessionEventRepo = getRepo(ds, ScenarioSessionEvents);
   const scenarioRepo = getRepo(ds, Scenarios);
+  const eventRepo = getRepo(ds, SessionEvents);
   const userRepo = getRepo(ds, User);
 
   const counselor = await userRepo.findOne({
@@ -29,9 +33,14 @@ export async function seedSessions(ds: DataSource): Promise<void> {
     if (row) scenarioIdByKey.set(fixture.key, row.id);
   }
 
+  const eventByCode = new Map(
+    (await eventRepo.find()).map((e) => [e.eventCode, e]),
+  );
+
   let created = 0;
   let existingCount = 0;
   let messageCount = 0;
+  let eventCount = 0;
 
   for (const fixture of sessions) {
     const scenarioId = scenarioIdByKey.get(fixture.scenarioKey);
@@ -64,11 +73,13 @@ export async function seedSessions(ds: DataSource): Promise<void> {
     );
     created++;
 
+    const turnTimings: Array<{ start: number; end: number }> = [];
     let offset = 0;
     for (const turn of fixture.transcript) {
       const start = offset;
       const end = offset + 8;
       offset = end + 2;
+      turnTimings.push({ start, end });
       await messageRepo.save(
         messageRepo.create({
           scenarioSessionId: session.id,
@@ -83,10 +94,30 @@ export async function seedSessions(ds: DataSource): Promise<void> {
       );
       messageCount++;
     }
+
+    for (const ev of fixture.events ?? []) {
+      const event = eventByCode.get(ev.eventCode);
+      const timing = turnTimings[ev.occurredAtTurnIndex];
+      if (!event || !timing || !startedAt) continue;
+
+      const occurredAt = new Date(startedAt.getTime() + timing.end * 1000);
+      await sessionEventRepo.save(
+        sessionEventRepo.create({
+          scenarioSessionId: session.id,
+          eventId: event.id,
+          occurredAt,
+          score: event.score,
+          emoji: event.emoji,
+          message: event.message,
+          tenantId: TENANT_CODE,
+        }),
+      );
+      eventCount++;
+    }
   }
 
   log(
     `sessions: ${created} created, ${existingCount} already existed ` +
-      `(${messageCount} messages added)`,
+      `(${messageCount} messages, ${eventCount} session events added)`,
   );
 }

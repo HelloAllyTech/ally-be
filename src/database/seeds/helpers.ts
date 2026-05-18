@@ -17,6 +17,14 @@ import { ScenarioTenants } from '../../learn/entity/scenario-tenants.entity';
 import { ScenarioVoices } from '../../learn/entity/scenario-voices.entity';
 import { ScenarioSessions } from '../../learn/entity/scenario-sessions.entity';
 import { ScenarioSessionMessages } from '../../learn/entity/scenario-session-messages.entity';
+import { ScenarioSessionEvents } from '../../learn/entity/scenario-session-events.entity';
+import { SimulationCredits } from '../../learn/entity/simulation-credits.entity';
+import { ScenarioSessionReview } from '../../scenario-session-review/entity/review.entity';
+import { ScenarioSessionReviewThread } from '../../scenario-session-review/entity/thread.entity';
+import { ScenarioSessionReviewComment } from '../../scenario-session-review/entity/comment.entity';
+import { ScenarioSessionReviewReaction } from '../../scenario-session-review/entity/reaction.entity';
+import { ScenarioSessionReviewCommentReaction } from '../../scenario-session-review/entity/comment-reaction.entity';
+import { ScenarioSessionReviewReadStatus } from '../../scenario-session-review/entity/read-status.entity';
 import { Languages } from '../../language/entity/languages.entity';
 import { SessionEvents } from '../../session-event/entity/session-events.entity';
 import { ScenarioPath } from '../../scenario-path/entity/scenario-path.entity';
@@ -44,6 +52,14 @@ export const SEED_ENTITIES = [
   ScenarioVoices,
   ScenarioSessions,
   ScenarioSessionMessages,
+  ScenarioSessionEvents,
+  SimulationCredits,
+  ScenarioSessionReview,
+  ScenarioSessionReviewThread,
+  ScenarioSessionReviewComment,
+  ScenarioSessionReviewReaction,
+  ScenarioSessionReviewCommentReaction,
+  ScenarioSessionReviewReadStatus,
   Languages,
   SessionEvents,
   ScenarioPath,
