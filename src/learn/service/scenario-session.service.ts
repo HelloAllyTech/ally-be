@@ -589,6 +589,25 @@ export class ScenarioSessionService {
         metadata: roomMetadata,
       });
 
+      // Proactively dispatch the agent immediately so it can initialize during
+      // the frontend's ringing-bell delay. The participant_joined webhook is still
+      // the fallback: if the agent is already in the room it will skip dispatch.
+      //
+      // Pre-mark the room so the webhook handler skips re-dispatch even if the
+      // agent hasn't appeared in listParticipants() yet (narrow race window).
+      this.livekitService.preMarkProactiveDispatch(`${scenarioSession.roomId}`);
+      this.livekitService
+        .agentDispatch(
+          `${scenarioSession.roomId}`,
+          this.configService.livekit.agentName,
+          JSON.stringify(roomMetadata),
+        )
+        .catch((err) =>
+          this.logger.warn(
+            `Proactive agent dispatch failed, webhook fallback will handle it: ${err?.message}`,
+          ),
+        );
+
       // Generate access token for the user
       const accessToken = await this.generateScenarioSessionToken(
         scenarioSession.roomId,
@@ -938,27 +957,16 @@ export class ScenarioSessionService {
       await this.updateTranscriptTimestamps(scenarioSession, egressInfo);
     }
 
-    let callDuration = 0;
-    if (startedAt && endedAt) {
-      callDuration = endedAt.getTime() - startedAt.getTime() || 0;
-    }
-    const creditsUsed = this.calculateCreditsToConsume(callDuration);
-
     const scenarioSessionMetadata =
       await this.getUpdatedMetadataForScenarioSession(
         scenarioSession,
         egressInfo,
       );
 
-    const updatedMetadata: Record<string, any> = {
-      ...(scenarioSessionMetadata ?? scenarioSession.metadata),
-      creditsUsed,
-    };
-
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       endedAt,
       startedAt,
-      metadata: updatedMetadata,
+      ...(scenarioSessionMetadata ? { metadata: scenarioSessionMetadata } : {}),
     });
 
     await this.createReflectionPromptRecordsForSession(
@@ -966,6 +974,10 @@ export class ScenarioSessionService {
       scenarioSession.tenantId,
     );
 
+    let callDuration = 0;
+    if (startedAt && endedAt) {
+      callDuration = endedAt.getTime() - startedAt.getTime() || 0;
+    }
     const caseSessionItemId = scenarioSession.caseSessionItemId;
     let previousMemory: string | null = null;
     let needMemory: boolean = false;
@@ -990,7 +1002,7 @@ export class ScenarioSessionService {
     return { message: 'Scenario session ended successfully' };
   }
 
-  private calculateCreditsToConsume(callDuration: number): number {
+  private async consumeSimulationCredits(userId: number, callDuration: number) {
     const callDurationInSeconds = callDuration / 1000;
     const secondsPerCredit =
       this.configService.simulationCredits.lifespanSecondsPerCredit ?? 60;
@@ -1001,11 +1013,7 @@ export class ScenarioSessionService {
 
     // If remaining seconds >= 30, charge 1 additional credit, otherwise 0
     const additionalCredit = remainingSeconds >= 30 ? 1 : 0;
-    return Math.max(0, fullCredits + additionalCredit);
-  }
-
-  private async consumeSimulationCredits(userId: number, callDuration: number) {
-    const totalCreditsToConsume = this.calculateCreditsToConsume(callDuration);
+    const totalCreditsToConsume = fullCredits + additionalCredit;
 
     if (totalCreditsToConsume <= 0) return;
     await this.simulationCreditsService.consumeCredits(
