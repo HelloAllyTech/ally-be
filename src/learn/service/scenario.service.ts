@@ -1876,6 +1876,7 @@ export class ScenarioService {
 
     const toCreate: CreateScenarioTranslation[] = [];
     const toUpdate: UpdateScenarioTranslation[] = [];
+    const normalizedByLanguageId: Record<number, string> = {};
 
     for (const [langIdStr, raw] of Object.entries(translationDescription)) {
       const languageId = Number(langIdStr);
@@ -1884,6 +1885,7 @@ export class ScenarioService {
 
       const row = existing?.find((r) => Number(r.languageId) === languageId);
       const normalized = typeof raw === 'string' ? raw.trim() : '';
+      normalizedByLanguageId[languageId] = normalized;
 
       const mergedMetadata = {
         ...(row?.metadata ?? {}),
@@ -1906,6 +1908,37 @@ export class ScenarioService {
       await this.scenarioTranslationsRepository.updateScenarioTranslations(
         toUpdate,
       );
+    }
+
+    // Mirror description translations into scenarios.translations JSONB keyed
+    // by translationCode so applyScenarioTranslations() can resolve by the
+    // app's language code at read time. The side table (keyed by languageId)
+    // and this JSONB (keyed by code) must stay in sync.
+    const touchedLanguageIds = Object.keys(normalizedByLanguageId).map(Number);
+    if (touchedLanguageIds.length) {
+      const languages =
+        await this.sharedLanguageService.getLanguagesByIds(touchedLanguageIds);
+      if (languages.length) {
+        const scenario = await this.scenariosRepository.findOne({
+          where: { id: scenarioId },
+        });
+        const currentTranslations: Record<string, any> =
+          (scenario?.translations as Record<string, any>) || {};
+        const mergedTranslations: Record<string, any> = {
+          ...currentTranslations,
+        };
+        for (const language of languages) {
+          const code = language.translationCode?.trim();
+          if (!code) continue;
+          mergedTranslations[code] = {
+            ...(currentTranslations[code] || {}),
+            description: normalizedByLanguageId[Number(language.id)],
+          };
+        }
+        await this.dataSource
+          .getRepository(Scenarios)
+          .update(scenarioId, { translations: mergedTranslations });
+      }
     }
   }
 
