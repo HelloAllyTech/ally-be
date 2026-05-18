@@ -174,7 +174,13 @@ async function createComment(
   >,
   resolveUserId: (email: string) => number | undefined,
   threadId: string,
-  fixture: ReviewCommentFixture | { authorEmail: string; content: string; reactions?: Array<{ email: string; reaction: string }> },
+  fixture:
+    | ReviewCommentFixture
+    | {
+        authorEmail: string;
+        content: string;
+        reactions?: Array<{ email: string; reaction: string }>;
+      },
   parentCommentId: string | undefined,
 ): Promise<string | undefined> {
   const authorId = resolveUserId(fixture.authorEmail);

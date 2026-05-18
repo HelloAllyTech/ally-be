@@ -76,9 +76,17 @@ describe('DynamicI18nService', () => {
       find: jest.fn(),
     };
 
+    const openAITranslations = {
+      isConfigured: jest.fn().mockReturnValue(false),
+      translateText: jest.fn().mockImplementation(async (text: string) => text),
+    };
+
     service = new DynamicI18nService(
       config,
       auditLogService as unknown as AuditLogService,
+      openAITranslations as unknown as ConstructorParameters<
+        typeof DynamicI18nService
+      >[2],
       userRepository as unknown as Repository<User>,
     );
   });

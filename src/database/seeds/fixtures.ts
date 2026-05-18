@@ -540,8 +540,7 @@ export const sessions: SessionFixture[] = [
     transcript: [
       {
         from: 'counselor',
-        content:
-          'Hi Rohan. Thank you for being here today. How are you doing?',
+        content: 'Hi Rohan. Thank you for being here today. How are you doing?',
       },
       {
         from: 'client',
@@ -608,7 +607,10 @@ export const simulationCreditsDefault: SimulationCreditsFixture = {
   consumedCredits: 0,
 };
 
-export const simulationCreditsByEmail: Record<string, SimulationCreditsFixture> = {
+export const simulationCreditsByEmail: Record<
+  string,
+  SimulationCreditsFixture
+> = {
   'learner@example.com': { creditLimit: 120, consumedCredits: 23 },
 };
 
@@ -639,7 +641,8 @@ export const reviews: ReviewFixture[] = [
             replies: [
               {
                 authorEmail: 'learner@example.com',
-                content: 'Thank you — pacing was the thing I was most nervous about.',
+                content:
+                  'Thank you — pacing was the thing I was most nervous about.',
               },
             ],
           },
@@ -675,7 +678,8 @@ export const reviews: ReviewFixture[] = [
             replies: [
               {
                 authorEmail: 'learner@example.com',
-                content: 'Good call. I felt myself rushing to fill the silence.',
+                content:
+                  'Good call. I felt myself rushing to fill the silence.',
               },
             ],
           },
@@ -776,7 +780,6 @@ export const badges: BadgeFixture[] = [
     groupNames: [UserRole.LEARNER],
   },
 ];
-
 
 export const defaults = {
   scenarioStatus: ScenarioStatus.ACTIVE,

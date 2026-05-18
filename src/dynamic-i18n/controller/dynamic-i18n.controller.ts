@@ -8,6 +8,7 @@ import {
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { I18nAuditLogQueryDto } from '../dto/audit-log-query.dto';
+import { AutoTranslateDto } from '../dto/auto-translate.dto';
 import { ListTranslationsQueryDto } from '../dto/list-translations-query.dto';
 import { PublishI18nDto } from '../dto/publish-i18n.dto';
 import { RollbackI18nDto } from '../dto/rollback-i18n.dto';
@@ -47,6 +48,16 @@ export class DynamicI18nController {
   @Put('translations')
   async updateTranslations(@Body() updateTranslationDto: UpdateTranslationDto) {
     return this.dynamicI18nService.updateTranslations(updateTranslationDto);
+  }
+
+  @ApiOperation({
+    summary:
+      'Auto-translate a single key from a source language (default: en) to all other supported languages via OpenAI and save into drafts',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_I18N_TRANSLATIONS])
+  @Post('translations/auto-translate')
+  async autoTranslate(@Body() autoTranslateDto: AutoTranslateDto) {
+    return this.dynamicI18nService.autoTranslateAndSave(autoTranslateDto);
   }
 
   @ApiOperation({ summary: 'Get draft diff against current live version' })
