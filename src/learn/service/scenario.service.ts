@@ -99,7 +99,16 @@ import {
   wrapFieldPlaceholders,
   unwrapFieldPlaceholders,
 } from 'src/session-event/util/session-event.util';
-import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import {
+  OpenAITranslationsService,
+  TranslationProgressCallback,
+} from 'src/common/service/openai-translation.service';
+import { ScenarioTranslationNotificationService } from './scenario-translation-notification.service';
+import {
+  ScenarioTranslationAction,
+  ScenarioTranslationStatus,
+} from '../enum/scenario-translation.enum';
+import { randomUUID } from 'crypto';
 import { ScenarioReportService } from 'src/scenario-report/service/scenario-report.service';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
@@ -169,6 +178,7 @@ export class ScenarioService {
     private behaviorService: BehaviorService,
     private permissionsService: PermissionsService,
     private readonly auditLogService: AuditLogService,
+    private readonly scenarioTranslationNotificationService: ScenarioTranslationNotificationService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -680,6 +690,12 @@ export class ScenarioService {
                     stateNames: scenario.metadata?.stateNames,
                   }),
                 translationConsiderableData,
+                undefined,
+                {
+                  userId,
+                  jobId: randomUUID(),
+                  action: ScenarioTranslationAction.CREATE,
+                },
               );
             }
           }
@@ -1093,6 +1109,11 @@ export class ScenarioService {
               translationConsiderableData,
               (s) =>
                 updateScenarioDto.languageVoices ?? s.metadata?.languageVoices,
+              {
+                userId,
+                jobId: randomUUID(),
+                action: ScenarioTranslationAction.UPDATE,
+              },
             );
           }
           await this.updateScenarioTerminationEvents(
@@ -1769,6 +1790,7 @@ export class ScenarioService {
       | Partial<{ message: string; branchInstruction: string }>,
     languageCodes: string[],
     translationConsiderableData?: TranslationConsiderableData,
+    onProgress?: TranslationProgressCallback,
   ): Promise<Record<string, Partial<MetadataShape>>> {
     // validation
     const codes = (languageCodes ?? [])
@@ -1795,6 +1817,7 @@ export class ScenarioService {
           metadataObj,
           codes,
           translationConsiderableData,
+          onProgress,
         );
 
       if (
@@ -1876,6 +1899,7 @@ export class ScenarioService {
 
     const toCreate: CreateScenarioTranslation[] = [];
     const toUpdate: UpdateScenarioTranslation[] = [];
+    const normalizedByLanguageId: Record<number, string> = {};
 
     for (const [langIdStr, raw] of Object.entries(translationDescription)) {
       const languageId = Number(langIdStr);
@@ -1884,6 +1908,7 @@ export class ScenarioService {
 
       const row = existing?.find((r) => Number(r.languageId) === languageId);
       const normalized = typeof raw === 'string' ? raw.trim() : '';
+      normalizedByLanguageId[languageId] = normalized;
 
       const mergedMetadata = {
         ...(row?.metadata ?? {}),
@@ -1906,6 +1931,37 @@ export class ScenarioService {
       await this.scenarioTranslationsRepository.updateScenarioTranslations(
         toUpdate,
       );
+    }
+
+    // Mirror description translations into scenarios.translations JSONB keyed
+    // by translationCode so applyScenarioTranslations() can resolve by the
+    // app's language code at read time. The side table (keyed by languageId)
+    // and this JSONB (keyed by code) must stay in sync.
+    const touchedLanguageIds = Object.keys(normalizedByLanguageId).map(Number);
+    if (touchedLanguageIds.length) {
+      const languages =
+        await this.sharedLanguageService.getLanguagesByIds(touchedLanguageIds);
+      if (languages.length) {
+        const scenario = await this.scenariosRepository.findOne({
+          where: { id: scenarioId },
+        });
+        const currentTranslations: Record<string, any> =
+          (scenario?.translations as Record<string, any>) || {};
+        const mergedTranslations: Record<string, any> = {
+          ...currentTranslations,
+        };
+        for (const language of languages) {
+          const code = language.translationCode?.trim();
+          if (!code) continue;
+          mergedTranslations[code] = {
+            ...(currentTranslations[code] || {}),
+            description: normalizedByLanguageId[Number(language.id)],
+          };
+        }
+        await this.dataSource
+          .getRepository(Scenarios)
+          .update(scenarioId, { translations: mergedTranslations });
+      }
     }
   }
 
@@ -2034,12 +2090,71 @@ export class ScenarioService {
     resolveLanguageVoices?: (
       scenario: Scenarios,
     ) => Record<string, string> | undefined,
+    progressContext?: {
+      userId: number;
+      jobId: string;
+      action: ScenarioTranslationAction;
+    },
   ) {
     if (!scenarios.length) {
       return;
     }
     // If you expect many scenarios at once and want fewer DB calls, implement batching here.
     for (const scenario of scenarios) {
+      const emitProgress = progressContext
+        ? (
+            status: ScenarioTranslationStatus,
+            extra: Partial<{
+              language: string;
+              completed: number;
+              total: number;
+              error: string;
+            }> = {},
+          ) => {
+            this.scenarioTranslationNotificationService.notifyProgress(
+              progressContext.userId,
+              {
+                jobId: progressContext.jobId,
+                scenarioId: scenario.id,
+                scenarioTitle: scenario.title,
+                action: progressContext.action,
+                status,
+                language: extra.language,
+                completed: extra.completed ?? 0,
+                total: extra.total ?? 0,
+                error: extra.error,
+                emittedAt: new Date().toISOString(),
+              },
+            );
+          }
+        : undefined;
+
+      const onLanguageProgress: TranslationProgressCallback | undefined =
+        emitProgress
+          ? (event) => {
+              if (event.kind === 'language_started') {
+                emitProgress(ScenarioTranslationStatus.TRANSLATING, {
+                  language: event.language,
+                  completed: event.completed,
+                  total: event.total,
+                });
+              } else if (event.kind === 'language_completed') {
+                emitProgress(ScenarioTranslationStatus.TRANSLATED, {
+                  language: event.language,
+                  completed: event.completed,
+                  total: event.total,
+                });
+              } else {
+                emitProgress(ScenarioTranslationStatus.LANGUAGE_FAILED, {
+                  language: event.language,
+                  completed: event.completed,
+                  total: event.total,
+                  error: event.error,
+                });
+              }
+            }
+          : undefined;
+
       try {
         const rawMetadata = metadataExtractor(scenario);
 
@@ -2080,6 +2195,11 @@ export class ScenarioService {
 
         const languageCodes = languagesFiltered.map((l) => l.translationCode);
 
+        emitProgress?.(ScenarioTranslationStatus.STARTED, {
+          completed: 0,
+          total: languageCodes.length,
+        });
+
         this.logger.info(
           `[persistTranslationsForScenarios] invoking translation API for scenario ${scenario.id} → codes: ${languageCodes.join(', ')}`,
         );
@@ -2088,6 +2208,7 @@ export class ScenarioService {
             sanitized as Partial<MetadataShape>,
             languageCodes,
             translationConsiderableData as TranslationConsiderableData,
+            onLanguageProgress,
           );
 
         // Build translatedList: map back to languageId
@@ -2174,11 +2295,19 @@ export class ScenarioService {
         this.dataSource
           .getRepository(Scenarios)
           .update(scenario.id, { translations: mergedTranslations });
+
+        emitProgress?.(ScenarioTranslationStatus.COMPLETED, {
+          completed: languageCodes.length,
+          total: languageCodes.length,
+        });
       } catch (outerErr) {
         this.logger?.error?.(
           `[persistTranslationsForScenarios] unexpected error processing scenario ${scenario.id}`,
           { outerErr },
         );
+        emitProgress?.(ScenarioTranslationStatus.FAILED, {
+          error: (outerErr as Error)?.message ?? 'Unknown error',
+        });
       }
     }
   }

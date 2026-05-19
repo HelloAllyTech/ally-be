@@ -37,6 +37,7 @@ export const mapCreateScenarioRequestToEntity = (
       tone: scenario.tone,
       openingStatements: scenario.openingStatements,
       responseLength: scenario.responseLength,
+      enableProsody: scenario.enableProsody,
       customFields: scenario.customFields?.map((customField) => ({
         name: customField.name,
         value: customField.value,
@@ -144,6 +145,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'tone',
     'openingStatements',
     'responseLength',
+    'enableProsody',
     'customFields',
     'languageVoices',
     'linguisticStyleSamples',

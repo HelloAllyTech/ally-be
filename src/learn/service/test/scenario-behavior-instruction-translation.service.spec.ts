@@ -169,7 +169,7 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
           expect.objectContaining({
             scenarioBehaviorInstructionId: 'instruction-uuid-1',
             languageId: 2,
-            stateInstructions: translatedStateInstructions,
+            instructions: ['Sea empático', 'Escuche con atención'],
           }),
         ]),
       );
@@ -252,9 +252,7 @@ describe('ScenarioBehaviorInstructionTranslationService', () => {
           expect.objectContaining({
             scenarioBehaviorInstructionId: 'instruction-uuid-1',
             languageId: 3,
-            stateInstructions: [
-              { stateId: '1', instruction: 'Soyez empathique' },
-            ],
+            instructions: ['Soyez empathique'],
           }),
         ]),
       );

@@ -1,9 +1,7 @@
-import { BehaviorStateInstruction } from '../type/scenario-behavior-instructions.type';
-
 export interface CreateScenarioBehaviorInstructionTranslation {
   scenarioBehaviorInstructionId: string;
   languageId: number;
-  stateInstructions: BehaviorStateInstruction[];
+  instructions: string[];
 }
 
 export interface UpdateScenarioBehaviorInstructionTranslation extends CreateScenarioBehaviorInstructionTranslation {}

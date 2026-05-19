@@ -10,6 +10,31 @@ import {
   CODE_MIXING_PRESERVE_WORDS,
 } from '../constants/translation.constants';
 import { LanguageConfig } from '../type/openai-translation.type';
+
+export type TranslationProgressEvent =
+  | {
+      kind: 'language_started';
+      language: string;
+      completed: number;
+      total: number;
+    }
+  | {
+      kind: 'language_completed';
+      language: string;
+      completed: number;
+      total: number;
+    }
+  | {
+      kind: 'language_failed';
+      language: string;
+      completed: number;
+      total: number;
+      error: string;
+    };
+
+export type TranslationProgressCallback = (
+  event: TranslationProgressEvent,
+) => void;
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
   DEFAULT_OPENAI_TRANSLATION_SYSTEM_PROMPT_TEMPLATE,
@@ -338,12 +363,14 @@ IMPORTANT:
     sourceObject: Record<string, any>,
     targetLanguages: string[],
     translationConsiderableData: any,
+    onProgress?: TranslationProgressCallback,
   ): Promise<Record<string, any>> {
     if (!targetLanguages || targetLanguages.length === 0) {
       return {};
     }
 
     const translatedResult: Record<string, any> = {};
+    const total = targetLanguages.length;
 
     // Loop through each language and translate
     // Fetch templates once to avoid repeated DB calls
@@ -355,8 +382,16 @@ IMPORTANT:
       this.USER_PROMPT_CODE,
     );
 
-    for (const language of targetLanguages) {
+    for (let i = 0; i < targetLanguages.length; i++) {
+      const language = targetLanguages[i];
       try {
+        onProgress?.({
+          kind: 'language_started',
+          language,
+          completed: i,
+          total,
+        });
+
         const systemPrompt = await this.buildSystemPrompt(
           language,
           translationConsiderableData,
@@ -380,6 +415,13 @@ IMPORTANT:
         translatedResult[language] = JSON.parse(
           translations[0] || JSON.stringify(sourceObject),
         );
+
+        onProgress?.({
+          kind: 'language_completed',
+          language,
+          completed: i + 1,
+          total,
+        });
       } catch (err) {
         this.logger.error(
           `Translation failed for language ${language}`,
@@ -387,6 +429,14 @@ IMPORTANT:
         );
         // Return original object as fallback
         translatedResult[language] = JSON.parse(JSON.stringify(sourceObject));
+
+        onProgress?.({
+          kind: 'language_failed',
+          language,
+          completed: i + 1,
+          total,
+          error: (err as Error)?.message ?? 'Unknown error',
+        });
       }
     }
 

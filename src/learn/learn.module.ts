@@ -90,6 +90,8 @@ import { ScenarioBehaviorInstructionTranslationService } from './service/scenari
 import { BehaviorInstructionTranslationService } from './service/behavior-instruction-translation.service';
 import { OpenAIAutofillService } from './service/openai-autofil-service';
 import { AnthropicAutofillService } from './service/anthropic-autofill.service';
+import { ScenarioTranslationGateway } from './gateway/scenario-translation.gateway';
+import { ScenarioTranslationNotificationService } from './service/scenario-translation-notification.service';
 
 import { AuditModule } from 'src/audit/audit.module';
 import { ScenarioSessionRecording } from './entity/scenario-session-recording.entity';
@@ -203,6 +205,8 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     AnthropicAutofillService,
     ScenarioSessionRecordingRepository,
     ScenarioSessionRecordingService,
+    ScenarioTranslationNotificationService,
+    ScenarioTranslationGateway,
   ],
   exports: [
     LearnMessageProcessor,

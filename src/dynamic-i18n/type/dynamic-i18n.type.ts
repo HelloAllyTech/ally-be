@@ -46,3 +46,11 @@ export type I18nStatus = {
   versions: I18nVersion[];
   retentionLimit: number;
 };
+
+export type AutoTranslateResult = {
+  namespace: string;
+  key: string;
+  sourceLanguage: string;
+  values: Record<string, string>;
+  failed: string[];
+};

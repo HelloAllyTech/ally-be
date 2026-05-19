@@ -1,10 +1,12 @@
 import {
   mapCreateScenarioRequestToEntity,
+  mapUpdateScenarioRequestToEntity,
   formatAutoTerminationEventsList,
   formatScenarioTriggerWarningsList,
 } from '../scenario.util';
 import { CreateScenarioDto } from '../../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../../dto/create-scenarios.dto';
+import { UpdateScenarioDto } from '../../dto/update-scenario.dto';
 import { Scenarios } from '../../entity/scenarios.entity';
 import {
   ScenarioStatus,
@@ -346,6 +348,85 @@ describe('Scenario Util', () => {
 
       expect(result.metadata.timerMode).toBeUndefined();
       expect(result.metadata.maxTimeValue).toBeUndefined();
+    });
+
+    it('should persist enableProsody=false to metadata when explicitly disabled', () => {
+      const userId = 401;
+      const scenario: CreateScenarioDto = {
+        title: 'Prosody-off Scenario',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        enableProsody: false,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.enableProsody).toBe(false);
+    });
+
+    it('should persist enableProsody=true to metadata when explicitly enabled', () => {
+      const userId = 402;
+      const scenario: CreateScenarioDto = {
+        title: 'Prosody-on Scenario',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        enableProsody: true,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.enableProsody).toBe(true);
+    });
+  });
+
+  describe('mapUpdateScenarioRequestToEntity', () => {
+    it('should merge enableProsody=false into existing metadata without losing other keys', () => {
+      const userId = 501;
+      const existingScenario = {
+        id: 1,
+        metadata: {
+          name: 'Existing',
+          responseLength: 'BRIEF',
+          enableProsody: true,
+        },
+      } as unknown as Scenarios;
+      const dto: UpdateScenarioDto = { enableProsody: false } as any;
+
+      const result = mapUpdateScenarioRequestToEntity(
+        dto,
+        existingScenario,
+        userId,
+      );
+
+      expect(result.metadata).toEqual({
+        name: 'Existing',
+        responseLength: 'BRIEF',
+        enableProsody: false,
+      });
+    });
+
+    it('should leave existing metadata.enableProsody untouched when omitted from DTO', () => {
+      const userId = 502;
+      const existingScenario = {
+        id: 1,
+        metadata: { name: 'Existing', enableProsody: false },
+      } as unknown as Scenarios;
+      const dto: UpdateScenarioDto = { name: 'Updated' } as any;
+
+      const result = mapUpdateScenarioRequestToEntity(
+        dto,
+        existingScenario,
+        userId,
+      );
+
+      expect(result.metadata).toEqual({
+        name: 'Updated',
+        enableProsody: false,
+      });
     });
   });
 

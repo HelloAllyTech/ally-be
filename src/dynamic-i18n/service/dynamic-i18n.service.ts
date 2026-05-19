@@ -11,10 +11,12 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
 import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
+import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { AppConfigService } from 'src/config/config.service';
 import { User } from 'src/user/entity/user.entity';
 import { In, Repository } from 'typeorm';
 import {
+  AutoTranslateResult,
   I18nManifest,
   I18nStatus,
   I18nVersion,
@@ -48,6 +50,7 @@ export class DynamicI18nService {
   constructor(
     private readonly config: AppConfigService,
     private readonly auditLogService: AuditLogService,
+    private readonly openAITranslations: OpenAITranslationsService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
   ) {}
@@ -179,6 +182,104 @@ export class DynamicI18nService {
       language: dto.language,
       namespace: dto.namespace,
       changedKeys: Object.keys(changes),
+    };
+  }
+
+  async autoTranslateAndSave(dto: {
+    namespace: string;
+    key: string;
+    sourceValue: string;
+    sourceLanguage?: string;
+    targetLanguages?: string[];
+  }): Promise<AutoTranslateResult> {
+    this.assertSafeSegment(dto.namespace, 'namespace');
+    if (!dto.key.trim()) {
+      throw new BadRequestException('Translation key cannot be empty');
+    }
+    if (!dto.sourceValue.trim()) {
+      throw new BadRequestException('Source value cannot be empty');
+    }
+    if (!this.openAITranslations.isConfigured()) {
+      throw new BadRequestException('OpenAI translations are not configured');
+    }
+    await this.ensureWorkspace();
+
+    const sourceLanguage = dto.sourceLanguage?.trim() || 'en';
+    this.assertSafeSegment(sourceLanguage, 'sourceLanguage');
+
+    const draft = await this.readDraftTranslations();
+    const existingLanguages = Object.keys(draft);
+    const targetLanguages = (
+      dto.targetLanguages?.length ? dto.targetLanguages : existingLanguages
+    ).filter((lang) => lang !== sourceLanguage);
+
+    for (const lang of targetLanguages)
+      this.assertSafeSegment(lang, 'language');
+
+    const values: Record<string, string> = {
+      [sourceLanguage]: dto.sourceValue,
+    };
+    const failed: string[] = [];
+
+    await Promise.all(
+      targetLanguages.map(async (lang) => {
+        try {
+          const translated = await this.openAITranslations.translateText(
+            dto.sourceValue,
+            lang,
+          );
+          values[lang] = translated?.trim() ? translated : dto.sourceValue;
+          if (!translated?.trim() || translated === dto.sourceValue) {
+            failed.push(lang);
+          }
+        } catch (error) {
+          this.logger.error(
+            `[autoTranslateAndSave] OpenAI failed for ${lang}: ${(error as Error).message}`,
+          );
+          values[lang] = dto.sourceValue;
+          failed.push(lang);
+        }
+      }),
+    );
+
+    const auditChanges: ChangeRecord[] = [];
+    for (const [language, newValue] of Object.entries(values)) {
+      const draftLanguage = await this.readDraftLanguageOrEmpty(language);
+      const namespace = this.getNamespace(draftLanguage, dto.namespace);
+      const oldRawValue = this.getDeepValue(namespace, dto.key);
+      if (oldRawValue !== undefined && typeof oldRawValue !== 'string') {
+        throw new BadRequestException(
+          `Translation key "${dto.key}" does not point to a string value`,
+        );
+      }
+      this.setDeepValue(namespace, dto.key, newValue);
+      draftLanguage[dto.namespace] = namespace;
+      await this.writeDraftLanguage(language, draftLanguage);
+      auditChanges.push({
+        key: dto.key,
+        oldValue: typeof oldRawValue === 'string' ? oldRawValue : undefined,
+        newValue,
+      });
+    }
+
+    await this.auditLogService.log({
+      eventType: AUDIT_EVENTS.DYNAMIC_I18N_TRANSLATION_UPDATED,
+      details: {
+        namespace: dto.namespace,
+        autoTranslated: true,
+        sourceLanguage,
+        targetLanguages,
+        failed,
+        changes: auditChanges,
+      },
+    });
+
+    return {
+      namespace: dto.namespace,
+      key: dto.key,
+      sourceLanguage,
+      values,
+      failed,
     };
   }
 
@@ -479,6 +580,14 @@ export class DynamicI18nService {
       );
     }
 
+    return this.readJsonFile<TranslationTree>(filePath);
+  }
+
+  private async readDraftLanguageOrEmpty(
+    language: string,
+  ): Promise<TranslationTree> {
+    const filePath = path.join(this.draftDir, `${language}.json`);
+    if (!(await this.pathExists(filePath))) return {};
     return this.readJsonFile<TranslationTree>(filePath);
   }
 

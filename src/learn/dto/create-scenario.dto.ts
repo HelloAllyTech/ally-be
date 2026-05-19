@@ -228,6 +228,16 @@ export class CreateScenarioDto {
   responseLength?: ScenarioResponseLength;
 
   @ApiProperty({
+    description:
+      'Enable speech prosody (per-turn voice expression generation) for this simulation. Defaults to true when unspecified.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  enableProsody?: boolean;
+
+  @ApiProperty({
     description: 'Tone of the AI client persona',
     example: 'Casual',
   })

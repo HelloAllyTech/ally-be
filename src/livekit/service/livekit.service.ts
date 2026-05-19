@@ -31,6 +31,11 @@ export class LiveKitService {
   private agentService!: AgentDispatchClient;
   private egressService!: EgressClient;
 
+  // Tracks rooms where a proactive dispatch has been fired but the agent has
+  // not yet appeared in listParticipants(). Prevents the webhook handler from
+  // issuing a duplicate dispatch during that narrow window.
+  private readonly proactiveDispatches = new Set<string>();
+
   constructor(private readonly configService: AppConfigService) {
     this.logger = LoggerService.getInstance(LiveKitService.name);
     this.initializeRoomService();
@@ -212,6 +217,21 @@ export class LiveKitService {
       );
       throw error;
     }
+  }
+
+  preMarkProactiveDispatch(roomName: string): void {
+    this.proactiveDispatches.add(roomName);
+    // Safety clear in case the agent never joins (crash, capacity issue, etc.)
+    setTimeout(() => this.proactiveDispatches.delete(roomName), 30_000);
+    this.logger.debug(`Proactive dispatch pre-marked for room: ${roomName}`);
+  }
+
+  clearProactiveDispatch(roomName: string): void {
+    this.proactiveDispatches.delete(roomName);
+  }
+
+  isProactiveDispatchPending(roomName: string): boolean {
+    return this.proactiveDispatches.has(roomName);
   }
 
   private buildS3FileOutput(

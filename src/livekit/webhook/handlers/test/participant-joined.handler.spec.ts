@@ -86,6 +86,9 @@ describe('ParticipantJoinedHandler', () => {
       startRoomCompositeEgress: jest
         .fn()
         .mockResolvedValue({ egressId: 'egress-1' }),
+      preMarkProactiveDispatch: jest.fn(),
+      clearProactiveDispatch: jest.fn(),
+      isProactiveDispatchPending: jest.fn().mockReturnValue(false),
     };
 
     const mockScenarioSessionService = {
@@ -221,6 +224,33 @@ describe('ParticipantJoinedHandler', () => {
       ).not.toHaveBeenCalled();
       expect(liveKitService.listParticipants).not.toHaveBeenCalled();
       expect(liveKitService.agentDispatch).not.toHaveBeenCalled();
+      // Agent joining must clear the proactive flag so it stops gating future
+      // webhooks for the same room name.
+      expect(liveKitService.clearProactiveDispatch).toHaveBeenCalledWith(
+        'test-room',
+      );
+    });
+
+    it('should skip re-dispatch when proactive dispatch is pending, but still process session', async () => {
+      liveKitService.isProactiveDispatchPending.mockReturnValue(true);
+      scenarioSessionService.getScenarioSessionByRoomId.mockResolvedValue({
+        id: 'session-123',
+        startedAt: null,
+      } as any);
+      scenarioSessionService.updateScenarioSession.mockResolvedValue({} as any);
+
+      await handler.handle(mockParticipantJoinedEvent);
+
+      // Agent dispatch is skipped because the proactive dispatch is in flight.
+      expect(liveKitService.agentDispatch).not.toHaveBeenCalled();
+      // listParticipants is bypassed when the proactive flag is set — it's a
+      // narrow race window where the agent hasn't appeared yet.
+      expect(liveKitService.listParticipants).not.toHaveBeenCalled();
+      // Session-level work (startedAt) must still happen on the human's join.
+      expect(scenarioSessionService.updateScenarioSession).toHaveBeenCalledWith(
+        'session-123',
+        expect.objectContaining({ startedAt: expect.any(Date) }),
+      );
     });
 
     it('should update scenario session startedAt when non-Agent joins and startedAt is null', async () => {
@@ -702,7 +732,7 @@ describe('ParticipantJoinedHandler', () => {
       expect(liveKitService.listParticipants).toHaveBeenCalledWith('test-room');
       expect(liveKitService.agentDispatch).not.toHaveBeenCalled();
       expect(mockLogger.info).toHaveBeenCalledWith(
-        `Agent already present in room test-room, skipping dispatch`,
+        `Agent already present in room test-room (proactive dispatch), skipping re-dispatch`,
       );
     });
 
