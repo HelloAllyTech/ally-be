@@ -36,6 +36,7 @@ describe('TooltipController', () => {
             getTooltips: jest.fn(),
             createTooltip: jest.fn(),
             updateTooltip: jest.fn(),
+            getActiveTooltips: jest.fn(),
           },
         },
         {
@@ -59,6 +60,26 @@ describe('TooltipController', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('getActiveTooltips', () => {
+    it('should return active tooltips from service', async () => {
+      const activeTooltips = [mockTooltip];
+      tooltipService.getActiveTooltips.mockResolvedValue(activeTooltips);
+
+      const result = await controller.getActiveTooltips();
+
+      expect(tooltipService.getActiveTooltips).toHaveBeenCalled();
+      expect(result).toEqual(activeTooltips);
+    });
+
+    it('should return empty array when no active tooltips exist', async () => {
+      tooltipService.getActiveTooltips.mockResolvedValue([]);
+
+      const result = await controller.getActiveTooltips();
+
+      expect(result).toEqual([]);
+    });
   });
 
   describe('getTooltips', () => {

@@ -38,6 +38,7 @@ describe('TooltipService', () => {
             findOne: jest.fn(),
             update: jest.fn(),
             getTooltips: jest.fn(),
+            getActiveTooltips: jest.fn(),
           },
         },
         {
@@ -290,6 +291,26 @@ describe('TooltipService', () => {
         sortBy: 'location',
         order: 'DESC',
       });
+    });
+  });
+
+  describe('getActiveTooltips', () => {
+    it('should return active tooltips from repository', async () => {
+      const activeTooltips = [mockTooltip];
+      tooltipRepository.getActiveTooltips.mockResolvedValue(activeTooltips);
+
+      const result = await service.getActiveTooltips();
+
+      expect(tooltipRepository.getActiveTooltips).toHaveBeenCalled();
+      expect(result).toEqual(activeTooltips);
+    });
+
+    it('should return empty array when no active tooltips exist', async () => {
+      tooltipRepository.getActiveTooltips.mockResolvedValue([]);
+
+      const result = await service.getActiveTooltips();
+
+      expect(result).toEqual([]);
     });
   });
 });
