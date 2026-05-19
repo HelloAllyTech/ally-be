@@ -89,6 +89,10 @@ export interface CaseFixture {
 }
 
 export interface SessionFixture {
+  // Stable identifier appended to `seed-room-` to form roomId. Required so
+  // multiple sessions can share a scenario+status without colliding, and so
+  // review fixtures can pin to a specific session by room id.
+  roomKey: string;
   scenarioKey: string;
   status: ScenarioSessionStatus;
   eventStatus: ScenarioSessionEventStatus;
@@ -165,6 +169,11 @@ export const users: UserFixture[] = [
     email: 'multi-tenant-admin1@example.com',
     name: 'Multi-Tenant Admin',
     roles: [UserRole.MULTI_TENANT_ADMIN],
+  },
+  {
+    email: 'reviewer@example.com',
+    name: 'Simulation Reviewer',
+    roles: [UserRole.SIMULATION_REVIEWER],
   },
 ];
 
@@ -463,6 +472,7 @@ export const cases: CaseFixture[] = [
 
 export const sessions: SessionFixture[] = [
   {
+    roomKey: 'coping-with-depression-ended',
     scenarioKey: 'coping-with-depression',
     status: ScenarioSessionStatus.ENDED,
     eventStatus: ScenarioSessionEventStatus.COMPLETED,
@@ -532,6 +542,7 @@ export const sessions: SessionFixture[] = [
     ],
   },
   {
+    roomKey: 'processing-grief-ended',
     scenarioKey: 'processing-grief',
     status: ScenarioSessionStatus.ENDED,
     eventStatus: ScenarioSessionEventStatus.COMPLETED,
@@ -594,11 +605,218 @@ export const sessions: SessionFixture[] = [
     ],
   },
   {
+    roomKey: 'coping-with-depression-active',
     scenarioKey: 'coping-with-depression',
     status: ScenarioSessionStatus.ACTIVE,
     eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
     durationMinutes: 0,
     transcript: [],
+  },
+  {
+    roomKey: 'coping-with-depression-ended-2',
+    scenarioKey: 'coping-with-depression',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    score: 86,
+    durationMinutes: 18,
+    transcript: [
+      {
+        from: 'counselor',
+        content:
+          'Hi Anjali, it is good to see you. What is on your mind today?',
+      },
+      {
+        from: 'client',
+        content:
+          'I am tired. I have been telling myself I am fine but I do not think I am.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'It takes a lot to say that out loud. Thank you for trusting me with it.',
+      },
+      {
+        from: 'client',
+        content:
+          'It feels like I am watching my life from a distance. Nothing reaches me.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'That sounds incredibly isolating — to be present in your life but feel cut off from it.',
+      },
+      {
+        from: 'client',
+        content:
+          'Yes. Exactly that. I did not know how to put words to it until now.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'Take your time. You do not need to have it all figured out here.',
+      },
+      {
+        from: 'client',
+        content:
+          'I keep waiting to feel like myself again and it just... does not come.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'Waiting like that — and the not-knowing — must be exhausting on top of everything else.',
+      },
+      {
+        from: 'client',
+        content:
+          'It is. Some mornings I just lie there and the day already feels too heavy.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'That must be hard for you. What helps, even a little, on the heavy mornings?',
+      },
+      {
+        from: 'client',
+        content:
+          'Honestly, not much. Sometimes a call with my sister. She does not ask me to be okay.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'It sounds like she gives you space to just be where you are. That kind of presence matters.',
+      },
+    ],
+    events: [
+      { eventCode: 'SS-LISTEN', occurredAtTurnIndex: 4 },
+      { eventCode: 'SS-LISTEN', occurredAtTurnIndex: 10 },
+    ],
+  },
+  {
+    roomKey: 'processing-grief-ended-2',
+    scenarioKey: 'processing-grief',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    score: 71,
+    durationMinutes: 16,
+    transcript: [
+      {
+        from: 'counselor',
+        content: 'Hi Rohan. How has this past week been for you?',
+      },
+      {
+        from: 'client',
+        content:
+          'Quieter. Too quiet, maybe. The house feels different without her in it.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'Silence can hold so much grief. Especially in spaces she filled.',
+      },
+      {
+        from: 'client',
+        content:
+          'I keep expecting to hear her in the kitchen. And then I remember.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'Those small expectations — the ones the body holds on to — they are some of the hardest.',
+      },
+      {
+        from: 'client',
+        content:
+          'Yes. It is like my mind knows but my body keeps forgetting.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'That is such a common part of grief, even though it does not feel common when you are in it.',
+      },
+      {
+        from: 'client',
+        content:
+          'I have not really cried this week. I am not sure if that is okay.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'There is no right way to grieve. Tears come when they come, and not coming does not mean you are not feeling.',
+      },
+      {
+        from: 'client',
+        content:
+          'Thank you. I think I needed to hear that. People keep asking if I am holding up and I do not know what to say.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'You do not have to have an answer for them. "I am getting through today" is enough, if that is what is true.',
+      },
+    ],
+    events: [{ eventCode: 'SS-LISTEN', occurredAtTurnIndex: 4 }],
+  },
+  {
+    roomKey: 'coping-with-depression-ended-3',
+    scenarioKey: 'coping-with-depression',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    score: 52,
+    durationMinutes: 10,
+    transcript: [
+      {
+        from: 'counselor',
+        content: 'Hi Anjali. So what is going on with you?',
+      },
+      {
+        from: 'client',
+        content:
+          'I have just been feeling really low for months now. I do not know what to do.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'Have you tried going for walks or exercising? That usually helps with low mood.',
+      },
+      {
+        from: 'client',
+        content:
+          'I... I can barely get out of bed most days. Walking feels really far away.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'Come on, you have to push through it. You will feel better once you start moving.',
+      },
+      {
+        from: 'client',
+        content:
+          'I do not think it is that simple for me right now.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'Everyone feels down sometimes. Try to think about the things you are grateful for.',
+      },
+      {
+        from: 'client',
+        content:
+          'I... yeah. I will try.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'Great. So what are three things you are grateful for today?',
+      },
+      {
+        from: 'client',
+        content: 'I do not really know. Can we talk about something else?',
+      },
+    ],
+    events: [
+      { eventCode: 'BC-RUDE', occurredAtTurnIndex: 4 },
+      { eventCode: 'SC-LOW', occurredAtTurnIndex: 8 },
+    ],
   },
 ];
 
@@ -743,6 +961,173 @@ export const reviews: ReviewFixture[] = [
             content:
               'Strong recovery — owning the misstep and inviting him back in. The phrase "deserves space" was particularly grounding.',
             reactions: [{ email: 'learner@example.com', reaction: '🙏' }],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    sessionRoomId: 'seed-room-coping-with-depression-ended-2',
+    authorEmail: 'learner@example.com',
+    note: 'A second pass with Anjali — I tried to stay with the "watching life from a distance" framing instead of jumping to coping skills. Curious if it felt steady throughout.',
+    reactions: [
+      { email: 'admin@example.com', reaction: '❤️' },
+      { email: 'org-admin@example.com', reaction: '👏' },
+    ],
+    readByEmails: ['admin@example.com'],
+    threads: [
+      {
+        turnIndex: 'general',
+        authorEmail: 'admin@example.com',
+        comments: [
+          {
+            authorEmail: 'admin@example.com',
+            content:
+              'Really attuned session. The reflection about her sister "not asking her to be okay" was a lovely thread to pick up on.',
+            reactions: [{ email: 'learner@example.com', reaction: '🙏' }],
+            replies: [
+              {
+                authorEmail: 'learner@example.com',
+                content:
+                  'Thanks — I almost moved past it but something in her tone made me circle back.',
+              },
+            ],
+          },
+        ],
+      },
+      {
+        turnIndex: 4,
+        selection: { startIndex: 0, endIndex: 30 },
+        authorEmail: 'org-admin@example.com',
+        comments: [
+          {
+            authorEmail: 'org-admin@example.com',
+            content:
+              '"Incredibly isolating" landed well — naming the feeling without trying to fix it.',
+            reactions: [{ email: 'admin@example.com', reaction: '👍' }],
+          },
+        ],
+      },
+      {
+        turnIndex: 10,
+        selection: { startIndex: 0, endIndex: 27 },
+        authorEmail: 'admin@example.com',
+        comments: [
+          {
+            authorEmail: 'admin@example.com',
+            content:
+              'Nice — you validated the weight before pivoting to the gentle question about what helps. That order matters.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    sessionRoomId: 'seed-room-processing-grief-ended-2',
+    authorEmail: 'learner@example.com',
+    note: 'Second session with Rohan. I wanted to normalise the absence of tears without sounding dismissive — would love a read on whether that landed.',
+    reactions: [{ email: 'org-admin@example.com', reaction: '❤️' }],
+    readByEmails: ['org-admin@example.com', 'admin@example.com'],
+    threads: [
+      {
+        turnIndex: 'general',
+        authorEmail: 'org-admin@example.com',
+        comments: [
+          {
+            authorEmail: 'org-admin@example.com',
+            content:
+              'The pacing was warm and unhurried. You held space for the silence in his house without rushing him out of it.',
+            reactions: [{ email: 'learner@example.com', reaction: '🙏' }],
+          },
+        ],
+      },
+      {
+        turnIndex: 8,
+        selection: { startIndex: 0, endIndex: 32 },
+        authorEmail: 'admin@example.com',
+        comments: [
+          {
+            authorEmail: 'admin@example.com',
+            content:
+              '"There is no right way to grieve" — exactly the kind of reassurance that opens doors rather than closing them.',
+            replies: [
+              {
+                authorEmail: 'learner@example.com',
+                content:
+                  'Thank you. I held that line in my head from last week\'s feedback.',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    sessionRoomId: 'seed-room-coping-with-depression-ended-3',
+    authorEmail: 'learner@example.com',
+    note: 'I know this one did not go well — sharing it because I want to understand where I lost her. Honest feedback welcome.',
+    readByEmails: ['admin@example.com', 'org-admin@example.com'],
+    threads: [
+      {
+        turnIndex: 'general',
+        authorEmail: 'admin@example.com',
+        comments: [
+          {
+            authorEmail: 'admin@example.com',
+            content:
+              'Appreciate you sharing a session that felt off — that is how the harder skills get built. A few specific spots below.',
+            reactions: [
+              { email: 'learner@example.com', reaction: '🙏' },
+              { email: 'org-admin@example.com', reaction: '❤️' },
+            ],
+          },
+        ],
+      },
+      {
+        turnIndex: 2,
+        selection: { startIndex: 0, endIndex: 70 },
+        authorEmail: 'org-admin@example.com',
+        comments: [
+          {
+            authorEmail: 'org-admin@example.com',
+            content:
+              'Jumping to "have you tried walks?" so early skips the validation step. The client has not felt heard yet.',
+            replies: [
+              {
+                authorEmail: 'learner@example.com',
+                content:
+                  'Yeah, looking back I went into problem-solving mode straight away.',
+              },
+              {
+                authorEmail: 'admin@example.com',
+                content:
+                  'A useful reframe: in the first few turns, your job is to understand, not to help.',
+              },
+            ],
+          },
+        ],
+      },
+      {
+        turnIndex: 4,
+        selection: { startIndex: 0, endIndex: 35 },
+        authorEmail: 'admin@example.com',
+        comments: [
+          {
+            authorEmail: 'admin@example.com',
+            content:
+              '"Push through it" is the kind of phrase that tells a depressed client her experience is a personal failure. Worth catching in the moment.',
+          },
+        ],
+      },
+      {
+        turnIndex: 6,
+        selection: { startIndex: 0, endIndex: 30 },
+        authorEmail: 'org-admin@example.com',
+        comments: [
+          {
+            authorEmail: 'org-admin@example.com',
+            content:
+              'Gratitude prompts can be valuable later — but offered here, they read as another instruction she is failing at.',
           },
         ],
       },

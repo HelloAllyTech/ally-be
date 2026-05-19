@@ -46,7 +46,7 @@ export async function seedSessions(ds: DataSource): Promise<void> {
     const scenarioId = scenarioIdByKey.get(fixture.scenarioKey);
     if (!scenarioId) continue;
 
-    const roomId = `seed-room-${fixture.scenarioKey}-${fixture.status.toLowerCase()}`;
+    const roomId = `seed-room-${fixture.roomKey}`;
     const existing = await sessionRepo.findOne({ where: { roomId } });
     if (existing) {
       existingCount++;
