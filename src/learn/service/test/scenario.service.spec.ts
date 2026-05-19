@@ -30,6 +30,7 @@ import { ScenarioEventsRepository } from 'src/learn/repository/scenario-events.r
 import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
 import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
 import { ScenarioService } from '../scenario.service';
+import { ScenarioTranslationNotificationService } from '../scenario-translation-notification.service';
 import { ScenarioTenants } from 'src/learn/entity/scenario-tenants.entity';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import { TriggerWarningsService } from '../trigger-warnings.service';
@@ -425,6 +426,10 @@ describe('ScenarioService', () => {
         {
           provide: PermissionsService,
           useValue: mockPermissionsService,
+        },
+        {
+          provide: ScenarioTranslationNotificationService,
+          useValue: { notifyProgress: jest.fn() },
         },
       ],
     }).compile();
@@ -4909,7 +4914,7 @@ describe('ScenarioService', () => {
 
       expect(
         mockOpenAITranslationsService.translateScenarioData,
-      ).toHaveBeenCalledWith(metadata, ['en', 'es'], undefined);
+      ).toHaveBeenCalledWith(metadata, ['en', 'es'], undefined, undefined);
       expect(result).toEqual({
         en: { ...metadata, translated: true },
         es: { ...metadata, translated: true },
@@ -4954,7 +4959,7 @@ describe('ScenarioService', () => {
 
       expect(
         mockOpenAITranslationsService.translateScenarioData,
-      ).toHaveBeenCalledWith(metadata, ['en', 'es'], undefined);
+      ).toHaveBeenCalledWith(metadata, ['en', 'es'], undefined, undefined);
     });
 
     it('should handle empty response from translation service', async () => {

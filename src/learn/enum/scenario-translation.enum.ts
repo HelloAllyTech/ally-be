@@ -1,0 +1,19 @@
+export enum ScenarioTranslationEvents {
+  CONNECTED = 'CONNECTED',
+  JOIN_USER_TRANSLATIONS_ROOM = 'JOIN_USER_TRANSLATIONS_ROOM',
+  TRANSLATION_PROGRESS = 'TRANSLATION_PROGRESS',
+}
+
+export enum ScenarioTranslationStatus {
+  STARTED = 'STARTED',
+  TRANSLATING = 'TRANSLATING',
+  TRANSLATED = 'TRANSLATED',
+  LANGUAGE_FAILED = 'LANGUAGE_FAILED',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+}
+
+export enum ScenarioTranslationAction {
+  CREATE = 'CREATE',
+  UPDATE = 'UPDATE',
+}

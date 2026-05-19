@@ -99,10 +99,16 @@ export class ScenarioBehaviorInstructionTranslationService {
           const translatedData = translatedMap[code];
           if (!translatedData || !translatedData.stateInstructions) continue;
 
+          const instructionStrings = (translatedData.stateInstructions ?? [])
+            .map((s: { instruction?: string }) => s?.instruction?.trim())
+            .filter((s: string | undefined): s is string => !!s);
+
+          if (instructionStrings.length === 0) continue;
+
           translatedList.push({
             scenarioBehaviorInstructionId: instruction.id,
             languageId: Number(language.id),
-            stateInstructions: translatedData.stateInstructions,
+            instructions: instructionStrings,
           });
         }
 
@@ -143,7 +149,7 @@ export class ScenarioBehaviorInstructionTranslationService {
       } catch (outerErr) {
         this.logger?.error?.(
           `[persistInstructionTranslations] unexpected error processing ${instruction.id}`,
-          { outerErr },
+          outerErr,
         );
       }
     }
