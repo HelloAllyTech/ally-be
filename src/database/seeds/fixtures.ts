@@ -725,8 +725,7 @@ export const sessions: SessionFixture[] = [
       },
       {
         from: 'client',
-        content:
-          'Yes. It is like my mind knows but my body keeps forgetting.',
+        content: 'Yes. It is like my mind knows but my body keeps forgetting.',
       },
       {
         from: 'counselor',
@@ -790,8 +789,7 @@ export const sessions: SessionFixture[] = [
       },
       {
         from: 'client',
-        content:
-          'I do not think it is that simple for me right now.',
+        content: 'I do not think it is that simple for me right now.',
       },
       {
         from: 'counselor',
@@ -800,13 +798,11 @@ export const sessions: SessionFixture[] = [
       },
       {
         from: 'client',
-        content:
-          'I... yeah. I will try.',
+        content: 'I... yeah. I will try.',
       },
       {
         from: 'counselor',
-        content:
-          'Great. So what are three things you are grateful for today?',
+        content: 'Great. So what are three things you are grateful for today?',
       },
       {
         from: 'client',
@@ -1054,7 +1050,7 @@ export const reviews: ReviewFixture[] = [
               {
                 authorEmail: 'learner@example.com',
                 content:
-                  'Thank you. I held that line in my head from last week\'s feedback.',
+                  "Thank you. I held that line in my head from last week's feedback.",
               },
             ],
           },
