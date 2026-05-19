@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ParticipantInfo_Kind } from '@livekit/protocol';
 import { DataSource, Repository } from 'typeorm';
 import { AiService } from 'src/ai/service/ai.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -200,6 +201,11 @@ describe('ScenarioSessionService', () => {
       generateAccessToken: jest.fn(),
       getRoom: jest.fn(),
       listRooms: jest.fn().mockResolvedValue([]),
+      listParticipants: jest.fn().mockResolvedValue([]),
+      agentDispatch: jest.fn().mockResolvedValue(undefined),
+      preMarkProactiveDispatch: jest.fn(),
+      clearProactiveDispatch: jest.fn(),
+      isProactiveDispatchPending: jest.fn().mockReturnValue(false),
     };
 
     const mockSessionEventSharedService = {
@@ -1759,6 +1765,123 @@ describe('ScenarioSessionService', () => {
     });
   });
 
+  describe('previewScenario proactive dispatch', () => {
+    const buildPreviewMocks = () => {
+      const previewDto = { scenarioId: mockScenarioId, languageId: 1 };
+      const mockValidScenario = {
+        ...mockScenario,
+        title: 'Test Scenario',
+        description: 'Test Description',
+        coverImageUrl: 'https://example.com/cover.jpg',
+        status: ScenarioStatus.ACTIVE,
+        difficultyLevel: ScenarioDifficultyLevel.EASY,
+        competencyId: '123e4567-e89b-12d3-a456-426614174000',
+        metadata: {
+          voiceId: 'voice-123',
+          languageVoices: { 1: 'voice-123' },
+          name: 'Test Client',
+          age: 25,
+          gender: 'female',
+          currentLocation: 'New York',
+          context: 'Context',
+          openingStatements: ['Hello'],
+          experienceMode: ExperienceMode.FEEDBACK,
+          stateInstructions: [],
+          stateNames: [],
+        },
+        isGlobal: true,
+        isPublic: false,
+      };
+      scenarioService.getAdminScenario.mockResolvedValue(mockValidScenario);
+      scenarioService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-123',
+        voiceId: 'openai-voice-id',
+      } as any);
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      sessionEventSharedService.findByIds.mockResolvedValue([]);
+      scenarioSharedService.createRoomMetadata.mockResolvedValue({
+        scenario: mockValidScenario,
+      } as any);
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue({
+        token: 'tok',
+        roomName: 'preview-room',
+        serverUrl: 'https://livekit.example.com',
+      });
+      return { previewDto };
+    };
+
+    it('should proactively dispatch the agent on preview start', async () => {
+      const { previewDto } = buildPreviewMocks();
+      const result = await service.previewScenario(
+        previewDto as any,
+        mockUserId,
+      );
+
+      expect(livekitService.preMarkProactiveDispatch).toHaveBeenCalledWith(
+        result.roomName,
+      );
+      expect(livekitService.agentDispatch).toHaveBeenCalledWith(
+        result.roomName,
+        'Agent',
+        expect.any(String),
+      );
+    });
+
+    it('should clear the proactive flag when preview dispatch fails', async () => {
+      const { previewDto } = buildPreviewMocks();
+      livekitService.agentDispatch.mockRejectedValueOnce(
+        new Error('preview dispatch failed'),
+      );
+
+      const result = await service.previewScenario(
+        previewDto as any,
+        mockUserId,
+      );
+
+      // Wait for the unawaited dispatch promise's .catch handler.
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(livekitService.clearProactiveDispatch).toHaveBeenCalledWith(
+        result.roomName,
+      );
+    });
+  });
+
+  describe('dispatchPreviewAgent idempotency', () => {
+    beforeEach(() => {
+      mockConfigService.allowDirectAgentDispatch = true;
+    });
+    afterEach(() => {
+      mockConfigService.allowDirectAgentDispatch = false;
+    });
+
+    it('should skip dispatch when a proactive dispatch is still pending', async () => {
+      livekitService.isProactiveDispatchPending.mockReturnValue(true);
+
+      await service.dispatchPreviewAgent('preview-1-uuid');
+
+      expect(livekitService.listParticipants).not.toHaveBeenCalled();
+      expect(livekitService.agentDispatch).not.toHaveBeenCalled();
+    });
+
+    it('should skip dispatch when an agent has already joined the room', async () => {
+      livekitService.isProactiveDispatchPending.mockReturnValue(false);
+      livekitService.listParticipants.mockResolvedValue([
+        { kind: ParticipantInfo_Kind.AGENT },
+      ] as any);
+
+      await service.dispatchPreviewAgent('preview-1-uuid');
+
+      expect(livekitService.listParticipants).toHaveBeenCalledWith(
+        'preview-1-uuid',
+      );
+      expect(livekitService.agentDispatch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getLatestScenarioSessionByScenarioPathSessionItemId', () => {
     it('should return a scenario session when found', async () => {
       const scenarioPathSessionItemId = '550e8400-e29b-41d4-a716-446655440000';
@@ -1984,6 +2107,96 @@ describe('ScenarioSessionService', () => {
             }),
           }),
         }),
+      );
+
+      // Proactively dispatches the agent at session-create time so it can
+      // initialize during the frontend's ringing-bell delay.
+      expect(livekitService.preMarkProactiveDispatch).toHaveBeenCalledWith(
+        mockCreatedSession.roomId,
+      );
+      expect(livekitService.agentDispatch).toHaveBeenCalledWith(
+        mockCreatedSession.roomId,
+        'Agent',
+        expect.any(String),
+      );
+    });
+
+    it('should clear the proactive flag when proactive dispatch fails so the webhook fallback can take over', async () => {
+      const startDto = {
+        scenarioId: mockScenarioId,
+        ttl: 3600,
+        languageId: 1,
+      };
+      const mockScenarioWithMetadata = {
+        ...mockScenario,
+        difficultyLevel: ScenarioDifficultyLevel.EASY,
+        metadata: {
+          title: 'Test Scenario',
+          description: 'Test Description',
+          voiceId: 'test-voice',
+          languageVoices: { 1: 'voice-123' },
+        },
+        isGlobal: false,
+      };
+      const mockVoice = {
+        id: 'voice-123',
+        name: 'Test Voice',
+        voiceId: 'openai-voice-id',
+        provider: 'openai',
+      };
+      const mockCreatedSession = {
+        ...mockScenarioSession,
+        id: 'new-session-id',
+        roomId: 'new-room-id',
+      };
+      const mockTokenResponse = {
+        token: 'access-token-123',
+        roomName: 'new-room-id',
+        serverUrl: 'https://livekit.example.com',
+      };
+      scenarioService.getAdminScenario.mockResolvedValue(
+        mockScenarioWithMetadata as any,
+      );
+      scenarioService.getScenarioVoice.mockResolvedValue(mockVoice as any);
+      scenarioTenantService.getScenarioTenant.mockResolvedValue({
+        id: 1,
+        scenarioId: mockScenarioId,
+        tenantId: mockTenantId,
+      } as any);
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      sessionEventTranslationService.getSessionEventsTranslationsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      sessionEventSharedService.findByIds.mockResolvedValue([]);
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        consumedCredits: 0,
+        creditLimit: 100,
+      } as any);
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue(
+        mockCreatedSession,
+      );
+      scenarioSharedService.createRoomMetadata.mockResolvedValue({
+        scenario: mockScenarioWithMetadata,
+      } as any);
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue(mockTokenResponse);
+      livekitService.agentDispatch.mockRejectedValue(
+        new Error('dispatch failed'),
+      );
+
+      await service.startScenarioSession(mockCounselorId, startDto as any);
+
+      // Wait for the unawaited dispatch promise's .catch handler to run.
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(livekitService.preMarkProactiveDispatch).toHaveBeenCalledWith(
+        mockCreatedSession.roomId,
+      );
+      expect(livekitService.clearProactiveDispatch).toHaveBeenCalledWith(
+        mockCreatedSession.roomId,
       );
     });
 

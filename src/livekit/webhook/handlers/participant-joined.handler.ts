@@ -62,8 +62,9 @@ export class ParticipantJoinedHandler {
       const roomName = event.room.name;
 
       if (event.participant.kind === ParticipantInfo_Kind.AGENT) {
-        // Agent joined the room - clean up the in-progress set
+        // Agent joined the room - clean up both tracking sets
         ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
+        this.liveKitService.clearProactiveDispatch(roomName);
       }
 
       if (event.participant.kind !== ParticipantInfo_Kind.AGENT) {
@@ -77,35 +78,30 @@ export class ParticipantJoinedHandler {
           return;
         }
 
-        // 2. Check if agent is already present in the room as a participant
-        try {
-          const participants =
-            await this.liveKitService.listParticipants(roomName);
-          const hasAgent = participants.some(
-            (p) => p.kind === ParticipantInfo_Kind.AGENT,
-          );
+        // 2. Check if a proactive dispatch is already in flight or the agent has
+        //    physically joined. The service-level flag covers the race window where
+        //    the agent was dispatched but hasn't appeared in listParticipants() yet.
+        let agentAlreadyPresent =
+          this.liveKitService.isProactiveDispatchPending(roomName);
 
-          if (hasAgent) {
-            this.logger.info(
-              `Agent already present in room ${roomName}, skipping dispatch`,
+        if (!agentAlreadyPresent) {
+          try {
+            const participants =
+              await this.liveKitService.listParticipants(roomName);
+            agentAlreadyPresent = participants.some(
+              (p) => p.kind === ParticipantInfo_Kind.AGENT,
             );
-            return;
+          } catch (listError) {
+            this.logger.error(
+              `Failed to check existing participants in room ${roomName}: ${listError.message}`,
+            );
+            // Proceed with dispatch as fallback if check fails
           }
-        } catch (listError) {
-          this.logger.error(
-            `Failed to check existing participants in room ${roomName}: ${listError.message}`,
-          );
-          // Proceed with dispatch as fallback if check fails
         }
 
-        // Mark dispatch as in-progress BEFORE awaiting the dispatch call
-        ParticipantJoinedHandler.dispatchesInProgress.add(roomName);
-
-        // Set a safety timeout to eventually clear it if the agent fails to join
-        setTimeout(() => {
-          ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
-        }, 30000); // 30s safety window
-
+        // Resolve session and record startedAt regardless of whether we dispatch —
+        // proactive dispatch skips the normal dispatch path but startedAt must
+        // still be persisted when the human actually joins.
         let scenarioSessionStartedAt = new Date();
         const isPreviewRoom = roomName.startsWith('preview');
         const scenarioSession = isPreviewRoom
@@ -176,6 +172,22 @@ export class ParticipantJoinedHandler {
             },
           );
         }
+
+        // Agent was pre-dispatched — nothing left to do.
+        if (agentAlreadyPresent) {
+          this.logger.info(
+            `Agent already present in room ${roomName} (proactive dispatch), skipping re-dispatch`,
+          );
+          return;
+        }
+
+        // Mark dispatch as in-progress BEFORE awaiting the dispatch call
+        ParticipantJoinedHandler.dispatchesInProgress.add(roomName);
+
+        // Set a safety timeout to eventually clear it if the agent fails to join
+        setTimeout(() => {
+          ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
+        }, 30000); // 30s safety window
 
         let metadata: any = {};
         const participantIdentity = this.configService.livekit.agentName;

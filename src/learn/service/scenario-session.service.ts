@@ -14,6 +14,7 @@ import {
   ScenarioSessionStatus,
 } from '../enum/scenario-session-status.enum';
 import { LiveKitService } from 'src/livekit/service/livekit.service';
+import { ParticipantInfo_Kind } from '@livekit/protocol';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
@@ -589,6 +590,30 @@ export class ScenarioSessionService {
         metadata: roomMetadata,
       });
 
+      // Proactively dispatch the agent immediately so it can initialize during
+      // the frontend's ringing-bell delay. The participant_joined webhook is still
+      // the fallback: if the agent is already in the room it will skip dispatch.
+      //
+      // Pre-mark the room so the webhook handler skips re-dispatch even if the
+      // agent hasn't appeared in listParticipants() yet (narrow race window).
+      this.livekitService.preMarkProactiveDispatch(`${scenarioSession.roomId}`);
+      this.livekitService
+        .agentDispatch(
+          `${scenarioSession.roomId}`,
+          this.configService.livekit.agentName,
+          JSON.stringify(roomMetadata),
+        )
+        .catch((err) => {
+          // Clear the pre-mark so the participant_joined webhook can take over.
+          // Otherwise the flag would block fallback dispatch until the 30s timeout.
+          this.livekitService.clearProactiveDispatch(
+            `${scenarioSession.roomId}`,
+          );
+          this.logger.warn(
+            `Proactive agent dispatch failed, webhook fallback will handle it: ${err?.message}`,
+          );
+        });
+
       // Generate access token for the user
       const accessToken = await this.generateScenarioSessionToken(
         scenarioSession.roomId,
@@ -942,7 +967,22 @@ export class ScenarioSessionService {
     if (startedAt && endedAt) {
       callDuration = endedAt.getTime() - startedAt.getTime() || 0;
     }
-    const creditsUsed = this.calculateCreditsToConsume(callDuration);
+
+    // Consume credits first so metadata.creditsUsed reflects the actual charge.
+    // If consumption fails (e.g. simulation-credits service blip), don't block
+    // end-session bookkeeping — record creditsUsed=0 and continue so metadata,
+    // reflection prompts and the AI summary still get persisted.
+    let creditsUsed = 0;
+    try {
+      creditsUsed = await this.consumeSimulationCredits(
+        scenarioSession.counselorId,
+        callDuration,
+      );
+    } catch (err) {
+      this.logger.error(
+        `consumeSimulationCredits failed for session ${scenarioSessionId}; recording creditsUsed=0 and continuing: ${err?.message}`,
+      );
+    }
 
     const scenarioSessionMetadata =
       await this.getUpdatedMetadataForScenarioSession(
@@ -951,7 +991,7 @@ export class ScenarioSessionService {
       );
 
     const updatedMetadata: Record<string, any> = {
-      ...(scenarioSessionMetadata ?? scenarioSession.metadata),
+      ...(scenarioSessionMetadata ?? scenarioSession.metadata ?? {}),
       creditsUsed,
     };
 
@@ -982,15 +1022,13 @@ export class ScenarioSessionService {
       endScenarioSessionRequestBodyDto?.enableRecommendations,
     );
 
-    await this.consumeSimulationCredits(
-      scenarioSession.counselorId,
-      callDuration,
-    );
-
     return { message: 'Scenario session ended successfully' };
   }
 
-  private calculateCreditsToConsume(callDuration: number): number {
+  private async consumeSimulationCredits(
+    userId: number,
+    callDuration: number,
+  ): Promise<number> {
     const callDurationInSeconds = callDuration / 1000;
     const secondsPerCredit =
       this.configService.simulationCredits.lifespanSecondsPerCredit ?? 60;
@@ -1001,17 +1039,14 @@ export class ScenarioSessionService {
 
     // If remaining seconds >= 30, charge 1 additional credit, otherwise 0
     const additionalCredit = remainingSeconds >= 30 ? 1 : 0;
-    return Math.max(0, fullCredits + additionalCredit);
-  }
+    const totalCreditsToConsume = fullCredits + additionalCredit;
 
-  private async consumeSimulationCredits(userId: number, callDuration: number) {
-    const totalCreditsToConsume = this.calculateCreditsToConsume(callDuration);
-
-    if (totalCreditsToConsume <= 0) return;
+    if (totalCreditsToConsume <= 0) return 0;
     await this.simulationCreditsService.consumeCredits(
       userId,
       totalCreditsToConsume,
     );
+    return totalCreditsToConsume;
   }
 
   private async getScenarioSessionSummaryFromAI(
@@ -1501,6 +1536,24 @@ export class ScenarioSessionService {
       previewRoomMetadataCache.set(roomName, roomMetadata);
     }
 
+    // Proactively dispatch the agent so it can initialize during the frontend's
+    // ringing-bell delay. Mirrors startScenarioSession; the existing
+    // dispatchPreviewAgent endpoint and webhook fallback both stay as safety nets.
+    this.livekitService.preMarkProactiveDispatch(roomName);
+    this.livekitService
+      .agentDispatch(
+        roomName,
+        this.configService.livekit.agentName,
+        JSON.stringify(roomMetadata),
+      )
+      .catch((err) => {
+        // Clear the pre-mark so dispatchPreviewAgent / webhook can take over.
+        this.livekitService.clearProactiveDispatch(roomName);
+        this.logger.warn(
+          `Proactive agent dispatch for preview failed, fallback will handle it: ${err?.message}`,
+        );
+      });
+
     const accessToken = await this.livekitService.generateAccessToken({
       roomName,
       participantName: userId.toString(),
@@ -1519,6 +1572,10 @@ export class ScenarioSessionService {
   /**
    * Dispatch agent to a preview room (local dev only).
    * Bypasses LiveKit webhook when ally-be is unreachable (e.g. localhost).
+   *
+   * Idempotent: previewScenario now dispatches proactively, so this endpoint
+   * is mostly a safety net. If a proactive dispatch is already in flight or
+   * the agent is already in the room, this no-ops.
    */
   async dispatchPreviewAgent(roomName: string): Promise<void> {
     if (!this.configService.allowDirectAgentDispatch) {
@@ -1531,6 +1588,32 @@ export class ScenarioSessionService {
         'Only preview rooms can use direct agent dispatch',
       );
     }
+
+    // Skip if proactive dispatch is still pending (narrow race window).
+    if (this.livekitService.isProactiveDispatchPending(roomName)) {
+      this.logger.debug(
+        `Proactive dispatch already pending for ${roomName}, skipping direct dispatch`,
+      );
+      return;
+    }
+
+    // Skip if an agent has already joined.
+    try {
+      const participants = await this.livekitService.listParticipants(roomName);
+      if (participants.some((p) => p.kind === ParticipantInfo_Kind.AGENT)) {
+        this.logger.debug(
+          `Agent already in room ${roomName}, skipping direct dispatch`,
+        );
+        return;
+      }
+    } catch (err) {
+      // Proceed with dispatch as a fallback if the check fails — same pattern
+      // as the participant_joined webhook handler.
+      this.logger.warn(
+        `listParticipants failed for ${roomName} during direct dispatch; proceeding: ${err?.message}`,
+      );
+    }
+
     const metadata = previewRoomMetadataCache.get(roomName);
     if (!metadata) {
       throw new NotFoundException(
