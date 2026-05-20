@@ -288,6 +288,16 @@ export class CreateScenarioDto {
   translationDescription?: Record<string, string>;
 
   @ApiProperty({
+    description:
+      'Title text for non-primary languages (scenario_translations.metadata.title), keyed by languageId string.',
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
+  @IsObject()
+  @IsOptional()
+  translationTitle?: Record<string, string>;
+
+  @ApiProperty({
     description: 'Termination events',
     example: [
       {
