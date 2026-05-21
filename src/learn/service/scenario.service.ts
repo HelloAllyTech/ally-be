@@ -725,6 +725,16 @@ export class ScenarioService {
             savedScenarios[i].metadata,
           );
         }
+        if (
+          dto.translationTitle &&
+          Object.keys(dto.translationTitle).length > 0
+        ) {
+          await this.upsertTranslationTitle(
+            savedScenarios[i].id,
+            dto.translationTitle,
+            savedScenarios[i].metadata,
+          );
+        }
       }
 
       return savedScenarios;
@@ -1231,7 +1241,8 @@ export class ScenarioService {
       if (
         success &&
         (updateScenarioDto.translationOpeningStatements !== undefined ||
-          updateScenarioDto.translationDescription !== undefined)
+          updateScenarioDto.translationDescription !== undefined ||
+          updateScenarioDto.translationTitle !== undefined)
       ) {
         const fresh = await this.scenariosRepository.findOne({
           where: { id },
@@ -1247,6 +1258,13 @@ export class ScenarioService {
           await this.upsertTranslationDescription(
             id,
             updateScenarioDto.translationDescription,
+            fresh?.metadata,
+          );
+        }
+        if (updateScenarioDto.translationTitle !== undefined) {
+          await this.upsertTranslationTitle(
+            id,
+            updateScenarioDto.translationTitle,
             fresh?.metadata,
           );
         }
@@ -1956,6 +1974,88 @@ export class ScenarioService {
           mergedTranslations[code] = {
             ...(currentTranslations[code] || {}),
             description: normalizedByLanguageId[Number(language.id)],
+          };
+        }
+        await this.dataSource
+          .getRepository(Scenarios)
+          .update(scenarioId, { translations: mergedTranslations });
+      }
+    }
+  }
+
+  private async upsertTranslationTitle(
+    scenarioId: number,
+    translationTitle: Record<string, string>,
+    metadataForPrimaryResolution?: Record<string, any> | null,
+  ): Promise<void> {
+    const primaryId =
+      await this.scenarioSharedService.resolveOpeningDialoguePrimaryLanguageId(
+        metadataForPrimaryResolution,
+      );
+
+    const existing =
+      await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
+        scenarioId,
+      );
+
+    const toCreate: CreateScenarioTranslation[] = [];
+    const toUpdate: UpdateScenarioTranslation[] = [];
+    const normalizedByLanguageId: Record<number, string> = {};
+
+    for (const [langIdStr, raw] of Object.entries(translationTitle)) {
+      const languageId = Number(langIdStr);
+      if (!Number.isFinite(languageId)) continue;
+      if (primaryId != null && languageId === primaryId) continue;
+
+      const row = existing?.find((r) => Number(r.languageId) === languageId);
+      const normalized = typeof raw === 'string' ? raw.trim() : '';
+      normalizedByLanguageId[languageId] = normalized;
+
+      const mergedMetadata = {
+        ...(row?.metadata ?? {}),
+        title: normalized,
+      };
+
+      if (row) {
+        toUpdate.push({ scenarioId, languageId, metadata: mergedMetadata });
+      } else {
+        toCreate.push({ scenarioId, languageId, metadata: mergedMetadata });
+      }
+    }
+
+    if (toCreate.length) {
+      await this.scenarioTranslationsRepository.createScenarioTranslations(
+        toCreate,
+      );
+    }
+    if (toUpdate.length) {
+      await this.scenarioTranslationsRepository.updateScenarioTranslations(
+        toUpdate,
+      );
+    }
+
+    // Mirror title translations into scenarios.translations JSONB keyed by
+    // translationCode so applyScenarioTranslations() (and the session read
+    // paths) can resolve by the app's language code at read time.
+    const touchedLanguageIds = Object.keys(normalizedByLanguageId).map(Number);
+    if (touchedLanguageIds.length) {
+      const languages =
+        await this.sharedLanguageService.getLanguagesByIds(touchedLanguageIds);
+      if (languages.length) {
+        const scenario = await this.scenariosRepository.findOne({
+          where: { id: scenarioId },
+        });
+        const currentTranslations: Record<string, any> =
+          (scenario?.translations as Record<string, any>) || {};
+        const mergedTranslations: Record<string, any> = {
+          ...currentTranslations,
+        };
+        for (const language of languages) {
+          const code = language.translationCode?.trim();
+          if (!code) continue;
+          mergedTranslations[code] = {
+            ...(currentTranslations[code] || {}),
+            title: normalizedByLanguageId[Number(language.id)],
           };
         }
         await this.dataSource

@@ -684,6 +684,7 @@ describe('ScenarioSharedService', () => {
         openingDialoguePrimaryLanguageId: null,
         translationDescription: {},
         challengeDescriptionPrimaryLanguageId: null,
+        translationTitle: {},
       });
       expect(
         sessionEventSharedService.findSessionEventById,
@@ -752,6 +753,40 @@ describe('ScenarioSharedService', () => {
         '7': 'Descripción en español',
       });
       expect(result.challengeDescriptionPrimaryLanguageId).toBe(1);
+    });
+
+    it('should map translationTitle from scenario_translations.metadata.title and skip empty values', async () => {
+      const scenarioResult = {
+        id: 1,
+        title: 'Test',
+        terminationEvents: [],
+      };
+      scenariosRepository.getAdminScenarioById.mockResolvedValue(
+        scenarioResult as any,
+      );
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
+        [
+          {
+            scenarioId: 1,
+            languageId: 7,
+            metadata: { title: 'Título en español' },
+          },
+          {
+            scenarioId: 1,
+            languageId: 9,
+            metadata: { title: '   ' },
+          },
+        ] as any,
+      );
+      sharedLanguageService.getLanguageByValue.mockResolvedValue({
+        id: 1,
+      } as any);
+
+      const result = await service.getAdminScenario(1);
+
+      expect(result.translationTitle).toEqual({
+        '7': 'Título en español',
+      });
     });
 
     it('should expose both translationDescription and translationOpeningStatements from same row when both metadata fields are present', async () => {

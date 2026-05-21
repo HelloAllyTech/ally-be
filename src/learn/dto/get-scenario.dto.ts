@@ -43,6 +43,14 @@ export class GetAdminScenarioDto extends Scenarios {
       'Language id whose challenge description is the primary (stored on scenarios.description). Mirrors openingDialoguePrimaryLanguageId resolution.',
   })
   challengeDescriptionPrimaryLanguageId?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Title per non-primary language (scenario_translations.metadata.title), keyed by languageId string',
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
+  translationTitle?: Record<string, string>;
 }
 
 export class GetScenarioDto extends Scenarios {
