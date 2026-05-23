@@ -8,7 +8,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { LoggerService } from '../../logger/logger.service';
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ChatService } from '../service/chat.service';
 import {
   AudioChatPlatform,
@@ -44,21 +44,13 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 })
 @Injectable()
 export class MicrophoneChatGateway
-  implements
-    OnGatewayInit,
-    OnGatewayConnection,
-    OnGatewayDisconnect,
-    OnModuleDestroy
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   private readonly logger = LoggerService.getInstance(
     MicrophoneChatGateway.name,
   );
 
   private sessions: { [key: string]: UserChatSessionData } = {};
-  // Periodic janitor reconciles `sessions` against the live socket set so we
-  // don't leak entries when handleDisconnect doesn't fire (network drops, etc.)
-  private sessionJanitor?: NodeJS.Timeout;
-  private static readonly SESSION_JANITOR_INTERVAL_MS = 60_000;
 
   private readonly auditLogger = AuditLoggerService.getInstance();
 
@@ -83,36 +75,6 @@ export class MicrophoneChatGateway
         PERMISSIONS.START_MICROPHONE_CHAT,
       ]),
     );
-
-    this.sessionJanitor = setInterval(
-      () => this.reconcileSessions(),
-      MicrophoneChatGateway.SESSION_JANITOR_INTERVAL_MS,
-    );
-    if (typeof this.sessionJanitor.unref === 'function') {
-      this.sessionJanitor.unref();
-    }
-  }
-
-  private reconcileSessions(): void {
-    const liveSockets = this.server?.sockets?.sockets;
-    if (!liveSockets) return;
-    let evicted = 0;
-    for (const sid of Object.keys(this.sessions)) {
-      if (!liveSockets.has(sid)) {
-        delete this.sessions[sid];
-        evicted++;
-      }
-    }
-    if (evicted > 0) {
-      this.logger.warn(
-        `Microphone chat session janitor evicted ${evicted} stale session(s)`,
-      );
-    }
-  }
-
-  onModuleDestroy() {
-    if (this.sessionJanitor) clearInterval(this.sessionJanitor);
-    this.sessions = {};
   }
 
   async handleConnection(client: Socket) {
