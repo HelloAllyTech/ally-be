@@ -26,11 +26,11 @@ export class PromptSharedService {
     });
 
     if (!promptRow) {
-      return this.readFromFolder(promptCode);
+      return await this.readFromFolder(promptCode);
     }
 
     if (!promptRow.useDashboardOverride) {
-      const fromFolder = this.readFromFolder(promptCode);
+      const fromFolder = await this.readFromFolder(promptCode);
       if (fromFolder !== null) {
         return fromFolder;
       }
@@ -61,27 +61,39 @@ export class PromptSharedService {
    * - Flat: promptCode.txt (legacy)
    * - Subdir: subdir/rest.txt when promptCode = subdir_rest (e.g. openai_simulation_foo -> openai_simulation/foo.txt)
    */
-  private readFromFolder(promptCode: string): string | null {
+  private async readFromFolder(promptCode: string): Promise<string | null> {
     const promptsDir = path.join(process.cwd(), PROMPTS_DIR);
     try {
-      if (!fs.existsSync(promptsDir)) return null;
+      try {
+        await fs.promises.stat(promptsDir);
+      } catch {
+        return null;
+      }
 
       // Try flat first (backward compat)
       const flatPath = path.join(promptsDir, `${promptCode}.txt`);
-      if (fs.existsSync(flatPath)) {
-        return fs.readFileSync(flatPath, 'utf-8').trim();
+      try {
+        await fs.promises.stat(flatPath);
+        const content = await fs.promises.readFile(flatPath, 'utf-8');
+        return content.trim();
+      } catch {
+        // Flat file not found, try subdir
       }
 
       // Try subdirs: promptCode subdir_rest -> subdir/rest.txt
-      const entries = fs.readdirSync(promptsDir, { withFileTypes: true });
+      const entries = await fs.promises.readdir(promptsDir, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         const prefix = entry.name.replace(/-/g, '_');
         if (promptCode.startsWith(prefix + '_')) {
           const rest = promptCode.slice(prefix.length + 1);
           const subdirPath = path.join(promptsDir, entry.name, `${rest}.txt`);
-          if (fs.existsSync(subdirPath)) {
-            return fs.readFileSync(subdirPath, 'utf-8').trim();
+          try {
+            await fs.promises.stat(subdirPath);
+            const content = await fs.promises.readFile(subdirPath, 'utf-8');
+            return content.trim();
+          } catch {
+            // Subdir file not found
           }
         }
       }
@@ -138,7 +150,7 @@ export class PromptSharedService {
 
     for (const row of rows) {
       if (!row.useDashboardOverride) {
-        const fromFolder = this.readFromFolder(row.promptCode);
+        const fromFolder = await this.readFromFolder(row.promptCode);
         if (fromFolder !== null) {
           row.prompt = fromFolder;
         } else if (row.defaultPrompt) {
