@@ -9,6 +9,11 @@ describe('RedisBrokerService', () => {
   let mockPubClient: jest.Mocked<Redis>;
   let mockSubClient: jest.Mocked<Redis>;
 
+  const getMessageHandler = () => {
+    const call = mockSubClient.on.mock.calls.find((c) => c[0] === 'message');
+    return call?.[1] as (channel: string, message: string) => void;
+  };
+
   beforeEach(async () => {
     // Create mock Redis clients
     mockPubClient = {
@@ -137,19 +142,10 @@ describe('RedisBrokerService', () => {
       const jsonMessage = JSON.stringify(message);
 
       mockSubClient.subscribe.mockResolvedValue('OK');
-      let messageHandler: (receivedChannel: string, message: string) => void;
-
-      mockSubClient.on.mockImplementation((event, handler) => {
-        if (event === 'message') {
-          messageHandler = handler;
-        }
-        return mockSubClient;
-      });
 
       await service.subscribe(channel, callback);
 
-      // Simulate message arrival
-      messageHandler!(channel, jsonMessage);
+      getMessageHandler()(channel, jsonMessage);
 
       expect(callback).toHaveBeenCalledWith(message);
     });
@@ -162,44 +158,28 @@ describe('RedisBrokerService', () => {
       const jsonMessage = JSON.stringify(message);
 
       mockSubClient.subscribe.mockResolvedValue('OK');
-      let messageHandler: (receivedChannel: string, message: string) => void;
-
-      mockSubClient.on.mockImplementation((event, handler) => {
-        if (event === 'message') {
-          messageHandler = handler;
-        }
-        return mockSubClient;
-      });
 
       await service.subscribe(channel, callback);
 
-      // Simulate message arrival on different channel
-      messageHandler!(differentChannel, jsonMessage);
+      getMessageHandler()(differentChannel, jsonMessage);
 
       expect(callback).not.toHaveBeenCalled();
     });
 
-    it('should handle JSON parse errors gracefully', async () => {
+    it('should pass raw message when payload is not valid JSON', async () => {
       const channel = 'test-channel';
       const callback = jest.fn();
       const invalidJsonMessage = 'invalid json {';
 
       mockSubClient.subscribe.mockResolvedValue('OK');
-      let messageHandler: (receivedChannel: string, message: string) => void;
-
-      mockSubClient.on.mockImplementation((event, handler) => {
-        if (event === 'message') {
-          messageHandler = handler;
-        }
-        return mockSubClient;
-      });
 
       await service.subscribe(channel, callback);
 
-      // Simulate message arrival with invalid JSON
       expect(() => {
-        messageHandler!(channel, invalidJsonMessage);
-      }).toThrow();
+        getMessageHandler()(channel, invalidJsonMessage);
+      }).not.toThrow();
+
+      expect(callback).toHaveBeenCalledWith(invalidJsonMessage);
     });
 
     it('should propagate Redis subscribe errors', async () => {
@@ -214,18 +194,24 @@ describe('RedisBrokerService', () => {
       );
     });
 
-    it('should handle multiple subscriptions to same channel', async () => {
+    it('should fan out a single Redis subscription to multiple callbacks on the same channel', async () => {
       const channel = 'test-channel';
       const callback1 = jest.fn();
       const callback2 = jest.fn();
+      const message = { id: 1, data: 'test data' };
 
       mockSubClient.subscribe.mockResolvedValue('OK');
 
       await service.subscribe(channel, callback1);
       await service.subscribe(channel, callback2);
 
-      expect(mockSubClient.subscribe).toHaveBeenCalledTimes(2);
-      expect(mockSubClient.on).toHaveBeenCalledTimes(2);
+      expect(mockSubClient.subscribe).toHaveBeenCalledTimes(1);
+      expect(mockSubClient.on).toHaveBeenCalledTimes(1);
+
+      getMessageHandler()(channel, JSON.stringify(message));
+
+      expect(callback1).toHaveBeenCalledWith(message);
+      expect(callback2).toHaveBeenCalledWith(message);
     });
   });
 });
