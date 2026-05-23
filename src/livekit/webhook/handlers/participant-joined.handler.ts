@@ -44,7 +44,29 @@ export interface ParticipantJoinedEvent {
 @Injectable()
 export class ParticipantJoinedHandler {
   private readonly logger = new LoggerService(ParticipantJoinedHandler.name);
-  private static dispatchesInProgress = new Set<string>();
+  // Tracks rooms with an in-flight dispatch. We own the safety timer so it can
+  // be cancelled when the dispatch resolves and so re-adding replaces (rather
+  // than stacks) timers. Previously this was a Set<string> with a fire-and-
+  // forget setTimeout, which leaked the room key if the timeout was delayed
+  // and the dispatch never resolved.
+  private static dispatchesInProgress = new Map<string, NodeJS.Timeout>();
+  private static readonly DISPATCH_TTL_MS = 30_000;
+
+  private static addInProgress(roomName: string): void {
+    const existing = ParticipantJoinedHandler.dispatchesInProgress.get(roomName);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
+    }, ParticipantJoinedHandler.DISPATCH_TTL_MS);
+    if (typeof timer.unref === 'function') timer.unref();
+    ParticipantJoinedHandler.dispatchesInProgress.set(roomName, timer);
+  }
+
+  private static removeInProgress(roomName: string): void {
+    const timer = ParticipantJoinedHandler.dispatchesInProgress.get(roomName);
+    if (timer) clearTimeout(timer);
+    ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
+  }
 
   constructor(
     private readonly liveKitService: LiveKitService,
@@ -63,7 +85,7 @@ export class ParticipantJoinedHandler {
 
       if (event.participant.kind === ParticipantInfo_Kind.AGENT) {
         // Agent joined the room - clean up both tracking sets
-        ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
+        ParticipantJoinedHandler.removeInProgress(roomName);
         this.liveKitService.clearProactiveDispatch(roomName);
       }
 
@@ -181,13 +203,9 @@ export class ParticipantJoinedHandler {
           return;
         }
 
-        // Mark dispatch as in-progress BEFORE awaiting the dispatch call
-        ParticipantJoinedHandler.dispatchesInProgress.add(roomName);
-
-        // Set a safety timeout to eventually clear it if the agent fails to join
-        setTimeout(() => {
-          ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
-        }, 30000); // 30s safety window
+        // Mark dispatch as in-progress BEFORE awaiting the dispatch call.
+        // addInProgress owns the safety timer (TTL) so we don't leak handles.
+        ParticipantJoinedHandler.addInProgress(roomName);
 
         let metadata: any = {};
         const participantIdentity = this.configService.livekit.agentName;
@@ -221,7 +239,7 @@ export class ParticipantJoinedHandler {
           );
         } catch (dispatchError) {
           // If dispatch fails, clear it from in-progress so we can retry on next join
-          ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);
+          ParticipantJoinedHandler.removeInProgress(roomName);
           throw dispatchError;
         }
       }

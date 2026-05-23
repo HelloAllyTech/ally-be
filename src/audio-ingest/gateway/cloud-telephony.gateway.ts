@@ -7,7 +7,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { LoggerService } from '../../logger/logger.service';
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ChatService } from '../../chat/service/chat.service';
 import {
   PLACEHOLDER_CHAT_ID,
@@ -33,13 +33,18 @@ import { WebSocketAuthMiddleware } from 'src/auth/middlewares/ws-auth.middleware
 })
 @Injectable()
 export class CloudTelephonyGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
 {
   private readonly logger = LoggerService.getInstance(
     CloudTelephonyGateway.name,
   );
 
   private sessions: { [key: string]: UserChatSessionData } = {};
+  // Periodic janitor reconciles `sessions` against the live socket set.
+  // Without it, abnormal disconnects (network drops without close frame, etc.)
+  // leave entries behind that only get cleaned up if handleDisconnect fires.
+  private sessionJanitor?: NodeJS.Timeout;
+  private static readonly SESSION_JANITOR_INTERVAL_MS = 60_000;
 
   constructor(
     private chatService: ChatService,
@@ -57,6 +62,36 @@ export class CloudTelephonyGateway
         PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
       ]),
     );
+
+    this.sessionJanitor = setInterval(
+      () => this.reconcileSessions(),
+      CloudTelephonyGateway.SESSION_JANITOR_INTERVAL_MS,
+    );
+    if (typeof this.sessionJanitor.unref === 'function') {
+      this.sessionJanitor.unref();
+    }
+  }
+
+  private reconcileSessions(): void {
+    const liveSocketIds = this.server?.sockets?.sockets;
+    if (!liveSocketIds) return;
+    let evicted = 0;
+    for (const sid of Object.keys(this.sessions)) {
+      if (!liveSocketIds.has(sid)) {
+        delete this.sessions[sid];
+        evicted++;
+      }
+    }
+    if (evicted > 0) {
+      this.logger.warn(
+        `Cloud telephony session janitor evicted ${evicted} stale session(s)`,
+      );
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.sessionJanitor) clearInterval(this.sessionJanitor);
+    this.sessions = {};
   }
 
   async handleConnection(client: Socket) {
