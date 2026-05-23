@@ -8,6 +8,10 @@ export class ScenarioReportNotificationService {
     this.listener = listener;
   }
 
+  removeListener(): void {
+    this.listener = undefined;
+  }
+
   notifyUpdate(userId: number, reportId: string): void {
     this.listener?.(userId, reportId);
   }
