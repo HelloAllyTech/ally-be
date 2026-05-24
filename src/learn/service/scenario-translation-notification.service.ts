@@ -17,6 +17,10 @@ export class ScenarioTranslationNotificationService {
     this.listener = listener;
   }
 
+  removeListener(): void {
+    this.listener = undefined;
+  }
+
   notifyProgress(
     userId: number,
     payload: ScenarioTranslationProgressPayload,

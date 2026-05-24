@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -23,7 +23,11 @@ const userRoom = (userId: number) => `user:${userId}`;
 })
 @Injectable()
 export class ScenarioTranslationGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleDestroy
 {
   private readonly logger = LoggerService.getInstance(
     ScenarioTranslationGateway.name,
@@ -49,6 +53,10 @@ export class ScenarioTranslationGateway
         this.handleProgress(userId, payload);
       },
     );
+  }
+
+  onModuleDestroy() {
+    this.scenarioTranslationNotificationService.removeListener();
   }
 
   async handleConnection(client: any) {

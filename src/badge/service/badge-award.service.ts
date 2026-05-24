@@ -499,13 +499,20 @@ export class BadgeAwardService {
       );
 
       if (unawardedBadges?.length > 0) {
-        unawardedBadges.forEach(async (badge) => {
-          await this.badgeUserService.awardBadgeToUsersByTenant(
-            badge,
-            tenantId ? [tenantId] : [],
-            [userId],
-          );
-        });
+        // `Array#forEach` ignores returned promises — the outer function used
+        // to return before any award completed, so awards could be silently
+        // dropped if the process restarted mid-loop or if the caller relied
+        // on completion. `Promise.all` keeps parallelism but ensures we
+        // actually wait for the writes.
+        await Promise.all(
+          unawardedBadges.map((badge) =>
+            this.badgeUserService.awardBadgeToUsersByTenant(
+              badge,
+              tenantId ? [tenantId] : [],
+              [userId],
+            ),
+          ),
+        );
       }
     } catch (error) {
       this.logger.error(

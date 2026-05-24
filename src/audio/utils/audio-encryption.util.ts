@@ -71,6 +71,12 @@ export class AudioEncryptionUtil {
     const readStream = fs.createReadStream(inputPath);
     const writeStream = fs.createWriteStream(outputPath);
 
+    // `pipe()` does not forward errors. Surface any upstream failure on the
+    // writeStream so callers only have to listen on one source, and so a
+    // read/decrypt failure can't leave the writeStream silently dangling.
+    readStream.on('error', (err) => writeStream.destroy(err));
+    decipher.on('error', (err) => writeStream.destroy(err));
+
     readStream.pipe(decipher).pipe(writeStream);
 
     return { readStream, decipher, writeStream };
