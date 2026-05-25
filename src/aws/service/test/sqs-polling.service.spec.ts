@@ -303,7 +303,7 @@ describe('SqsPollingService', () => {
           },
         ],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       };
 
       await privateService.pollMessages(queuePoller);
@@ -338,7 +338,7 @@ describe('SqsPollingService', () => {
           },
         ],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       };
 
       await privateService.pollMessages(queuePoller);
@@ -376,7 +376,7 @@ describe('SqsPollingService', () => {
           },
         ],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       };
 
       await privateService.pollMessages(queuePoller);
@@ -437,7 +437,7 @@ describe('SqsPollingService', () => {
           },
         ],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       };
 
       await privateService.pollMessages(queuePoller);
@@ -477,7 +477,7 @@ describe('SqsPollingService', () => {
           },
         ],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       };
 
       await privateService.pollMessages(queuePoller);
@@ -505,7 +505,7 @@ describe('SqsPollingService', () => {
           },
         ],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       };
 
       await privateService.pollMessages(queuePoller);
@@ -530,7 +530,7 @@ describe('SqsPollingService', () => {
           },
         ],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       };
 
       await privateService.pollMessages(queuePoller);
@@ -583,7 +583,7 @@ describe('SqsPollingService', () => {
           },
         ],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       };
 
       await privateService.pollMessages(queuePoller);
@@ -652,7 +652,7 @@ describe('SqsPollingService', () => {
           },
         ],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       };
 
       await privateService.pollMessages(queuePoller);
@@ -692,7 +692,7 @@ describe('SqsPollingService', () => {
         queueUrl: queueUrl1,
         handlers: [],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       });
 
       expect(mockLogger.debug).not.toHaveBeenCalledWith(
@@ -735,7 +735,7 @@ describe('SqsPollingService', () => {
           },
         ],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       };
 
       await privateService.pollQueue(queuePoller);
@@ -783,7 +783,7 @@ describe('SqsPollingService', () => {
           },
         ],
         isPolling: true,
-        pollInterval: 5000,
+        pollInterval: 1,
       };
 
       await privateService.pollQueue(queuePoller);

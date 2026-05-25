@@ -5,6 +5,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource, DeepPartial, EntityManager, In } from 'typeorm';
+
+async function executeInChunks<T, R>(
+  items: T[],
+  chunkSize: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
+}
 import { Scenarios } from '../entity/scenarios.entity';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
@@ -552,11 +566,13 @@ export class ScenarioService {
     createScenariosDto: CreateScenariosDto,
     userId: number,
   ): Promise<Scenarios[]> {
-    const createScenarioDtos = await Promise.all(
-      createScenariosDto.scenarios.map(async (scenario) => {
+    const createScenarioDtos = await executeInChunks(
+      createScenariosDto.scenarios,
+      10,
+      async (scenario) => {
         await this.validateCreateScenario(scenario);
         return mapCreateScenarioRequestToEntity(scenario, userId);
-      }),
+      },
     );
 
     const isMultiTenantAdmin =
@@ -976,8 +992,10 @@ export class ScenarioService {
       ),
     );
 
-    await Promise.all(
-      voiceIds.map((voiceId) => this.getScenarioVoice(voiceId)),
+    await executeInChunks(
+      voiceIds,
+      10,
+      async (voiceId) => this.getScenarioVoice(voiceId)
     );
   }
 
@@ -1534,8 +1552,10 @@ export class ScenarioService {
         const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
 
         // Create an array of ScenarioEvents entities to be saved
-        const scenarioEvents = await Promise.all(
-          events.map(async (event) => {
+        const scenarioEvents = await executeInChunks(
+          events,
+          10,
+          async (event) => {
             const scenarioEvent = await scenarioEventsRepo.findOne({
               where: {
                 scenarioId,
@@ -1574,7 +1594,7 @@ export class ScenarioService {
                 event.detectionConfig ?? scenarioEvent?.detectionConfig,
               checklistVisibilityStatus: event.checklistVisibilityStatus,
             };
-          }),
+          },
         );
 
         await scenarioEventsRepo.save(scenarioEvents);

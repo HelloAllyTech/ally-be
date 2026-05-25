@@ -126,6 +126,7 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
           )}`,
         );
       }
+      await new Promise((resolve) => setTimeout(resolve, poller.pollInterval));
     }
   }
 

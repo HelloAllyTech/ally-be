@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { NudgeRequest, NudgeResponse } from '../../chat/type/chat.type';
 import { RetryOnFail } from '../../common/decorator/retry.decorator';
@@ -255,16 +255,34 @@ export class AiService {
     const execId = uuidv4();
     let timeoutId: NodeJS.Timeout | undefined;
     const startTime = new Date().toISOString();
+    const startMs = Date.now();
+    const dataSize = (() => {
+      try {
+        return Buffer.byteLength(JSON.stringify(data), 'utf8');
+      } catch {
+        return -1;
+      }
+    })();
     try {
       const apiUrl = isLearnService
         ? this.config.ai.learnApiUrl
         : this.config.ai.apiUrl;
       const url = `${apiUrl}/${endpoint}`;
+      this.logger.info(
+        `AI Request START | execId=${execId} | endpoint=${endpoint} | url=${url} | ` +
+          `method=${method} | isLearnService=${isLearnService} | ` +
+          `dataSize=${dataSize}B | timeout=${this.maxTimeout}ms | startTime=${startTime}`,
+      );
       this.logger.debug(
-        `Making request to ${endpoint} | ${execId} | ${JSON.stringify(data)}`,
+        `AI Request BODY | execId=${execId} | endpoint=${endpoint} | ` +
+          `data=${JSON.stringify(data)}`,
       );
       // set timeout for alert threshold
       timeoutId = setTimeout(() => {
+        this.logger.warn(
+          `AI Request SLOW | execId=${execId} | endpoint=${endpoint} | ` +
+            `elapsedMs=${Date.now() - startMs} | thresholdMs=${this.alertThresholdTimeout}`,
+        );
         this.eventEmitter.emit('exception', {
           statusCode: 500,
           timestamp: new Date().toISOString(),
@@ -286,19 +304,66 @@ export class AiService {
         method,
         data,
       });
+      const elapsedMs = Date.now() - startMs;
+      const upstreamTraceId =
+        response.headers?.['x-trace-id'] ?? response.headers?.['X-Trace-ID'];
+      this.logger.info(
+        `AI Request OK | execId=${execId} | endpoint=${endpoint} | ` +
+          `status=${response.status} | elapsedMs=${elapsedMs} | ` +
+          `upstreamTraceId=${upstreamTraceId ?? 'none'}`,
+      );
       this.logger.debug(
-        `Response from ${endpoint} | ${execId} | ${JSON.stringify(response.data)}`,
+        `AI Response BODY | execId=${execId} | endpoint=${endpoint} | ` +
+          `data=${JSON.stringify(response.data)}`,
       );
       return response.data;
     } catch (error) {
+      const axiosErr = error as AxiosError;
+      const elapsedMs = Date.now() - startMs;
+      const upstreamStatus = axiosErr.response?.status;
+      const upstreamBody = axiosErr.response?.data;
+      const upstreamBodyStr =
+        typeof upstreamBody === 'string'
+          ? upstreamBody
+          : JSON.stringify(upstreamBody);
+      const upstreamDetail =
+        (upstreamBody as { detail?: unknown } | undefined)?.detail;
+      const upstreamTraceId =
+        axiosErr.response?.headers?.['x-trace-id'] ??
+        axiosErr.response?.headers?.['X-Trace-ID'];
+      // Network-level diagnostics: ECONNREFUSED / ECONNRESET / ETIMEDOUT etc.
+      const errCode = (error as NodeJS.ErrnoException).code;
+      const errno = (error as NodeJS.ErrnoException).errno;
+      const syscall = (error as NodeJS.ErrnoException).syscall;
+      const address = (error as { address?: string }).address;
+      const port = (error as { port?: number }).port;
+      const failureCategory = upstreamStatus
+        ? `upstream_${upstreamStatus}`
+        : errCode
+          ? `network_${errCode}`
+          : 'unknown';
       this.logger.error(
-        `AI Service Error: ${error.message} | ${execId} | ${JSON.stringify(data)}`,
+        `AI Request FAIL | execId=${execId} | endpoint=${endpoint} | ` +
+          `category=${failureCategory} | elapsedMs=${elapsedMs} | ` +
+          `errMsg=${error.message} | errCode=${errCode} | errno=${errno} | ` +
+          `syscall=${syscall} | address=${address} | port=${port} | ` +
+          `upstreamStatus=${upstreamStatus} | ` +
+          `upstreamTraceId=${upstreamTraceId ?? 'none'} | ` +
+          `upstreamDetail=${JSON.stringify(upstreamDetail)} | ` +
+          `upstreamBody=${upstreamBodyStr} | ` +
+          `dataSize=${dataSize}B | requestData=${JSON.stringify(data)}`,
+        error.stack,
       );
       this.eventEmitter.emit('exception', {
         statusCode: 500,
         timestamp: new Date().toISOString(),
         path: endpoint,
-        message: `${execId} | startTime: ${startTime} | ${error.message} `,
+        message:
+          `${execId} | startTime: ${startTime} | elapsedMs=${elapsedMs} | ` +
+          `category=${failureCategory} | ${error.message} | ` +
+          `errCode=${errCode} | upstreamStatus=${upstreamStatus} | ` +
+          `upstreamTraceId=${upstreamTraceId ?? 'none'} | ` +
+          `upstreamDetail=${JSON.stringify(upstreamDetail)}`,
         type: 'AI Request Error',
       } as NotificationErrorType);
       if (throwError) {

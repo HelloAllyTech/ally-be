@@ -34,7 +34,12 @@ export class LiveKitService {
   // Tracks rooms where a proactive dispatch has been fired but the agent has
   // not yet appeared in listParticipants(). Prevents the webhook handler from
   // issuing a duplicate dispatch during that narrow window.
-  private readonly proactiveDispatches = new Set<string>();
+  //
+  // Stored as Map<roomName, safetyTimer> so we own the timer handle and can
+  // (a) cancel it when the entry is removed and (b) replace it on re-mark,
+  // avoiding the prior pattern's risk of orphaned timers and unbounded growth.
+  private readonly proactiveDispatches = new Map<string, NodeJS.Timeout>();
+  private static readonly PROACTIVE_DISPATCH_TTL_MS = 30_000;
 
   constructor(private readonly configService: AppConfigService) {
     this.logger = LoggerService.getInstance(LiveKitService.name);
@@ -220,13 +225,22 @@ export class LiveKitService {
   }
 
   preMarkProactiveDispatch(roomName: string): void {
-    this.proactiveDispatches.add(roomName);
-    // Safety clear in case the agent never joins (crash, capacity issue, etc.)
-    setTimeout(() => this.proactiveDispatches.delete(roomName), 30_000);
+    // Cancel any prior safety timer so we never leak handles when re-marking.
+    const existing = this.proactiveDispatches.get(roomName);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(() => {
+      this.proactiveDispatches.delete(roomName);
+    }, LiveKitService.PROACTIVE_DISPATCH_TTL_MS);
+    // Avoid holding the event loop open on graceful shutdown.
+    if (typeof timer.unref === 'function') timer.unref();
+    this.proactiveDispatches.set(roomName, timer);
     this.logger.debug(`Proactive dispatch pre-marked for room: ${roomName}`);
   }
 
   clearProactiveDispatch(roomName: string): void {
+    const timer = this.proactiveDispatches.get(roomName);
+    if (timer) clearTimeout(timer);
     this.proactiveDispatches.delete(roomName);
   }
 

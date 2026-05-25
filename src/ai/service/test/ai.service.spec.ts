@@ -161,7 +161,12 @@ describe('AiService', () => {
 
       expect(result).toEqual({});
       expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('AI Service Error: Nudge failed'),
+        expect.stringContaining('AI Request FAIL'),
+        expect.anything(),
+      );
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('errMsg=Nudge failed'),
+        expect.anything(),
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         'exception',
@@ -235,7 +240,8 @@ describe('AiService', () => {
 
       expect(result).toEqual({});
       expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('AI Service Error: Tag rating failed'),
+        expect.stringContaining('errMsg=Tag rating failed'),
+        expect.anything(),
       );
     });
   });
@@ -273,7 +279,8 @@ describe('AiService', () => {
         'Add document failed',
       );
       expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('AI Service Error: Add document failed'),
+        expect.stringContaining('errMsg=Add document failed'),
+        expect.anything(),
       );
     });
   });
@@ -311,8 +318,9 @@ describe('AiService', () => {
       expect(result).toEqual({});
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.stringContaining(
-          'AI Service Error: Transcribe and summarize failed',
+          'errMsg=Transcribe and summarize failed',
         ),
+        expect.anything(),
       );
     });
   });
@@ -344,7 +352,8 @@ describe('AiService', () => {
 
       expect(result).toEqual({});
       expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('AI Service Error: Enhance failed'),
+        expect.stringContaining('errMsg=Enhance failed'),
+        expect.anything(),
       );
     });
   });
@@ -429,10 +438,10 @@ describe('AiService', () => {
       await service.generateSummaryAndTags(mockMessages);
 
       expect(mockLogger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('Making request to'),
+        expect.stringContaining('AI Request BODY'),
       );
       expect(mockLogger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('Response from'),
+        expect.stringContaining('AI Response BODY'),
       );
     });
 
