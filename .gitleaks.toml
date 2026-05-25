@@ -35,6 +35,8 @@ paths = [
   '''(?i)(^|/)\.gitleaks\.toml$''',
   '''(?i)(^|/)pre-commit-config\.yaml$''',
   '''(?i)(^|/)pull_request_template\.md$''',
+  '''(^|/)src/database/seeds/.*\.ts$''',
+  '''(^|/)dist/database/seeds/.*\.js$''',
 ]
 regexes = [
   '''your_[A-Za-z0-9_]+_here''',

@@ -80,4 +80,8 @@ export class TooltipService {
   ): Promise<Tooltip[]> {
     return this.tooltipRepository.getTooltips(search, options);
   }
+
+  async getActiveTooltips() {
+    return this.tooltipRepository.getActiveTooltips();
+  }
 }

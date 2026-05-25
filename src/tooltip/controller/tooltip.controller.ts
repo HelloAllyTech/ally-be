@@ -12,6 +12,7 @@ import {
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { Public } from 'src/auth/decorators/auth.metadata';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 import { CreateTooltipDto } from '../dto/create-tooltip.dto';
@@ -22,6 +23,13 @@ import { TooltipService } from '../service/tooltip.service';
 @Controller('v1/tooltips')
 export class TooltipController {
   constructor(private readonly tooltipService: TooltipService) {}
+
+  @Get('active')
+  @Public()
+  @ApiOperation({ summary: 'Get all active tooltips (public)' })
+  async getActiveTooltips() {
+    return this.tooltipService.getActiveTooltips();
+  }
 
   @Get()
   @ApiOperation({ summary: 'Get all tooltips' })
