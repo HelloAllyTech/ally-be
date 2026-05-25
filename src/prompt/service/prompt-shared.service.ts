@@ -81,7 +81,9 @@ export class PromptSharedService {
       }
 
       // Try subdirs: promptCode subdir_rest -> subdir/rest.txt
-      const entries = await fs.promises.readdir(promptsDir, { withFileTypes: true });
+      const entries = await fs.promises.readdir(promptsDir, {
+        withFileTypes: true,
+      });
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         const prefix = entry.name.replace(/-/g, '_');

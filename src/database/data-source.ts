@@ -3,7 +3,10 @@ import { config } from 'dotenv';
 
 config(); // Load .env file
 
-const parsePositiveInt = (value: string | undefined, fallback: number): number => {
+const parsePositiveInt = (
+  value: string | undefined,
+  fallback: number,
+): number => {
   if (!value) return fallback;
   const parsed = parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -30,10 +33,7 @@ export const dataSourceOptions: DataSourceOptions = {
   extra: {
     max: parsePositiveInt(process.env.DB_POOL_MAX, 30),
     min: parsePositiveInt(process.env.DB_POOL_MIN, 5),
-    idleTimeoutMillis: parsePositiveInt(
-      process.env.DB_IDLE_TIMEOUT_MS,
-      30_000,
-    ),
+    idleTimeoutMillis: parsePositiveInt(process.env.DB_IDLE_TIMEOUT_MS, 30_000),
     statement_timeout: parsePositiveInt(
       process.env.DB_STATEMENT_TIMEOUT_MS,
       30_000,

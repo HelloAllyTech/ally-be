@@ -20,6 +20,7 @@ import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { GroupService } from 'src/authorization/service/group.service';
 import { OAuth2Client } from 'google-auth-library';
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import {
   AuthenticationResponseDto,
   GenerateOtpV2Dto,
@@ -28,8 +29,13 @@ import {
 } from '../dto/login.dto';
 import { UserSuspendedException } from '../exception/login.exception';
 import { UserRole } from 'src/common/constants/user.constants';
-import { AuthProvider, GoogleTokenPayload } from '../type/auth.types';
+import {
+  AppleTokenPayload,
+  AuthProvider,
+  GoogleTokenPayload,
+} from '../type/auth.types';
 import { GoogleSignInDto } from '../dto/google-token.dto';
+import { AppleSignInDto } from '../dto/apple-token.dto';
 import * as crypto from 'crypto';
 import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
 import { CachedAuthAttempt } from '../interface/cached-auth-attempt.interface';
@@ -44,6 +50,11 @@ export class AuthService {
   private refreshTokenRepository: Repository<RefreshToken>;
   private readonly auditLogger = AuditLoggerService.getInstance();
   private readonly googleClient: OAuth2Client;
+  private readonly appleJwks = createRemoteJWKSet(
+    new URL('https://appleid.apple.com/auth/keys'),
+  );
+  private static readonly APPLE_ISSUER = 'https://appleid.apple.com';
+
   constructor(
     private dataSource: DataSource,
     private jwtService: JwtService,
@@ -505,6 +516,57 @@ export class AuthService {
       allowedRoles,
       email,
       AuthProvider.GOOGLE,
+    );
+  }
+
+  async verifyAppleToken(
+    appleSignInDto: AppleSignInDto,
+  ): Promise<AppleTokenPayload> {
+    const { identityToken } = appleSignInDto;
+    if (!identityToken) {
+      throw new BadRequestException('Apple identity token is required');
+    }
+    return this.verifyAppleIdToken(identityToken);
+  }
+
+  async verifyAppleIdToken(identityToken: string): Promise<AppleTokenPayload> {
+    const allowedAudiences = this.configService.appleAuth.bundleIds;
+    if (!allowedAudiences.length) {
+      this.logger.error('APPLE_BUNDLE_IDS is not configured');
+      throw new UnauthorizedException('Invalid Apple token');
+    }
+
+    let payload: JWTPayload;
+    try {
+      const verified = await jwtVerify(identityToken, this.appleJwks, {
+        issuer: AuthService.APPLE_ISSUER,
+        audience: allowedAudiences,
+      });
+      payload = verified.payload;
+    } catch {
+      throw new UnauthorizedException('Invalid Apple token');
+    }
+
+    const email = typeof payload.email === 'string' ? payload.email : undefined;
+    if (!email) {
+      throw new UnauthorizedException('Invalid Apple token');
+    }
+    return { email };
+  }
+
+  async verifyAppleUser(
+    payload: AppleTokenPayload,
+    allowedRoles: UserRole[],
+  ): Promise<AuthenticationResponseDto> {
+    const { email } = payload;
+    if (!email) {
+      throw new BadRequestException('Email is required');
+    }
+
+    return await this.validateUserAndIssueTokens(
+      allowedRoles,
+      email,
+      AuthProvider.APPLE,
     );
   }
 

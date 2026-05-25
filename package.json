@@ -78,6 +78,7 @@
     "hume": "^0.15.15",
     "ioredis": "^5.10.0",
     "joi": "^18.0.2",
+    "jose": "^5.10.0",
     "jsonwebtoken": "^9.0.3",
     "livekit-server-sdk": "^2.15.0",
     "lodash": "^4.17.23",

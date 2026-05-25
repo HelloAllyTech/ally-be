@@ -24,6 +24,7 @@ import { ApiBody, ApiTags } from '@nestjs/swagger';
 import { RefreshTokenDto } from '../dto/refresh.dto';
 import { RateLimit } from '../../rate-limit/decorator/rate-limit.decorator';
 import { GoogleSignInDto } from '../dto/google-token.dto';
+import { AppleSignInDto } from '../dto/apple-token.dto';
 import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -119,6 +120,17 @@ export class AuthController {
     return this.authService.verifyGoogleUser(
       payload,
       googleSignInDto.allowedRoles,
+    );
+  }
+
+  @Post('apple')
+  async appleAuth(
+    @Body() appleSignInDto: AppleSignInDto,
+  ): Promise<AuthenticationResponseDto> {
+    const payload = await this.authService.verifyAppleToken(appleSignInDto);
+    return this.authService.verifyAppleUser(
+      payload,
+      appleSignInDto.allowedRoles,
     );
   }
 

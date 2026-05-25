@@ -326,8 +326,8 @@ export class AiService {
         typeof upstreamBody === 'string'
           ? upstreamBody
           : JSON.stringify(upstreamBody);
-      const upstreamDetail =
-        (upstreamBody as { detail?: unknown } | undefined)?.detail;
+      const upstreamDetail = (upstreamBody as { detail?: unknown } | undefined)
+        ?.detail;
       const upstreamTraceId =
         axiosErr.response?.headers?.['x-trace-id'] ??
         axiosErr.response?.headers?.['X-Trace-ID'];

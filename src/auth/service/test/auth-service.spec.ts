@@ -38,6 +38,11 @@ jest.mock('src/auth/util/auth.util', () => ({
   },
 }));
 
+jest.mock('jose', () => ({
+  createRemoteJWKSet: jest.fn(() => 'mock-jwks'),
+  jwtVerify: jest.fn(),
+}));
+
 describe('AuthService', () => {
   let authService: AuthService;
   let userRepository: jest.Mocked<Repository<User>>;
@@ -89,6 +94,9 @@ describe('AuthService', () => {
       androidClientId: 'android',
       iosClientId: 'ios',
       webClientId: 'web',
+    },
+    appleAuth: {
+      bundleIds: ['com.helloally.app', 'com.helloally.app.dev'],
     },
   };
 
@@ -924,6 +932,151 @@ describe('AuthService', () => {
         `auth_attempt:magic:${tokenHash}`,
       );
       expect(refreshTokenRepository.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('verifyAppleToken', () => {
+    const jose = jest.requireMock('jose') as {
+      jwtVerify: jest.Mock;
+    };
+
+    beforeEach(() => {
+      jose.jwtVerify.mockReset();
+    });
+
+    it('throws BadRequest when identityToken is missing', async () => {
+      await expect(
+        authService.verifyAppleToken({
+          identityToken: '',
+          allowedRoles: [UserRole.CLIENT],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('returns email from a valid identity token', async () => {
+      jose.jwtVerify.mockResolvedValue({
+        payload: { email: 'ada@example.com', sub: 'apple-sub-123' },
+        protectedHeader: {},
+      });
+
+      const result = await authService.verifyAppleToken({
+        identityToken: 'valid.jwt.token',
+        allowedRoles: [UserRole.CLIENT],
+      });
+
+      expect(result).toEqual({ email: 'ada@example.com' });
+      expect(jose.jwtVerify).toHaveBeenCalledWith(
+        'valid.jwt.token',
+        'mock-jwks',
+        {
+          issuer: 'https://appleid.apple.com',
+          audience: ['com.helloally.app', 'com.helloally.app.dev'],
+        },
+      );
+    });
+
+    it('throws Unauthorized when jose rejects the token', async () => {
+      jose.jwtVerify.mockRejectedValue(new Error('bad signature'));
+
+      await expect(
+        authService.verifyAppleToken({
+          identityToken: 'bad.jwt',
+          allowedRoles: [UserRole.CLIENT],
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('throws Unauthorized when verified payload has no email', async () => {
+      jose.jwtVerify.mockResolvedValue({
+        payload: { sub: 'apple-sub-123' },
+        protectedHeader: {},
+      });
+
+      await expect(
+        authService.verifyAppleToken({
+          identityToken: 'valid.jwt',
+          allowedRoles: [UserRole.CLIENT],
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('verifyAppleUser', () => {
+    it('throws BadRequest when payload has no email', async () => {
+      await expect(
+        authService.verifyAppleUser({ email: '' }, [UserRole.CLIENT]),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('issues tokens for active user with allowed role', async () => {
+      userRepository.findOne.mockResolvedValue(mockUser);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.CLIENT]);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-refresh');
+      jwtService.signAsync
+        .mockResolvedValueOnce('access-token')
+        .mockResolvedValueOnce('refresh-token');
+      refreshTokenRepository.save.mockResolvedValue({} as RefreshToken);
+
+      const result = await authService.verifyAppleUser(
+        { email: 'testuser@example.com' },
+        [UserRole.CLIENT],
+      );
+
+      expect(result.accessToken).toBe('access-token');
+      expect(result.refreshToken).toBe('refresh-token');
+    });
+
+    it('throws NotFound when email has no account', async () => {
+      userRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        authService.verifyAppleUser({ email: 'ghost@example.com' }, [
+          UserRole.CLIENT,
+        ]),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws Forbidden when user lacks allowed role', async () => {
+      userRepository.findOne.mockResolvedValue(mockUser);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.ADMIN]);
+
+      await expect(
+        authService.verifyAppleUser({ email: 'testuser@example.com' }, [
+          UserRole.CLIENT,
+        ]),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('throws UserSuspended when user status is SUSPENDED', async () => {
+      const suspended = {
+        ...mockUser,
+        status: UserStatus.SUSPENDED,
+      } as unknown as User;
+      userRepository.findOne.mockResolvedValue(suspended);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.CLIENT]);
+
+      await expect(
+        authService.verifyAppleUser({ email: 'testuser@example.com' }, [
+          UserRole.CLIENT,
+        ]),
+      ).rejects.toThrow(UserSuspendedException);
+    });
+
+    it('uses AuthProvider.APPLE on the audit emission', async () => {
+      userRepository.findOne.mockResolvedValue(mockUser);
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.CLIENT]);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-refresh');
+      jwtService.signAsync
+        .mockResolvedValueOnce('access-token')
+        .mockResolvedValueOnce('refresh-token');
+      refreshTokenRepository.save.mockResolvedValue({} as RefreshToken);
+
+      await authService.verifyAppleUser({ email: 'testuser@example.com' }, [
+        UserRole.CLIENT,
+      ]);
+
+      expect(AuthProvider.APPLE).toBe('apple');
+      expect(redisService).toBeDefined();
     });
   });
 });

@@ -317,9 +317,7 @@ describe('AiService', () => {
 
       expect(result).toEqual({});
       expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'errMsg=Transcribe and summarize failed',
-        ),
+        expect.stringContaining('errMsg=Transcribe and summarize failed'),
         expect.anything(),
       );
     });

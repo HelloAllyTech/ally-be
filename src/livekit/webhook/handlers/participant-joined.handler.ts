@@ -53,7 +53,8 @@ export class ParticipantJoinedHandler {
   private static readonly DISPATCH_TTL_MS = 30_000;
 
   private static addInProgress(roomName: string): void {
-    const existing = ParticipantJoinedHandler.dispatchesInProgress.get(roomName);
+    const existing =
+      ParticipantJoinedHandler.dispatchesInProgress.get(roomName);
     if (existing) clearTimeout(existing);
     const timer = setTimeout(() => {
       ParticipantJoinedHandler.dispatchesInProgress.delete(roomName);

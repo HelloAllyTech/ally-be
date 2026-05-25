@@ -32,7 +32,11 @@ const reportRoom = (reportId: string) => `report:${reportId}`;
 })
 @Injectable()
 export class ScenarioReportGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
+  implements
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleDestroy
 {
   private readonly logger = LoggerService.getInstance(
     ScenarioReportGateway.name,

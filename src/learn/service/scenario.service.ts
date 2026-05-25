@@ -992,10 +992,8 @@ export class ScenarioService {
       ),
     );
 
-    await executeInChunks(
-      voiceIds,
-      10,
-      async (voiceId) => this.getScenarioVoice(voiceId)
+    await executeInChunks(voiceIds, 10, async (voiceId) =>
+      this.getScenarioVoice(voiceId),
     );
   }
 

@@ -339,6 +339,15 @@ export class AppConfigService {
     };
   }
 
+  get appleAuth() {
+    const bundleIds = this.configService
+      .get<string>('APPLE_BUNDLE_IDS', '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+    return { bundleIds };
+  }
+
   get openai() {
     return {
       apiKey: this.configService.get<string>('OPENAI_API_KEY'),
