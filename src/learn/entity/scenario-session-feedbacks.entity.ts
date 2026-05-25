@@ -14,4 +14,7 @@ export class ScenarioSessionFeedbacks extends BaseEntity {
 
   @Column({ nullable: true })
   feedback?: string;
+
+  @Column({ type: 'jsonb', default: () => `'[]'::jsonb` })
+  tags!: string[];
 }

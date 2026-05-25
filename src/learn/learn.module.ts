@@ -96,6 +96,9 @@ import { ScenarioSessionRecording } from './entity/scenario-session-recording.en
 import { ScenarioSessionRecordingRepository } from './repository/scenario-session-recording.repository';
 import { ScenarioSessionRecordingController } from './controller/scenario-session-recording.controller';
 import { ScenarioSessionRecordingService } from './service/scenario-session-recording.service';
+import { RatingMetadata } from './entity/rating-metadata.entity';
+import { RatingMetadataController } from './controller/rating-metadata.controller';
+import { RatingMetadataService } from './service/rating-metadata.service';
 
 @Module({
   imports: [
@@ -125,6 +128,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
       ScenarioBehaviorInstructionTranslation,
       AuditModule,
       ScenarioSessionRecording,
+      RatingMetadata,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -151,6 +155,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     ScenarioSessionChatController,
     CompetencyController,
     ScenarioSessionRecordingController,
+    RatingMetadataController,
   ],
   providers: [
     ScenarioService,
@@ -203,6 +208,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     AnthropicAutofillService,
     ScenarioSessionRecordingRepository,
     ScenarioSessionRecordingService,
+    RatingMetadataService,
   ],
   exports: [
     LearnMessageProcessor,

@@ -38,3 +38,8 @@ lerna-debug.log*
 .env
 docker.env
 gcloud/
+
+CLAUDE.md
+docker.yaml
+pnpm-lock.yaml
+.npmrc

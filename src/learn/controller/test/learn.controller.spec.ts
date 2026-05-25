@@ -1,3 +1,11 @@
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  jest,
+} from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { LearnController } from '../learn.controller';
 import { ScenarioService } from '../../service/scenario.service';
@@ -243,8 +251,11 @@ describe('LearnController', () => {
     };
 
     const mockUserService = {
-      getTermsAndAgreementApproval: jest.fn().mockResolvedValue(true),
+      getTermsAndAgreementApproval: jest.fn() as jest.Mock<
+        () => Promise<boolean>
+      >,
     };
+    mockUserService.getTermsAndAgreementApproval.mockResolvedValue(true);
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LearnController],
@@ -692,6 +703,7 @@ describe('LearnController', () => {
       const mockSession = {
         ...mockScenarioSessionResponse,
         hasFeedback: true,
+        sessionFeedback: { rating: 0, feedback: undefined, tags: [] },
         reviewId: 'review-id',
         reviewStatus: ReviewStatus.HIDDEN,
         reviewNote: 'Review note',
