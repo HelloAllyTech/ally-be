@@ -90,7 +90,7 @@
     "reflect-metadata": "^0.2.2",
     "remove": "^0.1.5",
     "rxjs": "^7.8.2",
-    "sanitize-html": "^2.17.3",
+    "sanitize-html": "^2.17.4",
     "sarvamai": "^1.1.6",
     "socket.io": "^4.8.3",
     "typeorm": "^0.3.28",
