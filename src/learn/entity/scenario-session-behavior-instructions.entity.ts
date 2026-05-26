@@ -9,7 +9,7 @@ export class ScenarioSessionBehaviorInstructions extends BaseWithoutTenantEntity
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   scenarioSessionId!: string;
 
   @Column()

@@ -958,4 +958,12 @@ export class ScenarioSharedService {
 
     return this.scenarioSessionRecordingRepository.save(recording);
   }
+
+  async getScenarioSessionRecordingBySessionId(
+    scenarioSessionId: string,
+  ): Promise<ScenarioSessionRecording | null> {
+    return this.scenarioSessionRecordingRepository.findOne({
+      where: { scenarioSessionId },
+    });
+  }
 }

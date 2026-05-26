@@ -50,6 +50,7 @@ export class ParticipantJoinedHandler {
   // forget setTimeout, which leaked the room key if the timeout was delayed
   // and the dispatch never resolved.
   private static dispatchesInProgress = new Map<string, NodeJS.Timeout>();
+  private static recordingsInProgress = new Set<string>();
   private static readonly DISPATCH_TTL_MS = 30_000;
 
   private static addInProgress(roomName: string): void {
@@ -145,6 +146,26 @@ export class ParticipantJoinedHandler {
             );
             return;
           }
+
+          // Check both local "in progress" set and database to avoid duplicate recordings
+          if (ParticipantJoinedHandler.recordingsInProgress.has(roomName)) {
+            this.logger.info(
+              `Recording already in progress for room ${roomName}, skipping.`,
+            );
+            return;
+          }
+
+          const existingRecording =
+            await this.scenarioSharedService.getScenarioSessionRecordingBySessionId(
+              scenarioSession.id,
+            );
+          if (existingRecording) {
+            this.logger.info(
+              `Recording already exists for session ${scenarioSession.id}, skipping.`,
+            );
+            return;
+          }
+
           const filepath = generateAudioStorageKey({
             key: roomName,
             extension: 'ogg',
@@ -152,6 +173,7 @@ export class ParticipantJoinedHandler {
           });
           if (!event.room.active_recording) {
             try {
+              ParticipantJoinedHandler.recordingsInProgress.add(roomName);
               const egressInfo =
                 await this.liveKitService.startRoomCompositeEgress({
                   roomName,
@@ -183,6 +205,8 @@ export class ParticipantJoinedHandler {
               this.logger.error(
                 `Failed to start audio recording for room ${roomName}: ${egressError.message}`,
               );
+            } finally {
+              ParticipantJoinedHandler.recordingsInProgress.delete(roomName);
             }
           }
         }

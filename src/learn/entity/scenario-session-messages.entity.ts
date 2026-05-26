@@ -10,7 +10,7 @@ export class ScenarioSessionMessages extends BaseEntity {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column()
+  @Column({ type: 'uuid' })
   scenarioSessionId!: string;
 
   @Column()

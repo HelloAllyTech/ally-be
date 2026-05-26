@@ -6,7 +6,7 @@ export class ScenarioSessionFeedbacks extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   scenarioSessionId!: string;
 
   @Column()
