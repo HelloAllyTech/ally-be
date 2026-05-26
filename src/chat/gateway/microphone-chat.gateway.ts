@@ -151,6 +151,17 @@ export class MicrophoneChatGateway
       },
     });
 
+    // Also emit directly to the client to ensure they receive it immediately
+    // and avoid race conditions with the message broker.
+    client.emit(ChatEvents.SESSION_CREATED, {
+      type: ChatEvents.SESSION_CREATED,
+      payload: {
+        userId: user.id,
+        content: 'User session created',
+        messageType: MessageType.SYSTEM,
+      },
+    });
+
     this.logger.info(
       `Client ${client.id} authenticated and joined room ${room}`,
     );
@@ -288,7 +299,7 @@ export class MicrophoneChatGateway
     },
   ) {
     this.logger.info(
-      `Client ${client.id} start audio chat with isLinear16Encoded: ${isLinear16Encoded} | platform: ${platform} | sampleRate: ${sampleRate}`,
+      `Client ${client.id} start audio chat with isLinear16Encoded: ${isLinear16Encoded} | platform: ${platform} | sampleRate: ${sampleRate} | mode: ${mode}`,
     );
 
     const session = this.sessions[client.id];

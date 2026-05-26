@@ -148,6 +148,19 @@ export class StreamFileProcessorService {
 
       // Only update session after transaction is successfully completed
       if (chatId !== undefined && onChatCreated) onChatCreated(chatId);
+
+      // Broadcast user joined AFTER transaction is committed to ensure
+      // subsequent GET /chats/counsellor-chat calls by the client see the new chat.
+      const channel = findMessageBrokerChannelUsingProvider(session.provider!);
+      this.broadcastMessageService.broadcastUserJoinedMessage(channel!, {
+        participants: [session.userId],
+        userId: session.userId,
+        chatId: chatId!,
+      });
+
+      this.logger.debug(
+        `Call stream started and user joined broadcasted | ChatId: ${chatId} | Provider: ${session.provider}`,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to create chat and start call stream for client ${callId}: with error ${JSON.stringify(
@@ -250,14 +263,8 @@ export class StreamFileProcessorService {
         callId,
       };
 
-      const channel = findMessageBrokerChannelUsingProvider(session.provider!);
-      this.broadcastMessageService.broadcastUserJoinedMessage(channel!, {
-        participants: [session.userId],
-        userId: session.userId,
-        chatId,
-      });
       this.logger.debug(
-        `Call stream started with dual files | ChatId: ${chatId} | Provider: ${session.provider}`,
+        `Call stream setup with dual files | ChatId: ${chatId} | Provider: ${session.provider}`,
       );
 
       return { uploadId: UploadId!, files: tempFiles, key };
