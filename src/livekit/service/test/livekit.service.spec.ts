@@ -26,6 +26,7 @@ jest.mock('livekit-server-sdk', () => ({
   })),
   AgentDispatchClient: jest.fn().mockImplementation(() => ({
     createDispatch: jest.fn(),
+    listDispatch: jest.fn(),
   })),
   EgressClient: jest.fn().mockImplementation(() => ({
     startRoomCompositeEgress: jest.fn(),
@@ -91,6 +92,7 @@ describe('LiveKitService', () => {
 
     mockAgentService = {
       createDispatch: jest.fn(),
+      listDispatch: jest.fn().mockResolvedValue([]),
     } as any;
 
     mockEgressService = {
@@ -627,6 +629,39 @@ describe('LiveKitService', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         `Failed to dispatch agent to room ${roomName}: Failed to dispatch agent`,
+      );
+    });
+
+    it('should skip createDispatch if an existing dispatch matches the agent name', async () => {
+      const roomName = 'duplicate-room';
+      const participantIdentity = 'Agent';
+      (mockAgentService.listDispatch as jest.Mock).mockResolvedValue([
+        { agentName: participantIdentity } as any,
+      ]);
+
+      await service.agentDispatch(roomName, participantIdentity);
+
+      expect(mockAgentService.listDispatch).toHaveBeenCalledWith(roomName);
+      expect(mockAgentService.createDispatch).not.toHaveBeenCalled();
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        `Agent ${participantIdentity} already dispatched to room ${roomName}, skipping`,
+      );
+    });
+
+    it('should still dispatch if existing dispatches are for a different agent name', async () => {
+      const roomName = 'other-agent-room';
+      const participantIdentity = 'Agent';
+      (mockAgentService.listDispatch as jest.Mock).mockResolvedValue([
+        { agentName: 'SomeOtherAgent' } as any,
+      ]);
+      mockAgentService.createDispatch.mockResolvedValue({} as any);
+
+      await service.agentDispatch(roomName, participantIdentity);
+
+      expect(mockAgentService.createDispatch).toHaveBeenCalledWith(
+        roomName,
+        participantIdentity,
+        { metadata: undefined },
       );
     });
   });

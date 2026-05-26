@@ -212,6 +212,21 @@ export class LiveKitService {
     const identity =
       participantIdentity || this.configService.livekit.agentName;
     try {
+      // Cross-instance dedup: LiveKit's dispatch list is the shared source of
+      // truth across every ally-be process talking to this LiveKit project.
+      // In-memory Sets (proactiveDispatches, dispatchesInProgress) only see
+      // one process; listDispatch sees them all. Without this, the deployed
+      // dev backend's participant_joined webhook handler and a local
+      // proactive dispatch can both fire createDispatch for the same room
+      // and the user hears every reply twice.
+      const existing = await this.agentService.listDispatch(roomName);
+      if (existing.some((d) => d.agentName === identity)) {
+        this.logger.debug(
+          `Agent ${identity} already dispatched to room ${roomName}, skipping`,
+        );
+        return;
+      }
+
       await this.agentService.createDispatch(roomName, identity, {
         metadata,
       });
