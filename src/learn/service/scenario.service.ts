@@ -901,8 +901,8 @@ export class ScenarioService {
           ),
         ),
     );
-    this.logger.error(JSON.stringify(invalidBehaviorInstructions));
     if (invalidBehaviorInstructions.length > 0) {
+      this.logger.error(JSON.stringify(invalidBehaviorInstructions));
       throw new BadRequestException('Invalid behavior instructions');
     }
   }
