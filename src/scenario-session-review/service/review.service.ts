@@ -270,18 +270,23 @@ export class ScenarioSessionReviewService extends BaseReviewService<
     languageCode?: string,
     audioUrlsBySessionId?: Map<string, string>,
   ) {
-    const reactionsByReviewId: Record<string, Record<string, number>> = {};
-    const commentsByReviewId: Record<string, number> = {};
+    const reactionsByReviewId = result.reactions.reduce(
+      (acc, reaction) => {
+        const reviewId = reaction.reviewId;
+        acc[reviewId] ??= {};
+        acc[reviewId][reaction.reaction] = Number(reaction.count);
+        return acc;
+      },
+      {} as Record<string, Record<string, number>>,
+    );
 
-    for (const reaction of result.reactions) {
-      const reviewId = reaction.reviewId;
-      reactionsByReviewId[reviewId] ??= {};
-      reactionsByReviewId[reviewId][reaction.reaction] = Number(reaction.count);
-    }
-
-    for (const comment of result.comments) {
-      commentsByReviewId[comment.reviewId] = Number(comment.count);
-    }
+    const commentsByReviewId = result.comments.reduce(
+      (acc, comment) => {
+        acc[comment.reviewId] = Number(comment.count);
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
 
     const data = result.reviews.map((review: ScenarioSessionReviews) => ({
       id: review.id,
