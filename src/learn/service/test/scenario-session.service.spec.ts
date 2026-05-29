@@ -763,7 +763,15 @@ describe('ScenarioSessionService', () => {
         mockCounselorId,
       );
 
-      expect(result).toEqual({ ...mockScenarioSession, hasFeedback: true });
+      expect(result).toEqual({
+        ...mockScenarioSession,
+        hasFeedback: true,
+        sessionFeedback: { rating: 5, feedback: undefined, tags: [] },
+        reviewId: undefined,
+        reviewNote: undefined,
+        reviewStatus: undefined,
+        reviewCreatedAt: undefined,
+      });
       expect(scenarioSessionRepository.getScenarioSession).toHaveBeenCalledWith(
         mockScenarioSessionId,
         mockCounselorId,
@@ -1307,6 +1315,7 @@ describe('ScenarioSessionService', () => {
         rating: mockFeedbackDto.rating,
         feedback: mockFeedbackDto.feedback,
         tenantId: mockTenantId,
+        tags: [],
       });
     });
   });

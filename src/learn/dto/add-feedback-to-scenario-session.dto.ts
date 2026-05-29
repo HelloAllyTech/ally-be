@@ -1,5 +1,13 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class AddFeedbackToScenarioSessionRequestDto {
   @ApiProperty({
@@ -17,4 +25,14 @@ export class AddFeedbackToScenarioSessionRequestDto {
   @IsOptional()
   @IsString()
   feedback?: string;
+
+  @ApiPropertyOptional({
+    description: 'Tags selected by the user (free-form, multi-select)',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @IsString({ each: true })
+  tags?: string[];
 }

@@ -100,9 +100,7 @@ describe('ParticipantJoinedHandler', () => {
       saveScenarioSessionRecording: jest
         .fn()
         .mockResolvedValue({ id: 'rec-1' }),
-      getScenarioSessionRecordingBySessionId: jest
-        .fn()
-        .mockResolvedValue(null),
+      getScenarioSessionRecordingBySessionId: jest.fn().mockResolvedValue(null),
     };
 
     mockAppConfigService = {
