@@ -115,9 +115,17 @@ export class AnthropicAutofillService {
     const jsonSuffix = buildJsonSchemaSuffix(fieldName);
     const fullPrompt = renderedPrompt + jsonSuffix;
 
+    const effectiveModel = modelOverride ?? this.model;
+    this.logger.info(
+      `[AUTOFILL] start field=${fieldName} promptCode=${promptCode} provider=anthropic model=${effectiveModel} ` +
+        `requestedCount=${(scenarioContext as any)?.numStates ?? (scenarioContext as any)?.numKnowledgeSources ?? 'n/a'} ` +
+        `existingFilled=${(scenarioContext as any)?.existingStates || (scenarioContext as any)?.existingKnowledgeSources ? 'yes' : 'no'}`,
+    );
+    const startedAt = Date.now();
+
     try {
       const response = await this.client.messages.create({
-        model: modelOverride ?? this.model,
+        model: effectiveModel,
         max_tokens: ANTHROPIC_MAX_TOKENS,
         messages: [{ role: 'user', content: fullPrompt }],
       });
@@ -131,14 +139,27 @@ export class AnthropicAutofillService {
         );
       }
 
-      return extractContent(
+      const extracted = extractContent(
         fieldName,
         stripMarkdownFences(content),
         behaviorIdMapping,
       );
+      const itemCount = Array.isArray(extracted)
+        ? extracted.length
+        : typeof extracted === 'string'
+          ? 1
+          : extracted && typeof extracted === 'object'
+            ? Object.keys(extracted).length
+            : 0;
+      this.logger.info(
+        `[AUTOFILL] done  field=${fieldName} promptCode=${promptCode} model=${effectiveModel} ` +
+          `itemsReturned=${itemCount} elapsedMs=${Date.now() - startedAt}`,
+      );
+      return extracted;
     } catch (error) {
       this.logger.error(
-        `Error generating content for prompt code: ${promptCode}`,
+        `[AUTOFILL] failed field=${fieldName} promptCode=${promptCode} model=${effectiveModel} ` +
+          `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
         error as any,
       );
       throw error;

@@ -100,6 +100,19 @@ export class UpdateScenarioReportDto {
   @IsOptional()
   @IsString()
   report_markdown?: string;
+
+  @ApiProperty({
+    description:
+      'Human-readable failure reason. Populated by ai-learn only when ' +
+      'status=FAILED. Persisted to scenario_reports.metadata.errorMessage ' +
+      'and surfaced back through the GET response so the studio UI can ' +
+      'render it in a toast.',
+    required: false,
+    example: 'AttributeError: NoneType has no attribute _value',
+  })
+  @IsOptional()
+  @IsString()
+  error_message?: string;
 }
 
 export class ScenarioReportDto {
@@ -177,6 +190,15 @@ export class ScenarioReportDto {
     example: ScenarioReportStatus.COMPLETED,
   })
   status!: ScenarioReportStatus;
+
+  @ApiProperty({
+    description:
+      'Human-readable failure reason. Only present when status=FAILED. ' +
+      'Mirrored from metadata.errorMessage so the studio can render it ' +
+      'as a toast without having to dig into the metadata JSONB.',
+    required: false,
+  })
+  errorMessage?: string;
 
   @ApiProperty({
     description: 'ID of the user who created the scenario report',

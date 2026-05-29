@@ -1,0 +1,4 @@
+{
+  "name": "Simulation States Autofill",
+  "description": "Generates per-simulation states (name, guidelines, score range, RAG flag, starting marker) for main-agent prompt variants with hasStates=true. Driven by character profile, competency, and challenge description; produces exactly numStates states ordered by ascending score with contiguous open-ended ranges and min gap of 50."
+}

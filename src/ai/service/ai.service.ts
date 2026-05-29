@@ -244,6 +244,43 @@ export class AiService {
     );
   }
 
+  /**
+   * Signal an in-flight scenario report to cancel.
+   *
+   * Called immediately after the DB is flipped to CANCELLED so the
+   * ai-learn worker stops the N-turn loop and skips the evaluator —
+   * without this, a cancelled report still consumed 3+ minutes of LLM
+   * compute (turn loop + 60s evaluator) and the user's "cancel" did
+   * nothing visible. ai-learn answers 202 whether or not it found an
+   * active service for the id, so a stale cancel after the run already
+   * finished is harmless.
+   *
+   * No retry decorator: best-effort. If this fails, the user's cancel
+   * is still durably recorded in our DB; ai-learn will eventually
+   * finish naturally and its final webhook will be ignored by ally-be's
+   * status-update guard.
+   */
+  async triggerScenarioReportCancel(reportId: string): Promise<void> {
+    try {
+      await this.makeRequest<unknown, Record<string, never>>(
+        `${ENDPOINTS.SCENARIO_REPORT_CANCEL}/${reportId}`,
+        {},
+        false,
+        'post',
+        undefined,
+        true,
+      );
+    } catch {
+      // Don't escalate — the user already sees CANCELLED in the UI.
+      // The underlying error is already logged inside makeRequest's catch.
+      this.logger.warn(
+        `Cancel propagation to ai-learn failed for report ${reportId}; ` +
+          `ai-learn worker will finish naturally and its final webhook will be ` +
+          `ignored by the status guard.`,
+      );
+    }
+  }
+
   private async makeRequest<R, T>(
     endpoint: string,
     data: T,
@@ -467,7 +504,10 @@ export class AiService {
       string,
       {
         prompt: string;
-        availableVariables?: string[];
+        availableVariables?: (
+          | string
+          | { name: string; label?: string; required?: boolean }
+        )[];
       }
     >
   > {
@@ -481,7 +521,10 @@ export class AiService {
         string,
         {
           prompt: string;
-          availableVariables?: string[];
+          availableVariables?: (
+            | string
+            | { name: string; label?: string; required?: boolean }
+          )[];
         }
       > = {};
       for (const p of prompts) {

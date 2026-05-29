@@ -258,6 +258,12 @@ export class ScenarioReportService {
       ...scenarioReport,
       scenarioTitle: scenario?.title ?? '',
       language: this.toReportLanguage(languages[0]),
+      // Lift the failure reason from metadata to a top-level field for the
+      // studio. Persisted under metadata.errorMessage (no migration needed)
+      // but the studio shouldn't have to know that.
+      errorMessage: (
+        scenarioReport.metadata as { errorMessage?: string } | undefined
+      )?.errorMessage,
     };
   }
 
@@ -341,6 +347,16 @@ export class ScenarioReportService {
       `${SCENARIO_REPORT_REDIS_KEY_PREFIX}:${reportId}`,
     );
 
+    // Propagate cancel to ai-learn so the N-turn loop stops + the
+    // evaluator is skipped. Without this, the asyncio task in ai-learn
+    // kept running for 3+ minutes after the user clicked Cancel, burning
+    // LLM tokens that nobody would ever see (every per-turn webhook hit
+    // the end-status guard in updateScenarioReport / appendLiveTranscript
+    // and was silently dropped). Fire-and-forget at the service level:
+    // ai-learn's response doesn't gate the user's response to the cancel
+    // mutation, but we await it to surface errors in the request log.
+    await this.aiService.triggerScenarioReportCancel(reportId);
+
     this.scenarioReportNotificationService.notifyUpdate(
       report.createdBy,
       reportId,
@@ -403,27 +419,55 @@ export class ScenarioReportService {
 
     const report = await this.getScenarioReportById(reportId);
 
-    if (SCENARIO_REPORT_END_STATUSES.includes(report.status)) {
-      this.logger.warn(
-        `Cannot update scenario report ${reportId} that is already completed, cancelled, or failed`,
+    // Status flips are one-way: once the report reaches an end status
+    // (COMPLETED / FAILED / CANCELLED) we never let a late webhook
+    // overwrite it. But we *do* still accept supplementary data —
+    // transcripts, metrics, markdown, error message — because:
+    //   - If user cancelled mid-run, ai-learn keeps producing turns
+    //     until cancel propagation lands; those partial transcripts are
+    //     worth showing.
+    //   - If ai-learn evaluated successfully but the row was already
+    //     CANCELLED, the metrics are still informative to record.
+    // The guard below splits "what is locked" from "what is additive"
+    // instead of dropping the whole update on the floor.
+    const statusLocked = SCENARIO_REPORT_END_STATUSES.includes(report.status);
+    if (statusLocked) {
+      this.logger.info(
+        `Report ${reportId} already in end status (${report.status}); ` +
+          `accepting additive transcript/metrics/markdown but ignoring status flip`,
       );
-    } else {
+    }
+
+    {
       const updatePayload: Partial<ScenarioReport> = {};
       if (dto.metrics !== undefined) updatePayload.metrics = dto.metrics;
       if (dto.report_markdown !== undefined)
         updatePayload.reportMarkdown = dto.report_markdown;
-      if (dto.status !== undefined) {
+      if (dto.status !== undefined && !statusLocked) {
         updatePayload.status = dto.status;
         if (SCENARIO_REPORT_END_STATUSES.includes(dto.status)) {
           updatePayload.endedAt = new Date();
         }
       }
 
+      // Persist failure reason from ai-learn into metadata.errorMessage.
+      // Using the existing JSONB column avoids a schema migration; the GET
+      // response builder mirrors it onto a top-level `errorMessage` field
+      // so the studio doesn't have to dig into metadata. Only written when
+      // ai-learn actually supplied a non-empty reason — preserves any
+      // unrelated metadata keys that were set earlier in the report's life.
+      if (dto.error_message) {
+        updatePayload.metadata = {
+          ...(report.metadata ?? {}),
+          errorMessage: dto.error_message,
+        };
+      }
+
       if (Object.keys(updatePayload).length > 0) {
         await this.scenarioReportRepository.update(reportId, updatePayload);
         if (
-          dto.status !== undefined &&
-          SCENARIO_REPORT_END_STATUSES.includes(dto.status)
+          updatePayload.status !== undefined &&
+          SCENARIO_REPORT_END_STATUSES.includes(updatePayload.status)
         ) {
           await this.redisService.del(
             `${SCENARIO_REPORT_REDIS_KEY_PREFIX}:${reportId}`,
@@ -451,12 +495,19 @@ export class ScenarioReportService {
     reportId: string,
     options?: { limit?: number; offset?: number },
   ): Promise<ScenarioReportTranscriptResponseDto> {
-    const report = await this.getScenarioReportById(reportId);
-    if (report.status !== ScenarioReportStatus.COMPLETED) {
-      throw new BadRequestException(
-        'Cannot get transcripts for a scenario report that is not completed',
-      );
-    }
+    // Previously this threw `BadRequestException` for any non-COMPLETED
+    // report. That guard predates the live transcript streaming feature
+    // — the studio now polls this endpoint every 3s WHILE a report is
+    // generating to show each turn as ai-learn produces it. Throwing 400
+    // for IN_PROGRESS reports killed the live caption view (polling
+    // promise rejected, caught and silently swallowed in the frontend).
+    //
+    // We still validate the report exists (via getScenarioReportById,
+    // which 404s on unknown ids and does the tenant/auth check). Any
+    // status is now allowed to read its transcripts — STARTED / IN_PROGRESS
+    // returns whatever has streamed in, CANCELLED returns the partial
+    // run, COMPLETED returns the full canonical transcript.
+    await this.getScenarioReportById(reportId);
 
     return this.scenarioReportTranscriptService.getScenarioReportTranscripts(
       reportId,

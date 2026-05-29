@@ -11,10 +11,15 @@ import { Pagination } from 'src/common/type/common.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { PromptResponse } from '../type/prompt-response.type';
 import { standardizePromptCode } from '../util/prompt-code.util';
+import { parseVariablesFromPrompt } from '../util/parse-variables.util';
+import { reconcileAvailableVariables } from '../util/normalize-available-variable.util';
 import { PROMPT_VERSION_RETENTION_LIMIT } from '../constants/prompt.constants';
+import { LoggerService } from 'src/logger/logger.service';
 
 @Injectable()
 export class PromptsService {
+  private readonly logger = LoggerService.getInstance(PromptsService.name);
+
   constructor(
     private readonly promptsRepository: PromptsRepository,
     private readonly promptVersionRepository: PromptVersionRepository,
@@ -95,10 +100,36 @@ export class PromptsService {
 
     if (updatePromptDto.useDashboardOverride !== undefined) {
       updateData.useDashboardOverride = updatePromptDto.useDashboardOverride;
+
+      // Restore-to-default path: when the admin flips override true → false,
+      // re-derive `availableVariables` from `defaultPrompt` so the studio's
+      // chip list immediately matches the file's authored baseline instead
+      // of lingering on whatever the dashboard-edited version had. The
+      // dashboard-edit path covers the opposite direction (auto-reconcile
+      // runs inside the transaction below when a new version is committed).
+      if (
+        updatePromptDto.useDashboardOverride === false &&
+        prompt.useDashboardOverride === true &&
+        prompt.defaultPrompt
+      ) {
+        const parsedNames = parseVariablesFromPrompt(prompt.defaultPrompt);
+        updateData.availableVariables = reconcileAvailableVariables(
+          prompt.availableVariables,
+          parsedNames,
+        );
+      }
     }
 
     if (updatePromptDto.kind !== undefined) {
       updateData.kind = updatePromptDto.kind;
+    }
+
+    if (updatePromptDto.promptType !== undefined) {
+      updateData.promptType = updatePromptDto.promptType;
+    }
+
+    if (updatePromptDto.hasStates !== undefined) {
+      updateData.hasStates = updatePromptDto.hasStates;
     }
 
     if (updatePromptDto.usesBlocks !== undefined) {
@@ -160,6 +191,21 @@ export class PromptsService {
           id,
           minVersionToKeep,
         );
+
+        // Reconcile availableVariables against the new text so studio
+        // readers (and any required-field check) reflect what the prompt
+        // actually references after this edit. Removed placeholders drop
+        // out of the variable list; survivors keep their per-variable
+        // metadata (label / required); newly-typed `{placeholders}` are
+        // appended as bare `{ name }` entries.
+        const parsedNames = parseVariablesFromPrompt(contentToVersion);
+        const reconciled = reconcileAvailableVariables(
+          prompt.availableVariables,
+          parsedNames,
+        );
+        await this.promptsRepository.update(id, {
+          availableVariables: reconciled,
+        });
       });
     }
 
@@ -215,6 +261,153 @@ export class PromptsService {
   }
 
   /**
+   * List variants for a given promptType (e.g. 'main_agent').
+   * Used by the studio prompt picker. Excludes obsolete rows. For each row,
+   * if useDashboardOverride is false the .prompt field is hydrated from the
+   * codebase default, mirroring getPrompts() semantics.
+   */
+  async getPromptsByType(promptType: string): Promise<PromptResponse[]> {
+    const data = await this.promptsRepository.getPromptsByType(promptType);
+    for (const row of data) {
+      if (!row.useDashboardOverride && row.promptCode) {
+        const fromFolder = await this.promptSharedService.getPromptByCode(
+          row.promptCode,
+        );
+        if (fromFolder !== null) {
+          row.prompt = fromFolder;
+        }
+      }
+    }
+    return data;
+  }
+
+  /**
+   * Duplicate a prompt into a new variant row. Copies prompt text, metadata,
+   * promptType, hasStates, availableVariables, usesBlocks. Generates a new
+   * promptCode (`<source>_copy_<short-id>`) and name. Sets useDashboardOverride
+   * true and creates an initial version, so the new variant lives in DB-backed
+   * metadata (the path that resolver_by_code looks up).
+   */
+  async duplicatePrompt(sourceId: string): Promise<Prompt> {
+    const userId = Number(ExecutionManager.getUserId());
+
+    const source = await this.promptsRepository.findOne({
+      where: { id: sourceId },
+    });
+    if (!source) {
+      throw new NotFoundException('Source prompt not found');
+    }
+
+    // Resolve content: prefer the current published version, fall back to
+    // defaultPrompt, then to the codebase default. Without content there's
+    // nothing useful to duplicate.
+    let sourceContent: string | null = null;
+    if (source.currentVersion != null) {
+      const v = await this.promptVersionRepository.findOne({
+        where: { promptId: source.id, version: source.currentVersion },
+      });
+      sourceContent = v?.prompt ?? null;
+    }
+    if (!sourceContent) {
+      sourceContent =
+        source.defaultPrompt ??
+        (await this.promptSharedService.getPromptByCode(source.promptCode)) ??
+        null;
+    }
+    if (!sourceContent) {
+      throw new NotFoundException('Source prompt has no content to duplicate');
+    }
+
+    // Re-reconcile availableVariables against the actual content being
+    // duplicated. Source's `availableVariables` could be stale (manual
+    // trims via prompt management leave entries that don't match the
+    // current text). Walking the text now guarantees the duplicate
+    // starts with a consistent variable list.
+    const sourceParsedNames = parseVariablesFromPrompt(sourceContent);
+    const reconciledAvailableVariables = reconcileAvailableVariables(
+      source.availableVariables,
+      sourceParsedNames,
+    );
+
+    const newName = `${source.name} (copy)`;
+    // Rule: every main-agent variant except the file-backed default carries
+    // states. Duplicates (which only exist in DB and never sync from file)
+    // are by definition not the default, so we force hasStates=true here
+    // regardless of the source row's flag. The studio no longer surfaces a
+    // Has-States toggle in prompt management; this is the single place that
+    // decides the new variant's value.
+    const newHasStates =
+      source.promptType === 'main_agent' ? true : source.hasStates;
+
+    // Retry the insert on `promptCode` unique-constraint collision. ShortId
+    // uses ms-timestamp + 4-digit base36 randomness; collision is rare but
+    // possible when two admins duplicate the same source within the same
+    // millisecond and roll the same random suffix. A single retry with a
+    // fresh shortId is overwhelmingly likely to succeed.
+    const MAX_DUPLICATE_RETRIES = 3;
+    let saved: Prompt | null = null;
+    for (let attempt = 0; attempt < MAX_DUPLICATE_RETRIES; attempt++) {
+      const shortId =
+        Date.now().toString(36) +
+        Math.floor(Math.random() * 1e4)
+          .toString(36)
+          .padStart(3, '0');
+      const newPromptCode = standardizePromptCode(
+        `${source.promptCode}_copy_${shortId}`,
+      );
+      const created = this.promptsRepository.create({
+        promptCode: newPromptCode,
+        name: newName,
+        description: source.description,
+        category: source.category,
+        defaultPrompt: source.defaultPrompt,
+        useDashboardOverride: true,
+        isObsolete: false,
+        kind: source.kind,
+        promptType: source.promptType,
+        hasStates: newHasStates,
+        availableVariables: reconciledAvailableVariables,
+        usesBlocks: source.usesBlocks,
+      });
+      try {
+        saved = await this.promptsRepository.save(created);
+        break;
+      } catch (err: unknown) {
+        const driverError =
+          (err as { code?: string; driverError?: { code?: string } })
+            ?.driverError ?? (err as { code?: string });
+        const isUniqueViolation =
+          driverError?.code === '23505'; /* Postgres unique_violation */
+        if (!isUniqueViolation || attempt === MAX_DUPLICATE_RETRIES - 1) {
+          throw err;
+        }
+        this.logger.warn(
+          `[PROMPT_DUPLICATE] retry attempt=${attempt + 1}/${MAX_DUPLICATE_RETRIES} ` +
+            `sourceId=${sourceId} reason=unique_violation_promptCode`,
+        );
+        // Brief stagger so the next Date.now() is at least 1ms ahead.
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+    }
+    if (!saved) {
+      throw new Error('duplicatePrompt: failed to save after retries');
+    }
+
+    const version = this.promptVersionRepository.create({
+      promptId: saved.id,
+      version: 1,
+      prompt: sourceContent,
+      createdBy: userId,
+      updatedBy: userId,
+    });
+    await this.promptVersionRepository.save(version);
+    await this.promptsRepository.update(saved.id, { currentVersion: 1 });
+
+    saved.currentVersion = 1;
+    return saved;
+  }
+
+  /**
    * Sync prompts from folder/codebase to DB. Add-only for new prompts;
    * for existing prompts, updates defaultPrompt only (preserves dashboard edits).
    * Automatically marks missing prompts as obsolete (grouping by ally_ai_learn vs native ally-be).
@@ -239,8 +432,11 @@ export class PromptsService {
         where: { promptCode },
       });
 
-      console.log(
-        `Syncing ${promptCode}, prompt length: ${item.prompt?.length}`,
+      // Demoted to debug — fires once per prompt on every container
+      // boot (~30 lines). The aggregate "added/updated" line at the end
+      // of syncPrompts is the useful one for INFO.
+      this.logger.debug(
+        `[PROMPT_SYNC] processing promptCode=${promptCode} bodyChars=${item.prompt?.length ?? 0}`,
       );
       if (!existing) {
         const prompt = this.promptsRepository.create({
@@ -250,6 +446,8 @@ export class PromptsService {
           category: item.category,
           defaultPrompt: item.prompt,
           kind: item.kind,
+          promptType: item.promptType,
+          hasStates: item.hasStates,
           availableVariables: item.availableVariables,
           usesBlocks: item.usesBlocks,
           isObsolete: false,
@@ -267,16 +465,63 @@ export class PromptsService {
         await this.promptsRepository.update(saved.id, { currentVersion: 1 });
         added++;
       } else {
-        await this.promptsRepository.update(existing.id, {
+        // Sync updates split by `useDashboardOverride`:
+        //
+        //   - `defaultPrompt` (the file's text) is ALWAYS refreshed from
+        //     the file so the Revert-to-default button can restore the
+        //     latest authored baseline.
+        //
+        //   - `name`, `description`, `category`, `kind`, `usesBlocks` are
+        //     file-driven metadata that sync owns end-to-end.
+        //
+        //   - `availableVariables` is the placeholder list the studio
+        //     reads. When `useDashboardOverride=true`, the dashboard's
+        //     auto-reconcile on save is the source of truth (it reflects
+        //     the live edited text in prompt_versions). Sync MUST NOT
+        //     overwrite it for dashboard-overridden rows, or the next
+        //     restart silently undoes the author's intentional removals.
+        //     For non-overridden rows, sync owns it.
+        //
+        //   - `promptType` / `hasStates` are only overwritten when the
+        //     payload explicitly carries them (backfilled values stay
+        //     intact when older sync sources omit them).
+        const updatePayload: Partial<Prompt> = {
           defaultPrompt: item.prompt,
           name: item.name,
           description: item.description || '',
           category: item.category,
           kind: item.kind,
-          availableVariables: item.availableVariables,
           usesBlocks: item.usesBlocks,
           isObsolete: false, // resurrected if it was obsolete
-        });
+        };
+        // Update `availableVariables` from the sync payload when EITHER
+        // the row isn't dashboard-overridden (sync owns the list) OR the
+        // existing row has no list yet (legacy / migration edge — without
+        // this initialization the studio's chip list stays empty for
+        // dashboard-overridden rows that were created before this column
+        // existed, even though the prompt clearly references placeholders).
+        const existingVarsCount = Array.isArray(existing.availableVariables)
+          ? existing.availableVariables.length
+          : 0;
+        if (!existing.useDashboardOverride || existingVarsCount === 0) {
+          updatePayload.availableVariables = item.availableVariables;
+        } else {
+          // Dashboard override active AND existing list non-empty: skip the
+          // sync overwrite. Logged so we can confirm dashboard edits survive
+          // restarts/redeploys (grep `[PROMPT_SYNC] preserved-vars`).
+          this.logger.info(
+            `[PROMPT_SYNC] preserved-vars promptCode=${promptCode} ` +
+              `useDashboardOverride=true existingCount=${existingVarsCount} ` +
+              `syncCount=${item.availableVariables?.length ?? 0}`,
+          );
+        }
+        if (item.promptType !== undefined) {
+          updatePayload.promptType = item.promptType;
+        }
+        if (item.hasStates !== undefined) {
+          updatePayload.hasStates = item.hasStates;
+        }
+        await this.promptsRepository.update(existing.id, updatePayload);
         updated++;
       }
     }

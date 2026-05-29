@@ -131,7 +131,13 @@ export class PromptsSyncService implements OnModuleInit {
       description: string;
       category?: string;
       prompt: string;
-      availableVariables: string[];
+      // Local sync auto-parses placeholders into bare names. Remote
+      // sync payloads from ai-learn may include the richer
+      // `{ name, label?, required? }` shape; the service accepts both.
+      availableVariables: (
+        | string
+        | { name: string; label?: string; required?: boolean }
+      )[];
       kind?: string;
       usesBlocks?: string[];
     }[] = [];

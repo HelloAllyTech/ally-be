@@ -60,6 +60,52 @@ export class BehaviorInstructionItem {
   stateInstructions!: BehaviorInstructionStateItem[];
 }
 
+export class SimulationStateAutofillItem {
+  @ApiProperty({ description: 'Human-readable state name.' })
+  name!: string;
+
+  @ApiProperty({
+    description: 'Free-text guidance injected when this state is active.',
+  })
+  guidelines!: string;
+
+  @ApiProperty({ description: 'Exactly one state must be marked starting.' })
+  isStarting!: boolean;
+
+  @ApiProperty({
+    description:
+      'Inclusive lower bound on current_score; null = open (first state).',
+    nullable: true,
+  })
+  scoreLower!: number | null;
+
+  @ApiProperty({
+    description:
+      'Exclusive upper bound on current_score; null = open (last state).',
+    nullable: true,
+  })
+  scoreUpper!: number | null;
+
+  @ApiProperty({
+    description:
+      'When false, the retrieval step is skipped while this state is active.',
+  })
+  ragEnabled!: boolean;
+}
+
+export class KnowledgeSourceAutofillItem {
+  @ApiProperty({ description: 'Short title/topic label (1-4 words).' })
+  title!: string;
+
+  @ApiProperty({
+    description:
+      'Self-contained narrative content the agent can reference when this ' +
+      'topic is relevant. Written in second person ("You ...") to match ' +
+      'the actor voice.',
+  })
+  content!: string;
+}
+
 export class GenerateScenarioFieldResponseDto {
   @ApiProperty({
     description: 'The field that was generated',

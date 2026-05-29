@@ -4,7 +4,10 @@ export type PromptOverride =
   | string
   | {
       prompt: string;
-      availableVariables?: string[];
+      availableVariables?: (
+        | string
+        | { name: string; label?: string; required?: boolean }
+      )[];
     };
 
 export type GenerateSummaryRequest = {

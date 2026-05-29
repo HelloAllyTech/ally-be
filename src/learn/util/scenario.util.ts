@@ -65,6 +65,8 @@ export const mapCreateScenarioRequestToEntity = (
         content: knowledgeSource.content,
       })),
       stateNames: scenario.stateNames,
+      selectedMainPromptCode: scenario.selectedMainPromptCode,
+      states: scenario.states,
     },
   };
 };
@@ -161,6 +163,8 @@ export const mapUpdateScenarioRequestToEntity = (
     'currentState',
     'knowledgeSources',
     'stateNames',
+    'selectedMainPromptCode',
+    'states',
   ];
 
   // Handle metadata fields - merge with existing metadata
@@ -232,6 +236,10 @@ export const getPromptCodeForScenarioField = (scenarioField: string) => {
       return toPromptCode('openai_simulation', 'linguistic_style_samples');
     case GeneratableField.ALLOWED_FILLER_WORDS:
       return toPromptCode('openai_simulation', 'allowed_filler_words');
+    case GeneratableField.STATES:
+      return toPromptCode('openai_simulation', 'states');
+    case GeneratableField.KNOWLEDGE_SOURCES:
+      return toPromptCode('openai_simulation', 'knowledge_sources');
   }
 };
 

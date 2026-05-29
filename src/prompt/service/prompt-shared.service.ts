@@ -126,6 +126,7 @@ export class PromptSharedService {
       .select(['pv.prompt AS prompt', 'prompt.promptCode AS "promptCode"'])
       .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
       .addSelect('prompt.availableVariables', 'availableVariables')
+      .addSelect('prompt.hasStates', 'hasStates')
       .addSelect('prompt.defaultPrompt', 'defaultPrompt');
 
     if (options.promptCode && options.promptCode.length > 0) {
@@ -145,7 +146,11 @@ export class PromptSharedService {
     const rows = await query.getRawMany<
       PromptsWithPromptCode & {
         useDashboardOverride: boolean;
-        availableVariables?: string[];
+        availableVariables?: (
+          | string
+          | { name: string; label?: string; required?: boolean }
+        )[];
+        hasStates?: boolean;
         defaultPrompt?: string;
       }
     >();

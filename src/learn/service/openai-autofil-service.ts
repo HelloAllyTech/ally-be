@@ -108,6 +108,14 @@ export class OpenAIAutofillService {
     const templateVariables = buildTemplateVariables(scenarioContext);
     const renderedPrompt = renderTemplate(promptTemplate, templateVariables);
 
+    const effectiveModel = modelOverride ?? this.model;
+    this.logger.info(
+      `[AUTOFILL] start field=${fieldName} promptCode=${promptCode} provider=openai model=${effectiveModel} ` +
+        `requestedCount=${(scenarioContext as any)?.numStates ?? (scenarioContext as any)?.numKnowledgeSources ?? 'n/a'} ` +
+        `existingFilled=${(scenarioContext as any)?.existingStates || (scenarioContext as any)?.existingKnowledgeSources ? 'yes' : 'no'}`,
+    );
+    const startedAt = Date.now();
+
     try {
       const messages: ChatCompletionMessageParam[] = [
         { role: 'user', content: renderedPrompt },
@@ -116,7 +124,7 @@ export class OpenAIAutofillService {
       const jsonSchema = STRUCTURED_OUTPUT_SCHEMAS[fieldName];
 
       const response = await this.client.chat.completions.create({
-        model: modelOverride ?? this.model,
+        model: effectiveModel,
         messages,
         ...(jsonSchema && {
           response_format: {
@@ -134,14 +142,27 @@ export class OpenAIAutofillService {
         );
       }
 
-      return extractContent(
+      const extracted = extractContent(
         fieldName,
         stripMarkdownFences(content),
         behaviorIdMapping,
       );
+      const itemCount = Array.isArray(extracted)
+        ? extracted.length
+        : typeof extracted === 'string'
+          ? 1
+          : extracted && typeof extracted === 'object'
+            ? Object.keys(extracted).length
+            : 0;
+      this.logger.info(
+        `[AUTOFILL] done  field=${fieldName} promptCode=${promptCode} model=${effectiveModel} ` +
+          `itemsReturned=${itemCount} elapsedMs=${Date.now() - startedAt}`,
+      );
+      return extracted;
     } catch (error) {
       this.logger.error(
-        `Error generating content for prompt code: ${promptCode}`,
+        `[AUTOFILL] failed field=${fieldName} promptCode=${promptCode} model=${effectiveModel} ` +
+          `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
         error as any,
       );
       throw error;

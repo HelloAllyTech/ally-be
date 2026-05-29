@@ -880,13 +880,18 @@ export class ScenarioSharedService {
       return {};
     }
 
-    // Only include prompts with non-empty content so ally-ai-learn uses dashboard edits
+    // Only include prompts with non-empty content so ally-ai-learn uses dashboard edits.
+    // Also forwards hasStates so ai-learn knows when to resolve simulation states.
     return prompts.reduce<
       Record<
         string,
         {
           prompt: string;
-          availableVariables?: string[];
+          availableVariables?: (
+            | string
+            | { name: string; label?: string; required?: boolean }
+          )[];
+          hasStates?: boolean;
         }
       >
     >((acc, prompt) => {
@@ -895,6 +900,7 @@ export class ScenarioSharedService {
         acc[prompt.promptCode] = {
           prompt: content,
           availableVariables: prompt.availableVariables || [],
+          hasStates: prompt.hasStates ?? false,
         };
       }
       return acc;

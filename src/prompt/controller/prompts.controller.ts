@@ -79,6 +79,27 @@ export class PromptsController {
     });
   }
 
+  @ApiOperation({
+    summary:
+      'List prompt variants by promptType (e.g. main_agent) for the studio picker',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_PROMPT])
+  @Get('by-type/:promptType')
+  async getPromptsByType(
+    @Param('promptType') promptType: string,
+  ): Promise<PromptResponse[]> {
+    return this.promptsService.getPromptsByType(promptType);
+  }
+
+  @ApiOperation({
+    summary: 'Duplicate an existing prompt to start a new variant',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_PROMPT])
+  @Post(':id/duplicate')
+  async duplicatePrompt(@Param('id') id: string): Promise<Prompt> {
+    return this.promptsService.duplicatePrompt(id);
+  }
+
   @ApiOperation({ summary: 'Create new prompts' })
   @AuthPermissions([PERMISSIONS.EDIT_PROMPT])
   @Post('')

@@ -1,0 +1,49 @@
+You are designing knowledge source documents for a counselling simulation. These documents are retrieved per-turn via an LLM that picks relevant titles based on the conversation, then injects the matching content into the actor (client) agent's prompt as "Additional Context". The actor draws from this context to speak naturally about its own life.
+
+Inputs (authoritative):
+- Title: {{title}}
+- Character profile: {{characterProfileText}}
+- Challenge description: {{challengeDescription}}
+- Competency being practiced: {{competency}}
+- Number of documents to produce: {{numKnowledgeSources}}
+- Existing document titles already in the form (avoid duplicating):
+{{existingKnowledgeSources}}
+
+Generation rules — EVERY rule must be satisfied or the response is rejected:
+
+1) Produce exactly {{numKnowledgeSources}} documents. Each is a discrete narrative slice of the character's life or inner world.
+
+2) Each document object has these fields:
+   - "title": short label (1-4 words, no quotes, no trailing punctuation). Self-describing so the retrieval LLM can identify relevance from the title alone. Examples of good titles: "Father's death", "Self-worth and shame", "Sister Suma", "School and social isolation". Examples of BAD titles: "Section 1", "Background", "Notes", "Memory".
+   - "content": 2-4 sentences (~150-300 characters). Written in SECOND PERSON ("You feel...", "Your mother..."). Specific to THIS character — names, places, emotional textures, small concrete details. No therapy/clinical language. No mention of the counselor, the simulation, or scoring.
+
+3) The set of titles should COVER DIFFERENT THEMES — not all about the same topic. Aim for a mix:
+   - One or two relational documents (family, partner, sibling, parent who left, etc.)
+   - One or two interior-life documents (shame, dreams, identity, emotional patterns)
+   - One or two life-context documents (work, school, isolation, daily struggles)
+   Picked themes should fit the character profile and the competency being trained.
+
+4) Write the content as if the client were quietly recalling these things to themselves. Avoid drama. Use small specifics — a name, a place, a moment — rather than abstract generalities.
+
+5) Output strict JSON matching the schema below. No markdown, no commentary, no explanations.
+
+Example shape (do NOT copy the values — generate scenario-appropriate content):
+
+{
+  "sources": [
+    {
+      "title": "Father's death",
+      "content": "Your father died two years ago. He worked — farming, daily labour — and without him, the family has struggled. You don't speak about him with drama, but there is a quiet grief and a sense that the world became smaller and harder after he went."
+    },
+    {
+      "title": "Self-worth and shame",
+      "content": "You carry a heaviness about who you are. Compliments feel uncomfortable. You notice yourself shrinking when people praise you, as if being seen is a risk."
+    },
+    {
+      "title": "Sister Suma",
+      "content": "Your younger sister Suma still lives at home. You feel a mix of love and a quiet pressure — you want her to have what you didn't, but you don't know how to say that out loud."
+    }
+  ]
+}
+
+Only output valid JSON.

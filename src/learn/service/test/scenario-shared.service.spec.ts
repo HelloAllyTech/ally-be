@@ -1409,14 +1409,17 @@ describe('ScenarioSharedService', () => {
         ally_ai_learn_system_default_system_prompt: {
           prompt: 'Default prompt text',
           availableVariables: [],
+          hasStates: false,
         },
         ally_ai_learn_prosody_default_generation_prompt: {
           prompt: 'Prosody generation text',
           availableVariables: [],
+          hasStates: false,
         },
         ally_ai_learn_counselor_report_generation_prompt: {
           prompt: 'Report generation text',
           availableVariables: [],
+          hasStates: false,
         },
       });
     });
@@ -1440,6 +1443,7 @@ describe('ScenarioSharedService', () => {
         ally_ai_learn_system_default_system_prompt: {
           prompt: 'Second value',
           availableVariables: [],
+          hasStates: false,
         },
       });
     });

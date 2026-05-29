@@ -33,6 +33,7 @@ import { TerminationEventsDto } from './termination-events.dto';
 import { BehaviorInstructionDto } from './behavior-instruction.dto';
 import { MAX_BEHAVIOR_INSTRUCTIONS_COUNT } from '../constants/scenario-behavior-instuctions.constants';
 import { KnowledgeSourceDto } from './knowledge-source.dto';
+import { SimulationStateDto } from './simulation-state.dto';
 import { StateNamesDto } from './state-names.dto';
 import { sanitizeDescriptionHtml } from 'src/common/util/sanitize-html.util';
 
@@ -351,6 +352,34 @@ export class UpdateScenarioDto {
   @ValidateNested({ each: true })
   @Type(() => CustomFieldsDto)
   customFields?: CustomFieldsDto[];
+
+  @ApiProperty({
+    description:
+      'promptCode of the main-agent prompt variant this simulation uses. ' +
+      'When omitted, the runtime falls back to the default main_agent prompt. ' +
+      'Branching and multilingual prompts are not selectable per simulation; ' +
+      'they remain singletons shared by all variants.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  selectedMainPromptCode?: string;
+
+  @ApiProperty({
+    description:
+      'Per-simulation states used by `hasStates` main-agent prompt variants. ' +
+      'Runtime resolves the active state per turn score and substitutes its ' +
+      'guidelines into `{state_x_guidelines}`. Server-side validation enforces ' +
+      'exactly one starting state, contiguous ranges with open ends, and a ' +
+      'minimum gap of 50 between finite bounds.',
+    type: [SimulationStateDto],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SimulationStateDto)
+  states?: SimulationStateDto[];
 
   @ApiProperty({
     description: 'Experience mode for the scenario',

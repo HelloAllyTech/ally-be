@@ -137,6 +137,51 @@ export class ScenarioFieldContextDto {
   @IsString()
   @IsOptional()
   languageName?: string;
+
+  @ApiProperty({
+    description:
+      'Number of states to generate (only used by GeneratableField.STATES). ' +
+      'The studio sends the count of state cards currently on screen so the ' +
+      'LLM produces exactly that many.',
+    required: false,
+  })
+  @IsNumber()
+  @IsOptional()
+  numStates?: number;
+
+  @ApiProperty({
+    description:
+      'Stringified JSON of existing filled states (only used by ' +
+      'GeneratableField.STATES). When the user has some filled state cards ' +
+      'and asks to generate, this lets the LLM produce complementary states ' +
+      "that don't duplicate names / overlap ranges.",
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  existingStates?: string;
+
+  @ApiProperty({
+    description:
+      'Number of knowledge source documents to generate (only used by ' +
+      'GeneratableField.KNOWLEDGE_SOURCES). Studio sends current count of ' +
+      'cards on screen so the LLM produces exactly that many.',
+    required: false,
+  })
+  @IsNumber()
+  @IsOptional()
+  numKnowledgeSources?: number;
+
+  @ApiProperty({
+    description:
+      'Stringified JSON of existing filled knowledge source titles (only ' +
+      'used by GeneratableField.KNOWLEDGE_SOURCES). Lets the LLM avoid ' +
+      'duplicating titles already in the form.',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  existingKnowledgeSources?: string;
 }
 
 export class GenerateScenarioFieldDto {

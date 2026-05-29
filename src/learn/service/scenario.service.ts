@@ -22,6 +22,7 @@ async function executeInChunks<T, R>(
 import { Scenarios } from '../entity/scenarios.entity';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
+import { validateSimulationStates } from '../util/validate-simulation-states.util';
 
 import { ScenariosRepository } from '../repository/scenario.repository';
 
@@ -141,6 +142,7 @@ import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
 import { GeneratableField } from '../enum/generatable-field.enum';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
+import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
@@ -193,6 +195,7 @@ export class ScenarioService {
     private permissionsService: PermissionsService,
     private readonly auditLogService: AuditLogService,
     private readonly scenarioTranslationNotificationService: ScenarioTranslationNotificationService,
+    private readonly promptSharedService: PromptSharedService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -571,6 +574,7 @@ export class ScenarioService {
       10,
       async (scenario) => {
         await this.validateCreateScenario(scenario);
+        await this.pruneStatesIfPromptNotStateful(scenario);
         return mapCreateScenarioRequestToEntity(scenario, userId);
       },
     );
@@ -800,6 +804,108 @@ export class ScenarioService {
       createScenarioDto.maxTimeValue
     ) {
       this.validateMaxTimeValue(createScenarioDto.maxTimeValue);
+    }
+
+    // Mirror the state validation in validateUpdateScenario so create and
+    // update paths apply the same constraints (one starting, contiguous
+    // ranges, min gap 50, open bounds at ends).
+    if (
+      Array.isArray(createScenarioDto.states) &&
+      createScenarioDto.states.length > 0
+    ) {
+      const stateErrors = validateSimulationStates(createScenarioDto.states);
+      if (stateErrors.length > 0) {
+        throw new BadRequestException(
+          `Invalid simulation states: ${stateErrors.join(' ')}`,
+        );
+      }
+    }
+
+    // Cross-check: when the scenario points at a hasStates main-agent
+    // variant, states must be non-empty — otherwise the runtime renders
+    // {state_x_guidelines} blank silently. Skip the lookup when no variant
+    // is selected (default main agent doesn't use states).
+    await this.validateStatesPairing(
+      createScenarioDto.selectedMainPromptCode,
+      createScenarioDto.states,
+    );
+  }
+
+  /**
+   * When a scenario selects a `hasStates: true` main-agent prompt, its
+   * `states` array must contain at least one entry. Without this gate,
+   * scenarios with selectedMainPromptCode set to a stateful variant but
+   * empty states save successfully and silently render empty state
+   * guidance at runtime.
+   */
+  private async validateStatesPairing(
+    selectedMainPromptCode: string | undefined,
+    states: unknown,
+  ): Promise<void> {
+    if (!selectedMainPromptCode) return;
+    // PromptSharedService is the only cross-module accessor for prompt
+    // rows from learn services; using it avoids a hard dependency on
+    // PromptsRepository here.
+    const matches = await this.promptSharedService.getPromptsByOptions({
+      promptCode: [selectedMainPromptCode],
+    });
+    const selectedPrompt = matches?.[0];
+    if (!selectedPrompt?.hasStates) {
+      // Demoted: routine save-time validation. The reject path stays at
+      // warn since it surfaces a misconfiguration the user needs to fix.
+      this.logger.debug(
+        `[STATES_VALIDATE] pairing ok — promptCode=${selectedMainPromptCode} ` +
+          `hasStates=${selectedPrompt?.hasStates ?? 'unknown'} (no states required)`,
+      );
+      return;
+    }
+    if (!Array.isArray(states) || states.length === 0) {
+      this.logger.warn(
+        `[STATES_VALIDATE] reject — promptCode=${selectedMainPromptCode} ` +
+          `hasStates=true but states array is empty/missing`,
+      );
+      throw new BadRequestException(
+        `The selected main-agent prompt "${selectedMainPromptCode}" declares ` +
+          'hasStates=true, but no simulation states are defined. Add at least ' +
+          'one state in the studio or pick a different prompt variant.',
+      );
+    }
+    this.logger.info(
+      `[STATES_VALIDATE] pairing ok — promptCode=${selectedMainPromptCode} ` +
+        `hasStates=true statesCount=${(states as unknown[]).length}`,
+    );
+  }
+
+  /**
+   * Drop `states` from the dto when the selected main-agent prompt does
+   * NOT have hasStates=true. Prevents dormant state data from a previous
+   * variant selection leaking into `metadata.states` on a variant switch.
+   * The runtime ignores `metadata.states` when the prompt doesn't opt in,
+   * but stale data clutters the row and confuses debugging.
+   *
+   * Mutates the dto in place. Skips when no prompt is selected (we can't
+   * determine the default's hasStates here without an extra lookup, so
+   * we err on the side of preserving user input).
+   */
+  private async pruneStatesIfPromptNotStateful(dto: {
+    selectedMainPromptCode?: string;
+    states?: unknown;
+  }): Promise<void> {
+    if (!dto.selectedMainPromptCode) return;
+    if (!Array.isArray(dto.states) || dto.states.length === 0) return;
+    const matches = await this.promptSharedService.getPromptsByOptions({
+      promptCode: [dto.selectedMainPromptCode],
+    });
+    const selectedPrompt = matches?.[0];
+    // Only prune when we can prove hasStates is explicitly false. Unknown
+    // prompts (deleted / sync race) keep the data intact.
+    if (selectedPrompt && selectedPrompt.hasStates === false) {
+      const droppedCount = Array.isArray(dto.states) ? dto.states.length : 0;
+      this.logger.info(
+        `[STATES_VALIDATE] pruned ${droppedCount} dormant states — selected ` +
+          `promptCode=${dto.selectedMainPromptCode} hasStates=false`,
+      );
+      dto.states = undefined;
     }
   }
 
@@ -1087,6 +1193,14 @@ export class ScenarioService {
     userId: number,
   ): Promise<boolean> {
     const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
+
+    // Drop stale states data when the selected variant doesn't use them.
+    // Mutation happens AFTER validation so the validator still saw the
+    // user's intended payload, but the entity mapping sees the cleaned
+    // version. Without this, `metadata.states` accumulates dormant arrays
+    // every time the user switches between hasStates and non-hasStates
+    // variants without manually clearing the editor.
+    await this.pruneStatesIfPromptNotStateful(updateScenarioDto);
 
     const isMultiTenantAdmin =
       await this.permissionsService.isMultiTenantAdmin(userId);
@@ -1431,6 +1545,37 @@ export class ScenarioService {
     if (!scenario) {
       throw new NotFoundException('Scenario not found');
     }
+
+    // States schema validation runs whenever a non-empty `states` array is
+    // present in the payload. Empty / unset is allowed at the schema level
+    // — pairing with a hasStates prompt is gated by validateStatesPairing
+    // below.
+    if (
+      Array.isArray(updateScenarioDto.states) &&
+      updateScenarioDto.states.length > 0
+    ) {
+      const stateErrors = validateSimulationStates(updateScenarioDto.states);
+      if (stateErrors.length > 0) {
+        throw new BadRequestException(
+          `Invalid simulation states: ${stateErrors.join(' ')}`,
+        );
+      }
+    }
+
+    // Cross-check pairing: if the (possibly newly-selected) main-agent
+    // variant has hasStates=true, the simulation must carry a non-empty
+    // states array. Use the incoming selectedMainPromptCode when set,
+    // else fall back to whatever was already on the scenario.
+    const effectiveCode =
+      updateScenarioDto.selectedMainPromptCode !== undefined
+        ? updateScenarioDto.selectedMainPromptCode
+        : (scenario.metadata as { selectedMainPromptCode?: string } | undefined)
+            ?.selectedMainPromptCode;
+    const effectiveStates =
+      updateScenarioDto.states !== undefined
+        ? updateScenarioDto.states
+        : (scenario.metadata as { states?: unknown } | undefined)?.states;
+    await this.validateStatesPairing(effectiveCode, effectiveStates);
 
     if (
       updateScenarioDto?.status &&

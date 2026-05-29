@@ -146,6 +146,80 @@ const BEHAVIOR_INSTRUCTIONS_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
   },
 };
 
+/**
+ * Per-simulation states autofill schema. Each item describes one state
+ * card in the studio editor; constraints (one starting, contiguous,
+ * min gap 50, open bounds at ends) are enforced by `validateSimulationStates`
+ * after parsing. We don't try to encode contiguity / min-gap in JSON Schema
+ * because OpenAI's strict mode doesn't support that level of conditional
+ * validation; the post-parse validation handles it.
+ */
+const STATES_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
+  name: 'simulation_states',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      states: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            guidelines: { type: 'string' },
+            isStarting: { type: 'boolean' },
+            scoreLower: { type: ['integer', 'null'] },
+            scoreUpper: { type: ['integer', 'null'] },
+            ragEnabled: { type: 'boolean' },
+          },
+          required: [
+            'name',
+            'guidelines',
+            'isStarting',
+            'scoreLower',
+            'scoreUpper',
+            'ragEnabled',
+          ],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['states'],
+    additionalProperties: false,
+  },
+};
+
+/**
+ * Per-simulation knowledge sources schema. Each entry is a self-contained
+ * narrative document the agent can draw from via RAG. The LLM uses the
+ * `title` to decide relevance per turn, then injects `content` into the
+ * prompt's `{retrieved_context}` slot. Counts and content lengths are
+ * left to the prompt template's guidance — schema only enforces shape.
+ */
+const KNOWLEDGE_SOURCES_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
+  name: 'knowledge_sources',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      sources: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            content: { type: 'string' },
+          },
+          required: ['title', 'content'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['sources'],
+    additionalProperties: false,
+  },
+};
+
 export const STRUCTURED_OUTPUT_SCHEMAS: Partial<
   Record<GeneratableField, ResponseFormatJSONSchema.JSONSchema>
 > = {
@@ -154,4 +228,6 @@ export const STRUCTURED_OUTPUT_SCHEMAS: Partial<
   [GeneratableField.BEHAVIOR_INSTRUCTIONS]: BEHAVIOR_INSTRUCTIONS_SCHEMA,
   [GeneratableField.LINGUISTIC_STYLE_SAMPLES]: LINGUISTIC_STYLE_SAMPLES_SCHEMA,
   [GeneratableField.ALLOWED_FILLER_WORDS]: ALLOWED_FILLER_WORDS_SCHEMA,
+  [GeneratableField.STATES]: STATES_SCHEMA,
+  [GeneratableField.KNOWLEDGE_SOURCES]: KNOWLEDGE_SOURCES_SCHEMA,
 };

@@ -27,10 +27,44 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
       .addSelect('prompt.isObsolete', 'isObsolete')
       .addSelect('prompt.kind', 'kind')
+      .addSelect('prompt.promptType', 'promptType')
+      .addSelect('prompt.hasStates', 'hasStates')
       .addSelect('prompt.availableVariables', 'availableVariables')
       .addSelect('prompt.usesBlocks', 'usesBlocks')
       .where('prompt.id = :id', { id })
       .getRawOne() as unknown as Promise<PromptDetailResponse | null>;
+  }
+
+  /**
+   * List prompts filtered by promptType (e.g. 'main_agent' to populate the
+   * studio variant picker). Returns the same shape as getPrompts().
+   */
+  getPromptsByType(promptType: string): Promise<PromptResponse[]> {
+    return this.createQueryBuilder('prompt')
+      .leftJoin(
+        'prompts_versions',
+        'pv',
+        '"prompt"."id" = "pv"."promptId" AND "pv"."version" = "prompt"."currentVersion"',
+      )
+      .select('prompt.id', 'id')
+      .addSelect('prompt.promptCode', 'promptCode')
+      .addSelect('prompt.name', 'name')
+      .addSelect('prompt.description', 'description')
+      .addSelect('prompt.category', 'category')
+      .addSelect('prompt.createdAt', 'createdAt')
+      .addSelect('pv.prompt', 'prompt')
+      .addSelect('prompt.defaultPrompt', 'defaultPrompt')
+      .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
+      .addSelect('prompt.isObsolete', 'isObsolete')
+      .addSelect('prompt.kind', 'kind')
+      .addSelect('prompt.promptType', 'promptType')
+      .addSelect('prompt.hasStates', 'hasStates')
+      .addSelect('prompt.availableVariables', 'availableVariables')
+      .addSelect('prompt.usesBlocks', 'usesBlocks')
+      .where('prompt.promptType = :promptType', { promptType })
+      .andWhere('prompt.isObsolete = false')
+      .orderBy('prompt.name', 'ASC')
+      .getRawMany() as unknown as Promise<PromptResponse[]>;
   }
 
   getPrompts(
@@ -67,6 +101,8 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
       .addSelect('prompt.isObsolete', 'isObsolete')
       .addSelect('prompt.kind', 'kind')
+      .addSelect('prompt.promptType', 'promptType')
+      .addSelect('prompt.hasStates', 'hasStates')
       .addSelect('prompt.availableVariables', 'availableVariables')
       .addSelect('prompt.usesBlocks', 'usesBlocks')
       .where('prompt.defaultPrompt IS NOT NULL');

@@ -40,6 +40,28 @@ export class UpdatePromptDto {
   @IsString()
   kind?: string;
 
+  @ApiProperty({
+    description:
+      'Role/category of this prompt in the agent pipeline. Examples: ' +
+      "'main_agent', 'branching', 'multilingual'. Variants share the same " +
+      'promptType.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  promptType?: string;
+
+  @ApiProperty({
+    description:
+      'When true, this prompt declares a States section; the studio shows ' +
+      'the state editor and runtime substitutes the matched state’s ' +
+      'guidelines into {state_x_guidelines} and gates RAG per state.',
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  hasStates?: boolean;
+
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

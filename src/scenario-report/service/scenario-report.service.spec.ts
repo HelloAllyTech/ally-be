@@ -93,6 +93,11 @@ describe('ScenarioReportService', () => {
 
     const mockAiService = {
       triggerScenarioReportGenerate: jest.fn().mockResolvedValue(undefined),
+      // Added when cancel propagation was wired (cancelScenarioReport now
+      // calls ai-learn so the asyncio task stops the N-turn loop instead
+      // of just flipping the DB status). Without this mock, the cancel
+      // test throws on undefined-method-call.
+      triggerScenarioReportCancel: jest.fn().mockResolvedValue(undefined),
     };
 
     const mockSharedLanguageService = {
@@ -424,8 +429,17 @@ describe('ScenarioReportService', () => {
   });
 
   describe('updateScenarioReport', () => {
-    it('should return report without updating when report is in end status', async () => {
+    it('should accept additive metrics/transcripts but never flip status when report is in end status', async () => {
+      // Behavior change: previously updateScenarioReport dropped the entire
+      // update when the report was in an end status. Now it splits "status
+      // locked" from "additive fields". The status flip stays locked once
+      // a report reaches COMPLETED/FAILED/CANCELLED, but transcripts,
+      // metrics, markdown, and error_message can still land. This is what
+      // makes partial transcripts on cancelled reports work — ai-learn
+      // sends them via the bulk webhook after the user already flipped
+      // status to CANCELLED, and we want to persist them.
       for (const status of SCENARIO_REPORT_END_STATUSES) {
+        jest.clearAllMocks();
         scenarioReportRepository.findOne.mockResolvedValue({
           ...mockReport,
           status,
@@ -433,10 +447,20 @@ describe('ScenarioReportService', () => {
 
         const result = await service.updateScenarioReport(reportId, {
           metrics: { accuracy: 80 },
+          status: ScenarioReportStatus.COMPLETED, // attempted flip
         });
 
-        expect(result.status).toBe(status);
-        expect(scenarioReportRepository.update).not.toHaveBeenCalled();
+        expect(result.status).toBe(status); // status stays locked
+        // Repository was called for the metrics write …
+        expect(scenarioReportRepository.update).toHaveBeenCalledWith(
+          reportId,
+          expect.objectContaining({ metrics: { accuracy: 80 } }),
+        );
+        // … but the status was NOT included in the update payload.
+        const updateArg = scenarioReportRepository.update.mock.calls[0][1];
+        expect(
+          (updateArg as { status?: ScenarioReportStatus }).status,
+        ).toBeUndefined();
       }
     });
 
@@ -500,23 +524,40 @@ describe('ScenarioReportService', () => {
   });
 
   describe('getScenarioReportTranscripts', () => {
-    it('should throw BadRequestException when report is not COMPLETED', async () => {
-      scenarioReportRepository.findOne.mockResolvedValue({
-        ...mockReport,
-        status: ScenarioReportStatus.IN_PROGRESS,
-      } as ScenarioReport);
-
-      await expect(
-        service.getScenarioReportTranscripts(reportId),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.getScenarioReportTranscripts(reportId),
-      ).rejects.toThrow(
-        'Cannot get transcripts for a scenario report that is not completed',
+    it('should return transcripts regardless of report status (including non-COMPLETED)', async () => {
+      // Behavior change: the BadRequestException guard was removed when
+      // partial-transcript preservation landed. Cancelled reports may
+      // hold meaningful partial transcripts the user wants to review,
+      // and (in earlier iterations) the live transcript view also
+      // polled this endpoint during IN_PROGRESS. The endpoint now
+      // returns whatever rows exist for any status; the caller decides
+      // what to render.
+      const transcriptResult = { messages: [], count: 0 };
+      scenarioReportTranscriptService.getScenarioReportTranscripts.mockResolvedValue(
+        transcriptResult,
       );
-      expect(
-        scenarioReportTranscriptService.getScenarioReportTranscripts,
-      ).not.toHaveBeenCalled();
+
+      for (const status of [
+        ScenarioReportStatus.STARTED,
+        ScenarioReportStatus.IN_PROGRESS,
+        ScenarioReportStatus.CANCELLED,
+        ScenarioReportStatus.FAILED,
+      ]) {
+        jest.clearAllMocks();
+        scenarioReportTranscriptService.getScenarioReportTranscripts.mockResolvedValue(
+          transcriptResult,
+        );
+        scenarioReportRepository.findOne.mockResolvedValue({
+          ...mockReport,
+          status,
+        } as ScenarioReport);
+
+        const result = await service.getScenarioReportTranscripts(reportId);
+        expect(result).toEqual(transcriptResult);
+        expect(
+          scenarioReportTranscriptService.getScenarioReportTranscripts,
+        ).toHaveBeenCalledWith(reportId, undefined);
+      }
     });
 
     it('should return transcript service result when report is COMPLETED', async () => {

@@ -34,6 +34,7 @@ import { TerminationEventsDto } from './termination-events.dto';
 import { BehaviorInstructionDto } from './behavior-instruction.dto';
 import { MAX_BEHAVIOR_INSTRUCTIONS_COUNT } from '../constants/scenario-behavior-instuctions.constants';
 import { KnowledgeSourceDto } from './knowledge-source.dto';
+import { SimulationStateDto } from './simulation-state.dto';
 import { StateNamesDto } from './state-names.dto';
 import { sanitizeDescriptionHtml } from 'src/common/util/sanitize-html.util';
 export class CreateScenarioDto {
@@ -339,6 +340,32 @@ export class CreateScenarioDto {
   @ValidateNested({ each: true })
   @Type(() => CustomFieldsDto)
   customFields?: CustomFieldsDto[];
+
+  @ApiProperty({
+    description:
+      'promptCode of the main-agent prompt variant this simulation uses. ' +
+      'When omitted, the runtime falls back to the default main_agent prompt. ' +
+      'Branching and multilingual prompts are not selectable per simulation; ' +
+      'they remain singletons shared by all variants.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  selectedMainPromptCode?: string;
+
+  @ApiProperty({
+    description:
+      'Per-simulation states used by main-agent prompt variants with ' +
+      '`hasStates: true`. See SimulationStateDto for the field schema and ' +
+      'server-side validation rules.',
+    type: [SimulationStateDto],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SimulationStateDto)
+  states?: SimulationStateDto[];
 
   @IsOptional()
   @ApiProperty({

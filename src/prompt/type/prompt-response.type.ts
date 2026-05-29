@@ -1,3 +1,5 @@
+import { AvailableVariableEntry } from '../entity/prompt.entity';
+
 export type PromptResponse = {
   id: string;
   promptCode: string;
@@ -8,9 +10,18 @@ export type PromptResponse = {
   prompt: string;
   defaultPrompt?: string;
   useDashboardOverride?: boolean;
-  availableVariables?: string[];
+  /**
+   * Variable placeholders for this prompt. May be either bare strings
+   * (legacy) or `{ name, label?, required? }` objects. Studio readers
+   * should normalize via `normalizeAvailableVariables`.
+   */
+  availableVariables?: AvailableVariableEntry[];
   isObsolete?: boolean;
   kind?: string;
+  /** Role/category in the agent pipeline: 'main_agent' | 'branching' | 'multilingual'. */
+  promptType?: string;
+  /** When true, this prompt declares a States section; studio renders the state editor. */
+  hasStates?: boolean;
   usesBlocks?: string[];
 };
 
@@ -26,16 +37,19 @@ export type PromptDetailResponse = {
   prompt?: string;
   defaultPrompt?: string;
   useDashboardOverride?: boolean;
-  availableVariables?: string[];
+  availableVariables?: AvailableVariableEntry[];
   isObsolete?: boolean;
   kind?: string;
+  promptType?: string;
+  hasStates?: boolean;
   usesBlocks?: string[];
 };
 
 export type PromptsWithPromptCode = {
   prompt: string;
   promptCode: string;
-  availableVariables?: string[];
+  availableVariables?: AvailableVariableEntry[];
+  hasStates?: boolean;
 };
 
 export type PromptSearchOptions = {

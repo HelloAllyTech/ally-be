@@ -1,9 +1,14 @@
 import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 import { GeneratableField } from '../enum/generatable-field.enum';
 import { BehaviorResponseDto } from '../dto/behavior-response.dto';
+import { LoggerService } from 'src/logger/logger.service';
+
+const logger = LoggerService.getInstance('autofillSharedUtil');
 import {
   StateInstructionItem,
   BehaviorInstructionItem,
+  KnowledgeSourceAutofillItem,
+  SimulationStateAutofillItem,
 } from '../dto/generate-scenario-field-response.dto';
 import { ScenarioFieldContextDto } from '../dto/generate-scenario-field.dto';
 import { STRUCTURED_OUTPUT_SCHEMAS } from '../constants/autofill-structured-output.constants';
@@ -150,6 +155,61 @@ export function extractContent(
       return fillers.filter(
         (s: unknown): s is string => typeof s === 'string' && s.trim() !== '',
       );
+    }
+
+    case GeneratableField.KNOWLEDGE_SOURCES: {
+      const parsed = JSON.parse(raw);
+      const sources = parsed?.sources;
+      if (!Array.isArray(sources)) {
+        return [] as KnowledgeSourceAutofillItem[];
+      }
+      // Coerce + drop entries missing either title or content. The studio
+      // generates ids client-side; we don't carry them through here.
+      return sources
+        .map((s) => ({
+          title: typeof s?.title === 'string' ? s.title.trim() : '',
+          content: typeof s?.content === 'string' ? s.content.trim() : '',
+        }))
+        .filter(
+          (s) => s.title.length > 0 && s.content.length > 0,
+        ) as KnowledgeSourceAutofillItem[];
+    }
+
+    case GeneratableField.STATES: {
+      const parsed = JSON.parse(raw);
+      const states = parsed?.states;
+      if (!Array.isArray(states)) return [] as SimulationStateAutofillItem[];
+      // Coerce shapes defensively — the JSON schema constrains types but
+      // belt-and-suspenders against any malformed entries. Caller is
+      // responsible for assigning stable ids and running
+      // validateSimulationStates against the contiguity / starting / gap
+      // rules.
+      return states.map((s, index) => {
+        // Log when the LLM omits required fields the schema marks as
+        // required. Defaulting silently can mask intent (e.g. an admin
+        // expecting RAG off on a withdrawn state). Surfacing here gives
+        // ops visibility into model misbehavior.
+        if (typeof s?.ragEnabled !== 'boolean') {
+          logger.warn(
+            `STATES autofill: state at index ${index} missing required ` +
+              `ragEnabled (got ${typeof s?.ragEnabled}); defaulting to true.`,
+          );
+        }
+        if (typeof s?.isStarting !== 'boolean') {
+          logger.warn(
+            `STATES autofill: state at index ${index} missing required ` +
+              `isStarting (got ${typeof s?.isStarting}); defaulting to false.`,
+          );
+        }
+        return {
+          name: typeof s?.name === 'string' ? s.name : '',
+          guidelines: typeof s?.guidelines === 'string' ? s.guidelines : '',
+          isStarting: Boolean(s?.isStarting),
+          scoreLower: typeof s?.scoreLower === 'number' ? s.scoreLower : null,
+          scoreUpper: typeof s?.scoreUpper === 'number' ? s.scoreUpper : null,
+          ragEnabled: typeof s?.ragEnabled === 'boolean' ? s.ragEnabled : true,
+        };
+      }) as SimulationStateAutofillItem[];
     }
   }
 }

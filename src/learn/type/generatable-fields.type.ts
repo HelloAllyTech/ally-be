@@ -1,5 +1,7 @@
 import {
   BehaviorInstructionItem,
+  KnowledgeSourceAutofillItem,
+  SimulationStateAutofillItem,
   StateInstructionItem,
 } from '../dto/generate-scenario-field-response.dto';
 import { BehaviorResponseDto } from '../dto/behavior-response.dto';
@@ -17,7 +19,9 @@ export type GeneratedContent =
   | string[]
   | StateInstructionItem[]
   | BehaviorInstructionItem[]
-  | BehaviorInstructionsWithStateNames;
+  | BehaviorInstructionsWithStateNames
+  | SimulationStateAutofillItem[]
+  | KnowledgeSourceAutofillItem[];
 
 export interface BehaviorInstructionPreset {
   category: BehaviorInstructionCategory;

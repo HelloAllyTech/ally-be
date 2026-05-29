@@ -1,4 +1,5 @@
 import { AuditLogService } from 'src/audit/service/audit-log.service';
+import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
@@ -430,6 +431,15 @@ describe('ScenarioService', () => {
         {
           provide: ScenarioTranslationNotificationService,
           useValue: { notifyProgress: jest.fn() },
+        },
+        {
+          provide: PromptSharedService,
+          useValue: {
+            // Defaults: no prompt found → validateStatesPairing short-circuits.
+            // Individual tests can override via spy if they need a hasStates row.
+            getPromptsByOptions: jest.fn().mockResolvedValue([]),
+            getPromptByCode: jest.fn().mockResolvedValue(null),
+          },
         },
       ],
     }).compile();
