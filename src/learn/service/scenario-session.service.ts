@@ -406,6 +406,14 @@ export class ScenarioSessionService {
 
     const hasFeedback = !!feedback;
 
+    const sessionFeedback = feedback
+      ? {
+          rating: feedback.rating,
+          feedback: feedback.feedback,
+          tags: feedback.tags ?? [],
+        }
+      : null;
+
     const review =
       await this.scenarioSessionReviewSharedService.getReviewByScenarioSessionId(
         scenarioSessionId,
@@ -432,6 +440,7 @@ export class ScenarioSessionService {
     return {
       ...scenarioSession,
       hasFeedback,
+      sessionFeedback,
       reviewId: review?.id,
       reviewNote: review?.note,
       reviewStatus: review?.status,
@@ -1296,14 +1305,20 @@ export class ScenarioSessionService {
       );
     }
 
-    const feedback = await this.scenarioSessionFeedbacksRepository.findOne({
-      where: { scenarioSessionId },
-    });
+    const feedbackExists =
+      await this.scenarioSessionFeedbacksRepository.findOne({
+        where: { scenarioSessionId },
+      });
 
-    if (feedback) {
-      throw new BadRequestException(
-        'Feedback already exists for this scenario session',
-      );
+    if (feedbackExists) {
+      await this.scenarioSessionFeedbacksRepository.update(feedbackExists.id, {
+        rating: addFeedbackToScenarioSessionDto.rating,
+        feedback: addFeedbackToScenarioSessionDto.feedback,
+        tags: addFeedbackToScenarioSessionDto.tags ?? [],
+      });
+      return this.scenarioSessionFeedbacksRepository.findOne({
+        where: { id: feedbackExists.id },
+      }) as Promise<ScenarioSessionFeedbacks>;
     }
 
     const scenarioSessionFeedback =
@@ -1312,6 +1327,7 @@ export class ScenarioSessionService {
         rating: addFeedbackToScenarioSessionDto.rating,
         feedback: addFeedbackToScenarioSessionDto.feedback,
         tenantId: ExecutionManager.getTenantId(),
+        tags: addFeedbackToScenarioSessionDto.tags ?? [],
       });
 
     return this.scenarioSessionFeedbacksRepository.save(

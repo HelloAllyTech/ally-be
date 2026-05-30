@@ -134,6 +134,12 @@ describe('LearnController', () => {
     feedback: 'Great session',
   };
 
+  const mockAddFeedbackWithTagsDto = {
+    rating: 4,
+    feedback: 'Good session',
+    tags: ['helpful', 'clear'],
+  };
+
   const mockCreateScenarioEventsDto = {
     scenarioId: 1,
     events: [
@@ -692,6 +698,7 @@ describe('LearnController', () => {
       const mockSession = {
         ...mockScenarioSessionResponse,
         hasFeedback: true,
+        sessionFeedback: { rating: 1, feedback: 'test', tags: ['test'] },
         reviewId: 'review-id',
         reviewStatus: ReviewStatus.HIDDEN,
         reviewNote: 'Review note',
@@ -904,13 +911,14 @@ describe('LearnController', () => {
   });
 
   describe('addFeedbackToScenarioSession', () => {
-    it('should add feedback to a scenario session', async () => {
+    it('should add feedback without tags to a scenario session', async () => {
       const scenarioSessionId = 'session-123';
       const mockResult = {
         id: 'feedback-123',
         scenarioSessionId,
         rating: 5,
         feedback: 'Great session',
+        tags: [],
         tenantId: 'tenant-123',
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -926,6 +934,87 @@ describe('LearnController', () => {
       );
 
       expect(result).toEqual(mockResult);
+      expect(
+        scenarioSessionService.addFeedbackToScenarioSession,
+      ).toHaveBeenCalledWith(
+        scenarioSessionId,
+        mockTokenUser.id,
+        mockAddFeedbackDto,
+      );
+    });
+
+    it('should add feedback with tags to a scenario session', async () => {
+      const scenarioSessionId = 'session-123';
+      const mockResult = {
+        id: 'feedback-456',
+        scenarioSessionId,
+        rating: 4,
+        feedback: 'Good session',
+        tags: ['helpful', 'clear'],
+        tenantId: 'tenant-123',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      scenarioSessionService.addFeedbackToScenarioSession.mockResolvedValue(
+        mockResult as any,
+      );
+
+      const result = await controller.addFeedbackToScenarioSession(
+        mockTokenUser,
+        scenarioSessionId,
+        mockAddFeedbackWithTagsDto,
+      );
+
+      expect(result).toEqual(mockResult);
+      expect(result.tags).toEqual(['helpful', 'clear']);
+      expect(
+        scenarioSessionService.addFeedbackToScenarioSession,
+      ).toHaveBeenCalledWith(
+        scenarioSessionId,
+        mockTokenUser.id,
+        mockAddFeedbackWithTagsDto,
+      );
+    });
+
+    it('should add feedback with empty tags array', async () => {
+      const scenarioSessionId = 'session-123';
+      const dtoWithEmptyTags = { rating: 3, feedback: 'Ok session', tags: [] };
+      const mockResult = {
+        id: 'feedback-789',
+        scenarioSessionId,
+        rating: 3,
+        feedback: 'Ok session',
+        tags: [],
+        tenantId: 'tenant-123',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      scenarioSessionService.addFeedbackToScenarioSession.mockResolvedValue(
+        mockResult as any,
+      );
+
+      const result = await controller.addFeedbackToScenarioSession(
+        mockTokenUser,
+        scenarioSessionId,
+        dtoWithEmptyTags,
+      );
+
+      expect(result.tags).toEqual([]);
+    });
+
+    it('should handle errors from service', async () => {
+      const scenarioSessionId = 'session-not-found';
+      scenarioSessionService.addFeedbackToScenarioSession.mockRejectedValue(
+        new Error('Scenario session not found'),
+      );
+
+      await expect(
+        controller.addFeedbackToScenarioSession(
+          mockTokenUser,
+          scenarioSessionId,
+          mockAddFeedbackDto,
+        ),
+      ).rejects.toThrow('Scenario session not found');
     });
   });
 
