@@ -141,10 +141,31 @@ export class PromptsController {
     return this.promptsService.revertPrompt(id);
   }
 
-  @ApiOperation({ summary: 'Delete an obsolete prompt' })
+  @ApiOperation({
+    summary:
+      'Delete a prompt. Allowed for obsolete prompts and for "Duplicate ' +
+      'as variant" rows (DB-only, promptCode contains `_copy_`). File-' +
+      'backed prompts must be obsoleted first (remove their .txt file). ' +
+      'Refused with 409 when any scenario still references the variant.',
+  })
   @AuthPermissions([PERMISSIONS.EDIT_PROMPT])
   @Delete(':id')
   async deleteObsoletePrompt(@Param('id') id: string): Promise<void> {
     return this.promptsService.deleteObsoletePrompt(id);
+  }
+
+  @ApiOperation({
+    summary:
+      'Get the count + a sample (up to 10) of scenarios referencing this ' +
+      'prompt via metadata.selectedMainPromptCode. Drives the in-use guard ' +
+      'and tooltip on the "Delete variant" button in the studio side panel.',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_PROMPT])
+  @Get(':id/usage')
+  async getPromptUsage(@Param('id') id: string): Promise<{
+    count: number;
+    scenarios: Array<{ id: number; title: string }>;
+  }> {
+    return this.promptsService.getPromptUsage(id);
   }
 }

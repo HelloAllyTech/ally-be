@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataSource, DeepPartial, In } from 'typeorm';
 import { Prompt } from '../entity/prompt.entity';
 import { PromptsRepository } from '../repository/prompt.repository';
@@ -560,6 +565,15 @@ export class PromptsService {
         incomingCodes,
       });
     }
+    // Exclude "Duplicate as variant" rows from auto-obsolescence. These
+    // live entirely in the DB — there's no `.txt` file to back them, so
+    // they NEVER appear in incomingCodes and would otherwise get marked
+    // obsolete on every container restart. Convention: duplicatePrompt
+    // sets the new promptCode to `<source>_copy_<shortId>`. The LIKE
+    // pattern below matches that suffix and protects all such rows.
+    query.andWhere('prompt.promptCode NOT LIKE :copySuffix', {
+      copySuffix: '%\\_copy\\_%',
+    });
     query.andWhere('prompt.isObsolete = :isObsolete', { isObsolete: false });
 
     const obsoletePrompts = await query.getMany();
@@ -578,11 +592,89 @@ export class PromptsService {
     if (!prompt) {
       throw new NotFoundException('Prompt not found');
     }
-    if (!prompt.isObsolete) {
-      throw new Error('Only obsolete prompts can be deleted');
+    // Two delete paths:
+    //   1) File-backed prompts: only deletable when isObsolete=true.
+    //      A non-obsolete file-backed prompt would just resurrect on the
+    //      next syncPrompts run anyway, so allowing deletion would be
+    //      misleading UX. Admins must first remove the .txt file in code
+    //      (which makes syncPrompts auto-obsolete the row) before
+    //      deleting through this endpoint.
+    //   2) Dashboard duplicates ("Duplicate as variant" rows with a
+    //      `*_copy_<shortId>` promptCode suffix): freely deletable
+    //      regardless of isObsolete. These live entirely in the DB —
+    //      there's no file to resurrect them and no other admin tooling
+    //      to clean them up, so the studio's delete button is the only
+    //      way to remove them.
+    const isDuplicate = prompt.promptCode.includes('_copy_');
+    if (!prompt.isObsolete && !isDuplicate) {
+      throw new BadRequestException(
+        'Only obsolete prompts or duplicated variants can be deleted. ' +
+          'File-backed prompts must be removed from code and resynced first.',
+      );
+    }
+    // Refuse delete when the variant is still referenced by any scenario.
+    // Forces the admin to switch those scenarios off this variant before
+    // removing it, avoiding silent fallback to the default prompt on the
+    // next session run.
+    const usage = await this.countScenarioUsage(prompt.promptCode);
+    if (usage > 0) {
+      throw new ConflictException(
+        `Cannot delete: variant is used by ${usage} simulation` +
+          `${usage === 1 ? '' : 's'}. Switch ${usage === 1 ? 'it' : 'them'} ` +
+          'to another prompt first.',
+      );
     }
     await this.promptVersionRepository.delete({ promptId: id });
     await this.promptsRepository.delete(id);
+  }
+
+  /**
+   * Count active scenarios whose selected main-agent prompt code matches the
+   * given promptCode. Used to gate deletion of duplicated variants and to
+   * surface usage info in the studio side panel.
+   *
+   * `selectedMainPromptCode` lives inside scenarios.metadata (jsonb), not as
+   * its own column — the query reads it via the ->> operator. Soft-deleted
+   * scenarios (deletedAt IS NOT NULL) are excluded since they can't be
+   * reactivated through the dashboard.
+   */
+  private async countScenarioUsage(promptCode: string): Promise<number> {
+    const rows: Array<{ count: string }> = await this.dataSource.query(
+      `SELECT COUNT(*)::text AS count
+         FROM scenarios
+        WHERE metadata->>'selectedMainPromptCode' = $1
+          AND "deletedAt" IS NULL`,
+      [promptCode],
+    );
+    return Number(rows[0]?.count ?? 0);
+  }
+
+  /**
+   * Returns the in-use count + a small sample of referencing scenarios so
+   * the studio can show "Used by N simulations" diagnostics next to the
+   * Delete button. Capped at 10 to keep the payload bounded.
+   */
+  async getPromptUsage(id: string): Promise<{
+    count: number;
+    scenarios: Array<{ id: number; title: string }>;
+  }> {
+    const prompt = await this.promptsRepository.findOne({ where: { id } });
+    if (!prompt) {
+      throw new NotFoundException('Prompt not found');
+    }
+    const count = await this.countScenarioUsage(prompt.promptCode);
+    if (count === 0) return { count: 0, scenarios: [] };
+    const scenarios: Array<{ id: number; title: string }> =
+      await this.dataSource.query(
+        `SELECT id, title
+           FROM scenarios
+          WHERE metadata->>'selectedMainPromptCode' = $1
+            AND "deletedAt" IS NULL
+          ORDER BY id DESC
+          LIMIT 10`,
+        [prompt.promptCode],
+      );
+    return { count, scenarios };
   }
 
   /**
