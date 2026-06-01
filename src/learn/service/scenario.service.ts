@@ -573,8 +573,11 @@ export class ScenarioService {
       createScenariosDto.scenarios,
       10,
       async (scenario) => {
-        await this.validateCreateScenario(scenario);
+        // Prune BEFORE validate so orphaned states from a variant whose
+        // body no longer references {state_x_guidelines} don't fail the
+        // strict-bounds validator with their legacy null bounds.
         await this.pruneStatesIfPromptNotStateful(scenario);
+        await this.validateCreateScenario(scenario);
         return mapCreateScenarioRequestToEntity(scenario, userId);
       },
     );
@@ -850,42 +853,57 @@ export class ScenarioService {
       promptCode: [selectedMainPromptCode],
     });
     const selectedPrompt = matches?.[0];
-    if (!selectedPrompt?.hasStates) {
-      // Demoted: routine save-time validation. The reject path stays at
-      // warn since it surfaces a misconfiguration the user needs to fix.
+    // Body-driven decision (shared with pruneStatesIfPromptNotStateful):
+    // does the variant's body actually reference {state_x_guidelines}?
+    // The legacy hasStates flag is consulted only for never-reconciled
+    // rows, so duplicates whose admin removed the placeholder no longer
+    // trigger the "must have states" requirement.
+    const usesStates = selectedPrompt
+      ? this.promptReferencesStates(selectedPrompt)
+      : false;
+    if (!usesStates) {
       this.logger.debug(
         `[STATES_VALIDATE] pairing ok — promptCode=${selectedMainPromptCode} ` +
-          `hasStates=${selectedPrompt?.hasStates ?? 'unknown'} (no states required)`,
+          `does not reference {state_x_guidelines} (no states required)`,
       );
       return;
     }
     if (!Array.isArray(states) || states.length === 0) {
       this.logger.warn(
         `[STATES_VALIDATE] reject — promptCode=${selectedMainPromptCode} ` +
-          `hasStates=true but states array is empty/missing`,
+          `references {state_x_guidelines} but states array is empty/missing`,
       );
       throw new BadRequestException(
-        `The selected main-agent prompt "${selectedMainPromptCode}" declares ` +
-          'hasStates=true, but no simulation states are defined. Add at least ' +
-          'one state in the studio or pick a different prompt variant.',
+        `The selected main-agent prompt "${selectedMainPromptCode}" references ` +
+          '{state_x_guidelines}, but no simulation states are defined. Add ' +
+          'at least one state in the studio or remove the placeholder from ' +
+          "the prompt's body.",
       );
     }
     this.logger.info(
       `[STATES_VALIDATE] pairing ok — promptCode=${selectedMainPromptCode} ` +
-        `hasStates=true statesCount=${(states as unknown[]).length}`,
+        `references {state_x_guidelines} statesCount=${(states as unknown[]).length}`,
     );
   }
 
   /**
-   * Drop `states` from the dto when the selected main-agent prompt does
-   * NOT have hasStates=true. Prevents dormant state data from a previous
-   * variant selection leaking into `metadata.states` on a variant switch.
-   * The runtime ignores `metadata.states` when the prompt doesn't opt in,
-   * but stale data clutters the row and confuses debugging.
+   * Drop `states` from the dto when the selected main-agent prompt's
+   * body does NOT reference `{state_x_guidelines}`. Prevents dormant
+   * state data from a previous variant selection leaking into
+   * `metadata.states` on a variant switch.
    *
-   * Mutates the dto in place. Skips when no prompt is selected (we can't
-   * determine the default's hasStates here without an extra lookup, so
-   * we err on the side of preserving user input).
+   * Body-driven via auto-reconciled `availableVariables`, mirroring the
+   * runtime gate in ai-learn (_get_selected_prompt_has_states) and the
+   * UI gate in StatesEditor. Critically — does NOT consult the legacy
+   * `hasStates` boolean column when the variant has a reconciled
+   * variable list, because duplicates carry `hasStates=true` forever
+   * (forced at duplicate time), so a hasStates-based check would never
+   * trigger pruning for any duplicated variant whose admin later
+   * removed `{state_x_guidelines}` from the body.
+   *
+   * Mutates the dto in place. Skips when no prompt is selected (we
+   * can't determine the default's behaviour here without an extra
+   * lookup, so we err on the side of preserving user input).
    */
   private async pruneStatesIfPromptNotStateful(dto: {
     selectedMainPromptCode?: string;
@@ -897,16 +915,46 @@ export class ScenarioService {
       promptCode: [dto.selectedMainPromptCode],
     });
     const selectedPrompt = matches?.[0];
-    // Only prune when we can prove hasStates is explicitly false. Unknown
-    // prompts (deleted / sync race) keep the data intact.
-    if (selectedPrompt && selectedPrompt.hasStates === false) {
+    if (!selectedPrompt) return; // unknown prompt — preserve user input
+
+    const usesStates = this.promptReferencesStates(selectedPrompt);
+    if (!usesStates) {
       const droppedCount = Array.isArray(dto.states) ? dto.states.length : 0;
       this.logger.info(
         `[STATES_VALIDATE] pruned ${droppedCount} dormant states — selected ` +
-          `promptCode=${dto.selectedMainPromptCode} hasStates=false`,
+          `promptCode=${dto.selectedMainPromptCode} does not reference ` +
+          `{state_x_guidelines} in its body`,
       );
       dto.states = undefined;
     }
+  }
+
+  /**
+   * Body-driven check: does the variant's auto-reconciled
+   * `availableVariables` list include `state_x_guidelines`? Falls back
+   * to the legacy `hasStates` flag only when the list is empty / null
+   * (i.e. the row predates auto-reconcile and has never been re-saved).
+   *
+   * Shared by pruneStatesIfPromptNotStateful and validateStatesPairing
+   * so both decisions agree on whether a variant "uses states" today.
+   */
+  private promptReferencesStates(prompt: {
+    availableVariables?: unknown;
+    hasStates?: boolean | null;
+  }): boolean {
+    const list = Array.isArray(prompt.availableVariables)
+      ? (prompt.availableVariables as Array<
+          string | { name?: string; label?: string; required?: boolean }
+        >)
+      : [];
+    if (list.length > 0) {
+      return list.some((entry) => {
+        const name = typeof entry === 'string' ? entry : entry?.name;
+        return name === 'state_x_guidelines';
+      });
+    }
+    // Empty / missing list → legacy row; honor the flag.
+    return Boolean(prompt.hasStates);
   }
 
   private async validateTriggerWarnings(triggerWarningIds: string[]) {
@@ -1192,15 +1240,16 @@ export class ScenarioService {
     updateScenarioDto: UpdateScenarioDto,
     userId: number,
   ): Promise<boolean> {
-    const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
-
-    // Drop stale states data when the selected variant doesn't use them.
-    // Mutation happens AFTER validation so the validator still saw the
-    // user's intended payload, but the entity mapping sees the cleaned
-    // version. Without this, `metadata.states` accumulates dormant arrays
-    // every time the user switches between hasStates and non-hasStates
-    // variants without manually clearing the editor.
+    // Drop stale states data BEFORE validation runs. The previous order
+    // (validate → prune) rejected updates whenever a variant whose body
+    // used to include {state_x_guidelines} had its placeholder removed
+    // — the orphaned states (often with legacy null bounds) failed the
+    // strict-bounds validator before pruning got a chance to clear
+    // them. With body-driven pruning + this reorder, the dto reaches
+    // the validator already cleaned.
     await this.pruneStatesIfPromptNotStateful(updateScenarioDto);
+
+    const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
 
     const isMultiTenantAdmin =
       await this.permissionsService.isMultiTenantAdmin(userId);
