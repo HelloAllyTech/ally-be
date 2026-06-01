@@ -43,40 +43,46 @@ export function validateSimulationStates(
     );
   }
 
-  // Sort by lower bound (treating null as -Infinity) to validate ordering.
+  // Sort by lower bound to validate ordering. All bounds are now finite
+  // numbers (strict min/max) — the previous open-ended-at-the-ends design
+  // was replaced because authors found "open" Min/Max inputs confusing.
+  // Out-of-range scores are clamped at the runtime resolver to the
+  // first/last state so total coverage of the score axis is preserved.
   const sorted = [...states].sort((a, b) => {
-    const al = a?.scoreLower ?? Number.NEGATIVE_INFINITY;
-    const bl = b?.scoreLower ?? Number.NEGATIVE_INFINITY;
+    const al = a?.scoreLower ?? 0;
+    const bl = b?.scoreLower ?? 0;
     return al - bl;
   });
 
-  // First state must have open lower bound; last must have open upper.
-  if (sorted[0]?.scoreLower !== null && sorted[0]?.scoreLower !== undefined) {
-    errors.push(
-      `First state '${sorted[0]?.name ?? sorted[0]?.id}' must have an open lower bound (scoreLower: null).`,
-    );
+  // Every state's bounds must now be finite numbers.
+  for (const state of sorted) {
+    if (typeof state?.scoreLower !== 'number') {
+      errors.push(
+        `State '${state?.name ?? state?.id}' is missing scoreLower (must be a finite number).`,
+      );
+    }
+    if (typeof state?.scoreUpper !== 'number') {
+      errors.push(
+        `State '${state?.name ?? state?.id}' is missing scoreUpper (must be a finite number).`,
+      );
+    }
   }
-  const last = sorted[sorted.length - 1];
-  if (last?.scoreUpper !== null && last?.scoreUpper !== undefined) {
-    errors.push(
-      `Last state '${last?.name ?? last?.id}' must have an open upper bound (scoreUpper: null).`,
-    );
+  // Bail before the contiguity / gap checks if any bound is missing —
+  // arithmetic on those would emit cascading misleading errors.
+  if (errors.length > 0) {
+    return errors;
   }
 
   // Intermediate states need finite bounds; check contiguity + min gap.
   for (let i = 0; i < sorted.length; i++) {
     const state = sorted[i];
-    const lower = state?.scoreLower;
-    const upper = state?.scoreUpper;
+    const lower = state?.scoreLower as number;
+    const upper = state?.scoreUpper as number;
 
-    // Range sanity within a state: upper - lower >= MIN_STATE_GAP when
-    // both bounds are finite. Equality is allowed (a range of exactly 50
-    // is valid); only strictly-smaller spans are rejected.
-    if (
-      typeof lower === 'number' &&
-      typeof upper === 'number' &&
-      upper - lower < MIN_STATE_GAP
-    ) {
+    // Range sanity within a state: upper - lower >= MIN_STATE_GAP.
+    // Equality is allowed (a range of exactly 50 is valid); only strictly-
+    // smaller spans are rejected.
+    if (upper - lower < MIN_STATE_GAP) {
       errors.push(
         `State '${state.name ?? state.id}' has a score range smaller than ${MIN_STATE_GAP} (lower=${lower}, upper=${upper}).`,
       );
@@ -85,16 +91,8 @@ export function validateSimulationStates(
     // Contiguity: next state's lower must equal this state's upper.
     if (i < sorted.length - 1) {
       const next = sorted[i + 1];
-      const nextLower = next?.scoreLower;
-      if (upper === null || upper === undefined) {
-        errors.push(
-          `Only the last state may have an open upper bound; '${state?.name ?? state?.id}' has scoreUpper: null but is not last.`,
-        );
-      } else if (nextLower === null || nextLower === undefined) {
-        errors.push(
-          `Only the first state may have an open lower bound; '${next?.name ?? next?.id}' has scoreLower: null but is not first.`,
-        );
-      } else if (nextLower !== upper) {
+      const nextLower = next?.scoreLower as number;
+      if (nextLower !== upper) {
         errors.push(
           `State ranges must be contiguous: '${state?.name ?? state?.id}' upper=${upper} does not meet next state '${next?.name ?? next?.id}' lower=${nextLower}.`,
         );
