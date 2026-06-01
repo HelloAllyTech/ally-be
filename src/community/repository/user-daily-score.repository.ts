@@ -115,27 +115,35 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     const leaderboardData = await this.query(
       `
       WITH aggregated_scores AS (
-        SELECT 
-          uds."userId",
-          SUM(uds."minutesPlayed") as "minutesPlayed",
-          SUM(uds."totalScore") as score
-        FROM user_daily_scores uds
-        INNER JOIN user_groups ug ON ug."userId" = uds."userId"
-        INNER JOIN groups g ON g.id = ug."groupId" AND g.name = 'LEARNER'
-        WHERE uds."tenant_id" = $1
+        SELECT
+          u.id as "userId",
+          COALESCE(SUM(uds."minutesPlayed"), 0) as "minutesPlayed",
+          COALESCE(SUM(uds."totalScore"), 0) as score
+        FROM users u
+        LEFT JOIN user_daily_scores uds
+          ON uds."userId" = u.id
+          AND uds."tenant_id" = $1
           AND uds."date" >= $2
           AND uds."date" <= $3
-        GROUP BY uds."userId"
+        WHERE u.tenant_id = $1
+          AND u.status != 'SUSPENDED'
+          AND EXISTS (
+            SELECT 1
+            FROM user_groups ug
+            INNER JOIN groups g ON g.id = ug."groupId"
+            WHERE ug."userId" = u.id AND g.name = 'LEARNER'
+          )
+        GROUP BY u.id
       ),
       ranked_scores AS (
-        SELECT 
+        SELECT
           "userId",
           "minutesPlayed",
           score,
           RANK() OVER (ORDER BY score DESC) as rank
         FROM aggregated_scores
       )
-      SELECT 
+      SELECT
         rs."userId",
         rs."minutesPlayed",
         rs.rank,
@@ -144,14 +152,14 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
         u.status,
         COALESCE(bu.badge_count, 0) as "badgeCount"
       FROM ranked_scores rs
-      JOIN users u ON u.id = rs."userId" AND u.status != 'SUSPENDED'
+      JOIN users u ON u.id = rs."userId"
       LEFT JOIN (
         SELECT "userId", COUNT(*) as badge_count
         FROM badge_users
         WHERE badge_users."deletedAt" IS NULL
         GROUP BY "userId"
       ) bu ON bu."userId" = rs."userId"
-      ORDER BY rs.rank ASC
+      ORDER BY rs.rank ASC, u.name ASC, rs."userId" ASC
       LIMIT $4 OFFSET $5
       `,
       [tenantId, startDate, endDate, limit, offset],
@@ -159,15 +167,18 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
 
     const countResult = await this.query(
       `
-      SELECT COUNT(DISTINCT uds."userId") as count
-      FROM user_daily_scores uds
-      INNER JOIN user_groups ug ON ug."userId" = uds."userId"
-      INNER JOIN groups g ON g.id = ug."groupId" AND g.name = 'LEARNER'
-      WHERE uds."tenant_id" = $1
-        AND uds."date" >= $2
-        AND uds."date" <= $3
+      SELECT COUNT(*) as count
+      FROM users u
+      WHERE u.tenant_id = $1
+        AND u.status != 'SUSPENDED'
+        AND EXISTS (
+          SELECT 1
+          FROM user_groups ug
+          INNER JOIN groups g ON g.id = ug."groupId"
+          WHERE ug."userId" = u.id AND g.name = 'LEARNER'
+        )
       `,
-      [tenantId, startDate, endDate],
+      [tenantId],
     );
 
     const totalCount = parseInt(countResult[0]?.count) || 0;
@@ -195,27 +206,35 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     const result = await this.query(
       `
       WITH aggregated_scores AS (
-        SELECT 
-          uds."userId",
-          SUM(uds."minutesPlayed") as "minutesPlayed",
-          SUM(uds."totalScore") as score
-        FROM user_daily_scores uds
-        INNER JOIN user_groups ug ON ug."userId" = uds."userId"
-        INNER JOIN groups g ON g.id = ug."groupId" AND g.name = 'LEARNER'
-        WHERE uds."tenant_id" = $1
+        SELECT
+          u.id as "userId",
+          COALESCE(SUM(uds."minutesPlayed"), 0) as "minutesPlayed",
+          COALESCE(SUM(uds."totalScore"), 0) as score
+        FROM users u
+        LEFT JOIN user_daily_scores uds
+          ON uds."userId" = u.id
+          AND uds."tenant_id" = $1
           AND uds."date" >= $2
           AND uds."date" <= $3
-        GROUP BY uds."userId"
+        WHERE u.tenant_id = $1
+          AND u.status != 'SUSPENDED'
+          AND EXISTS (
+            SELECT 1
+            FROM user_groups ug
+            INNER JOIN groups g ON g.id = ug."groupId"
+            WHERE ug."userId" = u.id AND g.name = 'LEARNER'
+          )
+        GROUP BY u.id
       ),
       ranked_scores AS (
-        SELECT 
+        SELECT
           "userId",
           "minutesPlayed",
           score,
           RANK() OVER (ORDER BY score DESC) as rank
         FROM aggregated_scores
       )
-      SELECT 
+      SELECT
         rs."userId",
         rs."minutesPlayed",
         rs.rank,
@@ -224,7 +243,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
         u.status,
         COALESCE(bu.badge_count, 0) as "badgeCount"
       FROM ranked_scores rs
-      JOIN users u ON u.id = rs."userId" AND u.status != 'SUSPENDED'
+      JOIN users u ON u.id = rs."userId"
       LEFT JOIN (
         SELECT "userId", COUNT(*) as badge_count
         FROM badge_users
