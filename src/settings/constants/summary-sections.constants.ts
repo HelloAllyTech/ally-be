@@ -127,7 +127,7 @@ export const SUMMARY_SECTIONS: readonly SummarySection[] = [
   },
   {
     id: 'ongoingRisks',
-    label: 'Ongoing Risks',
+    label: 'Risk Assessment',
     defaultVisibility: false,
     fields: [
       { id: 'ongoingRiskSelfHarm', label: 'Ongoing Risk, Self Harm' },
