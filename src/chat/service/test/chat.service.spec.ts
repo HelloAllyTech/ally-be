@@ -28,6 +28,7 @@ import { ChatAudioUploadsService } from '../../../audio/service/chat-audio-uploa
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { GroupService } from '../../../authorization/service/group.service';
 import { ScribeSessionReviewSharedService } from '../../../scribe-session-review/service/review-shared.service';
+import { NotificationService } from '../../../notification/service/notification.service';
 
 import { Message } from '../../entity/message.entity';
 import { CallDetails } from '../../entity/call.details.entity';
@@ -397,6 +398,13 @@ describe('ChatService', () => {
           useValue: {
             deleteReviewByScribeSessionId: jest.fn(),
             getReviewByScribeSessionId: jest.fn().mockResolvedValue(null),
+          },
+        },
+        {
+          provide: NotificationService,
+          useValue: {
+            notifyTranscriptionFailure: jest.fn(),
+            notifyReprocessSummary: jest.fn(),
           },
         },
       ],

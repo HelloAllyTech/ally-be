@@ -5,8 +5,15 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { DataSource, EntityManager, In } from 'typeorm';
-import { Chat, ChatStatus } from '../entity/chat.entity';
+import {
+  DataSource,
+  EntityManager,
+  In,
+  LessThan,
+  MoreThanOrEqual,
+  Raw,
+} from 'typeorm';
+import { Chat, ChatStatus, ChatSummaryStatus } from '../entity/chat.entity';
 import { LoggerService } from '../../logger/logger.service';
 import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
@@ -18,10 +25,17 @@ import {
 import { CallDetails } from '../entity/call.details.entity';
 import { Pagination, SuccessResponse } from '../../common/type/common.type';
 import { UserService } from '../../user/service/user.service';
-import { ChatEvents } from '../constants/chat.constants';
+import {
+  ChatEvents,
+  CHAT_SUMMARY_TIMEOUT_MINUTES,
+  CHAT_REPROCESS_LOOKBACK_DAYS,
+  CHAT_SUMMARY_TIMEOUT_ERROR,
+} from '../constants/chat.constants';
+import { TIME } from '../../common/constants/time.constants';
 import { UpdateChatInput } from '../type/chat.type';
 
 import { RedisService } from '../../redis/service/redis.service';
+import { NotificationService } from '../../notification/service/notification.service';
 
 import { NotFoundException } from '@nestjs/common';
 import { GenerateSummaryResponse } from '../../ai/dto/ai.response.dto';
@@ -75,6 +89,7 @@ export class ChatService {
     private chatAudioUploadsService: ChatAudioUploadsService,
     private permissionValidator: PermissionValidator,
     private readonly scribeSessionReviewSharedService: ScribeSessionReviewSharedService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async getChat(id: number) {
@@ -596,6 +611,109 @@ export class ChatService {
 
   async updateChat(chatId: number, input: UpdateChatInput) {
     await this.chatRepository.updateChat(chatId, input);
+  }
+
+  private static readonly PENDING_SUMMARY_STATUSES = [
+    ChatSummaryStatus.PENDING,
+    ChatSummaryStatus.IN_PROGRESS,
+  ];
+
+  /**
+   * Finds chats stuck on "Processing": still PENDING/IN_PROGRESS with no update
+   * for longer than the TTL. Keyed off updatedAt (not createdAt) so that
+   * re-dispatching a stuck chat resets its clock and the reaper won't re-fail a
+   * reprocess that is in flight.
+   */
+  async findStalePendingChats(): Promise<Chat[]> {
+    const cutoff = new Date(
+      Date.now() - CHAT_SUMMARY_TIMEOUT_MINUTES * TIME.MINUTE_IN_MS,
+    );
+
+    return this.chatRepository.find({
+      where: {
+        summaryStatus: In(ChatService.PENDING_SUMMARY_STATUSES),
+        updatedAt: LessThan(cutoff),
+      },
+    });
+  }
+
+  /**
+   * Chats eligible for the one-time reprocess backfill: created within the
+   * lookback window and either (a) still stuck on Processing, or (b) already
+   * failed by the timeout reaper. Including (b) makes the backfill independent
+   * of reaper timing and safe to re-run. Older stuck chats are intentionally
+   * excluded — their audio has very likely aged out of storage.
+   */
+  async findReprocessableStuckChats(): Promise<Chat[]> {
+    const ttlCutoff = new Date(
+      Date.now() - CHAT_SUMMARY_TIMEOUT_MINUTES * TIME.MINUTE_IN_MS,
+    );
+    const lookbackCutoff = new Date(
+      Date.now() - CHAT_REPROCESS_LOOKBACK_DAYS * TIME.DAY_IN_MS,
+    );
+
+    return this.chatRepository.find({
+      where: [
+        {
+          summaryStatus: In(ChatService.PENDING_SUMMARY_STATUSES),
+          updatedAt: LessThan(ttlCutoff),
+          createdAt: MoreThanOrEqual(lookbackCutoff),
+        },
+        {
+          summaryStatus: ChatSummaryStatus.FAILED,
+          metadata: Raw((alias) => `${alias} ->> 'error' = :timeoutError`, {
+            timeoutError: CHAT_SUMMARY_TIMEOUT_ERROR,
+          }),
+          createdAt: MoreThanOrEqual(lookbackCutoff),
+        },
+      ],
+    });
+  }
+
+  /**
+   * Fallback reaper for chats stuck on "Processing". A chat only leaves the
+   * PENDING/IN_PROGRESS summary state when the AI service posts a result back.
+   * If that result is lost the chat would sit on "Processing" indefinitely, so
+   * this marks any such chat older than the TTL as FAILED. Registered to run on
+   * the shared scheduler (see ChatSchedulerRegistrationService).
+   */
+  async markStalePendingChatsAsFailed(): Promise<void> {
+    const staleChats = await this.findStalePendingChats();
+
+    if (staleChats.length === 0) return;
+
+    try {
+      const result = await this.chatRepository.update(
+        {
+          id: In(staleChats.map((chat) => chat.id)),
+          summaryStatus: In(ChatService.PENDING_SUMMARY_STATUSES),
+        },
+        {
+          summaryStatus: ChatSummaryStatus.FAILED,
+          metadata: { error: CHAT_SUMMARY_TIMEOUT_ERROR } as Record<
+            string,
+            any
+          >,
+        },
+      );
+
+      if (result.affected && result.affected > 0) {
+        this.logger.info(
+          `Marked ${result.affected} stale chat(s) as FAILED after exceeding the ${CHAT_SUMMARY_TIMEOUT_MINUTES}min summary TTL`,
+        );
+        await this.notificationService.notifyTranscriptionFailure({
+          stage: 'summary-timeout',
+          reason: `No transcription result received within ${CHAT_SUMMARY_TIMEOUT_MINUTES} minutes (likely a dropped AI-service request/response)`,
+          chatIds: staleChats.map((chat) => chat.id),
+        });
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to mark stale chats as FAILED: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   async deleteChat(chatId: number): Promise<DeleteChatResponseDto> {

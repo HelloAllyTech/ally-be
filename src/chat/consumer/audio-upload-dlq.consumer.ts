@@ -5,6 +5,7 @@ import { ChatService } from '../service/chat.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { AudioChatProvider } from 'src/common/constants/chat.constants';
 import { ChatStatus, ChatSummaryStatus } from '../entity/chat.entity';
+import { NotificationService } from '../../notification/service/notification.service';
 
 @Injectable()
 export class AudioUploadDlqConsumer {
@@ -15,6 +16,7 @@ export class AudioUploadDlqConsumer {
   constructor(
     private readonly chatService: ChatService,
     private readonly s3Service: S3Service,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async handleAudioUploadDlq(message: Message): Promise<void> {
@@ -58,6 +60,13 @@ export class AudioUploadDlqConsumer {
             metadata: {
               dlq_message: responseMessage,
             },
+          });
+
+          await this.notificationService.notifyTranscriptionFailure({
+            chatId: chat.id,
+            stage: 'audio-upload-dlq',
+            reason:
+              'Audio upload event exhausted retries and landed in the DLQ',
           });
         }
       }

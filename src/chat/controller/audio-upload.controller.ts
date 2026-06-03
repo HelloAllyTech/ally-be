@@ -58,4 +58,15 @@ export class AudioUploadController {
       processAudioUploadRequestDto.s3Key,
     );
   }
+
+  @Post('reprocess-stuck')
+  @AuthPermissions([PERMISSIONS.CANCEL_AUDIO_UPLOAD])
+  @ApiOperation({
+    summary:
+      'One-time backfill: re-dispatch chats stuck on Processing whose audio is still in S3, fail the rest',
+  })
+  @ApiResponse({ status: 201, description: 'Backfill triggered' })
+  async reprocessStuck() {
+    return this.audioUploadService.reprocessStuckChats();
+  }
 }

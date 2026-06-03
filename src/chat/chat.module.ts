@@ -36,6 +36,7 @@ import { AiChatIntegrationService } from './service/ai-chat-integration.service'
 import { ChatFeedbackService } from './service/chat-feedback.service';
 import { ChatTranscriptService } from './service/chat-transcript.service';
 import { ChatSharedService } from './service/chat-shared.service';
+import { ChatSchedulerRegistrationService } from './service/chat-scheduler-registration.service';
 import { ScribeSessionReviewModule } from 'src/scribe-session-review/scribe-session-review.module';
 import { CustomFieldsModule } from '../custom-fields/custom-fields.module';
 
@@ -76,6 +77,7 @@ import { CustomFieldsModule } from '../custom-fields/custom-fields.module';
     AudioUploadDlqConsumer,
     ChatTranscriptService,
     ChatSharedService,
+    ChatSchedulerRegistrationService,
   ],
   exports: [
     ChatService,

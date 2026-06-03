@@ -25,6 +25,7 @@ import { AudioUploadService } from '../audio-upload.service';
 import { ChatService } from '../chat.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { UPLOADED_AUDIO_FILE_SIZE_LIMIT } from 'src/chat/constants/chat.constants';
+import { NotificationService } from '../../../notification/service/notification.service';
 
 // Mock the ExecutionManager with all required methods
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -95,6 +96,13 @@ describe('AudioUploadService', () => {
           provide: UserService,
           useValue: {
             get: jest.fn(),
+          },
+        },
+        {
+          provide: NotificationService,
+          useValue: {
+            notifyTranscriptionFailure: jest.fn(),
+            notifyReprocessSummary: jest.fn(),
           },
         },
       ],

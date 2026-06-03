@@ -33,6 +33,23 @@ export enum ChatEvents {
   SESSION_CREATED = 'SESSION_CREATED',
 }
 
+// A chat's summary is produced asynchronously by the AI service; the chat only
+// leaves PENDING when a transcribe/summarize result is posted back. If that
+// result is lost (worker crash, dropped SQS message, an AI-service error that
+// never reports back) the chat would sit on "Processing" forever. The reaper
+// marks any chat still PENDING/IN_PROGRESS past this TTL as FAILED.
+export const CHAT_SUMMARY_TIMEOUT_MINUTES = 30;
+
+// Only recordings created within this window are eligible for the one-time
+// reprocess backfill; older stuck chats are left for the reaper to fail since
+// their source audio has very likely been aged out of storage.
+export const CHAT_REPROCESS_LOOKBACK_DAYS = 60;
+
+// Marker the reaper writes to metadata.error when it fails a chat purely for
+// exceeding the summary TTL. The reprocess backfill matches on this so it can
+// recover timeout-failed chats and is safe to run regardless of reaper timing.
+export const CHAT_SUMMARY_TIMEOUT_ERROR = 'Summary timed out';
+
 export const LANGUAGE_MAP = {
   bn: 'Bengali',
   pa: 'Gurmukhi',

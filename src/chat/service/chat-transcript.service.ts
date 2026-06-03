@@ -10,6 +10,7 @@ import { FailedDependencyException } from 'src/exception/custom.exception';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { FlattenedSummaryNotePayload } from '../type/call.details.type';
 import { CallDetailsService } from './call-details.service';
+import { NotificationService } from '../../notification/service/notification.service';
 
 @Injectable()
 export class ChatTranscriptService {
@@ -21,6 +22,7 @@ export class ChatTranscriptService {
     private readonly config: AppConfigService,
     @Inject(forwardRef(() => CallDetailsService))
     private readonly callDetailsService: CallDetailsService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async processTranscribeResult(params: {
@@ -96,6 +98,14 @@ export class ChatTranscriptService {
       await this.chatService.updateChat(chatId, {
         summaryStatus: ChatSummaryStatus.FAILED,
         metadata: { error },
+      });
+      const reason =
+        params.error ||
+        (error instanceof Error ? error.message : JSON.stringify(error));
+      await this.notificationService.notifyTranscriptionFailure({
+        chatId,
+        stage: 'transcribe-result',
+        reason,
       });
       throw error;
     }

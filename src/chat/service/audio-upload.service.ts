@@ -21,6 +21,7 @@ import { addDurationToDate } from 'src/common/util/date.util';
 import {
   SUPPORTED_AUDIO_FILE_TYPES,
   UPLOADED_AUDIO_FILE_SIZE_LIMIT,
+  CHAT_REPROCESS_LOOKBACK_DAYS,
 } from '../constants/chat.constants';
 import { ChatAudioUploadStatus } from '../../audio/entity/chat-audio-uploads.entity';
 import {
@@ -30,6 +31,7 @@ import {
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { AUDIT_EVENTS } from 'src/audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
+import { NotificationService } from '../../notification/service/notification.service';
 
 @Injectable()
 export class AudioUploadService {
@@ -42,6 +44,7 @@ export class AudioUploadService {
     private readonly aiEventService: AiEventService,
     private readonly chatAudioUploadsService: ChatAudioUploadsService,
     private readonly userService: UserService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async createChatWithUploadUrl(
@@ -302,7 +305,105 @@ export class AudioUploadService {
           error: error.message,
         },
       });
+
+      await this.notificationService.notifyTranscriptionFailure({
+        chatId: chat.id,
+        stage: 'audio-upload',
+        reason: `Failed to dispatch audio to AI service: ${error.message}`,
+      });
     }
+  }
+
+  /**
+   * One-time backfill for recordings stuck on "Processing". For each stuck chat
+   * whose source audio is still in S3, regenerates a presigned URL and re-emits
+   * the transcribe request so it gets a real transcript/summary; touching the
+   * row resets its TTL clock so the reaper won't fail an in-flight reprocess.
+   * Chats with no recoverable audio are marked FAILED. Posts a Slack summary.
+   */
+  async reprocessStuckChats(): Promise<{
+    reprocessed: number[];
+    failed: number[];
+  }> {
+    const stuckChats = await this.chatService.findReprocessableStuckChats();
+    this.logger.info(
+      `Reprocess backfill: ${stuckChats.length} stuck chat(s) within the last ${CHAT_REPROCESS_LOOKBACK_DAYS} days`,
+    );
+
+    const reprocessed: number[] = [];
+    const failed: number[] = [];
+
+    for (const chat of stuckChats) {
+      try {
+        const audio = await this.chatAudioUploadsService.getAudioUpload(
+          chat.id,
+        );
+
+        if (!audio?.storageKey) {
+          await this.chatService.updateChat(chat.id, {
+            summaryStatus: ChatSummaryStatus.FAILED,
+            metadata: { error: 'Stuck with no stored audio to reprocess' },
+          });
+          failed.push(chat.id);
+          continue;
+        }
+
+        // Confirm the object still exists before re-dispatching.
+        try {
+          await this.s3Service.getHeadObject({
+            bucket: process.env.AUDIO_STORAGE_S3_BUCKET!,
+            key: audio.storageKey,
+          });
+        } catch {
+          await this.chatService.updateChat(chat.id, {
+            summaryStatus: ChatSummaryStatus.FAILED,
+            metadata: { error: 'Audio no longer present in storage' },
+          });
+          failed.push(chat.id);
+          continue;
+        }
+
+        const audioUrl = await this.s3Service.generatePresignedUrl({
+          bucket: process.env.AUDIO_STORAGE_S3_BUCKET!,
+          key: audio.storageKey,
+          operation: 'get',
+          expiresIn: 3600,
+          audience: 'internal',
+        });
+
+        await this.aiEventService.publishTranscribeAudioEvent({
+          message_type: 'transcribe_and_summarize_request',
+          chat_id: chat.id,
+          timestamp: Date.now(),
+          audio_url: audioUrl,
+        });
+
+        // Touch the row so updatedAt resets and the reaper gives this freshly
+        // re-dispatched chat a full TTL window to complete.
+        await this.chatService.updateChat(chat.id, {
+          summaryStatus: ChatSummaryStatus.PENDING,
+        });
+
+        reprocessed.push(chat.id);
+        this.logger.info(
+          `Re-dispatched stuck chat ${chat.id} for transcription`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to reprocess stuck chat ${chat.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        failed.push(chat.id);
+      }
+    }
+
+    await this.notificationService.notifyReprocessSummary({
+      reprocessed,
+      failed,
+    });
+
+    return { reprocessed, failed };
   }
 
   async cancelUpload(cancelUploadRequestDto: CancelUploadRequestDto) {
