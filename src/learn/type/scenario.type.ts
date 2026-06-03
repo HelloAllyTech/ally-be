@@ -19,13 +19,6 @@ export enum ScenarioDifficultyLevel {
   HARD = 'HARD',
 }
 
-export enum ScenarioResponseLength {
-  VERY_BRIEF = 'VERY_BRIEF',
-  BRIEF = 'BRIEF',
-  MEDIUM = 'MEDIUM',
-  ELABORATE = 'ELABORATE',
-}
-
 export enum ExperienceMode {
   FEEDBACK = 'FEEDBACK',
   CHECKLIST = 'CHECKLIST',

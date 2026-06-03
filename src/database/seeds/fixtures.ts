@@ -9,7 +9,6 @@ import {
 import {
   ExperienceMode,
   ScenarioDifficultyLevel,
-  ScenarioResponseLength,
   ScenarioStatus,
 } from '../../learn/type/scenario.type';
 import { ScenarioPathStatus } from '../../scenario-path/type/scenario-paths.type';
@@ -322,7 +321,6 @@ const sharedScenarioMetadata = {
   prompt: SEED_SCENARIO_PROMPT,
   selectedLanguageIds: [1],
   experienceMode: ExperienceMode.FEEDBACK,
-  responseLength: ScenarioResponseLength.VERY_BRIEF,
   timerMode: false,
   showScoreMeter: false,
   linguisticStyleSamples: {
@@ -354,7 +352,6 @@ export const scenarios: ScenarioFixture[] = [
       gender: 'female',
       profession: 'Graduate Student',
       currentLocation: 'Pune, India',
-      tone: 'Quiet and reserved',
       openingStatements: [
         'I have not really felt like myself in a long time.',
         'It is like nothing brings me joy anymore.',
@@ -409,7 +406,6 @@ export const scenarios: ScenarioFixture[] = [
       gender: 'male',
       profession: 'Teacher',
       currentLocation: 'Jaipur, India',
-      tone: 'Soft-spoken and tearful',
       openingStatements: [
         'My mother passed away six weeks ago.',
         'I keep replaying the last few days in my head.',

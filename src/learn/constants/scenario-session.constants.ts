@@ -311,9 +311,7 @@ export const LANGUAGE_STT_PROVIDER_CONFIG: Record<
 export const SCENARIO_SESSION_TRANSLATABLE_FIELDS: string[] = [
   'title',
   'description',
-  'tone',
   'context',
-  'personality',
   'openingStatements',
   'sexualOrientation',
   'genderIdentity',

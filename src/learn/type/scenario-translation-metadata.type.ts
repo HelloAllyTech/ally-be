@@ -3,8 +3,6 @@ import { ScenarioStateInstruction } from './scenario-state.type';
 export type MetadataShape = {
   title?: string;
   description?: string;
-  tone?: string;
-  personality?: string;
   context?: string;
   /** Primary language openings live on scenario.metadata; non-primary rows use this on scenario_translations only (not filled by bulk auto-translate). */
   openingStatements?: string[];
@@ -24,9 +22,6 @@ export type MetadataShape = {
 
 export type TranslationConsiderableData = {
   currentLocation: string;
-  lifeHistory: string;
-  personality: string;
-  coreMemories: string;
   profession: string;
   context: string;
   age: string;

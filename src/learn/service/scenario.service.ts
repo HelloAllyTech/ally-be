@@ -73,6 +73,7 @@ import {
   getPromptCodeForScenarioField,
   applyScenarioTranslations,
 } from '../util/scenario.util';
+import { sanitizeJsonbMetadata } from 'src/common/util/sanitize-jsonb.util';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.entity';
@@ -684,9 +685,6 @@ export class ScenarioService {
             for (const scenario of activeScenarios) {
               const translationConsiderableData: TranslationConsiderableData = {
                 currentLocation: scenario.metadata?.currentLocation,
-                lifeHistory: scenario.metadata?.lifeHistory,
-                personality: scenario.metadata?.personality,
-                coreMemories: scenario.metadata?.coreMemories,
                 profession: scenario.metadata?.profession,
                 context: scenario.metadata?.context,
                 age: scenario.metadata?.age,
@@ -699,8 +697,6 @@ export class ScenarioService {
                   this.sanitizeMetadata({
                     title: scenario.title,
                     description: scenario.description,
-                    tone: scenario.metadata?.tone,
-                    personality: scenario.metadata?.personality,
                     context: scenario.metadata?.context,
                     sexualOrientation: scenario.metadata?.sexualOrientation,
                     genderIdentity: scenario.metadata?.genderIdentity,
@@ -1273,9 +1269,6 @@ export class ScenarioService {
           if (scenario.status == ScenarioStatus.ACTIVE) {
             const translationConsiderableData: TranslationConsiderableData = {
               currentLocation: scenario.metadata?.currentLocation,
-              lifeHistory: scenario.metadata?.lifeHistory,
-              personality: scenario.metadata?.personality,
-              coreMemories: scenario.metadata?.coreMemories,
               profession: scenario.metadata?.profession,
               context: scenario.metadata?.context,
               age: scenario.metadata?.age,
@@ -1287,8 +1280,6 @@ export class ScenarioService {
                 this.sanitizeMetadata({
                   title: updateScenarioDto.title,
                   description: updateScenarioDto.description,
-                  tone: updateScenarioDto.tone,
-                  personality: updateScenarioDto.personality,
                   sexualOrientation: updateScenarioDto.sexualOrientation,
                   genderIdentity: updateScenarioDto.genderIdentity,
                   customFields: updateScenarioDto?.customFields,
@@ -1980,32 +1971,28 @@ export class ScenarioService {
   }
 
   /**
-   * Sanitize metadata: remove null/undefined values and trim strings
+   * Sanitize metadata for a `jsonb` column.
+   *
+   * Delegates to the shared `sanitizeJsonbMetadata` helper which:
+   *   - drops null / undefined / empty-string top-level values,
+   *   - trims top-level strings,
+   *   - recursively strips C0 control bytes (NULL, etc.) from strings,
+   *     INCLUDING strings buried inside arrays / nested objects.
+   *
+   * The nested cleanup is the critical bit: a stray NULL byte anywhere
+   * in `metadata.openingStatements[i]` would otherwise fail the
+   * `scenario_translations` insert with Postgres 22P05 ("  cannot
+   * be converted to text") — the issue this method now defends against.
+   *
+   * Kept as a thin instance method (instead of inlining the util at
+   * each call site) to preserve the existing test seam — spec files
+   * stub `(service as any).sanitizeMetadata` and we don't want to
+   * churn those.
    */
   private sanitizeMetadata<T extends Record<string, any>>(
     metadata: T,
   ): Partial<T> {
-    const cleaned: Partial<T> = {};
-
-    for (const key in metadata) {
-      if (!Object.prototype.hasOwnProperty.call(metadata, key)) continue;
-      const value = metadata[key as keyof T];
-      if (value === null || value === undefined) {
-        continue;
-      }
-      if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed === '') {
-          continue;
-        }
-
-        cleaned[key as keyof T] = trimmed as any;
-      } else {
-        cleaned[key as keyof T] = value;
-      }
-    }
-
-    return cleaned;
+    return sanitizeJsonbMetadata(metadata);
   }
 
   /**

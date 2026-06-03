@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
+import { sanitizeJsonbMetadata } from 'src/common/util/sanitize-jsonb.util';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from './scenario-shared.service';
 
@@ -116,24 +117,16 @@ export class BehaviorTranslationService {
     }
   }
 
+  /**
+   * Sanitize translated behavior metadata before persisting to the
+   * `behavior_translations.metadata` jsonb column. Delegates to the
+   * shared helper so we also strip stray C0 control bytes — OpenAI
+   * occasionally leaks NULL bytes into translation output and they
+   * would fail the insert with Postgres 22P05.
+   */
   private sanitizeMetadata(
     data?: Record<string, any> | null,
   ): Record<string, any> {
-    if (!data) return {};
-
-    const cleanedData: Record<string, any> = {};
-
-    for (const [key, value] of Object.entries(data)) {
-      if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed) {
-          cleanedData[key] = trimmed;
-        }
-      } else if (value != null) {
-        cleanedData[key] = value;
-      }
-    }
-
-    return cleanedData;
+    return sanitizeJsonbMetadata(data ?? {});
   }
 }

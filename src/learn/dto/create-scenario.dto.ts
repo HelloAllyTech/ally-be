@@ -18,7 +18,6 @@ import { Type, Transform } from 'class-transformer';
 
 import {
   ScenarioDifficultyLevel,
-  ScenarioResponseLength,
   ScenarioStatus,
   ExperienceMode,
   ChecklistType,
@@ -203,14 +202,6 @@ export class CreateScenarioDto {
   profession!: string;
 
   @ApiProperty({
-    description: 'Personality of the AI client persona',
-    example: 'Extraverted, anxious, open to new experiences, honest',
-  })
-  @IsString()
-  @IsOptional()
-  personality?: string;
-
-  @ApiProperty({
     description: 'Difficulty level of the scenario',
     example: ScenarioDifficultyLevel.EASY,
     enum: ScenarioDifficultyLevel,
@@ -218,15 +209,6 @@ export class CreateScenarioDto {
   @IsEnum(ScenarioDifficultyLevel)
   @IsOptional()
   difficultyLevel?: ScenarioDifficultyLevel;
-
-  @ApiProperty({
-    description: 'Response length of the scenario',
-    example: ScenarioResponseLength.VERY_BRIEF,
-    enum: ScenarioResponseLength,
-  })
-  @IsEnum(ScenarioResponseLength)
-  @IsOptional()
-  responseLength?: ScenarioResponseLength;
 
   @ApiProperty({
     description:
@@ -237,14 +219,6 @@ export class CreateScenarioDto {
   @IsOptional()
   @IsBoolean()
   enableProsody?: boolean;
-
-  @ApiProperty({
-    description: 'Tone of the AI client persona',
-    example: 'Casual',
-  })
-  @IsString()
-  @IsOptional()
-  tone?: string;
 
   @ApiProperty({
     description: 'Opening statements of the AI client persona',

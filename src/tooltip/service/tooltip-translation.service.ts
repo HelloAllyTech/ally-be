@@ -2,6 +2,7 @@ import { forwardRef, Inject, Injectable } from '@nestjs/common';
 
 import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from 'src/learn/constants/scenario-session.constants';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
+import { sanitizeJsonbMetadata } from 'src/common/util/sanitize-jsonb.util';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { LoggerService } from 'src/logger/logger.service';
@@ -168,20 +169,17 @@ export class TooltipTranslationService {
     }
   }
 
+  /**
+   * Sanitize translated tooltip metadata before persisting to the
+   * `tooltip_translations.metadata` jsonb column. Delegates to the
+   * shared helper so we also strip stray C0 control bytes — OpenAI
+   * occasionally leaks NULL bytes into translation output and they
+   * would fail the insert with Postgres 22P05.
+   */
   private sanitizeMetadata(
     data?: TooltipMetadata | null,
   ): Partial<TooltipMetadata> {
-    if (!data) return {};
-    const cleaned: Partial<TooltipMetadata> = {};
-    for (const [key, value] of Object.entries(data)) {
-      if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed) (cleaned as Record<string, unknown>)[key] = trimmed;
-      } else if (value != null) {
-        (cleaned as Record<string, unknown>)[key] = value;
-      }
-    }
-    return cleaned;
+    return sanitizeJsonbMetadata(data ?? {}) as Partial<TooltipMetadata>;
   }
 
   async getTooltipsWithTranslations(
