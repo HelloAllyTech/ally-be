@@ -439,6 +439,15 @@ export class UpdateScenarioDto {
   showScoreMeter?: boolean;
 
   @ApiProperty({
+    description: 'Enable the AI feedback/evaluation summary after a session',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  enableFeedback?: boolean;
+
+  @ApiProperty({
     description: 'Enable current state for the scenario',
     example: true,
     required: false,

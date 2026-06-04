@@ -425,6 +425,7 @@ export class ScenarioSessionService {
         experienceMode:
           scenario.metadata?.experienceMode ?? ExperienceMode.FEEDBACK,
         name: scenario.metadata?.name,
+        enableFeedback: scenario.metadata?.enableFeedback ?? true,
       };
       if (languageCode && scenario.translations?.[languageCode]) {
         scenario.title =
