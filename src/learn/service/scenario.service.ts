@@ -865,16 +865,11 @@ export class ScenarioService {
       return;
     }
     if (!Array.isArray(states) || states.length === 0) {
-      this.logger.warn(
-        `[STATES_VALIDATE] reject — promptCode=${selectedMainPromptCode} ` +
-          `references {state_x_guidelines} but states array is empty/missing`,
+      this.logger.debug(
+        `[STATES_VALIDATE] no states defined for promptCode=${selectedMainPromptCode} ` +
+          `which references {state_x_guidelines} — allowed, states are optional`,
       );
-      throw new BadRequestException(
-        `The selected main-agent prompt "${selectedMainPromptCode}" references ` +
-          '{state_x_guidelines}, but no simulation states are defined. Add ' +
-          'at least one state in the studio or remove the placeholder from ' +
-          "the prompt's body.",
-      );
+      return;
     }
     this.logger.info(
       `[STATES_VALIDATE] pairing ok — promptCode=${selectedMainPromptCode} ` +
