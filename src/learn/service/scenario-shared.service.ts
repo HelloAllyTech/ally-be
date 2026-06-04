@@ -373,8 +373,16 @@ export class ScenarioSharedService {
 
     const languageCode = metadata?.language as LanguageCode;
 
-    if (previousMemory) {
-      promptData.previousMemory = previousMemory;
+    // Pre-format previousMemory into the final sentence here so the
+    // ai-learn prompt template can substitute `{previous_memory}`
+    // verbatim with no conditional wrapper. Either we send a complete
+    // "You remember from your last session: …" block or an empty
+    // string — keeps the template body identical for session-1 and
+    // session-N+1 cases.
+    if (previousMemory && previousMemory.trim()) {
+      promptData.previousMemory = `You remember from your last session: ${previousMemory.trim()}.`;
+    } else {
+      promptData.previousMemory = '';
     }
 
     if (scenario?.prompt) {
