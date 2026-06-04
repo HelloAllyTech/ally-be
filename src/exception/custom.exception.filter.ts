@@ -18,7 +18,15 @@ export class CustomExceptionFilter implements ExceptionFilter {
 
   // TODO: Add a way to handle entityId in the response generically
   catch(exception: unknown, host: ArgumentsHost) {
-    this.logger.error(exception);
+    // Error's `message`/`stack` are non-enumerable, so logging the raw
+    // exception object stringifies to `{}` and hides the real failure.
+    // Log a serializable representation (name + message + stack) instead.
+    const reqForLog = host.switchToHttp().getRequest();
+    this.logger.error(
+      exception instanceof Error
+        ? `${reqForLog?.method} ${reqForLog?.url} -> ${exception.name}: ${exception.message}\n${exception.stack}`
+        : exception,
+    );
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
 

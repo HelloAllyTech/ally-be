@@ -1550,6 +1550,7 @@ describe('ScenarioSharedService', () => {
   describe('hasAllActiveScenarioMandatoryFields', () => {
     const baseScenario = {
       scenario_title: 'Test',
+      scenario_prompt: 'You are a test client.',
       scenario_description: 'Desc',
       scenario_coverImageUrl: 'https://img.png',
       scenario_difficultyLevel: 'medium',
@@ -1572,17 +1573,19 @@ describe('ScenarioSharedService', () => {
       );
     });
 
-    it('returns true when optional fields (prompt, characterProfileText, behaviorInstructions, linguisticStyleSamples) are absent', () => {
+    it('returns true when optional fields (characterProfileText, behaviorInstructions, linguisticStyleSamples) are absent', () => {
       const scenario = { ...baseScenario };
       expect(service.hasAllActiveScenarioMandatoryFields(scenario)).toBe(true);
     });
 
-    it('returns true when prompt is empty string', () => {
+    it('returns false when prompt is empty string', () => {
+      // prompt (role instructions) is a mandatory field, so a blank prompt
+      // must block activation.
       const scenario = {
         ...baseScenario,
         scenario_prompt: '',
       };
-      expect(service.hasAllActiveScenarioMandatoryFields(scenario)).toBe(true);
+      expect(service.hasAllActiveScenarioMandatoryFields(scenario)).toBe(false);
     });
 
     it('returns true when characterProfileText is null', () => {

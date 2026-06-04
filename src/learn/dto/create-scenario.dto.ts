@@ -195,11 +195,11 @@ export class CreateScenarioDto {
   @ApiProperty({
     description: 'Profession of the AI client persona',
     example: 'Student',
-    required: true,
+    required: false,
   })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  profession!: string;
+  profession?: string;
 
   @ApiProperty({
     description: 'Difficulty level of the scenario',

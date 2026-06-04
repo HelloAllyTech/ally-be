@@ -2381,7 +2381,7 @@ describe('ScenarioService', () => {
       );
     });
 
-    it('should not throw when ACTIVE scenario omits prompt', async () => {
+    it('should throw when ACTIVE scenario omits prompt (now mandatory)', async () => {
       const createDto: CreateScenarioDto = {
         title: 'Test',
         description: 'Desc',
@@ -2404,9 +2404,10 @@ describe('ScenarioService', () => {
         id: 'voice-1',
       } as any);
 
-      await expect(
-        service.validateCreateScenario(createDto),
-      ).resolves.not.toThrow();
+      // prompt (role instructions) is mandatory for ACTIVE scenarios.
+      await expect(service.validateCreateScenario(createDto)).rejects.toThrow(
+        /required fields are missing/,
+      );
     });
 
     it('should not throw when ACTIVE scenario omits characterProfileText', async () => {
@@ -2414,6 +2415,7 @@ describe('ScenarioService', () => {
         title: 'Test',
         description: 'Desc',
         status: ScenarioStatus.ACTIVE,
+        prompt: 'Prompt',
         isGlobal: false,
         name: 'Test',
         age: 30,
@@ -2442,6 +2444,7 @@ describe('ScenarioService', () => {
         title: 'Test',
         description: 'Desc',
         status: ScenarioStatus.ACTIVE,
+        prompt: 'Prompt',
         isGlobal: false,
         name: 'Test',
         age: 30,
@@ -2470,6 +2473,7 @@ describe('ScenarioService', () => {
         title: 'Test',
         description: 'Desc',
         status: ScenarioStatus.ACTIVE,
+        prompt: 'Prompt',
         isGlobal: false,
         name: 'Test',
         age: 30,
@@ -2498,6 +2502,7 @@ describe('ScenarioService', () => {
         title: 'Test',
         description: 'Desc',
         status: ScenarioStatus.ACTIVE,
+        prompt: 'Prompt',
         isGlobal: false,
         name: 'Test',
         age: 30,

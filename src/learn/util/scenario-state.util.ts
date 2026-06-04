@@ -9,5 +9,11 @@ import { ScenarioDifficultyLevel } from '../type/scenario.type';
  * @returns Formatted state instructions with score ranges
  */
 export const getScenarioStateConfigByDifficultyLevel = (
-  difficulty: ScenarioDifficultyLevel,
-): ScenarioStateConfig[] => SCENARIO_DIFFICULTY_STATE_MAP[difficulty];
+  difficulty?: ScenarioDifficultyLevel,
+): ScenarioStateConfig[] =>
+  // difficultyLevel is optional on a scenario; fall back to MEDIUM (the
+  // entity default) when it's missing so callers always get a valid config
+  // to map over instead of `undefined`.
+  SCENARIO_DIFFICULTY_STATE_MAP[difficulty ?? ScenarioDifficultyLevel.MEDIUM] ??
+  SCENARIO_DIFFICULTY_STATE_MAP[ScenarioDifficultyLevel.MEDIUM] ??
+  [];
