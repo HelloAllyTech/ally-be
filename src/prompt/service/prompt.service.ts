@@ -409,6 +409,15 @@ export class PromptsService {
     await this.promptsRepository.update(saved.id, { currentVersion: 1 });
 
     saved.currentVersion = 1;
+    // Attach the just-created version body to the response so the
+    // studio side panel can render the new variant's editor with the
+    // source's text pre-filled. Without this, FE consumers that read
+    // `prompt.prompt` (the live editable body — a virtual field stitched
+    // from prompts_versions at currentVersion in getPrompts queries)
+    // see undefined and render the placeholder "Enter prompt text",
+    // which looks like a duplicate of empty content rather than a copy
+    // of the source.
+    (saved as Prompt & { prompt: string }).prompt = sourceContent;
     return saved;
   }
 
