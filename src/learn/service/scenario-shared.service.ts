@@ -56,6 +56,7 @@ import {
   ScenarioEvaluationSkillCoverageItem,
 } from 'src/ai/dto/ai.response.dto';
 import { formatBehaviorInstructionsForLivekitMetadata } from '../util/scenario-behavior-instructions.util';
+import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 import { CompetencyService } from './competency.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { htmlToPlainText } from 'src/common/util/sanitize-html.util';
@@ -445,6 +446,26 @@ export class ScenarioSharedService {
         ? htmlToPlainText(translatedDescription)
         : scenarioDataWithoutMetadata.description;
     delete scenarioDataWithoutMetadata.translationDescription;
+
+    // Pre-compute helpful/unhelpful behaviour lists so ai-learn reads them
+    // directly instead of filtering behaviorInstructions by category each turn.
+    promptData.helpfulBehaviours = formattedBehaviorInstructionForMetadata
+      .filter((b) => b.category === BehaviorInstructionCategory.SHOULD_DO)
+      .flatMap((b) => b.behaviors);
+    promptData.unhelpfulBehaviours = formattedBehaviorInstructionForMetadata
+      .filter((b) => b.category === BehaviorInstructionCategory.SHOULD_NOT_DO)
+      .flatMap((b) => b.behaviors);
+
+    // Pre-sort states by scoreLower (ascending) so ai-learn's per-turn resolver
+    // can skip re-sorting. Also surface defaultStateId so the resolver avoids
+    // scanning for isStarting on every turn-1 call.
+    if (Array.isArray(promptData.states) && promptData.states.length > 0) {
+      promptData.states = [...promptData.states].sort(
+        (a: any, b: any) => (a.scoreLower ?? 0) - (b.scoreLower ?? 0),
+      );
+      const startingState = promptData.states.find((s: any) => s.isStarting);
+      promptData.defaultStateId = startingState?.id ?? promptData.states[0]?.id;
+    }
 
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
