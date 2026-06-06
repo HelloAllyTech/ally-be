@@ -7,4 +7,5 @@ export interface TranscribeAndSummarizeRequestMessage {
   audio_url: string;
   sample_rate?: number;
   mode?: ScribeSessionMode;
+  is_linear16_encoded?: boolean;
 }

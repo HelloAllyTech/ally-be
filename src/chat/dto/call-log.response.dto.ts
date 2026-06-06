@@ -65,6 +65,11 @@ export class CallInfo {
 
   @ApiProperty({ required: false, enum: ScribeSessionMode })
   mode?: ScribeSessionMode;
+
+  // Whether mobile sent raw linear16 (PCM) encoded audio. Forwarded to the AI
+  // transcription service so it knows how to decode the audio.
+  @ApiProperty({ required: false })
+  isLinear16Encoded?: boolean;
 }
 
 export class CallDetails {

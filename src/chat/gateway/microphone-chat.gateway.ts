@@ -338,6 +338,7 @@ export class MicrophoneChatGateway
           platform,
           mode,
           sampleRate,
+          isLinear16Encoded,
         },
         (chatId: number) => {
           // Update session with chatId

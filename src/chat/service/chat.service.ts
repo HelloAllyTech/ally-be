@@ -145,6 +145,7 @@ export class ChatService {
       provider?: AudioChatProvider;
       platform?: AudioChatPlatform;
       mode?: ScribeSessionMode;
+      isLinear16Encoded?: boolean;
       externalId?: string;
       status?: ChatStatus;
       startedAt?: Date;
@@ -160,6 +161,7 @@ export class ChatService {
       provider,
       platform,
       mode,
+      isLinear16Encoded,
       externalId,
       status,
       startedAt,
@@ -197,6 +199,7 @@ export class ChatService {
         provider,
         platform,
         mode: mode || ScribeSessionMode.SCRIBE,
+        isLinear16Encoded,
         summaryName: ChatUtil.getSummaryName(chat),
       },
     });
@@ -212,6 +215,7 @@ export class ChatService {
       provider?: AudioChatProvider;
       platform?: AudioChatPlatform;
       mode?: ScribeSessionMode;
+      isLinear16Encoded?: boolean;
       externalId?: string;
       status?: ChatStatus;
       startedAt?: Date;

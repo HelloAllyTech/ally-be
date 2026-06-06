@@ -105,6 +105,7 @@ export class StreamFileProcessorService {
       platform?: AudioChatPlatform;
       mode?: ScribeSessionMode;
       sampleRate?: number;
+      isLinear16Encoded?: boolean;
     },
     onChatCreated: (chatId: number) => void,
   ) {
@@ -124,6 +125,7 @@ export class StreamFileProcessorService {
             provider: chatData.provider,
             platform: chatData.platform,
             mode: chatData.mode,
+            isLinear16Encoded: chatData.isLinear16Encoded,
           },
           entityManager,
         );
@@ -696,13 +698,14 @@ export class StreamFileProcessorService {
       const { callDetails } =
         await this.chatService.getChatWithCallDetails(chatId);
 
-      this.aiEventService.publishTranscribeAudioEvent({
+      await this.aiEventService.publishTranscribeAudioEvent({
         message_type: 'transcribe_and_summarize_request',
         timestamp: Date.now(),
         audio_url: audioUrl,
         chat_id: chatId,
         sample_rate: sampleRate!,
         mode: callDetails?.callInfo?.mode,
+        is_linear16_encoded: callDetails?.callInfo?.isLinear16Encoded,
       });
 
       this.auditLogger.log({

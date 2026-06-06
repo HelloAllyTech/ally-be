@@ -4,6 +4,7 @@ import { SqsDlqListener } from '../../aws/decorators/sqs-listener.decorator';
 import { LoggerService } from '../../logger/logger.service';
 import { ChatService } from '../../chat/service/chat.service';
 import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
+import { AudioRetryMessage } from '../type/audio.retry.type';
 
 @Injectable()
 export class AudioRetryDlqConsumer {
@@ -17,13 +18,13 @@ export class AudioRetryDlqConsumer {
     if (!message.Body) return;
 
     try {
-      const responseMessage = JSON.parse(message.Body);
+      const responseMessage: AudioRetryMessage = JSON.parse(message.Body);
 
       this.logger.info(
         `Processing audio file retry DLQ message for chat ${responseMessage.chatId}`,
       );
 
-      await this.chatService.updateChat(responseMessage.chat_id, {
+      await this.chatService.updateChat(responseMessage.chatId, {
         summaryStatus: ChatSummaryStatus.FAILED,
         metadata: {
           dlq_message: responseMessage,
