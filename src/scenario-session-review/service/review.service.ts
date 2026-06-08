@@ -127,17 +127,18 @@ export class ScenarioSessionReviewService extends BaseReviewService<
       .map((review: ScenarioSessionReviews) => review.scenarioSessionId)
       .filter((id): id is string => !!id);
 
-    const [reactions, comments, audioUrlsBySessionId] = await Promise.all([
-      this.reviewReactionRepository.getReactionsByReviewIds(reviewIds),
-      this.reviewThreadRepository.getCommentsCountByReviewIds(
-        reviewIds,
-        userId,
-      ),
-      this.scenarioSessionRecordingService.getRecordingUrlsForSessions(
-        scenarioSessionIds,
-      ),
-    ]);
-
+    const [reactions, comments, audioUrlsBySessionId, readReviewIds] =
+      await Promise.all([
+        this.reviewReactionRepository.getReactionsByReviewIds(reviewIds),
+        this.reviewThreadRepository.getCommentsCountByReviewIds(
+          reviewIds,
+          userId,
+        ),
+        this.scenarioSessionRecordingService.getRecordingUrlsForSessions(
+          scenarioSessionIds,
+        ),
+        this.reviewReadStatusRepository.getReadReviewIds(userId, reviewIds),
+      ]);
     const data = this.formatReviewListResponse(
       {
         reviews: result.reviews,
@@ -147,6 +148,7 @@ export class ScenarioSessionReviewService extends BaseReviewService<
       },
       options?.languageCode,
       audioUrlsBySessionId,
+      readReviewIds,
     );
     return { data, count: result.count };
   }
@@ -269,6 +271,7 @@ export class ScenarioSessionReviewService extends BaseReviewService<
     result: GetScenarioSessionReviews,
     languageCode?: string,
     audioUrlsBySessionId?: Map<string, string>,
+    readReviewIds?: Set<string>,
   ) {
     const reactionsByReviewId = result.reactions.reduce(
       (acc, reaction) => {
@@ -326,6 +329,7 @@ export class ScenarioSessionReviewService extends BaseReviewService<
       createdBy: formatCreatedUserDetails(review.createdBy),
       note: review.note ?? null,
       noteEditedAt: review.noteEditedAt ?? null,
+      isReviewed: readReviewIds?.has(review.id) ?? false,
     }));
 
     return data;

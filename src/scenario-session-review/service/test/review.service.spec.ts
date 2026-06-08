@@ -207,6 +207,55 @@ describe('formatReviewListResponse', () => {
 
     expect(formattedData[0].scenarioSession.audioUrl).toBeNull();
   });
+
+  it('sets isReviewed to true when the review id is in the read set', () => {
+    const result = {
+      reviews: [baseReview as any],
+      count: 1,
+      reactions: [],
+      comments: [],
+    };
+
+    const formattedData = (service as any).formatReviewListResponse(
+      result,
+      undefined,
+      undefined,
+      new Set(['review-1']),
+    );
+
+    expect(formattedData[0].isReviewed).toBe(true);
+  });
+
+  it('sets isReviewed to false when the review id is not in the read set', () => {
+    const result = {
+      reviews: [baseReview as any],
+      count: 1,
+      reactions: [],
+      comments: [],
+    };
+
+    const formattedData = (service as any).formatReviewListResponse(
+      result,
+      undefined,
+      undefined,
+      new Set(['some-other-review']),
+    );
+
+    expect(formattedData[0].isReviewed).toBe(false);
+  });
+
+  it('defaults isReviewed to false when no read set is provided', () => {
+    const result = {
+      reviews: [baseReview as any],
+      count: 1,
+      reactions: [],
+      comments: [],
+    };
+
+    const formattedData = (service as any).formatReviewListResponse(result);
+
+    expect(formattedData[0].isReviewed).toBe(false);
+  });
 });
 
 describe('getReviewById', () => {
@@ -436,5 +485,120 @@ describe('getReviewById', () => {
     const result = await service.getReviewById('review-1');
 
     expect(result.scenarioSession.audioUrl).toBeNull();
+  });
+});
+
+describe('getAllReviews', () => {
+  let service: ScenarioSessionReviewService;
+  const reviewRepository = { getAllReviews: jest.fn() };
+  const reviewThreadRepository = { getCommentsCountByReviewIds: jest.fn() };
+  const reviewReactionRepository = { getReactionsByReviewIds: jest.fn() };
+  const recordingService = { getRecordingUrlsForSessions: jest.fn() };
+  const readStatusRepository = { getReadReviewIds: jest.fn() };
+
+  const reviewRow = (id: string) => ({
+    id,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    tenantId: 'tenant-1',
+    scenarioSessionId: `session-${id}`,
+    createdBy: { id: 1, name: 'Test User' } as any,
+    status: 'IN_REVIEW',
+    note: 'note',
+    noteEditedAt: null,
+    scenarioSession: {
+      id: `session-${id}`,
+      startedAt: new Date('2023-01-01T10:00:00Z'),
+      endedAt: new Date('2023-01-01T10:02:00Z'),
+      createdAt: new Date(),
+    },
+    scenario: {
+      id: 1,
+      title: 'Title',
+      description: 'Description',
+      createdAt: new Date(),
+      coverImageUrl: 'cover.jpg',
+      coverVideoUrl: 'video.mp4',
+    },
+  });
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ScenarioSessionReviewService,
+        {
+          provide: ScenarioSessionReviewRepository,
+          useValue: reviewRepository,
+        },
+        {
+          provide: ScenarioSessionReviewThreadRepository,
+          useValue: reviewThreadRepository,
+        },
+        {
+          provide: ScenarioSessionReviewReactionRepository,
+          useValue: reviewReactionRepository,
+        },
+        { provide: ScenarioSessionReviewCommentRepository, useValue: {} },
+        {
+          provide: ScenarioSessionReviewCommentReactionRepository,
+          useValue: {},
+        },
+        { provide: ScenarioSharedService, useValue: {} },
+        { provide: UserService, useValue: {} },
+        { provide: ScenarioReviewAccessValidator, useValue: {} },
+        {
+          provide: ScenarioSessionReviewReadStatusRepository,
+          useValue: readStatusRepository,
+        },
+        { provide: PermissionValidator, useValue: {} },
+        {
+          provide: ScenarioSessionRecordingService,
+          useValue: recordingService,
+        },
+      ],
+    }).compile();
+
+    service = module.get<ScenarioSessionReviewService>(
+      ScenarioSessionReviewService,
+    );
+
+    jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('1');
+    jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue('tenant-1');
+
+    reviewReactionRepository.getReactionsByReviewIds.mockResolvedValue([]);
+    reviewThreadRepository.getCommentsCountByReviewIds.mockResolvedValue([]);
+    recordingService.getRecordingUrlsForSessions.mockResolvedValue(new Map());
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('looks up read status for the current user and flags reviewed cards', async () => {
+    reviewRepository.getAllReviews.mockResolvedValue({
+      reviews: [reviewRow('review-1'), reviewRow('review-2')],
+      count: 2,
+    });
+    readStatusRepository.getReadReviewIds.mockResolvedValue(
+      new Set(['review-1']),
+    );
+
+    const result = await service.getAllReviews({});
+
+    expect(readStatusRepository.getReadReviewIds).toHaveBeenCalledWith(1, [
+      'review-1',
+      'review-2',
+    ]);
+    expect(result.data[0]).toMatchObject({ id: 'review-1', isReviewed: true });
+    expect(result.data[1]).toMatchObject({ id: 'review-2', isReviewed: false });
+  });
+
+  it('returns an empty list without querying read status when there are no reviews', async () => {
+    reviewRepository.getAllReviews.mockResolvedValue({ reviews: [], count: 0 });
+
+    const result = await service.getAllReviews({});
+
+    expect(result).toEqual({ data: [], count: 0 });
+    expect(readStatusRepository.getReadReviewIds).not.toHaveBeenCalled();
   });
 });

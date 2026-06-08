@@ -1,4 +1,4 @@
-import { DataSource, EntityTarget, Repository } from 'typeorm';
+import { DataSource, EntityTarget, In, Repository } from 'typeorm';
 import { BaseReviewReadStatus } from '../entity/base-review-read-status.entity';
 import { BaseReview } from '../entity/base-review.entity';
 import { ReviewStatus } from '../type/review.type';
@@ -33,6 +33,20 @@ export abstract class BaseReviewReadStatusRepository<
       .getRawOne();
 
     return parseInt(result?.count ?? '0', 10);
+  }
+
+  async getReadReviewIds(
+    userId: number,
+    reviewIds: string[],
+  ): Promise<Set<string>> {
+    if (reviewIds.length === 0) {
+      return new Set();
+    }
+    const readStatuses = await this.find({
+      where: { userId, reviewId: In(reviewIds) } as any,
+      select: ['reviewId'] as any,
+    });
+    return new Set(readStatuses.map((status) => status.reviewId));
   }
 
   async markAsRead(userId: number, reviewId: string): Promise<void> {
