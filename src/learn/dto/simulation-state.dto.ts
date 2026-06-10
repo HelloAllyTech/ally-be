@@ -15,9 +15,13 @@ import {
  * Validation rules (enforced by `validateSimulationStates`):
  *  - Exactly one entry has `isStarting: true`.
  *  - Ranges are contiguous and non-overlapping.
- *  - The first state's `scoreLower` is null (open lower bound).
- *  - The last state's `scoreUpper` is null (open upper bound).
- *  - When both bounds are finite, `scoreUpper - scoreLower >= 50`.
+ *  - Every state's bounds are finite numbers (strict-bounds migration).
+ *  - The first state's `scoreLower` and the last state's `scoreUpper` are
+ *    the open ends of the range — the runtime resolver clamps any score
+ *    below the first / at-or-above the last into that state. They stay
+ *    author-editable (state 0's lower may be negative); the value is just
+ *    the labelled boundary. Studio shows −∞ / +∞ as placeholder hints.
+ *  - For every state, `scoreUpper - scoreLower >= 50`.
  */
 export class SimulationStateDto {
   @ApiProperty({ description: 'Stable id for this state across saves.' })
@@ -48,8 +52,10 @@ export class SimulationStateDto {
 
   @ApiPropertyOptional({
     description:
-      'Inclusive lower bound on `current_score`. `null` means open at ' +
-      'this end (must be the first state).',
+      'Inclusive lower bound on `current_score`. Finite integer; may be ' +
+      'negative. For the first state this is the open lower end (any lower ' +
+      'score clamps into it) but it stays author-editable. `null` is only ' +
+      'transient while the author is mid-edit.',
     nullable: true,
   })
   @IsOptional()
@@ -58,8 +64,10 @@ export class SimulationStateDto {
 
   @ApiPropertyOptional({
     description:
-      'Exclusive upper bound on `current_score`. `null` means open at ' +
-      'this end (must be the last state).',
+      'Exclusive upper bound on `current_score`. Finite integer. For the ' +
+      'last state this is the open upper end (any higher score clamps into ' +
+      'it) but it stays author-editable. `null` is only transient while the ' +
+      'author is mid-edit.',
     nullable: true,
   })
   @IsOptional()
