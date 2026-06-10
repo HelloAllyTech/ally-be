@@ -106,7 +106,13 @@ export class ScenarioReportService {
 
     const scenarioReportEntity = this.scenarioReportRepository.create({
       scenarioId,
-      config: { ...createScenarioReportDto },
+      config: {
+        ...createScenarioReportDto,
+        // Snapshot the main-agent variant ("skill") in effect right now so
+        // report history records which skill produced this report, even if
+        // the scenario later switches variants.
+        selectedMainPromptCode: scenario.metadata?.selectedMainPromptCode,
+      },
       createdBy: userId,
       updatedBy: userId,
     });

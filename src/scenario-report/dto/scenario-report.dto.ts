@@ -140,6 +140,7 @@ export class ScenarioReportDto {
       helperAgentPrompt: 'Helper agent prompt',
       languageId: 1,
       turns: 5,
+      selectedMainPromptCode: 'ally_ai_main_agent_default',
     },
   })
   config!: ScenarioReportConfig;
