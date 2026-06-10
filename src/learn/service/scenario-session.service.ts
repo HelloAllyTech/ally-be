@@ -33,6 +33,8 @@ import { ScenarioSessionTagCategory } from '../enum/scenario-session-tag-categor
 import { AiService } from 'src/ai/service/ai.service';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
+import { ScenarioSessionTurnMetrics } from '../entity/scenario-session-turn-metrics.entity';
+import { LearnTurnMetricsData } from '../interface/learn-message.interface';
 import { ScenarioSessionMessageTags } from '../entity/scenario-session-message-tags.entity';
 import { ScenarioSessionTags } from '../entity/scenario-session-tags.entity';
 import {
@@ -1419,6 +1421,46 @@ export class ScenarioSessionService {
         scenarioSession.counselorId,
       );
     }
+  }
+
+  /**
+   * Persist one per-turn latency sample into scenario_session_turn_metrics.
+   * `occurredAt` is the agent-side turn timestamp; falls back to now() if absent.
+   */
+  async addTurnMetrics(
+    scenarioSession: ScenarioSessions,
+    metrics: LearnTurnMetricsData,
+    occurredAt?: Date,
+  ): Promise<void> {
+    const repo = this.dataSource.getRepository(ScenarioSessionTurnMetrics);
+    const row = repo.create({
+      scenarioSessionId: scenarioSession.id,
+      tenantId: scenarioSession.tenantId,
+      roomId: scenarioSession.roomId,
+      turnIndex: metrics.turn_index,
+      invocationId: metrics.invocation_id,
+      responseLatencyMs: metrics.response_latency_ms,
+      eouDelayMs: metrics.eou_delay_ms,
+      llmTtftMs: metrics.llm_ttft_ms,
+      ttsTtfbMs: metrics.tts_ttfb_ms,
+      orchestrationMs: metrics.orchestration_ms,
+      llmResponseMs: metrics.llm_response_ms,
+      prosodyMs: metrics.prosody_ms,
+      branchingMs: metrics.branching_ms,
+      knowledgeRetrievalMs: metrics.knowledge_retrieval_ms,
+      scenarioId: metrics.scenario_id ?? scenarioSession.scenarioId,
+      language: metrics.language,
+      llmModel: metrics.llm_model,
+      env: metrics.env,
+      responseChars: metrics.response_chars,
+      eventsDetected: metrics.events_detected ?? 0,
+      prosodySkipped: metrics.prosody_skipped ?? false,
+      llmTimedOut: metrics.llm_timed_out ?? false,
+      interrupted: metrics.interrupted ?? false,
+      occurredAt: occurredAt ?? new Date(),
+      metadata: metrics.metadata,
+    });
+    await repo.save(row);
   }
 
   async addScenarioSessionBehaviorInstruction(

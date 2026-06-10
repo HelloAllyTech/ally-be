@@ -76,6 +76,7 @@ import { ScenarioSessionContextProvider } from './service/scenario-session-conte
 import { ScenarioSessionChatService } from './service/scenario-session-chat.service';
 import { ScenarioSessionChatController } from './controller/scenario-session-chat.controller';
 import { BehaviorInstructionProcessor } from './processor/behavior-instruction.processor';
+import { TurnMetricsProcessor } from './processor/turn-metrics.processor';
 import { ScenarioSessionBehaviorInstructions } from './entity/scenario-session-behavior-instructions.entity';
 import { Competency } from './entity/competency.entity';
 import { CompetencyRepository } from './repository/competency.repository';
@@ -164,6 +165,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     LearnMessageProcessor,
     LearnEventProcessor,
     BehaviorInstructionProcessor,
+    TurnMetricsProcessor,
     ScenarioVoicesRepository,
     SimulationCreditsService,
     SimulationCreditsRepository,
@@ -212,6 +214,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     LearnMessageProcessor,
     LearnEventProcessor,
     BehaviorInstructionProcessor,
+    TurnMetricsProcessor,
     ScenarioSessionService,
     SimulationCreditsService,
     ScenarioSharedService,

@@ -13,6 +13,8 @@ import { AddFeedbackToScenarioSessionRequestDto } from 'src/learn/dto/add-feedba
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { ScenarioSessionDetails } from 'src/learn/entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from 'src/learn/entity/scenario-session-events.entity';
+import { ScenarioSessionTurnMetrics } from 'src/learn/entity/scenario-session-turn-metrics.entity';
+import { LearnTurnMetricsData } from 'src/learn/interface/learn-message.interface';
 import { ScenarioSessionBehaviorInstructions } from 'src/learn/entity/scenario-session-behavior-instructions.entity';
 import { ScenarioSessionMessages } from 'src/learn/entity/scenario-session-messages.entity';
 import { ScenarioSessionMessageType } from 'src/learn/enum/scenario-session-message.type.enum';
@@ -2701,6 +2703,108 @@ describe('ScenarioSessionService', () => {
       expect(stateInstructions).toEqual(
         mockScenario.metadata.stateInstructions,
       );
+    });
+  });
+
+  describe('addTurnMetrics', () => {
+    const session = {
+      id: 'sess-1',
+      tenantId: 'tenant-1',
+      roomId: 'ss_room-1',
+      scenarioId: 42,
+    } as ScenarioSessions;
+
+    const metrics: LearnTurnMetricsData = {
+      turn_index: 3,
+      invocation_id: 'abc12345',
+      response_latency_ms: 1320,
+      eou_delay_ms: 180,
+      llm_ttft_ms: 300,
+      tts_ttfb_ms: 210,
+      orchestration_ms: 120,
+      llm_response_ms: 640,
+      prosody_ms: 70,
+      language: 'en-IN',
+      llm_model: 'gpt-4o-mini',
+      env: 'LOCAL',
+      response_chars: 180,
+      events_detected: 1,
+      prosody_skipped: false,
+    };
+
+    let mockRepo: { create: jest.Mock; save: jest.Mock };
+
+    beforeEach(() => {
+      mockRepo = {
+        create: jest.fn((row) => row),
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+      (dataSource.getRepository as jest.Mock) = jest
+        .fn()
+        .mockReturnValue(mockRepo);
+    });
+
+    it('maps the payload onto a ScenarioSessionTurnMetrics row and saves it', async () => {
+      const occurredAt = new Date('2026-06-10T05:00:00.000Z');
+
+      await service.addTurnMetrics(session, metrics, occurredAt);
+
+      expect(dataSource.getRepository).toHaveBeenCalledWith(
+        ScenarioSessionTurnMetrics,
+      );
+      const created = mockRepo.create.mock.calls[0][0];
+      expect(created).toMatchObject({
+        scenarioSessionId: 'sess-1',
+        tenantId: 'tenant-1',
+        roomId: 'ss_room-1',
+        turnIndex: 3,
+        invocationId: 'abc12345',
+        responseLatencyMs: 1320,
+        eouDelayMs: 180,
+        llmTtftMs: 300,
+        ttsTtfbMs: 210,
+        orchestrationMs: 120,
+        llmResponseMs: 640,
+        prosodyMs: 70,
+        language: 'en-IN',
+        llmModel: 'gpt-4o-mini',
+        env: 'LOCAL',
+        responseChars: 180,
+        eventsDetected: 1,
+        prosodySkipped: false,
+        scenarioId: 42,
+        occurredAt,
+      });
+      expect(mockRepo.save).toHaveBeenCalledWith(created);
+    });
+
+    it('falls back to the session scenarioId when the metric omits it', async () => {
+      await service.addTurnMetrics(session, metrics);
+
+      const created = mockRepo.create.mock.calls[0][0];
+      expect(created.scenarioId).toBe(42); // from session, not the payload
+    });
+
+    it('defaults occurredAt to now() when not provided', async () => {
+      await service.addTurnMetrics(session, metrics);
+
+      const created = mockRepo.create.mock.calls[0][0];
+      expect(created.occurredAt).toBeInstanceOf(Date);
+    });
+
+    it('defaults flag/count fields when the metric omits them', async () => {
+      const sparse: LearnTurnMetricsData = {
+        turn_index: 0,
+        response_latency_ms: 900,
+      };
+
+      await service.addTurnMetrics(session, sparse);
+
+      const created = mockRepo.create.mock.calls[0][0];
+      expect(created.eventsDetected).toBe(0);
+      expect(created.prosodySkipped).toBe(false);
+      expect(created.llmTimedOut).toBe(false);
+      expect(created.interrupted).toBe(false);
     });
   });
 });
