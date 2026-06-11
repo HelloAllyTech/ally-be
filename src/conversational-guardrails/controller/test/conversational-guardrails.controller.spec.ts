@@ -28,8 +28,6 @@ describe('ConversationalGuardrailsController', () => {
       deleteGuardrail: jest.fn(),
       getRandomGuardrailsForSession: jest.fn(),
       countGuardrails: jest.fn(),
-      getTranslationsByGuardrailId: jest.fn(),
-      createTranslation: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({

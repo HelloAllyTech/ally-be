@@ -1,23 +1,9 @@
+import { ConversationalGuardrailKind } from '../enum/conversational-guardrails-kind.enum';
+
 export interface GuardrailMetadata {
   helperDialogue: string;
   actorDialogue: string;
-}
-
-export interface CreateGuardrailTranslation {
-  guardrailId: string;
-  languageId: number;
-  helperDialogue: string;
-  actorDialogue: string;
-}
-
-export interface CreateConversationalGuardrailTranslation {
-  guardrailId: string;
-  languageId: number;
-  helperDialogue: string;
-  actorDialogue: string;
-}
-
-export interface UpdateConversationalGuardrailTranslation {
-  helperDialogue?: string;
-  actorDialogue?: string;
+  // SYSTEM guardrails route to the dedicated coherence classifier in the agent;
+  // USER guardrails use the shared category classifier.
+  kind: ConversationalGuardrailKind;
 }

@@ -1,5 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import { ConversationalGuardrailKind } from '../enum/conversational-guardrails-kind.enum';
 
 @Entity('conversational_guardrails')
 export class ConversationalGuardrails extends BaseWithoutTenantEntity {
@@ -17,4 +18,20 @@ export class ConversationalGuardrails extends BaseWithoutTenantEntity {
 
   @Column({ default: true })
   active!: boolean;
+
+  // USER guardrails are admin-managed and randomly sampled per session.
+  // SYSTEM guardrails are platform-provided, always injected, and shown
+  // in the admin list with a locked badge.
+  @Column({
+    type: 'enum',
+    enum: ConversationalGuardrailKind,
+    enumName: 'conversational_guardrails_kind_enum',
+    default: ConversationalGuardrailKind.USER,
+  })
+  kind!: ConversationalGuardrailKind;
+
+  // Mandatory guardrails cannot be deleted or disabled (their dialogue text
+  // remains editable). Used to keep the STT Coherence Guard always on.
+  @Column({ default: false })
+  mandatory!: boolean;
 }
