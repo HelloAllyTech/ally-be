@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { AnalyticsController } from './controller/analytics.controller';
 import { TenantAnalyticsController } from './controller/tenant-analytics.controller';
 import { AnalyticsService } from './service/analytics.service';
+import { PlatformAnalyticsService } from './service/platform-analytics.service';
+import { PlatformAnalyticsRepository } from './repository/platform-analytics.repository';
 import { MetabaseService } from './service/metabase.service';
 import { AppConfigModule } from '../config/config.module';
 import { ProviderFactory } from '../factory/provider.factory';
@@ -25,6 +27,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
   controllers: [AnalyticsController, TenantAnalyticsController],
   providers: [
     AnalyticsService,
+    PlatformAnalyticsService,
+    PlatformAnalyticsRepository,
     MetabaseService,
     ProviderFactory.getAnalyticsFactory(),
     DashboardRepository,

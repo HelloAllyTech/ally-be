@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AnalyticsService } from '../service/analytics.service';
+import { PlatformAnalyticsService } from '../service/platform-analytics.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import {
   CreateDashboardDto,
@@ -21,6 +22,10 @@ import {
   DashboardResponseDTO,
   CreateDashboardResponseDto,
 } from '../dto/analytics.dto';
+import {
+  AnalyticsOverviewQueryDto,
+  AnalyticsOverviewResponseDto,
+} from '../dto/platform-analytics.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -40,7 +45,30 @@ import { UserRole } from 'src/common/constants/user.constants';
 @ApiBearerAuth()
 @ApiSecurity('access-token')
 export class AnalyticsController {
-  constructor(private readonly analyticsService: AnalyticsService) {}
+  constructor(
+    private readonly analyticsService: AnalyticsService,
+    private readonly platformAnalyticsService: PlatformAnalyticsService,
+  ) {}
+
+  @Get('overview')
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Platform analytics overview (super-admin)',
+    description:
+      'Platform-wide metrics: user growth, active users (DAU/WAU/MAU), ' +
+      'simulations completed, weekly retention and users by role, plus a KPI ' +
+      'summary. Time window selected via the `range` query param.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Analytics overview retrieved successfully',
+    type: AnalyticsOverviewResponseDto,
+  })
+  async getOverview(
+    @Query() query: AnalyticsOverviewQueryDto,
+  ): Promise<AnalyticsOverviewResponseDto> {
+    return this.platformAnalyticsService.getOverview(query.range ?? '30d');
+  }
 
   @ApiOperation({ summary: 'Get all dashboards' })
   @ApiResponse({
