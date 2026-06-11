@@ -11,4 +11,11 @@ export type ScenarioReportConfig = {
    * scenario was on the default variant.
    */
   selectedMainPromptCode?: string;
+  /**
+   * promptCode of the transcript-evaluator prompt variant chosen to score this
+   * report. Snapshotted at creation time so history records which evaluator
+   * variant produced each report. Undefined means the default evaluator
+   * template was used.
+   */
+  selectedEvaluatorPromptCode?: string;
 };

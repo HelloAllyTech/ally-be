@@ -112,6 +112,13 @@ export class ScenarioReportService {
         // report history records which skill produced this report, even if
         // the scenario later switches variants.
         selectedMainPromptCode: scenario.metadata?.selectedMainPromptCode,
+        // Snapshot the transcript-evaluator prompt variant chosen for this run.
+        // Prefer the value sent live with the request (lets a freshly picked
+        // variant take effect without a scenario save) and fall back to the
+        // scenario's saved selection. Undefined means the default evaluator.
+        selectedEvaluatorPromptCode:
+          createScenarioReportDto.selectedEvaluatorPromptCode ??
+          scenario.metadata?.selectedEvaluatorPromptCode,
       },
       createdBy: userId,
       updatedBy: userId,
@@ -179,6 +186,7 @@ export class ScenarioReportService {
         scenario_id: report.scenarioId,
         report_id: report.id,
         metadata: metadata,
+        evaluator_prompt_code: report.config.selectedEvaluatorPromptCode,
       });
 
       const currentReport = await this.scenarioReportRepository.findOne({

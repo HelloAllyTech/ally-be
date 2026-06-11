@@ -341,6 +341,17 @@ export class UpdateScenarioDto {
 
   @ApiProperty({
     description:
+      'promptCode of the transcript-evaluator prompt variant used when ' +
+      'scoring reports for this simulation. When omitted, the default ' +
+      'evaluator template is used.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  selectedEvaluatorPromptCode?: string;
+
+  @ApiProperty({
+    description:
       'Per-simulation states used by `hasStates` main-agent prompt variants. ' +
       'Runtime resolves the active state per turn score and substitutes its ' +
       'guidelines into `{state_x_guidelines}`. Server-side validation enforces ' +
@@ -428,6 +439,15 @@ export class UpdateScenarioDto {
   @IsString()
   @MaxLength(2500)
   characterProfileText?: string;
+
+  @ApiProperty({
+    description: 'Helper agent prompt used when generating reports',
+    example: 'You are a mental healthcare worker',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  helperAgentPrompt?: string;
 
   @ApiProperty({
     description: 'Show score meter',

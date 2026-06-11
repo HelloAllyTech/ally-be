@@ -47,6 +47,17 @@ export class CreateScenarioReportDto {
   @ApiProperty({ description: 'Helper agent prompt', required: true })
   @IsString()
   helperAgentPrompt!: string;
+
+  @ApiProperty({
+    description:
+      'promptCode of the transcript-evaluator variant to score this report ' +
+      'with. Sent live so a freshly picked variant takes effect without a ' +
+      'scenario save. When omitted, falls back to the saved scenario selection.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  selectedEvaluatorPromptCode?: string;
 }
 
 export class CreateScenarioReportResponseDto {

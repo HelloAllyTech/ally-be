@@ -97,6 +97,11 @@ export interface ScenarioReportGenerateRequest {
   scenario_id: number;
   report_id: string;
   metadata: Record<string, any>;
+  // promptCode of the transcript-evaluator variant to run. When set, ai-learn
+  // resolves the evaluator (LLM-judge) system prompt from this variant's
+  // dashboard text instead of the default evaluator template. Undefined uses
+  // the default evaluator.
+  evaluator_prompt_code?: string;
 }
 
 export type ScenarioEvaluationChatMessage = {

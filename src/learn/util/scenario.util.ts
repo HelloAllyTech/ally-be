@@ -55,6 +55,7 @@ export const mapCreateScenarioRequestToEntity = (
       }),
       optGuardrails: scenario.optGuardrails,
       characterProfileText: scenario.characterProfileText,
+      helperAgentPrompt: scenario.helperAgentPrompt,
       showScoreMeter: scenario.showScoreMeter,
       enableFeedback: scenario.enableFeedback,
       currentState: scenario.currentState,
@@ -65,6 +66,7 @@ export const mapCreateScenarioRequestToEntity = (
       })),
       stateNames: scenario.stateNames,
       selectedMainPromptCode: scenario.selectedMainPromptCode,
+      selectedEvaluatorPromptCode: scenario.selectedEvaluatorPromptCode,
       states: scenario.states,
     },
   };
@@ -156,12 +158,14 @@ export const mapUpdateScenarioRequestToEntity = (
     'maxTimeValue',
     'optGuardrails',
     'characterProfileText',
+    'helperAgentPrompt',
     'showScoreMeter',
     'enableFeedback',
     'currentState',
     'knowledgeSources',
     'stateNames',
     'selectedMainPromptCode',
+    'selectedEvaluatorPromptCode',
     'states',
   ];
 
