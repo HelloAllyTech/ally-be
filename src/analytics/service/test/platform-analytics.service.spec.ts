@@ -1,0 +1,220 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { PlatformAnalyticsService } from '../platform-analytics.service';
+import { PlatformAnalyticsRepository } from '../../repository/platform-analytics.repository';
+
+jest.mock('src/logger/logger.service', () => ({
+  LoggerService: {
+    getInstance: jest.fn().mockReturnValue({
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    }),
+  },
+}));
+
+/**
+ * Fixed "now" = Wednesday 2024-06-12T12:00:00Z. For range='30d' this yields:
+ *   windowStart      = 2024-05-14 (today - 29d)
+ *   endExclusive     = 2024-06-13 (start of tomorrow)
+ *   weekly axis      = 2024-05-13, 05-20, 05-27, 06-03, 06-10  (Mondays)
+ *   daily axis       = 2024-05-14 .. 2024-06-12 (30 days)
+ */
+const FIXED_NOW = new Date('2024-06-12T12:00:00.000Z');
+const WEEKLY_AXIS = [
+  '2024-05-13',
+  '2024-05-20',
+  '2024-05-27',
+  '2024-06-03',
+  '2024-06-10',
+];
+
+describe('PlatformAnalyticsService', () => {
+  let service: PlatformAnalyticsService;
+  let repo: jest.Mocked<PlatformAnalyticsRepository>;
+
+  beforeEach(async () => {
+    jest.useFakeTimers().setSystemTime(FIXED_NOW);
+
+    const mockRepo: Partial<jest.Mocked<PlatformAnalyticsRepository>> = {
+      getNewUsersByBucket: jest.fn().mockResolvedValue([]),
+      getUserCountBefore: jest.fn().mockResolvedValue(0),
+      getTotalUsers: jest.fn().mockResolvedValue(0),
+      getDailyActivityPairs: jest.fn().mockResolvedValue([]),
+      getSimulationsCompletedByWeek: jest.fn().mockResolvedValue([]),
+      getWeeklyActivePairsWithCreatedAt: jest.fn().mockResolvedValue([]),
+      getUsersByRole: jest.fn().mockResolvedValue([]),
+      getActiveUserCountSince: jest.fn().mockResolvedValue(0),
+      getReturningActiveUserCountSince: jest.fn().mockResolvedValue(0),
+      getCompletedSimsSince: jest.fn().mockResolvedValue(0),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        PlatformAnalyticsService,
+        { provide: PlatformAnalyticsRepository, useValue: mockRepo },
+      ],
+    }).compile();
+
+    service = module.get(PlatformAnalyticsService);
+    repo = module.get(PlatformAnalyticsRepository);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  describe('userGrowth', () => {
+    it('zero-fills the weekly axis and accumulates from the baseline', async () => {
+      repo.getUserCountBefore.mockResolvedValue(100);
+      repo.getNewUsersByBucket.mockResolvedValue([
+        { bucket: '2024-05-13', newUsers: 2 },
+        { bucket: '2024-06-10', newUsers: 3 },
+      ]);
+
+      const { userGrowth } = await service.getOverview('30d');
+
+      expect(userGrowth.map((p) => p.date)).toEqual(WEEKLY_AXIS);
+      expect(userGrowth).toEqual([
+        { date: '2024-05-13', newUsers: 2, cumulativeUsers: 102 },
+        { date: '2024-05-20', newUsers: 0, cumulativeUsers: 102 },
+        { date: '2024-05-27', newUsers: 0, cumulativeUsers: 102 },
+        { date: '2024-06-03', newUsers: 0, cumulativeUsers: 102 },
+        { date: '2024-06-10', newUsers: 3, cumulativeUsers: 105 },
+      ]);
+    });
+  });
+
+  describe('activeUsers DAU/WAU/MAU', () => {
+    it('rolls trailing 7-/30-day distinct counts per day', async () => {
+      // user 1: active 05-20 and 06-12; user 2: active 06-10
+      repo.getDailyActivityPairs.mockResolvedValue([
+        { day: '2024-05-20', counselorId: 1 },
+        { day: '2024-06-10', counselorId: 2 },
+        { day: '2024-06-12', counselorId: 1 },
+      ]);
+
+      const { activeUsers } = await service.getOverview('30d');
+
+      expect(activeUsers).toHaveLength(30);
+      expect(activeUsers[0].date).toBe('2024-05-14');
+      expect(activeUsers[activeUsers.length - 1].date).toBe('2024-06-12');
+
+      const byDate = new Map(activeUsers.map((p) => [p.date, p]));
+
+      // Last day: DAU counts only 06-12; WAU(06-06..06-12)={1,2}; MAU(05-14..06-12)={1,2}
+      expect(byDate.get('2024-06-12')).toEqual({
+        date: '2024-06-12',
+        dau: 1,
+        wau: 2,
+        mau: 2,
+      });
+
+      // 06-11: no activity that day, but trailing windows still see recent users
+      expect(byDate.get('2024-06-11')).toEqual({
+        date: '2024-06-11',
+        dau: 0,
+        wau: 1, // only user 2 (06-10) within 06-05..06-11
+        mau: 2, // user 1 (05-20) + user 2 (06-10) within 05-13..06-11
+      });
+    });
+  });
+
+  describe('retention', () => {
+    it('labels weekly-active users new vs returning by account-creation week', async () => {
+      repo.getWeeklyActivePairsWithCreatedAt.mockResolvedValue([
+        // active in week 05-13, account created same week -> new
+        { week: '2024-05-13', counselorId: 1, userCreatedAt: '2024-05-15' },
+        // active in week 06-10, account created same week -> new
+        { week: '2024-06-10', counselorId: 2, userCreatedAt: '2024-06-11' },
+        // active in week 06-10, account created long ago -> returning
+        { week: '2024-06-10', counselorId: 3, userCreatedAt: '2024-01-01' },
+      ]);
+
+      const { retention } = await service.getOverview('30d');
+
+      expect(retention.map((p) => p.weekStart)).toEqual(WEEKLY_AXIS);
+      expect(retention).toEqual([
+        { weekStart: '2024-05-13', newUsers: 1, returningUsers: 0 },
+        { weekStart: '2024-05-20', newUsers: 0, returningUsers: 0 },
+        { weekStart: '2024-05-27', newUsers: 0, returningUsers: 0 },
+        { weekStart: '2024-06-03', newUsers: 0, returningUsers: 0 },
+        { weekStart: '2024-06-10', newUsers: 1, returningUsers: 1 },
+      ]);
+    });
+  });
+
+  describe('simulationsCompleted', () => {
+    it('zero-fills the weekly axis', async () => {
+      repo.getSimulationsCompletedByWeek.mockResolvedValue([
+        { week: '2024-06-10', count: 5 },
+      ]);
+
+      const { simulationsCompleted } = await service.getOverview('30d');
+
+      expect(simulationsCompleted).toEqual([
+        { weekStart: '2024-05-13', count: 0 },
+        { weekStart: '2024-05-20', count: 0 },
+        { weekStart: '2024-05-27', count: 0 },
+        { weekStart: '2024-06-03', count: 0 },
+        { weekStart: '2024-06-10', count: 5 },
+      ]);
+    });
+  });
+
+  describe('summary', () => {
+    it('computes the retention rate as returning / active * 100', async () => {
+      repo.getTotalUsers.mockResolvedValue(100);
+      repo.getActiveUserCountSince.mockResolvedValue(10);
+      repo.getReturningActiveUserCountSince.mockResolvedValue(4);
+      repo.getCompletedSimsSince.mockResolvedValue(7);
+      repo.getUsersByRole.mockResolvedValue([
+        { role: 'LEARNER', count: 80 },
+        { role: 'SUPER_ADMIN', count: 2 },
+      ]);
+
+      const { summary, usersByRole } = await service.getOverview('30d');
+
+      expect(summary).toEqual({
+        totalUsers: 100,
+        activeUsers30d: 10,
+        simsThisWeek: 7,
+        retentionRatePct: 40,
+      });
+      expect(usersByRole).toEqual([
+        { role: 'LEARNER', count: 80 },
+        { role: 'SUPER_ADMIN', count: 2 },
+      ]);
+    });
+
+    it('reports 0% retention when there are no active users', async () => {
+      repo.getActiveUserCountSince.mockResolvedValue(0);
+      repo.getReturningActiveUserCountSince.mockResolvedValue(0);
+
+      const { summary } = await service.getOverview('30d');
+
+      expect(summary.retentionRatePct).toBe(0);
+    });
+  });
+
+  describe('range -> bucket mapping', () => {
+    it('uses monthly buckets for the 12m range', async () => {
+      await service.getOverview('12m');
+      expect(repo.getNewUsersByBucket).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'month',
+      );
+    });
+
+    it('uses weekly buckets for the 90d range', async () => {
+      await service.getOverview('90d');
+      expect(repo.getNewUsersByBucket).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'week',
+      );
+    });
+  });
+});

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsController } from '../analytics.controller';
 import { AnalyticsService } from '../../service/analytics.service';
+import { PlatformAnalyticsService } from '../../service/platform-analytics.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
@@ -62,6 +63,10 @@ describe('AnalyticsController', () => {
         {
           provide: AnalyticsService,
           useValue: mockAnalyticsService,
+        },
+        {
+          provide: PlatformAnalyticsService,
+          useValue: { getOverview: jest.fn() },
         },
         {
           provide: Reflector,
