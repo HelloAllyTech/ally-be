@@ -33,15 +33,10 @@ export function validateSimulationStates(
     idSet.add(state.id);
   }
 
-  // Exactly one starting state.
-  const startingStates = states.filter((s) => s?.isStarting);
-  if (startingStates.length === 0) {
-    errors.push('Exactly one state must be marked as the starting state.');
-  } else if (startingStates.length > 1) {
-    errors.push(
-      `Only one state may be the starting state; found ${startingStates.length}.`,
-    );
-  }
+  // No starting-state flag: the starting state is emergent. With the
+  // contiguity + finite-bounds rules below, score 0 always resolves to
+  // exactly one state (or clamps to the first), so the state opening the
+  // simulation is fully determined by the ranges.
 
   // Sort by lower bound to validate ordering. All bounds are now finite
   // numbers (strict min/max) — the previous open-ended-at-the-ends design

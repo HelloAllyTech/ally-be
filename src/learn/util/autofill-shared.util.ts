@@ -182,8 +182,7 @@ export function extractContent(
       // Coerce shapes defensively — the JSON schema constrains types but
       // belt-and-suspenders against any malformed entries. Caller is
       // responsible for assigning stable ids and running
-      // validateSimulationStates against the contiguity / starting / gap
-      // rules.
+      // validateSimulationStates against the contiguity / gap rules.
       return states.map((s, index) => {
         // Log when the LLM omits required fields the schema marks as
         // required. Defaulting silently can mask intent (e.g. an admin
@@ -195,16 +194,9 @@ export function extractContent(
               `ragEnabled (got ${typeof s?.ragEnabled}); defaulting to true.`,
           );
         }
-        if (typeof s?.isStarting !== 'boolean') {
-          logger.warn(
-            `STATES autofill: state at index ${index} missing required ` +
-              `isStarting (got ${typeof s?.isStarting}); defaulting to false.`,
-          );
-        }
         return {
           name: typeof s?.name === 'string' ? s.name : '',
           guidelines: typeof s?.guidelines === 'string' ? s.guidelines : '',
-          isStarting: Boolean(s?.isStarting),
           scoreLower: typeof s?.scoreLower === 'number' ? s.scoreLower : null,
           scoreUpper: typeof s?.scoreUpper === 'number' ? s.scoreUpper : null,
           ragEnabled: typeof s?.ragEnabled === 'boolean' ? s.ragEnabled : true,

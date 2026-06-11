@@ -15,8 +15,11 @@
  * and if `ragEnabled` is false on that state the retrieval step is
  * skipped — `{retrieved_context}` substitutes empty for the turn.
  *
- * Validation (enforced server-side on save):
- * - Exactly one state has `isStarting: true`.
+ * The starting state is emergent, not flagged: a session's score begins
+ * at 0, so the state whose range contains 0 (clamped to the first state
+ * if 0 sits below the range) is what opens the simulation.
+ *
+ * Validation (enforced server-side on save via `validateSimulationStates`):
  * - Every state's `scoreLower` / `scoreUpper` are finite numbers
  *   (strict-bounds — `null` is no longer accepted; clamping handles
  *   out-of-range scores at runtime).
@@ -30,8 +33,6 @@ export interface SimulationState {
   name: string;
   /** Free-text guidance injected into the prompt when this state is active. */
   guidelines: string;
-  /** Exactly one state must be marked starting; this picks turn-1 behavior. */
-  isStarting: boolean;
   /**
    * Inclusive lower bound on `current_score`. Required (finite number).
    * `null` is accepted in the type for in-flight editor state (a blank

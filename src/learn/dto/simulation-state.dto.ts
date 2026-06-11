@@ -12,8 +12,11 @@ import {
  * on `Scenarios.metadata.states`. Forwarded to ai-learn at session start
  * so the runtime can resolve the active state per turn score.
  *
+ * The starting state is emergent: the runtime opens in whichever state's
+ * range contains 0 (the session's opening score), clamped to the first
+ * state if 0 sits below the range. There is no `isStarting` flag.
+ *
  * Validation rules (enforced by `validateSimulationStates`):
- *  - Exactly one entry has `isStarting: true`.
  *  - Ranges are contiguous and non-overlapping.
  *  - Every state's bounds are finite numbers (strict-bounds migration).
  *  - The first state's `scoreLower` and the last state's `scoreUpper` are
@@ -41,14 +44,6 @@ export class SimulationStateDto {
   })
   @IsString()
   guidelines!: string;
-
-  @ApiProperty({
-    description:
-      'Exactly one state in the array must be marked starting. Used on ' +
-      'turn 1 before any score has accumulated.',
-  })
-  @IsBoolean()
-  isStarting!: boolean;
 
   @ApiPropertyOptional({
     description:

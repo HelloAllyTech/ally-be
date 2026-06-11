@@ -457,14 +457,13 @@ export class ScenarioSharedService {
       .flatMap((b) => b.behaviors);
 
     // Pre-sort states by scoreLower (ascending) so ai-learn's per-turn resolver
-    // can skip re-sorting. Also surface defaultStateId so the resolver avoids
-    // scanning for isStarting on every turn-1 call.
+    // can skip re-sorting. The starting state is emergent (the resolver opens
+    // in whichever range contains score 0), so there is no defaultStateId to
+    // pre-compute.
     if (Array.isArray(promptData.states) && promptData.states.length > 0) {
       promptData.states = [...promptData.states].sort(
         (a: any, b: any) => (a.scoreLower ?? 0) - (b.scoreLower ?? 0),
       );
-      const startingState = promptData.states.find((s: any) => s.isStarting);
-      promptData.defaultStateId = startingState?.id ?? promptData.states[0]?.id;
     }
 
     const scenarioData = {

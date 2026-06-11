@@ -806,8 +806,9 @@ export class ScenarioService {
     }
 
     // Mirror the state validation in validateUpdateScenario so create and
-    // update paths apply the same constraints (one starting, contiguous
-    // ranges, min gap 50, open bounds at ends).
+    // update paths apply the same constraints (contiguous ranges, min gap
+    // 50, finite bounds). The starting state is emergent (the range
+    // containing 0), so there is no starting-state rule.
     if (
       Array.isArray(createScenarioDto.states) &&
       createScenarioDto.states.length > 0

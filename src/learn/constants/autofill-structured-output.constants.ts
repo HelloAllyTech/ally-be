@@ -148,11 +148,12 @@ const BEHAVIOR_INSTRUCTIONS_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
 
 /**
  * Per-simulation states autofill schema. Each item describes one state
- * card in the studio editor; constraints (one starting, contiguous,
- * min gap 50, open bounds at ends) are enforced by `validateSimulationStates`
- * after parsing. We don't try to encode contiguity / min-gap in JSON Schema
- * because OpenAI's strict mode doesn't support that level of conditional
- * validation; the post-parse validation handles it.
+ * card in the studio editor; constraints (contiguous, min gap 50, open
+ * bounds at ends) are enforced by `validateSimulationStates` after parsing.
+ * We don't try to encode contiguity / min-gap in JSON Schema because
+ * OpenAI's strict mode doesn't support that level of conditional
+ * validation; the post-parse validation handles it. The starting state is
+ * emergent (the range containing 0), so there is no `isStarting` field.
  */
 const STATES_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
   name: 'simulation_states',
@@ -167,7 +168,6 @@ const STATES_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
           properties: {
             name: { type: 'string' },
             guidelines: { type: 'string' },
-            isStarting: { type: 'boolean' },
             scoreLower: { type: ['integer', 'null'] },
             scoreUpper: { type: ['integer', 'null'] },
             ragEnabled: { type: 'boolean' },
@@ -175,7 +175,6 @@ const STATES_SCHEMA: ResponseFormatJSONSchema.JSONSchema = {
           required: [
             'name',
             'guidelines',
-            'isStarting',
             'scoreLower',
             'scoreUpper',
             'ragEnabled',

@@ -69,9 +69,6 @@ export class SimulationStateAutofillItem {
   })
   guidelines!: string;
 
-  @ApiProperty({ description: 'Exactly one state must be marked starting.' })
-  isStarting!: boolean;
-
   @ApiProperty({
     description:
       'Inclusive lower bound on current_score; null = open (first state).',
