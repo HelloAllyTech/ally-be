@@ -65,6 +65,14 @@ export class ScenarioSessionTurnMetrics extends BaseEntity {
   @Column({ nullable: true })
   knowledgeRetrievalMs?: number;
 
+  /** Total time for the process_events fan-out branch (fan-in bottleneck). */
+  @Column({ nullable: true })
+  processEventsMs?: number;
+
+  /** Total time for the detect_behaviors fan-out branch (fan-in bottleneck). */
+  @Column({ nullable: true })
+  behaviorsMs?: number;
+
   // Dimensions ------------------------------------------------------------
   @Column({ nullable: true })
   scenarioId?: number;

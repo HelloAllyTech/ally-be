@@ -32,6 +32,8 @@ export interface LearnTurnMetricsData {
   prosody_ms?: number;
   branching_ms?: number;
   knowledge_retrieval_ms?: number;
+  process_events_ms?: number;
+  behaviors_ms?: number;
   scenario_id?: number;
   language?: string;
   llm_model?: string;

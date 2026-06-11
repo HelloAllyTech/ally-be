@@ -1448,6 +1448,8 @@ export class ScenarioSessionService {
       prosodyMs: metrics.prosody_ms,
       branchingMs: metrics.branching_ms,
       knowledgeRetrievalMs: metrics.knowledge_retrieval_ms,
+      processEventsMs: metrics.process_events_ms,
+      behaviorsMs: metrics.behaviors_ms,
       scenarioId: metrics.scenario_id ?? scenarioSession.scenarioId,
       language: metrics.language,
       llmModel: metrics.llm_model,
