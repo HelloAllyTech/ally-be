@@ -39,7 +39,6 @@ import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
   DEFAULT_OPENAI_TRANSLATION_SYSTEM_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_TRANSLATION_USER_PROMPT_TEMPLATE,
-  DEFAULT_OPENAI_GUARDRAIL_TRANSLATION_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_TEXT_TRANSLATION_PROMPT_TEMPLATE,
@@ -72,10 +71,6 @@ export class OpenAITranslationsService {
   private readonly USER_PROMPT_CODE = toPromptCode(
     'openai_translation',
     'speech_reexpression_user',
-  );
-  private readonly GUARDRAIL_PROMPT_CODE = toPromptCode(
-    'openai_translation',
-    'guardrail_translation',
   );
   private readonly BEHAVIOR_INSTRUCTION_PROMPT_CODE = toPromptCode(
     'openai_translation',
@@ -471,8 +466,6 @@ IMPORTANT:
 
   private getFallbackPromptTemplate(promptCode: string): string | undefined {
     const fallbackPromptMap: Record<string, string> = {
-      [this.GUARDRAIL_PROMPT_CODE]:
-        DEFAULT_OPENAI_GUARDRAIL_TRANSLATION_PROMPT_TEMPLATE,
       [this.BEHAVIOR_INSTRUCTION_PROMPT_CODE]:
         DEFAULT_OPENAI_BEHAVIOR_INSTRUCTION_TRANSLATION_PROMPT_TEMPLATE,
       [this.SESSION_EVENT_PROMPT_CODE]:

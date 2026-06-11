@@ -5,6 +5,7 @@ import { Pagination } from 'src/common/type/common.type';
 import { LoggerService } from 'src/logger/logger.service';
 import { MAX_GUARDRAILS_PER_SESSION } from '../constants/guardrails.constants';
 import { ConversationalGuardrailsSortBy } from '../enum/conversational-guardrails-sort-by.enum';
+import { ConversationalGuardrailKind } from '../enum/conversational-guardrails-kind.enum';
 
 @Injectable()
 export class ConversationalGuardrailsRepository extends Repository<ConversationalGuardrails> {
@@ -39,6 +40,34 @@ export class ConversationalGuardrailsRepository extends Repository<Conversationa
     }
 
     return query.getMany();
+  }
+
+  // SYSTEM guardrails are always injected into every session, regardless of
+  // the random USER-guardrail sampling.
+  async getSystemGuardrails() {
+    return this.createQueryBuilder('guardrail')
+      .where('guardrail.active = :active', { active: true })
+      .andWhere('guardrail.kind = :kind', {
+        kind: ConversationalGuardrailKind.SYSTEM,
+      })
+      .orderBy('guardrail.createdAt', 'ASC')
+      .getMany();
+  }
+
+  // Random active USER guardrails for a session, excluding SYSTEM rows (which
+  // are added separately so they are never crowded out by the random sample).
+  async getRandomUserGuardrails(limit: number) {
+    if (limit <= 0) {
+      return [];
+    }
+    return this.createQueryBuilder('guardrail')
+      .where('guardrail.active = :active', { active: true })
+      .andWhere('guardrail.kind = :kind', {
+        kind: ConversationalGuardrailKind.USER,
+      })
+      .orderBy('RANDOM()')
+      .limit(limit)
+      .getMany();
   }
 
   private applySorting(

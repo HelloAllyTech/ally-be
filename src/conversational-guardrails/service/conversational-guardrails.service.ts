@@ -1,24 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
+import { ConversationalGuardrails } from '../entity/conversational-guardrails.entity';
 import { ConversationalGuardrailsRepository } from '../repository/conversational-guardrails.repository';
-import { ConversationalGuardrailsTranslationsRepository } from '../repository/conversational-guardrails-translations.repository';
-import { ConversationalGuardrailsTranslationService } from './conversational-guardrails-translation.service';
 import { CreateConversationalGuardrailDto } from '../dto/create-conversational-guardrails.dto';
 import { Pagination } from 'src/common/type/common.type';
 import { MAX_GUARDRAILS_PER_SESSION } from '../constants/guardrails.constants';
-import {
-  CreateConversationalGuardrailTranslation,
-  GuardrailMetadata,
-  UpdateConversationalGuardrailTranslation,
-} from '../types/guardrail-translation.types';
+import { GuardrailMetadata } from '../types/guardrail-translation.types';
 import { UpdateConversationalGuardrailDto } from '../dto/update-conversational-guardrails.dto';
 
 @Injectable()
 export class ConversationalGuardrailsService {
   constructor(
     private guardrailsRepository: ConversationalGuardrailsRepository,
-    private translationsRepository: ConversationalGuardrailsTranslationsRepository,
-    private translationService: ConversationalGuardrailsTranslationService,
   ) {}
 
   async getGuardrails(search?: string, options?: Pagination) {
@@ -37,9 +34,7 @@ export class ConversationalGuardrailsService {
 
   async createGuardrail(createDto: CreateConversationalGuardrailDto) {
     const guardrail = this.guardrailsRepository.create(createDto);
-    const saved = await this.guardrailsRepository.save(guardrail);
-    this.translationService.createUpdateGuardrailTranslations([saved]);
-    return saved;
+    return this.guardrailsRepository.save(guardrail);
   }
 
   async updateGuardrail(
@@ -47,39 +42,45 @@ export class ConversationalGuardrailsService {
     updateDto: UpdateConversationalGuardrailDto,
   ) {
     const guardrail = await this.getGuardrailById(id);
+    // Mandatory (system) guardrails cannot be disabled or deleted (the admin
+    // dashboard deletes by setting active=false). Their dialogue text remains
+    // editable so super admins can refine the gibberish definition.
+    if (guardrail.mandatory && updateDto.active === false) {
+      throw new ForbiddenException(
+        'This guardrail is mandatory and cannot be disabled or deleted.',
+      );
+    }
     Object.assign(guardrail, updateDto);
-    const saved = await this.guardrailsRepository.save(guardrail);
-    this.translationService.createUpdateGuardrailTranslations([saved]);
-    return saved;
+    return this.guardrailsRepository.save(guardrail);
   }
 
-  async getRandomGuardrailsForSession(languageId?: number) {
-    const guardrails = await this.guardrailsRepository.getGuardrails(
-      undefined,
-      { limit: MAX_GUARDRAILS_PER_SESSION },
-    );
+  async getRandomGuardrailsForSession() {
+    const systemGuardrails =
+      await this.guardrailsRepository.getSystemGuardrails();
+    const userGuardrails =
+      await this.guardrailsRepository.getRandomUserGuardrails(
+        Math.max(MAX_GUARDRAILS_PER_SESSION - systemGuardrails.length, 0),
+      );
 
-    let guardrailsResponse = [];
-
-    if (languageId) {
-      const guardrailIds = guardrails.map((g) => g.id);
-      const translations =
-        await this.translationsRepository.getTranslationsForGuardrails(
-          guardrailIds,
-          languageId,
-        );
-
-      guardrailsResponse = translations;
-    } else {
-      guardrailsResponse = guardrails.map((g) => ({
-        helperDialogue: g.helperDialogue,
-        actorDialogue: g.actorDialogue,
-      }));
-    }
+    // Guardrails are not translated: the classifier judges the utterance
+    // against the boundary regardless of language, and the branching prompt
+    // makes the actor reply in the session language. The same guardrails
+    // therefore apply to every language.
+    const toMetadata = (g: ConversationalGuardrails): GuardrailMetadata => ({
+      helperDialogue: g.helperDialogue,
+      actorDialogue: g.actorDialogue,
+      kind: g.kind,
+    });
+    const systemItems = systemGuardrails.map(toMetadata);
+    const userItems = userGuardrails.map(toMetadata);
 
     return {
-      prompt: this.formatGuardrailsForPrompt(guardrailsResponse),
-      items: guardrailsResponse,
+      // SYSTEM guardrails fire dynamically via their branching instruction, so
+      // they are listed first but excluded from the static "must start with"
+      // prompt block. They remain in `items` so the agent creates a
+      // GuardrailEvent for them.
+      prompt: this.formatGuardrailsForPrompt(userItems),
+      items: [...systemItems, ...userItems],
     };
   }
 
@@ -94,31 +95,5 @@ export class ConversationalGuardrailsService {
     );
 
     return `Consider the following guardrails:\n${guardrailLines.join('\n')}`;
-  }
-
-  async createTranslation(createDto: CreateConversationalGuardrailTranslation) {
-    await this.getGuardrailById(createDto.guardrailId);
-    const translation = this.translationsRepository.create(createDto);
-    return this.translationsRepository.save(translation);
-  }
-
-  async updateTranslation(
-    id: string,
-    updateDto: UpdateConversationalGuardrailTranslation,
-  ) {
-    const translation = await this.translationsRepository.findOne({
-      where: { id },
-    });
-    if (!translation) {
-      throw new NotFoundException(`Translation with id ${id} not found`);
-    }
-    Object.assign(translation, updateDto);
-    return this.translationsRepository.save(translation);
-  }
-
-  async getTranslationsByGuardrailId(guardrailId: string) {
-    return this.translationsRepository.getTranslationsByGuardrailId(
-      guardrailId,
-    );
   }
 }

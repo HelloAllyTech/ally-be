@@ -16,7 +16,6 @@ describe('prompt-code.util', () => {
       const folderToCodes: Array<[string, string]> = [
         ['openai_translation', 'code_mixed_system'],
         ['openai_translation', 'speech_reexpression_user'],
-        ['openai_translation', 'guardrail_translation'],
         ['openai_translation', 'learn_behavior_instruction'],
         ['openai_translation', 'session_event'],
         ['openai_translation', 'general_text_translation'],

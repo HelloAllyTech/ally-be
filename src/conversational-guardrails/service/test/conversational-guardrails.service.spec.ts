@@ -1,15 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConversationalGuardrailsService } from '../conversational-guardrails.service';
 import { ConversationalGuardrailsRepository } from '../../repository/conversational-guardrails.repository';
-import { ConversationalGuardrailsTranslationsRepository } from '../../repository/conversational-guardrails-translations.repository';
-import { ConversationalGuardrailsTranslationService } from '../conversational-guardrails-translation.service';
 import { ConversationalGuardrails } from '../../entity/conversational-guardrails.entity';
-import { ConversationalGuardrailsTranslations } from '../../entity/conversational-guardrails-translations.entity';
 
 describe('ConversationalGuardrailsService', () => {
   let service: ConversationalGuardrailsService;
   let guardrailsRepository: jest.Mocked<ConversationalGuardrailsRepository>;
-  let translationsRepository: jest.Mocked<ConversationalGuardrailsTranslationsRepository>;
 
   const mockGuardrail: ConversationalGuardrails = {
     id: 'guardrail-uuid-1',
@@ -34,19 +30,11 @@ describe('ConversationalGuardrailsService', () => {
     } as ConversationalGuardrails,
   ];
 
-  const mockTranslation: ConversationalGuardrailsTranslations = {
-    id: 'translation-uuid-1',
-    guardrailId: 'guardrail-uuid-1',
-    languageId: 2,
-    helperDialogue: 'grosero',
-    actorDialogue: 'Por favor sea respetuoso',
-    createdAt: new Date('2026-01-01'),
-    updatedAt: new Date('2026-01-01'),
-  } as ConversationalGuardrailsTranslations;
-
   beforeEach(async () => {
     const mockGuardrailsRepository = {
       getGuardrails: jest.fn(),
+      getSystemGuardrails: jest.fn().mockResolvedValue([]),
+      getRandomUserGuardrails: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
@@ -56,36 +44,12 @@ describe('ConversationalGuardrailsService', () => {
       getRandomGuardrails: jest.fn(),
     };
 
-    const mockTranslationsRepository = {
-      getTranslationsByGuardrailId: jest.fn(),
-      getTranslationsForGuardrails: jest.fn(),
-      create: jest.fn(),
-      save: jest.fn(),
-      findOne: jest.fn(),
-      remove: jest.fn(),
-      delete: jest.fn(),
-    };
-
-    const mockTranslationService = {
-      createUpdateGuardrailTranslations: jest.fn().mockResolvedValue(undefined),
-      getGuardrailsWithTranslations: jest.fn(),
-      persistGuardrailTranslations: jest.fn(),
-    };
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ConversationalGuardrailsService,
         {
           provide: ConversationalGuardrailsRepository,
           useValue: mockGuardrailsRepository,
-        },
-        {
-          provide: ConversationalGuardrailsTranslationsRepository,
-          useValue: mockTranslationsRepository,
-        },
-        {
-          provide: ConversationalGuardrailsTranslationService,
-          useValue: mockTranslationService,
         },
       ],
     }).compile();
@@ -94,9 +58,6 @@ describe('ConversationalGuardrailsService', () => {
       ConversationalGuardrailsService,
     );
     guardrailsRepository = module.get(ConversationalGuardrailsRepository);
-    translationsRepository = module.get(
-      ConversationalGuardrailsTranslationsRepository,
-    );
   });
 
   afterEach(() => {
@@ -108,9 +69,8 @@ describe('ConversationalGuardrailsService', () => {
       expect(service).toBeDefined();
     });
 
-    it('should have all dependencies injected', () => {
+    it('should have its dependencies injected', () => {
       expect(guardrailsRepository).toBeDefined();
-      expect(translationsRepository).toBeDefined();
     });
   });
 
@@ -206,51 +166,57 @@ describe('ConversationalGuardrailsService', () => {
       expect(result.helperDialogue).toBe('Updated helper');
       expect(guardrailsRepository.save).toHaveBeenCalled();
     });
-  });
 
-  describe('Translation methods', () => {
-    describe('getTranslationsByGuardrailId', () => {
-      it('should return translations for a guardrail', async () => {
-        translationsRepository.getTranslationsByGuardrailId.mockResolvedValue([
-          mockTranslation,
-        ]);
+    it('should block disabling a mandatory guardrail', async () => {
+      const mandatoryGuardrail = {
+        ...mockGuardrail,
+        mandatory: true,
+      } as ConversationalGuardrails;
+      guardrailsRepository.findOne.mockResolvedValue(mandatoryGuardrail);
 
-        const result =
-          await service.getTranslationsByGuardrailId('guardrail-uuid-1');
-
-        expect(result).toEqual([mockTranslation]);
-        expect(
-          translationsRepository.getTranslationsByGuardrailId,
-        ).toHaveBeenCalledWith('guardrail-uuid-1');
-      });
+      await expect(
+        service.updateGuardrail('guardrail-uuid-1', { active: false }),
+      ).rejects.toThrow(
+        'This guardrail is mandatory and cannot be disabled or deleted.',
+      );
+      expect(guardrailsRepository.save).not.toHaveBeenCalled();
     });
 
-    describe('createTranslation', () => {
-      it('should create a translation for a guardrail', async () => {
-        const createDto = {
-          guardrailId: 'guardrail-uuid-1',
-          languageId: 2,
-          helperDialogue: 'grosero',
-          actorDialogue: 'Por favor sea respetuoso',
-        };
-
-        // Mock getGuardrailById check
-        guardrailsRepository.findOne.mockResolvedValue(mockGuardrail);
-
-        translationsRepository.create.mockReturnValue(mockTranslation);
-        translationsRepository.save.mockResolvedValue(mockTranslation);
-
-        const result = await service.createTranslation(createDto);
-
-        expect(result).toEqual(mockTranslation);
-        expect(translationsRepository.create).toHaveBeenCalledWith(createDto);
+    it('should allow editing the dialogue of a mandatory guardrail', async () => {
+      const mandatoryGuardrail = {
+        ...mockGuardrail,
+        mandatory: true,
+      } as ConversationalGuardrails;
+      guardrailsRepository.findOne.mockResolvedValue(mandatoryGuardrail);
+      guardrailsRepository.save.mockResolvedValue({
+        ...mandatoryGuardrail,
+        helperDialogue: 'Refined definition',
       });
+
+      const result = await service.updateGuardrail('guardrail-uuid-1', {
+        helperDialogue: 'Refined definition',
+      });
+
+      expect(result.helperDialogue).toBe('Refined definition');
+      expect(guardrailsRepository.save).toHaveBeenCalled();
     });
   });
 
   describe('getRandomGuardrailsForSession', () => {
+    const mockSystemGuardrail = {
+      id: 'system-uuid-1',
+      name: 'STT Coherence Guard',
+      helperDialogue: 'detect gibberish or out-of-context utterances',
+      actorDialogue: 'ask the counselor to repeat or rephrase',
+      active: true,
+      kind: 'SYSTEM',
+      mandatory: true,
+    } as unknown as ConversationalGuardrails;
+
     it('should return items array with correct helperDialogue and actorDialogue shape', async () => {
-      guardrailsRepository.getGuardrails.mockResolvedValue(mockGuardrails);
+      guardrailsRepository.getRandomUserGuardrails.mockResolvedValue(
+        mockGuardrails,
+      );
 
       const result = await service.getRandomGuardrailsForSession();
 
@@ -265,8 +231,10 @@ describe('ConversationalGuardrailsService', () => {
       });
     });
 
-    it('should return prompt string containing guardrail dialogues', async () => {
-      guardrailsRepository.getGuardrails.mockResolvedValue(mockGuardrails);
+    it('should return prompt string containing user guardrail dialogues', async () => {
+      guardrailsRepository.getRandomUserGuardrails.mockResolvedValue(
+        mockGuardrails,
+      );
 
       const result = await service.getRandomGuardrailsForSession();
 
@@ -275,29 +243,28 @@ describe('ConversationalGuardrailsService', () => {
       expect(result.prompt).toContain(mockGuardrails[0].actorDialogue);
     });
 
-    it('should use translations for non-English sessions', async () => {
-      guardrailsRepository.getGuardrails.mockResolvedValue(mockGuardrails);
-      translationsRepository.getTranslationsForGuardrails.mockResolvedValue([
-        mockTranslation,
+    it('should always include system guardrails (first) and exclude them from the prompt block', async () => {
+      guardrailsRepository.getSystemGuardrails.mockResolvedValue([
+        mockSystemGuardrail,
       ]);
-
-      const result = await service.getRandomGuardrailsForSession(2);
-
-      // use expect.objectContaining since translation object has extra fields
-      expect(result.items[0]).toEqual(
-        expect.objectContaining({
-          helperDialogue: mockTranslation.helperDialogue,
-          actorDialogue: mockTranslation.actorDialogue,
-        }),
+      guardrailsRepository.getRandomUserGuardrails.mockResolvedValue(
+        mockGuardrails,
       );
-      expect(
-        translationsRepository.getTranslationsForGuardrails,
-      ).toHaveBeenCalledWith(['guardrail-uuid-1', 'guardrail-uuid-2'], 2);
+
+      const result = await service.getRandomGuardrailsForSession();
+
+      // System first, then user — all using their own (untranslated) text.
+      expect(result.items).toHaveLength(3);
+      expect(result.items[0]).toEqual({
+        helperDialogue: mockSystemGuardrail.helperDialogue,
+        actorDialogue: mockSystemGuardrail.actorDialogue,
+        kind: 'SYSTEM',
+      });
+      // System guardrail fires dynamically, so it is not in the static prompt.
+      expect(result.prompt).not.toContain(mockSystemGuardrail.helperDialogue);
     });
 
     it('should return empty prompt string and empty items array when no guardrails exist', async () => {
-      guardrailsRepository.getGuardrails.mockResolvedValue([]);
-
       const result = await service.getRandomGuardrailsForSession();
 
       expect(result.prompt).toBe('');

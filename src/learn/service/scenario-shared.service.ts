@@ -362,15 +362,14 @@ export class ScenarioSharedService {
     const formattedBehaviorInstructionForMetadata =
       formatBehaviorInstructionsForLivekitMetadata(behaviorInstructions ?? []);
 
-    const { voiceId, promptData, langIsEnglish } =
-      await this.getScenarioTranslationData(
-        {
-          ...metadata,
-          title: scenario.title,
-          description: scenario.description,
-        },
-        scenario.id,
-      );
+    const { voiceId, promptData } = await this.getScenarioTranslationData(
+      {
+        ...metadata,
+        title: scenario.title,
+        description: scenario.description,
+      },
+      scenario.id,
+    );
 
     const languageCode = metadata?.language as LanguageCode;
 
@@ -586,9 +585,7 @@ export class ScenarioSharedService {
     }));
 
     const guardrails =
-      await this.conversationalGuardrailsService.getRandomGuardrailsForSession(
-        langIsEnglish ? undefined : languageDetails?.id,
-      );
+      await this.conversationalGuardrailsService.getRandomGuardrailsForSession();
 
     const prompts = await this.getPromptsForScenarioSession();
     scenarioData.promptData.prompts = prompts;
