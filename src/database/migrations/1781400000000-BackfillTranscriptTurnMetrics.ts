@@ -19,9 +19,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Covers history up to deploy time; ongoing new sessions are handled separately
  * (scheduled job). Re-runnable via down() (deletes all source='transcript').
  */
-export class BackfillTranscriptTurnMetrics1781400000000
-  implements MigrationInterface
-{
+export class BackfillTranscriptTurnMetrics1781400000000 implements MigrationInterface {
   name = 'BackfillTranscriptTurnMetrics1781400000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
