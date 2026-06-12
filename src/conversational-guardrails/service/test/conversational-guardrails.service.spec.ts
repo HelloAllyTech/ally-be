@@ -211,6 +211,7 @@ describe('ConversationalGuardrailsService', () => {
       active: true,
       kind: 'SYSTEM',
       mandatory: true,
+      detectorType: 'COHERENCE',
     } as unknown as ConversationalGuardrails;
 
     it('should return items array with correct helperDialogue and actorDialogue shape', async () => {
@@ -259,6 +260,7 @@ describe('ConversationalGuardrailsService', () => {
         helperDialogue: mockSystemGuardrail.helperDialogue,
         actorDialogue: mockSystemGuardrail.actorDialogue,
         kind: 'SYSTEM',
+        detectorType: 'COHERENCE',
       });
       // System guardrail fires dynamically, so it is not in the static prompt.
       expect(result.prompt).not.toContain(mockSystemGuardrail.helperDialogue);

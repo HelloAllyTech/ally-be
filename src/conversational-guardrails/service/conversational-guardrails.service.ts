@@ -70,6 +70,7 @@ export class ConversationalGuardrailsService {
       helperDialogue: g.helperDialogue,
       actorDialogue: g.actorDialogue,
       kind: g.kind,
+      detectorType: g.detectorType,
     });
     const systemItems = systemGuardrails.map(toMetadata);
     const userItems = userGuardrails.map(toMetadata);
