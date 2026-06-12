@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+    # Come back automatically after a Docker/Colima restart (matches the other
+    # services and ally-web). Without this the API stays down while infra returns.
+    restart: unless-stopped
     ports:
       # Map container port to host based on app PORT (.env). Default PORT=8001.
       - '8001:8001'
@@ -77,6 +80,7 @@ services:
       - /var/www/i18n:/var/www/i18n
   postgres:
     image: postgres:14-alpine
+    restart: unless-stopped
     ports:
       - '5477:5432'
     env_file:
@@ -94,6 +98,7 @@ services:
 
   redis:
     image: redis:latest
+    restart: unless-stopped
     ports:
       - '6379:6379'
     networks:
@@ -104,6 +109,7 @@ services:
   # matches the classic community image (SQS-only here) without login.
   localstack:
     image: localstack/localstack:3.8.1
+    restart: unless-stopped
     container_name: localstack
     ports:
       - '4566:4566'
