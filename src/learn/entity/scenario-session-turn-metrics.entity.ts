@@ -106,6 +106,16 @@ export class ScenarioSessionTurnMetrics extends BaseEntity {
   @Column({ type: 'timestamp', nullable: true })
   occurredAt?: Date;
 
+  /**
+   * How this row's metrics were produced:
+   *  - 'pipeline'   — emitted live by the agent (full breakdown columns set)
+   *  - 'transcript' — derived from scenario_session_messages start/end timings
+   *                   (responseLatencyMs only; breakdown columns NULL).
+   * Dashboards MUST filter/group by this so the two methods aren't mixed.
+   */
+  @Column({ default: 'pipeline' })
+  source!: string;
+
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
 }
