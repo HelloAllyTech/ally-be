@@ -25,6 +25,8 @@ import {
 import {
   AnalyticsOverviewQueryDto,
   AnalyticsOverviewResponseDto,
+  VoiceLatencyQueryDto,
+  VoiceLatencyResponseDto,
 } from '../dto/platform-analytics.dto';
 import {
   ApiTags,
@@ -68,6 +70,30 @@ export class AnalyticsController {
     @Query() query: AnalyticsOverviewQueryDto,
   ): Promise<AnalyticsOverviewResponseDto> {
     return this.platformAnalyticsService.getOverview(query.range ?? '30d');
+  }
+
+  @Get('voice-latency')
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Voice-to-voice latency trend (super-admin)',
+    description:
+      'Per-bucket avg / p50 / p95 voice-to-voice latency from ' +
+      'scenario_session_turn_metrics, split by `source` (live pipeline vs ' +
+      'historical transcript). Bucket granularity follows the `range` param ' +
+      '(30d -> day, 90d -> week, 12m -> month).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Voice-to-voice latency trend retrieved successfully',
+    type: VoiceLatencyResponseDto,
+  })
+  async getVoiceLatency(
+    @Query() query: VoiceLatencyQueryDto,
+  ): Promise<VoiceLatencyResponseDto> {
+    return this.platformAnalyticsService.getVoiceLatency(
+      query.range ?? '90d',
+      query.bucket,
+    );
   }
 
   @ApiOperation({ summary: 'Get all dashboards' })

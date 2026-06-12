@@ -6,7 +6,7 @@ import { ScenarioSessionEventStatus } from '../../learn/enum/scenario-session-st
  * Bucket granularity for time-series aggregation. Controlled internally by the
  * service (never user input) so it is safe to interpolate into `date_trunc`.
  */
-export type AnalyticsBucket = 'week' | 'month';
+export type AnalyticsBucket = 'day' | 'week' | 'month';
 
 export interface NewUsersBucketRow {
   /** Bucket start as a calendar date string (yyyy-mm-dd). */
@@ -39,6 +39,21 @@ export interface UsersByRoleRow {
   count: number;
 }
 
+export interface VoiceLatencyBucketRow {
+  /** Bucket start as a calendar date string (yyyy-mm-dd). */
+  bucket: string;
+  /** How the metrics were produced: 'pipeline' (live agent) or 'transcript'. */
+  source: string;
+  /** Turns aggregated into this bucket. */
+  turns: number;
+  /** Mean voice-to-voice latency (ms) in the bucket. */
+  avgMs: number;
+  /** Median (p50) voice-to-voice latency (ms) in the bucket. */
+  p50Ms: number;
+  /** p95 voice-to-voice latency (ms) in the bucket. */
+  p95Ms: number;
+}
+
 /**
  * Raw cross-table aggregation for the super-admin analytics overview.
  *
@@ -61,10 +76,12 @@ export interface UsersByRoleRow {
 export class PlatformAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  private resolveBucket(bucket: AnalyticsBucket): 'week' | 'month' {
+  private resolveBucket(bucket: AnalyticsBucket): 'day' | 'week' | 'month' {
     // Defense-in-depth: bucket is internal, but never interpolate anything we
     // have not explicitly whitelisted.
-    return bucket === 'month' ? 'month' : 'week';
+    if (bucket === 'day') return 'day';
+    if (bucket === 'month') return 'month';
+    return 'week';
   }
 
   /**
@@ -261,6 +278,72 @@ export class PlatformAnalyticsRepository {
       .getRawOne<{ count: number }>();
 
     return Number(row?.count) || 0;
+  }
+
+  /**
+   * Voice-to-voice latency aggregated per time bucket AND per `source`
+   * (pipeline vs transcript) within [start, end), over
+   * `scenario_session_turn_metrics`. Returns avg / p50 / p95 of
+   * `responseLatencyMs` plus the turn count for each (bucket, source) pair.
+   *
+   * Split by `source` so the live-pipeline trend and the historical
+   * transcript-derived trend are never silently mixed (they measure latency
+   * differently). The table is not registered as a TypeORM entity here, so it
+   * is queried by name via the DataSource query builder; `occurredAt` is the
+   * tz-naive turn timestamp, so `date_trunc` is pure calendar math (matches the
+   * service's UTC axis). Buckets with no turns are simply absent — latency has
+   * no meaningful zero, so the service does NOT gap-fill these.
+   */
+  async getVoiceLatencyByBucket(
+    start: Date,
+    end: Date,
+    bucket: AnalyticsBucket,
+  ): Promise<VoiceLatencyBucketRow[]> {
+    const trunc = this.resolveBucket(bucket);
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select(
+        `to_char(date_trunc('${trunc}', m."occurredAt"), 'YYYY-MM-DD')`,
+        'bucket',
+      )
+      .addSelect('m."source"', 'source')
+      .addSelect('COUNT(*)::int', 'turns')
+      .addSelect('round(avg(m."responseLatencyMs"))::int', 'avgMs')
+      .addSelect(
+        `round(percentile_cont(0.5) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p50Ms',
+      )
+      .addSelect(
+        `round(percentile_cont(0.95) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p95Ms',
+      )
+      .from('scenario_session_turn_metrics', 'm')
+      .where('m."occurredAt" >= :start', { start })
+      .andWhere('m."occurredAt" < :end', { end })
+      .andWhere('m."responseLatencyMs" IS NOT NULL')
+      .groupBy('bucket')
+      .addGroupBy('m."source"')
+      .orderBy('bucket', 'ASC')
+      .addOrderBy('m."source"', 'ASC')
+      .getRawMany<{
+        bucket: string;
+        source: string;
+        turns: number;
+        avgMs: number;
+        p50Ms: number;
+        p95Ms: number;
+      }>();
+
+    return rows.map((r) => ({
+      bucket: r.bucket,
+      source: r.source,
+      turns: Number(r.turns) || 0,
+      avgMs: Number(r.avgMs) || 0,
+      p50Ms: Number(r.p50Ms) || 0,
+      p95Ms: Number(r.p95Ms) || 0,
+    }));
   }
 
   /** Completed simulations whose completion timestamp is on/after `since`. */

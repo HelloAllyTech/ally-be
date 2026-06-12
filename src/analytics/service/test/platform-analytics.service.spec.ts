@@ -47,6 +47,7 @@ describe('PlatformAnalyticsService', () => {
       getActiveUserCountSince: jest.fn().mockResolvedValue(0),
       getReturningActiveUserCountSince: jest.fn().mockResolvedValue(0),
       getCompletedSimsSince: jest.fn().mockResolvedValue(0),
+      getVoiceLatencyByBucket: jest.fn().mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -215,6 +216,76 @@ describe('PlatformAnalyticsService', () => {
         expect.any(Date),
         'week',
       );
+    });
+  });
+
+  describe('getVoiceLatency', () => {
+    it('defaults to daily buckets for the 30d range over the 30-day window', async () => {
+      await service.getVoiceLatency('30d');
+
+      expect(repo.getVoiceLatencyByBucket).toHaveBeenCalledWith(
+        new Date('2024-05-14T00:00:00.000Z'), // today - 29d
+        new Date('2024-06-13T00:00:00.000Z'), // start of tomorrow
+        'day',
+      );
+    });
+
+    it('defaults to weekly buckets for the 90d range', async () => {
+      await service.getVoiceLatency('90d');
+
+      const [start, end, bucket] = repo.getVoiceLatencyByBucket.mock.calls[0];
+      expect(bucket).toBe('week');
+      expect(start).toEqual(new Date('2024-03-15T00:00:00.000Z')); // today - 89d
+      expect(end).toEqual(new Date('2024-06-13T00:00:00.000Z'));
+    });
+
+    it('defaults to monthly buckets for the 12m range', async () => {
+      await service.getVoiceLatency('12m');
+      expect(repo.getVoiceLatencyByBucket).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'month',
+      );
+    });
+
+    it('honours an explicit bucket override while keeping the range window', async () => {
+      await service.getVoiceLatency('12m', 'week');
+
+      const [start, , bucket] = repo.getVoiceLatencyByBucket.mock.calls[0];
+      // bucket overridden, but the window is still the 12-month range start.
+      expect(bucket).toBe('week');
+      expect(start).toEqual(new Date('2023-07-01T00:00:00.000Z'));
+    });
+
+    it('passes repo points through and includes the range, bucket and target', async () => {
+      const points = [
+        {
+          bucket: '2024-06-10',
+          source: 'pipeline',
+          turns: 12,
+          avgMs: 4858,
+          p50Ms: 4200,
+          p95Ms: 8046,
+        },
+        {
+          bucket: '2024-06-10',
+          source: 'transcript',
+          turns: 4,
+          avgMs: 4421,
+          p50Ms: 4000,
+          p95Ms: 6597,
+        },
+      ];
+      repo.getVoiceLatencyByBucket.mockResolvedValue(points);
+
+      const result = await service.getVoiceLatency('90d');
+
+      expect(result).toEqual({
+        range: '90d',
+        bucket: 'week',
+        targetMs: 1500,
+        points,
+      });
     });
   });
 });

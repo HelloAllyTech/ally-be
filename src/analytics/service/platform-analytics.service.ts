@@ -2,11 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import {
   ActiveUsersPointDto,
+  AnalyticsBucketParam,
   AnalyticsOverviewResponseDto,
   AnalyticsRange,
   RetentionPointDto,
   SimulationsCompletedPointDto,
   UserGrowthPointDto,
+  VoiceLatencyResponseDto,
 } from '../dto/platform-analytics.dto';
 import {
   AnalyticsBucket,
@@ -18,6 +20,9 @@ import {
 } from '../repository/platform-analytics.repository';
 
 const MS_PER_DAY = 86_400_000;
+
+/** Voice-to-voice latency target (ms) — the reference line on the trend. */
+const VOICE_LATENCY_TARGET_MS = 1500;
 
 /**
  * All bucketing/axis math is done in UTC. `date_trunc` on the tz-naive
@@ -160,6 +165,58 @@ export class PlatformAnalyticsService {
       ),
       retention: this.buildRetention(weeklyActive, windowStart, endExclusive),
       usersByRole,
+    };
+  }
+
+  /**
+   * Voice-to-voice latency trend, split by `source` (pipeline vs transcript).
+   * The `range` selects the time window; the bucket granularity defaults to the
+   * range (30d -> day, 90d -> week, 12m -> month) but can be overridden via
+   * `bucketParam` so the same window can be viewed day- or week-wise.
+   *
+   * Points are returned as-is from the DB (sorted by bucket then source); no
+   * gap-fill, because a bucket with no turns has no meaningful latency value.
+   */
+  async getVoiceLatency(
+    range: AnalyticsRange,
+    bucketParam?: AnalyticsBucketParam,
+  ): Promise<VoiceLatencyResponseDto> {
+    const now = new Date();
+    const todayStart = startOfUtcDay(now);
+    const endExclusive = addDays(todayStart, 1);
+
+    let defaultBucket: AnalyticsBucket;
+    let windowStart: Date;
+    if (range === '30d') {
+      defaultBucket = 'day';
+      windowStart = addDays(todayStart, -29);
+    } else if (range === '90d') {
+      defaultBucket = 'week';
+      windowStart = addDays(todayStart, -89);
+    } else {
+      defaultBucket = 'month';
+      windowStart = startOfUtcMonth(addMonths(todayStart, -11));
+    }
+
+    const bucket: AnalyticsBucket = bucketParam ?? defaultBucket;
+
+    this.logger.info(
+      `Building voice-latency trend range=${range} window=[${isoDate(
+        windowStart,
+      )},${isoDate(endExclusive)}) bucket=${bucket}`,
+    );
+
+    const points = await this.repo.getVoiceLatencyByBucket(
+      windowStart,
+      endExclusive,
+      bucket,
+    );
+
+    return {
+      range,
+      bucket,
+      targetMs: VOICE_LATENCY_TARGET_MS,
+      points,
     };
   }
 

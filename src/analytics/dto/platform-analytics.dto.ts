@@ -9,6 +9,10 @@ import { ApiProperty } from '@nestjs/swagger';
 export const ANALYTICS_RANGES = ['30d', '90d', '12m'] as const;
 export type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
 
+/** Bucket granularities a client may explicitly request for a trend. */
+export const ANALYTICS_BUCKETS = ['day', 'week', 'month'] as const;
+export type AnalyticsBucketParam = (typeof ANALYTICS_BUCKETS)[number];
+
 export class AnalyticsOverviewQueryDto {
   @ApiProperty({
     description: 'Time window for the analytics overview',
@@ -19,6 +23,79 @@ export class AnalyticsOverviewQueryDto {
   @IsOptional()
   @IsIn(ANALYTICS_RANGES)
   range?: AnalyticsRange;
+}
+
+export class VoiceLatencyQueryDto {
+  @ApiProperty({
+    description: 'Time window for the voice-to-voice latency trend',
+    enum: ANALYTICS_RANGES,
+    default: '90d',
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(ANALYTICS_RANGES)
+  range?: AnalyticsRange;
+
+  @ApiProperty({
+    description:
+      'Bucket granularity. Defaults to the range default ' +
+      '(30d -> day, 90d -> week, 12m -> month) when omitted.',
+    enum: ANALYTICS_BUCKETS,
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(ANALYTICS_BUCKETS)
+  bucket?: AnalyticsBucketParam;
+}
+
+export class VoiceLatencyPointDto {
+  @ApiProperty({ description: 'Bucket start date (ISO yyyy-mm-dd)' })
+  bucket!: string;
+
+  @ApiProperty({
+    description:
+      "How the metric was produced: 'pipeline' (live agent, full breakdown) " +
+      "or 'transcript' (historical, derived from message timings)",
+  })
+  source!: string;
+
+  @ApiProperty({ description: 'Turns aggregated into this bucket' })
+  turns!: number;
+
+  @ApiProperty({ description: 'Mean voice-to-voice latency (ms)' })
+  avgMs!: number;
+
+  @ApiProperty({ description: 'Median (p50) voice-to-voice latency (ms)' })
+  p50Ms!: number;
+
+  @ApiProperty({ description: 'p95 voice-to-voice latency (ms)' })
+  p95Ms!: number;
+}
+
+export class VoiceLatencyResponseDto {
+  @ApiProperty({
+    description: 'Time window the trend was computed over',
+    enum: ANALYTICS_RANGES,
+  })
+  range!: AnalyticsRange;
+
+  @ApiProperty({
+    description: 'Bucket granularity (day / week / month) for this range',
+  })
+  bucket!: string;
+
+  @ApiProperty({
+    description: 'Latency target line for reference (ms)',
+  })
+  targetMs!: number;
+
+  @ApiProperty({
+    description:
+      'Per-bucket, per-source latency points (sorted by bucket then source). ' +
+      'Buckets with no turns are omitted — latency has no meaningful zero.',
+    type: [VoiceLatencyPointDto],
+  })
+  points!: VoiceLatencyPointDto[];
 }
 
 export class AnalyticsSummaryDto {
