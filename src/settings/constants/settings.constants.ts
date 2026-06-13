@@ -112,3 +112,12 @@ export const DEFAULT_SUMMARY_FIELDS_ARRAY = [
 export const DEFAULT_SUMMARY_FIELDS_SET = new Set(DEFAULT_SUMMARY_FIELDS_ARRAY);
 
 export const DEFAULT_CHAT_TYPES = Object.values(ChatTypes);
+
+/**
+ * Names of the global_settings rows that hold editable legal page content.
+ * Each row stores `{ html: string }` in its jsonb `value` column.
+ */
+export const LEGAL_CONTENT_NAMES = {
+  TERMS: 'legal_terms',
+  PRIVACY: 'legal_privacy',
+} as const;

@@ -11,6 +11,9 @@ import {
 } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { Public } from 'src/auth/decorators/auth.metadata';
+import { UpdateLegalContentDto } from '../dto/legal-content.dto';
+import { LEGAL_CONTENT_NAMES } from '../constants/settings.constants';
 import {
   GetSummaryFieldsDto,
   UpdateSummaryFieldsDto,
@@ -240,5 +243,61 @@ export class SettingsController {
   @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_CHAT_TYPES])
   updateHiddenChatTypes(@Body() body: UpdateChatTypesDto) {
     return this.service.updateChatTypes(body);
+  }
+
+  @Get('terms')
+  @Public()
+  @ApiOperation({ summary: 'Get Terms of Service content (public)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the Terms of Service HTML content',
+  })
+  getTerms() {
+    return this.service.getLegalContent(LEGAL_CONTENT_NAMES.TERMS);
+  }
+
+  @Get('privacy')
+  @Public()
+  @ApiOperation({ summary: 'Get Privacy Policy content (public)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the Privacy Policy HTML content',
+  })
+  getPrivacy() {
+    return this.service.getLegalContent(LEGAL_CONTENT_NAMES.PRIVACY);
+  }
+
+  @Put('terms')
+  @ApiOperation({
+    summary: 'Update Terms of Service content (super admin only)',
+  })
+  @ApiBody({ type: UpdateLegalContentDto })
+  @ApiResponse({ status: 200, description: 'Terms of Service updated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - only super admin can update',
+  })
+  @AuthPermissions([PERMISSIONS.SYSTEM_ACCESS])
+  updateTerms(@Body() body: UpdateLegalContentDto) {
+    return this.service.updateLegalContent(
+      LEGAL_CONTENT_NAMES.TERMS,
+      body.html,
+    );
+  }
+
+  @Put('privacy')
+  @ApiOperation({ summary: 'Update Privacy Policy content (super admin only)' })
+  @ApiBody({ type: UpdateLegalContentDto })
+  @ApiResponse({ status: 200, description: 'Privacy Policy updated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - only super admin can update',
+  })
+  @AuthPermissions([PERMISSIONS.SYSTEM_ACCESS])
+  updatePrivacy(@Body() body: UpdateLegalContentDto) {
+    return this.service.updateLegalContent(
+      LEGAL_CONTENT_NAMES.PRIVACY,
+      body.html,
+    );
   }
 }

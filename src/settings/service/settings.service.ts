@@ -21,7 +21,10 @@ import {
   HiddenSectionsPreferenceValue,
   SummaryPreferenceValue,
 } from '../../common/type/common.type';
-import { DEFAULT_CHAT_TYPES } from '../constants/settings.constants';
+import {
+  DEFAULT_CHAT_TYPES,
+  LEGAL_CONTENT_NAMES,
+} from '../constants/settings.constants';
 import {
   DEFAULT_HIDDEN_SECTION_IDS,
   SECTION_ID_TO_FIELD_IDS,
@@ -30,6 +33,8 @@ import {
 } from '../constants/summary-sections.constants';
 import { DataSource, EntityManager } from 'typeorm';
 import * as _ from 'lodash';
+import { GlobalSettingsRepository } from '../repository/global-settings.repository';
+import { sanitizeDescriptionHtml } from '../../common/util/sanitize-html.util';
 import { ChatTypes } from '../../common/constants/chat.constants';
 import {
   GetSummaryFieldsDto,
@@ -55,7 +60,54 @@ export class SettingsService {
     private permissionsService: PermissionsService,
     private readonly adminTenantService: AdminTenantService,
     private readonly dataSource: DataSource,
+    private readonly globalSettingsRepository: GlobalSettingsRepository,
   ) {}
+
+  /**
+   * Read editable legal page content (Terms / Privacy) stored as a
+   * global_settings row. Returns an empty string if it hasn't been set yet.
+   */
+  async getLegalContent(
+    name: (typeof LEGAL_CONTENT_NAMES)[keyof typeof LEGAL_CONTENT_NAMES],
+  ): Promise<{ html: string }> {
+    const row = await this.globalSettingsRepository.findOne({
+      where: { name },
+    });
+    const html = (row?.value as { html?: string } | undefined)?.html ?? '';
+    return { html };
+  }
+
+  /**
+   * Upsert editable legal page content. Sanitizes the incoming HTML before
+   * persisting. Access is gated to super admins at the controller layer.
+   */
+  async updateLegalContent(
+    name: (typeof LEGAL_CONTENT_NAMES)[keyof typeof LEGAL_CONTENT_NAMES],
+    html: string,
+  ): Promise<{ success: boolean }> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('User ID is required');
+    }
+    const sanitized = sanitizeDescriptionHtml(html ?? '');
+    const existing = await this.globalSettingsRepository.findOne({
+      where: { name },
+    });
+    if (existing) {
+      existing.value = { html: sanitized };
+      existing.updatedBy = parseInt(userId);
+      await this.globalSettingsRepository.save(existing);
+    } else {
+      const entity = this.globalSettingsRepository.create({
+        name,
+        value: { html: sanitized },
+        createdBy: parseInt(userId),
+        updatedBy: parseInt(userId),
+      });
+      await this.globalSettingsRepository.save(entity);
+    }
+    return { success: true };
+  }
 
   private async resolveTenantCode(tenantId: string): Promise<string> {
     const isUuid =
