@@ -240,6 +240,61 @@ export class AuthService {
     };
   }
 
+  /**
+   * Local/dev only: issues tokens for a seeded user by email, bypassing the
+   * OTP flow. Hard-gated by `isDevLoginEnabled` (NODE_ENV=local or
+   * ENABLE_DEV_LOGIN=true) so it can never mint tokens in production.
+   */
+  async devLogin(email: string): Promise<AuthenticationResponseDto> {
+    if (!this.configService.isDevLoginEnabled) {
+      throw new ForbiddenException('Developer login is disabled');
+    }
+
+    // Restrict to the configured TEST_ACCOUNTS allowlist so that even if dev
+    // login is enabled on a shared dev server, only designated seeded accounts
+    // can be used — never arbitrary real users.
+    const testAccounts = this.getTestAccounts();
+    if (!testAccounts[email]) {
+      this.logger.error(`Dev login: ${email} is not a configured test account`);
+      throw new ForbiddenException(
+        'Developer login is only allowed for configured test accounts',
+      );
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { email, status: UserStatus.ACTIVE },
+      select: ['id', 'username', 'tenantId'],
+    });
+
+    if (!user) {
+      this.logger.error(`Dev login: no active user for email ${email}`);
+      throw new NotFoundException(
+        'No active account found associated with this email',
+      );
+    }
+
+    const tokens = await this.generateTokens(user as User);
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.USER_LOGIN_SUCCESS,
+      tenantId: user.tenantId,
+      userId: user.id,
+      details: {
+        email,
+        authProvider: 'DEV_LOGIN',
+      },
+    });
+
+    return {
+      user: {
+        id: user.id,
+        username: user.username,
+      },
+      ...tokens,
+      tokenType: 'bearer',
+    };
+  }
+
   async logout(userId: number) {
     // Delete all refresh tokens for the user
     await this.refreshTokenRepository.delete({ userId });

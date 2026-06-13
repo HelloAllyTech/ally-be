@@ -266,6 +266,18 @@ export class AppConfigService {
     return explicit || isLocalOnly;
   }
 
+  /**
+   * Local/dev only: enables the password-less `/auth/dev-login` endpoint that
+   * mints tokens for a seeded user without the OTP flow. Enabled when
+   * NODE_ENV=local, or explicitly via ENABLE_DEV_LOGIN=true. Must never be
+   * enabled in production.
+   */
+  get isDevLoginEnabled(): boolean {
+    const explicit =
+      this.configService.get<string>('ENABLE_DEV_LOGIN') === 'true';
+    return explicit || this.isLocal;
+  }
+
   get app() {
     return {
       baseUrl: this.configService.get<string>('APP_BASE_URL'),

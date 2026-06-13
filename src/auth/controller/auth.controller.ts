@@ -13,6 +13,7 @@ import { AuthService } from '../service/auth.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import {
   LoginDto,
+  DevLoginDto,
   GenerateOtpV2Dto,
   GenerateOtpV2ResponseDto,
   VerifyOtpV2Dto,
@@ -47,6 +48,19 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto.username, loginDto.password);
+  }
+
+  /**
+   * Local/dev only: log in as a seeded user without OTP. Gated server-side by
+   * `isDevLoginEnabled` (returns 403 otherwise), so it is inert in production.
+   */
+  @Post('dev-login')
+  @Version('1')
+  @HttpCode(HttpStatus.OK)
+  async devLogin(
+    @Body() devLoginDto: DevLoginDto,
+  ): Promise<AuthenticationResponseDto> {
+    return this.authService.devLogin(devLoginDto.email);
   }
 
   @Post('generate-otp')

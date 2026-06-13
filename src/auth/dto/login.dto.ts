@@ -7,6 +7,7 @@ import {
   IsBoolean,
   IsNumber,
   IsOptional,
+  IsEmail,
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
@@ -29,6 +30,18 @@ export class LoginDto {
   @IsString()
   @IsNotEmpty()
   password!: string;
+}
+
+export class DevLoginDto {
+  @ApiProperty({
+    description:
+      'Email of the seeded user to log in as. Local/dev only — bypasses OTP.',
+    example: 'admin@example.com',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @IsEmail()
+  email!: string;
 }
 
 export class GenerateOtpV2Dto {
