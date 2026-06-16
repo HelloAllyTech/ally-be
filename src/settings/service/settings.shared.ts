@@ -10,7 +10,12 @@ import {
   CreateAppVersionSettingsDto,
   UpdateAppVersionSettingsDto,
 } from 'src/app-version/dto/app-version-settings.dto';
-import { AppVersionSettingsEnum } from '../type/settings.type';
+import { AppVersionSettingsEnum, LegalContentKey } from '../type/settings.type';
+import {
+  LegalContentResponseDto,
+  UpdateLegalContentDto,
+} from '../dto/legal-content.dto';
+import { sanitizeLegalHtml } from 'src/common/util/sanitize-html.util';
 import { MinimumVersionResponseDto } from 'src/app-version/dto/minimum-version-response.dto';
 import { In } from 'typeorm';
 
@@ -19,6 +24,52 @@ export class SettingsShared {
   constructor(
     private readonly globalSettingsRepository: GlobalSettingsRepository,
   ) {}
+
+  /**
+   * Read platform-wide legal/consent HTML by key. Returns an empty string
+   * (not a 404) when the row has not been created yet, so clients can render
+   * gracefully before an admin has saved any content.
+   */
+  async getLegalContent(key: LegalContentKey): Promise<LegalContentResponseDto> {
+    const setting = await this.globalSettingsRepository.findOne({
+      where: { name: key },
+    });
+    return { html: (setting?.value?.html as string) ?? '' };
+  }
+
+  /**
+   * Upsert platform-wide legal/consent HTML by key.
+   */
+  async updateLegalContent(
+    key: LegalContentKey,
+    dto: UpdateLegalContentDto,
+  ): Promise<{ success: boolean }> {
+    const userId = Number(ExecutionManager.getUserId());
+
+    // Sanitize on write so every consumer gets safe HTML regardless of client.
+    const value: Record<string, any> = { html: sanitizeLegalHtml(dto.html) };
+
+    const existing = await this.globalSettingsRepository.findOne({
+      where: { name: key },
+    });
+
+    if (existing) {
+      await this.globalSettingsRepository.update(existing.id, {
+        value,
+        updatedBy: userId,
+      });
+    } else {
+      const created = this.globalSettingsRepository.create({
+        name: key,
+        value,
+        createdBy: userId,
+        updatedBy: userId,
+      });
+      await this.globalSettingsRepository.save(created);
+    }
+
+    return { success: true };
+  }
 
   async createGlobalSettings(
     createAppVersionSettingsDto: CreateAppVersionSettingsDto,

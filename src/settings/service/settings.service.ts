@@ -38,6 +38,9 @@ import {
 import { UpdateSummarySectionsDto } from '../dto/summary-sections.dto';
 import { GetChatTypesDto, UpdateChatTypesDto } from '../dto/chat-types.dto';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
+import { SettingsShared } from './settings.shared';
+import { LegalContentKey } from '../type/settings.type';
+import { UpdateLegalContentDto } from '../dto/legal-content.dto';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { AdminTenantService } from 'src/user/service/admin-tenant.service';
 import { CustomFieldType } from '../../custom-fields/entity/custom-field-definition.entity';
@@ -55,7 +58,16 @@ export class SettingsService {
     private permissionsService: PermissionsService,
     private readonly adminTenantService: AdminTenantService,
     private readonly dataSource: DataSource,
+    private readonly settingsShared: SettingsShared,
   ) {}
+
+  getLegalContent(key: LegalContentKey) {
+    return this.settingsShared.getLegalContent(key);
+  }
+
+  updateLegalContent(key: LegalContentKey, dto: UpdateLegalContentDto) {
+    return this.settingsShared.updateLegalContent(key, dto);
+  }
 
   private async resolveTenantCode(tenantId: string): Promise<string> {
     const isUuid =

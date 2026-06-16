@@ -11,6 +11,12 @@ import {
 } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { Public } from 'src/auth/decorators/auth.metadata';
+import { LegalContentKey } from '../type/settings.type';
+import {
+  LegalContentResponseDto,
+  UpdateLegalContentDto,
+} from '../dto/legal-content.dto';
 import {
   GetSummaryFieldsDto,
   UpdateSummaryFieldsDto,
@@ -240,5 +246,64 @@ export class SettingsController {
   @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_CHAT_TYPES])
   updateHiddenChatTypes(@Body() body: UpdateChatTypesDto) {
     return this.service.updateChatTypes(body);
+  }
+
+  // --- Legal / consent content (Terms, Privacy, sign-in Terms & Agreement) ---
+  // GETs are public so unauthenticated legal pages and the post-login consent
+  // popup (whose token isn't persisted yet) can read the content. Edits are
+  // restricted to admins via EDIT_GLOBAL_SETTINGS.
+
+  @Public()
+  @Get('terms')
+  @ApiOperation({ summary: 'Get Terms of Service content' })
+  @ApiResponse({ status: 200, type: LegalContentResponseDto })
+  getTerms() {
+    return this.service.getLegalContent(LegalContentKey.TERMS);
+  }
+
+  @Put('terms')
+  @ApiOperation({ summary: 'Update Terms of Service content' })
+  @ApiBody({ type: UpdateLegalContentDto })
+  @ApiResponse({ status: 200, description: 'Terms of Service updated' })
+  @AuthPermissions([PERMISSIONS.EDIT_GLOBAL_SETTINGS])
+  updateTerms(@Body() body: UpdateLegalContentDto) {
+    return this.service.updateLegalContent(LegalContentKey.TERMS, body);
+  }
+
+  @Public()
+  @Get('privacy')
+  @ApiOperation({ summary: 'Get Privacy Policy content' })
+  @ApiResponse({ status: 200, type: LegalContentResponseDto })
+  getPrivacy() {
+    return this.service.getLegalContent(LegalContentKey.PRIVACY);
+  }
+
+  @Put('privacy')
+  @ApiOperation({ summary: 'Update Privacy Policy content' })
+  @ApiBody({ type: UpdateLegalContentDto })
+  @ApiResponse({ status: 200, description: 'Privacy Policy updated' })
+  @AuthPermissions([PERMISSIONS.EDIT_GLOBAL_SETTINGS])
+  updatePrivacy(@Body() body: UpdateLegalContentDto) {
+    return this.service.updateLegalContent(LegalContentKey.PRIVACY, body);
+  }
+
+  @Public()
+  @Get('terms-and-agreement')
+  @ApiOperation({ summary: 'Get sign-in Terms & Agreement consent content' })
+  @ApiResponse({ status: 200, type: LegalContentResponseDto })
+  getTermsAndAgreement() {
+    return this.service.getLegalContent(LegalContentKey.TERMS_AND_AGREEMENT);
+  }
+
+  @Put('terms-and-agreement')
+  @ApiOperation({ summary: 'Update sign-in Terms & Agreement consent content' })
+  @ApiBody({ type: UpdateLegalContentDto })
+  @ApiResponse({ status: 200, description: 'Terms & Agreement updated' })
+  @AuthPermissions([PERMISSIONS.EDIT_GLOBAL_SETTINGS])
+  updateTermsAndAgreement(@Body() body: UpdateLegalContentDto) {
+    return this.service.updateLegalContent(
+      LegalContentKey.TERMS_AND_AGREEMENT,
+      body,
+    );
   }
 }

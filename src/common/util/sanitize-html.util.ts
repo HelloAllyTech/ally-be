@@ -31,6 +31,33 @@ export function sanitizeDescriptionHtml(html: string): string {
   return sanitizeHtml(html, SANITIZE_CONFIG);
 }
 
+// Legal/consent content (Terms, Privacy, sign-in Terms & Agreement) additionally
+// allows hyperlinks (e.g. the crisis-hotline link). Mirrors the allow-lists used
+// by the admin rich-text editor and the helpline/web sanitizers.
+const LEGAL_SANITIZE_CONFIG: sanitizeHtml.IOptions = {
+  allowedTags: [...(SANITIZE_CONFIG.allowedTags as string[]), 'a'],
+  allowedAttributes: { a: ['href', 'target', 'rel'] },
+  allowedSchemes: ['http', 'https', 'mailto', 'tel'],
+  disallowedTagsMode: 'discard',
+  transformTags: {
+    a: sanitizeHtml.simpleTransform('a', {
+      rel: 'noopener noreferrer nofollow',
+      target: '_blank',
+    }),
+  },
+};
+
+/**
+ * Sanitize legal/consent HTML: safe formatting tags plus hyperlinks with
+ * normalized rel/target and a restricted scheme allow-list. Used on write so
+ * every consumer (admin pages, web + mobile consent popups) gets safe HTML
+ * regardless of which client produced it.
+ */
+export function sanitizeLegalHtml(html: string): string {
+  if (!html) return '';
+  return sanitizeHtml(html, LEGAL_SANITIZE_CONFIG);
+}
+
 /**
  * Strip HTML tags and decode entities, producing plain narrative text.
  *
