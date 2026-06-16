@@ -223,6 +223,16 @@ export class UpdateScenarioDto {
   enableProsody?: boolean;
 
   @ApiProperty({
+    description:
+      'Enable the thinking-filler back-channel (a short acknowledgement played while the agent generates its reply) to mask turn latency. Defaults to false (opt-in) when unspecified.',
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  fillerEnabled?: boolean;
+
+  @ApiProperty({
     description: 'Opening statements of the AI client persona',
     example: ['Hi, I need some help.', 'I am feeling down today.'],
   })
