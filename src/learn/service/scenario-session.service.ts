@@ -1026,13 +1026,21 @@ export class ScenarioSessionService {
       previousMemory =
         await this.caseSharedService.getPreviousCaseMemory(caseSessionItemId);
     }
+    // Intentionally not awaited: summary generation can take minutes, so the
+    // end-session response returns immediately and the client polls for the
+    // result. The method persists its own success/failure row, so the only
+    // thing left to guard here is an unexpected rejection.
     this.getScenarioSessionSummaryFromAI(
       scenarioSessionId,
       needMemory,
       callDuration,
       previousMemory,
       endScenarioSessionRequestBodyDto?.enableRecommendations,
-    );
+    ).catch((error) => {
+      this.logger.error(
+        `getScenarioSessionSummaryFromAI rejected unexpectedly for ${scenarioSessionId}: ${JSON.stringify(error?.message)}`,
+      );
+    });
 
     return { message: 'Scenario session ended successfully' };
   }
@@ -1068,24 +1076,24 @@ export class ScenarioSessionService {
     previousMemory?: string | null,
     enableRecommendations?: boolean,
   ) {
-    try {
-      const tenantId = ExecutionManager.getTenantId();
-      if (!tenantId) {
-        this.logger.error(
-          'getScenarioSessionSummaryFromAI: tenantId not found in execution context',
-        );
-        return;
-      }
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      this.logger.error(
+        'getScenarioSessionSummaryFromAI: tenantId not found in execution context',
+      );
+      return;
+    }
 
+    let summary;
+    try {
       const scenarioSessionMessages =
         await this.scenarioSessionMessagesRepository.find({
           where: {
             scenarioSessionId,
             messageType: ScenarioSessionMessageType.TEXT,
-            tenantId: ExecutionManager.getTenantId(),
+            tenantId,
           },
         });
-      let summary;
       const callDurationInSeconds = callDuration ? callDuration / 1000 : 0;
       if (scenarioSessionMessages.length === 0) {
         this.logger.warn(
@@ -1152,7 +1160,21 @@ export class ScenarioSessionService {
         const aiSummary = CommonUtil.convertToCamelCase(aiResult);
         summary = { feedback: aiSummary };
       }
+    } catch (error) {
+      this.logger.error(
+        `Failed to get scenario session summary from AI: ${JSON.stringify(error.message)}`,
+      );
+      // Persist an explicit failure so the polling client renders a clear
+      // "summary failed" state instead of a completed session with no summary
+      // (e.g. when the AI call times out at the 5-minute axios limit).
+      summary = {
+        errorMessage: 'Failed to generate summary. Please try again.',
+      };
+    }
 
+    // Persist outside the AI try/catch so a row is ALWAYS written — whether the
+    // summary succeeded, was skipped (no messages / too short), or failed.
+    try {
       await this.dataSource.transaction(async (entityManager) => {
         const scenarioSessionDetailsRepo = entityManager.getRepository(
           ScenarioSessionDetails,
@@ -1167,7 +1189,7 @@ export class ScenarioSessionService {
       });
     } catch (error) {
       this.logger.error(
-        `Failed to get scenario session summary from AI: ${JSON.stringify(error.message)}`,
+        `Failed to persist scenario session details for ${scenarioSessionId}: ${JSON.stringify(error.message)}`,
       );
     }
   }
