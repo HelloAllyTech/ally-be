@@ -13,7 +13,9 @@ import {
   DEFAULT_SUMMARY_FIELDS_ARRAY,
   DEFAULT_SUMMARY_FIELDS_SET,
   DEFAULT_CHAT_TYPES,
+  LEGAL_CONTENT_NAMES,
 } from '../../constants/settings.constants';
+import { GlobalSettingsRepository } from '../../repository/global-settings.repository';
 import {
   DEFAULT_HIDDEN_SECTION_IDS,
   SECTION_ID_TO_FIELD_IDS,
@@ -47,6 +49,7 @@ describe('SettingsService', () => {
   let auditLogService: jest.Mocked<AuditLogService>;
   let permissionsService: jest.Mocked<PermissionsService>;
   let adminTenantService: jest.Mocked<AdminTenantService>;
+  let globalSettingsRepository: jest.Mocked<GlobalSettingsRepository>;
 
   const mockTenantId = 'test-tenant-id';
   const mockUserId = 'test-user-id';
@@ -132,6 +135,14 @@ describe('SettingsService', () => {
           provide: DataSource,
           useValue: { query: jest.fn() },
         },
+        {
+          provide: GlobalSettingsRepository,
+          useValue: {
+            findOne: jest.fn(),
+            create: jest.fn(),
+            save: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -141,6 +152,7 @@ describe('SettingsService', () => {
     auditLogService = module.get(AuditLogService) as any;
     permissionsService = module.get(PermissionsService) as any;
     adminTenantService = module.get(AdminTenantService) as any;
+    globalSettingsRepository = module.get(GlobalSettingsRepository);
 
     // Mock ExecutionManager static methods
     jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(mockTenantId);
@@ -1271,6 +1283,88 @@ describe('SettingsService', () => {
       );
 
       expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('getLegalContent', () => {
+    it('should return the stored html when the row exists', async () => {
+      globalSettingsRepository.findOne.mockResolvedValue({
+        id: 'gs-1',
+        name: LEGAL_CONTENT_NAMES.TERMS,
+        value: { html: '<p>Terms</p>' },
+        createdBy: 1,
+        updatedBy: 1,
+      } as any);
+
+      const result = await service.getLegalContent(LEGAL_CONTENT_NAMES.TERMS);
+
+      expect(globalSettingsRepository.findOne).toHaveBeenCalledWith({
+        where: { name: LEGAL_CONTENT_NAMES.TERMS },
+      });
+      expect(result).toEqual({ html: '<p>Terms</p>' });
+    });
+
+    it('should return empty html when the row does not exist yet', async () => {
+      globalSettingsRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getLegalContent(LEGAL_CONTENT_NAMES.PRIVACY);
+
+      expect(result).toEqual({ html: '' });
+    });
+  });
+
+  describe('updateLegalContent', () => {
+    it('should update an existing row with sanitized html', async () => {
+      const existing = {
+        id: 'gs-1',
+        name: LEGAL_CONTENT_NAMES.TERMS,
+        value: { html: '<p>old</p>' },
+        createdBy: 1,
+        updatedBy: 1,
+      };
+      globalSettingsRepository.findOne.mockResolvedValue(existing as any);
+      globalSettingsRepository.save.mockResolvedValue(existing as any);
+
+      const result = await service.updateLegalContent(
+        LEGAL_CONTENT_NAMES.TERMS,
+        '<p>new</p><script>alert(1)</script>',
+      );
+
+      const saved = globalSettingsRepository.save.mock.calls[0][0] as any;
+      expect(saved.value.html).toContain('<p>new</p>');
+      // sanitizeDescriptionHtml strips <script>
+      expect(saved.value.html).not.toContain('<script>');
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should create a new row when none exists', async () => {
+      globalSettingsRepository.findOne.mockResolvedValue(null);
+      globalSettingsRepository.create.mockImplementation(
+        (entity: any) => entity,
+      );
+      globalSettingsRepository.save.mockResolvedValue({} as any);
+
+      const result = await service.updateLegalContent(
+        LEGAL_CONTENT_NAMES.PRIVACY,
+        '<p>privacy</p>',
+      );
+
+      expect(globalSettingsRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: LEGAL_CONTENT_NAMES.PRIVACY,
+          value: { html: '<p>privacy</p>' },
+        }),
+      );
+      expect(globalSettingsRepository.save).toHaveBeenCalled();
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should throw BadRequestException when userId is missing', async () => {
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
+
+      await expect(
+        service.updateLegalContent(LEGAL_CONTENT_NAMES.TERMS, '<p>x</p>'),
+      ).rejects.toThrow(new BadRequestException('User ID is required'));
     });
   });
 });
