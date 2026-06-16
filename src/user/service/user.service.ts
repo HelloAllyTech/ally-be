@@ -4,7 +4,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { In, Not } from 'typeorm';
+import { DataSource, In, Not } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 import { User } from '../entity/user.entity';
@@ -35,6 +35,10 @@ import { SimulationCreditsService } from '../../learn/service/simulation-credits
 import { AddUserResponseDto } from '../dto/user-add-response.dto';
 import { UserGroupService } from '../../authorization/service/user-group.service';
 import { AddUserDto } from '../dto/add-user.dto';
+import { BulkAddUsersDto } from '../dto/bulk-add-user.dto';
+import { BulkAddUsersResponseDto } from '../dto/bulk-add-user-response.dto';
+import { CompleteProfileDto } from '../dto/complete-profile.dto';
+import { UserGroup } from 'src/authorization/entity/user-group.entity';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
 import { SuccessResponse } from 'src/common/type/common.type';
@@ -75,6 +79,7 @@ export class UserService {
     private s3Service: S3Service,
     private permissionsService: PermissionsService,
     private readonly adminTenantService: AdminTenantService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async get(id: number): Promise<User | null> {
@@ -169,6 +174,7 @@ export class UserService {
       phone: user.phone,
       status: user.status,
       profileImageUrl: user.profileImageUrl,
+      profileCompleted: user.profileCompleted,
     };
   }
 
@@ -492,6 +498,195 @@ export class UserService {
       createdAt: savedUser.createdAt,
       updatedAt: savedUser.updatedAt,
     };
+  }
+
+  /**
+   * Bulk-create users from a list of emails plus common settings (roles, tenant,
+   * credit limit). Each user is created with no name and profileCompleted=false
+   * so they are prompted to finish their profile on first login.
+   *
+   * All-or-nothing: every email is validated (format via the DTO, no duplicates
+   * within the batch, none already registered) before anything is written, and
+   * user + group creation runs inside a single transaction so any failure rolls
+   * the whole batch back.
+   */
+  async bulkAddUsers(
+    bulkData: BulkAddUsersDto,
+  ): Promise<BulkAddUsersResponseDto> {
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(Number(userId))
+      : false;
+    if (isMultiTenantAdmin) {
+      throw new BadRequestException('User is not authorized to add user');
+    }
+
+    // Normalise + dedupe emails within the batch.
+    const normalisedEmails = bulkData.emails.map((email) =>
+      email.trim().toLowerCase(),
+    );
+    const uniqueEmails = Array.from(new Set(normalisedEmails));
+    if (uniqueEmails.length !== normalisedEmails.length) {
+      const duplicates = Array.from(
+        new Set(
+          normalisedEmails.filter(
+            (email, index) => normalisedEmails.indexOf(email) !== index,
+          ),
+        ),
+      );
+      throw new BadRequestException(
+        `Duplicate emails in request: ${duplicates.join(', ')}`,
+      );
+    }
+
+    if (!bulkData.tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+    const isSuperAdmin = bulkData.roles.includes(UserRole.SUPER_ADMIN);
+    if (!isSuperAdmin) {
+      const tenant = await this.tenantService.findById(bulkData.tenantId);
+      if (!tenant) {
+        throw new BadRequestException('Tenant is not valid');
+      }
+    }
+
+    // Reject the whole batch if any email already belongs to an account.
+    const existingUsers = await this.userRepository.find({
+      where: { email: In(uniqueEmails) },
+      select: ['email'],
+    });
+    if (existingUsers.length > 0) {
+      const taken = existingUsers.map((user) => user.email);
+      throw new BadRequestException(
+        `These emails are already registered: ${taken.join(', ')}`,
+      );
+    }
+
+    const groups = await this.groupRepository.find({
+      where: { name: In(bulkData.roles) },
+    });
+
+    // Create users + group memberships atomically.
+    const savedUsers = await this.dataSource.transaction(async (manager) => {
+      const userRepo = manager.getRepository(User);
+      const userGroupRepo = manager.getRepository(UserGroup);
+
+      const created: User[] = [];
+      for (const email of uniqueEmails) {
+        const newUser = userRepo.create({
+          email,
+          // Blank until the user completes their profile on first login.
+          name: '',
+          status: UserStatus.ACTIVE,
+          profileCompleted: false,
+          metadata: {},
+          username: email,
+          tenantId: bulkData.tenantId,
+          ...(userId ? { createdBy: userId, updatedBy: userId } : {}),
+        });
+        const savedUser = await userRepo.save(newUser);
+
+        if (groups.length > 0) {
+          const groupsData = groups.map((group) =>
+            userGroupRepo.create({
+              userId: savedUser.id,
+              groupId: group.id,
+            }),
+          );
+          await userGroupRepo.save(groupsData);
+        }
+        created.push(savedUser);
+      }
+      return created;
+    });
+
+    // Simulation credits are applied after commit (their service validates
+    // role permissions against committed group rows), mirroring addUser.
+    if (bulkData.simulationCreditLimit) {
+      for (const savedUser of savedUsers) {
+        await this.simulationCreditsService.updateSimulationCredits({
+          userId: savedUser.id,
+          creditLimit: bulkData.simulationCreditLimit,
+        });
+      }
+    }
+
+    for (const savedUser of savedUsers) {
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.USER_CREATED,
+        tenantId: savedUser.tenantId,
+        userId: savedUser.id,
+        details: {
+          username: savedUser.username,
+          email: savedUser.email,
+          createdBy: userId,
+          updatedBy: userId,
+          bulk: true,
+        },
+      });
+    }
+
+    return {
+      created: savedUsers.length,
+      users: savedUsers.map((savedUser) => ({
+        id: savedUser.id,
+        name: savedUser.name,
+        email: savedUser.email,
+        username: savedUser.username,
+        phone: savedUser.phone,
+        externalId: savedUser.externalId,
+        status: savedUser.status,
+        metadata: savedUser.metadata,
+        tenantId: savedUser.tenantId,
+        createdAt: savedUser.createdAt,
+        updatedAt: savedUser.updatedAt,
+      })),
+    };
+  }
+
+  /**
+   * Self-serve completion of an incomplete profile (typically the first login
+   * of a bulk-created account). Fills in the name (and optionally phone) and
+   * flips profileCompleted so clients stop gating the user.
+   */
+  async completeProfile(
+    userId: number,
+    dto: CompleteProfileDto,
+  ): Promise<SuccessResponse> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    if (dto.phone && dto.phone !== user.phone) {
+      const existingPhone = await this.userRepository.findOne({
+        where: { phone: dto.phone, id: Not(userId) },
+      });
+      if (existingPhone) {
+        throw new BadRequestException('Phone number already registered');
+      }
+    }
+
+    await this.userRepository.update(userId, {
+      name: dto.name,
+      ...(dto.phone ? { phone: dto.phone } : {}),
+      profileCompleted: true,
+      updatedBy: userId,
+    });
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.USER_UPDATED,
+      tenantId: user.tenantId,
+      userId: user.id,
+      details: {
+        message: 'Profile completed',
+        updatedBy: userId,
+      },
+    });
+
+    return { success: true };
   }
 
   /**

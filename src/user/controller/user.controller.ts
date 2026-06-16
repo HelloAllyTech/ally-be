@@ -41,6 +41,9 @@ import {
 } from '../dto/user-response.dto';
 import { AddUserResponseDto } from '../dto/user-add-response.dto';
 import { AddUserDto } from '../dto/add-user.dto';
+import { BulkAddUsersDto } from '../dto/bulk-add-user.dto';
+import { BulkAddUsersResponseDto } from '../dto/bulk-add-user-response.dto';
+import { CompleteProfileDto } from '../dto/complete-profile.dto';
 import { User } from '../entity/user.entity';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { UpdateUserPreferencesDto } from '../dto/update-user-prefernces.dto';
@@ -190,6 +193,40 @@ export class UserController {
   @ApiSecurity('access-token')
   async addUser(@Body() userData: AddUserDto): Promise<AddUserResponseDto> {
     return this.userService.addUser(userData);
+  }
+
+  @ApiOperation({
+    summary:
+      'Bulk-create users from a list of emails plus common settings. ' +
+      'All-or-nothing: the batch is rejected if any email is invalid or already registered.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Users created successfully',
+    type: BulkAddUsersResponseDto,
+  })
+  @Post('bulk')
+  @HttpCode(HttpStatus.CREATED)
+  @AuthPermissions([PERMISSIONS.EDIT_USER])
+  @ApiSecurity('access-token')
+  async bulkAddUsers(
+    @Body() bulkData: BulkAddUsersDto,
+  ): Promise<BulkAddUsersResponseDto> {
+    return this.userService.bulkAddUsers(bulkData);
+  }
+
+  @ApiOperation({
+    summary:
+      'Complete the current user profile on first login (fill in name and ' +
+      'other remaining fields for a bulk-created account)',
+  })
+  @Patch('me/complete-profile')
+  @UseGuards(JwtAuthGuard)
+  async completeProfile(
+    @CurrentUser() tokenUser: TokenUser,
+    @Body() body: CompleteProfileDto,
+  ): Promise<SuccessResponse> {
+    return this.userService.completeProfile(tokenUser.id, body);
   }
 
   @ApiOperation({ summary: 'upload profile image ' })

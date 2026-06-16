@@ -23,6 +23,7 @@ import { S3Service } from 'src/aws/service/s3.service';
 import { ProfileImageUploadContentType } from 'src/user/enum/user.enum';
 import { AdminTenantService } from '../admin-tenant.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { DataSource } from 'typeorm';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -55,6 +56,9 @@ describe('UserService', () => {
   let mockS3Service: any;
   let mockAdminTenantService: any;
   let mockPermissionsService: any;
+  let mockDataSource: any;
+  let mockTxnUserRepo: any;
+  let mockTxnUserGroupRepo: any;
 
   const mockUser: User = {
     id: 1,
@@ -184,6 +188,27 @@ describe('UserService', () => {
       isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
     };
 
+    // Transaction manager exposes per-entity repositories; getRepository is
+    // routed by entity name so bulkAddUsers can resolve User vs UserGroup.
+    mockTxnUserRepo = {
+      create: jest.fn((data) => data),
+      save: jest.fn((user) => Promise.resolve({ id: 2, ...user })),
+    };
+    mockTxnUserGroupRepo = {
+      create: jest.fn((data) => data),
+      save: jest.fn((data) => Promise.resolve(data)),
+    };
+    mockDataSource = {
+      transaction: jest.fn((cb) =>
+        cb({
+          getRepository: (entity: any) =>
+            entity?.name === 'UserGroup'
+              ? mockTxnUserGroupRepo
+              : mockTxnUserRepo,
+        }),
+      ),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
@@ -208,6 +233,7 @@ describe('UserService', () => {
         { provide: S3Service, useValue: mockS3Service },
         { provide: AdminTenantService, useValue: mockAdminTenantService },
         { provide: PermissionsService, useValue: mockPermissionsService },
+        { provide: DataSource, useValue: mockDataSource },
       ],
     }).compile();
 
@@ -1178,6 +1204,136 @@ describe('UserService', () => {
 
       await expect(
         service.uploadProfileImage({ profileImageUrl: 'x' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('bulkAddUsers', () => {
+    const bulkData = {
+      emails: ['a@example.com', 'b@example.com'],
+      roles: [UserRole.CLIENT],
+      tenantId: 'test-tenant',
+    };
+
+    beforeEach(() => {
+      mockUsersRepository.find.mockResolvedValue([]);
+      mockTenantService.findById.mockResolvedValue({ id: 'test-tenant' });
+      mockGroupRepository.find.mockResolvedValue([
+        { id: 1, name: UserRole.CLIENT },
+      ]);
+    });
+
+    it('should create all users with blank name and profileCompleted=false', async () => {
+      const result = await service.bulkAddUsers(bulkData as any);
+
+      expect(result.created).toBe(2);
+      expect(result.users).toHaveLength(2);
+      expect(mockTxnUserRepo.create).toHaveBeenCalledTimes(2);
+      expect(mockTxnUserRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'a@example.com',
+          name: '',
+          profileCompleted: false,
+          username: 'a@example.com',
+          status: UserStatus.ACTIVE,
+        }),
+      );
+      // Group membership assigned per user.
+      expect(mockTxnUserGroupRepo.save).toHaveBeenCalledTimes(2);
+    });
+
+    it('should reject the batch when an email is already registered', async () => {
+      mockUsersRepository.find.mockResolvedValue([{ email: 'a@example.com' }]);
+
+      await expect(service.bulkAddUsers(bulkData as any)).rejects.toThrow(
+        BadRequestException,
+      );
+      // All-or-nothing: no transaction (and therefore no writes) attempted.
+      expect(mockDataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('should reject the batch when emails are duplicated within the request', async () => {
+      await expect(
+        service.bulkAddUsers({
+          ...bulkData,
+          emails: ['dup@example.com', 'DUP@example.com'],
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('should reject when caller is a multi-tenant admin', async () => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('5');
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+
+      await expect(service.bulkAddUsers(bulkData as any)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockDataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('should reject when tenant is invalid', async () => {
+      mockTenantService.findById.mockResolvedValue(null);
+
+      await expect(service.bulkAddUsers(bulkData as any)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should apply simulation credits to each created user when provided', async () => {
+      mockSimulationCreditsService.updateSimulationCredits.mockResolvedValue(
+        {},
+      );
+
+      await service.bulkAddUsers({
+        ...bulkData,
+        simulationCreditLimit: 50,
+      } as any);
+
+      expect(
+        mockSimulationCreditsService.updateSimulationCredits,
+      ).toHaveBeenCalledTimes(2);
+      expect(
+        mockSimulationCreditsService.updateSimulationCredits,
+      ).toHaveBeenCalledWith(expect.objectContaining({ creditLimit: 50 }));
+    });
+  });
+
+  describe('completeProfile', () => {
+    it('should set name and flip profileCompleted', async () => {
+      mockUsersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        profileCompleted: false,
+      });
+      mockUsersRepository.update.mockResolvedValue({ affected: 1 });
+
+      const result = await service.completeProfile(1, { name: 'Jane Doe' });
+
+      expect(result).toEqual({ success: true });
+      expect(mockUsersRepository.update).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          name: 'Jane Doe',
+          profileCompleted: true,
+        }),
+      );
+    });
+
+    it('should throw when user not found', async () => {
+      mockUsersRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.completeProfile(1, { name: 'Jane Doe' }),
+      ).rejects.toThrow();
+    });
+
+    it('should reject a phone already used by another user', async () => {
+      mockUsersRepository.findOne
+        .mockResolvedValueOnce({ ...mockUser, profileCompleted: false })
+        .mockResolvedValueOnce({ ...mockUser, id: 99 });
+
+      await expect(
+        service.completeProfile(1, { name: 'Jane', phone: '+1999' }),
       ).rejects.toThrow(BadRequestException);
     });
   });
