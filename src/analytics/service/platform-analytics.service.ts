@@ -99,9 +99,9 @@ export class PlatformAnalyticsService {
     return this.driftJudge.startBackfill(sinceDays, onlyUnjudged);
   }
 
-  /** Backfill job status for UI progress polling (in-memory job registry). */
+  /** Backfill job status for UI progress polling (Redis-backed job registry). */
   async getDriftBackfillStatus(jobId: string): Promise<DriftBackfillJobDto> {
-    const job = this.driftJudge.getJob(jobId);
+    const job = await this.driftJudge.getJob(jobId);
     if (!job) {
       return {
         jobId,

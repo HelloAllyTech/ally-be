@@ -3,6 +3,7 @@ import axios from 'axios';
 import { randomUUID } from 'crypto';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
+import { RedisService } from '../../redis/service/redis.service';
 import { DriftBackfillJobDto } from '../dto/platform-analytics.dto';
 import {
   DriftJudgeRepository,
@@ -24,22 +25,44 @@ interface JudgeResult {
  * stateless judge over HTTP, and persists the per-turn rows itself — ally-ai
  * never touches this database.
  *
- * Backfill runs as an in-memory background job (the Gemini judge is slow and a
- * 3-month run is long). Single-instance only; a multi-replica deploy should
- * move job state to a table — same caveat the old ally-ai version carried.
+ * Backfill runs as a background job (the Gemini judge is slow and a 3-month run
+ * is long). Job state is persisted in Redis — NOT process memory — because
+ * ally-be is load-balanced across instances: the POST that creates the job and
+ * the GET status polls can land on different instances, so the registry must be
+ * shared. The processing loop runs on the instance that received the POST and
+ * writes progress to Redis; any instance's poll reads it.
  */
 @Injectable()
 export class DriftJudgeService {
   private readonly logger = LoggerService.getInstance(DriftJudgeService.name);
-  private readonly jobs = new Map<string, DriftBackfillJobDto>();
+
+  // TTL refreshes on each update, so an active job stays alive; a finished job
+  // lingers ~1h for the UI to read the terminal state, then expires.
+  private static readonly JOB_TTL_SECONDS = 3600;
 
   constructor(
     private readonly repo: DriftJudgeRepository,
     private readonly config: AppConfigService,
+    private readonly redis: RedisService,
   ) {}
 
+  private jobKey(jobId: string): string {
+    return `drift:backfill:job:${jobId}`;
+  }
+
+  private async saveJob(job: DriftBackfillJobDto): Promise<void> {
+    await this.redis.set(
+      this.jobKey(job.jobId),
+      JSON.stringify(job),
+      DriftJudgeService.JOB_TTL_SECONDS,
+    );
+  }
+
   /** Start an async backfill over a window; returns a job id to poll. */
-  startBackfill(sinceDays = 90, onlyUnjudged = false): DriftBackfillJobDto {
+  async startBackfill(
+    sinceDays = 90,
+    onlyUnjudged = false,
+  ): Promise<DriftBackfillJobDto> {
     const jobId = randomUUID();
     const job: DriftBackfillJobDto = {
       jobId,
@@ -51,7 +74,7 @@ export class DriftJudgeService {
       skipped: 0,
       error: null,
     };
-    this.jobs.set(jobId, job);
+    await this.saveJob(job);
     // Fire-and-forget: the HTTP request returns immediately with the job id.
     void this.runJob(job, sinceDays, onlyUnjudged);
     this.logger.debug(
@@ -60,9 +83,9 @@ export class DriftJudgeService {
     return { ...job };
   }
 
-  getJob(jobId: string): DriftBackfillJobDto | undefined {
-    const job = this.jobs.get(jobId);
-    return job ? { ...job } : undefined;
+  async getJob(jobId: string): Promise<DriftBackfillJobDto | undefined> {
+    const raw = await this.redis.get(this.jobKey(jobId));
+    return raw ? (JSON.parse(raw) as DriftBackfillJobDto) : undefined;
   }
 
   private async runJob(
@@ -78,6 +101,7 @@ export class DriftJudgeService {
       });
       job.status = 'running';
       job.total = sessions.length;
+      await this.saveJob(job);
       for (const s of sessions) {
         try {
           const { transcript, aiText, userText } =
@@ -85,6 +109,7 @@ export class DriftJudgeService {
           if (Object.keys(aiText).length === 0) {
             job.skipped += 1;
             job.processed += 1;
+            await this.saveJob(job);
             continue;
           }
           const judged = await this.judgeViaAi(
@@ -105,21 +130,25 @@ export class DriftJudgeService {
           job.judged += 1;
           job.drifted += judged.rollup.drifted ? 1 : 0;
           job.processed += 1;
+          await this.saveJob(job);
         } catch (e) {
           // One bad session must not abort the whole job.
           this.logger.error(
             `drift backfill: session ${s.id} failed: ${(e as Error).message}`,
           );
           job.processed += 1;
+          await this.saveJob(job);
         }
       }
       job.status = 'done';
+      await this.saveJob(job);
     } catch (e) {
       this.logger.error(
         `drift backfill job ${job.jobId} failed: ${(e as Error).message}`,
       );
       job.status = 'error';
       job.error = (e as Error).message;
+      await this.saveJob(job);
     }
   }
 
