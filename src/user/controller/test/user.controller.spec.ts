@@ -73,6 +73,8 @@ describe('UserController', () => {
       getWaitingList: jest.fn(),
       getAllUsers: jest.fn(),
       addUser: jest.fn(),
+      bulkAddUsers: jest.fn(),
+      completeProfile: jest.fn(),
       updateUser: jest.fn(),
       updateUserStatus: jest.fn(),
       getTermsAndAgreementStatus: jest.fn(),
@@ -388,6 +390,46 @@ describe('UserController', () => {
       await expect(
         controller.addUser(addUserDto as AddUserDto),
       ).rejects.toThrow('Could not create user');
+    });
+  });
+
+  describe('bulkAddUsers', () => {
+    it('should delegate to the service and return the batch summary', async () => {
+      const bulkDto = {
+        emails: ['a@example.com', 'b@example.com'],
+        roles: [UserRole.CLIENT],
+        tenantId: 'test-tenant',
+      };
+      const mockResponse = { created: 2, users: [] };
+      mockUserService.bulkAddUsers.mockResolvedValue(mockResponse);
+
+      const result = await controller.bulkAddUsers(bulkDto as any);
+
+      expect(mockUserService.bulkAddUsers).toHaveBeenCalledWith(bulkDto);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should propagate a BadRequestException from the service', async () => {
+      mockUserService.bulkAddUsers.mockRejectedValue(
+        new BadRequestException('These emails are already registered'),
+      );
+
+      await expect(
+        controller.bulkAddUsers({ emails: ['a@example.com'] } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('completeProfile', () => {
+    it('should complete the current user profile', async () => {
+      const tokenUser = { id: 7, tenantId: 'test-tenant' } as any;
+      const body = { name: 'Jane Doe' };
+      mockUserService.completeProfile.mockResolvedValue({ success: true });
+
+      const result = await controller.completeProfile(tokenUser, body as any);
+
+      expect(mockUserService.completeProfile).toHaveBeenCalledWith(7, body);
+      expect(result).toEqual({ success: true });
     });
   });
 

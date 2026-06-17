@@ -72,6 +72,7 @@ describe('ChatService', () => {
     email: 'test@example.com',
     phone: '+1234567890',
     status: UserStatus.ACTIVE,
+    profileCompleted: true,
     username: 'testuser',
     tenantId: 'test-tenant',
     createdAt: new Date(),

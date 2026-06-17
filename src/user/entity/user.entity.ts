@@ -23,6 +23,12 @@ export class User extends BaseEntity {
   @Column()
   status!: UserStatus;
 
+  // False for accounts created in bulk by an admin (name left blank); the user
+  // is prompted to fill in remaining fields on first login. Defaults true so
+  // every pre-existing / individually-created account is treated as complete.
+  @Column({ type: 'boolean', default: true })
+  profileCompleted!: boolean;
+
   @Column({ unique: true })
   username!: string;
 
