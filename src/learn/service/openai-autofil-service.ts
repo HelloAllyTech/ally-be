@@ -205,6 +205,10 @@ export class OpenAIAutofillService {
       const response = await this.client.chat.completions.create({
         model: effectiveModel,
         messages,
+        // The agent-builder meta prompt now returns a single JSON object
+        // configuring the scenario (parsed client-side to auto-fill Basic
+        // Settings). json_object mode guarantees syntactically valid JSON.
+        response_format: { type: 'json_object' },
       });
 
       const content = response.choices?.[0]?.message?.content ?? '';

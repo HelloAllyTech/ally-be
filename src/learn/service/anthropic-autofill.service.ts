@@ -201,11 +201,19 @@ export class AnthropicAutofillService {
         model: effectiveModel,
         max_tokens: AGENT_BUILDER_MAX_TOKENS,
         system: metaPrompt,
-        messages: [{ role: 'user', content: description }],
+        messages: [
+          { role: 'user', content: description },
+          // Anthropic has no json_object response_format; prefill the
+          // assistant turn with an opening brace so the model is forced to
+          // continue a JSON object. The brace is re-prepended below since
+          // the API returns only the generated continuation.
+          { role: 'assistant', content: '{' },
+        ],
       });
 
       const block = response.content[0];
-      const content = block?.type === 'text' ? block.text : '';
+      const continuation = block?.type === 'text' ? block.text : '';
+      const content = continuation.trim() ? `{${continuation}` : '';
 
       if (!content.trim()) {
         throw new InternalServerErrorException(
