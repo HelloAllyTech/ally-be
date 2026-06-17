@@ -175,6 +175,11 @@ export class UserService {
       status: user.status,
       profileImageUrl: user.profileImageUrl,
       profileCompleted: user.profileCompleted,
+      // Per-user feature flags resolved server-side (email allowlists, etc.).
+      // Studio reads these to gate UI it must not expose to everyone.
+      featureFlags: {
+        thinkingFiller: this.configService.isThinkingFillerAllowed(user.email),
+      },
     };
   }
 

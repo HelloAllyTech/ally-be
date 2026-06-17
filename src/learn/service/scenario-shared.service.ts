@@ -397,6 +397,7 @@ export class ScenarioSharedService {
     // carries the active language's value only (see create-scenario DTO).
     delete promptData.allowedFillerWords;
     delete promptData.languageCharacteristics;
+    delete promptData.fillerDialogues;
 
     // Human-readable language name (e.g. "Tamil (India)") — gives the LLM a far
     // stronger dialect signal than the bare BCP-47 code alone.
@@ -419,6 +420,19 @@ export class ScenarioSharedService {
           .filter((f) => f.length > 0);
         if (cleaned.length > 0) {
           promptData.allowedFillerWords = cleaned;
+        }
+      }
+
+      // Thinking-filler dialogues — same per-language shape as allowedFillerWords;
+      // carry only the active language's list to the agent.
+      const dialogues =
+        metadata?.fillerDialogues?.[String(metadata.languageId)];
+      if (dialogues && Array.isArray(dialogues)) {
+        const cleaned = dialogues
+          .map((d) => (typeof d === 'string' ? d.trim() : ''))
+          .filter((d) => d.length > 0);
+        if (cleaned.length > 0) {
+          promptData.fillerDialogues = cleaned;
         }
       }
 
@@ -463,6 +477,14 @@ export class ScenarioSharedService {
       promptData.states = [...promptData.states].sort(
         (a: any, b: any) => (a.scoreLower ?? 0) - (b.scoreLower ?? 0),
       );
+    }
+
+    // Thinking Filler is gated to an email allowlist. Fail-closed: unless this
+    // session's user is explicitly allowed, strip the filler config so the
+    // agent never plays it (regardless of the scenario's fillerEnabled toggle).
+    if (!options.thinkingFillerAllowed) {
+      promptData.fillerEnabled = false;
+      delete promptData.fillerDialogues;
     }
 
     const scenarioData = {

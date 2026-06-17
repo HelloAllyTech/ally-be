@@ -233,6 +233,17 @@ export class UpdateScenarioDto {
   fillerEnabled?: boolean;
 
   @ApiProperty({
+    description:
+      'Per-language thinking-filler dialogues (keyed by languageId), shown under the Thinking Filler toggle. Core flattens to the active language before sending to the agent.',
+    example: { '2': ['Let me think about that...', 'One moment...'] },
+    type: 'object',
+    additionalProperties: { type: 'array', items: { type: 'string' } },
+  })
+  @IsObject()
+  @IsOptional()
+  fillerDialogues?: Record<string, string[]>;
+
+  @ApiProperty({
     description: 'Opening statements of the AI client persona',
     example: ['Hi, I need some help.', 'I am feeling down today.'],
   })

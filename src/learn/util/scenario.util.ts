@@ -37,6 +37,7 @@ export const mapCreateScenarioRequestToEntity = (
       openingStatements: scenario.openingStatements,
       enableProsody: scenario.enableProsody,
       fillerEnabled: scenario.fillerEnabled,
+      fillerDialogues: scenario.fillerDialogues,
       customFields: scenario.customFields?.map((customField) => ({
         name: customField.name,
         value: customField.value,
@@ -149,6 +150,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'openingStatements',
     'enableProsody',
     'fillerEnabled',
+    'fillerDialogues',
     'customFields',
     'languageVoices',
     'linguisticStyleSamples',

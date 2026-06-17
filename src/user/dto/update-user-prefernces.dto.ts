@@ -1,4 +1,10 @@
-import { ArrayUnique, IsArray, IsInt, IsOptional, IsString } from 'class-validator';
+import {
+  ArrayUnique,
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class UpdateUserPreferencesDto {
   @IsOptional()

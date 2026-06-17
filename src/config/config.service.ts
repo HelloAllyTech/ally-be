@@ -317,7 +317,28 @@ export class AppConfigService {
           'FEATURE_SCENARIO_SESSION_AUDIO_RECORDING',
           'false',
         ) === 'true',
+      // Thinking Filler is gated to an explicit email allowlist (comma-separated,
+      // case-insensitive). Empty list => disabled for everyone.
+      thinkingFillerEmails: (
+        this.configService.get<string>('FEATURE_THINKING_FILLER_EMAILS', '') ||
+        ''
+      )
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
     };
+  }
+
+  /**
+   * Whether the Thinking Filler feature is enabled for the given user email.
+   * Used to gate both Studio configuration (via /users/me) and runtime
+   * playback (when building room metadata). Case-insensitive exact match.
+   */
+  isThinkingFillerAllowed(email?: string | null): boolean {
+    if (!email) return false;
+    return this.featureFlag.thinkingFillerEmails.includes(
+      email.trim().toLowerCase(),
+    );
   }
 
   get googleCloudTranslationConfig() {

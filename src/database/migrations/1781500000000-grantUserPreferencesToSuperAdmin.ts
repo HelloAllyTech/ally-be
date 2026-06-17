@@ -9,9 +9,7 @@ const PREFERENCE_PERMISSIONS = [
   'view:user:preferences',
 ];
 
-export class GrantUserPreferencesToSuperAdmin1781500000000
-  implements MigrationInterface
-{
+export class GrantUserPreferencesToSuperAdmin1781500000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Ensure the permission rows exist (idempotent; they should already from
     // the language-preferences migration, but stay self-contained).
@@ -21,9 +19,10 @@ export class GrantUserPreferencesToSuperAdmin1781500000000
         [name],
       );
       if (existing.length === 0) {
-        await queryRunner.query(`INSERT INTO "permissions" (name) VALUES ($1)`, [
-          name,
-        ]);
+        await queryRunner.query(
+          `INSERT INTO "permissions" (name) VALUES ($1)`,
+          [name],
+        );
       }
     }
 

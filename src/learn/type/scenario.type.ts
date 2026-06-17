@@ -56,6 +56,10 @@ export interface CreateRoomMetadataOptions {
   sessionEvents: SessionEvents[];
   languageDetails?: Languages | null;
   previousMemory?: string | null;
+  // Whether the Thinking Filler feature is allowed for this session's user
+  // (email allowlist). Fail-closed: when not explicitly true, the filler is
+  // stripped from the room metadata so the agent never plays it.
+  thinkingFillerAllowed?: boolean;
 }
 
 export interface ScenarioAppLangugeTranslations {

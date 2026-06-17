@@ -172,6 +172,7 @@ describe('UserService', () => {
       aws: {
         region: 'ap-south-1',
       },
+      isThinkingFillerAllowed: jest.fn().mockReturnValue(false),
     };
 
     mockS3Service = {
