@@ -136,6 +136,10 @@ import { buildBehaviorIdMapping } from '../util/autofill-shared.util';
 import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
 import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
 import {
+  GenerateAgentPromptDto,
+  GenerateAgentPromptResponseDto,
+} from '../dto/generate-agent-prompt.dto';
+import {
   MAX_SCENARIO_STATE_INSTRUCTIONS,
   supportedStateInstructionStateIds,
 } from '../constants/scenario-state-instructions.constants';
@@ -3023,6 +3027,48 @@ export class ScenarioService {
     this.logger.info(`Generation completed for ${fieldName}`);
 
     return { fieldName, content };
+  }
+
+  /**
+   * Agent Builder Copilot: turn a free-text actor description into a
+   * comprehensive roleplay-actor system prompt. Routes to the OpenAI or
+   * Anthropic autofill service based on the requested provider (mirrors the
+   * provider registry used by generateField).
+   */
+  async generateAgentSystemPrompt(
+    generateAgentPromptDto: GenerateAgentPromptDto,
+  ): Promise<GenerateAgentPromptResponseDto> {
+    const { description, model, provider } = generateAgentPromptDto;
+
+    const autofillServiceRegistry = new Map<
+      string,
+      OpenAIAutofillService | AnthropicAutofillService
+    >([
+      ['openai', this.openAIAutofillService],
+      ['anthropic', this.anthropicAutofillService],
+    ]);
+    const resolvedProvider = provider ?? 'openai';
+    if (provider && !autofillServiceRegistry.has(provider)) {
+      this.logger.warn(
+        `Unrecognized agent-builder provider "${provider}", falling back to openai`,
+      );
+    }
+    const autofillService =
+      autofillServiceRegistry.get(resolvedProvider) ??
+      this.openAIAutofillService;
+
+    const systemPrompt = await autofillService.generateAgentSystemPrompt(
+      description,
+      model,
+    );
+
+    return {
+      systemPrompt,
+      provider: autofillServiceRegistry.has(resolvedProvider)
+        ? resolvedProvider
+        : 'openai',
+      model: model ?? '',
+    };
   }
 
   private getLanguageNameFromCode(code: string): string {

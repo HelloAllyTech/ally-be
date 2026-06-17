@@ -471,6 +471,24 @@ export class UpdateScenarioDto {
   helperAgentPrompt?: string;
 
   @ApiProperty({
+    description:
+      'Agent Builder Copilot: free-text description of the roleplay actor',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  agentBuilderDescription?: string;
+
+  @ApiProperty({
+    description:
+      'Agent Builder Copilot: generated/edited comprehensive system prompt for the roleplay actor',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  agentBuilderPrompt?: string;
+
+  @ApiProperty({
     description: 'Show score meter',
     example: true,
     required: false,

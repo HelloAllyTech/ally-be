@@ -72,6 +72,10 @@ import { ScenarioSessionReflectionPromptsResponseDto } from '../dto/scenario-ses
 import { UpdateReflectionPromptResponseDto } from '../dto/reflection-prompts-request.dto';
 import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
 import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
+import {
+  GenerateAgentPromptDto,
+  GenerateAgentPromptResponseDto,
+} from '../dto/generate-agent-prompt.dto';
 import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
 
 @ApiTags('Learn')
@@ -293,6 +297,25 @@ export class LearnController {
     @Body() generateScenarioFieldDto: GenerateScenarioFieldDto,
   ): Promise<GenerateScenarioFieldResponseDto> {
     return this.scenarioService.generateField(generateScenarioFieldDto);
+  }
+
+  @ApiOperation({
+    summary:
+      'Agent Builder Copilot: generate a comprehensive roleplay-actor system prompt from a free-text description',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Generated system prompt',
+    type: GenerateAgentPromptResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('agent-builder/generate-system-prompt')
+  async generateAgentSystemPrompt(
+    @Body() generateAgentPromptDto: GenerateAgentPromptDto,
+  ): Promise<GenerateAgentPromptResponseDto> {
+    return this.scenarioService.generateAgentSystemPrompt(
+      generateAgentPromptDto,
+    );
   }
 
   @ApiOperation({ summary: 'Create multiple scenarios' })
