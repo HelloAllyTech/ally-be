@@ -17,6 +17,7 @@ import {
   GeneratedContent,
 } from '../type/generatable-fields.type';
 import { PREFERRED_AUTOFILL_MODELS } from '../constants/autofill-models.constants';
+import { AGENT_BUILDER_PROMPT_CODE } from '../constants/agent-builder.constants';
 import {
   AUTOFILL_CACHE_TTL_MS,
   buildBehaviorIdMapping,
@@ -162,6 +163,65 @@ export class OpenAIAutofillService {
     } catch (error) {
       this.logger.error(
         `[AUTOFILL] failed field=${fieldName} promptCode=${promptCode} model=${effectiveModel} ` +
+          `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
+        error as any,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Generate a comprehensive roleplay-actor system prompt from a free-text
+   * description. Unlike generateFieldContent this returns plain prose (no JSON
+   * schema / extraction) using the agent-builder meta prompt as the system
+   * message and the author's description as the user message.
+   */
+  async generateAgentSystemPrompt(
+    description: string,
+    modelOverride?: string,
+  ): Promise<string> {
+    const metaPrompt = await this.promptSharedService.getPromptByCode(
+      AGENT_BUILDER_PROMPT_CODE,
+    );
+
+    if (!metaPrompt) {
+      throw new NotFoundException(
+        `Prompt template not found for code: ${AGENT_BUILDER_PROMPT_CODE}`,
+      );
+    }
+
+    const effectiveModel = modelOverride ?? this.model;
+    this.logger.info(
+      `[AGENT_BUILDER] start provider=openai model=${effectiveModel} descriptionLength=${description.length}`,
+    );
+    const startedAt = Date.now();
+
+    try {
+      const messages: ChatCompletionMessageParam[] = [
+        { role: 'system', content: metaPrompt },
+        { role: 'user', content: description },
+      ];
+
+      const response = await this.client.chat.completions.create({
+        model: effectiveModel,
+        messages,
+      });
+
+      const content = response.choices?.[0]?.message?.content ?? '';
+
+      if (!content.trim()) {
+        throw new InternalServerErrorException(
+          'Empty response from OpenAI for agent-builder generation',
+        );
+      }
+
+      this.logger.info(
+        `[AGENT_BUILDER] done provider=openai model=${effectiveModel} elapsedMs=${Date.now() - startedAt}`,
+      );
+      return stripMarkdownFences(content).trim();
+    } catch (error) {
+      this.logger.error(
+        `[AGENT_BUILDER] failed provider=openai model=${effectiveModel} ` +
           `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
         error as any,
       );

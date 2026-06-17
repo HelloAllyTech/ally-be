@@ -264,6 +264,67 @@ describe('AnthropicAutofillService', () => {
     });
   });
 
+  describe('generateAgentSystemPrompt', () => {
+    it('should throw NotFoundException when the meta prompt is not found', async () => {
+      promptSharedService.getPromptByCode.mockResolvedValue(null);
+
+      await expect(
+        service.generateAgentSystemPrompt('A anxious new mother'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw InternalServerErrorException when Anthropic returns empty content', async () => {
+      promptSharedService.getPromptByCode.mockResolvedValue('meta prompt');
+      mockCreate.mockResolvedValue(makeAnthropicResponse('   '));
+
+      await expect(service.generateAgentSystemPrompt('desc')).rejects.toThrow(
+        InternalServerErrorException,
+      );
+    });
+
+    it('should send the meta prompt as system and the description as the user message', async () => {
+      promptSharedService.getPromptByCode.mockResolvedValue('META');
+      mockCreate.mockResolvedValue(makeAnthropicResponse('You are Jane...'));
+
+      const result = await service.generateAgentSystemPrompt('Jane, 28');
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          system: 'META',
+          messages: [{ role: 'user', content: 'Jane, 28' }],
+        }),
+      );
+      expect(result).toBe('You are Jane...');
+    });
+
+    it('should strip markdown fences from the returned prompt', async () => {
+      promptSharedService.getPromptByCode.mockResolvedValue('META');
+      mockCreate.mockResolvedValue(
+        makeAnthropicResponse('```\nYou are Jane...\n```'),
+      );
+
+      const result = await service.generateAgentSystemPrompt('Jane');
+
+      expect(result).toBe('You are Jane...');
+    });
+
+    it('should use modelOverride when provided and fall back to the default otherwise', async () => {
+      promptSharedService.getPromptByCode.mockResolvedValue('META');
+      mockCreate.mockResolvedValue(makeAnthropicResponse('ok'));
+
+      await service.generateAgentSystemPrompt('desc', 'claude-haiku-4-5');
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'claude-haiku-4-5' }),
+      );
+
+      mockCreate.mockClear();
+      await service.generateAgentSystemPrompt('desc');
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'claude-sonnet-4-6' }),
+      );
+    });
+  });
+
   describe('extractContent', () => {
     beforeEach(() => {
       promptSharedService.getPromptByCode.mockResolvedValue('template');
