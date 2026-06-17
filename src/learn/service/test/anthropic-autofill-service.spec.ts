@@ -282,30 +282,36 @@ describe('AnthropicAutofillService', () => {
       );
     });
 
-    it('should send the meta prompt as system and the description as the user message', async () => {
+    it('should send the meta prompt as system, the description as the user message, and prefill the JSON object', async () => {
       promptSharedService.getPromptByCode.mockResolvedValue('META');
-      mockCreate.mockResolvedValue(makeAnthropicResponse('You are Jane...'));
+      // The assistant turn is prefilled with "{" so Anthropic continues a JSON
+      // object; the API returns only the continuation, which the service
+      // re-prepends "{" to in order to rebuild the full object.
+      mockCreate.mockResolvedValue(makeAnthropicResponse('"name": "Jane"}'));
 
       const result = await service.generateAgentSystemPrompt('Jane, 28');
 
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           system: 'META',
-          messages: [{ role: 'user', content: 'Jane, 28' }],
+          messages: [
+            { role: 'user', content: 'Jane, 28' },
+            { role: 'assistant', content: '{' },
+          ],
         }),
       );
-      expect(result).toBe('You are Jane...');
+      expect(result).toBe('{"name": "Jane"}');
     });
 
     it('should strip markdown fences from the returned prompt', async () => {
       promptSharedService.getPromptByCode.mockResolvedValue('META');
       mockCreate.mockResolvedValue(
-        makeAnthropicResponse('```\nYou are Jane...\n```'),
+        makeAnthropicResponse('"name": "Jane"}\n```'),
       );
 
       const result = await service.generateAgentSystemPrompt('Jane');
 
-      expect(result).toBe('You are Jane...');
+      expect(result).toBe('{"name": "Jane"}');
     });
 
     it('should use modelOverride when provided and fall back to the default otherwise', async () => {
