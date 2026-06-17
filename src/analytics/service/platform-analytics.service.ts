@@ -253,7 +253,7 @@ export class PlatformAnalyticsService {
       attributionMix,
       failureModes,
       byModel,
-      byProvider,
+      bySttModel,
       byPromptVersion,
       topicMix,
       coherenceMix,
@@ -267,8 +267,9 @@ export class PlatformAnalyticsService {
       // to the rollup (driftedOnly) — keeps them consistent with the drift KPI.
       this.repo.getDriftAttributionMix(f, true),
       this.repo.getDriftFailureModeBreakdown(f, true),
+      // Both the LLM and the STT model can contribute to drift; provider dropped.
       this.repo.getDriftRateByDimension(f, 'llmModel'),
-      this.repo.getDriftRateByDimension(f, 'llmProvider'),
+      this.repo.getDriftRateByDimension(f, 'sttModel'),
       this.repo.getDriftRateByDimension(f, 'promptVersion'),
       this.repo.getDriftSessionCountsBy(f, 'topicLabel', false, true),
       this.repo.getDriftSessionCountsBy(f, 'coherence', false, true),
@@ -357,7 +358,7 @@ export class PlatformAnalyticsService {
           r.totalSessions > 0 ? r.driftedSessions / r.totalSessions : 0,
       })),
       driftRateByModel: withRate(byModel),
-      driftRateByProvider: withRate(byProvider),
+      driftRateBySttModel: withRate(bySttModel),
       driftRateByPromptVersion: withRate(byPromptVersion),
     };
   }

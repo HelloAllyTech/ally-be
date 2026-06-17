@@ -139,7 +139,7 @@ export class ConversationDriftResponseDto {
   @ApiProperty({ type: [DriftRateByDimensionDto] })
   driftRateByModel!: DriftRateByDimensionDto[];
   @ApiProperty({ type: [DriftRateByDimensionDto] })
-  driftRateByProvider!: DriftRateByDimensionDto[];
+  driftRateBySttModel!: DriftRateByDimensionDto[];
   @ApiProperty({ type: [DriftRateByDimensionDto] })
   driftRateByPromptVersion!: DriftRateByDimensionDto[];
 }

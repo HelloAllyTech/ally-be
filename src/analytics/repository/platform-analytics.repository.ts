@@ -444,31 +444,41 @@ export class PlatformAnalyticsRepository {
 
   /**
    * Drifted vs total sessions grouped by an experiment dimension — the LLM
-   * model, inference provider, or prompt version that produced the session.
-   * `dimension` is whitelisted (never raw user input) before interpolation.
-   * Sessions with no captured value for the dimension are EXCLUDED ('unknown'
-   * isn't a real model/provider/prompt, so it shouldn't be charted as one).
+   * model, prompt version, or STT model behind the session (both the STT and
+   * the LLM can contribute to drift). `dimension` is whitelisted.
+   *
+   * - llmModel / promptVersion: the value captured/denormalized on the judgment.
+   * - sttModel: the STT model the session's language is configured to use,
+   *   joined from `languages.sttProviderConfig` (we don't capture the runtime
+   *   STT model per turn, so this is the configured model).
+   *
+   * Sessions with no captured value are EXCLUDED ('unknown' isn't a real
+   * model/prompt, so it shouldn't be charted as one).
    */
   async getDriftRateByDimension(
     f: DriftFilters,
-    dimension: 'llmModel' | 'llmProvider' | 'promptVersion',
+    dimension: 'llmModel' | 'promptVersion' | 'sttModel',
   ): Promise<DriftDimensionRow[]> {
-    const col = {
-      llmModel: 'llmModel',
-      llmProvider: 'llmProvider',
-      promptVersion: 'promptVersion',
-    }[dimension];
+    const keyExpr =
+      dimension === 'sttModel'
+        ? `lang."sttProviderConfig"->'config'->>'model'`
+        : `j."${dimension === 'llmModel' ? 'llmModel' : 'promptVersion'}"`;
     const qb = this.dataSource
       .createQueryBuilder()
-      .select(`j."${col}"`, 'key')
+      .select(keyExpr, 'key')
       .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'totalSessions')
       .addSelect(
         'COUNT(DISTINCT j."scenarioSessionId") FILTER (WHERE j."sessionDrifted" = true)::int',
         'driftedSessions',
       )
       .from('turn_drift_judgment', 'j');
+    if (dimension === 'sttModel') {
+      // Session's language -> its configured STT model. Inner join drops
+      // sessions whose language has no STT config (so no 'unknown' bucket).
+      qb.innerJoin('languages', 'lang', 'lang.value = j."language"');
+    }
     this.applyDriftFilters(qb, f);
-    qb.andWhere(`j."${col}" IS NOT NULL`).andWhere(`j."${col}" <> ''`);
+    qb.andWhere(`${keyExpr} IS NOT NULL`).andWhere(`${keyExpr} <> ''`);
     const rows = await qb
       .groupBy('key')
       .orderBy('"driftedSessions"', 'DESC')
