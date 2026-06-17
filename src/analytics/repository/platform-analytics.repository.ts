@@ -446,8 +446,8 @@ export class PlatformAnalyticsRepository {
    * Drifted vs total sessions grouped by an experiment dimension — the LLM
    * model, inference provider, or prompt version that produced the session.
    * `dimension` is whitelisted (never raw user input) before interpolation.
-   * NULL keys (e.g. sessions judged before generation-config capture landed)
-   * surface as 'unknown' so they're visible rather than silently dropped.
+   * Sessions with no captured value for the dimension are EXCLUDED ('unknown'
+   * isn't a real model/provider/prompt, so it shouldn't be charted as one).
    */
   async getDriftRateByDimension(
     f: DriftFilters,
@@ -460,7 +460,7 @@ export class PlatformAnalyticsRepository {
     }[dimension];
     const qb = this.dataSource
       .createQueryBuilder()
-      .select(`COALESCE(j."${col}", 'unknown')`, 'key')
+      .select(`j."${col}"`, 'key')
       .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'totalSessions')
       .addSelect(
         'COUNT(DISTINCT j."scenarioSessionId") FILTER (WHERE j."sessionDrifted" = true)::int',
@@ -468,6 +468,7 @@ export class PlatformAnalyticsRepository {
       )
       .from('turn_drift_judgment', 'j');
     this.applyDriftFilters(qb, f);
+    qb.andWhere(`j."${col}" IS NOT NULL`).andWhere(`j."${col}" <> ''`);
     const rows = await qb
       .groupBy('key')
       .orderBy('"driftedSessions"', 'DESC')
@@ -631,14 +632,17 @@ export class PlatformAnalyticsRepository {
         `to_char(date_trunc('${trunc}', COALESCE(j."occurredAt", j."createdAt")), 'YYYY-MM-DD')`,
         'bucket',
       )
-      .addSelect(`COALESCE(ssrc.source, 'unknown')`, 'source')
+      .addSelect('ssrc.source', 'source')
       .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'totalSessions')
       .addSelect(
         'COUNT(DISTINCT j."scenarioSessionId") FILTER (WHERE j."sessionDrifted" = true)::int',
         'driftedSessions',
       )
       .from('turn_drift_judgment', 'j')
-      .leftJoin(
+      // INNER join (+ NOT NULL below): a session with no recorded source can't
+      // be Live or Historical, so it's excluded rather than charted as a
+      // misleading 'unknown' series.
+      .innerJoin(
         `(SELECT "scenarioSessionId" AS sid,
                  mode() WITHIN GROUP (ORDER BY source) AS source
             FROM scenario_session_turn_metrics
@@ -648,6 +652,7 @@ export class PlatformAnalyticsRepository {
         'ssrc.sid = j."scenarioSessionId"',
       );
     this.applyDriftFilters(qb, f);
+    qb.andWhere('ssrc.source IS NOT NULL');
     const rows = await qb
       .groupBy('bucket')
       .addGroupBy('source')
