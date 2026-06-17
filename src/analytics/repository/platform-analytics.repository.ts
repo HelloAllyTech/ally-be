@@ -483,14 +483,22 @@ export class PlatformAnalyticsRepository {
     }));
   }
 
-  /** Sessions with >=1 drift turn by root attribution (STT vs LLM vs cascade vs context). */
-  async getDriftAttributionMix(f: DriftFilters): Promise<DriftCountRow[]> {
+  /**
+   * Sessions by root attribution (STT vs LLM vs cascade vs context). With
+   * `driftedOnly`, restricts to sessions the rollup flagged as drifted — the
+   * correct scope for "what caused the drift", so it agrees with the drift KPI.
+   */
+  async getDriftAttributionMix(
+    f: DriftFilters,
+    driftedOnly = false,
+  ): Promise<DriftCountRow[]> {
     const qb = this.dataSource
       .createQueryBuilder()
       .select('j."rootAttribution"', 'key')
       .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'count')
       .from('turn_drift_judgment', 'j');
     this.applyDriftFilters(qb, f);
+    if (driftedOnly) qb.andWhere('j."sessionDrifted" = true');
     const rows = await qb
       .andWhere('j."rootAttribution" IS NOT NULL')
       .andWhere(`j."rootAttribution" <> 'none'`)
@@ -500,9 +508,13 @@ export class PlatformAnalyticsRepository {
     return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
   }
 
-  /** Sessions with >=1 turn of each AI failure mode (what specifically broke). */
+  /**
+   * Sessions with >=1 turn of each AI failure mode (what specifically broke).
+   * `driftedOnly` restricts to drifted sessions (consistent with the KPI).
+   */
   async getDriftFailureModeBreakdown(
     f: DriftFilters,
+    driftedOnly = false,
   ): Promise<DriftCountRow[]> {
     const qb = this.dataSource
       .createQueryBuilder()
@@ -510,6 +522,7 @@ export class PlatformAnalyticsRepository {
       .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'count')
       .from('turn_drift_judgment', 'j');
     this.applyDriftFilters(qb, f);
+    if (driftedOnly) qb.andWhere('j."sessionDrifted" = true');
     const rows = await qb
       .andWhere('j."aiReplyFailureMode" IS NOT NULL')
       .andWhere(`j."aiReplyFailureMode" <> 'none'`)
@@ -535,6 +548,7 @@ export class PlatformAnalyticsRepository {
       | 'counselorUtteranceGarbled'
       | 'sttErrorType',
     excludeNone = false,
+    driftedOnly = false,
   ): Promise<DriftCountRow[]> {
     const col = {
       topicLabel: 'topicLabel',
@@ -551,6 +565,10 @@ export class PlatformAnalyticsRepository {
       .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'count')
       .from('turn_drift_judgment', 'j');
     this.applyDriftFilters(qb, f);
+    // Drift KINDS (topic/coherence) describe drifted sessions, so scope to the
+    // rollup. STT input-quality (garble/error-type) is independent of drift and
+    // is queried with driftedOnly=false.
+    if (driftedOnly) qb.andWhere('j."sessionDrifted" = true');
     qb.andWhere(`j."${col}" IS NOT NULL`);
     if (excludeNone) qb.andWhere(`j."${col}" <> 'none'`);
     const rows = await qb
@@ -558,44 +576,6 @@ export class PlatformAnalyticsRepository {
       .orderBy('count', 'DESC')
       .getRawMany<{ key: string; count: number }>();
     return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
-  }
-
-  /**
-   * Sessions affected by each drift KIND, split by language — the data behind
-   * the language × kind heatmap. `dimension` is whitelisted (never raw user
-   * input) and `allowed` is a parameterised value list, so a session counts for
-   * a (language, kind) cell if any of its turns matched. Cells are independent:
-   * a multi-kind session lights up several cells (no sum-to-whole), which is
-   * exactly why a heatmap (not a stacked bar) is the right viz here.
-   */
-  async getDriftKindByLanguage(
-    f: DriftFilters,
-    dimension: 'topicLabel' | 'coherence' | 'aiReplyFailureMode',
-    allowed: string[],
-  ): Promise<{ language: string; kind: string; count: number }[]> {
-    if (allowed.length === 0) return [];
-    const col = {
-      topicLabel: 'topicLabel',
-      coherence: 'coherence',
-      aiReplyFailureMode: 'aiReplyFailureMode',
-    }[dimension];
-    const qb = this.dataSource
-      .createQueryBuilder()
-      .select('j."language"', 'language')
-      .addSelect(`j."${col}"`, 'kind')
-      .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'count')
-      .from('turn_drift_judgment', 'j');
-    this.applyDriftFilters(qb, f);
-    qb.andWhere(`j."${col}" IN (:...allowed)`, { allowed });
-    const rows = await qb
-      .groupBy('j."language"')
-      .addGroupBy(`j."${col}"`)
-      .getRawMany<{ language: string; kind: string; count: number }>();
-    return rows.map((r) => ({
-      language: r.language ?? 'unknown',
-      kind: r.kind,
-      count: Number(r.count) || 0,
-    }));
   }
 
   /**

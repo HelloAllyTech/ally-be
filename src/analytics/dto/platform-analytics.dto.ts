@@ -78,20 +78,6 @@ export class DriftCountDto {
   count!: number;
 }
 
-/** One cell of the language × drift-kind heatmap (sessions affected). */
-export class DriftKindByLanguageDto {
-  @ApiProperty() language!: string;
-  @ApiProperty({
-    description: 'drift kind (off_topic / degrading / hallucination / ...)',
-  })
-  kind!: string;
-  @ApiProperty({
-    description:
-      'distinct sessions in this language with >=1 turn of this kind',
-  })
-  count!: number;
-}
-
 /** Drift rate grouped by an experiment dimension (model / provider / prompt version). */
 export class DriftRateByDimensionDto {
   @ApiProperty({ description: "dimension value, or 'unknown' if not captured" })
@@ -131,9 +117,9 @@ export class ConversationDriftResponseDto {
   failureModeBreakdown!: DriftCountDto[];
   // Consolidated "kinds of drift" (sessions affected by each kind, drift-only).
   @ApiProperty({ type: [DriftCountDto] }) kindsOfDrift!: DriftCountDto[];
-  // Language × kind grid (sessions affected) for the heatmap.
-  @ApiProperty({ type: [DriftKindByLanguageDto] })
-  kindByLanguage!: DriftKindByLanguageDto[];
+  // STT input quality (counselor-side garble severity + error type), all
+  // sessions — independent of whether the AI drifted.
+  @ApiProperty({ type: [DriftCountDto] }) sttInputQuality!: DriftCountDto[];
   // Consolidated "root cause" (attribution + STT garble/error specifics).
   @ApiProperty({ type: [DriftCountDto] }) rootCause!: DriftCountDto[];
   // Per-dimension session distributions (detail; kindsOfDrift is the summary).

@@ -263,43 +263,21 @@ export class PlatformAnalyticsService {
       driftTrendRaw,
     ] = await Promise.all([
       this.repo.getDriftRateByLanguage(f),
-      this.repo.getDriftAttributionMix(f),
-      this.repo.getDriftFailureModeBreakdown(f),
+      // Attribution + failure mode + kinds describe DRIFTED sessions, so scope
+      // to the rollup (driftedOnly) — keeps them consistent with the drift KPI.
+      this.repo.getDriftAttributionMix(f, true),
+      this.repo.getDriftFailureModeBreakdown(f, true),
       this.repo.getDriftRateByDimension(f, 'llmModel'),
       this.repo.getDriftRateByDimension(f, 'llmProvider'),
       this.repo.getDriftRateByDimension(f, 'promptVersion'),
-      this.repo.getDriftSessionCountsBy(f, 'topicLabel'),
-      this.repo.getDriftSessionCountsBy(f, 'coherence'),
+      this.repo.getDriftSessionCountsBy(f, 'topicLabel', false, true),
+      this.repo.getDriftSessionCountsBy(f, 'coherence', false, true),
+      // STT input quality is independent of drift — count across ALL sessions.
       this.repo.getDriftSessionCountsBy(f, 'counselorUtteranceGarbled'),
       this.repo.getDriftSessionCountsBy(f, 'sttErrorType', true),
       this.repo.getFirstDriftTurnHistogram(f),
       this.repo.getDriftTrend(f, trendBucket),
     ]);
-
-    // Language × kind (sessions affected) for the heatmap. Same kind set and
-    // de-dup rule as kindsOfDrift: off_topic/gibberish from topic, the
-    // incoherent levels from coherence, the LLM failure modes (excludes none).
-    const [topicByLang, cohByLang, failByLang] = await Promise.all([
-      this.repo.getDriftKindByLanguage(f, 'topicLabel', [
-        'off_topic',
-        'gibberish',
-      ]),
-      this.repo.getDriftKindByLanguage(f, 'coherence', [
-        'degrading',
-        'mostly_incoherent',
-      ]),
-      this.repo.getDriftKindByLanguage(f, 'aiReplyFailureMode', [
-        'hallucination',
-        'context_lockin',
-        'wrong_language_reply',
-        'repetition',
-        'role_slip',
-        'wrong_intent',
-      ]),
-    ]);
-    const kindByLanguage = [...topicByLang, ...cohByLang, ...failByLang].filter(
-      (r) => r.count > 0,
-    );
 
     const driftRateByLanguage = byLanguage.map((r) => ({
       language: r.language,
@@ -333,12 +311,15 @@ export class PlatformAnalyticsService {
       ...failureModes,
     ].filter((r) => r.count > 0);
 
-    // One consolidated "root cause" list (sessions affected) — the STT-vs-LLM
-    // attribution plus the STT specifics (garble severity partial/severe + error
-    // type), all as colour-coded bars. Overlaps like kindsOfDrift (a session can
-    // show several), so counts don't sum to a whole.
-    const rootCause = [
-      ...attributionMix, // stt_direct / stt_cascade / llm_direct / context_lockin
+    // "Root cause" of drift = the STT-vs-LLM attribution, scoped to drifted
+    // sessions (above). This answers "why did the drift happen", so it stays
+    // aligned with the drift KPI.
+    const rootCause = attributionMix.filter((r) => r.count > 0);
+
+    // STT input quality is a SEPARATE concern from drift: the counselor's audio
+    // can be garbled (partial/severe) with a specific error type regardless of
+    // whether the AI drifted. Reported across ALL sessions, not under drift.
+    const sttInputQuality = [
       ...sttGarbleMix.filter((r) => r.key === 'partial' || r.key === 'severe'),
       ...sttErrorTypeMix, // phonetic_garble / wrong_language / ... (excludes none)
     ].filter((r) => r.count > 0);
@@ -366,8 +347,11 @@ export class PlatformAnalyticsService {
         count: r.count,
       })),
       kindsOfDrift: kindsOfDrift.map((r) => ({ key: r.key, count: r.count })),
-      kindByLanguage,
       rootCause: rootCause.map((r) => ({ key: r.key, count: r.count })),
+      sttInputQuality: sttInputQuality.map((r) => ({
+        key: r.key,
+        count: r.count,
+      })),
       topicMix: topicMix.map((r) => ({ key: r.key, count: r.count })),
       coherenceMix: coherenceMix.map((r) => ({ key: r.key, count: r.count })),
       sttGarbleMix: sttGarbleMix.map((r) => ({ key: r.key, count: r.count })),
