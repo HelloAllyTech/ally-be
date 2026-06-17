@@ -613,32 +613,54 @@ export class PlatformAnalyticsRepository {
     f: DriftFilters,
     bucket: AnalyticsBucket,
   ): Promise<
-    { bucket: string; totalSessions: number; driftedSessions: number }[]
+    {
+      bucket: string;
+      source: string;
+      totalSessions: number;
+      driftedSessions: number;
+    }[]
   > {
     const trunc = this.resolveBucket(bucket);
+    // Split each bucket by the session's source — 'pipeline' (live agent runs)
+    // vs 'transcript' (historical/reconstructed) — derived from its turn
+    // metrics, mirroring the voice-latency chart. No column on the judgment;
+    // joined per session so it works on existing rows without a re-judge.
     const qb = this.dataSource
       .createQueryBuilder()
       .select(
         `to_char(date_trunc('${trunc}', COALESCE(j."occurredAt", j."createdAt")), 'YYYY-MM-DD')`,
         'bucket',
       )
+      .addSelect(`COALESCE(ssrc.source, 'unknown')`, 'source')
       .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'totalSessions')
       .addSelect(
         'COUNT(DISTINCT j."scenarioSessionId") FILTER (WHERE j."sessionDrifted" = true)::int',
         'driftedSessions',
       )
-      .from('turn_drift_judgment', 'j');
+      .from('turn_drift_judgment', 'j')
+      .leftJoin(
+        `(SELECT "scenarioSessionId" AS sid,
+                 mode() WITHIN GROUP (ORDER BY source) AS source
+            FROM scenario_session_turn_metrics
+           WHERE source IS NOT NULL
+           GROUP BY "scenarioSessionId")`,
+        'ssrc',
+        'ssrc.sid = j."scenarioSessionId"',
+      );
     this.applyDriftFilters(qb, f);
     const rows = await qb
       .groupBy('bucket')
+      .addGroupBy('source')
       .orderBy('bucket', 'ASC')
       .getRawMany<{
         bucket: string;
+        source: string;
         totalSessions: number;
         driftedSessions: number;
       }>();
     return rows.map((r) => ({
       bucket: r.bucket,
+      source: r.source ?? 'unknown',
       totalSessions: Number(r.totalSessions) || 0,
       driftedSessions: Number(r.driftedSessions) || 0,
     }));

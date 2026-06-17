@@ -362,6 +362,7 @@ export class PlatformAnalyticsService {
       firstDriftTurnHistogram,
       driftTrend: driftTrendRaw.map((r) => ({
         bucket: r.bucket,
+        source: r.source,
         totalSessions: r.totalSessions,
         driftedSessions: r.driftedSessions,
         driftRate:

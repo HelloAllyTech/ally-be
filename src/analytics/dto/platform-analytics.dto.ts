@@ -101,6 +101,11 @@ export class DriftHistogramBinDto {
 
 export class DriftTrendPointDto {
   @ApiProperty({ description: 'Bucket start, yyyy-mm-dd' }) bucket!: string;
+  @ApiProperty({
+    description:
+      "session source: 'pipeline' (live) | 'transcript' (historical)",
+  })
+  source!: string;
   @ApiProperty() totalSessions!: number;
   @ApiProperty() driftedSessions!: number;
   @ApiProperty({ description: 'driftedSessions / totalSessions, 0..1' })
