@@ -83,6 +83,15 @@ export class ScenarioSessionTurnMetrics extends BaseEntity {
   @Column({ nullable: true })
   llmModel?: string;
 
+  /**
+   * Inference provider for `llmModel` (e.g. 'openai' | 'gemini' | 'anthropic').
+   * First-class column (not inferred from the model string) so drift analytics
+   * can slice by provider as an experiment dimension. Generation params
+   * (temperature / top_p / max_tokens) ride in `metadata`.
+   */
+  @Column({ nullable: true })
+  llmProvider?: string;
+
   @Column({ nullable: true })
   env?: string;
 

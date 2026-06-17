@@ -3,7 +3,10 @@ import { AnalyticsController } from './controller/analytics.controller';
 import { TenantAnalyticsController } from './controller/tenant-analytics.controller';
 import { AnalyticsService } from './service/analytics.service';
 import { PlatformAnalyticsService } from './service/platform-analytics.service';
+import { DriftJudgeService } from './service/drift-judge.service';
+import { DriftBackfillSchedulerRegistrationService } from './service/drift-backfill-scheduler-registration.service';
 import { PlatformAnalyticsRepository } from './repository/platform-analytics.repository';
+import { DriftJudgeRepository } from './repository/drift-judge.repository';
 import { MetabaseService } from './service/metabase.service';
 import { AppConfigModule } from '../config/config.module';
 import { ProviderFactory } from '../factory/provider.factory';
@@ -28,6 +31,9 @@ import { TenantModule } from 'src/tenant/tenant.module';
   providers: [
     AnalyticsService,
     PlatformAnalyticsService,
+    DriftJudgeService,
+    DriftJudgeRepository,
+    DriftBackfillSchedulerRegistrationService,
     PlatformAnalyticsRepository,
     MetabaseService,
     ProviderFactory.getAnalyticsFactory(),

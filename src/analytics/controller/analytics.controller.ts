@@ -25,6 +25,10 @@ import {
 import {
   AnalyticsOverviewQueryDto,
   AnalyticsOverviewResponseDto,
+  ConversationDriftQueryDto,
+  ConversationDriftResponseDto,
+  DriftBackfillJobDto,
+  StartDriftBackfillDto,
   VoiceLatencyQueryDto,
   VoiceLatencyResponseDto,
 } from '../dto/platform-analytics.dto';
@@ -94,6 +98,60 @@ export class AnalyticsController {
       query.range ?? '90d',
       query.bucket,
     );
+  }
+
+  @Get('conversation-drift')
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Conversation drift analytics (super-admin)',
+    description:
+      'Drift rate per language (primary KPI) plus attribution mix (STT vs LLM ' +
+      'vs cascade vs context) and failure-mode breakdown, over ' +
+      'turn_drift_judgment. Sliceable by language / scenario / model / provider ' +
+      '/ promptVersion for experiment comparison.',
+  })
+  @ApiResponse({ status: 200, type: ConversationDriftResponseDto })
+  async getConversationDrift(
+    @Query() query: ConversationDriftQueryDto,
+  ): Promise<ConversationDriftResponseDto> {
+    return this.platformAnalyticsService.getConversationDrift(
+      query.range ?? '90d',
+      {
+        language: query.language,
+        scenarioId: query.scenarioId,
+        llmModel: query.llmModel,
+        llmProvider: query.llmProvider,
+        promptVersion: query.promptVersion,
+      },
+    );
+  }
+
+  @Post('conversation-drift/backfill')
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Re-run the drift backfill over the last N days (super-admin)',
+    description:
+      'Kicks off an async drift-judge backfill on ally-ai over sessions created ' +
+      'in the last `sinceDays` days (default 90 ≈ 3 months), judging only ' +
+      'sessions not already judged. Returns a job id; poll the status endpoint.',
+  })
+  @ApiResponse({ status: 202, type: DriftBackfillJobDto })
+  async startDriftBackfill(
+    @Body() body: StartDriftBackfillDto,
+  ): Promise<DriftBackfillJobDto> {
+    return this.platformAnalyticsService.startDriftBackfill(
+      body.sinceDays ?? 90,
+    );
+  }
+
+  @Get('conversation-drift/backfill/:jobId')
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Drift backfill job status (super-admin)' })
+  @ApiResponse({ status: 200, type: DriftBackfillJobDto })
+  async driftBackfillStatus(
+    @Param('jobId') jobId: string,
+  ): Promise<DriftBackfillJobDto> {
+    return this.platformAnalyticsService.getDriftBackfillStatus(jobId);
   }
 
   @ApiOperation({ summary: 'Get all dashboards' })

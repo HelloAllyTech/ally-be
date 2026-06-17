@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
+import { DriftJudgeService } from './drift-judge.service';
 import {
   ActiveUsersPointDto,
   AnalyticsBucketParam,
   AnalyticsOverviewResponseDto,
   AnalyticsRange,
+  ConversationDriftResponseDto,
+  DriftBackfillJobDto,
   RetentionPointDto,
   SimulationsCompletedPointDto,
   UserGrowthPointDto,
@@ -71,7 +74,48 @@ export class PlatformAnalyticsService {
     PlatformAnalyticsService.name,
   );
 
-  constructor(private readonly repo: PlatformAnalyticsRepository) {}
+  constructor(
+    private readonly repo: PlatformAnalyticsRepository,
+    private readonly driftJudge: DriftJudgeService,
+  ) {}
+
+  /**
+   * Start the async drift backfill for the last `sinceDays` days (default 90)
+   * and return a job id to poll. ally-be owns the session data: it selects,
+   * builds transcripts, calls ally-ai's stateless judge, and persists — see
+   * {@link DriftJudgeService}.
+   *
+   * `onlyUnjudged=false` (the default, used by the "Re-run" button) RE-JUDGES
+   * every session in the window — the loop for iterating on the judge rubric:
+   * edit the prompt in Prompt Management, click re-run, the fresh rubric is
+   * fetched and the per-turn rows are overwritten (upsert on
+   * session+turn+judgeModel+judgePromptVersion). Pass `onlyUnjudged=true` for
+   * the cheap ongoing catch-up (sessions with no judgment yet, no re-spend).
+   */
+  async startDriftBackfill(
+    sinceDays = 90,
+    onlyUnjudged = false,
+  ): Promise<DriftBackfillJobDto> {
+    return this.driftJudge.startBackfill(sinceDays, onlyUnjudged);
+  }
+
+  /** Backfill job status for UI progress polling (in-memory job registry). */
+  async getDriftBackfillStatus(jobId: string): Promise<DriftBackfillJobDto> {
+    const job = this.driftJudge.getJob(jobId);
+    if (!job) {
+      return {
+        jobId,
+        status: 'error',
+        total: 0,
+        processed: 0,
+        judged: 0,
+        drifted: 0,
+        skipped: 0,
+        error: 'job not found',
+      };
+    }
+    return job;
+  }
 
   /**
    * Build the consolidated super-admin analytics overview for the given range.
@@ -177,6 +221,174 @@ export class PlatformAnalyticsService {
    * Points are returned as-is from the DB (sorted by bucket then source); no
    * gap-fill, because a bucket with no turns has no meaningful latency value.
    */
+  /**
+   * Conversation drift analytics over turn_drift_judgment: drift rate per
+   * language (primary KPI) + attribution mix + failure-mode breakdown, sliced
+   * by the optional experiment filters.
+   */
+  async getConversationDrift(
+    range: AnalyticsRange,
+    filters: {
+      language?: string;
+      scenarioId?: number;
+      llmModel?: string;
+      llmProvider?: string;
+      promptVersion?: string;
+    } = {},
+  ): Promise<ConversationDriftResponseDto> {
+    const now = new Date();
+    const todayStart = startOfUtcDay(now);
+    const endExclusive = addDays(todayStart, 1);
+    let windowStart: Date;
+    if (range === '30d') windowStart = addDays(todayStart, -29);
+    else if (range === '90d') windowStart = addDays(todayStart, -89);
+    else windowStart = startOfUtcMonth(addMonths(todayStart, -11));
+
+    const f = { start: windowStart, end: endExclusive, ...filters };
+    const trendBucket: AnalyticsBucket =
+      range === '30d' ? 'day' : range === '90d' ? 'week' : 'month';
+
+    const [
+      byLanguage,
+      attributionMix,
+      failureModes,
+      byModel,
+      byProvider,
+      byPromptVersion,
+      topicMix,
+      coherenceMix,
+      sttGarbleMix,
+      sttErrorTypeMix,
+      firstDriftTurnHistogram,
+      driftTrendRaw,
+    ] = await Promise.all([
+      this.repo.getDriftRateByLanguage(f),
+      this.repo.getDriftAttributionMix(f),
+      this.repo.getDriftFailureModeBreakdown(f),
+      this.repo.getDriftRateByDimension(f, 'llmModel'),
+      this.repo.getDriftRateByDimension(f, 'llmProvider'),
+      this.repo.getDriftRateByDimension(f, 'promptVersion'),
+      this.repo.getDriftSessionCountsBy(f, 'topicLabel'),
+      this.repo.getDriftSessionCountsBy(f, 'coherence'),
+      this.repo.getDriftSessionCountsBy(f, 'counselorUtteranceGarbled'),
+      this.repo.getDriftSessionCountsBy(f, 'sttErrorType', true),
+      this.repo.getFirstDriftTurnHistogram(f),
+      this.repo.getDriftTrend(f, trendBucket),
+    ]);
+
+    // Language × kind (sessions affected) for the heatmap. Same kind set and
+    // de-dup rule as kindsOfDrift: off_topic/gibberish from topic, the
+    // incoherent levels from coherence, the LLM failure modes (excludes none).
+    const [topicByLang, cohByLang, failByLang] = await Promise.all([
+      this.repo.getDriftKindByLanguage(f, 'topicLabel', [
+        'off_topic',
+        'gibberish',
+      ]),
+      this.repo.getDriftKindByLanguage(f, 'coherence', [
+        'degrading',
+        'mostly_incoherent',
+      ]),
+      this.repo.getDriftKindByLanguage(f, 'aiReplyFailureMode', [
+        'hallucination',
+        'context_lockin',
+        'wrong_language_reply',
+        'repetition',
+        'role_slip',
+        'wrong_intent',
+      ]),
+    ]);
+    const kindByLanguage = [...topicByLang, ...cohByLang, ...failByLang].filter(
+      (r) => r.count > 0,
+    );
+
+    const driftRateByLanguage = byLanguage.map((r) => ({
+      language: r.language,
+      totalSessions: r.totalSessions,
+      driftedSessions: r.driftedSessions,
+      driftRate: r.totalSessions > 0 ? r.driftedSessions / r.totalSessions : 0,
+    }));
+    // {model|provider|promptVersion} → drift rate. These are the "which prompt /
+    // LLM config drifted" breakdowns; keys are 'unknown' for sessions judged
+    // before generation-config capture (A1/A7) was recording on the agent side.
+    const withRate = (
+      rows: { key: string; totalSessions: number; driftedSessions: number }[],
+    ) =>
+      rows.map((r) => ({
+        key: r.key,
+        totalSessions: r.totalSessions,
+        driftedSessions: r.driftedSessions,
+        driftRate:
+          r.totalSessions > 0 ? r.driftedSessions / r.totalSessions : 0,
+      }));
+    // One consolidated "kinds of drift" list (sessions affected by each kind) —
+    // drift categories only (healthy states excluded), de-duplicated: take
+    // off_topic/gibberish from topic, the incoherent levels from coherence, and
+    // the LLM failure modes (already excludes 'none'). A session can show
+    // several kinds, so these counts overlap — render as colored bars.
+    const kindsOfDrift = [
+      ...topicMix.filter((r) => r.key === 'off_topic' || r.key === 'gibberish'),
+      ...coherenceMix.filter(
+        (r) => r.key === 'degrading' || r.key === 'mostly_incoherent',
+      ),
+      ...failureModes,
+    ].filter((r) => r.count > 0);
+
+    // One consolidated "root cause" list (sessions affected) — the STT-vs-LLM
+    // attribution plus the STT specifics (garble severity partial/severe + error
+    // type), all as colour-coded bars. Overlaps like kindsOfDrift (a session can
+    // show several), so counts don't sum to a whole.
+    const rootCause = [
+      ...attributionMix, // stt_direct / stt_cascade / llm_direct / context_lockin
+      ...sttGarbleMix.filter((r) => r.key === 'partial' || r.key === 'severe'),
+      ...sttErrorTypeMix, // phonetic_garble / wrong_language / ... (excludes none)
+    ].filter((r) => r.count > 0);
+
+    const totalSessions = byLanguage.reduce((a, r) => a + r.totalSessions, 0);
+    const driftedSessions = byLanguage.reduce(
+      (a, r) => a + r.driftedSessions,
+      0,
+    );
+
+    return {
+      range,
+      summary: {
+        totalSessions,
+        driftedSessions,
+        driftRate: totalSessions > 0 ? driftedSessions / totalSessions : 0,
+      },
+      driftRateByLanguage,
+      attributionMix: attributionMix.map((r) => ({
+        key: r.key,
+        count: r.count,
+      })),
+      failureModeBreakdown: failureModes.map((r) => ({
+        key: r.key,
+        count: r.count,
+      })),
+      kindsOfDrift: kindsOfDrift.map((r) => ({ key: r.key, count: r.count })),
+      kindByLanguage,
+      rootCause: rootCause.map((r) => ({ key: r.key, count: r.count })),
+      topicMix: topicMix.map((r) => ({ key: r.key, count: r.count })),
+      coherenceMix: coherenceMix.map((r) => ({ key: r.key, count: r.count })),
+      sttGarbleMix: sttGarbleMix.map((r) => ({ key: r.key, count: r.count })),
+      sttErrorTypeMix: sttErrorTypeMix.map((r) => ({
+        key: r.key,
+        count: r.count,
+      })),
+      firstDriftTurnHistogram,
+      driftTrend: driftTrendRaw.map((r) => ({
+        bucket: r.bucket,
+        totalSessions: r.totalSessions,
+        driftedSessions: r.driftedSessions,
+        driftRate:
+          r.totalSessions > 0 ? r.driftedSessions / r.totalSessions : 0,
+      })),
+      driftRateByModel: withRate(byModel),
+      driftRateByProvider: withRate(byProvider),
+      driftRateByPromptVersion: withRate(byPromptVersion),
+    };
+  }
+
   async getVoiceLatency(
     range: AnalyticsRange,
     bucketParam?: AnalyticsBucketParam,

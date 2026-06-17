@@ -547,6 +547,23 @@ export class ScenarioSessionService {
       });
 
     try {
+      // Best-effort: record which prompt versions drive this session so drift
+      // analytics can attribute behaviour to a prompt-version experiment.
+      // Capture must never block session start.
+      try {
+        const promptVersions =
+          await this.scenarioSharedService.getResolvedPromptVersionsForScenarioSession();
+        if (Object.keys(promptVersions).length > 0) {
+          scenarioSession.metadata = {
+            ...(scenarioSession.metadata ?? {}),
+            promptVersions,
+          };
+          await this.scenarioSessionRepository.save(scenarioSession);
+        }
+      } catch {
+        // capture is best-effort; ignore failures
+      }
+
       // To add language and languageId to scenario metadata
       if (scenario?.metadata) {
         scenario.metadata.language =
@@ -1485,6 +1502,7 @@ export class ScenarioSessionService {
       scenarioId: metrics.scenario_id ?? scenarioSession.scenarioId,
       language: metrics.language,
       llmModel: metrics.llm_model,
+      llmProvider: metrics.llm_provider,
       env: metrics.env,
       responseChars: metrics.response_chars,
       eventsDetected: metrics.events_detected ?? 0,
@@ -1492,7 +1510,16 @@ export class ScenarioSessionService {
       llmTimedOut: metrics.llm_timed_out ?? false,
       interrupted: metrics.interrupted ?? false,
       occurredAt: occurredAt ?? new Date(),
-      metadata: metrics.metadata,
+      // Fold generation params into metadata (kept out of the wide column set
+      // since they're usually fixed per experiment; provider is a column).
+      metadata: {
+        ...(metrics.metadata ?? {}),
+        ...(metrics.temperature != null && {
+          temperature: metrics.temperature,
+        }),
+        ...(metrics.top_p != null && { topP: metrics.top_p }),
+        ...(metrics.max_tokens != null && { maxTokens: metrics.max_tokens }),
+      },
     });
     await repo.save(row);
   }

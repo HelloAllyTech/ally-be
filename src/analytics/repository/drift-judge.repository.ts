@@ -1,0 +1,243 @@
+import { Injectable } from '@nestjs/common';
+import { DataSource } from 'typeorm';
+
+/** Prompt-management code for the drift judge rubric (seeded by migration). */
+export const DRIFT_JUDGE_PROMPT_CODE = 'drift_judge_conversation_rubric';
+
+/** scenario_session_messages.senderId == -1 marks the AI client's turn. */
+const AI_SENDER_ID = -1;
+
+export interface DriftSessionRow {
+  id: string;
+  tenant_id: string;
+  scenario_id: number | null;
+  language: string;
+  persona: string | null;
+  prompt_versions: Record<string, unknown> | null;
+  occurred_at: Date | null;
+  llm_provider: string | null;
+  llm_model: string | null;
+}
+
+export interface TranscriptTurn {
+  role: 'client' | 'counselor';
+  text: string;
+  turn_index?: number;
+}
+
+export interface BuiltTranscript {
+  transcript: TranscriptTurn[];
+  aiText: Record<number, string>;
+  userText: Record<number, string>;
+}
+
+/** One per-turn judgment as returned by the ally-ai judge (snake_case). */
+export interface PerTurnJudgment {
+  turn_index: number;
+  coherence: string;
+  topic_label: string;
+  in_character: boolean;
+  counselor_utterance_garbled: string;
+  stt_error_type: string;
+  ai_reply_failure_mode: string;
+  root_attribution: string;
+  reasoning: string;
+}
+
+export interface SessionRollup {
+  drifted: boolean;
+  first_drift_turn: number | null;
+}
+
+/**
+ * Data access for drift judging. ally-be owns these tables, so the
+ * orchestration (select → build transcript → persist) lives here; the Gemini
+ * judge itself is a stateless call out to ally-ai. SQL ported from the former
+ * ally-ai runner so behaviour is identical.
+ */
+@Injectable()
+export class DriftJudgeRepository {
+  constructor(private readonly dataSource: DataSource) {}
+
+  /** Current rubric from prompt management; null if absent (judge falls back). */
+  async fetchRubric(): Promise<string | null> {
+    const rows = await this.dataSource.query(
+      `SELECT pv.prompt
+         FROM prompts p
+         LEFT JOIN prompts_versions pv
+           ON p.id = pv."promptId" AND pv.version = p."currentVersion"
+        WHERE p."promptCode" = $1`,
+      [DRIFT_JUDGE_PROMPT_CODE],
+    );
+    return rows?.[0]?.prompt ?? null;
+  }
+
+  /**
+   * Sessions to judge. Excludes admin-dashboard previews (roomId 'preview-%').
+   * `sinceDays` limits to recently-created sessions; `onlyUnjudged` skips any
+   * session that already has a judgment row (idempotent catch-up). Experiment
+   * fields (provider/model) come from the session's turn metrics.
+   */
+  async selectSessions(opts: {
+    sinceDays?: number | null;
+    language?: string | null;
+    onlyUnjudged?: boolean;
+    limit?: number | null;
+  }): Promise<DriftSessionRow[]> {
+    const params: unknown[] = [];
+    const p = (v: unknown) => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    let sql = `
+      SELECT s.id,
+             s.tenant_id        AS tenant_id,
+             s."scenarioId"     AS scenario_id,
+             COALESCE(l.value, 'en') AS language,
+             sc.prompt          AS persona,
+             s.metadata->'promptVersions' AS prompt_versions,
+             s."createdAt"      AS occurred_at,
+             (SELECT mode() WITHIN GROUP (ORDER BY m."llmProvider")
+                FROM scenario_session_turn_metrics m
+                WHERE m."scenarioSessionId" = s.id
+                  AND m."llmProvider" IS NOT NULL) AS llm_provider,
+             (SELECT mode() WITHIN GROUP (ORDER BY m."llmModel")
+                FROM scenario_session_turn_metrics m
+                WHERE m."scenarioSessionId" = s.id
+                  AND m."llmModel" IS NOT NULL) AS llm_model
+      FROM scenario_sessions s
+      LEFT JOIN languages l
+        ON l.id = NULLIF(s.metadata->>'languageId', '')::int
+      LEFT JOIN scenarios sc ON sc.id = s."scenarioId"
+      WHERE s."roomId" NOT LIKE 'preview-%'`;
+    if (opts.language)
+      sql += ` AND COALESCE(l.value, 'en') = ${p(opts.language)}`;
+    if (opts.sinceDays != null)
+      sql += ` AND s."createdAt" >= now() - make_interval(days => ${p(opts.sinceDays)})`;
+    if (opts.onlyUnjudged)
+      sql += ` AND NOT EXISTS (
+                 SELECT 1 FROM turn_drift_judgment j
+                 WHERE j."scenarioSessionId" = s.id)`;
+    sql += ` ORDER BY s."createdAt" DESC`;
+    if (opts.limit) sql += ` LIMIT ${p(opts.limit)}`;
+    return this.dataSource.query(sql, params);
+  }
+
+  /**
+   * Build the whole-session transcript. Turn indices are assigned to AI-client
+   * turns chronologically; an AI turn's "user text" is the most recent
+   * preceding counselor utterance. Mirrors the former Python build_transcript.
+   */
+  async buildTranscript(sessionId: string): Promise<BuiltTranscript> {
+    const rows: { sender_id: number; content: string | null }[] =
+      await this.dataSource.query(
+        `SELECT "senderId" AS sender_id, content
+           FROM scenario_session_messages
+          WHERE "scenarioSessionId" = $1
+          ORDER BY COALESCE("startSeconds", 0), id`,
+        [sessionId],
+      );
+    const transcript: TranscriptTurn[] = [];
+    const aiText: Record<number, string> = {};
+    const userText: Record<number, string> = {};
+    let aiIdx = 0;
+    let lastCounselor = '';
+    for (const r of rows) {
+      const content = r.content ?? '';
+      if (r.sender_id === AI_SENDER_ID) {
+        transcript.push({ role: 'client', turn_index: aiIdx, text: content });
+        aiText[aiIdx] = content;
+        userText[aiIdx] = lastCounselor;
+        aiIdx += 1;
+      } else {
+        transcript.push({ role: 'counselor', text: content });
+        lastCounselor = content;
+      }
+    }
+    return { transcript, aiText, userText };
+  }
+
+  /** Headline prompt version: prefer the main agent prompt, else any. */
+  private mainPromptVersion(pv: Record<string, unknown> | null): string | null {
+    if (!pv) return null;
+    for (const [code, version] of Object.entries(pv)) {
+      if (code.includes('main_agent') || code.includes('base_role'))
+        return String(version);
+    }
+    const first = Object.values(pv)[0];
+    return first != null ? String(first) : null;
+  }
+
+  /** Upsert all per-turn judgments for a session (idempotent on the unique key). */
+  async upsertJudgments(
+    session: DriftSessionRow,
+    perTurn: PerTurnJudgment[],
+    rollup: SessionRollup,
+    judgeModel: string,
+    judgePromptVersion: string,
+    aiText: Record<number, string>,
+    userText: Record<number, string>,
+  ): Promise<void> {
+    const promptVersion = this.mainPromptVersion(session.prompt_versions);
+    for (const t of perTurn) {
+      await this.dataSource.query(
+        `INSERT INTO turn_drift_judgment (
+           "tenant_id", "scenarioSessionId", "turnIndex", "coherence",
+           "topicLabel", "inCharacter", "counselorUtteranceGarbled",
+           "sttErrorType", "aiReplyFailureMode", "rootAttribution",
+           "reasoning", "userText", "aiText", "language", "scenarioId",
+           "llmProvider", "llmModel", "occurredAt",
+           "promptVersion", "sessionDrifted", "firstDriftTurn",
+           "judgeModel", "judgePromptVersion"
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+           $16, $17, $18, $19, $20, $21, $22, $23
+         )
+         ON CONFLICT ("scenarioSessionId", "turnIndex", "judgeModel", "judgePromptVersion")
+         DO UPDATE SET
+           "coherence" = EXCLUDED."coherence",
+           "topicLabel" = EXCLUDED."topicLabel",
+           "inCharacter" = EXCLUDED."inCharacter",
+           "counselorUtteranceGarbled" = EXCLUDED."counselorUtteranceGarbled",
+           "sttErrorType" = EXCLUDED."sttErrorType",
+           "aiReplyFailureMode" = EXCLUDED."aiReplyFailureMode",
+           "rootAttribution" = EXCLUDED."rootAttribution",
+           "reasoning" = EXCLUDED."reasoning",
+           "userText" = EXCLUDED."userText",
+           "aiText" = EXCLUDED."aiText",
+           "llmProvider" = EXCLUDED."llmProvider",
+           "llmModel" = EXCLUDED."llmModel",
+           "occurredAt" = EXCLUDED."occurredAt",
+           "promptVersion" = EXCLUDED."promptVersion",
+           "sessionDrifted" = EXCLUDED."sessionDrifted",
+           "firstDriftTurn" = EXCLUDED."firstDriftTurn",
+           "updatedAt" = now()`,
+        [
+          session.tenant_id,
+          session.id,
+          t.turn_index,
+          t.coherence,
+          t.topic_label,
+          t.in_character,
+          t.counselor_utterance_garbled,
+          t.stt_error_type,
+          t.ai_reply_failure_mode,
+          t.root_attribution,
+          t.reasoning,
+          userText[t.turn_index] ?? null,
+          aiText[t.turn_index] ?? null,
+          session.language,
+          session.scenario_id,
+          session.llm_provider,
+          session.llm_model,
+          session.occurred_at,
+          promptVersion,
+          rollup.drifted,
+          rollup.first_drift_turn,
+          judgeModel,
+          judgePromptVersion,
+        ],
+      );
+    }
+  }
+}

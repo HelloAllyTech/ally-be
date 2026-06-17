@@ -127,7 +127,8 @@ export class PromptSharedService {
       .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
       .addSelect('prompt.availableVariables', 'availableVariables')
       .addSelect('prompt.hasStates', 'hasStates')
-      .addSelect('prompt.defaultPrompt', 'defaultPrompt');
+      .addSelect('prompt.defaultPrompt', 'defaultPrompt')
+      .addSelect('prompt.currentVersion', 'currentVersion');
 
     if (options.promptCode && options.promptCode.length > 0) {
       query.andWhere('prompt.promptCode IN (:...promptCodes)', {
@@ -152,6 +153,7 @@ export class PromptSharedService {
         )[];
         hasStates?: boolean;
         defaultPrompt?: string;
+        currentVersion?: number;
       }
     >();
 

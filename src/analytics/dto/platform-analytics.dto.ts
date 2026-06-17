@@ -25,6 +25,159 @@ export class AnalyticsOverviewQueryDto {
   range?: AnalyticsRange;
 }
 
+export class ConversationDriftQueryDto {
+  @ApiProperty({ enum: ANALYTICS_RANGES, default: '90d', required: false })
+  @IsOptional()
+  @IsIn(ANALYTICS_RANGES)
+  range?: AnalyticsRange;
+
+  @ApiProperty({
+    description: 'Filter by language value (e.g. ta, hi)',
+    required: false,
+  })
+  @IsOptional()
+  language?: string;
+
+  @ApiProperty({ description: 'Filter by scenario id', required: false })
+  @IsOptional()
+  scenarioId?: number;
+
+  @ApiProperty({ description: 'Filter by agent LLM model', required: false })
+  @IsOptional()
+  llmModel?: string;
+
+  @ApiProperty({
+    description: 'Filter by provider (openai/gemini/anthropic)',
+    required: false,
+  })
+  @IsOptional()
+  llmProvider?: string;
+
+  @ApiProperty({ description: 'Filter by prompt version', required: false })
+  @IsOptional()
+  promptVersion?: string;
+}
+
+export class DriftRateByLanguageDto {
+  @ApiProperty() language!: string;
+  @ApiProperty() totalSessions!: number;
+  @ApiProperty() driftedSessions!: number;
+  @ApiProperty({ description: 'driftedSessions / totalSessions, 0..1' })
+  driftRate!: number;
+}
+
+export class DriftCountDto {
+  @ApiProperty({
+    description:
+      'category value (topic / coherence / attribution / failure / STT)',
+  })
+  key!: string;
+  @ApiProperty({
+    description: 'distinct sessions with >=1 turn in this category',
+  })
+  count!: number;
+}
+
+/** One cell of the language × drift-kind heatmap (sessions affected). */
+export class DriftKindByLanguageDto {
+  @ApiProperty() language!: string;
+  @ApiProperty({
+    description: 'drift kind (off_topic / degrading / hallucination / ...)',
+  })
+  kind!: string;
+  @ApiProperty({
+    description:
+      'distinct sessions in this language with >=1 turn of this kind',
+  })
+  count!: number;
+}
+
+/** Drift rate grouped by an experiment dimension (model / provider / prompt version). */
+export class DriftRateByDimensionDto {
+  @ApiProperty({ description: "dimension value, or 'unknown' if not captured" })
+  key!: string;
+  @ApiProperty() totalSessions!: number;
+  @ApiProperty() driftedSessions!: number;
+  @ApiProperty({ description: 'driftedSessions / totalSessions, 0..1' })
+  driftRate!: number;
+}
+
+export class DriftSummaryDto {
+  @ApiProperty() totalSessions!: number;
+  @ApiProperty() driftedSessions!: number;
+  @ApiProperty() driftRate!: number;
+}
+
+export class DriftHistogramBinDto {
+  @ApiProperty({ description: 'First-drift turn index' }) turn!: number;
+  @ApiProperty() sessions!: number;
+}
+
+export class DriftTrendPointDto {
+  @ApiProperty({ description: 'Bucket start, yyyy-mm-dd' }) bucket!: string;
+  @ApiProperty() totalSessions!: number;
+  @ApiProperty() driftedSessions!: number;
+  @ApiProperty({ description: 'driftedSessions / totalSessions, 0..1' })
+  driftRate!: number;
+}
+
+export class ConversationDriftResponseDto {
+  @ApiProperty({ enum: ANALYTICS_RANGES }) range!: AnalyticsRange;
+  @ApiProperty({ type: DriftSummaryDto }) summary!: DriftSummaryDto;
+  @ApiProperty({ type: [DriftRateByLanguageDto] })
+  driftRateByLanguage!: DriftRateByLanguageDto[];
+  @ApiProperty({ type: [DriftCountDto] }) attributionMix!: DriftCountDto[];
+  @ApiProperty({ type: [DriftCountDto] })
+  failureModeBreakdown!: DriftCountDto[];
+  // Consolidated "kinds of drift" (sessions affected by each kind, drift-only).
+  @ApiProperty({ type: [DriftCountDto] }) kindsOfDrift!: DriftCountDto[];
+  // Language × kind grid (sessions affected) for the heatmap.
+  @ApiProperty({ type: [DriftKindByLanguageDto] })
+  kindByLanguage!: DriftKindByLanguageDto[];
+  // Consolidated "root cause" (attribution + STT garble/error specifics).
+  @ApiProperty({ type: [DriftCountDto] }) rootCause!: DriftCountDto[];
+  // Per-dimension session distributions (detail; kindsOfDrift is the summary).
+  @ApiProperty({ type: [DriftCountDto] }) topicMix!: DriftCountDto[];
+  @ApiProperty({ type: [DriftCountDto] }) coherenceMix!: DriftCountDto[];
+  // STT failure detail (garble severity + error type).
+  @ApiProperty({ type: [DriftCountDto] }) sttGarbleMix!: DriftCountDto[];
+  @ApiProperty({ type: [DriftCountDto] }) sttErrorTypeMix!: DriftCountDto[];
+  // When drift starts + whether it's improving over time.
+  @ApiProperty({ type: [DriftHistogramBinDto] })
+  firstDriftTurnHistogram!: DriftHistogramBinDto[];
+  @ApiProperty({ type: [DriftTrendPointDto] })
+  driftTrend!: DriftTrendPointDto[];
+  // Experiment slices.
+  @ApiProperty({ type: [DriftRateByDimensionDto] })
+  driftRateByModel!: DriftRateByDimensionDto[];
+  @ApiProperty({ type: [DriftRateByDimensionDto] })
+  driftRateByProvider!: DriftRateByDimensionDto[];
+  @ApiProperty({ type: [DriftRateByDimensionDto] })
+  driftRateByPromptVersion!: DriftRateByDimensionDto[];
+}
+
+export class StartDriftBackfillDto {
+  @ApiProperty({
+    required: false,
+    default: 90,
+    description:
+      'Judge sessions created in the last N days (default 90 = ~3 months).',
+  })
+  sinceDays?: number;
+}
+
+export class DriftBackfillJobDto {
+  @ApiProperty() jobId!: string;
+  @ApiProperty({ description: 'queued | running | done | error' })
+  status!: string;
+  @ApiProperty() total!: number;
+  @ApiProperty() processed!: number;
+  @ApiProperty() judged!: number;
+  @ApiProperty() drifted!: number;
+  @ApiProperty() skipped!: number;
+  @ApiProperty({ required: false, nullable: true }) error?: string | null;
+}
+
 export class VoiceLatencyQueryDto {
   @ApiProperty({
     description: 'Time window for the voice-to-voice latency trend',

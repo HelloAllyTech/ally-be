@@ -54,6 +54,37 @@ export interface VoiceLatencyBucketRow {
   p95Ms: number;
 }
 
+/** Shared filters for conversation-drift analytics queries. */
+export interface DriftFilters {
+  start: Date;
+  end: Date;
+  language?: string;
+  scenarioId?: number;
+  llmModel?: string;
+  llmProvider?: string;
+  promptVersion?: string;
+}
+
+export interface DriftRateRow {
+  language: string;
+  totalSessions: number;
+  driftedSessions: number;
+}
+
+/** Drift rate grouped by an experiment dimension (model / provider / prompt version). */
+export interface DriftDimensionRow {
+  key: string;
+  totalSessions: number;
+  driftedSessions: number;
+}
+
+export interface DriftCountRow {
+  /** category value (topic / coherence / attribution / failure / STT). */
+  key: string;
+  /** number of distinct sessions that had >=1 turn in this category. */
+  count: number;
+}
+
 /**
  * Raw cross-table aggregation for the super-admin analytics overview.
  *
@@ -343,6 +374,293 @@ export class PlatformAnalyticsRepository {
       avgMs: Number(r.avgMs) || 0,
       p50Ms: Number(r.p50Ms) || 0,
       p95Ms: Number(r.p95Ms) || 0,
+    }));
+  }
+
+  // ---------------------------------------------------------------------
+  // Conversation drift analytics (over turn_drift_judgment).
+  // ---------------------------------------------------------------------
+
+  /**
+   * Apply the shared drift filters (time window on the session time +
+   * experiment slice dimensions) to a raw query on turn_drift_judgment aliased
+   * 'j'. Time uses COALESCE(occurredAt, createdAt): occurredAt is the session
+   * timestamp set by the runner; createdAt is the fallback for rows judged
+   * before occurredAt was populated.
+   */
+  private applyDriftFilters(
+    qb: import('typeorm').SelectQueryBuilder<import('typeorm').ObjectLiteral>,
+    f: DriftFilters,
+  ) {
+    // Window on the SESSION's time (occurredAt), not the judgment's createdAt —
+    // otherwise a backfill (which judges historic sessions today) would stamp
+    // them all as "now" and pile them into the wrong date bucket. occurredAt is
+    // populated by the runner from the session timestamp; COALESCE keeps older
+    // rows (judged before occurredAt was set) working off createdAt.
+    qb.where('COALESCE(j."occurredAt", j."createdAt") >= :start', {
+      start: f.start,
+    }).andWhere('COALESCE(j."occurredAt", j."createdAt") < :end', {
+      end: f.end,
+    });
+    if (f.language)
+      qb.andWhere('j."language" = :language', { language: f.language });
+    if (f.scenarioId != null)
+      qb.andWhere('j."scenarioId" = :scenarioId', { scenarioId: f.scenarioId });
+    if (f.llmModel)
+      qb.andWhere('j."llmModel" = :llmModel', { llmModel: f.llmModel });
+    if (f.llmProvider)
+      qb.andWhere('j."llmProvider" = :provider', { provider: f.llmProvider });
+    if (f.promptVersion)
+      qb.andWhere('j."promptVersion" = :pv', { pv: f.promptVersion });
+    return qb;
+  }
+
+  /** Drifted vs total sessions per language (the primary drift KPI). */
+  async getDriftRateByLanguage(f: DriftFilters): Promise<DriftRateRow[]> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('j."language"', 'language')
+      .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'totalSessions')
+      .addSelect(
+        'COUNT(DISTINCT j."scenarioSessionId") FILTER (WHERE j."sessionDrifted" = true)::int',
+        'driftedSessions',
+      )
+      .from('turn_drift_judgment', 'j');
+    this.applyDriftFilters(qb, f);
+    const rows = await qb
+      .groupBy('j."language"')
+      .orderBy('j."language"', 'ASC')
+      .getRawMany<{
+        language: string;
+        totalSessions: number;
+        driftedSessions: number;
+      }>();
+    return rows.map((r) => ({
+      language: r.language ?? 'unknown',
+      totalSessions: Number(r.totalSessions) || 0,
+      driftedSessions: Number(r.driftedSessions) || 0,
+    }));
+  }
+
+  /**
+   * Drifted vs total sessions grouped by an experiment dimension — the LLM
+   * model, inference provider, or prompt version that produced the session.
+   * `dimension` is whitelisted (never raw user input) before interpolation.
+   * NULL keys (e.g. sessions judged before generation-config capture landed)
+   * surface as 'unknown' so they're visible rather than silently dropped.
+   */
+  async getDriftRateByDimension(
+    f: DriftFilters,
+    dimension: 'llmModel' | 'llmProvider' | 'promptVersion',
+  ): Promise<DriftDimensionRow[]> {
+    const col = {
+      llmModel: 'llmModel',
+      llmProvider: 'llmProvider',
+      promptVersion: 'promptVersion',
+    }[dimension];
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select(`COALESCE(j."${col}", 'unknown')`, 'key')
+      .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'totalSessions')
+      .addSelect(
+        'COUNT(DISTINCT j."scenarioSessionId") FILTER (WHERE j."sessionDrifted" = true)::int',
+        'driftedSessions',
+      )
+      .from('turn_drift_judgment', 'j');
+    this.applyDriftFilters(qb, f);
+    const rows = await qb
+      .groupBy('key')
+      .orderBy('"driftedSessions"', 'DESC')
+      .getRawMany<{
+        key: string;
+        totalSessions: number;
+        driftedSessions: number;
+      }>();
+    return rows.map((r) => ({
+      key: r.key ?? 'unknown',
+      totalSessions: Number(r.totalSessions) || 0,
+      driftedSessions: Number(r.driftedSessions) || 0,
+    }));
+  }
+
+  /** Sessions with >=1 drift turn by root attribution (STT vs LLM vs cascade vs context). */
+  async getDriftAttributionMix(f: DriftFilters): Promise<DriftCountRow[]> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('j."rootAttribution"', 'key')
+      .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'count')
+      .from('turn_drift_judgment', 'j');
+    this.applyDriftFilters(qb, f);
+    const rows = await qb
+      .andWhere('j."rootAttribution" IS NOT NULL')
+      .andWhere(`j."rootAttribution" <> 'none'`)
+      .groupBy('j."rootAttribution"')
+      .orderBy('count', 'DESC')
+      .getRawMany<{ key: string; count: number }>();
+    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
+  }
+
+  /** Sessions with >=1 turn of each AI failure mode (what specifically broke). */
+  async getDriftFailureModeBreakdown(
+    f: DriftFilters,
+  ): Promise<DriftCountRow[]> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('j."aiReplyFailureMode"', 'key')
+      .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'count')
+      .from('turn_drift_judgment', 'j');
+    this.applyDriftFilters(qb, f);
+    const rows = await qb
+      .andWhere('j."aiReplyFailureMode" IS NOT NULL')
+      .andWhere(`j."aiReplyFailureMode" <> 'none'`)
+      .groupBy('j."aiReplyFailureMode"')
+      .orderBy('count', 'DESC')
+      .getRawMany<{ key: string; count: number }>();
+    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
+  }
+
+  /**
+   * Generic drift-turn counts grouped by a whitelisted per-turn dimension:
+   * topic label (on/tangent/off/gibberish), coherence level, STT garble
+   * severity (none/partial/severe), or STT error type. `excludeNone` drops the
+   * 'none' bucket — used for sttErrorType (where 'none' = "not garbled" and
+   * isn't informative); kept for garble severity, where none/partial/severe is
+   * the whole point.
+   */
+  async getDriftSessionCountsBy(
+    f: DriftFilters,
+    dimension:
+      | 'topicLabel'
+      | 'coherence'
+      | 'counselorUtteranceGarbled'
+      | 'sttErrorType',
+    excludeNone = false,
+  ): Promise<DriftCountRow[]> {
+    const col = {
+      topicLabel: 'topicLabel',
+      coherence: 'coherence',
+      counselorUtteranceGarbled: 'counselorUtteranceGarbled',
+      sttErrorType: 'sttErrorType',
+    }[dimension];
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select(`j."${col}"`, 'key')
+      // Distinct sessions touched by each category. Sessions can span multiple
+      // categories (different turns), so these counts overlap and don't sum to
+      // total sessions — render as bars, not a pie.
+      .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'count')
+      .from('turn_drift_judgment', 'j');
+    this.applyDriftFilters(qb, f);
+    qb.andWhere(`j."${col}" IS NOT NULL`);
+    if (excludeNone) qb.andWhere(`j."${col}" <> 'none'`);
+    const rows = await qb
+      .groupBy(`j."${col}"`)
+      .orderBy('count', 'DESC')
+      .getRawMany<{ key: string; count: number }>();
+    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
+  }
+
+  /**
+   * Sessions affected by each drift KIND, split by language — the data behind
+   * the language × kind heatmap. `dimension` is whitelisted (never raw user
+   * input) and `allowed` is a parameterised value list, so a session counts for
+   * a (language, kind) cell if any of its turns matched. Cells are independent:
+   * a multi-kind session lights up several cells (no sum-to-whole), which is
+   * exactly why a heatmap (not a stacked bar) is the right viz here.
+   */
+  async getDriftKindByLanguage(
+    f: DriftFilters,
+    dimension: 'topicLabel' | 'coherence' | 'aiReplyFailureMode',
+    allowed: string[],
+  ): Promise<{ language: string; kind: string; count: number }[]> {
+    if (allowed.length === 0) return [];
+    const col = {
+      topicLabel: 'topicLabel',
+      coherence: 'coherence',
+      aiReplyFailureMode: 'aiReplyFailureMode',
+    }[dimension];
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('j."language"', 'language')
+      .addSelect(`j."${col}"`, 'kind')
+      .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'count')
+      .from('turn_drift_judgment', 'j');
+    this.applyDriftFilters(qb, f);
+    qb.andWhere(`j."${col}" IN (:...allowed)`, { allowed });
+    const rows = await qb
+      .groupBy('j."language"')
+      .addGroupBy(`j."${col}"`)
+      .getRawMany<{ language: string; kind: string; count: number }>();
+    return rows.map((r) => ({
+      language: r.language ?? 'unknown',
+      kind: r.kind,
+      count: Number(r.count) || 0,
+    }));
+  }
+
+  /**
+   * Distribution of the turn at which drift first began, across drifted
+   * sessions ("after the nth utterance"). One count per session (firstDriftTurn
+   * is the rollup, denormalized onto every turn row, so DISTINCT session).
+   */
+  async getFirstDriftTurnHistogram(
+    f: DriftFilters,
+  ): Promise<{ turn: number; sessions: number }[]> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('j."firstDriftTurn"', 'turn')
+      .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'sessions')
+      .from('turn_drift_judgment', 'j');
+    this.applyDriftFilters(qb, f);
+    const rows = await qb
+      .andWhere('j."sessionDrifted" = true')
+      .andWhere('j."firstDriftTurn" IS NOT NULL')
+      .groupBy('j."firstDriftTurn"')
+      .orderBy('j."firstDriftTurn"', 'ASC')
+      .getRawMany<{ turn: number; sessions: number }>();
+    return rows.map((r) => ({
+      turn: Number(r.turn),
+      sessions: Number(r.sessions) || 0,
+    }));
+  }
+
+  /**
+   * Drift rate over time — drifted vs total sessions per day/week/month bucket
+   * on the session time (COALESCE occurredAt/createdAt). The "is drift getting
+   * better?" trend.
+   */
+  async getDriftTrend(
+    f: DriftFilters,
+    bucket: AnalyticsBucket,
+  ): Promise<
+    { bucket: string; totalSessions: number; driftedSessions: number }[]
+  > {
+    const trunc = this.resolveBucket(bucket);
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select(
+        `to_char(date_trunc('${trunc}', COALESCE(j."occurredAt", j."createdAt")), 'YYYY-MM-DD')`,
+        'bucket',
+      )
+      .addSelect('COUNT(DISTINCT j."scenarioSessionId")::int', 'totalSessions')
+      .addSelect(
+        'COUNT(DISTINCT j."scenarioSessionId") FILTER (WHERE j."sessionDrifted" = true)::int',
+        'driftedSessions',
+      )
+      .from('turn_drift_judgment', 'j');
+    this.applyDriftFilters(qb, f);
+    const rows = await qb
+      .groupBy('bucket')
+      .orderBy('bucket', 'ASC')
+      .getRawMany<{
+        bucket: string;
+        totalSessions: number;
+        driftedSessions: number;
+      }>();
+    return rows.map((r) => ({
+      bucket: r.bucket,
+      totalSessions: Number(r.totalSessions) || 0,
+      driftedSessions: Number(r.driftedSessions) || 0,
     }));
   }
 

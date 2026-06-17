@@ -37,6 +37,12 @@ export interface LearnTurnMetricsData {
   scenario_id?: number;
   language?: string;
   llm_model?: string;
+  /** Inference provider for llm_model ('openai' | 'gemini' | 'anthropic'). */
+  llm_provider?: string;
+  /** Generation params — folded into the turn-metrics `metadata` jsonb. */
+  temperature?: number;
+  top_p?: number;
+  max_tokens?: number;
   env?: string;
   response_chars?: number;
   events_detected?: number;

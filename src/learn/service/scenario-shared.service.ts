@@ -917,6 +917,33 @@ export class ScenarioSharedService {
    * Only includes prompts with useDashboardOverride=true (enabled from Dashboard).
    * ally-ai-learn uses metadata prompts when present; otherwise falls back to local .txt.
    */
+  /**
+   * Resolve the *versions* of the dashboard-override prompts that drive a
+   * scenario session, as { promptCode: currentVersion }. Stamped onto the
+   * session at start so drift analytics can attribute behaviour to a specific
+   * prompt-version experiment. Best-effort: returns {} on any failure (capture
+   * must never block session start).
+   */
+  async getResolvedPromptVersionsForScenarioSession(): Promise<
+    Record<string, number>
+  > {
+    try {
+      const prompts = await this.promptSharedService.getPromptsByOptions({
+        promptCodePrefix: ALLY_AI_LEARN_PROMPT_PREFIX,
+        useDashboardOverrideOnly: true,
+      });
+      return (prompts ?? []).reduce<Record<string, number>>((acc, p) => {
+        const version = (p as { currentVersion?: number }).currentVersion;
+        if (version != null) {
+          acc[p.promptCode] = version;
+        }
+        return acc;
+      }, {});
+    } catch {
+      return {};
+    }
+  }
+
   private async getPromptsForScenarioSession() {
     const prompts = await this.promptSharedService.getPromptsByOptions({
       promptCodePrefix: ALLY_AI_LEARN_PROMPT_PREFIX,
