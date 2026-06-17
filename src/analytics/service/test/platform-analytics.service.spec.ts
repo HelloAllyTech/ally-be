@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PlatformAnalyticsService } from '../platform-analytics.service';
+import { DriftJudgeService } from '../drift-judge.service';
 import { PlatformAnalyticsRepository } from '../../repository/platform-analytics.repository';
 
 jest.mock('src/logger/logger.service', () => ({
@@ -50,10 +51,18 @@ describe('PlatformAnalyticsService', () => {
       getVoiceLatencyByBucket: jest.fn().mockResolvedValue([]),
     };
 
+    // Drift backfill is delegated to DriftJudgeService; these tests cover the
+    // analytics aggregations, so a stub is enough to satisfy the constructor.
+    const mockDriftJudge: Partial<jest.Mocked<DriftJudgeService>> = {
+      startBackfill: jest.fn(),
+      getJob: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PlatformAnalyticsService,
         { provide: PlatformAnalyticsRepository, useValue: mockRepo },
+        { provide: DriftJudgeService, useValue: mockDriftJudge },
       ],
     }).compile();
 
