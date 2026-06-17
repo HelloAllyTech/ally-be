@@ -11,7 +11,7 @@ export class CreateTurnDriftJudgment1781600000000 implements MigrationInterface 
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TABLE "turn_drift_judgment" (` +
+      `CREATE TABLE IF NOT EXISTS "turn_drift_judgment" (` +
         `"createdAt" TIMESTAMP NOT NULL DEFAULT now(), ` +
         `"updatedAt" TIMESTAMP NOT NULL DEFAULT now(), ` +
         `"tenant_id" character varying NOT NULL, ` +
@@ -42,16 +42,16 @@ export class CreateTurnDriftJudgment1781600000000 implements MigrationInterface 
         `("scenarioSessionId", "turnIndex", "judgeModel", "judgePromptVersion"))`,
     );
     await queryRunner.query(
-      `CREATE INDEX "turn_drift_judgment_session_id_idx" ON "turn_drift_judgment" ("scenarioSessionId")`,
+      `CREATE INDEX IF NOT EXISTS "turn_drift_judgment_session_id_idx" ON "turn_drift_judgment" ("scenarioSessionId")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "turn_drift_judgment_occurred_at_idx" ON "turn_drift_judgment" ("occurredAt")`,
+      `CREATE INDEX IF NOT EXISTS "turn_drift_judgment_occurred_at_idx" ON "turn_drift_judgment" ("occurredAt")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "turn_drift_judgment_language_idx" ON "turn_drift_judgment" ("language")`,
+      `CREATE INDEX IF NOT EXISTS "turn_drift_judgment_language_idx" ON "turn_drift_judgment" ("language")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "turn_drift_judgment_scenario_id_idx" ON "turn_drift_judgment" ("scenarioId")`,
+      `CREATE INDEX IF NOT EXISTS "turn_drift_judgment_scenario_id_idx" ON "turn_drift_judgment" ("scenarioId")`,
     );
   }
 
