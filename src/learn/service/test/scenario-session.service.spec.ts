@@ -982,6 +982,126 @@ describe('ScenarioSessionService', () => {
     });
   });
 
+  describe('getScenarioSession - per-language report', () => {
+    const endedSession = (summary: Record<string, any>) =>
+      ({
+        ...mockScenarioSession,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T10:30:00Z'),
+        details: { summary },
+      }) as any;
+
+    beforeEach(() => {
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+    });
+
+    it('serves the default feedback (and strips internal cache fields) when the requested language matches the stored language', async () => {
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        endedSession({
+          feedback: { positives: ['Good rapport'] },
+          language: 'en',
+          translations: { hi: { status: 'COMPLETED', feedback: {} } },
+        }),
+      );
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+        true,
+        'en-US',
+      );
+
+      expect((result as any).details.summary.feedback).toEqual({
+        positives: ['Good rapport'],
+      });
+      expect((result as any).details.summary).not.toHaveProperty(
+        'translations',
+      );
+      expect((result as any).details.summary).not.toHaveProperty('language');
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('swaps in the cached COMPLETED feedback for the requested language', async () => {
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        endedSession({
+          feedback: { positives: ['English'] },
+          language: 'en',
+          translations: {
+            hi: { status: 'COMPLETED', feedback: { positives: ['हिंदी'] } },
+          },
+        }),
+      );
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+        true,
+        'hi',
+      );
+
+      expect((result as any).details.summary.feedback).toEqual({
+        positives: ['हिंदी'],
+      });
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('withholds feedback and triggers a background re-evaluation when the requested language is not cached', async () => {
+      const row: any = {
+        summary: { feedback: { positives: ['English'] }, language: 'en' },
+      };
+      const repoStub = {
+        findOne: jest.fn().mockResolvedValue(row),
+        save: jest.fn(),
+      };
+      dataSource.transaction.mockImplementation(async (cb: any) =>
+        cb({ getRepository: () => repoStub }),
+      );
+      scenarioSessionMessagesRepository.find.mockResolvedValue([
+        {
+          id: 1,
+          senderId: 1,
+          content: 'hello',
+          startSeconds: 0,
+          endSeconds: 1,
+        },
+      ] as any);
+      aiService.getScenarioSessionEvaluation.mockResolvedValue({
+        positives: [],
+        improvements: [],
+        emotional_movement: [],
+        message_tags: [],
+        areas_of_growth: [],
+      } as any);
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue(
+        endedSession({
+          feedback: { positives: ['English'] },
+          language: 'en',
+        }),
+      );
+
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+        true,
+        'ta',
+      );
+
+      // Feedback withheld so the client keeps polling until the Tamil copy lands.
+      expect((result as any).details.summary.feedback).toBeUndefined();
+      // PENDING slot was reserved.
+      expect(repoStub.save).toHaveBeenCalled();
+      expect(row.summary.translations.ta.status).toBeDefined();
+
+      // The fire-and-forget generation runs the evaluation in the target language.
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      const evalCall = aiService.getScenarioSessionEvaluation.mock.calls[0];
+      expect(evalCall[1]).toBe(false); // need_memory
+      expect(evalCall[5]).toBe('ta'); // languageCode
+    });
+  });
+
   describe('endScenarioSession', () => {
     it('should throw BadRequestException when scenario session not found', async () => {
       scenarioSessionRepository.findOne.mockResolvedValue(null);
@@ -1274,6 +1394,78 @@ describe('ScenarioSessionService', () => {
         null,
         undefined,
         true,
+        undefined,
+      );
+
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
+    });
+
+    it('should pass languageCode to getScenarioSessionEvaluation', async () => {
+      const mockSummaryResponse = {
+        improvements: [],
+        positives: [],
+        sessionGlimpse: '',
+        cumulativeMemory: '',
+        messageTags: [] as string[],
+        emotionalMovement: [] as string[],
+        areas_of_improvement: [
+          { improvement: 'Improve X', recommendation: 'Do Y' },
+        ],
+      };
+      const mockMessages = [
+        {
+          id: 1,
+          scenarioSessionId: mockScenarioSessionId,
+          senderId: 1,
+          messageType: ScenarioSessionMessageType.TEXT,
+          content: 'Hello',
+          startSeconds: 0,
+          endSeconds: 2,
+          tenantId: mockTenantId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+      const mockDetailsSave = jest.fn().mockResolvedValue(undefined);
+      const mockDetailsRepo = {
+        create: jest.fn().mockImplementation((dto) => dto),
+        save: mockDetailsSave,
+      };
+      const mockEntityManager = {
+        getRepository: jest.fn(() => mockDetailsRepo),
+      };
+
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = true;
+      scenarioSessionMessagesRepository.find.mockResolvedValue(
+        mockMessages as ScenarioSessionMessages[],
+      );
+      aiService.getScenarioSessionEvaluation.mockResolvedValue(
+        mockSummaryResponse as any,
+      );
+      dataSource.transaction.mockImplementation(async (cb: any) =>
+        cb(mockEntityManager),
+      );
+
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId, {
+        enableRecommendations: true,
+        languageCode: 'hi',
+      });
+      await new Promise((r) => setImmediate(r));
+
+      expect(aiService.getScenarioSessionEvaluation).toHaveBeenCalledWith(
+        expect.any(Array),
+        false,
+        null,
+        undefined,
+        true,
+        'hi',
       );
 
       mockConfigService.featureFlag.useScenarioSessionEvaluation = false;

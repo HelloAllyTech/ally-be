@@ -628,6 +628,7 @@ export class LearnController {
       type: 'object',
       properties: {
         enableRecommendations: { type: 'boolean' },
+        languageCode: { type: 'string' },
       },
     },
     required: false,

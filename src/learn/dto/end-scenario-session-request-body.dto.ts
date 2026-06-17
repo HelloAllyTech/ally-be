@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 
 export class EndScenarioSessionRequestBodyDto {
   @ApiProperty({
@@ -9,4 +9,15 @@ export class EndScenarioSessionRequestBodyDto {
   @IsBoolean()
   @IsOptional()
   enableRecommendations?: boolean;
+
+  @ApiProperty({
+    description:
+      "Learner's global UI language code (ISO 639-1 like 'hi'/'mr'/'en', " +
+      "possibly BCP-47 like 'hi-IN'). Forwarded to ally-ai scenario evaluation.",
+    required: false,
+    example: 'hi',
+  })
+  @IsString()
+  @IsOptional()
+  languageCode?: string;
 }

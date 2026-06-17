@@ -388,6 +388,20 @@ export class ScenarioSessionService {
       }
     }
 
+    // Serve the report in the viewer's selected UI language. When the requested
+    // language differs from the language the stored summary was generated in,
+    // serve the cached per-language copy if ready; otherwise kick off a one-off
+    // background re-evaluation in that language and return without feedback so
+    // the client keeps polling (mirrors the initial-summary generation flow).
+    if ((scenarioSession as any).details?.summary) {
+      await this.resolveSummaryLanguage(
+        (scenarioSession as any).details,
+        scenarioSessionId,
+        ScenarioSessionService.normalizeLanguage(languageCode),
+        enableRecommendations,
+      );
+    }
+
     // Filter events to only include those with ACTIVE session events (null when
     // visibility is PASSIVE or event missing), then remove sensitive fields
     if ((scenarioSession as any).events) {
@@ -1063,6 +1077,7 @@ export class ScenarioSessionService {
       callDuration,
       previousMemory,
       endScenarioSessionRequestBodyDto?.enableRecommendations,
+      endScenarioSessionRequestBodyDto?.languageCode,
     ).catch((error) => {
       this.logger.error(
         `getScenarioSessionSummaryFromAI rejected unexpectedly for ${scenarioSessionId}: ${JSON.stringify(error?.message)}`,
@@ -1102,6 +1117,7 @@ export class ScenarioSessionService {
     callDuration?: number,
     previousMemory?: string | null,
     enableRecommendations?: boolean,
+    languageCode?: string,
   ) {
     const tenantId = ExecutionManager.getTenantId();
     if (!tenantId) {
@@ -1155,6 +1171,7 @@ export class ScenarioSessionService {
               previousMemory,
               undefined,
               enableRecommendations,
+              languageCode,
             )
           : await this.aiService.getScenarioSessionSummary(
               messages as MessageRequest[],
@@ -1185,7 +1202,14 @@ export class ScenarioSessionService {
         }
 
         const aiSummary = CommonUtil.convertToCamelCase(aiResult);
-        summary = { feedback: aiSummary };
+        summary = {
+          feedback: aiSummary,
+          // Language this default feedback was generated in (normalized primary
+          // subtag, e.g. 'hi'). getScenarioSession() reads this to decide
+          // whether a viewer's selected UI language needs an on-demand
+          // per-language re-evaluation (cached under summary.translations).
+          language: ScenarioSessionService.normalizeLanguage(languageCode),
+        };
       }
     } catch (error) {
       this.logger.error(
@@ -1218,6 +1242,235 @@ export class ScenarioSessionService {
       this.logger.error(
         `Failed to persist scenario session details for ${scenarioSessionId}: ${JSON.stringify(error.message)}`,
       );
+    }
+  }
+
+  /**
+   * Normalize a BCP 47 / ISO 639-1 language code to its lowercase primary
+   * subtag (e.g. 'hi-IN' -> 'hi', 'EN' -> 'en'). Returns undefined for empty
+   * input so callers can treat "no language" uniformly.
+   */
+  static normalizeLanguage(code?: string | null): string | undefined {
+    if (!code) return undefined;
+    const primary = code.replace(/_/g, '-').split('-')[0].trim().toLowerCase();
+    return primary || undefined;
+  }
+
+  /**
+   * Decide which language's feedback to serve for a GET, mutating
+   * `details.summary` in place:
+   *  - no language requested / it matches the stored (default) language / there
+   *    is no base feedback yet (still generating, errored, too short) -> serve
+   *    the stored summary unchanged.
+   *  - a COMPLETED per-language copy exists -> swap it in.
+   *  - otherwise -> ensure a one-off background re-evaluation is running and
+   *    clear `feedback` so the polling client keeps waiting until it lands.
+   * Internal cache fields (`language`, `translations`) are always stripped from
+   * the response.
+   */
+  private async resolveSummaryLanguage(
+    details: { summary?: Record<string, any> },
+    scenarioSessionId: string,
+    requestedLanguage: string | undefined,
+    enableRecommendations: boolean,
+  ): Promise<void> {
+    const summary = details.summary;
+    if (!summary) return;
+
+    const baseLanguage = ScenarioSessionService.normalizeLanguage(
+      summary.language,
+    );
+
+    let feedbackToServe = summary.feedback;
+
+    const needsOtherLanguage =
+      !!requestedLanguage &&
+      requestedLanguage !== baseLanguage &&
+      !!summary.feedback &&
+      !summary.errorMessage;
+
+    if (needsOtherLanguage) {
+      const translations: Record<string, any> = summary.translations ?? {};
+      const cached = translations[requestedLanguage as string];
+      if (cached?.status === 'COMPLETED' && cached.feedback) {
+        feedbackToServe = cached.feedback;
+      } else {
+        if (!cached || cached.status === 'FAILED') {
+          await this.triggerLanguageSummaryGeneration(
+            scenarioSessionId,
+            requestedLanguage as string,
+            enableRecommendations,
+          );
+        }
+        // Not ready yet: withhold feedback so the client polls until the
+        // requested-language copy completes.
+        feedbackToServe = undefined;
+      }
+    }
+
+    details.summary = { ...summary, feedback: feedbackToServe };
+    delete details.summary.translations;
+    delete details.summary.language;
+  }
+
+  /**
+   * Atomically reserve a PENDING slot for `languageCode` and, if this caller
+   * won the race, fire-and-forget the re-evaluation. The pessimistic row lock
+   * means concurrent polls don't spawn duplicate generations.
+   */
+  private async triggerLanguageSummaryGeneration(
+    scenarioSessionId: string,
+    languageCode: string,
+    enableRecommendations: boolean,
+  ): Promise<void> {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      this.logger.error(
+        'triggerLanguageSummaryGeneration: tenantId not found in execution context',
+      );
+      return;
+    }
+
+    let shouldGenerate = false;
+    try {
+      await this.dataSource.transaction(async (entityManager) => {
+        const repo = entityManager.getRepository(ScenarioSessionDetails);
+        const row = await repo.findOne({
+          where: { scenarioSessionId, tenantId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        // Only translate a successfully-generated base summary.
+        if (!row?.summary?.feedback || row.summary.errorMessage) return;
+        const translations: Record<string, any> =
+          row.summary.translations ?? {};
+        const existing = translations[languageCode];
+        if (
+          existing?.status === 'PENDING' ||
+          (existing?.status === 'COMPLETED' && existing.feedback)
+        ) {
+          return;
+        }
+        translations[languageCode] = { status: 'PENDING' };
+        row.summary = { ...row.summary, translations };
+        await repo.save(row);
+        shouldGenerate = true;
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to reserve ${languageCode} summary slot for ${scenarioSessionId}: ${JSON.stringify(
+          (error as Error)?.message,
+        )}`,
+      );
+      return;
+    }
+
+    if (!shouldGenerate) return;
+
+    // Intentionally not awaited: a full re-evaluation can take tens of seconds;
+    // the GET returns immediately and the client polls for the cached result.
+    this.generateLanguageSummary(
+      scenarioSessionId,
+      languageCode,
+      enableRecommendations,
+      tenantId,
+    ).catch((error) => {
+      this.logger.error(
+        `generateLanguageSummary rejected for ${scenarioSessionId}/${languageCode}: ${JSON.stringify(
+          (error as Error)?.message,
+        )}`,
+      );
+    });
+  }
+
+  /**
+   * Re-run the LLM evaluation in `languageCode` and cache the result under
+   * `summary.translations[languageCode]`. Language-independent artifacts
+   * (message tags / scores already tied to message IDs, conversation memory)
+   * are NOT re-persisted — only the human-readable feedback is regenerated and
+   * stored per language.
+   */
+  private async generateLanguageSummary(
+    scenarioSessionId: string,
+    languageCode: string,
+    enableRecommendations: boolean,
+    tenantId: string,
+  ): Promise<void> {
+    const writeStatus = async (entry: Record<string, any>) => {
+      await this.dataSource.transaction(async (entityManager) => {
+        const repo = entityManager.getRepository(ScenarioSessionDetails);
+        const row = await repo.findOne({
+          where: { scenarioSessionId, tenantId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!row?.summary) return;
+        const translations: Record<string, any> =
+          row.summary.translations ?? {};
+        translations[languageCode] = entry;
+        row.summary = { ...row.summary, translations };
+        await repo.save(row);
+      });
+    };
+
+    try {
+      const scenarioSessionMessages =
+        await this.scenarioSessionMessagesRepository.find({
+          where: {
+            scenarioSessionId,
+            messageType: ScenarioSessionMessageType.TEXT,
+            tenantId,
+          },
+        });
+
+      if (scenarioSessionMessages.length === 0) {
+        await writeStatus({
+          status: 'FAILED',
+          errorMessage: 'No messages to evaluate.',
+        });
+        return;
+      }
+
+      const messages: ScenarioEvaluationChatMessage[] =
+        scenarioSessionMessages.map((message) => ({
+          id: message.id.toString(),
+          role: message.senderId > 0 ? 'COUNSELOR' : 'CLIENT',
+          content: message.content,
+          start_time: message.startSeconds,
+          end_time: message.endSeconds,
+        }));
+
+      // need_memory=false: memory is language-independent and already computed
+      // at end-session; this call only regenerates the feedback text.
+      const aiResult = await this.aiService.getScenarioSessionEvaluation(
+        messages,
+        false,
+        null,
+        undefined,
+        enableRecommendations,
+        languageCode,
+      );
+
+      if (aiResult && 'emotional_movement' in aiResult) {
+        const messageStartSecondsByMessageId = new Map(
+          scenarioSessionMessages.map((m) => [m.id, m.startSeconds ?? 0]),
+        );
+        for (const item of aiResult.emotional_movement) {
+          const messageId = parseInt(item.message_id, 10);
+          item.start_time = messageStartSecondsByMessageId.get(messageId);
+        }
+      }
+
+      const aiSummary = CommonUtil.convertToCamelCase(aiResult);
+      await writeStatus({ status: 'COMPLETED', feedback: aiSummary });
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate ${languageCode} summary for ${scenarioSessionId}: ${JSON.stringify(
+          (error as Error)?.message,
+        )}`,
+      );
+      await writeStatus({
+        status: 'FAILED',
+        errorMessage: 'Failed to generate summary in the selected language.',
+      }).catch(() => undefined);
     }
   }
 

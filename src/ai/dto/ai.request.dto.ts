@@ -119,4 +119,5 @@ export type ScenarioEvaluationRequest = {
   memory_prompt: string | null;
   prompts?: Record<string, PromptOverride>;
   enable_recommendations?: boolean;
+  language_code?: string | null;
 };

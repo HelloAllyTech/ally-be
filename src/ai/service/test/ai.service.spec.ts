@@ -177,6 +177,48 @@ describe('AiService', () => {
     });
   });
 
+  describe('getScenarioSessionEvaluation', () => {
+    const mockMessages = [
+      { id: '1', role: 'COUNSELOR', content: 'Hello' },
+    ] as any;
+
+    it('should set language_code on the ScenarioEvaluationRequest when languageCode is provided', async () => {
+      (mockedAxios as any).mockResolvedValue({ data: {} });
+
+      await service.getScenarioSessionEvaluation(
+        mockMessages,
+        false,
+        null,
+        undefined,
+        true,
+        'hi',
+      );
+
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            language_code: 'hi',
+            enable_recommendations: true,
+          }),
+        }),
+      );
+    });
+
+    it('should default language_code to null when languageCode is omitted', async () => {
+      (mockedAxios as any).mockResolvedValue({ data: {} });
+
+      await service.getScenarioSessionEvaluation(mockMessages, false, null);
+
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            language_code: null,
+          }),
+        }),
+      );
+    });
+  });
+
   describe('generateSummaryAndTags', () => {
     const mockMessages = [
       { role: 'user', content: 'Hello' },
