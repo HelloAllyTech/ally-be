@@ -122,10 +122,7 @@ export class ConversationDriftResponseDto {
   failureModeBreakdown!: DriftCountDto[];
   // Consolidated "kinds of drift" (sessions affected by each kind, drift-only).
   @ApiProperty({ type: [DriftCountDto] }) kindsOfDrift!: DriftCountDto[];
-  // STT input quality (counselor-side garble severity + error type), all
-  // sessions — independent of whether the AI drifted.
-  @ApiProperty({ type: [DriftCountDto] }) sttInputQuality!: DriftCountDto[];
-  // Consolidated "root cause" (attribution + STT garble/error specifics).
+  // Consolidated "root cause" (drift attribution, drifted sessions only).
   @ApiProperty({ type: [DriftCountDto] }) rootCause!: DriftCountDto[];
   // Per-dimension session distributions (detail; kindsOfDrift is the summary).
   @ApiProperty({ type: [DriftCountDto] }) topicMix!: DriftCountDto[];

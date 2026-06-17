@@ -316,14 +316,6 @@ export class PlatformAnalyticsService {
     // aligned with the drift KPI.
     const rootCause = attributionMix.filter((r) => r.count > 0);
 
-    // STT input quality is a SEPARATE concern from drift: the counselor's audio
-    // can be garbled (partial/severe) with a specific error type regardless of
-    // whether the AI drifted. Reported across ALL sessions, not under drift.
-    const sttInputQuality = [
-      ...sttGarbleMix.filter((r) => r.key === 'partial' || r.key === 'severe'),
-      ...sttErrorTypeMix, // phonetic_garble / wrong_language / ... (excludes none)
-    ].filter((r) => r.count > 0);
-
     const totalSessions = byLanguage.reduce((a, r) => a + r.totalSessions, 0);
     const driftedSessions = byLanguage.reduce(
       (a, r) => a + r.driftedSessions,
@@ -348,10 +340,6 @@ export class PlatformAnalyticsService {
       })),
       kindsOfDrift: kindsOfDrift.map((r) => ({ key: r.key, count: r.count })),
       rootCause: rootCause.map((r) => ({ key: r.key, count: r.count })),
-      sttInputQuality: sttInputQuality.map((r) => ({
-        key: r.key,
-        count: r.count,
-      })),
       topicMix: topicMix.map((r) => ({ key: r.key, count: r.count })),
       coherenceMix: coherenceMix.map((r) => ({ key: r.key, count: r.count })),
       sttGarbleMix: sttGarbleMix.map((r) => ({ key: r.key, count: r.count })),
