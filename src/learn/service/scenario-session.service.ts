@@ -105,7 +105,7 @@ import { UpdateReflectionPromptResponseDto } from '../dto/reflection-prompts-req
 import { ScenarioSessionReflectionPromptResponse } from '../entity/scenario-session-reflection-prompt-response.entity';
 import { SCENARIO_SESSION_REFLECTION_PROMPTS } from '../constants/scenario-session-reflection-prompt.constants';
 import { ScenariosRepository } from '../repository/scenario.repository';
-import { getSessionDurationInSeconds } from 'src/review/util/review.util';
+import { getActiveSessionDurationSeconds } from 'src/review/util/review.util';
 import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
 import { ScenarioSessionRecordingService } from './scenario-session-recording.service';
 import { convertTimestampNsToDate } from 'src/common/util/date.util';
@@ -370,9 +370,13 @@ export class ScenarioSessionService {
     }
 
     if (scenarioSession.startedAt && scenarioSession.endedAt) {
-      const callDuration = getSessionDurationInSeconds(
+      // Active (paused-excluded) duration so the displayed/recorded duration
+      // matches what the user is billed/credited for.
+      const callDuration = getActiveSessionDurationSeconds(
         scenarioSession.startedAt,
         scenarioSession.endedAt,
+        (scenarioSession as any).totalPausedMs,
+        (scenarioSession as any).pausedAt,
       );
       if ((scenarioSession as any).details) {
         (scenarioSession as any).details.callDuration = callDuration;
@@ -915,6 +919,12 @@ export class ScenarioSessionService {
     if (startedAt && endedAt) {
       callDuration = endedAt.getTime() - startedAt.getTime() || 0;
     }
+    // Exclude paused time so path/case progress and the leaderboard count only
+    // active conversation (closes any still-open pause interval at end).
+    callDuration = Math.max(
+      0,
+      callDuration - this.effectiveTotalPausedMs(scenarioSession, endedAt),
+    );
     if (scenarioSession.scenarioPathSessionItemId)
       await this.scenarioPathSessionService.handleEndScenarioPathSession({
         scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
@@ -1020,6 +1030,12 @@ export class ScenarioSessionService {
     if (startedAt && endedAt) {
       callDuration = endedAt.getTime() - startedAt.getTime() || 0;
     }
+    // Exclude paused time so the user is never billed for pauses (closes any
+    // still-open pause interval if the session ended while paused).
+    callDuration = Math.max(
+      0,
+      callDuration - this.effectiveTotalPausedMs(scenarioSession, endedAt),
+    );
 
     // Consume credits first so metadata.creditsUsed reflects the actual charge.
     // If consumption fails (e.g. simulation-credits service blip), don't block
@@ -1687,10 +1703,82 @@ export class ScenarioSessionService {
       case 'end-of-session':
         await this.handleEndScenarioSessionEvent(scenarioSession, event);
         break;
+      case 'session-paused':
+        await this.handleSessionPausedEvent(scenarioSession, event);
+        break;
+      case 'session-resumed':
+        await this.handleSessionResumedEvent(scenarioSession, event);
+        break;
       default:
         await this.addScenarioSessionEvent(scenarioSession, event);
         break;
     }
+  }
+
+  /**
+   * Mark a session paused. Stores `pausedAt` so that if the session ends while
+   * still paused (no resume arrives), the open interval can be closed at end.
+   * The agent's SessionClock is the source of truth for cumulative paused time,
+   * so we don't accumulate here — we only record the open-interval start.
+   */
+  async handleSessionPausedEvent(
+    scenarioSession: ScenarioSessions,
+    event: LearnEventData,
+  ) {
+    if (scenarioSession.status === ScenarioSessionStatus.ENDED) return;
+    const atMs = event.event_data.atMs;
+    const pausedAt = atMs ? new Date(atMs) : new Date();
+    await this.scenarioSessionRepository.update(scenarioSession.id, {
+      pausedAt,
+    });
+    this.logger.info(
+      `Scenario session ${scenarioSession.id} paused at ${pausedAt.toISOString()}`,
+    );
+  }
+
+  /**
+   * Mark a session resumed. Sets `totalPausedMs` to the agent-reported
+   * cumulative value (robust to duplicate/out-of-order events) and clears
+   * `pausedAt`.
+   */
+  async handleSessionResumedEvent(
+    scenarioSession: ScenarioSessions,
+    event: LearnEventData,
+  ) {
+    if (scenarioSession.status === ScenarioSessionStatus.ENDED) return;
+    // The agent reports cumulative paused ms. Apply it atomically with GREATEST
+    // so a reordered/duplicate/concurrent event can never lower the stored
+    // total (read-modify-write in JS would be racy). reported is clamped to a
+    // non-negative integer since it is interpolated into SQL.
+    const reported = Math.max(
+      0,
+      Math.trunc(event.event_data.totalPausedMs ?? 0),
+    );
+    await this.scenarioSessionRepository.update(scenarioSession.id, {
+      pausedAt: null,
+      totalPausedMs: () => `GREATEST("totalPausedMs", ${reported})`,
+    });
+    this.logger.info(
+      `Scenario session ${scenarioSession.id} resumed; totalPausedMs>=${reported}`,
+    );
+  }
+
+  /**
+   * Effective paused milliseconds to exclude from a session's duration,
+   * including an open pause interval if the session ended while still paused.
+   */
+  private effectiveTotalPausedMs(
+    scenarioSession: ScenarioSessions,
+    endedAt: Date,
+  ): number {
+    let total = scenarioSession.totalPausedMs ?? 0;
+    if (scenarioSession.pausedAt) {
+      total += Math.max(
+        0,
+        endedAt.getTime() - scenarioSession.pausedAt.getTime(),
+      );
+    }
+    return total;
   }
 
   async addScenarioSessionEvent(

@@ -111,4 +111,11 @@ export interface LearnEvent extends SessionEvents {
   autoTerminationStatus?: boolean;
   terminationMessage?: string;
   totalScore?: number;
+  /** Epoch-ms timestamp for session-paused / session-resumed control events. */
+  atMs?: number;
+  /**
+   * Cumulative paused milliseconds (agent SessionClock), carried on
+   * session-resumed as the source of truth for excluded paused time.
+   */
+  totalPausedMs?: number;
 }

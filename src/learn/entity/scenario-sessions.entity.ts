@@ -41,6 +41,16 @@ export class ScenarioSessions extends BaseEntity {
   @Column({ type: 'float', nullable: true })
   score?: number;
 
+  // Pause/resume bookkeeping. `pausedAt` is the start of the currently-open
+  // pause (null when running); `totalPausedMs` is the cumulative paused time,
+  // reported authoritatively by the agent and subtracted from billed/limited
+  // duration so paused time costs the user nothing.
+  @Column({ type: 'timestamp', nullable: true })
+  pausedAt?: Date | null;
+
+  @Column({ type: 'int', default: 0 })
+  totalPausedMs?: number;
+
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
 

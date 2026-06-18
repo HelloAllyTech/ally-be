@@ -15,6 +15,7 @@ import { ScenarioSessionRecordingService } from '../../../learn/service/scenario
 
 jest.mock('src/review/util/review.util', () => ({
   getSessionDurationInSeconds: jest.fn(() => 120),
+  getActiveSessionDurationSeconds: jest.fn(() => 120),
   formatCreatedUserDetails: jest.fn(() => ({
     id: 1,
     name: 'Test User',

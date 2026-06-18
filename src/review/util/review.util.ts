@@ -12,6 +12,30 @@ export const getSessionDurationInSeconds = (startDate: Date, endDate: Date) => {
     : 0;
 };
 
+/**
+ * Active session duration in seconds, excluding paused time. Mirrors the
+ * billing/leaderboard computation (wall-clock minus totalPausedMs and any
+ * still-open pause interval) so every surface reports the same "minutes
+ * actually practiced". Sessions without pause data fall back to wall-clock.
+ */
+export const getActiveSessionDurationSeconds = (
+  startDate: Date,
+  endDate: Date,
+  totalPausedMs: number | null = 0,
+  pausedAt?: Date | null,
+) => {
+  const wallSeconds = getSessionDurationInSeconds(startDate, endDate);
+  let pausedMs = totalPausedMs ?? 0;
+  if (pausedAt && endDate) {
+    // Close an interval left open if the session ended while still paused.
+    pausedMs += Math.max(
+      0,
+      new Date(endDate).getTime() - new Date(pausedAt).getTime(),
+    );
+  }
+  return Math.max(0, wallSeconds - Math.round(pausedMs / 1000));
+};
+
 export const formatCreatedUserDetails = (user: User) => {
   return {
     id: user.id,

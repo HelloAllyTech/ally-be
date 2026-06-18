@@ -25,7 +25,7 @@ import { ScenarioSessionReviewReactionRepository } from '../repository/reaction.
 import { LoggerService } from 'src/logger/logger.service';
 import {
   formatCreatedUserDetails,
-  getSessionDurationInSeconds,
+  getActiveSessionDurationSeconds,
 } from 'src/review/util/review.util';
 import { In, IsNull, Not } from 'typeorm';
 import { ScenarioSessionReviewCommentRepository } from '../repository/comment.repository';
@@ -247,9 +247,11 @@ export class ScenarioSessionReviewService extends BaseReviewService<
       },
       scenarioSession: {
         id: scenarioSession.id,
-        duration: getSessionDurationInSeconds(
+        duration: getActiveSessionDurationSeconds(
           scenarioSession.startedAt!,
           scenarioSession.endedAt!,
+          (scenarioSession as any).totalPausedMs,
+          (scenarioSession as any).pausedAt,
         ),
         createdAt: scenarioSession.createdAt,
         audioUrl: audioUrl ?? null,
@@ -316,9 +318,11 @@ export class ScenarioSessionReviewService extends BaseReviewService<
       scenarioSession: review.scenarioSession
         ? {
             createdAt: review.scenarioSession.createdAt,
-            duration: getSessionDurationInSeconds(
+            duration: getActiveSessionDurationSeconds(
               review.scenarioSession.startedAt!,
               review.scenarioSession.endedAt!,
+              (review.scenarioSession as any).totalPausedMs,
+              (review.scenarioSession as any).pausedAt,
             ),
             audioUrl:
               audioUrlsBySessionId?.get(review.scenarioSession.id) ?? null,

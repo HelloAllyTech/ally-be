@@ -1472,6 +1472,153 @@ describe('ScenarioSessionService', () => {
     });
   });
 
+  describe('pause/resume', () => {
+    it('handleSessionPausedEvent stamps pausedAt from the event timestamp', async () => {
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      const atMs = Date.parse('2024-01-01T10:01:00Z');
+
+      await service.handleSessionPausedEvent(mockScenarioSession, {
+        timestamp: new Date(),
+        event_data: { id: 'session-paused', atMs },
+      } as any);
+
+      expect(scenarioSessionRepository.update).toHaveBeenCalledWith(
+        mockScenarioSessionId,
+        { pausedAt: new Date(atMs) },
+      );
+    });
+
+    it('handleSessionPausedEvent is a no-op once the session has ended', async () => {
+      await service.handleSessionPausedEvent(
+        { ...mockScenarioSession, status: ScenarioSessionStatus.ENDED },
+        {
+          timestamp: new Date(),
+          event_data: { id: 'session-paused', atMs: 1 },
+        } as any,
+      );
+
+      expect(scenarioSessionRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('handleSessionResumedEvent sets cumulative totalPausedMs and clears pausedAt', async () => {
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+
+      await service.handleSessionResumedEvent(
+        { ...mockScenarioSession, totalPausedMs: 5000 },
+        {
+          timestamp: new Date(),
+          event_data: { id: 'session-resumed', totalPausedMs: 12000 },
+        } as any,
+      );
+
+      const [id, patch] = scenarioSessionRepository.update.mock.calls[0];
+      expect(id).toBe(mockScenarioSessionId);
+      expect(patch.pausedAt).toBeNull();
+      // totalPausedMs is applied atomically as a SQL GREATEST expression.
+      expect((patch.totalPausedMs as () => string)()).toBe(
+        'GREATEST("totalPausedMs", 12000)',
+      );
+    });
+
+    it('handleSessionResumedEvent applies GREATEST so a stale event cannot lower the total', async () => {
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+
+      await service.handleSessionResumedEvent(
+        { ...mockScenarioSession, totalPausedMs: 20000 },
+        {
+          timestamp: new Date(),
+          event_data: { id: 'session-resumed', totalPausedMs: 12000 },
+        } as any,
+      );
+
+      const [, patch] = scenarioSessionRepository.update.mock.calls[0];
+      // The DB-side GREATEST keeps the larger stored value (20000) over the
+      // stale reported 12000 — the guarantee now lives in SQL, atomically.
+      expect((patch.totalPausedMs as () => string)()).toBe(
+        'GREATEST("totalPausedMs", 12000)',
+      );
+    });
+
+    it('handleScenarioSessionEvent routes session-paused and session-resumed', async () => {
+      const pauseSpy = jest
+        .spyOn(service, 'handleSessionPausedEvent')
+        .mockResolvedValue(undefined as any);
+      const resumeSpy = jest
+        .spyOn(service, 'handleSessionResumedEvent')
+        .mockResolvedValue(undefined as any);
+
+      await service.handleScenarioSessionEvent(mockScenarioSession, {
+        timestamp: new Date(),
+        event_data: { id: 'session-paused' },
+      } as any);
+      await service.handleScenarioSessionEvent(mockScenarioSession, {
+        timestamp: new Date(),
+        event_data: { id: 'session-resumed' },
+      } as any);
+
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+
+      pauseSpy.mockRestore();
+      resumeSpy.mockRestore();
+    });
+
+    it('excludes totalPausedMs from billed credits', async () => {
+      // 165s wall - 60s paused = 105s active -> 1 full credit + 45s (>=30) -> 2 credits
+      const session = {
+        ...mockScenarioSession,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T10:02:45Z'),
+        totalPausedMs: 60000,
+      };
+      scenarioSessionRepository.findOne.mockResolvedValue(session);
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(80);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+
+      expect(simulationCreditsService.consumeCredits).toHaveBeenCalledWith(
+        mockCounselorId,
+        2,
+      );
+    });
+
+    it('closes an open pause interval (ended while paused) when billing', async () => {
+      // wall 165s, paused 10:01:00 -> end 10:02:45 = 105s -> active 60s -> exactly 1 credit
+      const session = {
+        ...mockScenarioSession,
+        startedAt: new Date('2024-01-01T10:00:00Z'),
+        endedAt: new Date('2024-01-01T10:02:45Z'),
+        pausedAt: new Date('2024-01-01T10:01:00Z'),
+        totalPausedMs: 0,
+      };
+      scenarioSessionRepository.findOne.mockResolvedValue(session);
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(80);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+
+      expect(simulationCreditsService.consumeCredits).toHaveBeenCalledWith(
+        mockCounselorId,
+        1,
+      );
+    });
+  });
+
   describe('addFeedbackToScenarioSession', () => {
     const mockFeedbackDto: AddFeedbackToScenarioSessionRequestDto = {
       rating: 5,
