@@ -27,6 +27,7 @@ import {
   AiServiceName,
   computeServiceCostUsd,
 } from '../constants/llm-pricing.constants';
+import { DriftAnalyticsRepository } from '../repository/drift-analytics.repository';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -82,6 +83,7 @@ export class PlatformAnalyticsService {
 
   constructor(
     private readonly repo: PlatformAnalyticsRepository,
+    private readonly driftRepo: DriftAnalyticsRepository,
     private readonly driftJudge: DriftJudgeService,
     private readonly llmUsageRepo: LlmUsageRepository,
   ) {}
@@ -340,22 +342,22 @@ export class PlatformAnalyticsService {
       firstDriftTurnHistogram,
       driftTrendRaw,
     ] = await Promise.all([
-      this.repo.getDriftRateByLanguage(f),
+      this.driftRepo.getDriftRateByLanguage(f),
       // Attribution + failure mode + kinds describe DRIFTED sessions, so scope
       // to the rollup (driftedOnly) — keeps them consistent with the drift KPI.
-      this.repo.getDriftAttributionMix(f, true),
-      this.repo.getDriftFailureModeBreakdown(f, true),
+      this.driftRepo.getDriftAttributionMix(f, true),
+      this.driftRepo.getDriftFailureModeBreakdown(f, true),
       // Both the LLM and the STT model can contribute to drift; provider dropped.
-      this.repo.getDriftRateByDimension(f, 'llmModel'),
-      this.repo.getDriftRateByDimension(f, 'sttModel'),
-      this.repo.getDriftRateByDimension(f, 'promptVersion'),
-      this.repo.getDriftSessionCountsBy(f, 'topicLabel', false, true),
-      this.repo.getDriftSessionCountsBy(f, 'coherence', false, true),
+      this.driftRepo.getDriftRateByDimension(f, 'llmModel'),
+      this.driftRepo.getDriftRateByDimension(f, 'sttModel'),
+      this.driftRepo.getDriftRateByDimension(f, 'promptVersion'),
+      this.driftRepo.getDriftSessionCountsBy(f, 'topicLabel', false, true),
+      this.driftRepo.getDriftSessionCountsBy(f, 'coherence', false, true),
       // STT input quality is independent of drift — count across ALL sessions.
-      this.repo.getDriftSessionCountsBy(f, 'counselorUtteranceGarbled'),
-      this.repo.getDriftSessionCountsBy(f, 'sttErrorType', true),
-      this.repo.getFirstDriftTurnHistogram(f),
-      this.repo.getDriftTrend(f, trendBucket),
+      this.driftRepo.getDriftSessionCountsBy(f, 'counselorUtteranceGarbled'),
+      this.driftRepo.getDriftSessionCountsBy(f, 'sttErrorType', true),
+      this.driftRepo.getFirstDriftTurnHistogram(f),
+      this.driftRepo.getDriftTrend(f, trendBucket),
     ]);
 
     const driftRateByLanguage = byLanguage.map((r) => ({
@@ -444,6 +446,7 @@ export class PlatformAnalyticsService {
   async getVoiceLatency(
     range: AnalyticsRange,
     bucketParam?: AnalyticsBucketParam,
+    language?: string,
   ): Promise<VoiceLatencyResponseDto> {
     const now = new Date();
     const todayStart = startOfUtcDay(now);
@@ -474,6 +477,7 @@ export class PlatformAnalyticsService {
       windowStart,
       endExclusive,
       bucket,
+      language,
     );
 
     return {

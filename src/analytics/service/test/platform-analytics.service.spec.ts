@@ -3,6 +3,7 @@ import { PlatformAnalyticsService } from '../platform-analytics.service';
 import { DriftJudgeService } from '../drift-judge.service';
 import { PlatformAnalyticsRepository } from '../../repository/platform-analytics.repository';
 import { LlmUsageRepository } from '../../repository/llm-usage.repository';
+import { DriftAnalyticsRepository } from '../../repository/drift-analytics.repository';
 
 jest.mock('src/logger/logger.service', () => ({
   LoggerService: {
@@ -53,8 +54,19 @@ describe('PlatformAnalyticsService', () => {
       getVoiceLatencyByBucket: jest.fn().mockResolvedValue([]),
     };
 
-    // Drift backfill is delegated to DriftJudgeService; these tests cover the
-    // analytics aggregations, so a stub is enough to satisfy the constructor.
+    // Drift aggregations live in DriftAnalyticsRepository and drift backfill is
+    // delegated to DriftJudgeService; these tests cover the overview/latency
+    // aggregations, so stubs are enough to satisfy the constructor.
+    const mockDriftRepo: Partial<jest.Mocked<DriftAnalyticsRepository>> = {
+      getDriftRateByLanguage: jest.fn().mockResolvedValue([]),
+      getDriftRateByDimension: jest.fn().mockResolvedValue([]),
+      getDriftAttributionMix: jest.fn().mockResolvedValue([]),
+      getDriftFailureModeBreakdown: jest.fn().mockResolvedValue([]),
+      getDriftSessionCountsBy: jest.fn().mockResolvedValue([]),
+      getFirstDriftTurnHistogram: jest.fn().mockResolvedValue([]),
+      getDriftTrend: jest.fn().mockResolvedValue([]),
+    };
+
     const mockDriftJudge: Partial<jest.Mocked<DriftJudgeService>> = {
       startBackfill: jest.fn(),
       getJob: jest.fn(),
@@ -68,6 +80,7 @@ describe('PlatformAnalyticsService', () => {
       providers: [
         PlatformAnalyticsService,
         { provide: PlatformAnalyticsRepository, useValue: mockRepo },
+        { provide: DriftAnalyticsRepository, useValue: mockDriftRepo },
         { provide: DriftJudgeService, useValue: mockDriftJudge },
         { provide: LlmUsageRepository, useValue: mockLlmUsageRepo },
       ],
@@ -244,6 +257,7 @@ describe('PlatformAnalyticsService', () => {
         new Date('2024-05-14T00:00:00.000Z'), // today - 29d
         new Date('2024-06-13T00:00:00.000Z'), // start of tomorrow
         'day',
+        undefined, // no language filter
       );
     });
 
@@ -262,6 +276,7 @@ describe('PlatformAnalyticsService', () => {
         expect.any(Date),
         expect.any(Date),
         'month',
+        undefined, // no language filter
       );
     });
 
