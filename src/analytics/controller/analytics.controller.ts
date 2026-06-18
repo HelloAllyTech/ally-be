@@ -97,6 +97,7 @@ export class AnalyticsController {
     return this.platformAnalyticsService.getVoiceLatency(
       query.range ?? '90d',
       query.bucket,
+      query.language,
     );
   }
 

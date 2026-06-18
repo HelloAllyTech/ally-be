@@ -329,9 +329,10 @@ export class PlatformAnalyticsRepository {
     start: Date,
     end: Date,
     bucket: AnalyticsBucket,
+    language?: string,
   ): Promise<VoiceLatencyBucketRow[]> {
     const trunc = this.resolveBucket(bucket);
-    const rows = await this.dataSource
+    const qb = this.dataSource
       .createQueryBuilder()
       .select(
         `to_char(date_trunc('${trunc}', m."occurredAt"), 'YYYY-MM-DD')`,
@@ -350,10 +351,28 @@ export class PlatformAnalyticsRepository {
           `(ORDER BY m."responseLatencyMs"))::int`,
         'p95Ms',
       )
-      .from('scenario_session_turn_metrics', 'm')
-      .where('m."occurredAt" >= :start', { start })
+      .from('scenario_session_turn_metrics', 'm');
+    if (language) {
+      // turn_metrics.language is largely unpopulated, so filter by the SESSION's
+      // configured language (join to scenario_sessions -> languages), matching
+      // how drift derives language.
+      qb.innerJoin(
+        'scenario_sessions',
+        's',
+        's.id = m."scenarioSessionId"',
+      ).leftJoin(
+        'languages',
+        'l',
+        `l.id = NULLIF(s.metadata->>'languageId', '')::int`,
+      );
+    }
+    qb.where('m."occurredAt" >= :start', { start })
       .andWhere('m."occurredAt" < :end', { end })
-      .andWhere('m."responseLatencyMs" IS NOT NULL')
+      .andWhere('m."responseLatencyMs" IS NOT NULL');
+    if (language) {
+      qb.andWhere(`COALESCE(l.value, 'en') = :language`, { language });
+    }
+    const rows = await qb
       .groupBy('bucket')
       .addGroupBy('m."source"')
       .orderBy('bucket', 'ASC')

@@ -187,6 +187,13 @@ export class VoiceLatencyQueryDto {
   @IsOptional()
   @IsIn(ANALYTICS_BUCKETS)
   bucket?: AnalyticsBucketParam;
+
+  @ApiProperty({
+    description: "Filter by the session's language value (e.g. en-IN, hi-IN)",
+    required: false,
+  })
+  @IsOptional()
+  language?: string;
 }
 
 export class VoiceLatencyPointDto {

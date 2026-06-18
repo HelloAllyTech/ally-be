@@ -366,6 +366,7 @@ export class PlatformAnalyticsService {
   async getVoiceLatency(
     range: AnalyticsRange,
     bucketParam?: AnalyticsBucketParam,
+    language?: string,
   ): Promise<VoiceLatencyResponseDto> {
     const now = new Date();
     const todayStart = startOfUtcDay(now);
@@ -396,6 +397,7 @@ export class PlatformAnalyticsService {
       windowStart,
       endExclusive,
       bucket,
+      language,
     );
 
     return {
