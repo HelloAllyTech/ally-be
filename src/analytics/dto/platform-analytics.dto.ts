@@ -246,6 +246,56 @@ export class VoiceLatencyResponseDto {
   points!: VoiceLatencyPointDto[];
 }
 
+export class TokenConsumptionQueryDto {
+  @ApiProperty({
+    description: 'Time window for the token-consumption breakdown',
+    enum: ANALYTICS_RANGES,
+    default: '30d',
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(ANALYTICS_RANGES)
+  range?: AnalyticsRange;
+}
+
+export class TokenConsumptionPointDto {
+  @ApiProperty({ description: "AI service: 'llm' | 'stt' | 'tts'" })
+  service!: string;
+  @ApiProperty({ description: 'Model id (LLM/STT) or voice/model id (TTS)' })
+  model!: string;
+  @ApiProperty({
+    description:
+      'Provider, e.g. openai / anthropic / gemini / deepgram / elevenlabs',
+  })
+  provider!: string;
+  @ApiProperty({ description: 'LlmTask value (operation type)' }) task!: string;
+  @ApiProperty() promptTokens!: number;
+  @ApiProperty() completionTokens!: number;
+  @ApiProperty() totalTokens!: number;
+  @ApiProperty({ description: 'Cached/prompt-cache tokens (subset of prompt)' })
+  cachedTokens!: number;
+  @ApiProperty({ description: 'STT billable audio duration (ms)' })
+  audioMs!: number;
+  @ApiProperty({ description: 'TTS billable synthesized characters' })
+  characters!: number;
+  @ApiProperty({ description: 'Number of calls in this slice' })
+  calls!: number;
+  @ApiProperty({ description: 'Estimated cost (USD) from the pricing tables' })
+  estimatedCostUsd!: number;
+  @ApiProperty({ description: 'false when the row has no pricing entry' })
+  priced!: boolean;
+}
+
+export class TokenConsumptionResponseDto {
+  @ApiProperty({ enum: ANALYTICS_RANGES }) range!: AnalyticsRange;
+  @ApiProperty({ description: 'Sum of estimatedCostUsd across all points' })
+  totalEstimatedCostUsd!: number;
+  @ApiProperty({ description: 'Sum of totalTokens across all points' })
+  totalTokens!: number;
+  @ApiProperty({ type: [TokenConsumptionPointDto] })
+  points!: TokenConsumptionPointDto[];
+}
+
 export class AnalyticsSummaryDto {
   @ApiProperty({ description: 'Total registered users on the platform' })
   totalUsers!: number;

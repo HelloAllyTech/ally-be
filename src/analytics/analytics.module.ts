@@ -6,6 +6,7 @@ import { PlatformAnalyticsService } from './service/platform-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
 import { DriftBackfillSchedulerRegistrationService } from './service/drift-backfill-scheduler-registration.service';
 import { PlatformAnalyticsRepository } from './repository/platform-analytics.repository';
+import { LlmUsageRepository } from './repository/llm-usage.repository';
 import { DriftAnalyticsRepository } from './repository/drift-analytics.repository';
 import { DriftJudgeRepository } from './repository/drift-judge.repository';
 import { MetabaseService } from './service/metabase.service';
@@ -36,6 +37,7 @@ import { TenantModule } from 'src/tenant/tenant.module';
     DriftJudgeRepository,
     DriftBackfillSchedulerRegistrationService,
     PlatformAnalyticsRepository,
+    LlmUsageRepository,
     DriftAnalyticsRepository,
     MetabaseService,
     ProviderFactory.getAnalyticsFactory(),

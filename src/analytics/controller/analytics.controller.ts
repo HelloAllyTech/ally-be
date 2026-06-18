@@ -29,6 +29,8 @@ import {
   ConversationDriftResponseDto,
   DriftBackfillJobDto,
   StartDriftBackfillDto,
+  TokenConsumptionQueryDto,
+  TokenConsumptionResponseDto,
   VoiceLatencyQueryDto,
   VoiceLatencyResponseDto,
 } from '../dto/platform-analytics.dto';
@@ -124,6 +126,24 @@ export class AnalyticsController {
         llmProvider: query.llmProvider,
         promptVersion: query.promptVersion,
       },
+    );
+  }
+
+  @Get('token-consumption')
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'AI token consumption by model & task (super-admin)',
+    description:
+      'Total LLM token usage over `range`, grouped by (model × task) and ' +
+      'converted to an estimated USD cost via the pricing table. Tokens are ' +
+      'the source of truth; `priced=false` flags models with no pricing entry.',
+  })
+  @ApiResponse({ status: 200, type: TokenConsumptionResponseDto })
+  async getTokenConsumption(
+    @Query() query: TokenConsumptionQueryDto,
+  ): Promise<TokenConsumptionResponseDto> {
+    return this.platformAnalyticsService.getTokenConsumption(
+      query.range ?? '30d',
     );
   }
 

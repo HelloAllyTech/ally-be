@@ -10,6 +10,7 @@ import {
   DriftBackfillJobDto,
   RetentionPointDto,
   SimulationsCompletedPointDto,
+  TokenConsumptionResponseDto,
   UserGrowthPointDto,
   VoiceLatencyResponseDto,
 } from '../dto/platform-analytics.dto';
@@ -21,6 +22,11 @@ import {
   WeeklyActiveUserRow,
   WeeklyCountRow,
 } from '../repository/platform-analytics.repository';
+import { LlmUsageRepository } from '../repository/llm-usage.repository';
+import {
+  AiServiceName,
+  computeServiceCostUsd,
+} from '../constants/llm-pricing.constants';
 import { DriftAnalyticsRepository } from '../repository/drift-analytics.repository';
 
 const MS_PER_DAY = 86_400_000;
@@ -79,7 +85,79 @@ export class PlatformAnalyticsService {
     private readonly repo: PlatformAnalyticsRepository,
     private readonly driftRepo: DriftAnalyticsRepository,
     private readonly driftJudge: DriftJudgeService,
+    private readonly llmUsageRepo: LlmUsageRepository,
   ) {}
+
+  /**
+   * AI cost broken down by (service × model × task), converted to an estimated
+   * USD cost via the per-service pricing tables (LLM tokens, STT audio minutes,
+   * TTS characters). The frontend pivots `points` into a stacked bar with a
+   * service/model/task toggle. Raw quantities are the source of truth;
+   * `priced=false` flags rows with no pricing entry (cost 0).
+   */
+  async getTokenConsumption(
+    range: AnalyticsRange,
+  ): Promise<TokenConsumptionResponseDto> {
+    const now = new Date();
+    const todayStart = startOfUtcDay(now);
+    const endExclusive = addDays(todayStart, 1);
+    let windowStart: Date;
+    if (range === '30d') windowStart = addDays(todayStart, -29);
+    else if (range === '90d') windowStart = addDays(todayStart, -89);
+    else windowStart = startOfUtcMonth(addMonths(todayStart, -11));
+
+    this.logger.info(
+      `Building AI cost range=${range} window=[${isoDate(
+        windowStart,
+      )},${isoDate(endExclusive)})`,
+    );
+
+    const rows = await this.llmUsageRepo.getTokenUsageByModelAndTask(
+      windowStart,
+      endExclusive,
+    );
+
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
+    const points = rows.map((r) => {
+      const service = (r.service as AiServiceName) || 'llm';
+      const { costUsd, priced } = computeServiceCostUsd(
+        service,
+        r.provider,
+        r.model,
+        {
+          promptTokens: r.promptTokens,
+          completionTokens: r.completionTokens,
+          audioMs: r.audioMs,
+          characters: r.characters,
+        },
+      );
+      return {
+        service,
+        model: r.model,
+        provider: r.provider,
+        task: r.task,
+        promptTokens: r.promptTokens,
+        completionTokens: r.completionTokens,
+        totalTokens: r.totalTokens,
+        cachedTokens: r.cachedTokens,
+        audioMs: r.audioMs,
+        characters: r.characters,
+        calls: r.calls,
+        estimatedCostUsd: round2(costUsd),
+        priced,
+      };
+    });
+
+    return {
+      range,
+      totalEstimatedCostUsd: round2(
+        points.reduce((sum, p) => sum + p.estimatedCostUsd, 0),
+      ),
+      totalTokens: points.reduce((sum, p) => sum + p.totalTokens, 0),
+      points,
+    };
+  }
 
   /**
    * Start the async drift backfill for the last `sinceDays` days (default 90)

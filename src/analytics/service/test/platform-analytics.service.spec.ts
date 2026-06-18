@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PlatformAnalyticsService } from '../platform-analytics.service';
 import { DriftJudgeService } from '../drift-judge.service';
 import { PlatformAnalyticsRepository } from '../../repository/platform-analytics.repository';
+import { LlmUsageRepository } from '../../repository/llm-usage.repository';
 import { DriftAnalyticsRepository } from '../../repository/drift-analytics.repository';
 
 jest.mock('src/logger/logger.service', () => ({
@@ -34,6 +35,7 @@ const WEEKLY_AXIS = [
 describe('PlatformAnalyticsService', () => {
   let service: PlatformAnalyticsService;
   let repo: jest.Mocked<PlatformAnalyticsRepository>;
+  let llmUsageRepo: jest.Mocked<LlmUsageRepository>;
 
   beforeEach(async () => {
     jest.useFakeTimers().setSystemTime(FIXED_NOW);
@@ -70,17 +72,23 @@ describe('PlatformAnalyticsService', () => {
       getJob: jest.fn(),
     };
 
+    const mockLlmUsageRepo: Partial<jest.Mocked<LlmUsageRepository>> = {
+      getTokenUsageByModelAndTask: jest.fn().mockResolvedValue([]),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PlatformAnalyticsService,
         { provide: PlatformAnalyticsRepository, useValue: mockRepo },
         { provide: DriftAnalyticsRepository, useValue: mockDriftRepo },
         { provide: DriftJudgeService, useValue: mockDriftJudge },
+        { provide: LlmUsageRepository, useValue: mockLlmUsageRepo },
       ],
     }).compile();
 
     service = module.get(PlatformAnalyticsService);
     repo = module.get(PlatformAnalyticsRepository);
+    llmUsageRepo = module.get(LlmUsageRepository);
   });
 
   afterEach(() => {
@@ -310,6 +318,102 @@ describe('PlatformAnalyticsService', () => {
         targetMs: 1500,
         points,
       });
+    });
+  });
+
+  describe('getTokenConsumption', () => {
+    it('queries the [start, end) window for the range', async () => {
+      await service.getTokenConsumption('30d');
+
+      expect(llmUsageRepo.getTokenUsageByModelAndTask).toHaveBeenCalledWith(
+        new Date('2024-05-14T00:00:00.000Z'), // today - 29d
+        new Date('2024-06-13T00:00:00.000Z'), // start of tomorrow
+      );
+    });
+
+    it('computes estimated USD cost per service and flags unpriced rows', async () => {
+      llmUsageRepo.getTokenUsageByModelAndTask.mockResolvedValue([
+        {
+          service: 'llm',
+          model: 'gpt-4o-mini', // 0.15 / 0.60 per 1M
+          provider: 'openai',
+          task: 'summary',
+          promptTokens: 1_000_000,
+          completionTokens: 1_000_000,
+          totalTokens: 2_000_000,
+          cachedTokens: 0,
+          audioMs: 0,
+          characters: 0,
+          calls: 10,
+        },
+        {
+          service: 'stt',
+          model: 'nova-3', // deepgram 0.0077/min
+          provider: 'deepgram',
+          task: 'agent_stt',
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          cachedTokens: 0,
+          audioMs: 600_000, // 10 minutes → 0.077
+          characters: 0,
+          calls: 5,
+        },
+        {
+          service: 'tts',
+          model: 'aura', // deepgram 15/1M chars
+          provider: 'deepgram',
+          task: 'agent_tts',
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          cachedTokens: 0,
+          audioMs: 0,
+          characters: 1_000_000, // → 15
+          calls: 5,
+        },
+        {
+          service: 'llm',
+          model: 'mystery-model', // no pricing entry
+          provider: 'x',
+          task: 'nudge',
+          promptTokens: 500_000,
+          completionTokens: 0,
+          totalTokens: 500_000,
+          cachedTokens: 0,
+          audioMs: 0,
+          characters: 0,
+          calls: 2,
+        },
+      ]);
+
+      const result = await service.getTokenConsumption('30d');
+
+      expect(result.range).toBe('30d');
+      const byModel = Object.fromEntries(
+        result.points.map((p) => [p.model, p]),
+      );
+      expect(byModel['gpt-4o-mini']).toMatchObject({
+        service: 'llm',
+        estimatedCostUsd: 0.75, // 0.15 + 0.60
+        priced: true,
+      });
+      expect(byModel['nova-3']).toMatchObject({
+        service: 'stt',
+        estimatedCostUsd: 0.08, // 10 min × 0.0077 = 0.077 → round2 0.08
+        priced: true,
+      });
+      expect(byModel['aura']).toMatchObject({
+        service: 'tts',
+        estimatedCostUsd: 15, // 1M chars × 15/1M
+        priced: true,
+      });
+      expect(byModel['mystery-model']).toMatchObject({
+        estimatedCostUsd: 0,
+        priced: false,
+        totalTokens: 500_000, // quantities preserved even when unpriced
+      });
+      expect(result.totalEstimatedCostUsd).toBe(15.83); // 0.75 + 0.08 + 15
     });
   });
 });
