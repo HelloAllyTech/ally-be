@@ -6,6 +6,7 @@ import {
 import { AnthropicAutofillService } from '../anthropic-autofill.service';
 import { AppConfigService } from 'src/config/config.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { GeneratableField } from 'src/learn/enum/generatable-field.enum';
 import { PREFERRED_ANTHROPIC_AUTOFILL_MODELS } from 'src/learn/constants/autofill-models.constants';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
@@ -70,6 +71,10 @@ describe('AnthropicAutofillService', () => {
         {
           provide: PromptSharedService,
           useValue: { getPromptByCode: jest.fn() },
+        },
+        {
+          provide: LlmUsageService,
+          useValue: { record: jest.fn() },
         },
       ],
     }).compile();

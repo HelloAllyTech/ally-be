@@ -45,6 +45,8 @@ import {
   DEFAULT_OPENAI_TOOLTIP_TRANSLATION_PROMPT_TEMPLATE,
 } from 'src/common/constants/openai-translations.constants';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
+import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmTask } from 'src/learn/enum/llm-task.enum';
 
 @Injectable()
 export class OpenAITranslationsService {
@@ -58,6 +60,7 @@ export class OpenAITranslationsService {
   constructor(
     private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
+    private readonly llmUsage: LlmUsageService,
   ) {
     this.client = new OpenAI({ apiKey: this.configService.openai.apiKey });
     this.model = this.configService.openai.translationModel;
@@ -297,6 +300,7 @@ IMPORTANT:
     targetLanguageCode: string,
     systemPrompt: string,
     userPrompt: string,
+    task: LlmTask = LlmTask.TRANSLATE_SCENARIO,
   ): Promise<string[]> {
     const temperature = this.getTemperatureForLanguage(targetLanguageCode);
 
@@ -319,6 +323,8 @@ IMPORTANT:
         temperature,
         messages: messages as unknown as ChatCompletionMessageParam[],
       });
+
+      this.recordUsage(response.usage, task, { language: targetLanguageCode });
 
       const content = response.choices?.[0]?.message?.content ?? '';
 
@@ -498,6 +504,9 @@ IMPORTANT:
         model: this.model,
         messages,
       });
+      this.recordUsage(response.usage, LlmTask.TRANSLATE_TEXT, {
+        language: targetLanguageCode,
+      });
       return (response.choices?.[0]?.message?.content ?? '').trim();
     } catch (error) {
       this.logger.error(
@@ -600,6 +609,7 @@ IMPORTANT:
           language,
           filledPrompt,
           '',
+          LlmTask.TRANSLATE_OBJECT,
         );
 
         // Parse the translated JSON string back to object
@@ -617,5 +627,28 @@ IMPORTANT:
     }
 
     return translatedResult;
+  }
+
+  /** Best-effort token-usage capture from an OpenAI chat-completion response. */
+  private recordUsage(
+    usage:
+      | {
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
+        }
+      | undefined,
+    task: LlmTask,
+    metadata?: Record<string, any>,
+  ): void {
+    void this.llmUsage.record({
+      provider: 'openai',
+      model: this.model,
+      task,
+      promptTokens: usage?.prompt_tokens,
+      completionTokens: usage?.completion_tokens,
+      totalTokens: usage?.total_tokens,
+      metadata,
+    });
   }
 }

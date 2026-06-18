@@ -6,6 +6,7 @@ import {
 import { OpenAIAutofillService } from '../openai-autofil-service';
 import { AppConfigService } from 'src/config/config.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { GeneratableField } from 'src/learn/enum/generatable-field.enum';
 import { STRUCTURED_OUTPUT_SCHEMAS } from 'src/learn/constants/autofill-structured-output.constants';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
@@ -52,6 +53,10 @@ describe('OpenAIAutofillService', () => {
         {
           provide: PromptSharedService,
           useValue: { getPromptByCode: jest.fn() },
+        },
+        {
+          provide: LlmUsageService,
+          useValue: { record: jest.fn() },
         },
       ],
     }).compile();

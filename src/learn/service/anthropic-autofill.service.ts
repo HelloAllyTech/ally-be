@@ -29,6 +29,8 @@ import {
   stripMarkdownFences,
 } from '../util/autofill-shared.util';
 import { AutofillModelInfo } from './openai-autofil-service';
+import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmTask } from '../enum/llm-task.enum';
 
 const ANTHROPIC_MAX_TOKENS = 4096;
 
@@ -47,6 +49,7 @@ export class AnthropicAutofillService {
   constructor(
     private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
+    private readonly llmUsage: LlmUsageService,
   ) {
     this.client = new Anthropic({
       apiKey: this.configService.anthropic.apiKey,
@@ -134,6 +137,11 @@ export class AnthropicAutofillService {
         messages: [{ role: 'user', content: fullPrompt }],
       });
 
+      this.recordUsage(response.usage, effectiveModel, LlmTask.AUTOFILL_FIELD, {
+        field: fieldName,
+        promptCode,
+      });
+
       const block = response.content[0];
       const content = block?.type === 'text' ? block.text.trim() : '';
 
@@ -211,6 +219,12 @@ export class AnthropicAutofillService {
         ],
       });
 
+      this.recordUsage(
+        response.usage,
+        effectiveModel,
+        LlmTask.AUTOFILL_AGENT_PROMPT,
+      );
+
       const block = response.content[0];
       const continuation = block?.type === 'text' ? block.text : '';
       const content = continuation.trim() ? `{${continuation}` : '';
@@ -233,5 +247,26 @@ export class AnthropicAutofillService {
       );
       throw error;
     }
+  }
+
+  /** Best-effort token-usage capture from an Anthropic message response. */
+  private recordUsage(
+    usage: Anthropic.Messages.Usage | undefined,
+    model: string,
+    task: LlmTask,
+    metadata?: Record<string, any>,
+  ): void {
+    const input = usage?.input_tokens ?? 0;
+    const output = usage?.output_tokens ?? 0;
+    void this.llmUsage.record({
+      provider: 'anthropic',
+      model,
+      task,
+      promptTokens: input,
+      completionTokens: output,
+      totalTokens: input + output,
+      cachedTokens: usage?.cache_read_input_tokens ?? undefined,
+      metadata,
+    });
   }
 }

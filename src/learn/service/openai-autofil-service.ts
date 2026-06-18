@@ -26,6 +26,8 @@ import {
   renderTemplate,
   stripMarkdownFences,
 } from '../util/autofill-shared.util';
+import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmTask } from '../enum/llm-task.enum';
 
 export interface AutofillModelInfo {
   value: string;
@@ -48,6 +50,7 @@ export class OpenAIAutofillService {
   constructor(
     private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
+    private readonly llmUsage: LlmUsageService,
   ) {
     this.client = new OpenAI({ apiKey: this.configService.openai.apiKey });
     this.model = this.configService.openai.autofillModel;
@@ -135,6 +138,16 @@ export class OpenAIAutofillService {
         }),
       });
 
+      void this.llmUsage.record({
+        provider: 'openai',
+        model: effectiveModel,
+        task: LlmTask.AUTOFILL_FIELD,
+        promptTokens: response.usage?.prompt_tokens,
+        completionTokens: response.usage?.completion_tokens,
+        totalTokens: response.usage?.total_tokens,
+        metadata: { field: fieldName, promptCode },
+      });
+
       const content = response.choices?.[0]?.message?.content ?? '';
 
       if (!content || content.trim() === '') {
@@ -209,6 +222,15 @@ export class OpenAIAutofillService {
         // configuring the scenario (parsed client-side to auto-fill Basic
         // Settings). json_object mode guarantees syntactically valid JSON.
         response_format: { type: 'json_object' },
+      });
+
+      void this.llmUsage.record({
+        provider: 'openai',
+        model: effectiveModel,
+        task: LlmTask.AUTOFILL_AGENT_PROMPT,
+        promptTokens: response.usage?.prompt_tokens,
+        completionTokens: response.usage?.completion_tokens,
+        totalTokens: response.usage?.total_tokens,
       });
 
       const content = response.choices?.[0]?.message?.content ?? '';

@@ -27,6 +27,7 @@ function createService(
   return new OpenAITranslationsService(
     (cfg ?? baseConfig) as AppConfigService,
     promptSharedWithDefaults as PromptSharedService,
+    { record: jest.fn() } as any,
   );
 }
 

@@ -52,6 +52,47 @@ export interface LearnTurnMetricsData {
   metadata?: Record<string, any>;
 }
 
+/**
+ * Token-usage payload (message_type "llm_usage") emitted by the Python services
+ * (ally-ai / ally-ai-learn). Snake_case to match the wire format. Unlike
+ * turn_metrics this is NOT necessarily tied to a scenario session — autofill,
+ * translation, drift-judge and embeddings have no room — so `room_id` and the
+ * correlation fields are all optional.
+ */
+export interface LlmUsageEventData {
+  /** AI service: 'llm' | 'stt' | 'tts'. Defaults to 'llm' when omitted. */
+  service?: string;
+  unit?: string;
+  provider: string;
+  model: string;
+  task: string;
+  // LLM quantities.
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cached_tokens?: number;
+  // STT billable audio duration (ms) / TTS billable characters.
+  audio_ms?: number;
+  characters?: number;
+  env?: string;
+  scenario_id?: number;
+  scenario_session_id?: string;
+  tenant_id?: string;
+  metadata?: Record<string, any>;
+}
+
+/**
+ * Full SQS envelope for an `llm_usage` message. Mirrors the turn_metrics
+ * envelope: the payload rides under `data.llm_usage`. `room_id` is optional
+ * (most usage events have no room).
+ */
+export interface LlmUsageMessage {
+  message_type: string;
+  timestamp?: number;
+  room_id?: string;
+  data: { llm_usage?: LlmUsageEventData };
+}
+
 export interface LearnBehaviorInstructionData {
   timestamp: Date;
   behavior_instruction_data: LearnBehaviorInstruction;
