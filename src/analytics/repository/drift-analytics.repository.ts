@@ -114,16 +114,22 @@ export class DriftAnalyticsRepository {
 
   /**
    * Drifted vs total sessions grouped by an experiment dimension — the LLM
-   * model, prompt version, or STT model behind the session (both the STT and
-   * the LLM can contribute to drift). `dimension` is whitelisted.
+   * model, main-agent prompt, or STT model behind the session (all can
+   * contribute to drift). `dimension` is whitelisted.
    *
-   * - llmModel / promptVersion: the value captured/denormalized on the judgment.
+   * - llmModel: the model id captured/denormalized on the judgment.
+   * - promptVersion: the main-agent prompt the session ran, shown by its human
+   *   NAME (+ version) rather than a bare version number. There are several
+   *   main-agent prompts (each a `prompts` row with its own name); the session
+   *   records `{promptCode: version}` in `metadata.promptVersions`, so we pick
+   *   the main-agent code and join `prompts` for its name. Resolved at query
+   *   time (no extra column / re-judge needed — works on existing rows).
    * - sttModel: the STT model the session's language is configured to use,
    *   joined from `languages.sttProviderConfig` (we don't capture the runtime
    *   STT model per turn, so this is the configured model).
    *
-   * Sessions with no captured value are EXCLUDED ('unknown' isn't a real
-   * model/prompt, so it shouldn't be charted as one).
+   * Sessions with no captured/identifiable value are EXCLUDED ('unknown' isn't
+   * a real model/prompt, so it shouldn't be charted as one).
    */
   async getDriftRateByDimension(
     f: DriftFilters,
@@ -132,7 +138,9 @@ export class DriftAnalyticsRepository {
     const keyExpr =
       dimension === 'sttModel'
         ? `lang."sttProviderConfig"->'config'->>'model'`
-        : `j."${dimension === 'llmModel' ? 'llmModel' : 'promptVersion'}"`;
+        : dimension === 'promptVersion'
+          ? `pinfo.label`
+          : `j."llmModel"`;
     const qb = this.dataSource
       .createQueryBuilder()
       .select(keyExpr, 'key')
@@ -146,6 +154,31 @@ export class DriftAnalyticsRepository {
       // Session's language -> its configured STT model. Inner join drops
       // sessions whose language has no STT config (so no 'unknown' bucket).
       qb.innerJoin('languages', 'lang', 'lang.value = j."language"');
+    } else if (dimension === 'promptVersion') {
+      // Resolve the main-agent prompt NAME (+ version) the session ran, instead
+      // of a bare version number. Per session: pick the main-agent code out of
+      // metadata.promptVersions ({code: version}) and join `prompts` for its
+      // name. CROSS JOIN LATERAL drops sessions with no main-agent entry; the
+      // jsonb_typeof guard keeps jsonb_object_keys from erroring on a
+      // non-object; INNER JOIN prompts drops codes with no matching row — so
+      // only identifiable prompts are charted (no 'unknown' bucket).
+      qb.innerJoin(
+        `(SELECT s.id AS sid,
+                 pr.name || ' (v' || (s.metadata->'promptVersions'->>mc.code) || ')' AS label
+            FROM scenario_sessions s
+            CROSS JOIN LATERAL (
+              SELECT k AS code
+                FROM jsonb_object_keys(
+                       CASE WHEN jsonb_typeof(s.metadata->'promptVersions') = 'object'
+                            THEN s.metadata->'promptVersions' ELSE '{}'::jsonb END) k
+               WHERE k ILIKE '%main_agent%' OR k ILIKE '%base_role%'
+               ORDER BY k
+               LIMIT 1
+            ) mc
+            JOIN prompts pr ON pr."promptCode" = mc.code)`,
+        'pinfo',
+        'pinfo.sid = j."scenarioSessionId"',
+      );
     }
     this.applyDriftFilters(qb, f);
     qb.andWhere(`${keyExpr} IS NOT NULL`).andWhere(`${keyExpr} <> ''`);
