@@ -254,4 +254,57 @@ export class OpenAIAutofillService {
       throw error;
     }
   }
+
+  /**
+   * Pick the single best-fit competency from a catalog for a free-text actor
+   * brief. Used by the Copilot orchestrator to auto-select a competency when
+   * the superadmin only supplies a brief. Returns the chosen competency id, or
+   * null when the model can't decide / the response is unparseable (caller
+   * falls back to the first competency).
+   *
+   * Always runs on a small OpenAI model regardless of the builder model — this
+   * is a cheap classification, decoupled from actor generation.
+   */
+  async selectCompetency(
+    brief: string,
+    competencies: { id: string; name: string }[],
+    modelOverride?: string,
+  ): Promise<string | null> {
+    if (!competencies.length) return null;
+
+    const catalog = competencies
+      .map((c, i) => `${i + 1}. id=${c.id} | name=${c.name}`)
+      .join('\n');
+    const system =
+      'You match a roleplay-actor training brief to the single most relevant ' +
+      'counseling competency from a catalog. Respond ONLY with JSON: ' +
+      '{"competencyId": "<the id of the best-fit competency>"}. The id MUST be ' +
+      'one of the ids in the catalog.';
+    const user = `Brief:\n${brief}\n\nCompetency catalog:\n${catalog}`;
+    const effectiveModel = modelOverride ?? this.model;
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: effectiveModel,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        response_format: { type: 'json_object' },
+      });
+      const content = response.choices?.[0]?.message?.content ?? '';
+      const parsed = JSON.parse(stripMarkdownFences(content)) as {
+        competencyId?: string;
+      };
+      const chosen = competencies.find((c) => c.id === parsed.competencyId);
+      return chosen?.id ?? null;
+    } catch (error) {
+      this.logger.warn(
+        `[COPILOT_COMPETENCY] selection failed on model=${effectiveModel}: ${
+          (error as any)?.message ?? error
+        }`,
+      );
+      return null;
+    }
+  }
 }

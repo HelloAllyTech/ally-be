@@ -182,6 +182,29 @@ export class ScenarioFieldContextDto {
   @IsString()
   @IsOptional()
   existingKnowledgeSources?: string;
+
+  @ApiProperty({
+    description:
+      'Current value of the field being regenerated, serialized as text. ' +
+      'Set on Copilot refinement rounds (round >= 2) so the LLM revises the ' +
+      'existing value instead of starting from scratch. Omitted on a fresh ' +
+      'generation.',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  currentValue?: string;
+
+  @ApiProperty({
+    description:
+      'Evaluation feedback (the practice-conversation report) the LLM should ' +
+      'address when revising the current value. Set on Copilot refinement ' +
+      'rounds; omitted on a fresh generation.',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  improvementRecommendation?: string;
 }
 
 export class GenerateScenarioFieldDto {

@@ -22,6 +22,7 @@ import { RedisService } from '../../redis/service/redis.service';
 import { TIME } from 'src/common/constants/time.constants';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 jest.mock('../../logger/logger.service', () => ({
   LoggerService: {
@@ -174,6 +175,10 @@ describe('ScenarioReportService', () => {
         {
           provide: PermissionsService,
           useValue: mockPermissionsService,
+        },
+        {
+          provide: EventEmitter2,
+          useValue: { emit: jest.fn() },
         },
       ],
     }).compile();

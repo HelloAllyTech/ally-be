@@ -226,6 +226,10 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     ScenarioService,
     ScenarioTenantService,
     ScenarioSessionRecordingService,
+    // Exported for the Copilot orchestrator (src/copilot).
+    CompetencyService,
+    ScenarioVoicesRepository,
+    OpenAIAutofillService,
   ],
 })
 export class LearnModule {}
