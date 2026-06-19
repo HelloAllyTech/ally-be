@@ -62,6 +62,7 @@ export const mapCreateScenarioRequestToEntity = (
       agentBuilderPrompt: scenario.agentBuilderPrompt,
       showScoreMeter: scenario.showScoreMeter,
       enableFeedback: scenario.enableFeedback,
+      pauseEnabled: scenario.pauseEnabled,
       currentState: scenario.currentState,
       knowledgeSources: scenario.knowledgeSources?.map((knowledgeSource) => ({
         id: knowledgeSource.id,
@@ -169,6 +170,7 @@ export const mapUpdateScenarioRequestToEntity = (
     'agentBuilderPrompt',
     'showScoreMeter',
     'enableFeedback',
+    'pauseEnabled',
     'currentState',
     'knowledgeSources',
     'stateNames',

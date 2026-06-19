@@ -507,6 +507,17 @@ export class UpdateScenarioDto {
   enableFeedback?: boolean;
 
   @ApiProperty({
+    description:
+      'Allow the learner to pause/resume the simulation. Defaults to enabled ' +
+      '(only an explicit false hides the pause control).',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  pauseEnabled?: boolean;
+
+  @ApiProperty({
     description: 'Enable current state for the scenario',
     example: true,
     required: false,
