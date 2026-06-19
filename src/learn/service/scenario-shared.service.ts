@@ -610,6 +610,9 @@ export class ScenarioSharedService {
       environment: this.configService.livekit.environment,
       scenario: {
         ...scenarioData,
+        // Surface metadata flags the agent reads top-level (raw.get(...)).
+        // pauseEnabled drives the agent's defense-in-depth pause gate.
+        pauseEnabled: metadata?.pauseEnabled,
         voice: scenarioVoice,
         ...(metadata?.language && {
           languageCode: languageCode,

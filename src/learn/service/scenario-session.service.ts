@@ -682,6 +682,7 @@ export class ScenarioSessionService {
         maxTimeValue: scenario?.metadata?.maxTimeValue,
         checklistEvents,
         showScoreMeter: scenario?.metadata?.showScoreMeter,
+        pauseEnabled: scenario?.metadata?.pauseEnabled,
         stateNames,
         metadata: {
           name: scenario?.metadata?.name,
