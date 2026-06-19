@@ -479,14 +479,6 @@ export class ScenarioSharedService {
       );
     }
 
-    // Thinking Filler is gated to an email allowlist. Fail-closed: unless this
-    // session's user is explicitly allowed, strip the filler config so the
-    // agent never plays it (regardless of the scenario's fillerEnabled toggle).
-    if (!options.thinkingFillerAllowed) {
-      promptData.fillerEnabled = false;
-      delete promptData.fillerDialogues;
-    }
-
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
       // Ensure we have values even if not translated

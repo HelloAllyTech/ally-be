@@ -9,7 +9,6 @@ import { PermissionValidator } from 'src/authorization/service/permission-valida
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { AppConfigService } from 'src/config/config.service';
-import { UserService } from 'src/user/service/user.service';
 import { AddFeedbackToScenarioSessionRequestDto } from 'src/learn/dto/add-feedback-to-scenario-session.dto';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
 import { ScenarioSessionDetails } from 'src/learn/entity/scenario-session-details.entity';
@@ -355,7 +354,6 @@ describe('ScenarioSessionService', () => {
         scenarioCustomFields: true,
         useScenarioSessionEvaluation: false,
       },
-      isThinkingFillerAllowed: jest.fn().mockReturnValue(false),
       simulationConcurrency: {
         maxConcurrentSimulations: 100,
       },
@@ -456,12 +454,6 @@ describe('ScenarioSessionService', () => {
         {
           provide: SessionEventTranslationService,
           useValue: mockSessionEventTranslationService,
-        },
-        {
-          provide: UserService,
-          useValue: {
-            get: jest.fn().mockResolvedValue({ email: 'test@example.com' }),
-          },
         },
         {
           provide: SharedLanguageService,

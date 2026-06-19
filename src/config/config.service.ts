@@ -318,7 +318,10 @@ export class AppConfigService {
           'false',
         ) === 'true',
       // Thinking Filler is gated to an explicit email allowlist (comma-separated,
-      // case-insensitive). Empty list => disabled for everyone.
+      // case-insensitive) for STUDIO ACCESS ONLY — i.e. who may see/use the
+      // Thinking Filler toggle when authoring a scenario. Runtime playback is
+      // NOT email-gated; it follows the scenario's fillerEnabled setting.
+      // Empty list => no one can configure it.
       thinkingFillerEmails: (
         this.configService.get<string>('FEATURE_THINKING_FILLER_EMAILS', '') ||
         ''
@@ -330,9 +333,10 @@ export class AppConfigService {
   }
 
   /**
-   * Whether the Thinking Filler feature is enabled for the given user email.
-   * Used to gate both Studio configuration (via /users/me) and runtime
-   * playback (when building room metadata). Case-insensitive exact match.
+   * Whether the user may CONFIGURE the Thinking Filler in Studio (email
+   * allowlist). Exposed via /users/me to gate the Studio toggle. Does NOT
+   * affect runtime playback, which is driven solely by the scenario's
+   * fillerEnabled setting. Case-insensitive exact match.
    */
   isThinkingFillerAllowed(email?: string | null): boolean {
     if (!email) return false;

@@ -62,7 +62,6 @@ import {
 } from '../constants/scenario-session.constants';
 import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
-import { UserService } from 'src/user/service/user.service';
 import {
   ChecklistItem,
   ExperienceMode,
@@ -152,7 +151,6 @@ export class ScenarioSessionService {
     private scenarioSessionRecordingService: ScenarioSessionRecordingService,
     private sharedLanguageService: SharedLanguageService,
     private sessionEventTranslationService: SessionEventTranslationService,
-    private userService: UserService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -601,20 +599,12 @@ export class ScenarioSessionService {
         );
       }
 
-      // Thinking Filler is gated to an email allowlist — resolve the counselor's
-      // email and let createRoomMetadata strip the filler when not allowed.
-      const counselor = await this.userService.get(counselorId);
-      const thinkingFillerAllowed = this.configService.isThinkingFillerAllowed(
-        counselor?.email,
-      );
-
       // Prepare room metadata with events and dependencies
       const roomMetadata = await this.scenarioSharedService.createRoomMetadata({
         scenario,
         sessionEvents,
         languageDetails,
         previousMemory,
-        thinkingFillerAllowed,
       });
 
       // Preparing checklist events for simulation room, only if CHECKLIST mode is enabled for scenario
