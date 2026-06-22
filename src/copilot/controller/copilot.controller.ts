@@ -11,6 +11,7 @@ import {
   CopilotRunDto,
   CreateCopilotRunDto,
   CreateCopilotRunResponseDto,
+  ReviseCopilotRunDto,
 } from '../dto/copilot.dto';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -63,5 +64,26 @@ export class CopilotController {
     @Param('runId') runId: string,
   ): Promise<CopilotRunDto> {
     return this.copilotService.cancelRun(runId, tokenUser.id);
+  }
+
+  @Post('/runs/:runId/revise')
+  @ApiOperation({
+    summary:
+      'Revise a finished Copilot run: re-run build & test on the same draft, ' +
+      'carrying forward prior context plus a free-text revision instruction.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @ApiResponse({ status: 201, type: CreateCopilotRunResponseDto })
+  async reviseRun(
+    @CurrentUser() tokenUser: TokenUser,
+    @Param('runId') runId: string,
+    @Body() dto: ReviseCopilotRunDto,
+  ): Promise<CreateCopilotRunResponseDto> {
+    const { runId: newRunId, status } = await this.copilotService.reviseRun(
+      runId,
+      dto,
+      tokenUser.id,
+    );
+    return { runId: newRunId, status };
   }
 }

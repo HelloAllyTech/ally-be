@@ -8,6 +8,7 @@ import {
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import { CopilotRunStatus } from '../enum/copilot-run.enum';
 import {
+  CopilotProgressEvent,
   CopilotRunConfig,
   CopilotRoundHistoryEntry,
 } from '../type/copilot-run.type';
@@ -66,6 +67,31 @@ export class CopilotRun extends BaseWithoutTenantEntity {
   /** Human-readable failure reason (when status=FAILED). */
   @Column({ type: 'text', nullable: true })
   errorMessage?: string;
+
+  /**
+   * Append-only, ordered activity feed for the live Claude-Coding-style chat
+   * UI. Each entry is a small PII-safe structured event (see
+   * CopilotProgressEvent). Defaults to an empty array so existing rows read
+   * back as an empty feed.
+   */
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  progressLog!: CopilotProgressEvent[];
+
+  /**
+   * Monotonic counter for the next progress event `seq`. Incremented atomically
+   * on append so concurrent appends (webhook-driven onReportCompleted vs the
+   * round it resumes) keep a strictly increasing order without re-reading the
+   * array length.
+   */
+  @Column({ type: 'int', default: 0 })
+  progressSeq!: number;
+
+  /**
+   * Set on a run created by `/revise` — points at the run it continues.
+   * Gives an audit chain across revision turns.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  parentRunId?: string;
 
   @DeleteDateColumn()
   deletedAt?: Date;

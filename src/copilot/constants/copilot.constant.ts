@@ -11,6 +11,18 @@ export const COPILOT_SCORE_THRESHOLD = 90;
 export const COPILOT_MAX_ROUNDS = 5;
 
 /**
+ * Hard cap on the persisted activity feed length (safety valve). With 5 rounds
+ * x ~8 fields x 2 events + tier/score markers a run realistically stays well
+ * under this; when exceeded, the oldest non-anchor events are dropped first
+ * (never round_scored / terminal / revise_requested markers).
+ */
+export const COPILOT_PROGRESS_LOG_MAX = 500;
+
+/** Max length of a progress event label / reason (truncated at the writer). */
+export const COPILOT_PROGRESS_LABEL_MAX = 120;
+export const COPILOT_PROGRESS_REASON_MAX = 200;
+
+/**
  * Maximum number of counselor (agent B) turns in the practice conversation.
  * Maps directly to the scenario-report `turns` parameter.
  */

@@ -31,6 +31,77 @@ export type CopilotRunConfig = {
    * scenario updates / report creation authorize correctly.
    */
   tenantId?: string;
+  /**
+   * Conversation segment for the live feed: 0 for the original build, +1 per
+   * `/revise` turn. Lets the chat UI render each revision as a new chapter.
+   */
+  segment?: number;
+  /**
+   * Free-text revise instruction from the superadmin. When set, it is folded
+   * into the round-1 refinement context (same channel as round-≥2 feedback).
+   */
+  reviseInstruction?: string;
+};
+
+/**
+ * One entry in a run's append-only activity feed (`progressLog`). Small,
+ * PII-safe structured events the Claude-Coding-style chat UI renders as it
+ * polls the run. Carries identifiers + numbers only — never field prose or
+ * transcript bodies.
+ */
+export type CopilotProgressEventKind =
+  | 'run_started'
+  | 'draft_provisioned'
+  | 'round_started'
+  | 'base_generation'
+  | 'field_generation'
+  | 'tier_completed'
+  | 'generation_completed'
+  | 'evaluation_started'
+  | 'round_scored'
+  | 'refining'
+  | 'revise_requested'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
+
+export type CopilotProgressEventStatus =
+  | 'started'
+  | 'completed'
+  | 'skipped'
+  | 'failed'
+  | 'info';
+
+export type CopilotProgressEvent = {
+  /** Stable uuid so the FE can key/dedupe. */
+  id: string;
+  /** Monotonic 0-based ordinal across the whole run; the FE diffs on this. */
+  seq: number;
+  /** ISO timestamp. */
+  at: string;
+  /** Which generate→converse→evaluate round this belongs to (0 for setup). */
+  round: number;
+  /** Conversation segment (0 = original build, +1 per revise turn). */
+  segment: number;
+  kind: CopilotProgressEventKind;
+  status: CopilotProgressEventStatus;
+  /** Short human label, e.g. "Generating behavior instructions". PII-safe. */
+  label: string;
+  /** Small structured extras — never prose / transcript bodies. */
+  payload?: {
+    /** GeneratableField value for field_generation events. */
+    fieldName?: string;
+    /** Tier index for tier_completed events. */
+    tier?: number;
+    /** Composite score (0-100) for round_scored. */
+    score?: number | null;
+    /** Per-metric LLM-judge scores for round_scored. */
+    metrics?: Record<string, number>;
+    /** scenario-report id — links the FE to the transcript / eval side panel. */
+    reportId?: string;
+    /** Truncated failure / skip reason (<= 200 chars). */
+    reason?: string;
+  };
 };
 
 /**

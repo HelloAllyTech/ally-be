@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { CopilotRunStatus } from '../enum/copilot-run.enum';
 import {
+  CopilotProgressEvent,
   CopilotRunConfig,
   CopilotRoundHistoryEntry,
 } from '../type/copilot-run.type';
@@ -46,6 +47,20 @@ export class CreateCopilotRunResponseDto {
   status!: CopilotRunStatus;
 }
 
+export class ReviseCopilotRunDto {
+  @ApiProperty({
+    description:
+      'Free-text instruction describing how to revise the roleplay settings. ' +
+      'Re-runs the build & test loop on the same draft, carrying prior context.',
+    example:
+      'Make the client more guarded at the start and slower to open up about the real issue.',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(10000)
+  instruction!: string;
+}
+
 export class CopilotRunDto {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -84,6 +99,22 @@ export class CopilotRunDto {
     isArray: true,
   })
   roundHistory?: CopilotRoundHistoryEntry[];
+
+  @ApiProperty({
+    description:
+      'Append-only activity feed for the live chat UI. The client diffs by ' +
+      'the monotonic `seq` on each entry.',
+    type: Object,
+    isArray: true,
+  })
+  progressLog!: CopilotProgressEvent[];
+
+  @ApiProperty({
+    required: false,
+    format: 'uuid',
+    description: 'Set on runs created by /revise — the run this one continues.',
+  })
+  parentRunId?: string;
 
   @ApiProperty({ required: false })
   errorMessage?: string;
