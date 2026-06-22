@@ -28,6 +28,7 @@ import {
   renderTemplate,
   stripMarkdownFences,
 } from '../util/autofill-shared.util';
+import { EnhanceableField } from '../enum/enhanceable-field.enum';
 import { AutofillModelInfo } from './openai-autofil-service';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from '../enum/llm-task.enum';
@@ -171,6 +172,84 @@ export class AnthropicAutofillService {
     } catch (error) {
       this.logger.error(
         `[AUTOFILL] failed field=${fieldName} promptCode=${promptCode} model=${effectiveModel} ` +
+          `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
+        error as any,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Field-level Enhance: run an already-rendered enhance prompt (built from a
+   * Prompt-Management template by the caller) and return the improved content.
+   * When `expectJson` is set, the assistant turn is prefilled with `{` so the
+   * model is forced to emit a JSON object (Anthropic has no json mode).
+   */
+  async enhanceFieldContent(
+    fieldName: EnhanceableField,
+    promptCode: string,
+    variables: Record<string, string>,
+    expectJson: boolean,
+    modelOverride?: string,
+  ): Promise<string> {
+    const template = await this.promptSharedService.getPromptByCode(promptCode);
+    if (!template) {
+      throw new NotFoundException(
+        `Prompt template not found for code: ${promptCode}`,
+      );
+    }
+    const prompt = renderTemplate(template, variables);
+
+    const effectiveModel = modelOverride ?? this.model;
+    this.logger.info(
+      `[ENHANCE] start field=${fieldName} provider=anthropic model=${effectiveModel} ` +
+        `promptCode=${promptCode} expectJson=${expectJson}`,
+    );
+    const startedAt = Date.now();
+
+    try {
+      const response = await this.client.messages.create({
+        model: effectiveModel,
+        max_tokens: ANTHROPIC_MAX_TOKENS,
+        messages: expectJson
+          ? [
+              { role: 'user', content: prompt },
+              { role: 'assistant', content: '{' },
+            ]
+          : [{ role: 'user', content: prompt }],
+      });
+
+      this.recordUsage(
+        response.usage,
+        effectiveModel,
+        LlmTask.AUTOFILL_ENHANCE_FIELD,
+        { field: fieldName },
+      );
+
+      const block = response.content[0];
+      const raw = block?.type === 'text' ? block.text : '';
+      // Re-prepend the prefilled brace for JSON responses — but only if the
+      // model didn't already echo it (some versions do), to avoid `{{`.
+      const reconstructed =
+        expectJson && raw.trim() && !raw.trimStart().startsWith('{')
+          ? `{${raw}`
+          : raw;
+      const improved = stripMarkdownFences(reconstructed).trim();
+
+      if (!improved) {
+        throw new InternalServerErrorException(
+          `Empty response from Anthropic while enhancing field: ${fieldName}`,
+        );
+      }
+
+      this.logger.info(
+        `[ENHANCE] done  field=${fieldName} model=${effectiveModel} ` +
+          `resultLength=${improved.length} elapsedMs=${Date.now() - startedAt}`,
+      );
+      return improved;
+    } catch (error) {
+      this.logger.error(
+        `[ENHANCE] failed field=${fieldName} model=${effectiveModel} ` +
           `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
         error as any,
       );

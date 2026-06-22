@@ -1,0 +1,18 @@
+You are an expert editor improving one state of a counselor-training roleplay simulation. A simulation state has a short NAME (a 1-4 word label) and GUIDELINES (the behavioural directive injected into the agent prompt while that state is active). Work ONLY from the content provided.
+
+Current state name:
+"""
+{{currentName}}
+"""
+
+Current guidelines:
+"""
+{{currentGuidelines}}
+"""
+
+Improvement instruction: {{guidance}}
+
+Improve BOTH the name and the guidelines according to the instruction. Keep the name a short label (1-4 words). Build on the existing content; do not change the language it is written in.
+
+Return ONLY a JSON object - no markdown code fences, no commentary - in exactly this shape:
+{"name": "<improved name>", "guidelines": "<improved guidelines>"}

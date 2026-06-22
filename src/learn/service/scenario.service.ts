@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource, DeepPartial, EntityManager, In } from 'typeorm';
@@ -132,9 +133,22 @@ import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-in
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { OpenAIAutofillService } from './openai-autofil-service';
 import { AnthropicAutofillService } from './anthropic-autofill.service';
-import { buildBehaviorIdMapping } from '../util/autofill-shared.util';
+import {
+  buildBehaviorIdMapping,
+  ENHANCE_AUTO_IMPROVE_INSTRUCTION,
+} from '../util/autofill-shared.util';
 import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
 import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
+import {
+  EnhanceScenarioFieldDto,
+  EnhanceScenarioFieldResponseDto,
+} from '../dto/enhance-scenario-field.dto';
+import {
+  EnhanceableField,
+  ENHANCEABLE_FIELD_LABELS,
+  ENHANCE_FIELD_PROMPT_CODE,
+  ENHANCE_STATE_PROMPT_CODE,
+} from '../enum/enhanceable-field.enum';
 import {
   GenerateAgentPromptDto,
   GenerateAgentPromptResponseDto,
@@ -2816,6 +2830,150 @@ export class ScenarioService {
       this.anthropicAutofillService.getAvailableModels(),
     ]);
     return [...openaiModels, ...anthropicModels];
+  }
+
+  /**
+   * Field-level Enhance: improve the existing content of a single scenario
+   * field. Unlike {@link generateField} this never invents content — it takes
+   * the field's current value plus the other field values as grounding context
+   * and rewrites it according to a preset/custom instruction. Provider routing
+   * mirrors generateField.
+   */
+  async enhanceField(
+    enhanceScenarioFieldDto: EnhanceScenarioFieldDto,
+  ): Promise<EnhanceScenarioFieldResponseDto> {
+    const { fieldName, currentValue, guidance, model, provider } =
+      enhanceScenarioFieldDto;
+
+    if (!currentValue?.trim()) {
+      throw new BadRequestException(
+        'currentValue is required to enhance a field — there is nothing to improve.',
+      );
+    }
+
+    const autofillServiceRegistry = new Map<
+      string,
+      OpenAIAutofillService | AnthropicAutofillService
+    >([
+      ['openai', this.openAIAutofillService],
+      ['anthropic', this.anthropicAutofillService],
+    ]);
+    const resolvedProvider = provider ?? 'openai';
+    if (provider && !autofillServiceRegistry.has(provider)) {
+      this.logger.warn(
+        `Unrecognized enhance provider "${provider}", falling back to openai`,
+      );
+    }
+    const autofillService =
+      autofillServiceRegistry.get(resolvedProvider) ??
+      this.openAIAutofillService;
+
+    // Blank custom box ⇒ generic auto-improve directive.
+    const effectiveGuidance =
+      guidance?.trim() || ENHANCE_AUTO_IMPROVE_INSTRUCTION;
+
+    // The state field is structured: it carries a JSON {name, guidelines} and
+    // expects a JSON object back. Everything else is plain text in/out and uses
+    // the single generic enhance prompt (editable in Prompt Management).
+    let promptCode: string;
+    let variables: Record<string, string>;
+    let expectJson = false;
+    let stateInput: { name: string; guidelines: string } | null = null;
+    if (fieldName === EnhanceableField.STATE) {
+      let parsed: { name?: string; guidelines?: string } = {};
+      try {
+        parsed = JSON.parse(currentValue) as {
+          name?: string;
+          guidelines?: string;
+        };
+      } catch {
+        throw new BadRequestException(
+          'currentValue for a state must be JSON {"name","guidelines"}.',
+        );
+      }
+      stateInput = {
+        name: typeof parsed.name === 'string' ? parsed.name : '',
+        guidelines:
+          typeof parsed.guidelines === 'string' ? parsed.guidelines : '',
+      };
+      if (!stateInput.name.trim() && !stateInput.guidelines.trim()) {
+        throw new BadRequestException(
+          'A state needs a name or guidelines before it can be improved.',
+        );
+      }
+      promptCode = ENHANCE_STATE_PROMPT_CODE;
+      variables = {
+        currentName: stateInput.name,
+        currentGuidelines: stateInput.guidelines,
+        guidance: effectiveGuidance,
+      };
+      expectJson = true;
+    } else {
+      promptCode = ENHANCE_FIELD_PROMPT_CODE;
+      variables = {
+        fieldLabel: ENHANCEABLE_FIELD_LABELS[fieldName] ?? fieldName,
+        currentValue,
+        guidance: effectiveGuidance,
+      };
+    }
+
+    const content = await autofillService.enhanceFieldContent(
+      fieldName,
+      promptCode,
+      variables,
+      expectJson,
+      model,
+    );
+
+    this.logger.info(`Enhancement completed for ${fieldName}`);
+
+    // For the structured state field, normalise the model output into a clean,
+    // guaranteed-parseable {name, guidelines} JSON string so the studio never
+    // has to parse free-form prose. A missing key falls back to the original
+    // value; unparseable output is a hard failure (surfaced as a 500 → error
+    // toast) rather than silently corrupting the field.
+    if (fieldName === EnhanceableField.STATE && stateInput) {
+      return {
+        fieldName,
+        content: this.normaliseStateEnhanceOutput(content, stateInput),
+      };
+    }
+
+    return { fieldName, content };
+  }
+
+  /**
+   * Coerce the model's state-enhance output into a clean, guaranteed-parseable
+   * `{"name","guidelines"}` JSON string. Extracts the first balanced JSON
+   * object (tolerating stray prose/braces around it), falls back to the
+   * original value for any missing/blank key, and throws if nothing parseable
+   * is found so the studio shows a failure toast instead of writing garbage.
+   */
+  private normaliseStateEnhanceOutput(
+    raw: string,
+    original: { name: string; guidelines: string },
+  ): string {
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    let parsed: { name?: unknown; guidelines?: unknown } | null = null;
+    if (start !== -1 && end > start) {
+      try {
+        parsed = JSON.parse(raw.slice(start, end + 1));
+      } catch {
+        parsed = null;
+      }
+    }
+    if (!parsed) {
+      throw new InternalServerErrorException(
+        'State enhancement returned malformed JSON.',
+      );
+    }
+    const pick = (value: unknown, fallback: string): string =>
+      typeof value === 'string' && value.trim() ? value : fallback;
+    return JSON.stringify({
+      name: pick(parsed.name, original.name),
+      guidelines: pick(parsed.guidelines, original.guidelines),
+    });
   }
 
   async generateField(

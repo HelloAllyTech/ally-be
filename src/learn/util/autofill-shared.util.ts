@@ -43,6 +43,15 @@ export function buildTemplateVariables(
   return variables;
 }
 
+/**
+ * Default instruction used for an "auto-improve" (no specific direction).
+ * Substituted into the `{{guidance}}` slot of the enhance prompt when the
+ * author leaves the custom box blank.
+ */
+export const ENHANCE_AUTO_IMPROVE_INSTRUCTION =
+  'Improve the overall quality, clarity, coherence and impact of the content ' +
+  'while preserving its original meaning, intent and language.';
+
 export function buildBehaviorIdMapping(behaviors: BehaviorResponseDto[]): {
   mapping: BehaviorIdMapping;
   formattedList: string;
