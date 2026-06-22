@@ -1,7 +1,30 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateCompetencyDto {
+  @ApiPropertyOptional({
+    description:
+      'Name of the competency. Optional when isCustom is true — the server ' +
+      'generates a name of the form "{userId}_custom_{N}".',
+    example: 'Communication Skills',
+  })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  name?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Create a user-owned custom competency (scoped to the creator and hidden ' +
+      'from the global competency list). The name is server-generated.',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isCustom?: boolean;
+}
+
+export class UpdateCompetencyDto {
   @ApiProperty({
     description: 'Name of the competency',
     example: 'Communication Skills',
@@ -17,6 +40,11 @@ export class CreateCompetencyResponseDto {
 
   @ApiProperty({ description: 'Name of the competency' })
   name!: string;
+
+  @ApiProperty({
+    description: 'Whether this is a user-owned custom competency',
+  })
+  isCustom!: boolean;
 }
 
 export class CompetencyResponseDto {
@@ -25,6 +53,11 @@ export class CompetencyResponseDto {
 
   @ApiProperty({ description: 'Name of the competency' })
   name!: string;
+
+  @ApiProperty({
+    description: 'Whether this is a user-owned custom competency',
+  })
+  isCustom!: boolean;
 }
 
 export class GetCompetenciesResponseDto {
