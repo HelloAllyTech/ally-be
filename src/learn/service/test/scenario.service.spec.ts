@@ -7,6 +7,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import {
   BadRequestException,
   ForbiddenException,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { Repository, DataSource } from 'typeorm';
@@ -51,6 +52,7 @@ import { OpenAIAutofillService } from '../openai-autofil-service';
 import { AnthropicAutofillService } from '../anthropic-autofill.service';
 import { BehaviorService } from '../behavior.service';
 import { GeneratableField } from 'src/learn/enum/generatable-field.enum';
+import { EnhanceableField } from 'src/learn/enum/enhanceable-field.enum';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { TokenUser } from 'src/auth/type/auth.types';
@@ -296,12 +298,14 @@ describe('ScenarioService', () => {
 
     const mockOpenAIAutofillService = {
       generateFieldContent: jest.fn(),
+      enhanceFieldContent: jest.fn(),
       buildBehaviorIdMapping: jest.fn(),
       getAvailableModels: jest.fn().mockResolvedValue([]),
     };
 
     const mockAnthropicAutofillService = {
       generateFieldContent: jest.fn(),
+      enhanceFieldContent: jest.fn(),
       buildBehaviorIdMapping: jest.fn(),
       getAvailableModels: jest.fn().mockResolvedValue([]),
     };
@@ -6037,6 +6041,180 @@ describe('ScenarioService', () => {
           sanitizedDifferent,
         ),
       ).toBe(true);
+    });
+  });
+
+  describe('enhanceField', () => {
+    const baseDto = {
+      fieldName: EnhanceableField.CHARACTER_PROFILE_TEXT,
+      currentValue: 'A short backstory.',
+    };
+
+    it('returns the improved content and routes to OpenAI by default', async () => {
+      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+        'A richer, improved backstory.',
+      );
+
+      const result = await service.enhanceField(baseDto as any);
+
+      expect(result).toEqual({
+        fieldName: EnhanceableField.CHARACTER_PROFILE_TEXT,
+        content: 'A richer, improved backstory.',
+      });
+      expect(openAIAutofillService.enhanceFieldContent).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it('uses the generic enhance prompt with field label + current value, and model', async () => {
+      openAIAutofillService.enhanceFieldContent.mockResolvedValue('improved');
+
+      await service.enhanceField({
+        ...baseDto,
+        guidance: 'Make it shorter',
+        model: 'gpt-4o',
+      } as any);
+
+      const call = openAIAutofillService.enhanceFieldContent.mock.calls[0];
+      expect(call[0]).toBe(EnhanceableField.CHARACTER_PROFILE_TEXT);
+      expect(call[1]).toBe('enhance_field'); // prompt-management code
+      expect(call[2]).toMatchObject({
+        currentValue: 'A short backstory.',
+        guidance: 'Make it shorter',
+      });
+      expect(typeof call[2].fieldLabel).toBe('string');
+      expect(call[3]).toBe(false); // expectJson — plain text field
+      expect(call[4]).toBe('gpt-4o'); // model override
+    });
+
+    it('falls back to the auto-improve directive when guidance is blank', async () => {
+      openAIAutofillService.enhanceFieldContent.mockResolvedValue('improved');
+
+      await service.enhanceField(baseDto as any);
+
+      const variables =
+        openAIAutofillService.enhanceFieldContent.mock.calls[0][2];
+      expect(variables.guidance).toMatch(/improve the overall quality/i);
+    });
+
+    it('uses the structured state prompt (JSON) for the STATE field', async () => {
+      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+        '{"name":"Withdrawn","guidelines":"..."}',
+      );
+
+      await service.enhanceField({
+        fieldName: EnhanceableField.STATE,
+        currentValue: JSON.stringify({
+          name: 'Withdrawn',
+          guidelines: 'quiet and terse',
+        }),
+        guidance: 'make it vivid',
+      } as any);
+
+      const call = openAIAutofillService.enhanceFieldContent.mock.calls[0];
+      expect(call[1]).toBe('enhance_state');
+      expect(call[2]).toMatchObject({
+        currentName: 'Withdrawn',
+        currentGuidelines: 'quiet and terse',
+        guidance: 'make it vivid',
+      });
+      expect(call[3]).toBe(true); // expectJson
+    });
+
+    it('normalises prose-wrapped JSON from the model into clean state JSON', async () => {
+      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+        'Sure!\n{"name":"Reserved","guidelines":"Quiet and brief."}\nHope that helps.',
+      );
+
+      const result = await service.enhanceField({
+        fieldName: EnhanceableField.STATE,
+        currentValue: JSON.stringify({ name: 'sad', guidelines: 'quiet' }),
+      } as any);
+
+      expect(JSON.parse(result.content)).toEqual({
+        name: 'Reserved',
+        guidelines: 'Quiet and brief.',
+      });
+    });
+
+    it('falls back to the original value when the model omits a state key', async () => {
+      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+        '{"guidelines":"Improved guidelines."}',
+      );
+
+      const result = await service.enhanceField({
+        fieldName: EnhanceableField.STATE,
+        currentValue: JSON.stringify({
+          name: 'Withdrawn',
+          guidelines: 'quiet',
+        }),
+      } as any);
+
+      expect(JSON.parse(result.content)).toEqual({
+        name: 'Withdrawn', // preserved — model didn't return a name
+        guidelines: 'Improved guidelines.',
+      });
+    });
+
+    it('throws when the model returns no parseable JSON for a state', async () => {
+      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+        'I cannot do that.',
+      );
+
+      await expect(
+        service.enhanceField({
+          fieldName: EnhanceableField.STATE,
+          currentValue: JSON.stringify({
+            name: 'Withdrawn',
+            guidelines: 'quiet',
+          }),
+        } as any),
+      ).rejects.toThrow(InternalServerErrorException);
+    });
+
+    it('throws BadRequestException when a STATE currentValue is not valid JSON', async () => {
+      await expect(
+        service.enhanceField({
+          fieldName: EnhanceableField.STATE,
+          currentValue: 'not json',
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException when a STATE has no name and no guidelines', async () => {
+      await expect(
+        service.enhanceField({
+          fieldName: EnhanceableField.STATE,
+          currentValue: JSON.stringify({ name: '  ', guidelines: '' }),
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+      expect(openAIAutofillService.enhanceFieldContent).not.toHaveBeenCalled();
+    });
+
+    it('routes to Anthropic when provider is anthropic', async () => {
+      anthropicAutofillService.enhanceFieldContent.mockResolvedValue(
+        'improved',
+      );
+
+      await service.enhanceField({
+        ...baseDto,
+        provider: 'anthropic',
+      } as any);
+
+      expect(
+        anthropicAutofillService.enhanceFieldContent,
+      ).toHaveBeenCalledTimes(1);
+      expect(openAIAutofillService.enhanceFieldContent).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when currentValue is blank', async () => {
+      await expect(
+        service.enhanceField({
+          fieldName: EnhanceableField.CHARACTER_PROFILE_TEXT,
+          currentValue: '   ',
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+      expect(openAIAutofillService.enhanceFieldContent).not.toHaveBeenCalled();
     });
   });
 

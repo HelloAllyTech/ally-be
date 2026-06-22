@@ -28,6 +28,7 @@ export enum LlmTask {
 
   // ally-be studio operations (in-process).
   AUTOFILL_FIELD = 'autofill_field',
+  AUTOFILL_ENHANCE_FIELD = 'autofill_enhance_field',
   AUTOFILL_AGENT_PROMPT = 'autofill_agent_prompt',
   TRANSLATE_SCENARIO = 'translate_scenario',
   TRANSLATE_TEXT = 'translate_text',
