@@ -37,6 +37,19 @@ export class BehaviorRepository extends Repository<Behavior> {
     });
   }
 
+  // Case-insensitive lookup by exact names — used to find-or-create behaviours
+  // from free-text competency behaviour entries.
+  async getBehaviorsByNames(names: string[]): Promise<Behavior[]> {
+    if (names.length === 0) {
+      return [];
+    }
+    return this.createQueryBuilder('behavior')
+      .where('LOWER(behavior.name) IN (:...names)', {
+        names: names.map((n) => n.toLowerCase()),
+      })
+      .getMany();
+  }
+
   private applySorting(
     query: SelectQueryBuilder<Behavior>,
     options: Pagination,

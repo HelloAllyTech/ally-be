@@ -84,6 +84,12 @@ import { Competency } from './entity/competency.entity';
 import { CompetencyRepository } from './repository/competency.repository';
 import { CompetencyService } from './service/competency.service';
 import { CompetencyController } from './controller/competency.controller';
+import { OptimisationGoal } from './entity/optimisation-goal.entity';
+import { OptimisationGoalRepository } from './repository/optimisation-goal.repository';
+import { OptimisationGoalService } from './service/optimisation-goal.service';
+import { OptimisationGoalController } from './controller/optimisation-goal.controller';
+import { CompetencyBehavior } from './entity/competency-behavior.entity';
+import { CompetencyBehaviorRepository } from './repository/competency-behavior.repository';
 import { BehaviorTranslation } from './entity/behavior-translation.entity';
 import { ScenarioBehaviorInstructionTranslation } from './entity/scenario-behavior-instruction-translation.entity';
 import { BehaviorTranslationRepository } from './repository/behavior-translation.repository';
@@ -126,6 +132,8 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
       ScenarioSessionChatMessage,
       ScenarioSessionBehaviorInstructions,
       Competency,
+      CompetencyBehavior,
+      OptimisationGoal,
       BehaviorTranslation,
       ScenarioBehaviorInstructionTranslation,
       AuditModule,
@@ -156,6 +164,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     FillerTagController,
     ScenarioSessionChatController,
     CompetencyController,
+    OptimisationGoalController,
     ScenarioSessionRecordingController,
   ],
   providers: [
@@ -202,6 +211,9 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     ScenarioSessionChatService,
     CompetencyService,
     CompetencyRepository,
+    CompetencyBehaviorRepository,
+    OptimisationGoalService,
+    OptimisationGoalRepository,
     BehaviorTranslationRepository,
     ScenarioBehaviorInstructionTranslationRepository,
     BehaviorInstructionTranslationService,
