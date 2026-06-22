@@ -73,6 +73,10 @@ import { UpdateReflectionPromptResponseDto } from '../dto/reflection-prompts-req
 import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
 import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
 import {
+  EnhanceScenarioFieldDto,
+  EnhanceScenarioFieldResponseDto,
+} from '../dto/enhance-scenario-field.dto';
+import {
   GenerateAgentPromptDto,
   GenerateAgentPromptResponseDto,
 } from '../dto/generate-agent-prompt.dto';
@@ -297,6 +301,23 @@ export class LearnController {
     @Body() generateScenarioFieldDto: GenerateScenarioFieldDto,
   ): Promise<GenerateScenarioFieldResponseDto> {
     return this.scenarioService.generateField(generateScenarioFieldDto);
+  }
+
+  @ApiOperation({
+    summary:
+      'Enhance the existing content of a scenario field using AI (preset or custom guidance)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Enhanced field content',
+    type: EnhanceScenarioFieldResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('scenarios/enhance-field')
+  async enhanceScenarioField(
+    @Body() enhanceScenarioFieldDto: EnhanceScenarioFieldDto,
+  ): Promise<EnhanceScenarioFieldResponseDto> {
+    return this.scenarioService.enhanceField(enhanceScenarioFieldDto);
   }
 
   @ApiOperation({
