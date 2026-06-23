@@ -12,6 +12,7 @@
  */
 export enum EnhanceableField {
   ROLE_INSTRUCTION = 'roleInstruction',
+  TITLE = 'title',
   CHARACTER_PROFILE_TEXT = 'characterProfileText',
   DESCRIPTION = 'description',
   OPENING_STATEMENTS = 'openingStatements',
@@ -31,6 +32,9 @@ export const ENHANCEABLE_FIELD_LABELS: Record<EnhanceableField, string> = {
   [EnhanceableField.ROLE_INSTRUCTION]:
     'Role instruction — the directive that tells the AI how to stay in ' +
     'character as the client during the roleplay.',
+  [EnhanceableField.TITLE]:
+    'Scenario title — a short, learner-facing title for the roleplay. Keep it ' +
+    'concise (a few words).',
   [EnhanceableField.CHARACTER_PROFILE_TEXT]:
     'Character backstory — the life history and personality of the AI client ' +
     'persona.',
