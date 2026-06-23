@@ -7,6 +7,99 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { ExperienceMode, ChecklistType } from '../type/scenario.type';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { GeneratableField } from '../enum/generatable-field.enum';
+import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
+
+/**
+ * Scenario fields persisted on `scenarios.metadata` (vs. dedicated columns).
+ * Single source of truth shared by the DTO→entity mapper and the version
+ * config↔scenario hydration so the two never drift.
+ */
+export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
+  'name',
+  'age',
+  'gender',
+  'genderIdentity',
+  'sexualOrientation',
+  'currentLocation',
+  'profession',
+  'openingStatements',
+  'enableProsody',
+  'fillerEnabled',
+  'fillerDialogues',
+  'customFields',
+  'languageVoices',
+  'linguisticStyleSamples',
+  'allowedFillerWords',
+  'languageCharacteristics',
+  'experienceMode',
+  'checklistType',
+  'timerMode',
+  'maxTimeValue',
+  'optGuardrails',
+  'characterProfileText',
+  'helperAgentPrompt',
+  'agentBuilderDescription',
+  'agentBuilderPrompt',
+  'showScoreMeter',
+  'enableFeedback',
+  'pauseEnabled',
+  'currentState',
+  'knowledgeSources',
+  'stateNames',
+  'selectedMainPromptCode',
+  'selectedEvaluatorPromptCode',
+  'states',
+];
+
+/** Scenario fields persisted as dedicated `scenarios` columns. */
+export const SCENARIO_ROOT_FIELDS: (keyof UpdateScenarioDto)[] = [
+  'title',
+  'description',
+  'coverImageUrl',
+  'coverVideoUrl',
+  'status',
+  'isPublic',
+  'prompt',
+  'isGlobal',
+  'difficultyLevel',
+  'competencyId',
+];
+
+/**
+ * Rebuild a form-shaped admin scenario (the shape `createRoomMetadata`
+ * consumes) from a flattened version `config`, overlaid on a live `base`
+ * scenario. The base supplies identity/competency/translation maps that aren't
+ * part of the editable snapshot; `config` overrides everything editable.
+ *
+ * NOTE: session events and scenario_translations are keyed by scenarioId in
+ * their own tables, so a draft test run still reflects the live scenario's
+ * events/translations — only the editable form surface comes from the draft.
+ */
+export const hydrateAdminScenarioFromVersionConfig = (
+  base: GetAdminScenarioDto,
+  config: Record<string, any>,
+): GetAdminScenarioDto => {
+  const metadata: Record<string, any> = { ...(base.metadata ?? {}) };
+  for (const field of SCENARIO_METADATA_FIELDS) {
+    if (config[field] !== undefined) {
+      metadata[field] = config[field];
+    }
+  }
+
+  const hydrated = { ...base, metadata } as GetAdminScenarioDto;
+  for (const field of SCENARIO_ROOT_FIELDS) {
+    if (config[field] !== undefined) {
+      (hydrated as Record<string, any>)[field] = config[field];
+    }
+  }
+  if (config.terminationEvents !== undefined) {
+    hydrated.terminationEvents = config.terminationEvents;
+  }
+  if (config.behaviorInstructions !== undefined) {
+    hydrated.behaviorInstructions = config.behaviorInstructions;
+  }
+  return hydrated;
+};
 
 export const mapCreateScenarioRequestToEntity = (
   scenario: CreateScenarioDto,
@@ -142,48 +235,11 @@ export const mapUpdateScenarioRequestToEntity = (
     }
   }
 
-  const metadataFields: (keyof UpdateScenarioDto)[] = [
-    'name',
-    'age',
-    'gender',
-    'genderIdentity',
-    'sexualOrientation',
-    'currentLocation',
-    'profession',
-    'openingStatements',
-    'enableProsody',
-    'fillerEnabled',
-    'fillerDialogues',
-    'customFields',
-    'languageVoices',
-    'linguisticStyleSamples',
-    'allowedFillerWords',
-    'languageCharacteristics',
-    'experienceMode',
-    'checklistType',
-    'timerMode',
-    'maxTimeValue',
-    'optGuardrails',
-    'characterProfileText',
-    'helperAgentPrompt',
-    'agentBuilderDescription',
-    'agentBuilderPrompt',
-    'showScoreMeter',
-    'enableFeedback',
-    'pauseEnabled',
-    'currentState',
-    'knowledgeSources',
-    'stateNames',
-    'selectedMainPromptCode',
-    'selectedEvaluatorPromptCode',
-    'states',
-  ];
-
   // Handle metadata fields - merge with existing metadata
   const metadataUpdates: Record<string, any> = {};
 
   // Only include fields that are defined
-  for (const field of metadataFields) {
+  for (const field of SCENARIO_METADATA_FIELDS) {
     const value = updateScenarioDto[field as keyof UpdateScenarioDto];
     if (value !== undefined) {
       // Trim customFields to only include name and value properties

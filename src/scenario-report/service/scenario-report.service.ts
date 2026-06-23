@@ -29,6 +29,7 @@ import { ScenarioReportTranscriptResponseDto } from '../dto/scenario-report-tran
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { Languages } from 'src/language/entity/languages.entity';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
+import { GetAdminScenarioDto } from 'src/learn/dto/get-scenario.dto';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
 import { RedisService } from '../../redis/service/redis.service';
 import {
@@ -92,8 +93,29 @@ export class ScenarioReportService {
     if (!scenario) {
       throw new NotFoundException('Scenario not found');
     }
+
+    // When a version is requested, run against that version's config (which may
+    // be an unpublished draft) instead of the live scenario, and validate the
+    // hydrated config. Otherwise tag the report with the live published
+    // version so reports stay attributable.
+    const { scenarioVersionId, ...reportConfigDto } = createScenarioReportDto;
+    let scenarioOverride: typeof scenario | undefined;
+    if (scenarioVersionId) {
+      scenarioOverride =
+        await this.scenarioSharedService.buildScenarioOverrideFromVersion(
+          scenarioId,
+          scenarioVersionId,
+          scenario,
+        );
+    }
+    const effectiveScenario = scenarioOverride ?? scenario;
+    const tagVersionId =
+      scenarioVersionId ?? scenario.publishedVersionId ?? null;
+
     if (
-      !this.scenarioSharedService.hasAllActiveScenarioMandatoryFields(scenario)
+      !this.scenarioSharedService.hasAllActiveScenarioMandatoryFields(
+        effectiveScenario,
+      )
     ) {
       throw new BadRequestException(
         'Required fields are missing for the scenario',
@@ -109,19 +131,21 @@ export class ScenarioReportService {
 
     const scenarioReportEntity = this.scenarioReportRepository.create({
       scenarioId,
+      scenarioVersionId: tagVersionId,
       config: {
-        ...createScenarioReportDto,
+        ...reportConfigDto,
         // Snapshot the main-agent variant ("skill") in effect right now so
         // report history records which skill produced this report, even if
         // the scenario later switches variants.
-        selectedMainPromptCode: scenario.metadata?.selectedMainPromptCode,
+        selectedMainPromptCode:
+          effectiveScenario.metadata?.selectedMainPromptCode,
         // Snapshot the transcript-evaluator prompt variant chosen for this run.
         // Prefer the value sent live with the request (lets a freshly picked
         // variant take effect without a scenario save) and fall back to the
         // scenario's saved selection. Undefined means the default evaluator.
         selectedEvaluatorPromptCode:
-          createScenarioReportDto.selectedEvaluatorPromptCode ??
-          scenario.metadata?.selectedEvaluatorPromptCode,
+          reportConfigDto.selectedEvaluatorPromptCode ??
+          effectiveScenario.metadata?.selectedEvaluatorPromptCode,
       },
       createdBy: userId,
       updatedBy: userId,
@@ -140,7 +164,11 @@ export class ScenarioReportService {
       SCENARIO_REPORT_TTL_SECONDS,
     );
 
-    this.triggerScenarioReportGeneration(scenarioReport, languages[0]?.value);
+    this.triggerScenarioReportGeneration(
+      scenarioReport,
+      languages[0]?.value,
+      scenarioOverride,
+    );
     return {
       id: scenarioReport.id,
       status: scenarioReport.status,
@@ -168,12 +196,14 @@ export class ScenarioReportService {
   private async triggerScenarioReportGeneration(
     report: ScenarioReport,
     languageCode: string,
+    scenarioOverride?: GetAdminScenarioDto,
   ): Promise<void> {
     try {
       const metadata =
         await this.scenarioSharedService.createMetadataForScenario(
           report.scenarioId,
           report.config.languageId,
+          scenarioOverride,
         );
 
       const translatedPrompt =

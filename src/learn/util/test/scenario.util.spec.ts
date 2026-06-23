@@ -3,7 +3,9 @@ import {
   mapUpdateScenarioRequestToEntity,
   formatAutoTerminationEventsList,
   formatScenarioTriggerWarningsList,
+  hydrateAdminScenarioFromVersionConfig,
 } from '../scenario.util';
+import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { CreateScenarioDto } from '../../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../../dto/update-scenario.dto';
@@ -609,6 +611,88 @@ describe('Scenario Util', () => {
         { scenarioId: 2, triggerWarningId: 'uuid-4' },
         { scenarioId: 2, triggerWarningId: 'uuid-5' },
       ]);
+    });
+  });
+
+  describe('hydrateAdminScenarioFromVersionConfig', () => {
+    // The live scenario the draft is overlaid on. Carries identity + fields
+    // that must survive when the draft doesn't override them.
+    const base = {
+      id: 42,
+      title: 'LIVE title',
+      description: 'live description',
+      prompt: 'LIVE prompt',
+      coverImageUrl: 'https://live/cover.png',
+      isPublic: true,
+      isGlobal: false,
+      difficultyLevel: 'MEDIUM',
+      competencyId: 'comp-1',
+      publishedVersionId: 'v-live',
+      metadata: {
+        name: 'LiveName',
+        age: 30,
+        gender: 'MALE',
+        // base-only metadata that the draft doesn't touch — must be preserved.
+        languageVoices: { '1': 'voice-1' },
+      },
+      terminationEvents: [{ eventId: 99 }],
+      behaviorInstructions: [{ category: 'SHOULD_DO' }],
+      triggerWarnings: [{ id: 'tw-live' }],
+    } as unknown as GetAdminScenarioDto;
+
+    it('overlays the draft config onto the live scenario (form shape)', () => {
+      const config = {
+        title: 'DRAFT title',
+        prompt: 'DRAFT prompt',
+        // metadata fields flattened at top level (DTO shape)
+        name: 'DraftName',
+        age: 16,
+        openingStatements: 'Hi, I am the draft.',
+        status: ScenarioStatus.DRAFT,
+        terminationEvents: [{ eventId: 7 }],
+        behaviorInstructions: [{ category: 'SHOULD_NOT_DO' }],
+      };
+
+      const result = hydrateAdminScenarioFromVersionConfig(base, config);
+
+      // Root fields overridden by the draft.
+      expect(result.title).toBe('DRAFT title');
+      expect(result.prompt).toBe('DRAFT prompt');
+      // Identity preserved from base.
+      expect(result.id).toBe(42);
+      expect(result.competencyId).toBe('comp-1');
+      // Flattened persona fields rebuilt into nested metadata.
+      expect(result.metadata?.name).toBe('DraftName');
+      expect(result.metadata?.age).toBe(16);
+      expect(result.metadata?.openingStatements).toBe('Hi, I am the draft.');
+      // Base-only metadata not present in the draft survives.
+      expect(result.metadata?.languageVoices).toEqual({ '1': 'voice-1' });
+      // Related arrays come from the draft.
+      expect(result.terminationEvents).toEqual([{ eventId: 7 }]);
+      expect(result.behaviorInstructions).toEqual([
+        { category: 'SHOULD_NOT_DO' },
+      ]);
+    });
+
+    it('keeps base values for fields the draft omits', () => {
+      const result = hydrateAdminScenarioFromVersionConfig(base, {
+        title: 'only title changed',
+      });
+
+      expect(result.title).toBe('only title changed');
+      expect(result.prompt).toBe('LIVE prompt');
+      expect(result.metadata?.name).toBe('LiveName');
+      expect(result.terminationEvents).toEqual([{ eventId: 99 }]);
+    });
+
+    it('does not mutate the base scenario or its metadata', () => {
+      const result = hydrateAdminScenarioFromVersionConfig(base, {
+        name: 'DraftName',
+      });
+
+      expect(result.metadata).not.toBe(base.metadata);
+      expect(base.metadata?.name).toBe('LiveName');
+      expect(base.title).toBe('LIVE title');
     });
   });
 });

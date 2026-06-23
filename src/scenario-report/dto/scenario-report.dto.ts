@@ -6,6 +6,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -58,6 +59,18 @@ export class CreateScenarioReportDto {
   @IsOptional()
   @IsString()
   selectedEvaluatorPromptCode?: string;
+
+  @ApiProperty({
+    description:
+      'Scenario version to generate the report against. When set, the run ' +
+      'uses that version’s (possibly unpublished draft) config instead of the ' +
+      'live scenario. When omitted, runs the live scenario and tags the report ' +
+      'with the scenario’s published version.',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID()
+  scenarioVersionId?: string;
 }
 
 export class CreateScenarioReportResponseDto {
@@ -138,6 +151,13 @@ export class ScenarioReportDto {
     example: 1,
   })
   scenarioId!: number;
+
+  @ApiProperty({
+    description: 'Scenario version this report was generated against',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  scenarioVersionId?: string | null;
 
   @ApiProperty({
     description: 'Scenario title',

@@ -414,6 +414,7 @@ describe('ScenarioSessionRepository', () => {
       expect(result).toEqual({
         id: mockUuid,
         scenarioId: mockScenarioId,
+        scenarioVersionId: null,
         roomId: `ss_${mockUuid}`,
         counselorId: mockCounselorId,
         tenantId: mockTenantId,
@@ -433,6 +434,7 @@ describe('ScenarioSessionRepository', () => {
         roomId: `ss_${mockUuid}`,
         counselorId: mockCounselorId,
         scenarioId: mockStartDto.scenarioId,
+        scenarioVersionId: null,
         tenantId: mockTenantId,
         metadata: {
           sessionName: 'SS-1-2024-01-01',
@@ -467,6 +469,7 @@ describe('ScenarioSessionRepository', () => {
       const createdScenarioSession = {
         id: mockUuid,
         scenarioId: mockScenarioId,
+        scenarioVersionId: null,
         roomId: `ss_${mockUuid}`,
         counselorId: mockCounselorId,
         tenantId: mockTenantId,
@@ -490,6 +493,7 @@ describe('ScenarioSessionRepository', () => {
         roomId: `ss_${mockUuid}`,
         counselorId: mockCounselorId,
         scenarioId: mockStartDto.scenarioId,
+        scenarioVersionId: null,
         tenantId: mockTenantId,
         metadata: {
           sessionName: 'SS-undefined-2024-01-01',

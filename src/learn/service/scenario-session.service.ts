@@ -554,6 +554,12 @@ export class ScenarioSessionService {
       ...startScenarioSessionDto,
       scenarioPathSessionItemId:
         startScenarioSessionDto.scenarioPathSessionItemId,
+      // Attribute the run to a version: explicit request wins, else the
+      // scenario's live published version.
+      scenarioVersionId:
+        startScenarioSessionDto.scenarioVersionId ??
+        scenario.publishedVersionId ??
+        undefined,
       voiceId,
     };
     // Create scenario session record
@@ -1873,9 +1879,14 @@ export class ScenarioSessionService {
     previewScenarioDto: PreviewScenarioDto,
     userId: number,
   ) {
-    const { scenarioId, languageId } = previewScenarioDto;
+    const { scenarioId, languageId, scenarioVersionId } = previewScenarioDto;
 
-    const scenario = await this.scenarioService.getAdminScenario(scenarioId);
+    const scenario = scenarioVersionId
+      ? await this.scenarioSharedService.buildScenarioOverrideFromVersion(
+          scenarioId,
+          scenarioVersionId,
+        )
+      : await this.scenarioService.getAdminScenario(scenarioId);
 
     await this.validatePreviewScenario(scenario);
     await this.validateGlobalSimulationCapacity();

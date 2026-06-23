@@ -4,6 +4,7 @@ import { ScenarioService } from '../../service/scenario.service';
 import { ScenarioSessionService } from '../../service/scenario-session.service';
 import { ScenarioTenantService } from '../../service/scenario-tenant.service';
 import { TriggerWarningsService } from '../../service/trigger-warnings.service';
+import { ScenarioVersionService } from '../../service/scenario-version.service';
 import { ScenarioSharedService } from '../../service/scenario-shared.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { TokenUser } from 'src/auth/type/auth.types';
@@ -280,6 +281,17 @@ describe('LearnController', () => {
         {
           provide: TriggerWarningsService,
           useValue: mockTriggerWarningsService,
+        },
+        {
+          provide: ScenarioVersionService,
+          useValue: {
+            listVersions: jest.fn(),
+            getVersion: jest.fn(),
+            createVersion: jest.fn(),
+            updateVersion: jest.fn(),
+            publishVersion: jest.fn(),
+            deleteVersion: jest.fn(),
+          },
         },
         {
           provide: ScenarioSharedService,

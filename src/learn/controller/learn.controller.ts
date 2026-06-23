@@ -32,6 +32,10 @@ import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-s
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { Scenarios } from '../entity/scenarios.entity';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
+import { ScenarioVersionService } from '../service/scenario-version.service';
+import { ScenarioVersion } from '../entity/scenario-version.entity';
+import { CreateScenarioVersionDto } from '../dto/create-scenario-version.dto';
+import { UpdateScenarioVersionDto } from '../dto/update-scenario-version.dto';
 import { Public } from 'src/auth/decorators/auth.metadata';
 import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
@@ -95,6 +99,7 @@ export class LearnController {
     private readonly scenarioSessionService: ScenarioSessionService,
     private readonly scenarioTenantService: ScenarioTenantService,
     private readonly triggerWarningService: TriggerWarningsService,
+    private readonly scenarioVersionService: ScenarioVersionService,
   ) {}
 
   @Public()
@@ -372,6 +377,89 @@ export class LearnController {
   @Post('scenarios/:id/duplicate')
   async duplicateScenario(@Param('id') id: number): Promise<Scenarios> {
     return this.scenarioService.duplicateScenario(id);
+  }
+
+  @ApiOperation({ summary: 'List saved versions of a scenario (newest first)' })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @Get('scenarios/:id/versions')
+  async listScenarioVersions(
+    @Param('id') id: number,
+  ): Promise<ScenarioVersion[]> {
+    return this.scenarioVersionService.listVersions(id);
+  }
+
+  @ApiOperation({ summary: 'Get a single scenario version' })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @Get('scenarios/:id/versions/:versionId')
+  async getScenarioVersion(
+    @Param('id') id: number,
+    @Param('versionId') versionId: string,
+  ): Promise<ScenarioVersion> {
+    return this.scenarioVersionService.getVersion(id, versionId);
+  }
+
+  @ApiOperation({
+    summary: 'Create a new draft version (optionally branched from another)',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('scenarios/:id/versions')
+  async createScenarioVersion(
+    @CurrentUser() tokenUser: TokenUser,
+    @Param('id') id: number,
+    @Body() createScenarioVersionDto: CreateScenarioVersionDto,
+  ): Promise<ScenarioVersion> {
+    return this.scenarioVersionService.createVersion(
+      id,
+      createScenarioVersionDto,
+      tokenUser.id,
+    );
+  }
+
+  @ApiOperation({ summary: 'Autosave a draft version (config and/or name)' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Put('scenarios/:id/versions/:versionId')
+  async updateScenarioVersion(
+    @CurrentUser() tokenUser: TokenUser,
+    @Param('id') id: number,
+    @Param('versionId') versionId: string,
+    @Body() updateScenarioVersionDto: UpdateScenarioVersionDto,
+  ): Promise<ScenarioVersion> {
+    return this.scenarioVersionService.updateVersion(
+      id,
+      versionId,
+      updateScenarioVersionDto,
+      tokenUser.id,
+    );
+  }
+
+  @ApiOperation({ summary: 'Publish a version (make it the live scenario)' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('scenarios/:id/versions/:versionId/publish')
+  async publishScenarioVersion(
+    @CurrentUser() tokenUser: TokenUser,
+    @Param('id') id: number,
+    @Param('versionId') versionId: string,
+  ): Promise<ScenarioVersion> {
+    return this.scenarioVersionService.publishVersion(
+      id,
+      versionId,
+      tokenUser.id,
+    );
+  }
+
+  @ApiOperation({ summary: 'Delete a draft version' })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Delete('scenarios/:id/versions/:versionId')
+  async deleteScenarioVersion(
+    @CurrentUser() tokenUser: TokenUser,
+    @Param('id') id: number,
+    @Param('versionId') versionId: string,
+  ): Promise<boolean> {
+    return this.scenarioVersionService.deleteVersion(
+      id,
+      versionId,
+      tokenUser.id,
+    );
   }
 
   @ApiOperation({ summary: 'Preview a scenario' })

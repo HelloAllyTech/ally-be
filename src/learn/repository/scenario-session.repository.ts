@@ -137,6 +137,7 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       roomId: `ss_${uuid}`,
       counselorId,
       scenarioId: createScenarioSessionDto.scenarioId,
+      scenarioVersionId: createScenarioSessionDto.scenarioVersionId ?? null,
       tenantId: ExecutionManager.getTenantId(),
       scenarioPathSessionItemId:
         createScenarioSessionDto.scenarioPathSessionItemId,

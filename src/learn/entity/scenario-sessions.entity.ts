@@ -54,6 +54,12 @@ export class ScenarioSessions extends BaseEntity {
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
 
+  // The scenario_versions row this session ran against. Studio test runs set
+  // it to the version under test; production sessions default to the
+  // scenario's publishedVersionId. Lets reports be attributed to a version.
+  @Column({ type: 'uuid', nullable: true })
+  scenarioVersionId?: string | null;
+
   @Column({ type: 'uuid', nullable: true })
   scenarioPathSessionItemId?: string;
 

@@ -19,6 +19,9 @@ import { LearnMessageProcessor } from './processor/learn-message.processor';
 import { LearnEventProcessor } from './processor/learn-event.processor';
 import { ScenarioSessionEvents } from './entity/scenario-session-events.entity';
 import { ScenariosRepository } from './repository/scenario.repository';
+import { ScenarioVersion } from './entity/scenario-version.entity';
+import { ScenarioVersionRepository } from './repository/scenario-version.repository';
+import { ScenarioVersionService } from './service/scenario-version.service';
 import { ScenarioVoices } from './entity/scenario-voices.entity';
 import { ScenarioVoicesRepository } from './repository/scenario-voices.repository';
 import { SimulationCreditsController } from './controller/simulation-credits.controller';
@@ -138,6 +141,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
       ScenarioBehaviorInstructionTranslation,
       AuditModule,
       ScenarioSessionRecording,
+      ScenarioVersion,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -169,6 +173,8 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
   ],
   providers: [
     ScenarioService,
+    ScenarioVersionService,
+    ScenarioVersionRepository,
     ScenarioSessionService,
     ScenarioSessionRepository,
     ScenarioSessionMessagesRepository,

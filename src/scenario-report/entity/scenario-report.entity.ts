@@ -20,6 +20,11 @@ export class ScenarioReport extends BaseWithoutTenantEntity {
   @Column()
   scenarioId!: number;
 
+  // The scenario_versions row whose config produced this report. Lets admins
+  // compare a version's runs by reading the reports tagged to it.
+  @Column({ type: 'uuid', nullable: true })
+  scenarioVersionId?: string | null;
+
   @Column({ enum: ScenarioReportStatus, default: ScenarioReportStatus.STARTED })
   status!: ScenarioReportStatus;
 

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNumber, IsOptional, IsUUID } from 'class-validator';
 
 export class PreviewScenarioDto {
   @ApiProperty({
@@ -15,4 +15,13 @@ export class PreviewScenarioDto {
   })
   @IsNumber()
   languageId!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Scenario version to preview. When set, the preview runs that version’s ' +
+      '(possibly unpublished draft) config instead of the live scenario.',
+  })
+  @IsOptional()
+  @IsUUID()
+  scenarioVersionId?: string;
 }

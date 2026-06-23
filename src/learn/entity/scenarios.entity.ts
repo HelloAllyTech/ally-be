@@ -63,4 +63,10 @@ export class Scenarios extends BaseWithoutTenantEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   translations?: Record<string, any>;
+
+  // Points at the scenario_versions row currently materialised into this live
+  // record. Set when a version is published; null for scenarios that predate
+  // versioning or have never been published from a version.
+  @Column({ type: 'uuid', nullable: true })
+  publishedVersionId?: string | null;
 }

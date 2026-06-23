@@ -47,8 +47,10 @@ import { BehaviorInstructionWithBehaviorsDto } from '../dto/behavior-instruction
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import {
   getActiveScenarioMandatoryFields,
+  hydrateAdminScenarioFromVersionConfig,
   isEnglishLanguage,
 } from '../util/scenario.util';
+import { ScenarioVersionRepository } from '../repository/scenario-version.repository';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 import {
@@ -114,6 +116,7 @@ export class ScenarioSharedService {
   );
   constructor(
     private readonly scenariosRepository: ScenariosRepository,
+    private readonly scenarioVersionRepository: ScenarioVersionRepository,
     private scenarioSessionRepository: ScenarioSessionRepository,
     private scenarioTranslationsRepository: ScenarioTranslationsRepository,
     private scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
@@ -282,12 +285,16 @@ export class ScenarioSharedService {
     return scenarioSessionDetails.summary?.feedback?.sessionGlimpse;
   }
 
-  // Used for scenario report generation
+  // Used for scenario report generation. `scenarioOverride` lets a draft
+  // version's hydrated config drive the run instead of the live scenario;
+  // when omitted, behaviour is unchanged (reads the live scenario).
   async createMetadataForScenario(
     scenarioId: number,
     languageId: number,
+    scenarioOverride?: GetAdminScenarioDto,
   ): Promise<Record<string, any>> {
-    const scenario = await this.getAdminScenario(scenarioId);
+    const scenario =
+      scenarioOverride ?? (await this.getAdminScenario(scenarioId));
 
     const { enLanguageDetails, languageDetails } =
       await this.getLanguageDetailsForScenarioSession(languageId);
@@ -838,6 +845,29 @@ export class ScenarioSharedService {
     (result as GetAdminScenarioDto).translationTitle = translationTitle;
 
     return result;
+  }
+
+  /**
+   * Build a form-shaped admin scenario from a saved version's config, overlaid
+   * on the live scenario. Used to run a draft version's report/preview without
+   * publishing it. Throws if the version doesn't belong to the scenario.
+   */
+  async buildScenarioOverrideFromVersion(
+    scenarioId: number,
+    versionId: string,
+    base?: GetAdminScenarioDto,
+  ): Promise<GetAdminScenarioDto> {
+    const version = await this.scenarioVersionRepository.findOne({
+      where: { id: versionId, scenarioId },
+    });
+    if (!version) {
+      throw new NotFoundException('Scenario version not found');
+    }
+    const baseScenario = base ?? (await this.getAdminScenario(scenarioId));
+    return hydrateAdminScenarioFromVersionConfig(
+      baseScenario,
+      version.config ?? {},
+    );
   }
 
   async resolveOpeningDialoguePrimaryLanguageId(

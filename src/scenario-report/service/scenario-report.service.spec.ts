@@ -657,6 +657,7 @@ describe('ScenarioReportService', () => {
       });
       expect(scenarioReportRepository.create).toHaveBeenCalledWith({
         scenarioId,
+        scenarioVersionId: null,
         config: { languageId: 1, turns: 5, helperAgentPrompt: 'helper prompt' },
         createdBy: userId,
         updatedBy: userId,
@@ -666,7 +667,7 @@ describe('ScenarioReportService', () => {
       ).toHaveBeenCalledWith(userId, reportId);
       expect(
         scenarioSharedService.createMetadataForScenario,
-      ).toHaveBeenCalledWith(scenarioId, 1);
+      ).toHaveBeenCalledWith(scenarioId, 1, undefined);
       expect(aiService.triggerScenarioReportGenerate).toHaveBeenCalledWith({
         prompt: 'helper prompt',
         turns: 5,

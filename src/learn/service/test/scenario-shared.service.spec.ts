@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { In } from 'typeorm';
 import { ScenarioSharedService } from '../scenario-shared.service';
 import { ScenariosRepository } from '../../repository/scenario.repository';
+import { ScenarioVersionRepository } from '../../repository/scenario-version.repository';
 import { ScenarioSessionRepository } from '../../repository/scenario-session.repository';
 import { Scenarios } from '../../entity/scenarios.entity';
 import { ScenarioSessions } from '../../entity/scenario-sessions.entity';
@@ -164,6 +165,10 @@ describe('ScenarioSharedService', () => {
         {
           provide: ScenariosRepository,
           useValue: mockScenariosRepo,
+        },
+        {
+          provide: ScenarioVersionRepository,
+          useValue: { findOne: jest.fn() },
         },
         {
           provide: ScenarioSessionRepository,

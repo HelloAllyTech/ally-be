@@ -1249,6 +1249,11 @@ export class ScenarioService {
     id: number,
     updateScenarioDto: UpdateScenarioDto,
     userId: number,
+    // When provided, the update runs inside the caller's transaction (used by
+    // publishVersion to make config + events + version-status atomic) instead
+    // of opening its own. Omitted on the normal edit path — behaviour is
+    // unchanged there.
+    manager?: EntityManager,
   ): Promise<boolean> {
     // Drop stale states data BEFORE validation runs. The previous order
     // (validate → prune) rejected updates whenever a variant whose body
@@ -1270,157 +1275,155 @@ export class ScenarioService {
     await this.checkForInProgressScenarioReports(scenario.id);
 
     try {
-      const success = await this.dataSource.transaction(
-        async (entityManager) => {
-          const updateData = mapUpdateScenarioRequestToEntity(
-            updateScenarioDto,
-            scenario,
-            userId,
-          );
+      const runUpdate = async (
+        entityManager: EntityManager,
+      ): Promise<boolean> => {
+        const updateData = mapUpdateScenarioRequestToEntity(
+          updateScenarioDto,
+          scenario,
+          userId,
+        );
 
-          const scenarioRepository = entityManager.getRepository(Scenarios);
-          const updated = await scenarioRepository.update(id, updateData);
-          if (scenario.status == ScenarioStatus.ACTIVE) {
-            const translationConsiderableData: TranslationConsiderableData = {
-              currentLocation: scenario.metadata?.currentLocation,
-              profession: scenario.metadata?.profession,
-              context: scenario.metadata?.context,
-              age: scenario.metadata?.age,
-              gender: scenario.metadata?.gender,
-            };
-            this.persistTranslationsForScenarios(
-              [scenario], // single-item array so helper can reuse same logic
-              () =>
-                this.sanitizeMetadata({
-                  title: updateScenarioDto.title,
-                  description: updateScenarioDto.description,
-                  sexualOrientation: updateScenarioDto.sexualOrientation,
-                  genderIdentity: updateScenarioDto.genderIdentity,
-                  customFields: updateScenarioDto?.customFields,
-                  knowledgeSources: updateScenarioDto?.knowledgeSources,
-                  stateNames: updateScenarioDto?.stateNames,
-                }),
-              translationConsiderableData,
-              (s) =>
-                updateScenarioDto.languageVoices ?? s.metadata?.languageVoices,
-              {
-                userId,
-                jobId: randomUUID(),
-                action: ScenarioTranslationAction.UPDATE,
-              },
-            );
-          }
-          await this.updateScenarioTerminationEvents(
-            id,
-            updateScenarioDto?.terminationEvents || [],
+        const scenarioRepository = entityManager.getRepository(Scenarios);
+        const updated = await scenarioRepository.update(id, updateData);
+        if (scenario.status == ScenarioStatus.ACTIVE) {
+          const translationConsiderableData: TranslationConsiderableData = {
+            currentLocation: scenario.metadata?.currentLocation,
+            profession: scenario.metadata?.profession,
+            context: scenario.metadata?.context,
+            age: scenario.metadata?.age,
+            gender: scenario.metadata?.gender,
+          };
+          this.persistTranslationsForScenarios(
+            [scenario], // single-item array so helper can reuse same logic
+            () =>
+              this.sanitizeMetadata({
+                title: updateScenarioDto.title,
+                description: updateScenarioDto.description,
+                sexualOrientation: updateScenarioDto.sexualOrientation,
+                genderIdentity: updateScenarioDto.genderIdentity,
+                customFields: updateScenarioDto?.customFields,
+                knowledgeSources: updateScenarioDto?.knowledgeSources,
+                stateNames: updateScenarioDto?.stateNames,
+              }),
+            translationConsiderableData,
+            (s) =>
+              updateScenarioDto.languageVoices ?? s.metadata?.languageVoices,
+            {
+              userId,
+              jobId: randomUUID(),
+              action: ScenarioTranslationAction.UPDATE,
+            },
+          );
+        }
+        await this.updateScenarioTerminationEvents(
+          id,
+          updateScenarioDto?.terminationEvents || [],
+          entityManager,
+        );
+
+        // Update behavior instructions when the caller explicitly sent an
+        // array (including `[]`, which means "remove all existing BIs").
+        // An omitted field (undefined) means "no change to BIs"; the
+        // updateBehaviorInstructions service does a full sync — creating,
+        // updating, and soft-deleting as needed.
+        if (Array.isArray(updateScenarioDto.behaviorInstructions)) {
+          await this.scenarioBehaviorInstructionService.updateBehaviorInstructions(
+            {
+              scenarioId: id,
+              behaviorInstructions: updateScenarioDto.behaviorInstructions,
+            },
             entityManager,
           );
+        }
 
-          // Update behavior instructions when the caller explicitly sent an
-          // array (including `[]`, which means "remove all existing BIs").
-          // An omitted field (undefined) means "no change to BIs"; the
-          // updateBehaviorInstructions service does a full sync — creating,
-          // updating, and soft-deleting as needed.
-          if (Array.isArray(updateScenarioDto.behaviorInstructions)) {
-            await this.scenarioBehaviorInstructionService.updateBehaviorInstructions(
-              {
-                scenarioId: id,
-                behaviorInstructions: updateScenarioDto.behaviorInstructions,
-              },
-              entityManager,
+        if (updated.affected === 0) return false;
+
+        const updatedScenario = await scenarioRepository.findOne({
+          where: { id },
+        });
+        if (
+          updateScenarioDto.isGlobal !== undefined &&
+          updatedScenario?.isGlobal !== scenario.isGlobal
+        ) {
+          const tenants = await this.tenantService.findAll();
+          const tenantIds = tenants.map((tenant) => tenant.id);
+          const scenarioTenantRepo =
+            entityManager.getRepository(ScenarioTenants);
+
+          if (updateScenarioDto.isGlobal) {
+            await scenarioTenantRepo.delete({ scenarioId: id });
+            const scenarioTenantMappings = tenantIds.map((tenantId) => ({
+              scenarioId: id,
+              tenantId: tenantId,
+            }));
+            await scenarioTenantRepo.save(
+              scenarioTenantRepo.create(scenarioTenantMappings),
             );
-          }
-
-          if (updated.affected === 0) return false;
-
-          const updatedScenario = await scenarioRepository.findOne({
-            where: { id },
-          });
-          if (
-            updateScenarioDto.isGlobal !== undefined &&
-            updatedScenario?.isGlobal !== scenario.isGlobal
-          ) {
-            const tenants = await this.tenantService.findAll();
-            const tenantIds = tenants.map((tenant) => tenant.id);
-            const scenarioTenantRepo =
-              entityManager.getRepository(ScenarioTenants);
-
-            if (updateScenarioDto.isGlobal) {
-              await scenarioTenantRepo.delete({ scenarioId: id });
-              const scenarioTenantMappings = tenantIds.map((tenantId) => ({
-                scenarioId: id,
-                tenantId: tenantId,
-              }));
-              await scenarioTenantRepo.save(
-                scenarioTenantRepo.create(scenarioTenantMappings),
-              );
-            } else {
-              await scenarioTenantRepo.delete({
-                scenarioId: id,
-                tenantId: In(tenantIds),
-              });
-            }
-          }
-          const scenarioTriggerWarningsRepo = entityManager.getRepository(
-            ScenarioTriggerWarnings,
-          );
-          const existingTriggerWarnings =
-            await scenarioTriggerWarningsRepo.find({
-              where: { scenarioId: id },
+          } else {
+            await scenarioTenantRepo.delete({
+              scenarioId: id,
+              tenantId: In(tenantIds),
             });
-          const existingTriggerWarningIds = existingTriggerWarnings?.map(
-            (warning) => warning.triggerWarningId,
-          );
-          // Getting triggerWarnings that need to be added
-          const newTriggerWarningIds = [
-            ...new Set(
-              !existingTriggerWarningIds
-                ? updateScenarioDto?.triggerWarningIds
-                : updateScenarioDto?.triggerWarningIds?.filter(
-                    (id) => !existingTriggerWarningIds?.includes(id),
-                  ),
-            ),
-          ];
-          if (newTriggerWarningIds && newTriggerWarningIds.length > 0) {
-            const scenarioTriggerWarningList = newTriggerWarningIds.map(
-              (triggerWarningId) =>
-                scenarioTriggerWarningsRepo.create({
-                  scenarioId: id,
-                  triggerWarningId,
-                }),
-            );
-            await scenarioTriggerWarningsRepo.save(scenarioTriggerWarningList);
           }
-
-          // Getting triggerWranings that need to be deleted
-          const triggerWarningListToDelete = existingTriggerWarnings
-            ?.filter(
-              ({ triggerWarningId }) =>
-                !updateScenarioDto.triggerWarningIds?.includes(
-                  triggerWarningId,
+        }
+        const scenarioTriggerWarningsRepo = entityManager.getRepository(
+          ScenarioTriggerWarnings,
+        );
+        const existingTriggerWarnings = await scenarioTriggerWarningsRepo.find({
+          where: { scenarioId: id },
+        });
+        const existingTriggerWarningIds = existingTriggerWarnings?.map(
+          (warning) => warning.triggerWarningId,
+        );
+        // Getting triggerWarnings that need to be added
+        const newTriggerWarningIds = [
+          ...new Set(
+            !existingTriggerWarningIds
+              ? updateScenarioDto?.triggerWarningIds
+              : updateScenarioDto?.triggerWarningIds?.filter(
+                  (id) => !existingTriggerWarningIds?.includes(id),
                 ),
-            )
-            ?.map(({ id }) => id);
-          if (triggerWarningListToDelete.length > 0) {
-            await scenarioTriggerWarningsRepo.delete(
-              triggerWarningListToDelete,
-            );
-          }
-
-          if (isMultiTenantAdmin) {
-            this.auditLogService.log({
-              eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SCENARIO,
-              details: {
-                action: AUDIT_ACTIONS.UPDATE_SCENARIO,
+          ),
+        ];
+        if (newTriggerWarningIds && newTriggerWarningIds.length > 0) {
+          const scenarioTriggerWarningList = newTriggerWarningIds.map(
+            (triggerWarningId) =>
+              scenarioTriggerWarningsRepo.create({
                 scenarioId: id,
-                userId,
-              },
-            });
-          }
+                triggerWarningId,
+              }),
+          );
+          await scenarioTriggerWarningsRepo.save(scenarioTriggerWarningList);
+        }
 
-          return true;
-        },
-      );
+        // Getting triggerWranings that need to be deleted
+        const triggerWarningListToDelete = existingTriggerWarnings
+          ?.filter(
+            ({ triggerWarningId }) =>
+              !updateScenarioDto.triggerWarningIds?.includes(triggerWarningId),
+          )
+          ?.map(({ id }) => id);
+        if (triggerWarningListToDelete.length > 0) {
+          await scenarioTriggerWarningsRepo.delete(triggerWarningListToDelete);
+        }
+
+        if (isMultiTenantAdmin) {
+          this.auditLogService.log({
+            eventType: AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SCENARIO,
+            details: {
+              action: AUDIT_ACTIONS.UPDATE_SCENARIO,
+              scenarioId: id,
+              userId,
+            },
+          });
+        }
+
+        return true;
+      };
+      const success = manager
+        ? await runUpdate(manager)
+        : await this.dataSource.transaction(runUpdate);
 
       if (
         success &&
@@ -1738,14 +1741,18 @@ export class ScenarioService {
     return true;
   }
 
-  async mapEventsToScenario(createScenarioEventsDto: CreateScenarioEventsDto) {
+  async mapEventsToScenario(
+    createScenarioEventsDto: CreateScenarioEventsDto,
+    // When provided, runs inside the caller's transaction (publishVersion).
+    manager?: EntityManager,
+  ) {
     const { scenarioId, events } = createScenarioEventsDto;
 
     await this.validateMapEventsToScenario(scenarioId, events);
     await this.checkForInProgressScenarioReports(scenarioId);
 
     try {
-      return await this.dataSource.transaction(async (entityManager) => {
+      const runMap = async (entityManager: EntityManager) => {
         const scenarioEventsRepo = entityManager.getRepository(ScenarioEvents);
 
         // Create an array of ScenarioEvents entities to be saved
@@ -1812,7 +1819,10 @@ export class ScenarioService {
             checklistVisibilityStatus: event.checklistVisibilityStatus,
           })),
         };
-      });
+      };
+      return manager
+        ? await runMap(manager)
+        : await this.dataSource.transaction(runMap);
     } catch (error) {
       if (
         isDuplicateKeyException(
@@ -1899,7 +1909,11 @@ export class ScenarioService {
     }
   }
 
-  async deleteScenarioEvents(scenarioEvents: DeleteScenarioEventsDto) {
+  async deleteScenarioEvents(
+    scenarioEvents: DeleteScenarioEventsDto,
+    // When provided, deletes within the caller's transaction (publishVersion).
+    manager?: EntityManager,
+  ) {
     const { scenarioId, eventIds } = scenarioEvents;
     if (eventIds.length === 0) {
       throw new BadRequestException('Event IDs array cannot be empty');
@@ -1908,7 +1922,10 @@ export class ScenarioService {
     await this.getScenario(scenarioId);
     await this.checkForInProgressScenarioReports(scenarioId);
 
-    const result = await this.scenarioEventsRepository.delete({
+    const eventsRepo = manager
+      ? manager.getRepository(ScenarioEvents)
+      : this.scenarioEventsRepository;
+    const result = await eventsRepo.delete({
       eventId: In(eventIds),
       scenarioId,
       autoTerminationStatus: false,
