@@ -4,9 +4,8 @@ import { AppConfigService } from 'src/config/config.service';
 import { ChatAiService } from './chat-ai-service';
 import { ChatService } from './chat.service';
 import { LoggerService } from 'src/logger/logger.service';
-import { ChatSummaryStatus } from '../entity/chat.entity';
+import { Chat, ChatSummaryStatus } from '../entity/chat.entity';
 import axios from 'axios';
-import { FailedDependencyException } from 'src/exception/custom.exception';
 import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { FlattenedSummaryNotePayload } from '../type/call.details.type';
 import { CallDetailsService } from './call-details.service';
@@ -32,6 +31,8 @@ export class ChatTranscriptService {
     downloadPresignedUrl?: string;
     deletePresignedUrl?: string;
     error?: string;
+    stage?: string;
+    correlationId?: string;
   }): Promise<void> {
     const {
       chatId,
@@ -40,75 +41,157 @@ export class ChatTranscriptService {
       downloadPresignedUrl,
       deletePresignedUrl,
       error,
+      stage,
+      correlationId,
     } = params;
 
-    this.logger.info(`Processing transcription result for chat: ${chatId}`);
-    this.logger.debug(`S3 Result Path: ${downloadPresignedUrl}`);
+    const startedAt = Date.now();
+    this.logger.info(
+      `Processing transcription result for chat: ${chatId} correlationId=${correlationId} hasError=${!!error}`,
+    );
+
+    const chat = await this.chatService.getChatByIdForServiceCall(chatId);
+    if (!chat) {
+      this.logger.info(
+        `Chat not found: ${chatId} correlationId=${correlationId}`,
+      );
+      if (!this.config.isDevelopment && downloadPresignedUrl) {
+        await this.deleteFromS3(downloadPresignedUrl);
+      }
+      return;
+    }
+
+    // Fall back to the correlation id stamped at dispatch if the callback
+    // didn't echo one (older in-flight messages).
+    const effectiveCorrelationId =
+      correlationId ??
+      (chat.metadata as Record<string, any> | undefined)?.correlationId;
+
+    // Idempotency: a retried/duplicate delivery of an already-successful chat
+    // is a no-op. This is what makes the AI-side delivery retries safe.
+    if (chat.summaryStatus === ChatSummaryStatus.SUCCESS) {
+      this.logger.info(
+        `Chat already has a summary, ignoring duplicate result: ${chatId} correlationId=${effectiveCorrelationId}`,
+      );
+      return;
+    }
+
+    // ally-ai reported a genuine processing failure: record it (with the stage
+    // and upstream reason) and ack 200 so the AI side does not re-post.
+    if (error) {
+      this.logger.error(
+        `AI service reported failure for chat ${chatId} stage=${stage} correlationId=${effectiveCorrelationId}: ${error}`,
+      );
+      await this.recordFailure(chatId, {
+        stage: stage ?? 'transcribe-result',
+        reason: error,
+        correlationId: effectiveCorrelationId,
+        mode: 'explicit-failure',
+        elapsedMs: Date.now() - startedAt,
+      });
+      return;
+    }
+
     try {
-      const chat = await this.chatService.getChatByIdForServiceCall(chatId);
-      if (!chat) {
-        this.logger.info(`Chat not found: ${chatId}`);
-        if (!this.config.isDevelopment && downloadPresignedUrl) {
-          // Delete the result from S3
-          await this.deleteFromS3(downloadPresignedUrl);
-        }
-        return;
-      }
-
-      if (chat.summaryStatus === ChatSummaryStatus.SUCCESS) {
-        this.logger.info(`Chat already has a summary: ${chatId}`);
-        return;
-      }
-
-      if (error) {
-        this.logger.info(`Error from AI service: ${error}`);
-        throw new FailedDependencyException(params);
-      }
-      if (transcription && summary) {
-        await this.chatAiService.addTranscript(chat, transcription);
-
-        await this.chatAiService.addSummary(chatId, summary);
-        await this.callDetailsService.fillAiCustomFields(chat, chat.tenantId);
-      } else if (downloadPresignedUrl) {
-        // Download the result from S3
+      let tx = transcription;
+      let sm = summary;
+      if (!(tx && sm) && downloadPresignedUrl) {
         const s3Result = await this.downloadFromS3(downloadPresignedUrl);
+        tx = s3Result.transcription;
+        sm = s3Result.summary;
+      }
 
-        // Add the transcription to the chat
-        await this.chatAiService.addTranscript(chat, s3Result.transcription);
-
-        // Add the summary to the chat
-        await this.chatAiService.addSummary(chatId, s3Result.summary);
-        await this.callDetailsService.fillAiCustomFields(chat, chat.tenantId);
+      if (tx && sm) {
+        await this.chatAiService.addTranscript(chat, tx);
+        await this.chatAiService.addSummary(chatId, sm);
       }
 
       if (!this.config.isDevelopment && deletePresignedUrl) {
-        // Delete the result from S3
         await this.deleteFromS3(deletePresignedUrl);
       }
 
+      // Mark SUCCESS and ack immediately. The slow, non-critical post-summary
+      // work (AI custom-field fill + counselor email) is deliberately moved
+      // OFF this synchronous path — running it inline used to push the callback
+      // past the AI-service read timeout under concurrency and flip good
+      // summaries to FAILED.
       await this.chatService.updateChat(chatId, {
         summaryStatus: ChatSummaryStatus.SUCCESS,
       });
-    } catch (error) {
-      this.logger.error(
-        `Failed to process transcription result for chat ${chatId} with error ${JSON.stringify(
-          error,
-        )}`,
+      this.logger.info(
+        `process-transcript acked SUCCESS for chat ${chatId} correlationId=${effectiveCorrelationId} elapsedMs=${Date.now() - startedAt}`,
       );
-      await this.chatService.updateChat(chatId, {
-        summaryStatus: ChatSummaryStatus.FAILED,
-        metadata: { error },
+
+      // Fire-and-forget: both calls are internally best-effort and never throw.
+      void this.runPostSummaryTasks(chat, chatId, effectiveCorrelationId);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : JSON.stringify(err);
+      this.logger.error(
+        `Failed to persist transcription result for chat ${chatId} correlationId=${effectiveCorrelationId}: ${reason}`,
+      );
+      await this.recordFailure(chatId, {
+        stage: stage ?? 'transcribe-result',
+        reason: `Failed to persist result on ally-core: ${reason}`,
+        correlationId: effectiveCorrelationId,
+        mode: 'delivery-failure',
+        elapsedMs: Date.now() - startedAt,
       });
-      const reason =
-        params.error ||
-        (error instanceof Error ? error.message : JSON.stringify(error));
-      await this.notificationService.notifyTranscriptionFailure({
-        chatId,
-        stage: 'transcribe-result',
-        reason,
-      });
-      throw error;
+      // Rethrow so the AI side treats it as a delivery failure and retries the
+      // (idempotent) result — a transient DB blip then self-heals.
+      throw err;
     }
+  }
+
+  /**
+   * Marks a chat FAILED with a categorised reason and posts an actionable
+   * Slack alert. Centralised so every failure path records the same shape
+   * (stage + reason + correlationId + mode).
+   */
+  private async recordFailure(
+    chatId: number,
+    params: {
+      stage: string;
+      reason: string;
+      correlationId?: string;
+      mode: 'explicit-failure' | 'delivery-failure';
+      elapsedMs?: number;
+    },
+  ): Promise<void> {
+    const { stage, reason, correlationId, mode, elapsedMs } = params;
+    await this.chatService.updateChat(chatId, {
+      summaryStatus: ChatSummaryStatus.FAILED,
+      metadata: { error: reason, stage, correlationId } as Record<string, any>,
+    });
+    await this.notificationService.notifyTranscriptionFailure({
+      chatId,
+      stage,
+      reason,
+      correlationId,
+      mode,
+      elapsedMs,
+    });
+  }
+
+  /**
+   * Slow, non-critical work that runs after the chat is already SUCCESS and the
+   * callback has been acked. Each step is best-effort and isolated so a failure
+   * here can never affect the summary's success state.
+   */
+  private async runPostSummaryTasks(
+    chat: Chat,
+    chatId: number,
+    correlationId?: string,
+  ): Promise<void> {
+    try {
+      await this.callDetailsService.fillAiCustomFields(chat, chat.tenantId);
+    } catch (err) {
+      this.logger.error(
+        `Post-summary custom-field fill failed for chat ${chatId} correlationId=${correlationId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    await this.chatAiService.sendSummaryReadyEmail(chatId);
   }
 
   private async downloadFromS3(s3Path: string): Promise<any> {

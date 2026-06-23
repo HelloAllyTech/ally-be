@@ -60,4 +60,23 @@ export class TranscriptRequestDto {
   @IsOptional()
   @IsString()
   error?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Pipeline stage the failure occurred in (e.g. transcribe, diarize, summarize, deliver)',
+    example: 'summarize',
+  })
+  @IsOptional()
+  @IsString()
+  stage?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'End-to-end trace id echoed from the original transcribe request',
+  })
+  @IsOptional()
+  @IsString()
+  correlationId?: string;
 }

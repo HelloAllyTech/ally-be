@@ -296,15 +296,12 @@ describe('ChatAiService', () => {
           }),
         },
       );
-      expect(mockUserService.get).toHaveBeenCalledWith(2);
-      expect(mockChatService.getChatWithCallDetails).toHaveBeenCalledWith(1);
+      // The counselor email is now decoupled from addSummary (it runs after
+      // the chat is marked SUCCESS, off the synchronous callback path).
+      expect(mockUserService.get).not.toHaveBeenCalled();
       expect(
         mockNotificationService.sendEmailSummaryNotification,
-      ).toHaveBeenCalledWith({
-        to: 'counselor@test.com',
-        chatId: 1,
-        summaryName: 'test-call-1',
-      });
+      ).not.toHaveBeenCalled();
     });
 
     it('should throw ValidationException when chat not found', async () => {
@@ -318,18 +315,18 @@ describe('ChatAiService', () => {
       );
     });
 
-    it('should handle missing counselor gracefully', async () => {
+    it('should persist the summary without sending the email (email is decoupled)', async () => {
       mockCallDetailsRepository.update.mockResolvedValue({});
       mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
       mockChatService.getChatWithCallDetails.mockResolvedValue({
         callDetails: mockCallDetails,
       });
-      mockUserService.get.mockResolvedValue(null);
 
       const result = await service.addSummary(1, mockSummary);
 
       expect(result).toBe(true);
-      expect(mockUserService.get).toHaveBeenCalledWith(2);
+      expect(mockCallDetailsRepository.update).toHaveBeenCalled();
+      expect(mockUserService.get).not.toHaveBeenCalled();
       expect(
         mockNotificationService.sendEmailSummaryNotification,
       ).not.toHaveBeenCalled();
@@ -503,6 +500,37 @@ describe('ChatAiService', () => {
       await expect(
         service.addTranscript(mockChat, mockMessageRequests),
       ).rejects.toThrow('Error adding transcript');
+    });
+  });
+
+  describe('sendSummaryReadyEmail', () => {
+    it('should email the counselor when chat and counselor exist', async () => {
+      mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+      mockUserService.get.mockResolvedValue(mockCounselor);
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        callDetails: mockCallDetails,
+      });
+
+      await service.sendSummaryReadyEmail(1);
+
+      expect(mockUserService.get).toHaveBeenCalledWith(2);
+      expect(
+        mockNotificationService.sendEmailSummaryNotification,
+      ).toHaveBeenCalledWith({
+        to: 'counselor@test.com',
+        chatId: 1,
+        summaryName: 'test-call-1',
+      });
+    });
+
+    it('should be best-effort and not throw when the counselor is missing', async () => {
+      mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+      mockUserService.get.mockResolvedValue(null);
+
+      await expect(service.sendSummaryReadyEmail(1)).resolves.toBeUndefined();
+      expect(
+        mockNotificationService.sendEmailSummaryNotification,
+      ).not.toHaveBeenCalled();
     });
   });
 

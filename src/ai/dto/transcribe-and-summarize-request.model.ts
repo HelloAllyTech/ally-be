@@ -8,4 +8,8 @@ export interface TranscribeAndSummarizeRequestMessage {
   sample_rate?: number;
   mode?: ScribeSessionMode;
   is_linear16_encoded?: boolean;
+  // End-to-end trace id, minted at dispatch and echoed back on the result
+  // callback so a single chat's transcription journey can be traced across
+  // ally-be and ally-ai.
+  correlation_id?: string;
 }

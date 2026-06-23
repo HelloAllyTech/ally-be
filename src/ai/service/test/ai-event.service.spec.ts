@@ -92,15 +92,23 @@ describe('AiEventService', () => {
 
       await service.publishTranscribeAudioEvent(mockEvent);
 
+      // The published message carries a minted correlation_id alongside the
+      // original event fields.
       expect(sqsService.sendMessage).toHaveBeenCalledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/transcription-request-queue',
-        mockEvent,
+        expect.objectContaining({
+          ...mockEvent,
+          correlation_id: expect.any(String),
+        }),
       );
       expect(chatService.updateChat).toHaveBeenCalledWith(123, {
         summaryStatus: ChatSummaryStatus.IN_PROGRESS,
+        metadata: { correlationId: expect.any(String) },
       });
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Transcribe and summarize request published for chat 123',
+        expect.stringContaining(
+          'Transcribe and summarize request published for chat 123',
+        ),
       );
     });
 
@@ -118,7 +126,13 @@ describe('AiEventService', () => {
 
       await serviceWithEmptyUrl.publishTranscribeAudioEvent(mockEvent);
 
-      expect(sqsService.sendMessage).toHaveBeenCalledWith('', mockEvent);
+      expect(sqsService.sendMessage).toHaveBeenCalledWith(
+        '',
+        expect.objectContaining({
+          ...mockEvent,
+          correlation_id: expect.any(String),
+        }),
+      );
     });
 
     it('should handle missing queue URL gracefully', async () => {
@@ -133,7 +147,13 @@ describe('AiEventService', () => {
 
       await serviceWithoutUrl.publishTranscribeAudioEvent(mockEvent);
 
-      expect(sqsService.sendMessage).toHaveBeenCalledWith('', mockEvent);
+      expect(sqsService.sendMessage).toHaveBeenCalledWith(
+        '',
+        expect.objectContaining({
+          ...mockEvent,
+          correlation_id: expect.any(String),
+        }),
+      );
     });
 
     it('should handle SQS service error and throw', async () => {
@@ -146,12 +166,15 @@ describe('AiEventService', () => {
 
       expect(sqsService.sendMessage).toHaveBeenCalledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/transcription-request-queue',
-        mockEvent,
+        expect.objectContaining({
+          ...mockEvent,
+          correlation_id: expect.any(String),
+        }),
       );
       expect(chatService.updateChat).not.toHaveBeenCalled();
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.stringContaining(
-          'Failed to publish transcribe and summarize request for chat 123 with error',
+          'Failed to publish transcribe and summarize request for chat 123',
         ),
       );
     });
@@ -167,14 +190,18 @@ describe('AiEventService', () => {
 
       expect(sqsService.sendMessage).toHaveBeenCalledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/transcription-request-queue',
-        mockEvent,
+        expect.objectContaining({
+          ...mockEvent,
+          correlation_id: expect.any(String),
+        }),
       );
       expect(chatService.updateChat).toHaveBeenCalledWith(123, {
         summaryStatus: ChatSummaryStatus.IN_PROGRESS,
+        metadata: { correlationId: expect.any(String) },
       });
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.stringContaining(
-          'Failed to publish transcribe and summarize request for chat 123 with error',
+          'Failed to publish transcribe and summarize request for chat 123',
         ),
       );
     });
@@ -188,9 +215,12 @@ describe('AiEventService', () => {
 
       expect(chatService.updateChat).toHaveBeenCalledWith(456, {
         summaryStatus: ChatSummaryStatus.IN_PROGRESS,
+        metadata: { correlationId: expect.any(String) },
       });
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Transcribe and summarize request published for chat 456',
+        expect.stringContaining(
+          'Transcribe and summarize request published for chat 456',
+        ),
       );
     });
 
@@ -210,10 +240,14 @@ describe('AiEventService', () => {
 
       expect(sqsService.sendMessage).toHaveBeenCalledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/transcription-request-queue',
-        eventWithDifferentProps,
+        expect.objectContaining({
+          ...eventWithDifferentProps,
+          correlation_id: expect.any(String),
+        }),
       );
       expect(chatService.updateChat).toHaveBeenCalledWith(789, {
         summaryStatus: ChatSummaryStatus.IN_PROGRESS,
+        metadata: { correlationId: expect.any(String) },
       });
     });
 
@@ -232,7 +266,7 @@ describe('AiEventService', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.stringContaining(
-          'Failed to publish transcribe and summarize request for chat 123 with error',
+          'Failed to publish transcribe and summarize request for chat 123',
         ),
       );
     });
@@ -246,7 +280,7 @@ describe('AiEventService', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.stringContaining(
-          'Failed to publish transcribe and summarize request for chat 123 with error',
+          'Failed to publish transcribe and summarize request for chat 123',
         ),
       );
     });
@@ -321,7 +355,13 @@ describe('AiEventService', () => {
 
       await serviceWithMinimalConfig.publishTranscribeAudioEvent(mockEvent);
 
-      expect(sqsService.sendMessage).toHaveBeenCalledWith('', mockEvent);
+      expect(sqsService.sendMessage).toHaveBeenCalledWith(
+        '',
+        expect.objectContaining({
+          ...mockEvent,
+          correlation_id: expect.any(String),
+        }),
+      );
     });
 
     it('should work with null configuration', async () => {
@@ -352,7 +392,13 @@ describe('AiEventService', () => {
 
       await serviceWithNullConfig.publishTranscribeAudioEvent(mockEvent);
 
-      expect(sqsService.sendMessage).toHaveBeenCalledWith('', mockEvent);
+      expect(sqsService.sendMessage).toHaveBeenCalledWith(
+        '',
+        expect.objectContaining({
+          ...mockEvent,
+          correlation_id: expect.any(String),
+        }),
+      );
     });
   });
 });

@@ -20,26 +20,70 @@ export class NotificationService {
   }
 
   /**
-   * Posts a Scribe transcription failure to Slack with the underlying reason so
-   * failures are visible instead of silently sitting as FAILED. Accepts a single
-   * chatId or a batch (used by the stale-chat reaper).
+   * Posts a Scribe transcription failure to Slack with enough context to act on
+   * it: the failure *mode* (so on-call can tell an upstream AI error from a
+   * dropped result from a reaped/stuck chat), the pipeline stage, the upstream
+   * reason, the correlation id (to grep both services), and timing/attempt
+   * info when available. Accepts a single chatId or a batch (reaper).
    */
   async notifyTranscriptionFailure(params: {
     reason: string;
     stage: string;
     chatId?: number;
     chatIds?: number[];
+    correlationId?: string;
+    /**
+     * - `explicit-failure`: ally-ai reported a real processing error.
+     * - `delivery-failure`: the result callback could not be persisted.
+     * - `summary-timeout`: chat sat on Processing past the TTL (reaper).
+     * - `dispatch-failure`: we failed to hand the audio to ally-ai.
+     */
+    mode?:
+      | 'explicit-failure'
+      | 'delivery-failure'
+      | 'summary-timeout'
+      | 'dispatch-failure';
+    attempt?: number;
+    elapsedMs?: number;
   }) {
-    const { reason, stage, chatId, chatIds } = params;
+    const {
+      reason,
+      stage,
+      chatId,
+      chatIds,
+      correlationId,
+      mode,
+      attempt,
+      elapsedMs,
+    } = params;
+
     const target = chatId
       ? `Chat ${chatId}`
       : `Chats ${(chatIds ?? []).join(', ')}`;
-    const message =
-      `:rotating_light: *Scribe transcription failed*\n` +
-      `• ${target}\n` +
-      `• Stage: ${stage}\n` +
-      `• Reason: ${reason}`;
-    await this.slackService.sendMessage(message);
+
+    // Distinct icon per mode so the failure type is scannable at a glance.
+    const icon =
+      mode === 'summary-timeout'
+        ? ':hourglass_flowing_sand:'
+        : mode === 'delivery-failure'
+          ? ':satellite_antenna:'
+          : mode === 'dispatch-failure'
+            ? ':outbox_tray:'
+            : ':rotating_light:';
+
+    const lines = [
+      `${icon} *Scribe transcription failed*${mode ? ` _(${mode})_` : ''}`,
+      `• ${target}`,
+      `• Stage: ${stage}`,
+      `• Reason: ${reason}`,
+    ];
+    if (correlationId) lines.push(`• Correlation ID: \`${correlationId}\``);
+    if (typeof attempt === 'number') lines.push(`• Attempt: ${attempt}`);
+    if (typeof elapsedMs === 'number') {
+      lines.push(`• Elapsed: ${(elapsedMs / 1000).toFixed(1)}s`);
+    }
+
+    await this.slackService.sendMessage(lines.join('\n'));
   }
 
   /**

@@ -309,6 +309,7 @@ export class AudioUploadService {
       await this.notificationService.notifyTranscriptionFailure({
         chatId: chat.id,
         stage: 'audio-upload',
+        mode: 'dispatch-failure',
         reason: `Failed to dispatch audio to AI service: ${error.message}`,
       });
     }

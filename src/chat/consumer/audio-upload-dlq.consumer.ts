@@ -65,6 +65,7 @@ export class AudioUploadDlqConsumer {
           await this.notificationService.notifyTranscriptionFailure({
             chatId: chat.id,
             stage: 'audio-upload-dlq',
+            mode: 'dispatch-failure',
             reason:
               'Audio upload event exhausted retries and landed in the DLQ',
           });

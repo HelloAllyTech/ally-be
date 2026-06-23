@@ -92,23 +92,11 @@ export class ChatAiService {
         tenantId: chat.tenantId,
       });
 
-      if (!chat.counselorId) {
-        this.logger.error(`Counselor id is not set for chatId: ${chatId}`);
-        return true;
-      }
-
-      const counselor = await this.userService.get(chat.counselorId);
-
-      if (!counselor) {
-        this.logger.error(`Counselor not found for chatId: ${chatId}`);
-        return true;
-      }
-
-      await this.notificationService.sendEmailSummaryNotification({
-        to: counselor.email,
-        chatId,
-        summaryName: callDetails?.callInfo?.summaryName,
-      });
+      // NOTE: the counselor email is intentionally NOT sent here. It is a slow,
+      // non-critical step (SMTP) that used to run on the synchronous
+      // process-transcript path and push it past the AI-service callback
+      // timeout. It now runs after the chat is marked SUCCESS via
+      // sendSummaryReadyEmail() — see ChatTranscriptService.
       this.logger.info(`Summary added for chatId: ${chatId} from ai service`);
       return true;
     } catch (error) {
@@ -199,6 +187,53 @@ export class ChatAiService {
         )}`,
       );
       throw new ValidationException('Error adding transcript');
+    }
+  }
+
+  /**
+   * Emails the counselor that their summary is ready. Split out of addSummary
+   * so it can run *after* the chat is marked SUCCESS (off the synchronous
+   * callback path). Best-effort: never throws — a failed email must not affect
+   * the summary's success.
+   */
+  async sendSummaryReadyEmail(chatId: number): Promise<void> {
+    try {
+      const chat = await this.chatService.getChatByIdForServiceCall(chatId);
+      if (!chat?.counselorId) {
+        this.logger.error(
+          `Cannot send summary email; counselor id not set for chatId: ${chatId}`,
+        );
+        return;
+      }
+
+      this.setAuthContext({
+        userId: chat.counselorId,
+        tenantId: chat.tenantId,
+      });
+
+      const counselor = await this.userService.get(chat.counselorId);
+      if (!counselor) {
+        this.logger.error(
+          `Cannot send summary email; counselor not found for chatId: ${chatId}`,
+        );
+        return;
+      }
+
+      const { callDetails } =
+        await this.chatService.getChatWithCallDetails(chatId);
+
+      await this.notificationService.sendEmailSummaryNotification({
+        to: counselor.email,
+        chatId,
+        summaryName: callDetails?.callInfo?.summaryName,
+      });
+      this.logger.info(`Summary-ready email sent for chatId: ${chatId}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send summary-ready email for chatId ${chatId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

@@ -707,7 +707,8 @@ export class ChatService {
         );
         await this.notificationService.notifyTranscriptionFailure({
           stage: 'summary-timeout',
-          reason: `No transcription result received within ${CHAT_SUMMARY_TIMEOUT_MINUTES} minutes (likely a dropped AI-service request/response)`,
+          mode: 'summary-timeout',
+          reason: `No transcription result received within ${CHAT_SUMMARY_TIMEOUT_MINUTES} minutes (dropped/never-delivered AI-service result; check ally-ai logs by correlationId)`,
           chatIds: staleChats.map((chat) => chat.id),
         });
       }

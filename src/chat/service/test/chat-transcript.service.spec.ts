@@ -6,7 +6,6 @@ import { ChatAiService } from '../chat-ai-service';
 import { ChatService } from '../chat.service';
 import { AppConfigService } from 'src/config/config.service';
 import { Chat, ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
-import { FailedDependencyException } from 'src/exception/custom.exception';
 import { CallDetailsService } from '../call-details.service';
 import { NotificationService } from '../../../notification/service/notification.service';
 
@@ -44,6 +43,7 @@ describe('ChatTranscriptService', () => {
           useValue: {
             addTranscript: jest.fn(),
             addSummary: jest.fn(),
+            sendSummaryReadyEmail: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -82,12 +82,12 @@ describe('ChatTranscriptService', () => {
   });
 
   describe('processTranscribeResult', () => {
-    it('should mark chat as FAILED and rethrow if chat is not found', async () => {
-      const notFoundError = new Error('Chat not found');
+    it('should propagate (for redrive) without flipping status if loading the chat errors', async () => {
+      // A transient error loading the chat must not flip the row to FAILED —
+      // it propagates (HTTP 5xx) so the AI side retries the idempotent result.
+      const loadError = new Error('Chat not found');
 
-      chatService.getChatByIdForServiceCall.mockRejectedValueOnce(
-        notFoundError,
-      );
+      chatService.getChatByIdForServiceCall.mockRejectedValueOnce(loadError);
 
       await expect(
         service.processTranscribeResult({
@@ -99,14 +99,8 @@ describe('ChatTranscriptService', () => {
       expect(chatService.getChatByIdForServiceCall).toHaveBeenCalledWith(
         chatId,
       );
-
-      expect(chatService.updateChat).toHaveBeenCalledWith(chatId, {
-        summaryStatus: ChatSummaryStatus.FAILED,
-        metadata: expect.objectContaining({
-          error: notFoundError,
-        }),
-      });
-
+      // Status is left untouched (no FAILED flip) so a retry can still succeed.
+      expect(chatService.updateChat).not.toHaveBeenCalled();
       expect(mockedAxios.delete).not.toHaveBeenCalled();
     });
 
@@ -125,20 +119,38 @@ describe('ChatTranscriptService', () => {
       expect(mockedAxios.delete).not.toHaveBeenCalled();
     });
 
-    it('should throw FailedDependencyException if error is received', async () => {
+    it('should record a categorised failure and ack (not throw) when AI reports an error', async () => {
       chatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+      const notify = (service as any).notificationService
+        .notifyTranscriptionFailure as jest.Mock;
 
+      // Acks (resolves) so the AI side does not re-post the error.
       await expect(
         service.processTranscribeResult({
           chatId,
           error: 'AI failure',
+          stage: 'summarize',
+          correlationId: 'corr-1',
         }),
-      ).rejects.toBeInstanceOf(FailedDependencyException);
+      ).resolves.toBeUndefined();
 
       expect(chatService.updateChat).toHaveBeenCalledWith(chatId, {
         summaryStatus: ChatSummaryStatus.FAILED,
-        metadata: expect.any(Object),
+        metadata: expect.objectContaining({
+          error: 'AI failure',
+          stage: 'summarize',
+          correlationId: 'corr-1',
+        }),
       });
+      expect(notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId,
+          stage: 'summarize',
+          reason: 'AI failure',
+          correlationId: 'corr-1',
+          mode: 'explicit-failure',
+        }),
+      );
     });
 
     it('should process transcription and summary successfully', async () => {
