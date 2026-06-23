@@ -1,6 +1,31 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { EnhanceableField } from '../enum/enhanceable-field.enum';
+
+/**
+ * A language to re-translate the improved (primary-language) content into.
+ * Used by primary+translation fields (Challenge Description, Opening Dialogues)
+ * so improving the source language refreshes every translation in one step.
+ */
+export class EnhanceTranslateTargetDto {
+  @ApiProperty({ description: 'Scenario language id (keys the returned map)' })
+  @IsString()
+  @IsNotEmpty()
+  languageId!: string;
+
+  @ApiProperty({ description: 'Language code, e.g. hi-IN' })
+  @IsString()
+  @IsNotEmpty()
+  languageCode!: string;
+}
 
 export class EnhanceScenarioFieldDto {
   @ApiProperty({
@@ -50,6 +75,20 @@ export class EnhanceScenarioFieldDto {
   @IsEnum(['openai', 'anthropic'])
   @IsOptional()
   provider?: 'openai' | 'anthropic';
+
+  @ApiProperty({
+    description:
+      'When set (primary+translation fields only), re-translate the improved ' +
+      'content into these languages and return them in `translations`. Ignored ' +
+      'for the structured state field.',
+    type: [EnhanceTranslateTargetDto],
+    required: false,
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => EnhanceTranslateTargetDto)
+  @IsOptional()
+  translateTo?: EnhanceTranslateTargetDto[];
 }
 
 export class EnhanceScenarioFieldResponseDto {
@@ -65,4 +104,12 @@ export class EnhanceScenarioFieldResponseDto {
       'structure. The state field returns a JSON string {"name","guidelines"}.',
   })
   content!: string;
+
+  @ApiProperty({
+    description:
+      'Translations of the improved content, keyed by languageId — present ' +
+      'only when `translateTo` was supplied.',
+    required: false,
+  })
+  translations?: Record<string, string>;
 }

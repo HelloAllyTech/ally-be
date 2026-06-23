@@ -85,6 +85,7 @@ describe('ScenarioService', () => {
   let triggerWarningsService: jest.Mocked<TriggerWarningsService>;
   let openAIAutofillService: jest.Mocked<OpenAIAutofillService>;
   let anthropicAutofillService: jest.Mocked<AnthropicAutofillService>;
+  let openaiTranslationsService: jest.Mocked<OpenAITranslationsService>;
   let behaviorService: jest.Mocked<BehaviorService>;
   let scenarioBehaviorInstructionService: jest.Mocked<ScenarioBehaviorInstructionService>;
 
@@ -276,6 +277,7 @@ describe('ScenarioService', () => {
     const mockOpenAITranslationsService = {
       translateObjectToLanguages: jest.fn().mockResolvedValue({}),
       translateScenarioData: jest.fn().mockResolvedValue({}),
+      translateText: jest.fn().mockResolvedValue('translated'),
       isConfigured: jest.fn().mockReturnValue(true),
       getLanguageConfig: jest.fn(),
     };
@@ -463,6 +465,7 @@ describe('ScenarioService', () => {
     triggerWarningsService = module.get(TriggerWarningsService);
     openAIAutofillService = module.get(OpenAIAutofillService);
     anthropicAutofillService = module.get(AnthropicAutofillService);
+    openaiTranslationsService = module.get(OpenAITranslationsService);
     behaviorService = module.get(BehaviorService);
     scenarioBehaviorInstructionService = module.get(
       ScenarioBehaviorInstructionService,
@@ -6189,6 +6192,52 @@ describe('ScenarioService', () => {
         } as any),
       ).rejects.toThrow(BadRequestException);
       expect(openAIAutofillService.enhanceFieldContent).not.toHaveBeenCalled();
+    });
+
+    it('re-translates the improved content into each target language', async () => {
+      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+        'Improved primary.',
+      );
+      openaiTranslationsService.translateText
+        .mockResolvedValueOnce('हिंदी अनुवाद')
+        .mockResolvedValueOnce('தமிழ் மொழிபெயர்ப்பு');
+
+      const result = await service.enhanceField({
+        fieldName: EnhanceableField.DESCRIPTION,
+        currentValue: 'Practice active listening.',
+        translateTo: [
+          { languageId: '2', languageCode: 'hi-IN' },
+          { languageId: '3', languageCode: 'ta-IN' },
+        ],
+      } as any);
+
+      expect(openaiTranslationsService.translateText).toHaveBeenCalledWith(
+        'Improved primary.',
+        'hi-IN',
+      );
+      expect(openaiTranslationsService.translateText).toHaveBeenCalledWith(
+        'Improved primary.',
+        'ta-IN',
+      );
+      expect(result).toEqual({
+        fieldName: EnhanceableField.DESCRIPTION,
+        content: 'Improved primary.',
+        translations: { '2': 'हिंदी अनुवाद', '3': 'தமிழ் மொழிபெயர்ப்பு' },
+      });
+    });
+
+    it('does not translate when translateTo is omitted', async () => {
+      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+        'Improved primary.',
+      );
+
+      const result = await service.enhanceField({
+        fieldName: EnhanceableField.DESCRIPTION,
+        currentValue: 'Practice active listening.',
+      } as any);
+
+      expect(openaiTranslationsService.translateText).not.toHaveBeenCalled();
+      expect(result.translations).toBeUndefined();
     });
 
     it('routes to Anthropic when provider is anthropic', async () => {

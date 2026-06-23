@@ -2842,7 +2842,7 @@ export class ScenarioService {
   async enhanceField(
     enhanceScenarioFieldDto: EnhanceScenarioFieldDto,
   ): Promise<EnhanceScenarioFieldResponseDto> {
-    const { fieldName, currentValue, guidance, model, provider } =
+    const { fieldName, currentValue, guidance, model, provider, translateTo } =
       enhanceScenarioFieldDto;
 
     if (!currentValue?.trim()) {
@@ -2936,6 +2936,33 @@ export class ScenarioService {
       return {
         fieldName,
         content: this.normaliseStateEnhanceOutput(content, stateInput),
+      };
+    }
+
+    // Primary+translation fields (Challenge Description, Opening Dialogues):
+    // re-translate the improved primary content into the scenario's other
+    // languages so all languages stay in sync from one action. A failed
+    // translation falls back to the original text (translateText behaviour)
+    // rather than blocking the improve.
+    if (translateTo?.length) {
+      // Translate all target languages in parallel — sequential awaits add up
+      // fast when a scenario has many languages.
+      const entries = await Promise.all(
+        translateTo.map(
+          async (target) =>
+            [
+              target.languageId,
+              await this.openaiTranslationsService.translateText(
+                content,
+                target.languageCode,
+              ),
+            ] as const,
+        ),
+      );
+      return {
+        fieldName,
+        content,
+        translations: Object.fromEntries(entries),
       };
     }
 
