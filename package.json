@@ -93,7 +93,7 @@
     "sanitize-html": "^2.17.4",
     "sarvamai": "^1.1.6",
     "socket.io": "^4.8.3",
-    "typeorm": "^0.3.28",
+    "typeorm": "^0.3.30",
     "uuid": "^13.0.1",
     "winston": "^3.19.0",
     "winston-cloudwatch": "^6.3.0"
@@ -115,6 +115,7 @@
     "multer": "^2.2.0",
     "picomatch@4": "^4.0.4",
     "brace-expansion@2": "^2.0.3",
+    "form-data": "^4.0.6",
     "hume": {
       "uuid": "^11.1.1"
     },
