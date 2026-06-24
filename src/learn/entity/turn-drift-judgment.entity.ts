@@ -7,9 +7,10 @@ import { Column, Entity, Index, PrimaryGeneratedColumn, Unique } from 'typeorm';
  * transcript and emits a per-turn array; each element becomes one row here.
  *
  * Wide-by-design and **denormalized** (mirrors scenario_session_turn_metrics):
- * `language` / `scenarioId` / `llmModel` / `llmProvider` / `promptVersion` are
- * copied from the session/turn at write time so the analytics dashboard can
- * slice by them with a single-table query (no fragile 4-way join).
+ * `language` / `scenarioId` / `scenarioVersionId` / `llmModel` / `llmProvider` /
+ * `promptVersion` are copied from the session/turn at write time so the
+ * analytics dashboard can slice by them with a single-table query (no fragile
+ * 4-way join).
  *
  * This is *mutable eval data* — re-run when the judge model or rubric changes —
  * which is why it lives in its own table and not as columns on turn_metrics.
@@ -24,6 +25,7 @@ import { Column, Entity, Index, PrimaryGeneratedColumn, Unique } from 'typeorm';
 @Index('turn_drift_judgment_occurred_at_idx', ['occurredAt'])
 @Index('turn_drift_judgment_language_idx', ['language'])
 @Index('turn_drift_judgment_scenario_id_idx', ['scenarioId'])
+@Index('turn_drift_judgment_scenario_version_id_idx', ['scenarioVersionId'])
 @Unique('turn_drift_judgment_session_turn_judge_uq', [
   'scenarioSessionId',
   'turnIndex',
@@ -87,6 +89,10 @@ export class TurnDriftJudgment extends BaseEntity {
 
   @Column({ nullable: true })
   scenarioId?: number;
+
+  /** scenario_versions row the session ran against (experiment dimension). */
+  @Column({ type: 'uuid', nullable: true })
+  scenarioVersionId?: string;
 
   @Column({ nullable: true })
   llmModel?: string;

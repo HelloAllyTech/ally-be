@@ -416,4 +416,50 @@ describe('PlatformAnalyticsService', () => {
       expect(result.totalEstimatedCostUsd).toBe(15.83); // 0.75 + 0.08 + 15
     });
   });
+
+  describe('conversationDrift — scenario version slice', () => {
+    let driftRepo: jest.Mocked<DriftAnalyticsRepository>;
+    beforeEach(() => {
+      driftRepo = service['driftRepo'] as jest.Mocked<DriftAnalyticsRepository>;
+    });
+
+    it('compares versions when a scenarioId is set, ignoring the version filter', async () => {
+      driftRepo.getDriftRateByDimension.mockImplementation(
+        async (_f, dimension) =>
+          dimension === 'scenarioVersion'
+            ? [{ key: 'v2', totalSessions: 4, driftedSessions: 1 }]
+            : [],
+      );
+
+      const result = await service.getConversationDrift('90d', {
+        scenarioId: 7,
+        scenarioVersionId: 'ver-123',
+      });
+
+      expect(result.driftRateByScenarioVersion).toEqual([
+        { key: 'v2', totalSessions: 4, driftedSessions: 1, driftRate: 0.25 },
+      ]);
+      // The comparison must span ALL versions of the scenario, so the
+      // scenarioVersionId filter is dropped for the scenarioVersion dimension.
+      expect(driftRepo.getDriftRateByDimension).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scenarioId: 7,
+          scenarioVersionId: undefined,
+        }),
+        'scenarioVersion',
+      );
+    });
+
+    it('skips the version comparison entirely when no scenarioId is set', async () => {
+      driftRepo.getDriftRateByDimension.mockResolvedValue([]);
+
+      const result = await service.getConversationDrift('90d', {});
+
+      expect(result.driftRateByScenarioVersion).toEqual([]);
+      const dims = driftRepo.getDriftRateByDimension.mock.calls.map(
+        ([, dimension]) => dimension,
+      );
+      expect(dims).not.toContain('scenarioVersion');
+    });
+  });
 });

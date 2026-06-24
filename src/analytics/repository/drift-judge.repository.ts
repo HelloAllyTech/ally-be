@@ -11,6 +11,7 @@ export interface DriftSessionRow {
   id: string;
   tenant_id: string;
   scenario_id: number | null;
+  scenario_version_id: string | null;
   language: string;
   persona: string | null;
   prompt_versions: Record<string, unknown> | null;
@@ -93,6 +94,7 @@ export class DriftJudgeRepository {
       SELECT s.id,
              s.tenant_id        AS tenant_id,
              s."scenarioId"     AS scenario_id,
+             s."scenarioVersionId" AS scenario_version_id,
              COALESCE(l.value, 'en') AS language,
              sc.prompt          AS persona,
              s.metadata->'promptVersions' AS prompt_versions,
@@ -188,10 +190,10 @@ export class DriftJudgeRepository {
            "reasoning", "userText", "aiText", "language", "scenarioId",
            "llmProvider", "llmModel", "occurredAt",
            "promptVersion", "sessionDrifted", "firstDriftTurn",
-           "judgeModel", "judgePromptVersion"
+           "judgeModel", "judgePromptVersion", "scenarioVersionId"
          ) VALUES (
            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-           $16, $17, $18, $19, $20, $21, $22, $23
+           $16, $17, $18, $19, $20, $21, $22, $23, $24
          )
          ON CONFLICT ("scenarioSessionId", "turnIndex", "judgeModel", "judgePromptVersion")
          DO UPDATE SET
@@ -236,6 +238,7 @@ export class DriftJudgeRepository {
           rollup.first_drift_turn,
           judgeModel,
           judgePromptVersion,
+          session.scenario_version_id,
         ],
       );
     }

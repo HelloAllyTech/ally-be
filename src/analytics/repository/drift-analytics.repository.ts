@@ -9,6 +9,7 @@ export interface DriftFilters {
   end: Date;
   language?: string;
   scenarioId?: number;
+  scenarioVersionId?: string;
   llmModel?: string;
   llmProvider?: string;
   promptVersion?: string;
@@ -76,6 +77,10 @@ export class DriftAnalyticsRepository {
       qb.andWhere('j."language" = :language', { language: f.language });
     if (f.scenarioId != null)
       qb.andWhere('j."scenarioId" = :scenarioId', { scenarioId: f.scenarioId });
+    if (f.scenarioVersionId)
+      qb.andWhere('j."scenarioVersionId" = :scenarioVersionId', {
+        scenarioVersionId: f.scenarioVersionId,
+      });
     if (f.llmModel)
       qb.andWhere('j."llmModel" = :llmModel', { llmModel: f.llmModel });
     if (f.llmProvider)
@@ -127,20 +132,27 @@ export class DriftAnalyticsRepository {
    * - sttModel: the STT model the session's language is configured to use,
    *   joined from `languages.sttProviderConfig` (we don't capture the runtime
    *   STT model per turn, so this is the configured model).
+   * - scenarioVersion: the scenario_versions row the session ran against, shown
+   *   by its human NAME (+ version number). Denormalized onto the judgment at
+   *   write time, joined to `scenario_versions` here for the label. Meant to be
+   *   used with a `scenarioId` filter so versions of ONE scenario are compared
+   *   (bare "v1" labels would otherwise collide across scenarios).
    *
    * Sessions with no captured/identifiable value are EXCLUDED ('unknown' isn't
-   * a real model/prompt, so it shouldn't be charted as one).
+   * a real model/prompt/version, so it shouldn't be charted as one).
    */
   async getDriftRateByDimension(
     f: DriftFilters,
-    dimension: 'llmModel' | 'promptVersion' | 'sttModel',
+    dimension: 'llmModel' | 'promptVersion' | 'sttModel' | 'scenarioVersion',
   ): Promise<DriftDimensionRow[]> {
     const keyExpr =
       dimension === 'sttModel'
         ? `lang."sttProviderConfig"->'config'->>'model'`
         : dimension === 'promptVersion'
           ? `pinfo.label`
-          : `j."llmModel"`;
+          : dimension === 'scenarioVersion'
+            ? `COALESCE(NULLIF(sv.name, '') || ' · v' || sv."versionNumber"::text, 'v' || sv."versionNumber"::text)`
+            : `j."llmModel"`;
     const qb = this.dataSource
       .createQueryBuilder()
       .select(keyExpr, 'key')
@@ -179,6 +191,11 @@ export class DriftAnalyticsRepository {
         'pinfo',
         'pinfo.sid = j."scenarioSessionId"',
       );
+    } else if (dimension === 'scenarioVersion') {
+      // Resolve the version label from the denormalized id. Inner join drops
+      // sessions with no scenarioVersionId (e.g. pre-versioning sessions), so
+      // they aren't charted as an 'unknown' version.
+      qb.innerJoin('scenario_versions', 'sv', 'sv.id = j."scenarioVersionId"');
     }
     this.applyDriftFilters(qb, f);
     qb.andWhere(`${keyExpr} IS NOT NULL`).andWhere(`${keyExpr} <> ''`);

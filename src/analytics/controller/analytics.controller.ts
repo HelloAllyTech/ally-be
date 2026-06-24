@@ -122,6 +122,7 @@ export class AnalyticsController {
       {
         language: query.language,
         scenarioId: query.scenarioId,
+        scenarioVersionId: query.scenarioVersionId,
         llmModel: query.llmModel,
         llmProvider: query.llmProvider,
         promptVersion: query.promptVersion,

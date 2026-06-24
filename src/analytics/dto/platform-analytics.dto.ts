@@ -42,6 +42,15 @@ export class ConversationDriftQueryDto {
   @IsOptional()
   scenarioId?: number;
 
+  @ApiProperty({
+    description:
+      'Filter by scenario version id (uuid). Use with scenarioId to scope ' +
+      'drift to one version of a scenario.',
+    required: false,
+  })
+  @IsOptional()
+  scenarioVersionId?: string;
+
   @ApiProperty({ description: 'Filter by agent LLM model', required: false })
   @IsOptional()
   llmModel?: string;
@@ -142,6 +151,10 @@ export class ConversationDriftResponseDto {
   driftRateBySttModel!: DriftRateByDimensionDto[];
   @ApiProperty({ type: [DriftRateByDimensionDto] })
   driftRateByPromptVersion!: DriftRateByDimensionDto[];
+  // Drift rate per scenario version (compare v1 vs v2 …). Populated only when a
+  // scenarioId filter is set; empty otherwise (labels collide across scenarios).
+  @ApiProperty({ type: [DriftRateByDimensionDto] })
+  driftRateByScenarioVersion!: DriftRateByDimensionDto[];
 }
 
 export class StartDriftBackfillDto {

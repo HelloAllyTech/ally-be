@@ -311,6 +311,7 @@ export class PlatformAnalyticsService {
     filters: {
       language?: string;
       scenarioId?: number;
+      scenarioVersionId?: string;
       llmModel?: string;
       llmProvider?: string;
       promptVersion?: string;
@@ -335,6 +336,7 @@ export class PlatformAnalyticsService {
       byModel,
       bySttModel,
       byPromptVersion,
+      byScenarioVersion,
       topicMix,
       coherenceMix,
       sttGarbleMix,
@@ -351,6 +353,16 @@ export class PlatformAnalyticsService {
       this.driftRepo.getDriftRateByDimension(f, 'llmModel'),
       this.driftRepo.getDriftRateByDimension(f, 'sttModel'),
       this.driftRepo.getDriftRateByDimension(f, 'promptVersion'),
+      // Compare drift across the versions of ONE scenario. Only meaningful with
+      // a scenarioId filter (version labels collide across scenarios), and it
+      // ignores the scenarioVersionId filter so every version of the scenario
+      // is charted even while another chart is scoped to a single version.
+      filters.scenarioId != null
+        ? this.driftRepo.getDriftRateByDimension(
+            { ...f, scenarioVersionId: undefined },
+            'scenarioVersion',
+          )
+        : Promise.resolve([]),
       this.driftRepo.getDriftSessionCountsBy(f, 'topicLabel', false, true),
       this.driftRepo.getDriftSessionCountsBy(f, 'coherence', false, true),
       // STT input quality is independent of drift — count across ALL sessions.
@@ -440,6 +452,7 @@ export class PlatformAnalyticsService {
       driftRateByModel: withRate(byModel),
       driftRateBySttModel: withRate(bySttModel),
       driftRateByPromptVersion: withRate(byPromptVersion),
+      driftRateByScenarioVersion: withRate(byScenarioVersion),
     };
   }
 
