@@ -83,20 +83,25 @@ export class ScenarioVersionService {
       // Branch: fork an existing version's data into a new draft.
       const parent = await this.getVersion(scenarioId, dto.fromVersionId);
       parentVersionId = parent.id;
-      config = parent.config ?? {};
+      // The published version's stored config is a snapshot that can drift from
+      // the live scenario when it's edited directly (outside the version
+      // system). Rebuild from the live state so branching the published version
+      // always captures current edits. Drafts/archived snapshots are authored
+      // in the version system (or intentionally frozen), so clone them as-is.
+      config =
+        parent.status === ScenarioVersionStatus.PUBLISHED
+          ? await this.buildConfigFromScenario(scenarioId)
+          : (parent.config ?? {});
     } else {
-      // Default: seed from the published version, else the live scenario.
+      // Default: seed from the published version, else the live scenario. The
+      // published snapshot can be stale (see above), so always rebuild from live.
       const published = scenario.publishedVersionId
         ? await this.scenarioVersionRepository.findOne({
             where: { id: scenario.publishedVersionId, scenarioId },
           })
         : null;
-      if (published) {
-        parentVersionId = published.id;
-        config = published.config ?? {};
-      } else {
-        config = await this.buildConfigFromScenario(scenarioId);
-      }
+      parentVersionId = published?.id ?? null;
+      config = await this.buildConfigFromScenario(scenarioId);
     }
 
     // getNextVersionNumber is a read-then-insert, so two concurrent creates can

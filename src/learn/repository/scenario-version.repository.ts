@@ -16,9 +16,11 @@ export class ScenarioVersionRepository extends Repository<ScenarioVersion> {
   }
 
   /**
-   * Next version number for a scenario. Counts soft-deleted rows too (via the
-   * raw max) so numbers are never reused. Safe to call inside a transaction by
-   * passing the entity manager.
+   * Next version number for a scenario, computed over NON-deleted rows only, so
+   * the number of a deleted top version is reused (delete v18 → next is v18).
+   * The partial unique index is scoped to `deletedAt IS NULL`, so the new live
+   * row never collides with the soft-deleted one. Safe to call inside a
+   * transaction by passing the entity manager.
    */
   async getNextVersionNumber(
     scenarioId: number,
@@ -27,9 +29,9 @@ export class ScenarioVersionRepository extends Repository<ScenarioVersion> {
     const repo = em ? em.getRepository(ScenarioVersion) : this;
     const row = await repo
       .createQueryBuilder('v')
-      .withDeleted()
       .select('MAX(v.versionNumber)', 'max')
       .where('v.scenarioId = :scenarioId', { scenarioId })
+      .andWhere('v.deletedAt IS NULL')
       .getRawOne<{ max: string | null }>();
     return (row?.max ? Number(row.max) : 0) + 1;
   }

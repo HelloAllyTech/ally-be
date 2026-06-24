@@ -101,6 +101,36 @@ describe('ScenarioVersionService', () => {
       });
     });
 
+    it('branching the PUBLISHED version rebuilds from the live scenario (not the stale snapshot)', async () => {
+      // The published version's stored config is stale (no skill); the live
+      // scenario has it. Branching must capture the live state.
+      (versionRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'v-pub',
+        scenarioId: 10,
+        status: ScenarioVersionStatus.PUBLISHED,
+        config: { title: 'stale', selectedMainPromptCode: undefined },
+      });
+      (scenarioService.getAdminScenario as jest.Mock).mockResolvedValue({
+        title: 'live',
+        metadata: { selectedMainPromptCode: 'variant_x' },
+        triggerWarnings: [],
+        terminationEvents: [],
+        behaviorInstructions: [],
+      });
+
+      await service.createVersion(10, { fromVersionId: 'v-pub' }, 1);
+
+      const created = txVersionRepo.create.mock.calls[0][0];
+      expect(created.parentVersionId).toBe('v-pub');
+      // Rebuilt from live, so the current skill version is carried.
+      expect(created.config).toMatchObject({
+        title: 'live',
+        selectedMainPromptCode: 'variant_x',
+        status: ScenarioStatus.DRAFT,
+      });
+      expect(scenarioService.getAdminScenario).toHaveBeenCalledWith(10);
+    });
+
     it('creates a blank draft with mappedEvents:[] when empty', async () => {
       await service.createVersion(10, { empty: true, name: 'from scratch' }, 1);
 
