@@ -404,7 +404,6 @@ export class ScenarioSharedService {
     // carries the active language's value only (see create-scenario DTO).
     delete promptData.allowedFillerWords;
     delete promptData.languageCharacteristics;
-    delete promptData.fillerDialogues;
 
     // Human-readable language name (e.g. "Tamil (India)") — gives the LLM a far
     // stronger dialect signal than the bare BCP-47 code alone.
@@ -427,19 +426,6 @@ export class ScenarioSharedService {
           .filter((f) => f.length > 0);
         if (cleaned.length > 0) {
           promptData.allowedFillerWords = cleaned;
-        }
-      }
-
-      // Thinking-filler dialogues — same per-language shape as allowedFillerWords;
-      // carry only the active language's list to the agent.
-      const dialogues =
-        metadata?.fillerDialogues?.[String(metadata.languageId)];
-      if (dialogues && Array.isArray(dialogues)) {
-        const cleaned = dialogues
-          .map((d) => (typeof d === 'string' ? d.trim() : ''))
-          .filter((d) => d.length > 0);
-        if (cleaned.length > 0) {
-          promptData.fillerDialogues = cleaned;
         }
       }
 

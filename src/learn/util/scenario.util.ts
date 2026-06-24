@@ -25,7 +25,6 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'openingStatements',
   'enableProsody',
   'fillerEnabled',
-  'fillerDialogues',
   'customFields',
   'languageVoices',
   'linguisticStyleSamples',
@@ -130,7 +129,6 @@ export const mapCreateScenarioRequestToEntity = (
       openingStatements: scenario.openingStatements,
       enableProsody: scenario.enableProsody,
       fillerEnabled: scenario.fillerEnabled,
-      fillerDialogues: scenario.fillerDialogues,
       customFields: scenario.customFields?.map((customField) => ({
         name: customField.name,
         value: customField.value,
