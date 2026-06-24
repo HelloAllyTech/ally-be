@@ -531,6 +531,21 @@ export class ChatController {
     return this.service.generateSummary(id);
   }
 
+  @ApiOperation({
+    summary: 'Retry summary generation from the saved transcript',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Regenerates the summary for a chat whose transcript was saved but ' +
+      'whose summary previously failed',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SUMMARY])
+  @Post(':id/retry-summary')
+  async retrySummary(@Param('id', ParseIntPipe) id: number) {
+    return this.service.retrySummary(id);
+  }
+
   @ApiOperation({ summary: 'Get chat summary for message' })
   @AuthPermissions([PERMISSIONS.EDIT_SUMMARY])
   @Post('summaryForMessage')

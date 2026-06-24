@@ -464,6 +464,28 @@ export class ChatService {
     return summary;
   }
 
+  /**
+   * Re-run summary generation from the chat's stored transcript (manual "Retry
+   * summary" action). For chats whose transcript was saved but the summary
+   * failed; reuses the same engine as the auto-retry cron.
+   */
+  async retrySummary(
+    chatId: number,
+  ): Promise<{ success: boolean; message: string }> {
+    const result = await this.callDetailsService.retrySummary(chatId);
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.SUMMARY_GENERATED,
+      details: {
+        chatId,
+        trigger: 'manual-retry',
+        success: result.success,
+      },
+    });
+
+    return result;
+  }
+
   async generateSummaryForMessage(
     messageRequests: MessageRequest[],
   ): Promise<GenerateSummaryResponse | undefined> {

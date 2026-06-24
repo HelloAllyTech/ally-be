@@ -76,54 +76,68 @@ export class ChatTranscriptService {
       return;
     }
 
-    // ally-ai reported a genuine processing failure: record it (with the stage
-    // and upstream reason) and ack 200 so the AI side does not re-post.
-    if (error) {
-      this.logger.error(
-        `AI service reported failure for chat ${chatId} stage=${stage} correlationId=${effectiveCorrelationId}: ${error}`,
-      );
-      await this.recordFailure(chatId, {
-        stage: stage ?? 'transcribe-result',
-        reason: error,
-        correlationId: effectiveCorrelationId,
-        mode: 'explicit-failure',
-        elapsedMs: Date.now() - startedAt,
-      });
-      return;
-    }
-
     try {
+      // Resolve transcript + summary (inline, or from the legacy S3 result
+      // file). A download failure is caught below and recorded as FAILED.
       let tx = transcription;
       let sm = summary;
       if (!(tx && sm) && downloadPresignedUrl) {
         const s3Result = await this.downloadFromS3(downloadPresignedUrl);
-        tx = s3Result.transcription;
-        sm = s3Result.summary;
+        tx = tx ?? s3Result.transcription;
+        sm = sm ?? s3Result.summary;
       }
 
-      if (tx && sm) {
-        await this.chatAiService.addTranscript(chat, tx);
-        await this.chatAiService.addSummary(chatId, sm);
+      // No transcript at all → a genuine hard failure (transcription/
+      // diarization failed upstream). There is nothing to show or retry.
+      if (!tx) {
+        if (error) {
+          this.logger.error(
+            `AI service reported failure (no transcript) for chat ${chatId} stage=${stage} correlationId=${effectiveCorrelationId}: ${error}`,
+          );
+          await this.recordFailure(chatId, {
+            stage: stage ?? 'transcribe-result',
+            reason: error,
+            correlationId: effectiveCorrelationId,
+            mode: 'explicit-failure',
+            elapsedMs: Date.now() - startedAt,
+          });
+        }
+        return;
       }
+
+      // Persist the transcript FIRST so it survives a summary failure — this is
+      // what lets us show the transcript and offer a summary retry instead of
+      // throwing the whole session away.
+      await this.chatAiService.addTranscript(chat, tx);
 
       if (!this.config.isDevelopment && deletePresignedUrl) {
         await this.deleteFromS3(deletePresignedUrl);
       }
 
-      // Mark SUCCESS and ack immediately. The slow, non-critical post-summary
-      // work (AI custom-field fill + counselor email) is deliberately moved
-      // OFF this synchronous path — running it inline used to push the callback
-      // past the AI-service read timeout under concurrency and flip good
-      // summaries to FAILED.
-      await this.chatService.updateChat(chatId, {
-        summaryStatus: ChatSummaryStatus.SUCCESS,
-      });
-      this.logger.info(
-        `process-transcript acked SUCCESS for chat ${chatId} correlationId=${effectiveCorrelationId} elapsedMs=${Date.now() - startedAt}`,
-      );
-
-      // Fire-and-forget: both calls are internally best-effort and never throw.
-      void this.runPostSummaryTasks(chat, chatId, effectiveCorrelationId);
+      if (sm) {
+        // Full success: transcript + summary. The slow post-summary work
+        // (custom-field fill + counselor email) runs off the request path.
+        await this.chatAiService.addSummary(chatId, sm);
+        await this.chatService.updateChat(chatId, {
+          summaryStatus: ChatSummaryStatus.SUCCESS,
+        });
+        this.logger.info(
+          `process-transcript acked SUCCESS for chat ${chatId} correlationId=${effectiveCorrelationId} elapsedMs=${Date.now() - startedAt}`,
+        );
+        void this.runPostSummaryTasks(chat, chatId, effectiveCorrelationId);
+      } else {
+        // Transcript saved, but summary generation failed upstream. Keep the
+        // transcript viewable and mark the summary retryable (manual button +
+        // cron auto-retry) rather than failing the whole chat.
+        await this.markSummaryRetryable(chatId, chat, {
+          reason: error ?? 'Summary generation failed',
+          stage: stage ?? 'summarize',
+          correlationId: effectiveCorrelationId,
+        });
+        this.logger.info(
+          `process-transcript saved transcript; summary FAILED (retryable) for chat ${chatId} correlationId=${effectiveCorrelationId}`,
+        );
+      }
     } catch (err) {
       const reason = err instanceof Error ? err.message : JSON.stringify(err);
       this.logger.error(
@@ -169,6 +183,40 @@ export class ChatTranscriptService {
       correlationId,
       mode,
       elapsedMs,
+    });
+  }
+
+  /**
+   * The transcript was persisted but summary generation failed upstream. Mark
+   * the summary FAILED but flag it retryable (transcript exists), so the client
+   * can show the transcript with a "Retry summary" action and the cron can
+   * auto-retry. Preserves existing metadata (e.g. the dispatch correlationId).
+   */
+  private async markSummaryRetryable(
+    chatId: number,
+    chat: Chat,
+    params: { reason: string; stage: string; correlationId?: string },
+  ): Promise<void> {
+    const { reason, stage, correlationId } = params;
+    const existingMetadata =
+      (chat.metadata as Record<string, any> | undefined) ?? {};
+    await this.chatService.updateChat(chatId, {
+      summaryStatus: ChatSummaryStatus.FAILED,
+      metadata: {
+        ...existingMetadata,
+        error: reason,
+        stage,
+        correlationId: correlationId ?? existingMetadata.correlationId,
+        summaryRetryable: true,
+        summaryRetryAttempts: 0,
+      } as Record<string, any>,
+    });
+    await this.notificationService.notifyTranscriptionFailure({
+      chatId,
+      stage,
+      reason: `${reason} (transcript saved; summary retryable)`,
+      correlationId,
+      mode: 'explicit-failure',
     });
   }
 

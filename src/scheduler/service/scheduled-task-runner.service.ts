@@ -14,6 +14,11 @@ export class ScheduledTaskRunnerService {
     await this.runTasksForInterval('30min');
   }
 
+  @Cron(`0 */15 * * * *`)
+  async runFifteenMinuteTasks(): Promise<void> {
+    await this.runTasksForInterval('15min');
+  }
+
   private async runTasksForInterval(interval: string): Promise<void> {
     const tasks = scheduledTaskRegistry.getHandlers(interval);
     if (tasks.length === 0) return;

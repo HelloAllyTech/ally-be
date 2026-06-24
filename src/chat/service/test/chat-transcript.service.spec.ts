@@ -223,6 +223,48 @@ describe('ChatTranscriptService', () => {
       });
     });
 
+    it('saves the transcript and marks the summary retryable when summary failed upstream', async () => {
+      chatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+      const notify = (service as any).notificationService
+        .notifyTranscriptionFailure as jest.Mock;
+
+      const transcription = [
+        { role: 'client', content: 'hello world', start_time: 0, end_time: 2 },
+      ];
+
+      // ally-ai delivered the transcript but no summary, with a summary error.
+      await service.processTranscribeResult({
+        chatId,
+        transcription,
+        error: 'summary llm failed',
+        stage: 'summarize',
+        correlationId: 'corr-9',
+      });
+
+      // Transcript is persisted...
+      expect(chatAiService.addTranscript).toHaveBeenCalledWith(
+        mockChat,
+        transcription,
+      );
+      // ...summary is NOT (it failed)...
+      expect(chatAiService.addSummary).not.toHaveBeenCalled();
+      // ...and the chat is FAILED-but-retryable.
+      expect(chatService.updateChat).toHaveBeenCalledWith(
+        chatId,
+        expect.objectContaining({
+          summaryStatus: ChatSummaryStatus.FAILED,
+          metadata: expect.objectContaining({
+            summaryRetryable: true,
+            summaryRetryAttempts: 0,
+            correlationId: 'corr-9',
+          }),
+        }),
+      );
+      expect(notify).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId, mode: 'explicit-failure' }),
+      );
+    });
+
     it('should mark chat as FAILED if S3 download fails', async () => {
       chatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
       mockedAxios.get.mockRejectedValueOnce(new Error('S3 error'));

@@ -50,6 +50,16 @@ export const CHAT_REPROCESS_LOOKBACK_DAYS = 60;
 // recover timeout-failed chats and is safe to run regardless of reaper timing.
 export const CHAT_SUMMARY_TIMEOUT_ERROR = 'Summary timed out';
 
+// When transcription succeeds but summary generation fails, the transcript is
+// kept and the summary is flagged retryable (metadata.summaryRetryable). The
+// cron auto-retries from the stored transcript up to this many times, then
+// leaves it FAILED for a manual retry. Manual retries are not bounded here.
+export const SUMMARY_RETRY_MAX_ATTEMPTS = 3;
+
+// Only retry summaries for chats created within this window; older transcripts
+// are left for a manual retry rather than auto-retried indefinitely.
+export const SUMMARY_RETRY_LOOKBACK_DAYS = 30;
+
 export const LANGUAGE_MAP = {
   bn: 'Bengali',
   pa: 'Gurmukhi',

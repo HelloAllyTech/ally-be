@@ -168,6 +168,8 @@ describe('CallDetailsService', () => {
           useValue: {
             findOne: jest.fn(),
             save: jest.fn(),
+            update: jest.fn(),
+            find: jest.fn(),
           },
         },
         {
@@ -664,6 +666,53 @@ describe('CallDetailsService', () => {
       );
     });
 
+    it('clears the FAILED/retryable state when a failed-summary chat is manually edited', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue({
+        id: 1,
+        tenantId: 'test-tenant',
+        counselorId: 200,
+        summaryStatus: ChatSummaryStatus.FAILED,
+        metadata: { summaryRetryable: true, correlationId: 'c1' },
+      } as unknown as Chat);
+      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
+      const chatUpdate = jest
+        .spyOn(chatRepository, 'update')
+        .mockResolvedValue({} as any);
+
+      await service.updateCallDetails(1, {
+        sessionSummary: 'hand written',
+      } as any);
+
+      expect(chatUpdate).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          summaryStatus: ChatSummaryStatus.SUCCESS,
+          metadata: expect.objectContaining({
+            summaryRetryable: false,
+            correlationId: 'c1',
+          }),
+        }),
+      );
+    });
+
+    it('does not change status when editing an already-successful chat', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue({
+        id: 1,
+        tenantId: 'test-tenant',
+        counselorId: 200,
+        summaryStatus: ChatSummaryStatus.SUCCESS,
+        metadata: {},
+      } as unknown as Chat);
+      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
+      const chatUpdate = jest
+        .spyOn(chatRepository, 'update')
+        .mockResolvedValue({} as any);
+
+      await service.updateCallDetails(1, { sessionSummary: 'edit' } as any);
+
+      expect(chatUpdate).not.toHaveBeenCalled();
+    });
+
     it('should handle summary without sessionSummary', async () => {
       const summary: any = {
         callId: '1',
@@ -1001,6 +1050,114 @@ describe('CallDetailsService', () => {
       const result = await service['getChatById'](999);
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('retrySummary', () => {
+    const failedChat = {
+      id: 55,
+      tenantId: 'test-tenant',
+      counselorId: 200,
+      summaryStatus: ChatSummaryStatus.FAILED,
+      metadata: { summaryRetryable: true, summaryRetryAttempts: 1 },
+    } as unknown as Chat;
+
+    it('regenerates from the transcript and marks SUCCESS on success', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(failedChat);
+      jest
+        .spyOn(service as any, 'regenerateSummaryFromTranscript')
+        .mockResolvedValue(undefined);
+      const update = jest
+        .spyOn(chatRepository, 'update')
+        .mockResolvedValue({} as any);
+
+      const result = await service.retrySummary(55);
+
+      expect(result.success).toBe(true);
+      expect(update).toHaveBeenLastCalledWith(
+        55,
+        expect.objectContaining({
+          summaryStatus: ChatSummaryStatus.SUCCESS,
+          metadata: expect.objectContaining({ summaryRetryable: false }),
+        }),
+      );
+    });
+
+    it('keeps it retryable and increments attempts on failure', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(failedChat);
+      jest
+        .spyOn(service as any, 'regenerateSummaryFromTranscript')
+        .mockRejectedValue(new Error('llm down'));
+      const update = jest
+        .spyOn(chatRepository, 'update')
+        .mockResolvedValue({} as any);
+
+      const result = await service.retrySummary(55);
+
+      expect(result.success).toBe(false);
+      expect(update).toHaveBeenLastCalledWith(
+        55,
+        expect.objectContaining({
+          summaryStatus: ChatSummaryStatus.FAILED,
+          metadata: expect.objectContaining({
+            summaryRetryable: true,
+            summaryRetryAttempts: 2, // was 1, incremented
+          }),
+        }),
+      );
+    });
+
+    it('is a no-op when the summary already succeeded', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue({
+        ...failedChat,
+        summaryStatus: ChatSummaryStatus.SUCCESS,
+      } as unknown as Chat);
+      const regen = jest.spyOn(
+        service as any,
+        'regenerateSummaryFromTranscript',
+      );
+
+      const result = await service.retrySummary(55);
+
+      expect(result.success).toBe(true);
+      expect(regen).not.toHaveBeenCalled();
+    });
+
+    it('throws when the chat is not found', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(null);
+
+      await expect(service.retrySummary(404)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('retryFailedSummaries (cron)', () => {
+    it('runs a retry for each retryable chat', async () => {
+      const chats = [
+        { id: 1, tenantId: 't', counselorId: 200, metadata: {} },
+        { id: 2, tenantId: 't', counselorId: 201, metadata: {} },
+      ] as unknown as Chat[];
+      jest.spyOn(chatRepository, 'find').mockResolvedValue(chats);
+      const runRetry = jest
+        .spyOn(service as any, 'runSummaryRetry')
+        .mockResolvedValue({ success: true, message: 'ok' });
+      const setCtx = jest.spyOn(ExecutionManager, 'setAuthContext');
+
+      await service.retryFailedSummaries();
+
+      expect(runRetry).toHaveBeenCalledTimes(2);
+      expect(setCtx).toHaveBeenCalledWith('200', 't');
+      expect(setCtx).toHaveBeenCalledWith('201', 't');
+    });
+
+    it('does nothing when there are no retryable chats', async () => {
+      jest.spyOn(chatRepository, 'find').mockResolvedValue([]);
+      const runRetry = jest.spyOn(service as any, 'runSummaryRetry');
+
+      await service.retryFailedSummaries();
+
+      expect(runRetry).not.toHaveBeenCalled();
     });
   });
 });

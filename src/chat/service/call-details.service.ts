@@ -20,8 +20,13 @@ import {
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
 import { TIME } from '../../common/constants/time.constants';
 import { ForbiddenException } from '../../exception/custom.exception';
-import { Chat } from '../entity/chat.entity';
+import { Raw, MoreThanOrEqual } from 'typeorm';
+import { Chat, ChatSummaryStatus } from '../entity/chat.entity';
 import { MessageType } from '../entity/message.entity';
+import {
+  SUMMARY_RETRY_MAX_ATTEMPTS,
+  SUMMARY_RETRY_LOOKBACK_DAYS,
+} from '../constants/chat.constants';
 import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type';
 import { CallInfo } from '../dto/call-log.response.dto';
 import { CallDetails } from '../entity/call.details.entity';
@@ -107,6 +112,165 @@ export class CallDetailsService {
     );
 
     await this.fillAiCustomFields(chat, chat.tenantId);
+  }
+
+  /**
+   * Regenerate the summary (and AI custom fields) from the chat's STORED
+   * transcript and persist it. No audio or re-transcription needed — this is
+   * the shared engine behind both the manual retry endpoint and the cron.
+   * Tenant is taken from the chat so it works without a request context.
+   * Throws if there is no transcript to summarise.
+   */
+  private async regenerateSummaryFromTranscript(chat: Chat): Promise<void> {
+    const tenantId = chat.tenantId;
+    const messages = await this.messageService.getChatHistoryForAIService(
+      chat.id,
+      { sortBy: 'createdAt', order: 'ASC' },
+      tenantId,
+    );
+    if (!messages?.length) {
+      throw new Error('No transcript available to summarise');
+    }
+
+    const callDetails = await this.callDetailsRepository.findOne({
+      where: { chatId: chat.id, tenantId },
+    });
+    const mode = callDetails?.callInfo?.mode;
+
+    const aiResponse = await this.aiService.generateSummaryAndTags(
+      messages,
+      mode,
+    );
+    const summary: any = this.convertToCamelCase(aiResponse) ?? {};
+    summary.mode = mode ?? ScribeSessionMode.SCRIBE;
+    if (summary.sessionSummary) {
+      summary.sessionSummary = await this.cryptoService.encrypt(
+        summary.sessionSummary,
+        this.config.phiData?.phiDataEncryptionKey,
+      );
+    }
+
+    await this.callDetailsRepository.update({ chatId: chat.id }, { summary });
+    await this.fillAiCustomFields(chat, tenantId);
+  }
+
+  /**
+   * Status transitions + attempt tracking around a single summary retry.
+   * Shared by the manual endpoint and the cron.
+   */
+  private async runSummaryRetry(
+    chat: Chat,
+  ): Promise<{ success: boolean; message: string }> {
+    const chatId = chat.id;
+    const metadata = (chat.metadata as Record<string, any>) ?? {};
+
+    await this.chatRepository.update(chatId, {
+      summaryStatus: ChatSummaryStatus.IN_PROGRESS,
+    });
+
+    try {
+      await this.regenerateSummaryFromTranscript(chat);
+      await this.chatRepository.update(chatId, {
+        summaryStatus: ChatSummaryStatus.SUCCESS,
+        metadata: { ...metadata, summaryRetryable: false } as Record<
+          string,
+          any
+        >,
+      });
+      this.logger.info(`Summary retry succeeded for chat ${chatId}`);
+      return { success: true, message: 'Summary generated' };
+    } catch (err) {
+      const attempts = (Number(metadata.summaryRetryAttempts) || 0) + 1;
+      const reason = err instanceof Error ? err.message : String(err);
+      await this.chatRepository.update(chatId, {
+        summaryStatus: ChatSummaryStatus.FAILED,
+        metadata: {
+          ...metadata,
+          summaryRetryable: true,
+          summaryRetryAttempts: attempts,
+          error: reason,
+        } as Record<string, any>,
+      });
+      this.logger.error(
+        `Summary retry failed for chat ${chatId} (attempt ${attempts}): ${reason}`,
+      );
+      return { success: false, message: reason };
+    }
+  }
+
+  /**
+   * Manual "Retry summary" action (tenant-scoped to the caller). Regenerates
+   * the summary from the saved transcript for a chat whose summary previously
+   * failed.
+   */
+  async retrySummary(
+    chatId: number,
+  ): Promise<{ success: boolean; message: string }> {
+    const tenantId = ExecutionManager.getTenantId();
+    const chat = await this.chatRepository.findOne({
+      where: { id: chatId, tenantId },
+    });
+    if (!chat) {
+      throw new NotFoundException('Chat not found');
+    }
+    if (chat.summaryStatus === ChatSummaryStatus.SUCCESS) {
+      return { success: true, message: 'Summary already generated' };
+    }
+    return this.runSummaryRetry(chat);
+  }
+
+  /**
+   * Chats whose transcript was saved but summary failed and that are still
+   * within the auto-retry budget (created recently, under the attempt cap).
+   */
+  private async findRetryableSummaryChats(): Promise<Chat[]> {
+    const lookbackCutoff = new Date(
+      Date.now() - SUMMARY_RETRY_LOOKBACK_DAYS * TIME.DAY_IN_MS,
+    );
+    return this.chatRepository.find({
+      where: {
+        summaryStatus: ChatSummaryStatus.FAILED,
+        createdAt: MoreThanOrEqual(lookbackCutoff),
+        metadata: Raw(
+          (alias) =>
+            `${alias} ->> 'summaryRetryable' = 'true' AND ` +
+            `COALESCE((${alias} ->> 'summaryRetryAttempts')::int, 0) < :maxAttempts`,
+          { maxAttempts: SUMMARY_RETRY_MAX_ATTEMPTS },
+        ),
+      },
+    });
+  }
+
+  /**
+   * Cron: auto-retry summary generation for chats that have a transcript but a
+   * failed summary, up to SUMMARY_RETRY_MAX_ATTEMPTS. Beyond that they stay
+   * FAILED and wait for a manual retry.
+   */
+  async retryFailedSummaries(): Promise<void> {
+    const chats = await this.findRetryableSummaryChats();
+    if (chats.length === 0) return;
+
+    this.logger.info(
+      `Summary retry cron: attempting ${chats.length} chat(s) with failed summaries`,
+    );
+
+    for (const chat of chats) {
+      // Runs outside a request; set tenant/user context for any downstream
+      // reads that rely on it.
+      ExecutionManager.setAuthContext(
+        chat.counselorId ? chat.counselorId.toString() : '',
+        chat.tenantId,
+      );
+      try {
+        await this.runSummaryRetry(chat);
+      } catch (err) {
+        this.logger.error(
+          `Summary retry cron failed for chat ${chat.id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
   }
 
   async fillAiCustomFields(chat: Chat, tenantId: string) {
@@ -459,6 +623,24 @@ export class CallDetailsService {
       { chatId, tenantId: ExecutionManager.getTenantId() },
       { summary },
     );
+
+    // A manual edit is an authoritative summary. If the chat's summary had
+    // failed (transcript saved, summary retryable), mark it SUCCESS and clear
+    // the retryable flag so it shows as complete AND the auto-retry cron won't
+    // overwrite the counselor's hand-entered fields.
+    if (chat.summaryStatus !== ChatSummaryStatus.SUCCESS) {
+      const existingMetadata = (chat.metadata as Record<string, any>) ?? {};
+      await this.chatRepository.update(chatId, {
+        summaryStatus: ChatSummaryStatus.SUCCESS,
+        metadata: { ...existingMetadata, summaryRetryable: false } as Record<
+          string,
+          any
+        >,
+      });
+      this.logger.info(
+        `Summary manually edited for chat ${chatId}; marked SUCCESS and cleared retryable`,
+      );
+    }
   }
 
   async updateCallInfo(chatId: number, body: CallInfoDto, chat: Chat) {
