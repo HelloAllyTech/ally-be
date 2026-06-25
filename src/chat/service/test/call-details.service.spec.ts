@@ -27,6 +27,7 @@ import { MessageType } from 'src/chat/entity/message.entity';
 import { FlattenedSummaryNotePayloadCamelCase } from 'src/chat/type/call.details.type';
 import { CallDetails } from 'src/chat/entity/call.details.entity';
 import { CustomFieldsService } from '../../../custom-fields/service/custom-fields.service';
+import { ChatAudioUploadsService } from '../../../audio/service/chat-audio-uploads.service';
 
 describe('CallDetailsService', () => {
   let service: CallDetailsService;
@@ -38,6 +39,7 @@ describe('CallDetailsService', () => {
   let cache: RedisService;
   let broadcastMessageService: BroadcastMessageService;
   let streamFileProcessorService: StreamFileProcessorService;
+  let audioUploadsService: jest.Mocked<ChatAudioUploadsService>;
 
   const mockChat: Chat = {
     id: 1,
@@ -231,6 +233,12 @@ describe('CallDetailsService', () => {
             upsertValuesInternal: jest.fn(),
           },
         },
+        {
+          provide: ChatAudioUploadsService,
+          useValue: {
+            cleanupStoredAudio: jest.fn().mockResolvedValue(true),
+          },
+        },
       ],
     }).compile();
 
@@ -249,6 +257,9 @@ describe('CallDetailsService', () => {
     streamFileProcessorService = module.get<StreamFileProcessorService>(
       StreamFileProcessorService,
     );
+    audioUploadsService = module.get(
+      ChatAudioUploadsService,
+    ) as jest.Mocked<ChatAudioUploadsService>;
   });
 
   afterEach(() => {
@@ -1081,6 +1092,8 @@ describe('CallDetailsService', () => {
           metadata: expect.objectContaining({ summaryRetryable: false }),
         }),
       );
+      // Recording is dropped once the summary is final.
+      expect(audioUploadsService.cleanupStoredAudio).toHaveBeenCalledWith(55);
     });
 
     it('keeps it retryable and increments attempts on failure', async () => {
@@ -1105,6 +1118,8 @@ describe('CallDetailsService', () => {
           }),
         }),
       );
+      // Recording is kept so the next retry can still recover.
+      expect(audioUploadsService.cleanupStoredAudio).not.toHaveBeenCalled();
     });
 
     it('is a no-op when the summary already succeeded', async () => {

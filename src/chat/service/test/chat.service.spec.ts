@@ -125,6 +125,7 @@ describe('ChatService', () => {
             save: jest.fn(),
             find: jest.fn(),
             findOne: jest.fn(),
+            count: jest.fn().mockResolvedValue(0),
             deleteMessageByChatId: jest.fn(),
             createQueryBuilder: jest.fn(() => ({
               leftJoinAndMapOne: jest.fn().mockReturnThis(),
@@ -955,6 +956,50 @@ describe('ChatService', () => {
       await service.updateChat(1, updateInput);
 
       expect(chatRepository.updateChat).toHaveBeenCalledWith(1, updateInput);
+    });
+  });
+
+  describe('markStalePendingChatsAsFailed', () => {
+    it('marks a timed-out chat WITH a transcript as FAILED + retryable', async () => {
+      jest
+        .spyOn(chatRepository, 'find')
+        .mockResolvedValue([{ id: 7, metadata: {} } as any]);
+      const messageRepo = (service as any)
+        .messageRepository as jest.Mocked<MessageRepository>;
+      messageRepo.count.mockResolvedValue(3); // transcript present
+      const update = jest
+        .spyOn(chatRepository, 'update')
+        .mockResolvedValue({ affected: 1 } as any);
+
+      await service.markStalePendingChatsAsFailed();
+
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 7 }),
+        expect.objectContaining({
+          summaryStatus: ChatSummaryStatus.FAILED,
+          metadata: expect.objectContaining({ summaryRetryable: true }),
+        }),
+      );
+    });
+
+    it('marks a timed-out chat WITHOUT a transcript as plain FAILED (not retryable)', async () => {
+      jest
+        .spyOn(chatRepository, 'find')
+        .mockResolvedValue([{ id: 8, metadata: {} } as any]);
+      const messageRepo = (service as any)
+        .messageRepository as jest.Mocked<MessageRepository>;
+      messageRepo.count.mockResolvedValue(0); // no transcript
+      const update = jest
+        .spyOn(chatRepository, 'update')
+        .mockResolvedValue({ affected: 1 } as any);
+
+      await service.markStalePendingChatsAsFailed();
+
+      const meta = (update.mock.calls[0][1] as any).metadata;
+      expect(meta.summaryRetryable).toBeUndefined();
+      expect((update.mock.calls[0][1] as any).summaryStatus).toBe(
+        ChatSummaryStatus.FAILED,
+      );
     });
   });
 });

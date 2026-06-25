@@ -8,6 +8,7 @@ import { AppConfigService } from 'src/config/config.service';
 import { Chat, ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
 import { CallDetailsService } from '../call-details.service';
 import { NotificationService } from '../../../notification/service/notification.service';
+import { ChatAudioUploadsService } from '../../../audio/service/chat-audio-uploads.service';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -16,6 +17,7 @@ describe('ChatTranscriptService', () => {
   let service: ChatTranscriptService;
   let chatAiService: jest.Mocked<ChatAiService>;
   let chatService: jest.Mocked<ChatService>;
+  let audioUploadsService: jest.Mocked<ChatAudioUploadsService>;
 
   const chatId = 1;
 
@@ -72,12 +74,21 @@ describe('ChatTranscriptService', () => {
             notifyTranscriptStored: jest.fn(),
           },
         },
+        {
+          provide: ChatAudioUploadsService,
+          useValue: {
+            cleanupStoredAudio: jest.fn().mockResolvedValue(true),
+          },
+        },
       ],
     }).compile();
 
     service = module.get(ChatTranscriptService);
     chatAiService = module.get(ChatAiService) as jest.Mocked<ChatAiService>;
     chatService = module.get(ChatService) as jest.Mocked<ChatService>;
+    audioUploadsService = module.get(
+      ChatAudioUploadsService,
+    ) as jest.Mocked<ChatAudioUploadsService>;
 
     jest.clearAllMocks();
   });
@@ -187,6 +198,13 @@ describe('ChatTranscriptService', () => {
       });
 
       expect(mockedAxios.delete).toHaveBeenCalledWith('delete-url');
+
+      // Recording is deleted only after the summary is final (post-summary
+      // task, off the request path).
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(audioUploadsService.cleanupStoredAudio).toHaveBeenCalledWith(
+        chatId,
+      );
     });
 
     it('should process inline transcription and summary when both are provided', async () => {
@@ -305,6 +323,9 @@ describe('ChatTranscriptService', () => {
       expect(notifyStored).toHaveBeenCalledWith(
         expect.objectContaining({ chatId, messageCount: 1 }),
       );
+      // ...and the recording is NOT deleted (kept until the summary is final).
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(audioUploadsService.cleanupStoredAudio).not.toHaveBeenCalled();
     });
 
     it('should mark chat as FAILED if S3 download fails', async () => {

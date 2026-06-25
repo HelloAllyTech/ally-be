@@ -38,7 +38,13 @@ export enum ChatEvents {
 // result is lost (worker crash, dropped SQS message, an AI-service error that
 // never reports back) the chat would sit on "Processing" forever. The reaper
 // marks any chat still PENDING/IN_PROGRESS past this TTL as FAILED.
-export const CHAT_SUMMARY_TIMEOUT_MINUTES = 30;
+//
+// Summaries normally complete in 2-4 min, so 5 min is a tight fail-fast. This
+// is only safe because the transcript is delivered+stored BEFORE the summary
+// (two-phase) and the audio is kept until success — so failing fast loses
+// nothing: a late summary still flips FAILED->SUCCESS, and a genuine timeout is
+// marked retryable (transcript present) for the auto-retry cron / manual retry.
+export const CHAT_SUMMARY_TIMEOUT_MINUTES = 5;
 
 // Only recordings created within this window are eligible for the one-time
 // reprocess backfill; older stuck chats are left for the reaper to fail since

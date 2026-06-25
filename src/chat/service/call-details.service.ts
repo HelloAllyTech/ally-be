@@ -7,6 +7,7 @@ import { ChatRepository } from '../repository/chat.repository';
 import { MessageService } from './message.service';
 import { BroadcastMessageService } from '../../audio/service/broadcast-message.service';
 import { StreamFileProcessorService } from '../../audio/service/stream-file-processor.service';
+import { ChatAudioUploadsService } from '../../audio/service/chat-audio-uploads.service';
 import { AiService } from '../../ai/service/ai.service';
 import { RedisService } from '../../redis/service/redis.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
@@ -48,6 +49,7 @@ export class CallDetailsService {
     private broadcastMessageService: BroadcastMessageService,
     private streamFileProcessorService: StreamFileProcessorService,
     private customFieldsService: CustomFieldsService,
+    private chatAudioUploadsService: ChatAudioUploadsService,
   ) {}
 
   async handleChatEnded(chat: Chat) {
@@ -178,6 +180,19 @@ export class CallDetailsService {
         >,
       });
       this.logger.info(`Summary retry succeeded for chat ${chatId}`);
+      // Summary is final — drop the recording now that recovery is no longer
+      // needed. Best-effort.
+      if (!this.config.isDevelopment) {
+        try {
+          await this.chatAudioUploadsService.cleanupStoredAudio(chatId);
+        } catch (err) {
+          this.logger.error(
+            `Failed to delete stored audio after summary retry for chat ${chatId}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
       return { success: true, message: 'Summary generated' };
     } catch (err) {
       const attempts = (Number(metadata.summaryRetryAttempts) || 0) + 1;

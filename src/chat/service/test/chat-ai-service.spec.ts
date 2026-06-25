@@ -433,17 +433,12 @@ describe('ChatAiService', () => {
       expect(mockChatService.updateMessageStatistics).toHaveBeenCalledWith(
         mockChat,
       );
-      expect(mockS3Service.deleteObject).toHaveBeenCalledWith({
-        bucket: 'test-audio-bucket',
-        key: 'audio/test-chat-1.wav',
-      });
+      // The recording is preserved at transcript time so a summary timeout or
+      // failure stays recoverable; it is deleted only on summary success.
+      expect(mockS3Service.deleteObject).not.toHaveBeenCalled();
       expect(
         mockChatAudioUploadsService.updateAudioUpload,
-      ).toHaveBeenCalledWith(1, {
-        storageKey: null,
-        sampleRate: null,
-        format: null,
-      });
+      ).not.toHaveBeenCalled();
     });
 
     it('is idempotent: skips insert when a transcript already exists', async () => {

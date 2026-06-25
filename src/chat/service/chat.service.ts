@@ -54,6 +54,7 @@ import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 import { SummaryFeedbackRepository } from '../repository/summary-feedback.repository';
 import { CallDetailsRepository } from '../repository/call-details.repository';
 import { MessageRepository } from '../repository/message.repository';
+import { MessageType } from '../entity/message.entity';
 import { ChatUtil } from '../util/chat.util';
 import { ChatAudioUploadsService } from 'src/audio/service/chat-audio-uploads.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -708,38 +709,73 @@ export class ChatService {
 
     if (staleChats.length === 0) return;
 
-    try {
-      const result = await this.chatRepository.update(
-        {
-          id: In(staleChats.map((chat) => chat.id)),
-          summaryStatus: In(ChatService.PENDING_SUMMARY_STATUSES),
-        },
-        {
-          summaryStatus: ChatSummaryStatus.FAILED,
-          metadata: { error: CHAT_SUMMARY_TIMEOUT_ERROR } as Record<
-            string,
-            any
-          >,
-        },
-      );
+    // Per chat: if the transcript was already stored (two-phase delivery),
+    // failing the summary is recoverable — mark it retryable so the auto-retry
+    // cron / manual retry can regenerate the summary from the saved transcript.
+    // Only chats with no transcript are a dead failure.
+    const retryableIds: number[] = [];
+    const deadIds: number[] = [];
 
-      if (result.affected && result.affected > 0) {
-        this.logger.info(
-          `Marked ${result.affected} stale chat(s) as FAILED after exceeding the ${CHAT_SUMMARY_TIMEOUT_MINUTES}min summary TTL`,
+    for (const chat of staleChats) {
+      try {
+        const hasTranscript =
+          (await this.messageRepository.count({
+            where: { chatId: chat.id, type: MessageType.TEXT },
+          })) > 0;
+
+        const existingMetadata =
+          (chat.metadata as Record<string, any> | undefined) ?? {};
+
+        // The status guard makes this a no-op if the chat raced to SUCCESS
+        // (e.g. a late phase-2 summary landed) between selection and update —
+        // so a slow-but-successful summary is never clobbered back to FAILED.
+        const result = await this.chatRepository.update(
+          {
+            id: chat.id,
+            summaryStatus: In(ChatService.PENDING_SUMMARY_STATUSES),
+          },
+          {
+            summaryStatus: ChatSummaryStatus.FAILED,
+            metadata: hasTranscript
+              ? ({
+                  ...existingMetadata,
+                  error: CHAT_SUMMARY_TIMEOUT_ERROR,
+                  summaryRetryable: true,
+                  summaryRetryAttempts: Number(
+                    existingMetadata.summaryRetryAttempts ?? 0,
+                  ),
+                } as Record<string, any>)
+              : ({ error: CHAT_SUMMARY_TIMEOUT_ERROR } as Record<string, any>),
+          },
         );
-        await this.notificationService.notifyTranscriptionFailure({
-          stage: 'summary-timeout',
-          mode: 'summary-timeout',
-          reason: `No transcription result received within ${CHAT_SUMMARY_TIMEOUT_MINUTES} minutes (dropped/never-delivered AI-service result; check ally-ai logs by correlationId)`,
-          chatIds: staleChats.map((chat) => chat.id),
-        });
+
+        if (result.affected && result.affected > 0) {
+          (hasTranscript ? retryableIds : deadIds).push(chat.id);
+        }
+      } catch (error) {
+        this.logger.error(
+          `Failed to mark stale chat ${chat.id} as FAILED: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
-    } catch (error) {
-      this.logger.error(
-        `Failed to mark stale chats as FAILED: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+    }
+
+    const total = retryableIds.length + deadIds.length;
+    if (total > 0) {
+      this.logger.info(
+        `Marked ${total} stale chat(s) FAILED after the ${CHAT_SUMMARY_TIMEOUT_MINUTES}min summary TTL ` +
+          `(retryable/transcript-saved: ${retryableIds.length}, no-transcript: ${deadIds.length})`,
       );
+      await this.notificationService.notifyTranscriptionFailure({
+        stage: 'summary-timeout',
+        mode: 'summary-timeout',
+        reason:
+          `No summary within ${CHAT_SUMMARY_TIMEOUT_MINUTES} minutes. ` +
+          `Retryable (transcript saved): ${retryableIds.length}; ` +
+          `no transcript (check ally-ai logs by correlationId): ${deadIds.length}`,
+        chatIds: [...retryableIds, ...deadIds],
+      });
     }
   }
 

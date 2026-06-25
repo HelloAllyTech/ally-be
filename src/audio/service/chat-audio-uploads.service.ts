@@ -120,6 +120,36 @@ export class ChatAudioUploadsService {
     return result;
   }
 
+  /**
+   * Deletes the stored audio from S3 and clears the storageKey on the row so
+   * the DB never claims audio that is already gone. Best-effort and idempotent:
+   * returns false when there is nothing to delete.
+   *
+   * Call this ONLY once the summary is final (first-pass SUCCESS, manual retry,
+   * or auto-retry). Until then the recording is kept so a summary timeout or
+   * failure can be recovered by re-transcribing/re-summarising.
+   */
+  async cleanupStoredAudio(chatId: number): Promise<boolean> {
+    const deleted = await this.deleteUploadedAudioFile(chatId);
+    if (!deleted) {
+      return false;
+    }
+    try {
+      await this.updateAudioUpload(chatId, {
+        storageKey: null,
+        sampleRate: null,
+        format: null,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Audio deleted from S3 but failed to clear storageKey for chatId: ${chatId} with error ${JSON.stringify(
+          error,
+        )}`,
+      );
+    }
+    return true;
+  }
+
   async deleteUploadedAudioFile(chatId: number): Promise<boolean> {
     const uploadedAudioFile = await this.getAudioUpload(chatId);
     if (!uploadedAudioFile?.storageKey) {

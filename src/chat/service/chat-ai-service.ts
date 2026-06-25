@@ -164,34 +164,11 @@ export class ChatAiService {
       this.logger.info(
         `Transcript added for chatId: ${chat.id} from ai service`,
       );
-      const uploadedAudioFile =
-        await this.chatAudioUploadsService.getAudioUpload(chat.id);
-      if (
-        !this.config.isDevelopment &&
-        uploadedAudioFile &&
-        uploadedAudioFile.storageKey
-      ) {
-        this.logger.info(
-          `Deleting audio file for chatId: ${chat.id} from ai service`,
-        );
-        await this.s3Service.deleteObject({
-          bucket: this.config.s3.audioBucket!,
-          key: uploadedAudioFile.storageKey,
-        });
-        await this.chatAudioUploadsService.updateAudioUpload(chat.id, {
-          storageKey: null,
-          sampleRate: null,
-          format: null,
-        });
-        this.auditLogger.log({
-          eventType: AUDIT_EVENTS.AUDIO_UPLOAD_CLEANUP_S3_FILES,
-          tenantId: chat.tenantId,
-          userId: chat.counselorId!,
-          details: {
-            chatId: chat.id,
-          },
-        });
-      }
+      // NOTE: the recording is intentionally NOT deleted here. It is kept until
+      // the summary is final (SUCCESS on first pass, a manual retry, or
+      // auto-retry) so a summary timeout/failure can be recovered by
+      // re-transcribing/re-summarising. Deletion happens on summary success via
+      // ChatAudioUploadsService.cleanupStoredAudio.
       return true;
     } catch (error) {
       this.logger.error(

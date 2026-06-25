@@ -358,4 +358,40 @@ describe('ChatAudioUploadsService', () => {
       });
     });
   });
+
+  describe('cleanupStoredAudio', () => {
+    it('deletes the audio and clears the storageKey on the row', async () => {
+      const chatId = 456;
+      repository.findOne.mockResolvedValue(mockAudioUpload);
+      s3Service.deleteObject.mockResolvedValue({} as any);
+      repository.update.mockResolvedValue({} as any);
+
+      const result = await service.cleanupStoredAudio(chatId);
+
+      expect(result).toBe(true);
+      expect(s3Service.deleteObject).toHaveBeenCalledWith({
+        bucket: 'test-bucket',
+        key: 'test-key',
+      });
+      expect(repository.update).toHaveBeenCalledWith(
+        { chatId },
+        expect.objectContaining({
+          storageKey: null,
+          sampleRate: null,
+          format: null,
+        }),
+      );
+    });
+
+    it('is a no-op (returns false) when there is no stored audio', async () => {
+      const chatId = 456;
+      repository.findOne.mockResolvedValue(null);
+
+      const result = await service.cleanupStoredAudio(chatId);
+
+      expect(result).toBe(false);
+      expect(s3Service.deleteObject).not.toHaveBeenCalled();
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+  });
 });

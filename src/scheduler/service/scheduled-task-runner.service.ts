@@ -9,6 +9,11 @@ export class ScheduledTaskRunnerService {
     ScheduledTaskRunnerService.name,
   );
 
+  @Cron(`0 */5 * * * *`)
+  async runFiveMinuteTasks(): Promise<void> {
+    await this.runTasksForInterval('5min');
+  }
+
   @Cron(`0 */30 * * * *`)
   async runThirtyMinuteTasks(): Promise<void> {
     await this.runTasksForInterval('30min');

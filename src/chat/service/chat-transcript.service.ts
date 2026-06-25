@@ -10,6 +10,7 @@ import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { FlattenedSummaryNotePayload } from '../type/call.details.type';
 import { CallDetailsService } from './call-details.service';
 import { NotificationService } from '../../notification/service/notification.service';
+import { ChatAudioUploadsService } from '../../audio/service/chat-audio-uploads.service';
 
 @Injectable()
 export class ChatTranscriptService {
@@ -22,6 +23,7 @@ export class ChatTranscriptService {
     @Inject(forwardRef(() => CallDetailsService))
     private readonly callDetailsService: CallDetailsService,
     private readonly notificationService: NotificationService,
+    private readonly chatAudioUploadsService: ChatAudioUploadsService,
   ) {}
 
   async processTranscribeResult(params: {
@@ -275,6 +277,25 @@ export class ChatTranscriptService {
       );
     }
     await this.chatAiService.sendSummaryReadyEmail(chatId);
+    // Summary is final — the recording is no longer needed. Delete it now
+    // (best-effort) now that it can no longer be needed for recovery.
+    if (!this.config.isDevelopment) {
+      try {
+        const cleaned =
+          await this.chatAudioUploadsService.cleanupStoredAudio(chatId);
+        if (cleaned) {
+          this.logger.info(
+            `Deleted stored audio after summary success for chat ${chatId} correlationId=${correlationId}`,
+          );
+        }
+      } catch (err) {
+        this.logger.error(
+          `Failed to delete stored audio after summary success for chat ${chatId} correlationId=${correlationId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
   }
 
   private async downloadFromS3(s3Path: string): Promise<any> {
