@@ -87,6 +87,28 @@ export class NotificationService {
   }
 
   /**
+   * Confirmation that a session's transcript was generated and stored (phase 1
+   * of two-phase delivery) BEFORE summarisation. Lets us verify in Slack that
+   * the transcript is safely persisted independently of the summary outcome.
+   */
+  async notifyTranscriptStored(params: {
+    chatId: number;
+    correlationId?: string;
+    messageCount?: number;
+  }) {
+    const { chatId, correlationId, messageCount } = params;
+    const lines = [
+      `:page_facing_up: *Scribe transcript stored* _(summary pending)_`,
+      `• Chat ${chatId}`,
+    ];
+    if (typeof messageCount === 'number') {
+      lines.push(`• Messages: ${messageCount}`);
+    }
+    if (correlationId) lines.push(`• Correlation ID: \`${correlationId}\``);
+    await this.slackService.sendMessage(lines.join('\n'));
+  }
+
+  /**
    * Summary alert for the one-time stuck-chat reprocess backfill: how many were
    * re-dispatched for transcription vs. marked FAILED (no recoverable audio).
    */

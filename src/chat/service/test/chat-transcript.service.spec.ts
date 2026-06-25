@@ -69,6 +69,7 @@ describe('ChatTranscriptService', () => {
           provide: NotificationService,
           useValue: {
             notifyTranscriptionFailure: jest.fn(),
+            notifyTranscriptStored: jest.fn(),
           },
         },
       ],
@@ -262,6 +263,47 @@ describe('ChatTranscriptService', () => {
       );
       expect(notify).toHaveBeenCalledWith(
         expect.objectContaining({ chatId, mode: 'explicit-failure' }),
+      );
+    });
+
+    it('phase 1: stores the transcript and keeps IN_PROGRESS (transcript only, no summary, no error)', async () => {
+      chatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+      const notify = (service as any).notificationService
+        .notifyTranscriptionFailure as jest.Mock;
+      const notifyStored = (service as any).notificationService
+        .notifyTranscriptStored as jest.Mock;
+
+      const transcription = [
+        { role: 'client', content: 'hello world', start_time: 0, end_time: 2 },
+      ];
+
+      // ally-ai delivered ONLY the transcript (phase 1); summary still pending.
+      await service.processTranscribeResult({
+        chatId,
+        transcription,
+        correlationId: 'corr-1',
+      });
+
+      // Transcript is saved...
+      expect(chatAiService.addTranscript).toHaveBeenCalledWith(
+        mockChat,
+        transcription,
+      );
+      // ...summary is not touched...
+      expect(chatAiService.addSummary).not.toHaveBeenCalled();
+      // ...the chat stays IN_PROGRESS (NOT failed) and is flagged transcriptReady.
+      expect(chatService.updateChat).toHaveBeenCalledWith(
+        chatId,
+        expect.objectContaining({
+          summaryStatus: ChatSummaryStatus.IN_PROGRESS,
+          metadata: expect.objectContaining({ transcriptReady: true }),
+        }),
+      );
+      // ...and no failure alert is raised for a normal phase-1 delivery.
+      expect(notify).not.toHaveBeenCalled();
+      // ...but a confirmation ping IS sent that the transcript is stored.
+      expect(notifyStored).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId, messageCount: 1 }),
       );
     });
 

@@ -121,6 +121,19 @@ export class ChatAiService {
         tenantId: chat.tenantId,
       });
 
+      // Idempotency: with two-phase delivery (transcript first, then summary)
+      // and SQS redrive, the transcript can be delivered more than once. If it
+      // is already stored, do nothing — never duplicate the transcript.
+      const existingTranscriptCount = await this.messageRepository.count({
+        where: { chatId: chat.id, type: MessageType.TEXT },
+      });
+      if (existingTranscriptCount > 0) {
+        this.logger.info(
+          `Transcript already present for chatId: ${chat.id}; skipping duplicate insert`,
+        );
+        return true;
+      }
+
       const formattedMessages = messages.map(async (message) => {
         const encryptedContent = await this.cryptoService.encrypt(
           message.content,

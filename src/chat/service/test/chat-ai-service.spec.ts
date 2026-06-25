@@ -50,6 +50,7 @@ describe('ChatAiService', () => {
   let mockMessageRepository: {
     create: jest.Mock;
     save: jest.Mock;
+    count: jest.Mock;
   };
   let mockChatService: {
     updateMessageStatistics: jest.Mock;
@@ -176,6 +177,7 @@ describe('ChatAiService', () => {
     mockMessageRepository = {
       create: jest.fn(),
       save: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
     };
 
     mockChatService = {
@@ -442,6 +444,19 @@ describe('ChatAiService', () => {
         sampleRate: null,
         format: null,
       });
+    });
+
+    it('is idempotent: skips insert when a transcript already exists', async () => {
+      // Two-phase delivery (transcript first, then summary) and SQS redrive can
+      // deliver the transcript more than once — it must never be duplicated.
+      mockMessageRepository.count.mockResolvedValue(2);
+
+      const result = await service.addTranscript(mockChat, mockMessageRequests);
+
+      expect(result).toBe(true);
+      expect(mockMessageRepository.create).not.toHaveBeenCalled();
+      expect(mockMessageRepository.save).not.toHaveBeenCalled();
+      expect(mockS3Service.deleteObject).not.toHaveBeenCalled();
     });
 
     it('should add transcript successfully in development without S3 cleanup', async () => {

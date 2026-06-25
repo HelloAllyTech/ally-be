@@ -125,18 +125,53 @@ export class ChatTranscriptService {
           `process-transcript acked SUCCESS for chat ${chatId} correlationId=${effectiveCorrelationId} elapsedMs=${Date.now() - startedAt}`,
         );
         void this.runPostSummaryTasks(chat, chatId, effectiveCorrelationId);
-      } else {
-        // Transcript saved, but summary generation failed upstream. Keep the
-        // transcript viewable and mark the summary retryable (manual button +
-        // cron auto-retry) rather than failing the whole chat.
+      } else if (error) {
+        // Summary generation failed upstream (transcript was delivered). Keep
+        // the transcript viewable and mark the summary retryable (manual button
+        // + cron auto-retry) rather than failing the whole chat.
         await this.markSummaryRetryable(chatId, chat, {
-          reason: error ?? 'Summary generation failed',
+          reason: error,
           stage: stage ?? 'summarize',
           correlationId: effectiveCorrelationId,
         });
         this.logger.info(
           `process-transcript saved transcript; summary FAILED (retryable) for chat ${chatId} correlationId=${effectiveCorrelationId}`,
         );
+      } else {
+        // Phase 1 of two-phase delivery: the transcript arrived on its own and
+        // the summary is still being generated. The transcript is now SAVED, so
+        // it can never be lost to a slow/hung/failed summary. Keep the chat
+        // IN_PROGRESS (the reaper still guards a genuinely stuck summary) and
+        // record that the transcript is ready. Preserve existing metadata.
+        const existingMetadata =
+          (chat.metadata as Record<string, any> | undefined) ?? {};
+        await this.chatService.updateChat(chatId, {
+          summaryStatus: ChatSummaryStatus.IN_PROGRESS,
+          metadata: {
+            ...existingMetadata,
+            correlationId:
+              effectiveCorrelationId ?? existingMetadata.correlationId,
+            transcriptReady: true,
+          } as Record<string, any>,
+        });
+        this.logger.info(
+          `process-transcript stored transcript (phase 1); summary pending for chat ${chatId} correlationId=${effectiveCorrelationId}`,
+        );
+        // Confirmation ping: transcript is safely stored before summarisation.
+        // Best-effort — a Slack hiccup must never affect the stored transcript.
+        try {
+          await this.notificationService.notifyTranscriptStored({
+            chatId,
+            correlationId: effectiveCorrelationId,
+            messageCount: tx.length,
+          });
+        } catch (notifyErr) {
+          this.logger.error(
+            `Failed to send transcript-stored Slack alert for chat ${chatId} correlationId=${effectiveCorrelationId}: ${
+              notifyErr instanceof Error ? notifyErr.message : String(notifyErr)
+            }`,
+          );
+        }
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : JSON.stringify(err);
