@@ -19,6 +19,7 @@ import {
   CancelUploadRequestDto,
 } from 'src/chat/dto/audio-upload.dto';
 import { ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
+import { MAX_STUCK_REPROCESS_ATTEMPTS } from '../../constants/chat.constants';
 
 import { UserService } from 'src/user/service/user.service';
 import { AudioUploadService } from '../audio-upload.service';
@@ -70,6 +71,8 @@ describe('AudioUploadService', () => {
             createChatForAnonymousClient: jest.fn(),
             getChatByIdForServiceCall: jest.fn(),
             updateChat: jest.fn(),
+            findReprocessableStuckChats: jest.fn(),
+            getChatWithCallDetails: jest.fn(),
           },
         },
         {
@@ -90,6 +93,7 @@ describe('AudioUploadService', () => {
           provide: ChatAudioUploadsService,
           useValue: {
             createAudioUpload: jest.fn(),
+            getAudioUpload: jest.fn(),
           },
         },
         {
@@ -529,6 +533,88 @@ describe('AudioUploadService', () => {
         status: ChatStatus.CANCELLED,
         summaryStatus: ChatSummaryStatus.NO_AUDIO,
       });
+    });
+  });
+
+  describe('reprocessStuckChats (scheduled recovery)', () => {
+    it('re-transcribes a stuck chat from stored audio (preserving the transcript) instead of failing it', async () => {
+      chatService.findReprocessableStuckChats.mockResolvedValue([
+        { id: 700, metadata: {} },
+      ] as any);
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue({
+        storageKey: 'audio/700.wav',
+        sampleRate: 16000,
+      } as any);
+      s3Service.getHeadObject.mockResolvedValue({} as any);
+      s3Service.generatePresignedUrl.mockResolvedValue('https://signed');
+      chatService.getChatWithCallDetails.mockResolvedValue({
+        callDetails: { callInfo: { mode: 'SCRIBE', isLinear16Encoded: true } },
+      } as any);
+
+      const result = await service.reprocessStuckChats();
+
+      // Re-dispatched with the mode + linear16 flag so mobile audio decodes
+      // correctly on re-transcription.
+      expect(aiEventService.publishTranscribeAudioEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_id: 700,
+          sample_rate: 16000,
+          mode: 'SCRIBE',
+          is_linear16_encoded: true,
+        }),
+      );
+      // Set back to PENDING with the attempt counter incremented (not FAILED).
+      expect(chatService.updateChat).toHaveBeenCalledWith(700, {
+        summaryStatus: ChatSummaryStatus.PENDING,
+        metadata: { reprocessAttempts: 1 },
+      });
+      expect(result.reprocessed).toContain(700);
+    });
+
+    it('marks FAILED (no re-dispatch) once the reprocess attempts are exhausted', async () => {
+      chatService.findReprocessableStuckChats.mockResolvedValue([
+        {
+          id: 701,
+          metadata: { reprocessAttempts: MAX_STUCK_REPROCESS_ATTEMPTS },
+        },
+      ] as any);
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue({
+        storageKey: 'audio/701.wav',
+      } as any);
+
+      const result = await service.reprocessStuckChats();
+
+      expect(aiEventService.publishTranscribeAudioEvent).not.toHaveBeenCalled();
+      expect(chatService.updateChat).toHaveBeenCalledWith(
+        701,
+        expect.objectContaining({ summaryStatus: ChatSummaryStatus.FAILED }),
+      );
+      expect(result.failed).toContain(701);
+    });
+
+    it('marks FAILED when there is no recoverable audio', async () => {
+      chatService.findReprocessableStuckChats.mockResolvedValue([
+        { id: 702, metadata: {} },
+      ] as any);
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue(null as any);
+
+      const result = await service.reprocessStuckChats();
+
+      expect(aiEventService.publishTranscribeAudioEvent).not.toHaveBeenCalled();
+      expect(chatService.updateChat).toHaveBeenCalledWith(
+        702,
+        expect.objectContaining({ summaryStatus: ChatSummaryStatus.FAILED }),
+      );
+      expect(result.failed).toContain(702);
+    });
+
+    it('stays quiet when nothing is stuck', async () => {
+      chatService.findReprocessableStuckChats.mockResolvedValue([]);
+
+      const result = await service.reprocessStuckChats();
+
+      expect(result).toEqual({ reprocessed: [], failed: [] });
+      expect(aiEventService.publishTranscribeAudioEvent).not.toHaveBeenCalled();
     });
   });
 });

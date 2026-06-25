@@ -51,6 +51,7 @@ import { SummaryFeedbackDto } from '../dto/summary-feedback.dto';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ChatTranscriptService } from '../service/chat-transcript.service';
+import { AudioUploadService } from '../service/audio-upload.service';
 import { TranscriptRequestDto } from '../dto/transcript.dto';
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { ToggleArchiveStatusDto } from '../dto/toggle-archive-status.dto';
@@ -65,6 +66,7 @@ export class ChatController {
     private readonly feedbackService: FeedbackService,
     private readonly chatSummaryService: ChatSummaryService,
     private readonly chatTranscriptService: ChatTranscriptService,
+    private readonly audioUploadService: AudioUploadService,
   ) {}
 
   @AuthPermissions([PERMISSIONS.VIEW_CHAT])
@@ -532,18 +534,33 @@ export class ChatController {
   }
 
   @ApiOperation({
-    summary: 'Retry summary generation from the saved transcript',
+    summary: 'Retry a failed summary — regenerate, or re-transcribe if needed',
   })
   @ApiResponse({
     status: 200,
     description:
-      'Regenerates the summary for a chat whose transcript was saved but ' +
-      'whose summary previously failed',
+      'If a transcript exists, regenerates the summary from it; if the ' +
+      'session never produced a transcript, re-transcribes from the stored ' +
+      'audio so it can recover both failure modes',
   })
   @AuthPermissions([PERMISSIONS.EDIT_SUMMARY])
   @Post(':id/retry-summary')
   async retrySummary(@Param('id', ParseIntPipe) id: number) {
-    return this.service.retrySummary(id);
+    const result = await this.service.retrySummary(id);
+
+    // No transcript to summarise from → recover by re-transcribing from the
+    // stored audio (the same "Retry" action handles both failure modes).
+    if (result.needsReprocess) {
+      const reprocess = await this.audioUploadService.reprocessChatById(id);
+      return {
+        success: reprocess.reprocessed,
+        message: reprocess.reprocessed
+          ? 'No transcript found — re-transcribing the recording'
+          : (reprocess.reason ?? 'Could not recover this session'),
+      };
+    }
+
+    return result;
   }
 
   @ApiOperation({ summary: 'Get chat summary for message' })

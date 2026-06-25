@@ -34,16 +34,25 @@ export enum ChatEvents {
 }
 
 // A chat's summary is produced asynchronously by the AI service; the chat only
-// leaves PENDING when a transcribe/summarize result is posted back. If that
-// result is lost (worker crash, dropped SQS message, an AI-service error that
-// never reports back) the chat would sit on "Processing" forever. The reaper
-// marks any chat still PENDING/IN_PROGRESS past this TTL as FAILED.
-export const CHAT_SUMMARY_TIMEOUT_MINUTES = 30;
+// leaves PENDING when a transcribe/summarize result is posted back. Generation
+// normally completes in 2-4 min, so if nothing has come back after this TTL the
+// chat is marked FAILED rather than left on "Processing". The reaper runs on the
+// 5-min bucket, so a stuck chat is failed within ~5-10 min (not the old 30).
+// The transcript, when the AI delivered one, is preserved separately and the
+// user can retry summary generation.
+export const CHAT_SUMMARY_TIMEOUT_MINUTES = 5;
 
-// Only recordings created within this window are eligible for the one-time
-// reprocess backfill; older stuck chats are left for the reaper to fail since
-// their source audio has very likely been aged out of storage.
+// Only recordings created within this window are eligible for the
+// reprocess job; older stuck chats are failed since their source audio has
+// very likely been aged out of storage.
 export const CHAT_REPROCESS_LOOKBACK_DAYS = 60;
+
+// A stuck session is re-transcribed from its stored audio (rather than
+// dead-marked FAILED) up to this many times. Only after exhausting these
+// attempts — or when there is no audio to recover from — is it marked FAILED.
+// This bounds the scheduled recovery so a permanently-dropping session can't
+// be re-dispatched forever.
+export const MAX_STUCK_REPROCESS_ATTEMPTS = 3;
 
 // Marker the reaper writes to metadata.error when it fails a chat purely for
 // exceeding the summary TTL. The reprocess backfill matches on this so it can

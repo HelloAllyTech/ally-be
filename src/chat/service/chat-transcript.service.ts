@@ -125,17 +125,37 @@ export class ChatTranscriptService {
           `process-transcript acked SUCCESS for chat ${chatId} correlationId=${effectiveCorrelationId} elapsedMs=${Date.now() - startedAt}`,
         );
         void this.runPostSummaryTasks(chat, chatId, effectiveCorrelationId);
-      } else {
-        // Transcript saved, but summary generation failed upstream. Keep the
-        // transcript viewable and mark the summary retryable (manual button +
-        // cron auto-retry) rather than failing the whole chat.
+      } else if (error) {
+        // Summary generation failed upstream (transcript was delivered). Keep
+        // the transcript viewable and mark the summary retryable (manual button
+        // + cron auto-retry) rather than failing the whole chat.
         await this.markSummaryRetryable(chatId, chat, {
-          reason: error ?? 'Summary generation failed',
+          reason: error,
           stage: stage ?? 'summarize',
           correlationId: effectiveCorrelationId,
         });
         this.logger.info(
           `process-transcript saved transcript; summary FAILED (retryable) for chat ${chatId} correlationId=${effectiveCorrelationId}`,
+        );
+      } else {
+        // Phase 1 of two-phase delivery: the transcript arrived on its own and
+        // the summary is still being generated. Keep the chat IN_PROGRESS so
+        // the reaper can still time out a slow summary — and because the
+        // transcript now exists, that timeout will mark it retryable (not a
+        // dead failure). Preserve existing metadata (e.g. correlationId).
+        const existingMetadata =
+          (chat.metadata as Record<string, any> | undefined) ?? {};
+        await this.chatService.updateChat(chatId, {
+          summaryStatus: ChatSummaryStatus.IN_PROGRESS,
+          metadata: {
+            ...existingMetadata,
+            correlationId:
+              effectiveCorrelationId ?? existingMetadata.correlationId,
+            transcriptReady: true,
+          } as Record<string, any>,
+        });
+        this.logger.info(
+          `process-transcript stored transcript (phase 1); summary pending for chat ${chatId} correlationId=${effectiveCorrelationId}`,
         );
       }
     } catch (err) {

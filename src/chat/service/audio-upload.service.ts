@@ -8,7 +8,7 @@ import { ChatService } from './chat.service';
 import { S3Service } from '../../aws/service/s3.service';
 import { AiEventService } from '../../ai/service/ai-event.service';
 import { ChatAudioUploadsService } from '../../audio/service/chat-audio-uploads.service';
-import { ChatStatus, ChatSummaryStatus } from '../entity/chat.entity';
+import { Chat, ChatStatus, ChatSummaryStatus } from '../entity/chat.entity';
 import {
   AudioUploadRequestDto,
   AudioUploadResponseDto,
@@ -22,6 +22,7 @@ import {
   SUPPORTED_AUDIO_FILE_TYPES,
   UPLOADED_AUDIO_FILE_SIZE_LIMIT,
   CHAT_REPROCESS_LOOKBACK_DAYS,
+  MAX_STUCK_REPROCESS_ATTEMPTS,
 } from '../constants/chat.constants';
 import { ChatAudioUploadStatus } from '../../audio/entity/chat-audio-uploads.entity';
 import {
@@ -327,6 +328,10 @@ export class AudioUploadService {
     failed: number[];
   }> {
     const stuckChats = await this.chatService.findReprocessableStuckChats();
+    if (stuckChats.length === 0) {
+      // Nothing stuck this cycle — stay quiet (this runs on a schedule).
+      return { reprocessed: [], failed: [] };
+    }
     this.logger.info(
       `Reprocess backfill: ${stuckChats.length} stuck chat(s) within the last ${CHAT_REPROCESS_LOOKBACK_DAYS} days`,
     );
@@ -336,59 +341,8 @@ export class AudioUploadService {
 
     for (const chat of stuckChats) {
       try {
-        const audio = await this.chatAudioUploadsService.getAudioUpload(
-          chat.id,
-        );
-
-        if (!audio?.storageKey) {
-          await this.chatService.updateChat(chat.id, {
-            summaryStatus: ChatSummaryStatus.FAILED,
-            metadata: { error: 'Stuck with no stored audio to reprocess' },
-          });
-          failed.push(chat.id);
-          continue;
-        }
-
-        // Confirm the object still exists before re-dispatching.
-        try {
-          await this.s3Service.getHeadObject({
-            bucket: process.env.AUDIO_STORAGE_S3_BUCKET!,
-            key: audio.storageKey,
-          });
-        } catch {
-          await this.chatService.updateChat(chat.id, {
-            summaryStatus: ChatSummaryStatus.FAILED,
-            metadata: { error: 'Audio no longer present in storage' },
-          });
-          failed.push(chat.id);
-          continue;
-        }
-
-        const audioUrl = await this.s3Service.generatePresignedUrl({
-          bucket: process.env.AUDIO_STORAGE_S3_BUCKET!,
-          key: audio.storageKey,
-          operation: 'get',
-          expiresIn: 3600,
-          audience: 'internal',
-        });
-
-        await this.aiEventService.publishTranscribeAudioEvent({
-          message_type: 'transcribe_and_summarize_request',
-          chat_id: chat.id,
-          timestamp: Date.now(),
-          audio_url: audioUrl,
-        });
-
-        // Touch the row so updatedAt resets and the reaper gives this freshly
-        // re-dispatched chat a full TTL window to complete.
-        await this.chatService.updateChat(chat.id, {
-          summaryStatus: ChatSummaryStatus.PENDING,
-        });
-
-        reprocessed.push(chat.id);
-        this.logger.info(
-          `Re-dispatched stuck chat ${chat.id} for transcription`,
-        );
+        const result = await this.reprocessChat(chat);
+        (result.reprocessed ? reprocessed : failed).push(chat.id);
       } catch (error) {
         this.logger.error(
           `Failed to reprocess stuck chat ${chat.id}: ${
@@ -405,6 +359,125 @@ export class AudioUploadService {
     });
 
     return { reprocessed, failed };
+  }
+
+  /**
+   * Re-dispatch transcription for a SINGLE chat from its stored audio — the
+   * shared engine behind the backfill above and the "retry when there is no
+   * transcript" fallback. Re-runs the whole pipeline (download → transcribe →
+   * diarize → summarize) so the chat gets a real transcript + summary. Bounded
+   * by MAX_STUCK_REPROCESS_ATTEMPTS; marks the chat FAILED when there is no
+   * recoverable audio or the attempts are exhausted.
+   */
+  async reprocessChat(
+    chat: Chat,
+  ): Promise<{ reprocessed: boolean; reason?: string }> {
+    const existingMetadata =
+      (chat.metadata as Record<string, any> | undefined) ?? {};
+    const attempts = Number(existingMetadata.reprocessAttempts) || 0;
+
+    const audio = await this.chatAudioUploadsService.getAudioUpload(chat.id);
+
+    if (!audio?.storageKey) {
+      await this.chatService.updateChat(chat.id, {
+        summaryStatus: ChatSummaryStatus.FAILED,
+        metadata: {
+          ...existingMetadata,
+          error: 'Stuck with no stored audio to reprocess',
+        },
+      });
+      return { reprocessed: false, reason: 'No stored audio to reprocess' };
+    }
+
+    // Bound the recovery: after enough attempts a session that keeps dropping
+    // its result is genuinely stuck — stop re-dispatching and mark it FAILED.
+    if (attempts >= MAX_STUCK_REPROCESS_ATTEMPTS) {
+      await this.chatService.updateChat(chat.id, {
+        summaryStatus: ChatSummaryStatus.FAILED,
+        metadata: {
+          ...existingMetadata,
+          error: `Still no result after ${MAX_STUCK_REPROCESS_ATTEMPTS} reprocess attempts`,
+        },
+      });
+      return {
+        reprocessed: false,
+        reason: `Exhausted ${MAX_STUCK_REPROCESS_ATTEMPTS} reprocess attempts`,
+      };
+    }
+
+    // Confirm the object still exists before re-dispatching.
+    try {
+      await this.s3Service.getHeadObject({
+        bucket: process.env.AUDIO_STORAGE_S3_BUCKET!,
+        key: audio.storageKey,
+      });
+    } catch {
+      await this.chatService.updateChat(chat.id, {
+        summaryStatus: ChatSummaryStatus.FAILED,
+        metadata: {
+          ...existingMetadata,
+          error: 'Audio no longer present in storage',
+        },
+      });
+      return {
+        reprocessed: false,
+        reason: 'Audio no longer present in storage',
+      };
+    }
+
+    const audioUrl = await this.s3Service.generatePresignedUrl({
+      bucket: process.env.AUDIO_STORAGE_S3_BUCKET!,
+      key: audio.storageKey,
+      operation: 'get',
+      expiresIn: 3600,
+      audience: 'internal',
+    });
+
+    // Carry the mode + linear16 flag so a mobile (raw PCM) recording is
+    // re-decoded correctly on re-transcription instead of producing noise.
+    const { callDetails } = await this.chatService.getChatWithCallDetails(
+      chat.id,
+    );
+
+    await this.aiEventService.publishTranscribeAudioEvent({
+      message_type: 'transcribe_and_summarize_request',
+      chat_id: chat.id,
+      timestamp: Date.now(),
+      audio_url: audioUrl,
+      sample_rate: audio.sampleRate ?? undefined,
+      mode: callDetails?.callInfo?.mode,
+      is_linear16_encoded: callDetails?.callInfo?.isLinear16Encoded,
+    });
+
+    // Touch the row so updatedAt resets (fresh window) and record the attempt.
+    await this.chatService.updateChat(chat.id, {
+      summaryStatus: ChatSummaryStatus.PENDING,
+      metadata: {
+        ...existingMetadata,
+        reprocessAttempts: attempts + 1,
+      } as Record<string, any>,
+    });
+
+    this.logger.info(
+      `Re-dispatched chat ${chat.id} for transcription (attempt ${
+        attempts + 1
+      }/${MAX_STUCK_REPROCESS_ATTEMPTS})`,
+    );
+    return { reprocessed: true };
+  }
+
+  /**
+   * Re-transcribe a chat by id — used by the "Retry" action when the session
+   * has no stored transcript to summarise from (transcription never came back).
+   */
+  async reprocessChatById(
+    chatId: number,
+  ): Promise<{ reprocessed: boolean; reason?: string }> {
+    const chat = await this.chatService.getChatByIdForServiceCall(chatId);
+    if (!chat) {
+      return { reprocessed: false, reason: 'Chat not found' };
+    }
+    return this.reprocessChat(chat);
   }
 
   async cancelUpload(cancelUploadRequestDto: CancelUploadRequestDto) {
