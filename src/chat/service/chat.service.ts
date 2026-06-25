@@ -472,7 +472,7 @@ export class ChatService {
    */
   async retrySummary(
     chatId: number,
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; needsReprocess?: boolean }> {
     const result = await this.callDetailsService.retrySummary(chatId);
 
     this.auditLogger.log({

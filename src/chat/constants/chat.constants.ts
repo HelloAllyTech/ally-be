@@ -51,6 +51,11 @@ export const CHAT_SUMMARY_TIMEOUT_MINUTES = 5;
 // their source audio has very likely been aged out of storage.
 export const CHAT_REPROCESS_LOOKBACK_DAYS = 60;
 
+// Bounds how many times a single chat may be re-dispatched for transcription
+// (e.g. via the Retry action's re-transcribe fallback) so a chat whose audio
+// repeatedly fails to transcribe can't be re-queued forever.
+export const MAX_STUCK_REPROCESS_ATTEMPTS = 3;
+
 // Marker the reaper writes to metadata.error when it fails a chat purely for
 // exceeding the summary TTL. The reprocess backfill matches on this so it can
 // recover timeout-failed chats and is safe to run regardless of reaper timing.

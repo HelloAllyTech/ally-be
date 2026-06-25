@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChatController } from '../chat.controller';
 import { ChatService } from '../../service/chat.service';
+import { AudioUploadService } from '../../service/audio-upload.service';
 import { FeedbackService } from '../../service/feedback.service';
 import { ChatSummaryService } from '../../service/chat-summary.service';
 import { TokenUser } from '../../../auth/type/auth.types';
@@ -23,6 +24,7 @@ describe('ChatController', () => {
   let mockFeedbackService: any;
   let mockChatSummaryService: any;
   let mockChatTranscriptService: any;
+  let mockAudioUploadService: any;
 
   const mockTokenUser: TokenUser = {
     id: 1,
@@ -100,6 +102,11 @@ describe('ChatController', () => {
       tagPositivityRatings: jest.fn(),
       addNoteToSession: jest.fn(),
       addFeedbackToChat: jest.fn(),
+      retrySummary: jest.fn(),
+    };
+
+    mockAudioUploadService = {
+      reprocessChatById: jest.fn(),
     };
 
     mockFeedbackService = {
@@ -134,6 +141,10 @@ describe('ChatController', () => {
         {
           provide: ChatTranscriptService,
           useValue: mockChatTranscriptService,
+        },
+        {
+          provide: AudioUploadService,
+          useValue: mockAudioUploadService,
         },
         {
           provide: PermissionsService,
@@ -748,6 +759,55 @@ describe('ChatController', () => {
       await expect(controller.processTranscript(dto)).rejects.toThrow(
         'Processing failed',
       );
+    });
+  });
+
+  describe('retrySummary', () => {
+    it('regenerates from the transcript when one exists (no reprocess)', async () => {
+      mockChatService.retrySummary.mockResolvedValue({
+        success: true,
+        message: 'Summary generated',
+      });
+
+      const result = await controller.retrySummary(7);
+
+      expect(mockChatService.retrySummary).toHaveBeenCalledWith(7);
+      expect(mockAudioUploadService.reprocessChatById).not.toHaveBeenCalled();
+      expect(result).toEqual({ success: true, message: 'Summary generated' });
+    });
+
+    it('falls back to re-transcription when there is no transcript', async () => {
+      mockChatService.retrySummary.mockResolvedValue({
+        success: false,
+        message: 'No transcript available; re-transcription required',
+        needsReprocess: true,
+      });
+      mockAudioUploadService.reprocessChatById.mockResolvedValue({
+        reprocessed: true,
+      });
+
+      const result = await controller.retrySummary(7);
+
+      expect(mockAudioUploadService.reprocessChatById).toHaveBeenCalledWith(7);
+      expect(result.success).toBe(true);
+      expect(result.message).toMatch(/re-transcrib/i);
+    });
+
+    it('reports the reason when re-transcription cannot recover the session', async () => {
+      mockChatService.retrySummary.mockResolvedValue({
+        success: false,
+        message: 'No transcript available; re-transcription required',
+        needsReprocess: true,
+      });
+      mockAudioUploadService.reprocessChatById.mockResolvedValue({
+        reprocessed: false,
+        reason: 'Audio no longer present in storage',
+      });
+
+      const result = await controller.retrySummary(7);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Audio no longer present in storage');
     });
   });
 });
