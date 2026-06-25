@@ -128,7 +128,7 @@ This is where most **analytics** about training performance live.
 | Table | Base | Key columns | Notes |
 |-------|------|-------------|-------|
 | `scenario_sessions` | BaseEntity | `id` (uuid), `room_id`, `scenario_id`, `counselor_id` (idx), `status` (`ScenarioSessionStatus`, ACTIVE), `event_status`, `started_at`, `ended_at`, `score` (float), `metadata`, `scenario_path_session_item_id`, `case_session_item_id` | **One simulation run.** Central fact table |
-| `scenario_session_details` | BaseEntity | `scenario_session_id` (idx), `call_duration` (sec), `summary` (jsonb) | One row per session |
+| `scenario_session_details` | BaseEntity | `scenario_session_id` (idx), `call_duration` (sec), `summary` (jsonb), `metrics` (jsonb: goal→0-100), `compositeScore` (int), `evaluationMarkdown` (text), `evaluationStatus` (IN_PROGRESS/COMPLETED/FAILED), `evaluatedAt` | One row per session; the eval columns hold the goal-based actor evaluation (LLM judge over the real-session transcript, scored vs `optimisation_goals`) populated async via the session-evaluation webhook |
 | `scenario_session_messages` | BaseEntity | `id` (int), `scenario_session_id` (idx), `sender_id`, `message_type` (`ScenarioSessionMessageType`), `content`, `start_seconds`, `end_seconds`, `metadata` | Voice transcript turns |
 | `scenario_session_chats` | BaseEntity | `scenario_session_id`, `user_id`, `summary`, `summarized_message_count` | Text-chat thread; uniq `(session, user)` |
 | `scenario_session_chat_messages` | BaseEntity | `chat_id` (idx), `sender_id` (−1 = AI), `content`, `citation_transcript_ids` (int[]) | Text-chat messages |

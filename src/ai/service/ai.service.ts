@@ -21,6 +21,7 @@ import {
   ScenarioReportGenerateRequest,
   ScenarioEvaluationChatMessage,
   ScenarioEvaluationRequest,
+  ActorGoalEvaluationRequest,
   SearchReferenceDocumentsRequest,
   TagPositivityRatingsRequest,
   TranscribeAudioRequest,
@@ -277,6 +278,33 @@ export class AiService {
         `Cancel propagation to ai-learn failed for report ${reportId}; ` +
           `ai-learn worker will finish naturally and its final webhook will be ` +
           `ignored by the status guard.`,
+      );
+    }
+  }
+
+  /**
+   * Trigger the goal-based actor evaluation of a REAL session in ai-learn.
+   * Best-effort (no retry, never throws): the evaluation is an enhancement, so
+   * a failure here must never break the session-end flow. ai-learn answers 202
+   * and webhooks the per-goal scores back via the evaluation webhook.
+   */
+  async triggerActorGoalEvaluation(
+    request: ActorGoalEvaluationRequest,
+  ): Promise<void> {
+    try {
+      await this.makeRequest<unknown, ActorGoalEvaluationRequest>(
+        ENDPOINTS.ACTOR_GOAL_EVALUATION,
+        request,
+        false,
+        'post',
+        undefined,
+        true,
+      );
+    } catch {
+      // Already logged inside makeRequest; swallow so session-end is unaffected.
+      this.logger.warn(
+        `Actor goal-evaluation trigger failed for session ` +
+          `${request.scenario_session_id}; it will simply remain un-evaluated.`,
       );
     }
   }

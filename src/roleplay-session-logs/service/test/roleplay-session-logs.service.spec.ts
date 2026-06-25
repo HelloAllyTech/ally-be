@@ -30,13 +30,81 @@ describe('RoleplaySessionLogsService', () => {
     repo = {
       list: jest.fn(),
       findOne: jest.fn(),
-      findSummary: jest.fn(),
-      findEvents: jest.fn(),
-      findTranscript: jest.fn(),
+      findSummary: jest.fn().mockResolvedValue(null),
+      findEvents: jest.fn().mockResolvedValue([]),
+      findTranscript: jest.fn().mockResolvedValue([]),
+      getUsageBySessions: jest.fn().mockResolvedValue([]),
+      getUsageBySession: jest.fn().mockResolvedValue([]),
+      getLatencyBySession: jest.fn().mockResolvedValue({ turnCount: 0 }),
+      getRecordingBySession: jest.fn().mockResolvedValue(null),
+      getFeedbackBySession: jest.fn().mockResolvedValue(null),
+      findOptimisationGoals: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<RoleplaySessionLogsRepository>;
 
     service = new RoleplaySessionLogsService(repo);
   });
+
+  const usageRows = [
+    {
+      scenarioSessionId: 'sess-1',
+      service: 'llm',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      promptTokens: 200000,
+      completionTokens: 100000,
+      totalTokens: 300000,
+      cachedTokens: 0,
+      audioMs: 0,
+      characters: 0,
+      calls: 5,
+    },
+    {
+      scenarioSessionId: 'sess-1',
+      service: 'stt',
+      provider: 'deepgram',
+      model: 'nova-3',
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cachedTokens: 0,
+      audioMs: 120000, // 2 minutes
+      characters: 0,
+      calls: 3,
+    },
+    {
+      scenarioSessionId: 'sess-1',
+      service: 'tts',
+      provider: 'elevenlabs',
+      model: 'voice-x',
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cachedTokens: 0,
+      audioMs: 0,
+      characters: 1000,
+      calls: 4,
+    },
+  ];
+
+  const zeroLatency = {
+    turnCount: 0,
+    avgResponseLatencyMs: null,
+    p50ResponseLatencyMs: null,
+    p95ResponseLatencyMs: null,
+    avgEouDelayMs: null,
+    avgLlmTtftMs: null,
+    avgTtsTtfbMs: null,
+    avgOrchestrationMs: null,
+    avgLlmResponseMs: null,
+    avgProsodyMs: null,
+    avgBranchingMs: null,
+    avgKnowledgeRetrievalMs: null,
+    avgProcessEventsMs: null,
+    avgBehaviorsMs: null,
+    interruptedTurns: 0,
+    llmTimedOutTurns: 0,
+    prosodySkippedTurns: 0,
+  };
 
   describe('list', () => {
     it('coerces string numerics and passes total through', async () => {
@@ -126,6 +194,90 @@ describe('RoleplaySessionLogsService', () => {
       expect(detail.events[0].eventName).toBe('Empathy shown');
       expect(detail.transcript).toHaveLength(1);
       expect(detail.transcript[0].content).toBe('Hello');
+    });
+  });
+
+  describe('usage, cost, models & latency', () => {
+    it('rolls up tokens and prices LLM/STT/TTS via the pricing tables', async () => {
+      repo.findOne.mockResolvedValue(baseRow);
+      repo.getUsageBySession.mockResolvedValue(usageRows);
+
+      const detail = await service.getById('sess-1');
+
+      expect(detail.usage).not.toBeNull();
+      expect(detail.usage!.llmTotalTokens).toBe(300000);
+      expect(detail.usage!.sttAudioMs).toBe(120000);
+      expect(detail.usage!.ttsCharacters).toBe(1000);
+      // 0.09 (llm) + 0.0154 (stt: 2min*0.0077) + 0.15 (tts: 1000/1e6*150) -> 0.26
+      expect(detail.usage!.estimatedCostUsd).toBeCloseTo(0.26, 2);
+      expect(detail.usage!.priced).toBe(true);
+      expect(detail.models).toEqual({
+        llm: [{ provider: 'openai', model: 'gpt-4o-mini' }],
+        stt: [{ provider: 'deepgram', model: 'nova-3' }],
+        tts: [{ provider: 'elevenlabs', model: 'voice-x' }],
+      });
+    });
+
+    it('attaches per-row token + cost rollups in the list', async () => {
+      repo.list.mockResolvedValue({ rows: [baseRow], total: 1 });
+      repo.getUsageBySessions.mockResolvedValue(usageRows);
+
+      const { data } = await service.list({});
+      expect(data[0].totalTokens).toBe(300000);
+      expect(data[0].estimatedCostUsd).toBeCloseTo(0.26, 2);
+      expect(data[0].costPriced).toBe(true);
+    });
+
+    it('returns null latency with no pipeline turns, else aggregates', async () => {
+      repo.findOne.mockResolvedValue(baseRow);
+      const noTurns = await service.getById('sess-1');
+      expect(noTurns.latency).toBeNull();
+
+      repo.getLatencyBySession.mockResolvedValue({
+        ...zeroLatency,
+        turnCount: 10,
+        avgResponseLatencyMs: 850,
+        p50ResponseLatencyMs: 800,
+        p95ResponseLatencyMs: 1500,
+        interruptedTurns: 2,
+      });
+      const withTurns = await service.getById('sess-1');
+      expect(withTurns.latency).toMatchObject({
+        turnCount: 10,
+        p95ResponseLatencyMs: 1500,
+        interruptedTurns: 2,
+      });
+    });
+  });
+
+  describe('actor evaluation', () => {
+    it('builds the evaluation block with pass/fail vs threshold', async () => {
+      repo.findOne.mockResolvedValue({
+        ...baseRow,
+        compositeScore: 88,
+        evalMetrics: { 'Build rapport': 86, 'Stay in character': 90 },
+        evaluationStatus: 'COMPLETED',
+        evaluationMarkdown: '## Summary\nSolid.',
+        evaluatedAt: new Date('2026-06-01T10:06:00Z'),
+      });
+
+      const detail = await service.getById('sess-1');
+      expect(detail.actorEvaluation).toMatchObject({
+        compositeScore: 88,
+        passThreshold: 90,
+        pass: false, // 88 < 90
+        status: 'COMPLETED',
+      });
+      expect(detail.actorEvaluation!.metrics).toEqual({
+        'Build rapport': 86,
+        'Stay in character': 90,
+      });
+    });
+
+    it('is null when the session was never evaluated', async () => {
+      repo.findOne.mockResolvedValue(baseRow);
+      const detail = await service.getById('sess-1');
+      expect(detail.actorEvaluation).toBeNull();
     });
   });
 });

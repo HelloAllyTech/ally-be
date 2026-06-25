@@ -90,6 +90,8 @@ import { CompetencyController } from './controller/competency.controller';
 import { OptimisationGoal } from './entity/optimisation-goal.entity';
 import { OptimisationGoalRepository } from './repository/optimisation-goal.repository';
 import { OptimisationGoalService } from './service/optimisation-goal.service';
+import { ScenarioSessionEvaluationService } from './service/scenario-session-evaluation.service';
+import { ScenarioSessionEvaluationWebhookController } from './controller/scenario-session-evaluation-webhook.controller';
 import { OptimisationGoalController } from './controller/optimisation-goal.controller';
 import { CompetencyBehavior } from './entity/competency-behavior.entity';
 import { CompetencyBehaviorRepository } from './repository/competency-behavior.repository';
@@ -170,6 +172,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     CompetencyController,
     OptimisationGoalController,
     ScenarioSessionRecordingController,
+    ScenarioSessionEvaluationWebhookController,
   ],
   providers: [
     ScenarioService,
@@ -220,6 +223,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     CompetencyBehaviorRepository,
     OptimisationGoalService,
     OptimisationGoalRepository,
+    ScenarioSessionEvaluationService,
     BehaviorTranslationRepository,
     ScenarioBehaviorInstructionTranslationRepository,
     BehaviorInstructionTranslationService,

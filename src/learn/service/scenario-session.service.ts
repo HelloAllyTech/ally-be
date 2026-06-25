@@ -31,6 +31,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ScenarioSessionMessageType } from '../enum/scenario-session-message.type.enum';
 import { ScenarioSessionTagCategory } from '../enum/scenario-session-tag-category.enum';
 import { AiService } from 'src/ai/service/ai.service';
+import { ScenarioSessionEvaluationService } from './scenario-session-evaluation.service';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { ScenarioSessionTurnMetrics } from '../entity/scenario-session-turn-metrics.entity';
@@ -151,6 +152,7 @@ export class ScenarioSessionService {
     private scenarioSessionRecordingService: ScenarioSessionRecordingService,
     private sharedLanguageService: SharedLanguageService,
     private sessionEventTranslationService: SessionEventTranslationService,
+    private scenarioSessionEvaluationService: ScenarioSessionEvaluationService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -945,6 +947,12 @@ export class ScenarioSessionService {
     });
     this.logger.info(
       `Updated scenario ${scenarioSessionId} eventStatus to COMPLETED`,
+    );
+
+    // Score the roleplay actor against the configured optimisation goals
+    // (async, best-effort — never blocks or fails session end).
+    await this.scenarioSessionEvaluationService.triggerForSession(
+      scenarioSession,
     );
 
     // Emit event for community leaderboard score update

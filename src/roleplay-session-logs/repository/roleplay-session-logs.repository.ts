@@ -24,6 +24,51 @@ export interface RoleplaySessionLogRawRow {
   callDuration: number | string | null;
   totalPausedMs: number | string | null;
   createdAt: Date;
+  /** Detail-only enrichments (present on `findOne`, absent on `list`). */
+  scenarioVersionId?: string | null;
+  language?: string | null;
+  voiceId?: string | null;
+  compositeScore?: number | string | null;
+  evalMetrics?: Record<string, number> | null;
+  evaluationMarkdown?: string | null;
+  evaluationStatus?: string | null;
+  evaluatedAt?: Date | null;
+}
+
+/** One usage bucket for a session, grouped by (service, provider, model). */
+export interface RoleplaySessionUsageRow {
+  scenarioSessionId: string;
+  service: string;
+  provider: string;
+  model: string;
+  promptTokens: number | string;
+  completionTokens: number | string;
+  totalTokens: number | string;
+  cachedTokens: number | string;
+  audioMs: number | string;
+  characters: number | string;
+  calls: number | string;
+}
+
+/** Aggregated per-session voice-pipeline latency + quality (one row). */
+export interface RoleplaySessionLatencyRow {
+  turnCount: number | string;
+  avgResponseLatencyMs: number | string | null;
+  p50ResponseLatencyMs: number | string | null;
+  p95ResponseLatencyMs: number | string | null;
+  avgEouDelayMs: number | string | null;
+  avgLlmTtftMs: number | string | null;
+  avgTtsTtfbMs: number | string | null;
+  avgOrchestrationMs: number | string | null;
+  avgLlmResponseMs: number | string | null;
+  avgProsodyMs: number | string | null;
+  avgBranchingMs: number | string | null;
+  avgKnowledgeRetrievalMs: number | string | null;
+  avgProcessEventsMs: number | string | null;
+  avgBehaviorsMs: number | string | null;
+  interruptedTurns: number | string;
+  llmTimedOutTurns: number | string;
+  prosodySkippedTurns: number | string;
 }
 
 /**
@@ -188,6 +233,14 @@ export class RoleplaySessionLogsRepository {
       .addSelect('d."callDuration"', 'callDuration')
       .addSelect('ss."totalPausedMs"', 'totalPausedMs')
       .addSelect('ss."createdAt"', 'createdAt')
+      .addSelect('ss."scenarioVersionId"', 'scenarioVersionId')
+      .addSelect(`COALESCE(lang."label", lang."value")`, 'language')
+      .addSelect(`ss.metadata->>'voiceId'`, 'voiceId')
+      .addSelect('d."compositeScore"', 'compositeScore')
+      .addSelect('d."metrics"', 'evalMetrics')
+      .addSelect('d."evaluationMarkdown"', 'evaluationMarkdown')
+      .addSelect('d."evaluationStatus"', 'evaluationStatus')
+      .addSelect('d."evaluatedAt"', 'evaluatedAt')
       .from('scenario_sessions', 'ss')
       .leftJoin('users', 'u', 'u.id = ss."counselorId"')
       .leftJoin('scenarios', 'scn', 'scn.id = ss."scenarioId"')
@@ -199,6 +252,12 @@ export class RoleplaySessionLogsRepository {
         'scenario_session_details',
         'd',
         'd."scenarioSessionId"::uuid = ss.id',
+      )
+      // Resolve the session's configured language id (metadata) to a label.
+      .leftJoin(
+        'languages',
+        'lang',
+        `lang.id = NULLIF(ss.metadata->>'languageId', '')::int`,
       )
       .where('ss.id = :id', { id })
       .getRawOne<RoleplaySessionLogRawRow>();
@@ -271,5 +330,187 @@ export class RoleplaySessionLogsRepository {
       .orderBy('m."startSeconds"', 'ASC', 'NULLS LAST')
       .addOrderBy('m."createdAt"', 'ASC')
       .getRawMany();
+  }
+
+  /**
+   * AI usage for one or more sessions, grouped by (session, service, provider,
+   * model). Mirrors {@link LlmUsageRepository.getTokenUsageByModelAndTask} but
+   * keyed per session via the `scenarioSessionId` correlation column. The
+   * service prices these rows (LLM/STT/TTS) and rolls them up. Returns [] for an
+   * empty id list (TypeORM's `IN (:...ids)` rejects an empty array).
+   */
+  async getUsageBySessions(ids: string[]): Promise<RoleplaySessionUsageRow[]> {
+    if (ids.length === 0) return [];
+    return this.dataSource
+      .createQueryBuilder()
+      .select('lu."scenarioSessionId"', 'scenarioSessionId')
+      .addSelect('lu.service', 'service')
+      .addSelect('lu.provider', 'provider')
+      .addSelect('lu.model', 'model')
+      .addSelect('COALESCE(SUM(lu."promptTokens"), 0)::bigint', 'promptTokens')
+      .addSelect(
+        'COALESCE(SUM(lu."completionTokens"), 0)::bigint',
+        'completionTokens',
+      )
+      .addSelect('COALESCE(SUM(lu."totalTokens"), 0)::bigint', 'totalTokens')
+      .addSelect('COALESCE(SUM(lu."cachedTokens"), 0)::bigint', 'cachedTokens')
+      .addSelect('COALESCE(SUM(lu."audioMs"), 0)::bigint', 'audioMs')
+      .addSelect('COALESCE(SUM(lu."characters"), 0)::bigint', 'characters')
+      .addSelect('COUNT(*)::int', 'calls')
+      .from('llm_usage', 'lu')
+      .where('lu."scenarioSessionId" IN (:...ids)', { ids })
+      .groupBy('lu."scenarioSessionId"')
+      .addGroupBy('lu.service')
+      .addGroupBy('lu.provider')
+      .addGroupBy('lu.model')
+      .getRawMany<RoleplaySessionUsageRow>();
+  }
+
+  /** Convenience: usage buckets for a single session. */
+  async getUsageBySession(id: string): Promise<RoleplaySessionUsageRow[]> {
+    return this.getUsageBySessions([id]);
+  }
+
+  /**
+   * Per-session voice-pipeline latency + quality, aggregated over
+   * `scenario_session_turn_metrics` (source='pipeline' only — never mix the
+   * transcript-derived estimates). Mirrors the percentile pattern in
+   * {@link PlatformAnalyticsRepository.getVoiceLatencyByBucket}. Always returns
+   * one row; `turnCount` is 0 when the session has no pipeline turns.
+   */
+  async getLatencyBySession(id: string): Promise<RoleplaySessionLatencyRow> {
+    const row = await this.dataSource
+      .createQueryBuilder()
+      .select('COUNT(*)::int', 'turnCount')
+      .addSelect(
+        'round(avg(m."responseLatencyMs"))::int',
+        'avgResponseLatencyMs',
+      )
+      .addSelect(
+        `round(percentile_cont(0.5) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p50ResponseLatencyMs',
+      )
+      .addSelect(
+        `round(percentile_cont(0.95) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p95ResponseLatencyMs',
+      )
+      .addSelect('round(avg(m."eouDelayMs"))::int', 'avgEouDelayMs')
+      .addSelect('round(avg(m."llmTtftMs"))::int', 'avgLlmTtftMs')
+      .addSelect('round(avg(m."ttsTtfbMs"))::int', 'avgTtsTtfbMs')
+      .addSelect('round(avg(m."orchestrationMs"))::int', 'avgOrchestrationMs')
+      .addSelect('round(avg(m."llmResponseMs"))::int', 'avgLlmResponseMs')
+      .addSelect('round(avg(m."prosodyMs"))::int', 'avgProsodyMs')
+      .addSelect('round(avg(m."branchingMs"))::int', 'avgBranchingMs')
+      .addSelect(
+        'round(avg(m."knowledgeRetrievalMs"))::int',
+        'avgKnowledgeRetrievalMs',
+      )
+      .addSelect('round(avg(m."processEventsMs"))::int', 'avgProcessEventsMs')
+      .addSelect('round(avg(m."behaviorsMs"))::int', 'avgBehaviorsMs')
+      .addSelect(
+        'COALESCE(SUM(CASE WHEN m."interrupted" THEN 1 ELSE 0 END), 0)::int',
+        'interruptedTurns',
+      )
+      .addSelect(
+        'COALESCE(SUM(CASE WHEN m."llmTimedOut" THEN 1 ELSE 0 END), 0)::int',
+        'llmTimedOutTurns',
+      )
+      .addSelect(
+        'COALESCE(SUM(CASE WHEN m."prosodySkipped" THEN 1 ELSE 0 END), 0)::int',
+        'prosodySkippedTurns',
+      )
+      .from('scenario_session_turn_metrics', 'm')
+      .where('m."scenarioSessionId" = :id', { id })
+      .andWhere(`m."source" = 'pipeline'`)
+      .getRawOne<RoleplaySessionLatencyRow>();
+
+    // getRawOne over an aggregate always returns a row; fall back defensively.
+    return (
+      row ?? {
+        turnCount: 0,
+        avgResponseLatencyMs: null,
+        p50ResponseLatencyMs: null,
+        p95ResponseLatencyMs: null,
+        avgEouDelayMs: null,
+        avgLlmTtftMs: null,
+        avgTtsTtfbMs: null,
+        avgOrchestrationMs: null,
+        avgLlmResponseMs: null,
+        avgProsodyMs: null,
+        avgBranchingMs: null,
+        avgKnowledgeRetrievalMs: null,
+        avgProcessEventsMs: null,
+        avgBehaviorsMs: null,
+        interruptedTurns: 0,
+        llmTimedOutTurns: 0,
+        prosodySkippedTurns: 0,
+      }
+    );
+  }
+
+  /** LiveKit egress recording pointer for a session, if one exists. */
+  async getRecordingBySession(
+    id: string,
+  ): Promise<{ storageKey: string; egressId: string } | null> {
+    const row = await this.dataSource
+      .createQueryBuilder()
+      .select('r."storageKey"', 'storageKey')
+      .addSelect('r."egressId"', 'egressId')
+      .from('scenario_session_recordings', 'r')
+      .where('r."scenarioSessionId" = :id', { id })
+      .getRawOne<{ storageKey: string; egressId: string }>();
+
+    return row ?? null;
+  }
+
+  /**
+   * All superadmin-configured optimisation goals (global; not tenant-scoped).
+   * These are the rubric the roleplay actor is scored against, shown alongside
+   * the per-session evaluation.
+   */
+  async findOptimisationGoals(): Promise<
+    Array<{
+      id: string;
+      title: string;
+      category: string;
+      description: string | null;
+    }>
+  > {
+    return this.dataSource
+      .createQueryBuilder()
+      .select('g."id"', 'id')
+      .addSelect('g."title"', 'title')
+      .addSelect('g."category"', 'category')
+      .addSelect('g."description"', 'description')
+      .from('optimisation_goals', 'g')
+      .orderBy('g."category"', 'ASC')
+      .addOrderBy('g."title"', 'ASC')
+      .getRawMany();
+  }
+
+  /** Most recent post-session learner feedback for a session, if any. */
+  async getFeedbackBySession(id: string): Promise<{
+    rating: number | string;
+    feedback: string | null;
+    tags: string[] | null;
+  } | null> {
+    const row = await this.dataSource
+      .createQueryBuilder()
+      .select('f."rating"', 'rating')
+      .addSelect('f."feedback"', 'feedback')
+      .addSelect('f."tags"', 'tags')
+      .from('scenario_session_feedbacks', 'f')
+      .where('f."scenarioSessionId" = :id', { id })
+      .orderBy('f."createdAt"', 'DESC')
+      .limit(1)
+      .getRawOne<{
+        rating: number | string;
+        feedback: string | null;
+        tags: string[] | null;
+      }>();
+
+    return row ?? null;
   }
 }
