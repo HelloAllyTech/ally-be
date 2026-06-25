@@ -233,6 +233,16 @@ export class UpdateScenarioDto {
   fillerEnabled?: boolean;
 
   @ApiProperty({
+    description:
+      'Trim conversation history sent to the agent to the last few dialogues (older turns dropped) to reduce turn latency. Defaults to false (opt-in) when unspecified.',
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  historyTrimEnabled?: boolean;
+
+  @ApiProperty({
     description: 'Opening statements of the AI client persona',
     example: ['Hi, I need some help.', 'I am feeling down today.'],
   })
