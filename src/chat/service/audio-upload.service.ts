@@ -22,6 +22,7 @@ import {
   SUPPORTED_AUDIO_FILE_TYPES,
   UPLOADED_AUDIO_FILE_SIZE_LIMIT,
   CHAT_REPROCESS_LOOKBACK_DAYS,
+  MAX_STUCK_REPROCESS_ATTEMPTS,
 } from '../constants/chat.constants';
 import { ChatAudioUploadStatus } from '../../audio/entity/chat-audio-uploads.entity';
 import {
@@ -405,6 +406,85 @@ export class AudioUploadService {
     });
 
     return { reprocessed, failed };
+  }
+
+  /**
+   * Recover a single chat by re-transcribing from its stored audio. Used as the
+   * fallback for the Retry action when there is no transcript to summarise from
+   * (transcription itself never came back). Re-dispatches the transcribe request
+   * with the original mode/sample-rate and resets the chat to PENDING so the
+   * pipeline runs again. Bounded by MAX_STUCK_REPROCESS_ATTEMPTS.
+   */
+  async reprocessChatById(
+    chatId: number,
+  ): Promise<{ reprocessed: boolean; reason?: string }> {
+    const audio = await this.chatAudioUploadsService.getAudioUpload(chatId);
+    if (!audio?.storageKey) {
+      return {
+        reprocessed: false,
+        reason: 'No stored audio to re-transcribe',
+      };
+    }
+
+    const { chat, callDetails } =
+      await this.chatService.getChatWithCallDetails(chatId);
+    const metadata = (chat?.metadata as Record<string, any>) ?? {};
+    const attempts = Number(metadata.reprocessAttempts ?? 0);
+    if (attempts >= MAX_STUCK_REPROCESS_ATTEMPTS) {
+      return {
+        reprocessed: false,
+        reason: `Re-transcription attempt limit reached (${MAX_STUCK_REPROCESS_ATTEMPTS})`,
+      };
+    }
+
+    // Confirm the object still exists before re-dispatching.
+    try {
+      await this.s3Service.getHeadObject({
+        bucket: process.env.AUDIO_STORAGE_S3_BUCKET!,
+        key: audio.storageKey,
+      });
+    } catch {
+      return {
+        reprocessed: false,
+        reason: 'Audio no longer present in storage',
+      };
+    }
+
+    const audioUrl = await this.s3Service.generatePresignedUrl({
+      bucket: process.env.AUDIO_STORAGE_S3_BUCKET!,
+      key: audio.storageKey,
+      operation: 'get',
+      expiresIn: 3600,
+      audience: 'internal',
+    });
+
+    await this.aiEventService.publishTranscribeAudioEvent({
+      message_type: 'transcribe_and_summarize_request',
+      chat_id: chatId,
+      timestamp: Date.now(),
+      audio_url: audioUrl,
+      sample_rate: audio.sampleRate ?? undefined,
+      mode: callDetails?.callInfo?.mode,
+      is_linear16_encoded: callDetails?.callInfo?.isLinear16Encoded,
+    });
+
+    // publishTranscribeAudioEvent set IN_PROGRESS + a fresh correlationId.
+    // Preserve that, bump the re-transcribe count, and reset to PENDING so the
+    // reaper gives the freshly re-dispatched chat a full window.
+    const refreshed = await this.chatService.getChatById(chatId);
+    const refreshedMeta = (refreshed?.metadata as Record<string, any>) ?? {};
+    await this.chatService.updateChat(chatId, {
+      summaryStatus: ChatSummaryStatus.PENDING,
+      metadata: {
+        ...refreshedMeta,
+        reprocessAttempts: attempts + 1,
+      } as Record<string, any>,
+    });
+
+    this.logger.info(
+      `Re-dispatched chat ${chatId} for re-transcription (retry fallback), attempt ${attempts + 1}`,
+    );
+    return { reprocessed: true };
   }
 
   async cancelUpload(cancelUploadRequestDto: CancelUploadRequestDto) {

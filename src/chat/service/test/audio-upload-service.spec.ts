@@ -69,6 +69,8 @@ describe('AudioUploadService', () => {
           useValue: {
             createChatForAnonymousClient: jest.fn(),
             getChatByIdForServiceCall: jest.fn(),
+            getChatWithCallDetails: jest.fn(),
+            getChatById: jest.fn(),
             updateChat: jest.fn(),
           },
         },
@@ -90,6 +92,7 @@ describe('AudioUploadService', () => {
           provide: ChatAudioUploadsService,
           useValue: {
             createAudioUpload: jest.fn(),
+            getAudioUpload: jest.fn(),
           },
         },
         {
@@ -529,6 +532,88 @@ describe('AudioUploadService', () => {
         status: ChatStatus.CANCELLED,
         summaryStatus: ChatSummaryStatus.NO_AUDIO,
       });
+    });
+  });
+
+  describe('reprocessChatById', () => {
+    it('re-dispatches transcription from the stored audio and resets to PENDING', async () => {
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue({
+        storageKey: 'audio/1.wav',
+        sampleRate: 16000,
+      } as any);
+      chatService.getChatWithCallDetails.mockResolvedValue({
+        chat: { id: 1, metadata: {} },
+        callDetails: { callInfo: { mode: 'SCRIBE', isLinear16Encoded: true } },
+      } as any);
+      s3Service.getHeadObject.mockResolvedValue({} as any);
+      s3Service.generatePresignedUrl.mockResolvedValue('https://signed');
+      aiEventService.publishTranscribeAudioEvent.mockResolvedValue(
+        undefined as any,
+      );
+      chatService.getChatById.mockResolvedValue({
+        id: 1,
+        metadata: { correlationId: 'c1' },
+      } as any);
+      chatService.updateChat.mockResolvedValue(undefined as any);
+
+      const result = await service.reprocessChatById(1);
+
+      expect(result.reprocessed).toBe(true);
+      expect(aiEventService.publishTranscribeAudioEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ chat_id: 1, audio_url: 'https://signed' }),
+      );
+      // resets to PENDING and bumps the re-transcribe counter
+      expect(chatService.updateChat).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          summaryStatus: ChatSummaryStatus.PENDING,
+          metadata: expect.objectContaining({ reprocessAttempts: 1 }),
+        }),
+      );
+    });
+
+    it('does not re-dispatch when there is no stored audio', async () => {
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue({
+        storageKey: null,
+      } as any);
+
+      const result = await service.reprocessChatById(1);
+
+      expect(result.reprocessed).toBe(false);
+      expect(aiEventService.publishTranscribeAudioEvent).not.toHaveBeenCalled();
+    });
+
+    it('does not re-dispatch when the audio is gone from storage', async () => {
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue({
+        storageKey: 'audio/1.wav',
+      } as any);
+      chatService.getChatWithCallDetails.mockResolvedValue({
+        chat: { id: 1, metadata: {} },
+        callDetails: {},
+      } as any);
+      s3Service.getHeadObject.mockRejectedValue(new Error('NoSuchKey'));
+
+      const result = await service.reprocessChatById(1);
+
+      expect(result.reprocessed).toBe(false);
+      expect(result.reason).toMatch(/no longer present/i);
+      expect(aiEventService.publishTranscribeAudioEvent).not.toHaveBeenCalled();
+    });
+
+    it('stops re-dispatching once the attempt cap is reached', async () => {
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue({
+        storageKey: 'audio/1.wav',
+      } as any);
+      chatService.getChatWithCallDetails.mockResolvedValue({
+        chat: { id: 1, metadata: { reprocessAttempts: 3 } },
+        callDetails: {},
+      } as any);
+
+      const result = await service.reprocessChatById(1);
+
+      expect(result.reprocessed).toBe(false);
+      expect(result.reason).toMatch(/attempt limit/i);
+      expect(aiEventService.publishTranscribeAudioEvent).not.toHaveBeenCalled();
     });
   });
 });
