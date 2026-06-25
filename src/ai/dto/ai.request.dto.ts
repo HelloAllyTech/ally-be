@@ -104,6 +104,34 @@ export interface ScenarioReportGenerateRequest {
   evaluator_prompt_code?: string;
 }
 
+/** One optimisation goal the actor is scored against (sent to the LLM judge). */
+export interface ActorGoalEvaluationGoal {
+  id: string;
+  title: string;
+  category: string;
+  description?: string | null;
+}
+
+/** A single transcript turn for the actor evaluation. */
+export interface ActorGoalEvaluationTurn {
+  /** 'assistant' = the roleplay actor; 'user' = the trainee/counselor. */
+  role: 'assistant' | 'user';
+  content: string;
+}
+
+/**
+ * Request to ai-learn to evaluate the roleplay ACTOR agent of a real session
+ * against the configured optimisation goals. ai-learn runs the LLM judge over
+ * the transcript and webhooks per-goal scores + feedback back to ally-be.
+ */
+export interface ActorGoalEvaluationRequest {
+  scenario_session_id: string;
+  transcript: ActorGoalEvaluationTurn[];
+  goals: ActorGoalEvaluationGoal[];
+  /** Session language (id or code) for the judge prompt; optional. */
+  language?: string;
+}
+
 export type ScenarioEvaluationChatMessage = {
   id: string;
   role: string;

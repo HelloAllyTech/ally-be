@@ -56,6 +56,7 @@ import { ScenarioEventsRepository } from 'src/learn/repository/scenario-events.r
 import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
 import { SimulationCapacityException } from 'src/learn/exception/simulation-capacity.exception';
 import { ScenarioSessionRecordingService } from '../scenario-session-recording.service';
+import { ScenarioSessionEvaluationService } from '../scenario-session-evaluation.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -502,6 +503,10 @@ describe('ScenarioSessionService', () => {
         {
           provide: ScenarioSessionRecordingService,
           useValue: mockScenarioSessionRecordingService,
+        },
+        {
+          provide: ScenarioSessionEvaluationService,
+          useValue: { triggerForSession: jest.fn() },
         },
       ],
     }).compile();
