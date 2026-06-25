@@ -1,0 +1,48 @@
+import { Reflector } from '@nestjs/core';
+import { RoleplaySessionLogsController } from '../roleplay-session-logs.controller';
+import { RoleplaySessionLogsService } from '../../service/roleplay-session-logs.service';
+import { ROLES_KEY } from '../../../auth/decorators/roles.decorator';
+import { UserRole } from '../../../common/constants/user.constants';
+
+describe('RoleplaySessionLogsController', () => {
+  let controller: RoleplaySessionLogsController;
+  let service: jest.Mocked<RoleplaySessionLogsService>;
+
+  beforeEach(() => {
+    service = {
+      list: jest.fn(),
+      getById: jest.fn(),
+    } as unknown as jest.Mocked<RoleplaySessionLogsService>;
+
+    controller = new RoleplaySessionLogsController(service);
+  });
+
+  it('guards both endpoints with the SUPER_ADMIN role', () => {
+    const reflector = new Reflector();
+    const listRoles = reflector.get<UserRole[]>(ROLES_KEY, controller.list);
+    const detailRoles = reflector.get<UserRole[]>(
+      ROLES_KEY,
+      controller.getById,
+    );
+
+    expect(listRoles).toEqual([UserRole.SUPER_ADMIN]);
+    expect(detailRoles).toEqual([UserRole.SUPER_ADMIN]);
+  });
+
+  it('delegates list to the service', async () => {
+    const response = { data: [], total: 0 };
+    service.list.mockResolvedValue(response);
+
+    const query = { limit: 10 };
+    await expect(controller.list(query)).resolves.toBe(response);
+    expect(service.list).toHaveBeenCalledWith(query);
+  });
+
+  it('delegates detail lookup to the service', async () => {
+    const detail = { id: 'abc' } as any;
+    service.getById.mockResolvedValue(detail);
+
+    await expect(controller.getById('abc')).resolves.toBe(detail);
+    expect(service.getById).toHaveBeenCalledWith('abc');
+  });
+});
