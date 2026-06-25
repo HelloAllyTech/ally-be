@@ -11,12 +11,9 @@ export class ChatSchedulerRegistrationService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    // Summary normally generates in 2-4 min. If nothing has come back past the
-    // (5-min) TTL the session is marked FAILED fast — on the 5-min bucket — so
-    // the user isn't left waiting. The transcript, when the AI delivered one,
-    // is preserved separately and stays retryable; truly-dropped sessions can
-    // be recovered via the manual reprocess endpoint.
-    scheduledTaskRegistry.register('5min', 'chat-summary-timeout', () =>
+    // The scheduler runner currently fires the '30min' bucket; the chat summary
+    // TTL is also 30min, so a stuck chat is reaped within ~30-60min of creation.
+    scheduledTaskRegistry.register('30min', 'chat-summary-timeout', () =>
       this.chatService.markStalePendingChatsAsFailed(),
     );
 

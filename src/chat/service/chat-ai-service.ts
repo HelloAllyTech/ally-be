@@ -121,19 +121,6 @@ export class ChatAiService {
         tenantId: chat.tenantId,
       });
 
-      // Idempotent: the transcript may already be stored (two-phase delivery
-      // sends it once on its own, then again with the summary; a redelivery can
-      // also repeat it). Skip re-inserting so we don't duplicate the transcript.
-      const existingCount = await this.messageRepository.count({
-        where: { chatId: chat.id, type: MessageType.TEXT },
-      });
-      if (existingCount > 0) {
-        this.logger.info(
-          `Transcript already present for chatId: ${chat.id}; skipping re-insert`,
-        );
-        return true;
-      }
-
       const formattedMessages = messages.map(async (message) => {
         const encryptedContent = await this.cryptoService.encrypt(
           message.content,

@@ -125,7 +125,6 @@ describe('ChatService', () => {
             save: jest.fn(),
             find: jest.fn(),
             findOne: jest.fn(),
-            count: jest.fn().mockResolvedValue(0),
             deleteMessageByChatId: jest.fn(),
             createQueryBuilder: jest.fn(() => ({
               leftJoinAndMapOne: jest.fn().mockReturnThis(),
@@ -956,50 +955,6 @@ describe('ChatService', () => {
       await service.updateChat(1, updateInput);
 
       expect(chatRepository.updateChat).toHaveBeenCalledWith(1, updateInput);
-    });
-  });
-
-  describe('markStalePendingChatsAsFailed (transcript-aware reaper)', () => {
-    it('marks a timed-out chat FAILED + retryable when a transcript exists', async () => {
-      jest
-        .spyOn(chatRepository, 'find')
-        .mockResolvedValue([
-          { id: 900, metadata: { correlationId: 'c1' } },
-        ] as any);
-      (service as any).messageRepository.count.mockResolvedValue(1);
-      const update = jest
-        .spyOn(chatRepository, 'update')
-        .mockResolvedValue({ affected: 1 } as any);
-
-      await service.markStalePendingChatsAsFailed();
-
-      const call = update.mock.calls.find((c) => (c[0] as any).id === 900);
-      expect(call).toBeTruthy();
-      expect((call![1] as any).summaryStatus).toBe(ChatSummaryStatus.FAILED);
-      expect((call![1] as any).metadata).toEqual(
-        expect.objectContaining({
-          summaryRetryable: true,
-          summaryRetryAttempts: 0,
-          correlationId: 'c1',
-        }),
-      );
-    });
-
-    it('marks a timed-out chat FAILED (not retryable) when there is no transcript', async () => {
-      jest
-        .spyOn(chatRepository, 'find')
-        .mockResolvedValue([{ id: 901, metadata: {} }] as any);
-      (service as any).messageRepository.count.mockResolvedValue(0);
-      const update = jest
-        .spyOn(chatRepository, 'update')
-        .mockResolvedValue({ affected: 1 } as any);
-
-      await service.markStalePendingChatsAsFailed();
-
-      const call = update.mock.calls.find((c) => (c[0] as any).id === 901);
-      expect(call).toBeTruthy();
-      expect((call![1] as any).summaryStatus).toBe(ChatSummaryStatus.FAILED);
-      expect((call![1] as any).metadata.summaryRetryable).toBeUndefined();
     });
   });
 });

@@ -205,7 +205,7 @@ export class CallDetailsService {
    */
   async retrySummary(
     chatId: number,
-  ): Promise<{ success: boolean; message: string; needsReprocess?: boolean }> {
+  ): Promise<{ success: boolean; message: string }> {
     const tenantId = ExecutionManager.getTenantId();
     const chat = await this.chatRepository.findOne({
       where: { id: chatId, tenantId },
@@ -216,23 +216,6 @@ export class CallDetailsService {
     if (chat.summaryStatus === ChatSummaryStatus.SUCCESS) {
       return { success: true, message: 'Summary already generated' };
     }
-
-    // No stored transcript means transcription itself never came back — there
-    // is nothing to summarise from. Signal the caller to recover by
-    // re-transcribing from the audio instead of looping on summary retries.
-    const messages = await this.messageService.getChatHistoryForAIService(
-      chatId,
-      { sortBy: 'createdAt', order: 'ASC' },
-      tenantId,
-    );
-    if (!messages?.length) {
-      return {
-        success: false,
-        message: 'No transcript available; re-transcription required',
-        needsReprocess: true,
-      };
-    }
-
     return this.runSummaryRetry(chat);
   }
 

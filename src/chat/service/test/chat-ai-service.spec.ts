@@ -50,7 +50,6 @@ describe('ChatAiService', () => {
   let mockMessageRepository: {
     create: jest.Mock;
     save: jest.Mock;
-    count: jest.Mock;
   };
   let mockChatService: {
     updateMessageStatistics: jest.Mock;
@@ -177,8 +176,6 @@ describe('ChatAiService', () => {
     mockMessageRepository = {
       create: jest.fn(),
       save: jest.fn(),
-      // Default: no existing transcript, so addTranscript proceeds to insert.
-      count: jest.fn().mockResolvedValue(0),
     };
 
     mockChatService = {
@@ -386,16 +383,6 @@ describe('ChatAiService', () => {
   });
 
   describe('addTranscript', () => {
-    it('is idempotent: skips re-inserting when a transcript already exists', async () => {
-      mockMessageRepository.count.mockResolvedValue(2); // transcript already stored
-
-      const result = await service.addTranscript(mockChat, mockMessageRequests);
-
-      expect(result).toBe(true);
-      expect(mockMessageRepository.create).not.toHaveBeenCalled();
-      expect(mockMessageRepository.save).not.toHaveBeenCalled();
-    });
-
     it('should add transcript successfully in production', async () => {
       const mockMessages = [
         {

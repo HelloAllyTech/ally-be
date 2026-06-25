@@ -265,42 +265,6 @@ describe('ChatTranscriptService', () => {
       );
     });
 
-    it('stores the transcript and keeps IN_PROGRESS on phase-1 delivery (transcript only, summary still pending)', async () => {
-      chatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
-      const notify = (service as any).notificationService
-        .notifyTranscriptionFailure as jest.Mock;
-
-      const transcription = [
-        { role: 'client', content: 'hello world', start_time: 0, end_time: 2 },
-      ];
-
-      // Phase 1: transcript delivered on its own, no summary, no error.
-      await service.processTranscribeResult({
-        chatId,
-        transcription,
-        correlationId: 'corr-1',
-      });
-
-      expect(chatAiService.addTranscript).toHaveBeenCalledWith(
-        mockChat,
-        transcription,
-      );
-      expect(chatAiService.addSummary).not.toHaveBeenCalled();
-      // Kept IN_PROGRESS (not FAILED, not retryable) — the summary is coming.
-      expect(chatService.updateChat).toHaveBeenCalledWith(
-        chatId,
-        expect.objectContaining({
-          summaryStatus: ChatSummaryStatus.IN_PROGRESS,
-          metadata: expect.objectContaining({
-            transcriptReady: true,
-            correlationId: 'corr-1',
-          }),
-        }),
-      );
-      // Not a failure — no alert.
-      expect(notify).not.toHaveBeenCalled();
-    });
-
     it('should mark chat as FAILED if S3 download fails', async () => {
       chatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
       mockedAxios.get.mockRejectedValueOnce(new Error('S3 error'));

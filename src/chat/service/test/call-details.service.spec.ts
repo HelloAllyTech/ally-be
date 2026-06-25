@@ -1065,9 +1065,6 @@ describe('CallDetailsService', () => {
     it('regenerates from the transcript and marks SUCCESS on success', async () => {
       jest.spyOn(chatRepository, 'findOne').mockResolvedValue(failedChat);
       jest
-        .spyOn(messageService, 'getChatHistoryForAIService')
-        .mockResolvedValue([{ content: 'hi' }] as any);
-      jest
         .spyOn(service as any, 'regenerateSummaryFromTranscript')
         .mockResolvedValue(undefined);
       const update = jest
@@ -1088,9 +1085,6 @@ describe('CallDetailsService', () => {
 
     it('keeps it retryable and increments attempts on failure', async () => {
       jest.spyOn(chatRepository, 'findOne').mockResolvedValue(failedChat);
-      jest
-        .spyOn(messageService, 'getChatHistoryForAIService')
-        .mockResolvedValue([{ content: 'hi' }] as any);
       jest
         .spyOn(service as any, 'regenerateSummaryFromTranscript')
         .mockRejectedValue(new Error('llm down'));
@@ -1135,23 +1129,6 @@ describe('CallDetailsService', () => {
       await expect(service.retrySummary(404)).rejects.toThrow(
         NotFoundException,
       );
-    });
-
-    it('signals needsReprocess when there is no transcript to summarise from', async () => {
-      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(failedChat);
-      jest
-        .spyOn(messageService, 'getChatHistoryForAIService')
-        .mockResolvedValue([] as any);
-      const regen = jest.spyOn(
-        service as any,
-        'regenerateSummaryFromTranscript',
-      );
-
-      const result = await service.retrySummary(55);
-
-      expect(result.needsReprocess).toBe(true);
-      expect(result.success).toBe(false);
-      expect(regen).not.toHaveBeenCalled();
     });
   });
 
