@@ -8,6 +8,7 @@ import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
+import { StartV2VTestSessionRequestDto } from '../dto/start-v2v-test-session-request.dto';
 import { ScenarioService } from './scenario.service';
 import {
   ScenarioSessionEventStatus,
@@ -710,6 +711,79 @@ export class ScenarioSessionService {
     }
   }
 
+  /**
+   * Start a SUPERADMIN V2V test session: run the normal scenario session (which
+   * creates the room and dispatches the real client agent), then dispatch a
+   * second "simulated user" agent into the same room to play the counselor side
+   * over voice. The client agent records the canonical transcript + turn
+   * metrics, so the run shows up in the session logs like a human session —
+   * but no human is needed. Attributed to the triggering superadmin.
+   */
+  async startV2VTestSession(
+    superAdminId: number,
+    dto: StartV2VTestSessionRequestDto,
+  ) {
+    // Reuse the standard flow for the client agent, room, metadata and session
+    // row. The generated participant token is simply left unused (no human).
+    const result = await this.startScenarioSession(superAdminId, {
+      scenarioId: dto.scenarioId,
+      languageId: dto.languageId,
+      ttl: dto.ttl,
+    } as StartScenarioSessionRequestDto);
+
+    const roomId = `${result.scenarioSession.roomId}`;
+
+    // Build the counselor-side context + language for the simulated user.
+    const scenario = await this.scenarioService.getAdminScenario(
+      dto.scenarioId,
+    );
+    const { languageDetails } = await this.getLanguageDetailsForScenarioSession(
+      dto.languageId,
+    );
+    const simulatedUserMetadata = {
+      simulated_user: {
+        scenario_context: this.buildSimulatedUserContext(scenario),
+        language_label:
+          languageDetails?.label ?? languageDetails?.value ?? 'English',
+        language_code: languageDetails?.value ?? DEFAULT_LANGUAGE_CODE,
+        max_exchanges: dto.maxExchanges ?? 12,
+      },
+    };
+
+    // Dispatch the second agent (counselor side) into the same room. Different
+    // agent name from the client agent, so LiveKit's per-name dedup allows both.
+    await this.livekitService.agentDispatch(
+      roomId,
+      this.configService.livekit.simulatedUserAgentName,
+      JSON.stringify(simulatedUserMetadata),
+    );
+
+    this.logger.debug(
+      `Started V2V test session room=${roomId} scenario=${dto.scenarioId} ` +
+        `simulatedUserAgent=${this.configService.livekit.simulatedUserAgentName}`,
+    );
+
+    return {
+      ...result,
+      isTestSession: true,
+      simulatedUserAgent: this.configService.livekit.simulatedUserAgentName,
+    };
+  }
+
+  /** Compact "who the client is + what to practice" brief for the simulated user. */
+  private buildSimulatedUserContext(scenario: any): string {
+    const m = scenario?.metadata ?? {};
+    const parts: string[] = [];
+    const title = scenario?.title ?? m.title;
+    if (title) parts.push(`Scenario: ${title}`);
+    if (m.name) parts.push(`Client: ${m.name}`);
+    const description = scenario?.description ?? m.description;
+    if (description) parts.push(`Situation: ${description}`);
+    if (m.competency) parts.push(`Competency to practice: ${m.competency}`);
+    if (m.roleInstructions) parts.push(`Notes: ${m.roleInstructions}`);
+    return parts.join('\n');
+  }
+
   async updateScenarioSession(
     scenarioSessionId: string,
     updateScenarioSessionDto: Partial<ScenarioSessions>,
@@ -835,7 +909,13 @@ export class ScenarioSessionService {
       );
     }
     const credits =
-      await this.simulationCreditsService.getSimulationCredits(counselorId);
+      // Pass counselorId as both args: for SYSTEM_ACCESS users (e.g. a
+      // superadmin running a V2V test) getSimulationCredits resolves the target
+      // from the second arg, so omitting it throws "User ID is required".
+      await this.simulationCreditsService.getSimulationCredits(
+        counselorId,
+        counselorId,
+      );
     const lifespanSecondsPerCredit =
       this.configService.simulationCredits.lifespanSecondsPerCredit ?? 60;
     if (

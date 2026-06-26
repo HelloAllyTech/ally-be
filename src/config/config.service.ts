@@ -251,6 +251,12 @@ export class AppConfigService {
       serverUrl: this.configService.get<string>('LIVEKIT_URL'),
       environment: this.configService.get<string>('LIVEKIT_ENVIRONMENT'),
       agentName: this.configService.get<string>('LIVEKIT_AGENT_NAME', 'Agent'),
+      // Second agent that plays the counselor side in superadmin V2V test
+      // sessions; dispatched into the same room under this name.
+      simulatedUserAgentName: this.configService.get<string>(
+        'SIMULATED_USER_AGENT_NAME',
+        'SimulatedUser',
+      ),
     };
   }
 
