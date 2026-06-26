@@ -909,7 +909,13 @@ export class ScenarioSessionService {
       );
     }
     const credits =
-      await this.simulationCreditsService.getSimulationCredits(counselorId);
+      // Pass counselorId as both args: for SYSTEM_ACCESS users (e.g. a
+      // superadmin running a V2V test) getSimulationCredits resolves the target
+      // from the second arg, so omitting it throws "User ID is required".
+      await this.simulationCreditsService.getSimulationCredits(
+        counselorId,
+        counselorId,
+      );
     const lifespanSecondsPerCredit =
       this.configService.simulationCredits.lifespanSecondsPerCredit ?? 60;
     if (
