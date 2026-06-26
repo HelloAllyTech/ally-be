@@ -3,9 +3,11 @@ import { AnalyticsController } from './controller/analytics.controller';
 import { TenantAnalyticsController } from './controller/tenant-analytics.controller';
 import { AnalyticsService } from './service/analytics.service';
 import { PlatformAnalyticsService } from './service/platform-analytics.service';
+import { ScribeAnalyticsService } from './service/scribe-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
 import { DriftBackfillSchedulerRegistrationService } from './service/drift-backfill-scheduler-registration.service';
 import { PlatformAnalyticsRepository } from './repository/platform-analytics.repository';
+import { ScribeAnalyticsRepository } from './repository/scribe-analytics.repository';
 import { LlmUsageRepository } from './repository/llm-usage.repository';
 import { DriftAnalyticsRepository } from './repository/drift-analytics.repository';
 import { DriftJudgeRepository } from './repository/drift-judge.repository';
@@ -33,10 +35,12 @@ import { TenantModule } from 'src/tenant/tenant.module';
   providers: [
     AnalyticsService,
     PlatformAnalyticsService,
+    ScribeAnalyticsService,
     DriftJudgeService,
     DriftJudgeRepository,
     DriftBackfillSchedulerRegistrationService,
     PlatformAnalyticsRepository,
+    ScribeAnalyticsRepository,
     LlmUsageRepository,
     DriftAnalyticsRepository,
     MetabaseService,

@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { AnalyticsService } from '../service/analytics.service';
 import { PlatformAnalyticsService } from '../service/platform-analytics.service';
+import { ScribeAnalyticsService } from '../service/scribe-analytics.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import {
   CreateDashboardDto,
@@ -35,6 +36,11 @@ import {
   VoiceLatencyResponseDto,
 } from '../dto/platform-analytics.dto';
 import {
+  ScribeAnalyticsQueryDto,
+  ScribeOverviewResponseDto,
+  ScribeSummaryFailureResponseDto,
+} from '../dto/scribe-analytics.dto';
+import {
   ApiTags,
   ApiOperation,
   ApiResponse,
@@ -56,6 +62,7 @@ export class AnalyticsController {
   constructor(
     private readonly analyticsService: AnalyticsService,
     private readonly platformAnalyticsService: PlatformAnalyticsService,
+    private readonly scribeAnalyticsService: ScribeAnalyticsService,
   ) {}
 
   @Get('overview')
@@ -146,6 +153,40 @@ export class AnalyticsController {
     return this.platformAnalyticsService.getTokenConsumption(
       query.range ?? '30d',
     );
+  }
+
+  @Get('scribe/overview')
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Scribe-session analytics overview (super-admin)',
+    description:
+      'Platform-wide scribe (counselor session) metrics over `range`: total ' +
+      'sessions, summary success rate, sessions-created trend, outcome ' +
+      'breakdown by summaryStatus, and mode split (SCRIBE upload vs DICTATION ' +
+      'live). Derived from the `chats` table (cross-tenant).',
+  })
+  @ApiResponse({ status: 200, type: ScribeOverviewResponseDto })
+  async getScribeOverview(
+    @Query() query: ScribeAnalyticsQueryDto,
+  ): Promise<ScribeOverviewResponseDto> {
+    return this.scribeAnalyticsService.getOverview(query.range ?? '30d');
+  }
+
+  @Get('scribe/summary-failures')
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Scribe summary-generation failure analytics (super-admin)',
+    description:
+      'Summary-failure rate over `range` (FAILED / (SUCCESS + FAILED), ' +
+      'excluding no-audio and in-flight), the failure-rate trend, failures by ' +
+      'pipeline stage, retryable-vs-terminal split, and timeout-vs-other split. ' +
+      'Derived from the `chats` table (cross-tenant).',
+  })
+  @ApiResponse({ status: 200, type: ScribeSummaryFailureResponseDto })
+  async getScribeSummaryFailures(
+    @Query() query: ScribeAnalyticsQueryDto,
+  ): Promise<ScribeSummaryFailureResponseDto> {
+    return this.scribeAnalyticsService.getSummaryFailures(query.range ?? '30d');
   }
 
   @Post('conversation-drift/backfill')

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsController } from '../analytics.controller';
 import { AnalyticsService } from '../../service/analytics.service';
 import { PlatformAnalyticsService } from '../../service/platform-analytics.service';
+import { ScribeAnalyticsService } from '../../service/scribe-analytics.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
@@ -67,6 +68,10 @@ describe('AnalyticsController', () => {
         {
           provide: PlatformAnalyticsService,
           useValue: { getOverview: jest.fn() },
+        },
+        {
+          provide: ScribeAnalyticsService,
+          useValue: { getOverview: jest.fn(), getSummaryFailures: jest.fn() },
         },
         {
           provide: Reflector,
