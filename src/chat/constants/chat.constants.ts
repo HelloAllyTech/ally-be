@@ -39,12 +39,19 @@ export enum ChatEvents {
 // never reports back) the chat would sit on "Processing" forever. The reaper
 // marks any chat still PENDING/IN_PROGRESS past this TTL as FAILED.
 //
-// Summaries normally complete in 2-4 min, so 5 min is a tight fail-fast. This
-// is only safe because the transcript is delivered+stored BEFORE the summary
-// (two-phase) and the audio is kept until success — so failing fast loses
-// nothing: a late summary still flips FAILED->SUCCESS, and a genuine timeout is
-// marked retryable (transcript present) for the auto-retry cron / manual retry.
-export const CHAT_SUMMARY_TIMEOUT_MINUTES = 5;
+// This TTL MUST exceed the AI worker's worst-case end-to-end budget, otherwise
+// the reaper fails chats that are still being processed healthily. The ally-ai
+// SQS visibility timeout is 900s (15 min) — a single message can legitimately
+// run that long (long recording: download + segmented STT + chunked diarize +
+// summary), and during the pre-phase-1 window there is no transcript yet, so a
+// premature reap is recorded as a dead failure (no transcript, not retryable).
+// Set comfortably above 15 min so the reaper only catches genuinely lost
+// results (worker crash, dropped SQS message, an error that never reports
+// back), not slow-but-healthy jobs. The transcript is still delivered+stored
+// before the summary (two-phase) and the audio is kept until success, so a
+// genuine timeout with a transcript present is marked retryable for the
+// auto-retry cron / manual retry.
+export const CHAT_SUMMARY_TIMEOUT_MINUTES = 20;
 
 // Only recordings created within this window are eligible for the one-time
 // reprocess backfill; older stuck chats are left for the reaper to fail since

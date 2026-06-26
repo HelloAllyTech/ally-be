@@ -11,11 +11,12 @@ export class ChatSchedulerRegistrationService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    // Fail fast: the chat summary TTL is 5min, so the reaper runs on the '5min'
-    // bucket and a stuck chat surfaces within ~5-10min of creation. This is safe
+    // Run the reaper frequently (every 5min) but it only fails chats older than
+    // CHAT_SUMMARY_TIMEOUT_MINUTES (20min), set above the AI worker's 15min
+    // processing budget so slow-but-healthy jobs aren't reaped mid-flight. Safe
     // because the transcript is stored before the summary (two-phase) and the
-    // audio is kept until success, so failing fast loses nothing — a timed-out
-    // chat is marked retryable for the auto-retry cron / manual retry.
+    // audio is kept until success — a timed-out chat with a transcript is marked
+    // retryable for the auto-retry cron / manual retry.
     scheduledTaskRegistry.register('5min', 'chat-summary-timeout', () =>
       this.chatService.markStalePendingChatsAsFailed(),
     );

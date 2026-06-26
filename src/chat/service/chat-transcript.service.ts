@@ -91,7 +91,12 @@ export class ChatTranscriptService {
 
       // No transcript at all → a genuine hard failure (transcription/
       // diarization failed upstream). There is nothing to show or retry.
-      if (!tx) {
+      // NOTE: an empty array must be treated the same as missing — `![]` is
+      // false in JS, so without the length check an empty transcript would slip
+      // through, be marked SUCCESS, and the recording would be deleted, leaving
+      // nothing to recover from. Gate the success/audio-delete path on a
+      // non-empty transcript.
+      if (!tx || tx.length === 0) {
         if (error) {
           this.logger.error(
             `AI service reported failure (no transcript) for chat ${chatId} stage=${stage} correlationId=${effectiveCorrelationId}: ${error}`,
