@@ -29,6 +29,11 @@ export class TranscriptionRequestDlqConsumer {
         summaryStatus: ChatSummaryStatus.FAILED,
         metadata: {
           dlq_message: responseMessage,
+          // Tag stage/error so failure analytics attribute this as a
+          // dead-letter (transcription request exhausted its SQS retries)
+          // rather than 'unknown'.
+          stage: 'transcription-request-dlq',
+          error: 'Transcription request dead-lettered (exhausted retries)',
         },
       });
     } catch (err) {

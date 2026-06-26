@@ -86,6 +86,8 @@ describe('TranscriptionRequestDlqConsumer', () => {
           summaryStatus: ChatSummaryStatus.FAILED,
           metadata: {
             dlq_message: mockDlqMessage,
+            stage: 'transcription-request-dlq',
+            error: 'Transcription request dead-lettered (exhausted retries)',
           },
         },
       );
@@ -173,6 +175,8 @@ describe('TranscriptionRequestDlqConsumer', () => {
         summaryStatus: ChatSummaryStatus.FAILED,
         metadata: {
           dlq_message: messageWithoutChatId,
+          stage: 'transcription-request-dlq',
+          error: 'Transcription request dead-lettered (exhausted retries)',
         },
       });
     });
@@ -220,6 +224,8 @@ describe('TranscriptionRequestDlqConsumer', () => {
           summaryStatus: ChatSummaryStatus.FAILED,
           metadata: {
             dlq_message: minimalMessage,
+            stage: 'transcription-request-dlq',
+            error: 'Transcription request dead-lettered (exhausted retries)',
           },
         },
       );
@@ -248,6 +254,8 @@ describe('TranscriptionRequestDlqConsumer', () => {
           summaryStatus: ChatSummaryStatus.FAILED,
           metadata: {
             dlq_message: messageWithExtraFields,
+            stage: 'transcription-request-dlq',
+            error: 'Transcription request dead-lettered (exhausted retries)',
           },
         },
       );
@@ -269,6 +277,8 @@ describe('TranscriptionRequestDlqConsumer', () => {
           summaryStatus: ChatSummaryStatus.FAILED,
           metadata: {
             dlq_message: mockDlqMessage,
+            stage: 'transcription-request-dlq',
+            error: 'Transcription request dead-lettered (exhausted retries)',
           },
         },
       );
@@ -313,6 +323,8 @@ describe('TranscriptionRequestDlqConsumer', () => {
         summaryStatus: ChatSummaryStatus.FAILED,
         metadata: {
           dlq_message: {},
+          stage: 'transcription-request-dlq',
+          error: 'Transcription request dead-lettered (exhausted retries)',
         },
       });
     });
@@ -338,6 +350,8 @@ describe('TranscriptionRequestDlqConsumer', () => {
         summaryStatus: ChatSummaryStatus.FAILED,
         metadata: {
           dlq_message: messageWithNulls,
+          stage: 'transcription-request-dlq',
+          error: 'Transcription request dead-lettered (exhausted retries)',
         },
       });
     });
@@ -418,6 +432,8 @@ describe('TranscriptionRequestDlqConsumer', () => {
           summaryStatus: ChatSummaryStatus.FAILED,
           metadata: {
             dlq_message: largeMessage,
+            stage: 'transcription-request-dlq',
+            error: 'Transcription request dead-lettered (exhausted retries)',
           },
         },
       );

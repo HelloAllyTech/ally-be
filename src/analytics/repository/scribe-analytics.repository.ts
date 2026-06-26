@@ -168,16 +168,23 @@ export class ScribeAnalyticsRepository {
     end: Date,
   ): Promise<ScribeKeyCountRow[]> {
     // Stage attribution: prefer the explicit metadata.stage; otherwise infer
-    // 'summary-timeout' from the reaper's error marker so timeout failures —
-    // which historically carried no stage — are attributed correctly without a
-    // data backfill. Anything still unlabelled falls back to 'unknown'.
+    // the bucket from other metadata markers so failures that historically
+    // carried no stage are still attributed correctly without a data backfill:
+    //   - a 'dlq_message' => the message dead-lettered (exhausted SQS retries)
+    //   - the reaper's timeout error marker => 'summary-timeout'
+    //   - any other error string => 'other-error'
+    // Only genuinely empty metadata falls through to 'unknown'.
     const rows = await this.dataSource
       .createQueryBuilder()
       .select(
         `COALESCE(
           NULLIF(c."metadata"->>'stage', ''),
+          CASE WHEN c."metadata"->>'dlq_message' IS NOT NULL
+               THEN 'dead-letter' END,
           CASE WHEN c."metadata"->>'error' = :timeoutError
                THEN 'summary-timeout' END,
+          CASE WHEN c."metadata"->>'error' IS NOT NULL
+               THEN 'other-error' END,
           'unknown'
         )`,
         'key',
