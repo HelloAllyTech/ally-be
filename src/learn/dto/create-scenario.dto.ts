@@ -232,6 +232,16 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
+      'Enable comfort audio (a faint, constant room tone played on the background track) for this simulation so the line never sounds dead between turns. Gated by the global COMFORT_AUDIO_ENABLED kill-switch. Defaults to false (opt-in) when unspecified.',
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  comfortAudioEnabled?: boolean;
+
+  @ApiProperty({
+    description:
       'Trim conversation history sent to the agent to the last few dialogues (older turns dropped) to reduce turn latency. Defaults to false (opt-in) when unspecified.',
     example: false,
     required: false,
@@ -239,6 +249,16 @@ export class CreateScenarioDto {
   @IsOptional()
   @IsBoolean()
   historyTrimEnabled?: boolean;
+
+  @ApiProperty({
+    description:
+      "Enable continuous back-channeling — brief 'mm-hmm'-style listener affirmations played sparsely while the learner is still speaking on a long turn. Defaults to false (opt-in) when unspecified.",
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  continuousBackchanneling?: boolean;
 
   @ApiProperty({
     description: 'Opening statements of the AI client persona',
