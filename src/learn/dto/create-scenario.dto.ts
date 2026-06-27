@@ -261,6 +261,16 @@ export class CreateScenarioDto {
   continuousBackchanneling?: boolean;
 
   @ApiProperty({
+    description:
+      "Enable the predictive interim reply — while the learner is still speaking on a long turn, a fast model drafts a short, non-committal holding reply the agent speaks the instant they stop, to mask the real reply's latency (then cut when the real reply begins). Defaults to false (opt-in) when unspecified.",
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  interimReplyEnabled?: boolean;
+
+  @ApiProperty({
     description: 'Opening statements of the AI client persona',
     example: ['Hi, I need some help.', 'I am feeling down today.'],
   })
