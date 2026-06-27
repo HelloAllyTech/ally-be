@@ -977,7 +977,10 @@ describe('ChatService', () => {
         expect.objectContaining({ id: 7 }),
         expect.objectContaining({
           summaryStatus: ChatSummaryStatus.FAILED,
-          metadata: expect.objectContaining({ summaryRetryable: true }),
+          metadata: expect.objectContaining({
+            summaryRetryable: true,
+            stage: 'summary-timeout',
+          }),
         }),
       );
     });
@@ -997,6 +1000,7 @@ describe('ChatService', () => {
 
       const meta = (update.mock.calls[0][1] as any).metadata;
       expect(meta.summaryRetryable).toBeUndefined();
+      expect(meta.stage).toBe('summary-timeout');
       expect((update.mock.calls[0][1] as any).summaryStatus).toBe(
         ChatSummaryStatus.FAILED,
       );

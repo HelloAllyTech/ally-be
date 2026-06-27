@@ -167,9 +167,28 @@ export class ScribeAnalyticsRepository {
     start: Date,
     end: Date,
   ): Promise<ScribeKeyCountRow[]> {
+    // Stage attribution: prefer the explicit metadata.stage; otherwise infer
+    // the bucket from other metadata markers so failures that historically
+    // carried no stage are still attributed correctly without a data backfill:
+    //   - a 'dlq_message' => the message dead-lettered (exhausted SQS retries)
+    //   - the reaper's timeout error marker => 'summary-timeout'
+    //   - any other error string => 'other-error'
+    // Only genuinely empty metadata falls through to 'unknown'.
     const rows = await this.dataSource
       .createQueryBuilder()
-      .select(`COALESCE(NULLIF(c."metadata"->>'stage', ''), 'unknown')`, 'key')
+      .select(
+        `COALESCE(
+          NULLIF(c."metadata"->>'stage', ''),
+          CASE WHEN c."metadata"->>'dlq_message' IS NOT NULL
+               THEN 'dead-letter' END,
+          CASE WHEN c."metadata"->>'error' = :timeoutError
+               THEN 'summary-timeout' END,
+          CASE WHEN c."metadata"->>'error' IS NOT NULL
+               THEN 'other-error' END,
+          'unknown'
+        )`,
+        'key',
+      )
       .addSelect('COUNT(*)::int', 'count')
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
@@ -177,6 +196,7 @@ export class ScribeAnalyticsRepository {
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
+      .setParameter('timeoutError', CHAT_SUMMARY_TIMEOUT_ERROR)
       .groupBy('key')
       .orderBy('count', 'DESC')
       .getRawMany<{ key: string; count: number }>();

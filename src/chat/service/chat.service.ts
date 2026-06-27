@@ -740,12 +740,19 @@ export class ChatService {
               ? ({
                   ...existingMetadata,
                   error: CHAT_SUMMARY_TIMEOUT_ERROR,
+                  // Tag the stage so failure analytics attribute timeouts as
+                  // 'summary-timeout' rather than 'unknown' (matches the Slack
+                  // alert's stage). Overrides any earlier in-flight stage.
+                  stage: 'summary-timeout',
                   summaryRetryable: true,
                   summaryRetryAttempts: Number(
                     existingMetadata.summaryRetryAttempts ?? 0,
                   ),
                 } as Record<string, any>)
-              : ({ error: CHAT_SUMMARY_TIMEOUT_ERROR } as Record<string, any>),
+              : ({
+                  error: CHAT_SUMMARY_TIMEOUT_ERROR,
+                  stage: 'summary-timeout',
+                } as Record<string, any>),
           },
         );
 
