@@ -238,6 +238,41 @@ export class ChatService {
     return chat;
   }
 
+  /**
+   * Creates an empty manual scribe note: a Chat with mode SCRIBE and no audio,
+   * so the organization's custom-field values can be attached to it. Returns the
+   * new chat id and its auto-generated name (CALL-{id}-{date}).
+   */
+  async createNote(
+    counselorId: number,
+  ): Promise<{ chatId: number; name: string }> {
+    const now = new Date();
+
+    const chat = await this.createChatForAnonymousClient({
+      counselorId,
+      provider: AudioChatProvider.MICROPHONE,
+      mode: ScribeSessionMode.SCRIBE,
+      status: ChatStatus.ENDED,
+      startedAt: now,
+      endedAt: now,
+    });
+
+    if (!chat) {
+      throw new HttpException(
+        'Failed to create note',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+
+    // A manual note has no audio/transcript to summarise, so mark the summary as
+    // resolved; otherwise the call-logs list would show it stuck on "Processing".
+    await this.updateChat(chat.id, {
+      summaryStatus: ChatSummaryStatus.SUCCESS,
+    });
+
+    return { chatId: chat.id, name: ChatUtil.getSummaryName(chat) };
+  }
+
   async getChatsByUserIds(
     userIds: number[],
     options?: {

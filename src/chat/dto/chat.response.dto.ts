@@ -3,6 +3,20 @@ import { CallDetails } from './call-log.response.dto';
 import { ChatStatus } from '../entity/chat.entity';
 import { IsNotEmpty, IsString } from 'class-validator';
 
+export class CreateNoteResponseDto {
+  @ApiProperty({
+    example: 12345,
+    description: 'Chat id of the created note',
+  })
+  chatId!: number;
+
+  @ApiProperty({
+    example: 'CALL-12345-2026-06-27',
+    description: 'Auto-generated note name (CALL-{id}-{date})',
+  })
+  name!: string;
+}
+
 export class ChatDto {
   @ApiProperty({ example: 1, description: 'Unique identifier for the chat' })
   id!: number;

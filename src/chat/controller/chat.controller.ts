@@ -34,6 +34,7 @@ import {
 import {
   CallInfoDto,
   ChatResponseDto,
+  CreateNoteResponseDto,
   DeleteChatResponseDto,
 } from '../dto/chat.response.dto';
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
@@ -68,6 +69,20 @@ export class ChatController {
     private readonly chatTranscriptService: ChatTranscriptService,
     private readonly audioUploadService: AudioUploadService,
   ) {}
+
+  @Post('note')
+  @AuthPermissions([PERMISSIONS.EDIT_CUSTOM_FIELD_VALUES])
+  @ApiOperation({ summary: 'Create an empty manual scribe note' })
+  @ApiResponse({
+    status: 201,
+    description: 'Note created',
+    type: CreateNoteResponseDto,
+  })
+  async createNote(
+    @CurrentUser() tokenUser: TokenUser,
+  ): Promise<CreateNoteResponseDto> {
+    return this.service.createNote(tokenUser.id);
+  }
 
   @AuthPermissions([PERMISSIONS.VIEW_CHAT])
   @Get('my-chat')
