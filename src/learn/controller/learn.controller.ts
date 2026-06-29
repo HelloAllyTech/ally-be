@@ -41,9 +41,6 @@ import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioSortBy } from '../type/scenario.type';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
-import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
-import { UserRole } from 'src/common/constants/user.constants';
-import { StartV2VTestSessionRequestDto } from '../dto/start-v2v-test-session-request.dto';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
 import { UpdateScenarioVoiceDto } from '../dto/update-scenario-voice.dto';
@@ -732,21 +729,6 @@ export class LearnController {
     return this.scenarioSessionService.startScenarioSession(
       tokenUser.id,
       startScenarioSessionDto,
-    );
-  }
-
-  @ApiOperation({
-    summary: 'Start a superadmin V2V test session (AI plays the user side)',
-  })
-  @AuthRoles(UserRole.SUPER_ADMIN)
-  @Post('v2v-test-session-start')
-  async startV2VTestSession(
-    @CurrentUser() tokenUser: TokenUser,
-    @Body() startV2VTestSessionDto: StartV2VTestSessionRequestDto,
-  ) {
-    return this.scenarioSessionService.startV2VTestSession(
-      tokenUser.id,
-      startV2VTestSessionDto,
     );
   }
 
