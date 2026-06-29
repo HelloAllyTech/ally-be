@@ -292,6 +292,20 @@ export class CreateScenarioDto {
   interimReplyEnabled?: boolean;
 
   @ApiProperty({
+    description:
+      'Sampling temperature for the roleplay actor LLM in this simulation. Higher values (e.g. 1.0) make the persona more varied/creative; lower values (e.g. 0.2) make it more focused and deterministic. Range 0–2. When unspecified, the global default temperature is used.',
+    example: 0.7,
+    minimum: 0,
+    maximum: 2,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  temperature?: number;
+
+  @ApiProperty({
     description: 'Opening statements of the AI client persona',
     example: ['Hi, I need some help.', 'I am feeling down today.'],
   })

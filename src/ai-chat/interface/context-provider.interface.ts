@@ -8,6 +8,12 @@ export interface ChatContext {
     transcriptTurns?: number;
     callDuration?: number;
     transcriptMessages?: ScenarioSessionMessages[];
+    /**
+     * Per-simulation LLM sampling temperature persisted on the scenario
+     * (scenarios.metadata.temperature). Undefined when unset; consumers
+     * fall back to the global default.
+     */
+    temperature?: number;
   };
 }
 
