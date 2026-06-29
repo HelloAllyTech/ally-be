@@ -81,6 +81,17 @@ export class ScenarioSessionContextProvider implements ContextProvider {
     if (promptTemplate) {
       systemPrompt = this.renderTemplate(promptTemplate, templateVariables);
     }
+    // Per-simulation LLM temperature lives on scenarios.metadata (JSONB).
+    // Surface it so the chat service can apply it, falling back to the global
+    // default when unset/invalid.
+    const rawTemperature = (
+      scenario.metadata as Record<string, any> | undefined
+    )?.temperature;
+    const temperature =
+      typeof rawTemperature === 'number' && Number.isFinite(rawTemperature)
+        ? rawTemperature
+        : undefined;
+
     return {
       systemPrompt,
       metadata: {
@@ -89,6 +100,7 @@ export class ScenarioSessionContextProvider implements ContextProvider {
         transcriptTurns: transcriptMessages.length,
         callDuration: details?.callDuration,
         transcriptMessages,
+        temperature,
       },
     };
   }

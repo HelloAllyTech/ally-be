@@ -93,6 +93,20 @@ export class ScenarioSessionChatService {
     const subject = new Subject<SseMessageEvent>();
     let fullResponse = '';
 
+    // Resolve the sampling temperature: honor the per-simulation value
+    // (scenarios.metadata.temperature) when set, otherwise fall back to the
+    // global default.
+    const perSimulationTemperature = context?.metadata?.temperature;
+    const temperature =
+      typeof perSimulationTemperature === 'number'
+        ? perSimulationTemperature
+        : this.configService.aiChat.temperature;
+    if (temperature !== this.configService.aiChat.temperature) {
+      this.logger.debug(
+        `Using per-simulation LLM temperature ${temperature} for chatId: ${chat.id}`,
+      );
+    }
+
     // Stream the response
     this.logger.debug(`Starting AI stream response for chatId: ${chat.id}`);
     const streamObservable = this.aiChatService.streamResponse({
@@ -101,7 +115,7 @@ export class ScenarioSessionChatService {
       userMessage,
       llmConfig: {
         model: this.configService.aiChat.model,
-        temperature: this.configService.aiChat.temperature,
+        temperature,
         maxTokens: this.configService.aiChat.maxTokens,
       },
     });
