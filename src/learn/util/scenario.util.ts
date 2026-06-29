@@ -30,7 +30,6 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'historyTrimEnabled',
   'continuousBackchanneling',
   'interimReplyEnabled',
-  'temperature',
   'customFields',
   'languageVoices',
   'linguisticStyleSamples',
@@ -140,7 +139,6 @@ export const mapCreateScenarioRequestToEntity = (
       historyTrimEnabled: scenario.historyTrimEnabled,
       continuousBackchanneling: scenario.continuousBackchanneling,
       interimReplyEnabled: scenario.interimReplyEnabled,
-      temperature: scenario.temperature,
       customFields: scenario.customFields?.map((customField) => ({
         name: customField.name,
         value: customField.value,
