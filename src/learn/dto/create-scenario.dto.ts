@@ -212,11 +212,18 @@ export class CreateScenarioDto {
   @IsOptional()
   difficultyLevel?: ScenarioDifficultyLevel;
 
+  /**
+   * @deprecated Speech prosody has been removed from the voice pipeline
+   * (ElevenLabs v3 expressiveness is produced inline by the agent). This flag is
+   * ignored downstream and is retained only for backwards compatibility with
+   * stored scenarios and existing clients. It will be removed in a later release.
+   */
   @ApiProperty({
     description:
-      'Enable speech prosody (per-turn voice expression generation) for this simulation. Defaults to true when unspecified.',
+      'DEPRECATED — speech prosody has been removed from the pipeline; this flag is ignored. Retained for backwards compatibility.',
     example: true,
     required: false,
+    deprecated: true,
   })
   @IsOptional()
   @IsBoolean()
