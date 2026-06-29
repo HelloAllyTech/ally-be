@@ -379,6 +379,22 @@ describe('Scenario Util', () => {
 
       expect(result.metadata.enableProsody).toBe(true);
     });
+
+    it('should persist temperature to metadata when provided (forwarded to ally-ai-learn as promptData.temperature)', () => {
+      const userId = 403;
+      const scenario: CreateScenarioDto = {
+        title: 'Temperature Scenario',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        temperature: 0.3,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.temperature).toBe(0.3);
+    });
   });
 
   describe('mapUpdateScenarioRequestToEntity', () => {
@@ -404,6 +420,46 @@ describe('Scenario Util', () => {
         name: 'Existing',
         responseLength: 'BRIEF',
         enableProsody: false,
+      });
+    });
+
+    it('should merge temperature into existing metadata without losing other keys', () => {
+      const userId = 503;
+      const existingScenario = {
+        id: 1,
+        metadata: { name: 'Existing', temperature: 0.7 },
+      } as unknown as Scenarios;
+      const dto: UpdateScenarioDto = { temperature: 1.2 } as any;
+
+      const result = mapUpdateScenarioRequestToEntity(
+        dto,
+        existingScenario,
+        userId,
+      );
+
+      expect(result.metadata).toEqual({
+        name: 'Existing',
+        temperature: 1.2,
+      });
+    });
+
+    it('should leave existing metadata.temperature untouched when omitted from DTO', () => {
+      const userId = 504;
+      const existingScenario = {
+        id: 1,
+        metadata: { name: 'Existing', temperature: 0.4 },
+      } as unknown as Scenarios;
+      const dto: UpdateScenarioDto = { name: 'Updated' } as any;
+
+      const result = mapUpdateScenarioRequestToEntity(
+        dto,
+        existingScenario,
+        userId,
+      );
+
+      expect(result.metadata).toEqual({
+        name: 'Updated',
+        temperature: 0.4,
       });
     });
 
