@@ -321,8 +321,10 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_I18N_TRANSLATIONS,
   PERMISSIONS.VIEW_TOOLTIPS,
   PERMISSIONS.EDIT_TOOLTIPS,
-  PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
-  PERMISSIONS.START_MICROPHONE_CHAT,
+  // start:microphone-chat / start:cloud-telephony-chat are intentionally NOT
+  // granted here — initiating a recording (scribe/dictation/telephony) is a
+  // counsellor capability. A SUPER_ADMIN who is also a counsellor inherits it
+  // via the COUNSELOR group (permissions are unioned across a user's roles).
   PERMISSIONS.EDIT_USER_PREFERENCES,
   PERMISSIONS.VIEW_USER_PREFERENCES,
 ];
@@ -415,8 +417,10 @@ const ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_CUSTOM_FIELD_VALUES,
   PERMISSIONS.VIEW_SETTINGS_CUSTOM_FIELD_TYPES,
   PERMISSIONS.EDIT_SETTINGS_CUSTOM_FIELD_TYPES,
-  PERMISSIONS.START_CLOUD_TELEPHONY_CHAT,
-  PERMISSIONS.START_MICROPHONE_CHAT,
+  // start:microphone-chat / start:cloud-telephony-chat are intentionally NOT
+  // granted here — initiating a recording (scribe/dictation/telephony) is a
+  // counsellor capability. An ADMIN who is also a counsellor inherits it via
+  // the COUNSELOR group (permissions are unioned across a user's roles).
 ];
 
 const MULTI_TENANT_ADMIN_PERMISSIONS = [
