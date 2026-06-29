@@ -13,6 +13,8 @@ import {
   ArrayMaxSize,
   ValidateIf,
   MaxLength,
+  Min,
+  Max,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
@@ -219,6 +221,18 @@ export class CreateScenarioDto {
   @IsOptional()
   @IsBoolean()
   enableProsody?: boolean;
+
+  @ApiProperty({
+    description:
+      'Roleplay-level LLM sampling temperature for the main response agent. Persisted on scenarios.metadata and forwarded to ally-ai-learn as promptData.temperature, where it overrides the per-language llm.config.temperature and the global LLM_TEMPERATURE default for this simulation only. Lower values (0.2–0.4) keep the persona tightly consistent; higher values add variety. Range 0–2; unspecified falls back to the global default.',
+    example: 0.7,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  temperature?: number;
 
   @ApiProperty({
     description:
