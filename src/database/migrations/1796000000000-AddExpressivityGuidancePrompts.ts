@@ -16,9 +16,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * and break_tag_guidance.txt; these v1 bodies mirror them. The ON CONFLICT clause
  * keeps useDashboardOverride=true even if the file-sync created the row first.
  */
-export class AddExpressivityGuidancePrompts1796000000000
-  implements MigrationInterface
-{
+export class AddExpressivityGuidancePrompts1796000000000 implements MigrationInterface {
   name = 'AddExpressivityGuidancePrompts1796000000000';
 
   // Keep each body in sync with the canonical ally-ai-learn .txt files.
