@@ -85,6 +85,9 @@ import {
   GenerateAgentPromptResponseDto,
 } from '../dto/generate-agent-prompt.dto';
 import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
+import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
+import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
+import { UserRole } from 'src/common/constants/user.constants';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -1245,5 +1248,22 @@ export class LearnController {
   @Post('trigger-warnings/make-translations')
   async makeTranslationsForTriggerWarnings(): Promise<boolean> {
     return this.triggerWarningService.makeTranslationsForTriggerWarnings();
+  }
+
+  @ApiOperation({
+    summary: 'Start an AI-vs-AI V2V test session (super-admin only)',
+    description:
+      'Creates a real scenario session where an AI simulated learner plays the user role. ' +
+      'The counselor AI runs as normal; the simulated learner joins via a low-cost TTS/LLM. ' +
+      'The session appears in Roleplay Session Logs.',
+  })
+  @ApiBody({ type: StartV2VTestSessionDto })
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @Post('v2v-test-session-start')
+  async startV2VTestSession(
+    @CurrentUser() user: TokenUser,
+    @Body() dto: StartV2VTestSessionDto,
+  ) {
+    return this.scenarioSessionService.startV2VTestSession(user.id, dto);
   }
 }

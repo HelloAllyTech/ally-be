@@ -24,6 +24,8 @@ export interface RoleplaySessionLogRawRow {
   callDuration: number | string | null;
   totalPausedMs: number | string | null;
   createdAt: Date;
+  /** True when this session was started by the super-admin V2V test tool. */
+  isV2VTest: boolean;
   /** Detail-only enrichments (present on `findOne`, absent on `list`). */
   scenarioVersionId?: string | null;
   language?: string | null;
@@ -140,6 +142,14 @@ export class RoleplaySessionLogsRepository {
         dateTo: filters.dateTo,
       });
     }
+
+    if (filters.isV2VTest === true) {
+      qb.andWhere(`(ss.metadata->>'v2vTest')::boolean = true`);
+    } else if (filters.isV2VTest === false) {
+      qb.andWhere(
+        `COALESCE((ss.metadata->>'v2vTest')::boolean, false) = false`,
+      );
+    }
   }
 
   /** Paginated, filtered, cross-tenant list of roleplay sessions + total count. */
@@ -170,6 +180,10 @@ export class RoleplaySessionLogsRepository {
       .addSelect('d."callDuration"', 'callDuration')
       .addSelect('ss."totalPausedMs"', 'totalPausedMs')
       .addSelect('ss."createdAt"', 'createdAt')
+      .addSelect(
+        `COALESCE((ss.metadata->>'v2vTest')::boolean, false)`,
+        'isV2VTest',
+      )
       .from('scenario_sessions', 'ss')
       .leftJoin('users', 'u', 'u.id = ss."counselorId"')
       .leftJoin('scenarios', 'scn', 'scn.id = ss."scenarioId"')
@@ -233,6 +247,10 @@ export class RoleplaySessionLogsRepository {
       .addSelect('d."callDuration"', 'callDuration')
       .addSelect('ss."totalPausedMs"', 'totalPausedMs')
       .addSelect('ss."createdAt"', 'createdAt')
+      .addSelect(
+        `COALESCE((ss.metadata->>'v2vTest')::boolean, false)`,
+        'isV2VTest',
+      )
       .addSelect('ss."scenarioVersionId"', 'scenarioVersionId')
       .addSelect(`COALESCE(lang."label", lang."value")`, 'language')
       .addSelect(`ss.metadata->>'voiceId'`, 'voiceId')

@@ -112,6 +112,7 @@ import { convertTimestampNsToDate } from 'src/common/util/date.util';
 import { EgressInfo } from 'livekit-server-sdk';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
+import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -2287,5 +2288,170 @@ export class ScenarioSessionService {
       });
     }
     return [];
+  }
+
+  /**
+   * Start an AI-vs-AI V2V test session (super-admin only).
+   *
+   * Creates a real ScenarioSession (visible in Roleplay Session Logs, tagged
+   * with metadata.v2vTest=true) where the counselor AI runs as normal and an
+   * AI simulated learner joins as the user side via a low-cost TTS/LLM.
+   */
+  async startV2VTestSession(
+    userId: number,
+    dto: StartV2VTestSessionDto,
+  ): Promise<{
+    scenarioSession: ScenarioSessions;
+    isTestSession: boolean;
+    simulatedUserAgent: string;
+  }> {
+    const { scenarioId, languageId, maxExchanges = 12 } = dto;
+
+    const scenario = await this.scenarioService.getAdminScenario(scenarioId);
+    if (!scenario) {
+      throw new BadRequestException('Scenario not found');
+    }
+
+    // Reuse the same validation as preview (status + mandatory fields check).
+    await this.validatePreviewScenario(scenario);
+    await this.validateGlobalSimulationCapacity();
+
+    const { enLanguageDetails, languageDetails } =
+      await this.getLanguageDetailsForScenarioSession(languageId);
+
+    const isOtherLanguage =
+      languageId &&
+      languageDetails &&
+      !isEnglishLanguage(
+        languageId,
+        languageDetails.value,
+        enLanguageDetails?.id,
+      );
+
+    const sessionEvents = isOtherLanguage
+      ? await this.sessionEventSharedService.getSessionEventsTranslationsByScenarioId(
+          scenarioId,
+          languageId,
+        )
+      : await this.sessionEventSharedService.getSessionEventsByScenarioId(
+          scenarioId,
+        );
+
+    if (isOtherLanguage) {
+      await this.overlayBehaviorInstructionTranslations(scenario, languageId);
+    }
+
+    if (isOtherLanguage && (scenario?.terminationEvents?.length ?? 0) > 0) {
+      scenario.terminationEvents = scenario.terminationEvents!.map(
+        (termEvent) => {
+          const translated = sessionEvents.find(
+            (e) => e.id === termEvent?.eventId,
+          );
+          return translated
+            ? {
+                ...translated,
+                eventId: translated.id,
+                autoTerminationStatus: true,
+              }
+            : termEvent;
+        },
+      );
+    }
+
+    const voiceId = scenario?.metadata?.languageVoices?.[languageId];
+    if (!voiceId) {
+      throw new BadRequestException(
+        'Voice ID not found for scenario + language',
+      );
+    }
+
+    if (scenario?.metadata) {
+      scenario.metadata.voiceId = voiceId;
+      scenario.metadata.language =
+        languageDetails?.value ?? DEFAULT_LANGUAGE_CODE;
+      scenario.metadata.languageId = languageId ?? enLanguageDetails?.id;
+      scenario.metadata.defaultLanguageId = enLanguageDetails?.id;
+    }
+
+    const roomMetadata = await this.scenarioSharedService.createRoomMetadata({
+      scenario,
+      sessionEvents,
+      languageDetails,
+    });
+
+    // Create a real session record so the run appears in session logs.
+    const scenarioSession =
+      await this.scenarioSessionRepository.createScenarioSession(userId, {
+        scenarioId,
+        languageId,
+        voiceId,
+      });
+
+    // Tag the session as a V2V test so it can be filtered downstream.
+    scenarioSession.metadata = {
+      ...(scenarioSession.metadata ?? {}),
+      v2vTest: true,
+      v2vMaxExchanges: maxExchanges,
+    };
+    await this.scenarioSessionRepository.save(scenarioSession);
+
+    try {
+      // Create the LiveKit room and dispatch the counselor AI agent.
+      await this.livekitService.createRoom({
+        name: `${scenarioSession.roomId}`,
+        ttl: DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
+        metadata: roomMetadata,
+      });
+
+      this.livekitService.preMarkProactiveDispatch(`${scenarioSession.roomId}`);
+      this.livekitService
+        .agentDispatch(
+          `${scenarioSession.roomId}`,
+          this.configService.livekit.agentName,
+          JSON.stringify(roomMetadata),
+        )
+        .catch((err) => {
+          this.livekitService.clearProactiveDispatch(
+            `${scenarioSession.roomId}`,
+          );
+          this.logger.warn(
+            `V2V: proactive agent dispatch failed: ${err?.message}`,
+          );
+        });
+
+      // Generate a LiveKit token for the tester bot participant.
+      const { token: testerToken } =
+        await this.livekitService.generateAccessToken({
+          roomName: `${scenarioSession.roomId}`,
+          participantName: 'v2v-tester-bot',
+          participantIdentity: `v2v-tester-${scenarioSession.id}`,
+        });
+
+      // Start the simulated learner in ally-ai-learn (fire-and-forget).
+      this.aiService
+        .startV2VTester({
+          roomName: `${scenarioSession.roomId}`,
+          testerToken,
+          maxExchanges,
+          language: languageDetails?.value ?? DEFAULT_LANGUAGE_CODE,
+          scenarioTitle: scenario.title ?? '',
+          scenarioContext:
+            (roomMetadata as Record<string, any>)?.character ?? '',
+          scenarioSessionId: scenarioSession.id,
+          counselorId: userId,
+        })
+        .catch((err) => {
+          this.logger.error(`V2V: failed to start tester bot: ${err?.message}`);
+        });
+
+      return {
+        scenarioSession,
+        isTestSession: true,
+        simulatedUserAgent: 'google-tts',
+      };
+    } catch (error) {
+      await this.scenarioSessionRepository.delete(scenarioSession.id);
+      throw error;
+    }
   }
 }

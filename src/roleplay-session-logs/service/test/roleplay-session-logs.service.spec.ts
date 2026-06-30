@@ -24,6 +24,7 @@ describe('RoleplaySessionLogsService', () => {
     callDuration: null,
     totalPausedMs: '0',
     createdAt: new Date('2026-06-01T10:00:00Z'),
+    isV2VTest: false,
   };
 
   beforeEach(() => {

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { ScenarioSessionReviewService } from '../review.service';
+import { ReadFilter } from 'src/review/type/review.type';
 import { ScenarioSessionReviewRepository } from '../../repository/review.repository';
 import { ScenarioSessionReviewThreadRepository } from '../../repository/thread.repository';
 import { ScenarioSessionReviewReactionRepository } from '../../repository/reaction.repository';
@@ -601,5 +602,106 @@ describe('getAllReviews', () => {
 
     expect(result).toEqual({ data: [], count: 0 });
     expect(readStatusRepository.getReadReviewIds).not.toHaveBeenCalled();
+  });
+
+  it('passes readFilter option through to the repository', async () => {
+    reviewRepository.getAllReviews.mockResolvedValue({ reviews: [], count: 0 });
+
+    await service.getAllReviews({ readFilter: ReadFilter.UNREAD });
+
+    expect(reviewRepository.getAllReviews).toHaveBeenCalledWith(
+      expect.objectContaining({ readFilter: ReadFilter.UNREAD }),
+      'tenant-1',
+      1,
+    );
+  });
+});
+
+describe('markReviewAsRead', () => {
+  let service: ScenarioSessionReviewService;
+  const reviewRepository = { findOne: jest.fn() };
+  const readStatusRepository = { markAsRead: jest.fn() };
+  const permissionValidator = { validatePermissions: jest.fn() };
+  const reviewAccessValidator = { getReviewerAccessPermission: jest.fn() };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ScenarioSessionReviewService,
+        {
+          provide: ScenarioSessionReviewRepository,
+          useValue: reviewRepository,
+        },
+        { provide: ScenarioSessionReviewThreadRepository, useValue: {} },
+        { provide: ScenarioSessionReviewReactionRepository, useValue: {} },
+        { provide: ScenarioSessionReviewCommentRepository, useValue: {} },
+        {
+          provide: ScenarioSessionReviewCommentReactionRepository,
+          useValue: {},
+        },
+        { provide: ScenarioSharedService, useValue: {} },
+        { provide: UserService, useValue: {} },
+        {
+          provide: ScenarioReviewAccessValidator,
+          useValue: reviewAccessValidator,
+        },
+        {
+          provide: ScenarioSessionReviewReadStatusRepository,
+          useValue: readStatusRepository,
+        },
+        { provide: PermissionValidator, useValue: permissionValidator },
+        {
+          provide: ScenarioSessionRecordingService,
+          useValue: {
+            getRecordingUrlForSession: jest.fn(),
+            getRecordingUrlsForSessions: jest.fn(),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get<ScenarioSessionReviewService>(
+      ScenarioSessionReviewService,
+    );
+
+    jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue('42');
+    jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue('tenant-1');
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const setupHappyPath = () => {
+    permissionValidator.validatePermissions.mockResolvedValue(true);
+    reviewAccessValidator.getReviewerAccessPermission.mockReturnValue(
+      'VIEW_SIMULATION_REVIEWS',
+    );
+    reviewRepository.findOne.mockResolvedValue({
+      id: 'review-1',
+      tenantId: 'tenant-1',
+    });
+    readStatusRepository.markAsRead.mockResolvedValue(undefined);
+  };
+
+  it('logs a simulation_review_viewed event with reviewId and userId', async () => {
+    setupHappyPath();
+    const loggerSpy = jest.spyOn((service as any).logger, 'info');
+
+    await service.markReviewAsRead('review-1');
+
+    expect(loggerSpy).toHaveBeenCalledWith({
+      event: 'simulation_review_viewed',
+      reviewId: 'review-1',
+      userId: 42,
+    });
+  });
+
+  it('returns the success response from the base implementation', async () => {
+    setupHappyPath();
+
+    const result = await service.markReviewAsRead('review-1');
+
+    expect(result).toEqual({ success: true });
   });
 });
