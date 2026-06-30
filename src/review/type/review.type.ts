@@ -10,6 +10,14 @@ export enum ReviewSortBy {
   LATEST = 'LATEST',
   MOST_REVIEWED = 'MOST_REVIEWED',
   UNDISCOVERED = 'UNDISCOVERED',
+  MOST_COMMENTED = 'MOST_COMMENTED',
+  MOST_VIEWED = 'MOST_VIEWED',
+}
+
+export enum ReadFilter {
+  ALL = 'ALL',
+  READ = 'READ',
+  UNREAD = 'UNREAD',
 }
 
 export interface GetReviewsOptions {
@@ -18,4 +26,5 @@ export interface GetReviewsOptions {
   sortBy?: ReviewSortBy;
   sortOrder?: SortOrder;
   languageCode?: string;
+  readFilter?: ReadFilter;
 }

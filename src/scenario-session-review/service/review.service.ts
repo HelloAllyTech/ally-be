@@ -339,6 +339,17 @@ export class ScenarioSessionReviewService extends BaseReviewService<
     return data;
   }
 
+  async markReviewAsRead(reviewId: string) {
+    const result = await super.markReviewAsRead(reviewId);
+    const userId = Number(ExecutionManager.getUserId());
+    this.logger.info({
+      event: 'simulation_review_viewed',
+      reviewId,
+      userId,
+    });
+    return result;
+  }
+
   async getReviewMessages(
     reviewId: string,
     options?: Pagination,
