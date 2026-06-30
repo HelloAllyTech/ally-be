@@ -56,6 +56,11 @@ export class ScenarioSessionTurnMetrics extends BaseEntity {
   @Column({ nullable: true })
   llmResponseMs?: number;
 
+  /**
+   * @deprecated Speech prosody was removed from the voice pipeline; ally-ai-learn
+   * no longer emits this and it is no longer populated. Column retained so existing
+   * rows and analytics/Metabase queries keep working (new rows are NULL).
+   */
   @Column({ nullable: true })
   prosodyMs?: number;
 
@@ -102,6 +107,11 @@ export class ScenarioSessionTurnMetrics extends BaseEntity {
   @Column({ default: 0 })
   eventsDetected!: number;
 
+  /**
+   * @deprecated Speech prosody was removed from the voice pipeline; ally-ai-learn
+   * no longer emits this and it is no longer populated. Column retained so existing
+   * rows and analytics/Metabase queries keep working (new rows default to false).
+   */
   @Column({ default: false })
   prosodySkipped!: boolean;
 

@@ -1392,8 +1392,8 @@ describe('ScenarioSharedService', () => {
           availableVariables: [],
         },
         {
-          promptCode: 'ally_ai_learn_prosody_default_generation_prompt',
-          prompt: 'Prosody generation text',
+          promptCode: 'ally_ai_learn_system_audio_tag_guidance',
+          prompt: 'Audio tag guidance text',
           availableVariables: [],
         },
         {
@@ -1416,8 +1416,8 @@ describe('ScenarioSharedService', () => {
           availableVariables: [],
           hasStates: false,
         },
-        ally_ai_learn_prosody_default_generation_prompt: {
-          prompt: 'Prosody generation text',
+        ally_ai_learn_system_audio_tag_guidance: {
+          prompt: 'Audio tag guidance text',
           availableVariables: [],
           hasStates: false,
         },
