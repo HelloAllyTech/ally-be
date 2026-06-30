@@ -239,9 +239,11 @@ export class ChatService {
   }
 
   /**
-   * Creates an empty manual scribe note: a Chat with mode SCRIBE and no audio,
-   * so the organization's custom-field values can be attached to it. Returns the
-   * new chat id and its auto-generated name (CALL-{id}-{date}).
+   * Creates an empty manual scribe note: a Chat with mode DICTATION and no
+   * audio, so the organization's custom-field values can be attached to it.
+   * Manual notes are hand-typed (not transcribed), so they are categorised as
+   * Dictation. Returns the new chat id and its auto-generated name
+   * (CALL-{id}-{date}).
    */
   async createNote(
     counselorId: number,
@@ -251,7 +253,7 @@ export class ChatService {
     const chat = await this.createChatForAnonymousClient({
       counselorId,
       provider: AudioChatProvider.MICROPHONE,
-      mode: ScribeSessionMode.SCRIBE,
+      mode: ScribeSessionMode.DICTATION,
       status: ChatStatus.ENDED,
       startedAt: now,
       endedAt: now,
