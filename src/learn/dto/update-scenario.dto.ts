@@ -214,43 +214,6 @@ export class UpdateScenarioDto {
   @IsOptional()
   difficultyLevel?: ScenarioDifficultyLevel;
 
-  /**
-   * @deprecated Speech prosody has been removed from the voice pipeline
-   * (ElevenLabs v3 expressiveness is produced inline by the agent). This flag is
-   * ignored downstream and is retained only for backwards compatibility with
-   * stored scenarios and existing clients. It will be removed in a later release.
-   */
-  @ApiProperty({
-    description:
-      'DEPRECATED — speech prosody has been removed from the pipeline; this flag is ignored. Retained for backwards compatibility.',
-    example: true,
-    required: false,
-    deprecated: true,
-  })
-  @IsOptional()
-  @IsBoolean()
-  enableProsody?: boolean;
-
-  @ApiProperty({
-    description:
-      'Enable performative-text voice expression (punctuation, pacing, disfluencies — no markup) for non-ElevenLabs-v3 voices. Default false. No effect on v3 (which uses inline audio tags). Stored on scenarios.metadata.',
-    example: false,
-    required: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  enablePerformativeText?: boolean;
-
-  @ApiProperty({
-    description:
-      'Enable inline <break time=.../> pause tags for ElevenLabs (non-v3) voices. Default false. Ignored on providers that do not parse break tags. Stored on scenarios.metadata.',
-    example: false,
-    required: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  enableBreakTags?: boolean;
-
   @ApiProperty({
     description:
       'Roleplay-level LLM sampling temperature for the main response agent. Persisted on scenarios.metadata and forwarded to ally-ai-learn as promptData.temperature, where it overrides the per-language llm.config.temperature and the global LLM_TEMPERATURE default for this simulation only. Lower values (0.2–0.4) keep the persona tightly consistent; higher values add variety. Range 0–2; unspecified falls back to the global default.',

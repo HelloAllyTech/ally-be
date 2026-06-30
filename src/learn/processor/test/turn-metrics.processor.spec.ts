@@ -20,7 +20,6 @@ describe('TurnMetricsProcessor', () => {
     scenario_id: 99,
     response_chars: 120,
     events_detected: 1,
-    prosody_skipped: false,
   };
 
   const message = (overrides: Partial<LearnMessageAndEventMessage> = {}) =>

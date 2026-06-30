@@ -3067,13 +3067,11 @@ describe('ScenarioSessionService', () => {
       tts_ttfb_ms: 210,
       orchestration_ms: 120,
       llm_response_ms: 640,
-      prosody_ms: 70,
       language: 'en-IN',
       llm_model: 'gpt-4o-mini',
       env: 'LOCAL',
       response_chars: 180,
       events_detected: 1,
-      prosody_skipped: false,
     };
 
     let mockRepo: { create: jest.Mock; save: jest.Mock };
@@ -3109,13 +3107,11 @@ describe('ScenarioSessionService', () => {
         ttsTtfbMs: 210,
         orchestrationMs: 120,
         llmResponseMs: 640,
-        prosodyMs: 70,
         language: 'en-IN',
         llmModel: 'gpt-4o-mini',
         env: 'LOCAL',
         responseChars: 180,
         eventsDetected: 1,
-        prosodySkipped: false,
         scenarioId: 42,
         occurredAt,
       });
@@ -3146,7 +3142,6 @@ describe('ScenarioSessionService', () => {
 
       const created = mockRepo.create.mock.calls[0][0];
       expect(created.eventsDetected).toBe(0);
-      expect(created.prosodySkipped).toBe(false);
       expect(created.llmTimedOut).toBe(false);
       expect(created.interrupted).toBe(false);
     });

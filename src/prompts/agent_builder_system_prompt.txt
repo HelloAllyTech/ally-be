@@ -47,7 +47,6 @@ The JSON object must use exactly these keys (all keys are optional except as not
   "toggles": {
     "showScoreMeter": false,
     "enableFeedback": true,
-    "enableProsody": true,
     "autoTerminationStatus": false,
     "timerMode": false,
     "isGlobal": false,

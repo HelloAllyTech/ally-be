@@ -29,6 +29,7 @@ export interface LearnTurnMetricsData {
   tts_ttfb_ms?: number;
   orchestration_ms?: number;
   llm_response_ms?: number;
+  /** @deprecated Speech prosody removed; ally-ai-learn no longer emits this. */
   prosody_ms?: number;
   branching_ms?: number;
   knowledge_retrieval_ms?: number;
@@ -46,6 +47,7 @@ export interface LearnTurnMetricsData {
   env?: string;
   response_chars?: number;
   events_detected?: number;
+  /** @deprecated Speech prosody removed; ally-ai-learn no longer emits this. */
   prosody_skipped?: boolean;
   llm_timed_out?: boolean;
   interrupted?: boolean;
