@@ -583,4 +583,29 @@ export class AiService {
       return {};
     }
   }
+
+  /**
+   * Fire-and-forget: tell ally-ai-learn to start an AI simulated learner for a
+   * V2V test session.  The tester bot joins the LiveKit room as a participant
+   * and plays the user/learner role using a cheap LLM + TTS.
+   */
+  async startV2VTester(params: {
+    roomName: string;
+    testerToken: string;
+    maxExchanges: number;
+    language: string;
+    scenarioTitle: string;
+    scenarioContext: string;
+    scenarioSessionId: string;
+    counselorId: number;
+  }): Promise<void> {
+    await this.makeRequest<void, typeof params>(
+      'api/v1/v2v-tester/start',
+      params,
+      true,
+      'post',
+      undefined,
+      true, // isLearnService — routes to ally-ai-learn
+    );
+  }
 }

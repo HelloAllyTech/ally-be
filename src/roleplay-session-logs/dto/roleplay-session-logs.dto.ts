@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsISO8601,
@@ -95,6 +96,19 @@ export class ListRoleplaySessionLogsQueryDto {
   @IsOptional()
   @IsEnum(SortOrder)
   order?: SortOrder;
+
+  @ApiProperty({
+    required: false,
+    description: 'true = only V2V test sessions, false = only real sessions',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  isV2VTest?: boolean;
 }
 
 export class RoleplaySessionLogRowDto {
@@ -137,6 +151,9 @@ export class RoleplaySessionLogRowDto {
       'lower-bound approximation).',
   })
   costPriced!: boolean;
+
+  @ApiProperty({ description: 'True when this session was a V2V test run' })
+  isV2VTest!: boolean;
 }
 
 export class ListRoleplaySessionLogsResponseDto {

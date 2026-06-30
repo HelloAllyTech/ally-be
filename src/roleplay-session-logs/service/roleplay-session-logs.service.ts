@@ -173,12 +173,13 @@ export class RoleplaySessionLogsService {
       startedAt: r.startedAt ?? null,
       endedAt: r.endedAt ?? null,
       durationSeconds: this.resolveDurationSeconds(r),
-      score: this.toNumberOrNull(r.score),
+      score: this.clampScore(this.toNumberOrNull(r.score)),
       platform: r.platform ?? null,
       createdAt: r.createdAt,
       totalTokens: usage ? usage.totalTokens : null,
       estimatedCostUsd: usage ? usage.estimatedCostUsd : null,
       costPriced: usage ? usage.priced : true,
+      isV2VTest: r.isV2VTest === true,
     };
   }
 
@@ -379,5 +380,10 @@ export class RoleplaySessionLogsService {
     if (value === null || value === undefined) return null;
     const n = Number(value);
     return Number.isFinite(n) ? n : null;
+  }
+
+  private clampScore(score: number | null): number | null {
+    if (score === null) return null;
+    return Math.min(100, Math.max(0, score));
   }
 }
