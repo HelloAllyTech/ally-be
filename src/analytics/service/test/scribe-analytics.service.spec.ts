@@ -32,6 +32,7 @@ describe('ScribeAnalyticsService', () => {
       getFailureRateByBucket: jest.fn().mockResolvedValue([]),
       getFailureBreakdown: jest.fn().mockResolvedValue([]),
       getFailuresByMode: jest.fn().mockResolvedValue([]),
+      getFailuresByCaptureMethod: jest.fn().mockResolvedValue([]),
       getFailureRetryableCounts: jest.fn().mockResolvedValue([
         { key: 'retryable', count: 0 },
         { key: 'terminal', count: 0 },

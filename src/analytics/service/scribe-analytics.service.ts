@@ -180,14 +180,21 @@ export class ScribeAnalyticsService {
       )},${isoDate(endExclusive)}) bucket=${bucket}`,
     );
 
-    const [rateRows, breakdownRows, modeRows, retryableRows, timeoutRows] =
-      await Promise.all([
-        this.repo.getFailureRateByBucket(windowStart, endExclusive, bucket),
-        this.repo.getFailureBreakdown(windowStart, endExclusive),
-        this.repo.getFailuresByMode(windowStart, endExclusive),
-        this.repo.getFailureRetryableCounts(windowStart, endExclusive),
-        this.repo.getFailureTimeoutCounts(windowStart, endExclusive),
-      ]);
+    const [
+      rateRows,
+      breakdownRows,
+      modeRows,
+      captureRows,
+      retryableRows,
+      timeoutRows,
+    ] = await Promise.all([
+      this.repo.getFailureRateByBucket(windowStart, endExclusive, bucket),
+      this.repo.getFailureBreakdown(windowStart, endExclusive),
+      this.repo.getFailuresByMode(windowStart, endExclusive),
+      this.repo.getFailuresByCaptureMethod(windowStart, endExclusive),
+      this.repo.getFailureRetryableCounts(windowStart, endExclusive),
+      this.repo.getFailureTimeoutCounts(windowStart, endExclusive),
+    ]);
 
     const byBucket = new Map(rateRows.map((r) => [r.bucket, r]));
     const failureRateTrend = this.axisKeys(
@@ -228,7 +235,7 @@ export class ScribeAnalyticsService {
       failureRateTrend,
       failureBreakdown: breakdownRows,
       failuresByMode: modeRows,
-      retryableBreakdown: retryableRows,
+      failuresByCaptureMethod: captureRows,
     };
   }
 }

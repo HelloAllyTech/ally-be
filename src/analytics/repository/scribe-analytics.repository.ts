@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
 import { CHAT_SUMMARY_TIMEOUT_ERROR } from '../../chat/constants/chat.constants';
-import { ScribeSessionMode } from '../../common/constants/chat.constants';
+import {
+  AudioChatProvider,
+  ScribeSessionMode,
+} from '../../common/constants/chat.constants';
 import { AnalyticsBucket } from './platform-analytics.repository';
 
 export interface ScribeBucketCountRow {
@@ -237,6 +240,44 @@ export class ScribeAnalyticsRepository {
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
+      .groupBy('key')
+      .orderBy('count', 'DESC')
+      .getRawMany<{ key: string; count: number }>();
+
+    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
+  }
+
+  /**
+   * FAILED scribe sessions in [start, end) grouped by CAPTURE METHOD
+   * (call_details.callInfo->>'provider'): AUDIO_UPLOAD = an uploaded file,
+   * anything else (MICROPHONE / WEBRTC / telephony) = live streaming. This is
+   * distinct from note mode (SCRIBE/DICTATION) — a live session can carry
+   * either mode — and is the dimension that actually reflects the durable-
+   * capture bug (which only affects streamed audio).
+   */
+  async getFailuresByCaptureMethod(
+    start: Date,
+    end: Date,
+  ): Promise<ScribeKeyCountRow[]> {
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select(
+        `CASE
+          WHEN cd."callInfo"->>'provider' = :uploadProvider THEN 'upload'
+          WHEN NULLIF(cd."callInfo"->>'provider', '') IS NULL THEN 'unknown'
+          ELSE 'live'
+        END`,
+        'key',
+      )
+      .addSelect('COUNT(*)::int', 'count')
+      .from('chats', 'c')
+      .leftJoin('call_details', 'cd', 'cd."chatId" = c.id')
+      .where('c."createdAt" >= :start', { start })
+      .andWhere('c."createdAt" < :end', { end })
+      .andWhere('c."summaryStatus" = :failed', {
+        failed: ChatSummaryStatus.FAILED,
+      })
+      .setParameter('uploadProvider', AudioChatProvider.AUDIO_UPLOAD)
       .groupBy('key')
       .orderBy('count', 'DESC')
       .getRawMany<{ key: string; count: number }>();

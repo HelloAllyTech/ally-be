@@ -112,13 +112,16 @@ export class ScribeSummaryFailureResponseDto {
   @ApiProperty({
     type: [ScribeCountDto],
     description:
-      'Failed sessions by mode (DICTATION = live, SCRIBE = upload) — confirms ' +
-      'whether failures concentrate in live sessions.',
+      'Failed sessions by note mode (SCRIBE vs DICTATION). Independent of how ' +
+      'audio was captured — a live session can carry either mode.',
   })
   failuresByMode!: ScribeCountDto[];
   @ApiProperty({
     type: [ScribeCountDto],
-    description: 'Failures split into retryable vs terminal.',
+    description:
+      'Failed sessions by capture method (upload = uploaded file, live = ' +
+      'streamed via mic/telephony). This is the dimension the durable-capture ' +
+      'bug tracks.',
   })
-  retryableBreakdown!: ScribeCountDto[];
+  failuresByCaptureMethod!: ScribeCountDto[];
 }
