@@ -67,6 +67,7 @@ import { ChatFeedbackService } from './chat-feedback.service';
 import { ToggleArchiveStatusDto } from '../dto/toggle-archive-status.dto';
 import { ScribeSessionReviewSharedService } from 'src/scribe-session-review/service/review-shared.service';
 import { ReviewStatus } from 'src/review/type/review.type';
+import { SettingsService } from '../../settings/service/settings.service';
 
 @Injectable()
 export class ChatService {
@@ -91,6 +92,7 @@ export class ChatService {
     private permissionValidator: PermissionValidator,
     private readonly scribeSessionReviewSharedService: ScribeSessionReviewSharedService,
     private readonly notificationService: NotificationService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async getChat(id: number) {
@@ -248,6 +250,13 @@ export class ChatService {
   async createNote(
     counselorId: number,
   ): Promise<{ chatId: number; name: string }> {
+    const enabled = await this.settingsService.getScribeNoteCreationEnabled();
+    if (!enabled) {
+      throw new ForbiddenException(
+        'Scribe note creation is not enabled for this organization',
+      );
+    }
+
     const now = new Date();
 
     const chat = await this.createChatForAnonymousClient({

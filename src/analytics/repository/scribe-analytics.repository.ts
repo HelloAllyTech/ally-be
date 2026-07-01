@@ -239,6 +239,50 @@ export class ScribeAnalyticsRepository {
   }
 
   /**
+   * Among FAILED scribe sessions in [start, end), the state of their stored
+   * audio (LEFT JOIN chat_audio_uploads). This distinguishes the two reasons a
+   * recording is unrecoverable:
+   *   - 'upload-never-finalized' (status=pending): the multipart upload never
+   *     completed — the session ended abnormally, so audio was never durably
+   *     saved (and transcription was never dispatched).
+   *   - 'uploaded-ok' (status=success): audio was saved fine; if it's now
+   *     missing from S3 that's lifecycle expiry, not a durability bug.
+   * Plus 'upload-failed', 'audio-cleared' (storageKey null), and
+   * 'no-upload-record' (no row at all — e.g. a pure summary-side failure).
+   */
+  async getFailureAudioStatusBreakdown(
+    start: Date,
+    end: Date,
+  ): Promise<ScribeKeyCountRow[]> {
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select(
+        `CASE
+          WHEN au.id IS NULL THEN 'no-upload-record'
+          WHEN au."storageKey" IS NULL THEN 'audio-cleared'
+          WHEN LOWER(au.status) = 'pending' THEN 'upload-never-finalized'
+          WHEN LOWER(au.status) = 'success' THEN 'uploaded-ok'
+          WHEN LOWER(au.status) = 'failed' THEN 'upload-failed'
+          ELSE COALESCE(au.status, 'unknown')
+        END`,
+        'key',
+      )
+      .addSelect('COUNT(*)::int', 'count')
+      .from('chats', 'c')
+      .leftJoin('chat_audio_uploads', 'au', 'au."chatId" = c.id')
+      .where('c."createdAt" >= :start', { start })
+      .andWhere('c."createdAt" < :end', { end })
+      .andWhere('c."summaryStatus" = :failed', {
+        failed: ChatSummaryStatus.FAILED,
+      })
+      .groupBy('key')
+      .orderBy('count', 'DESC')
+      .getRawMany<{ key: string; count: number }>();
+
+    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
+  }
+
+  /**
    * Among FAILED scribe sessions in [start, end), split into retryable
    * (`metadata->>'summaryRetryable' = 'true'`, transcript saved → recoverable)
    * vs terminal (no transcript / not recoverable).

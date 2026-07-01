@@ -71,7 +71,7 @@ export class ChatController {
   ) {}
 
   @Post('note')
-  @AuthPermissions([PERMISSIONS.EDIT_CUSTOM_FIELD_VALUES])
+  @AuthPermissions([PERMISSIONS.COUNSELOR_ACCESS])
   @ApiOperation({ summary: 'Create an empty manual scribe note' })
   @ApiResponse({
     status: 201,
