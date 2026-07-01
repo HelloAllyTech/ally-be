@@ -284,6 +284,9 @@ describe('ScenarioService', () => {
 
     const mockScenarioBehaviorInstructionService = {
       validateBehaviorInstructions: jest.fn().mockResolvedValue(undefined),
+      validateBehaviorInstructionsBehaviors: jest
+        .fn()
+        .mockResolvedValue(undefined),
       createBehaviorInstructions: jest.fn().mockResolvedValue(undefined),
       updateBehaviorInstructions: jest.fn().mockResolvedValue(undefined),
       getBehaviorInstructionsByScenarioId: jest
@@ -2494,6 +2497,191 @@ describe('ScenarioService', () => {
         stateNames: [{ stateId: '1', name: 'state1' }],
         profession: 'Doctor',
         languageVoices: { '1': 'voice-1' },
+      };
+      scenarioSharedService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      await expect(
+        service.validateCreateScenario(createDto),
+      ).resolves.not.toThrow();
+    });
+
+    it('should throw when a behaviorInstructions entry omits category', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.ACTIVE,
+        prompt: 'Prompt',
+        isGlobal: false,
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        openingStatements: ['Hi'],
+        coverImageUrl: 'https://img.png',
+        difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+        experienceMode: ExperienceMode.FEEDBACK,
+        competencyId: '1',
+        stateNames: [{ stateId: '1', name: 'state1' }],
+        profession: 'Doctor',
+        languageVoices: { '1': 'voice-1' },
+        behaviorInstructions: [
+          {
+            category: undefined as any,
+            behaviors: ['behavior-1'],
+          },
+        ],
+      };
+      scenarioSharedService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      await expect(service.validateCreateScenario(createDto)).rejects.toThrow(
+        /Invalid behavior instructions/,
+      );
+    });
+
+    it('should throw when a behaviorInstructions entry has an empty behaviors array', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.ACTIVE,
+        prompt: 'Prompt',
+        isGlobal: false,
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        openingStatements: ['Hi'],
+        coverImageUrl: 'https://img.png',
+        difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+        experienceMode: ExperienceMode.FEEDBACK,
+        competencyId: '1',
+        stateNames: [{ stateId: '1', name: 'state1' }],
+        profession: 'Doctor',
+        languageVoices: { '1': 'voice-1' },
+        behaviorInstructions: [
+          {
+            category: BehaviorInstructionCategory.SHOULD_DO,
+            behaviors: [],
+          },
+        ],
+      };
+      scenarioSharedService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      await expect(service.validateCreateScenario(createDto)).rejects.toThrow(
+        /Invalid behavior instructions/,
+      );
+    });
+
+    it('should not throw when a behaviorInstructions entry omits stateInstructions entirely', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.ACTIVE,
+        prompt: 'Prompt',
+        isGlobal: false,
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        openingStatements: ['Hi'],
+        coverImageUrl: 'https://img.png',
+        difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+        experienceMode: ExperienceMode.FEEDBACK,
+        competencyId: '1',
+        stateNames: [{ stateId: '1', name: 'state1' }],
+        profession: 'Doctor',
+        languageVoices: { '1': 'voice-1' },
+        // Newer prompt variants hide the per-state coaching columns, and
+        // AI-generated rows may omit stateInstructions altogether — that
+        // must not block publishing as long as category + behaviors are set.
+        behaviorInstructions: [
+          {
+            category: BehaviorInstructionCategory.SHOULD_DO,
+            behaviors: ['behavior-1'],
+          },
+        ],
+      };
+      scenarioSharedService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      await expect(
+        service.validateCreateScenario(createDto),
+      ).resolves.not.toThrow();
+    });
+
+    it('should not throw when a behaviorInstructions entry has fewer than 4 stateInstructions with a non-standard stateId', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.ACTIVE,
+        prompt: 'Prompt',
+        isGlobal: false,
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        openingStatements: ['Hi'],
+        coverImageUrl: 'https://img.png',
+        difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+        experienceMode: ExperienceMode.FEEDBACK,
+        competencyId: '1',
+        stateNames: [{ stateId: '1', name: 'state1' }],
+        profession: 'Doctor',
+        languageVoices: { '1': 'voice-1' },
+        behaviorInstructions: [
+          {
+            category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+            behaviors: ['behavior-1'],
+            stateInstructions: [{ stateId: '99', instruction: 'legacy' }],
+          },
+        ],
+      };
+      scenarioSharedService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      await expect(
+        service.validateCreateScenario(createDto),
+      ).resolves.not.toThrow();
+    });
+
+    it('should not throw when a behaviorInstructions entry has a complete, valid structure', async () => {
+      const createDto: CreateScenarioDto = {
+        title: 'Test',
+        description: 'Desc',
+        status: ScenarioStatus.ACTIVE,
+        prompt: 'Prompt',
+        isGlobal: false,
+        name: 'Test',
+        age: 30,
+        gender: 'Male' as any,
+        currentLocation: 'NY',
+        openingStatements: ['Hi'],
+        coverImageUrl: 'https://img.png',
+        difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+        experienceMode: ExperienceMode.FEEDBACK,
+        competencyId: '1',
+        stateNames: [{ stateId: '1', name: 'state1' }],
+        profession: 'Doctor',
+        languageVoices: { '1': 'voice-1' },
+        behaviorInstructions: [
+          {
+            category: BehaviorInstructionCategory.SHOULD_DO,
+            behaviors: ['behavior-1'],
+            stateInstructions: [
+              { stateId: '-1', instruction: '' },
+              { stateId: '1', instruction: 'do this' },
+              { stateId: '2', instruction: '' },
+              { stateId: '3', instruction: '' },
+            ],
+          },
+        ],
       };
       scenarioSharedService.getScenarioVoice.mockResolvedValue({
         id: 'voice-1',

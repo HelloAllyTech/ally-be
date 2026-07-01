@@ -153,10 +153,6 @@ import {
   GenerateAgentPromptDto,
   GenerateAgentPromptResponseDto,
 } from '../dto/generate-agent-prompt.dto';
-import {
-  MAX_SCENARIO_STATE_INSTRUCTIONS,
-  supportedStateInstructionStateIds,
-} from '../constants/scenario-state-instructions.constants';
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
 import { GeneratableField } from '../enum/generatable-field.enum';
@@ -1049,21 +1045,17 @@ export class ScenarioService {
     // Callers gate on non-empty input; this method only validates the structure
     // of each provided entry. The "BI required" check has been removed because
     // behavior instructions are now optional for ACTIVE scenarios.
-    const supportedStateInstructionStateIdList =
-      supportedStateInstructionStateIds;
+    //
+    // Per-state coaching (`stateInstructions`) is optional content, not a
+    // gating field: newer prompt variants hide those columns entirely, and
+    // AI-generated rows may reasonably omit them. Only category + at least
+    // one linked behaviour drive scoring, so those are the only fields
+    // required here.
     const invalidBehaviorInstructions = behaviorInstructions?.filter(
       (instruction) =>
         !instruction.category ||
         !instruction.behaviors ||
-        instruction.behaviors.length === 0 ||
-        !instruction.stateInstructions ||
-        instruction.stateInstructions.length !==
-          MAX_SCENARIO_STATE_INSTRUCTIONS ||
-        !instruction.stateInstructions?.every((stateInstruction) =>
-          supportedStateInstructionStateIdList.includes(
-            stateInstruction.stateId,
-          ),
-        ),
+        instruction.behaviors.length === 0,
     );
     if (invalidBehaviorInstructions.length > 0) {
       this.logger.error(JSON.stringify(invalidBehaviorInstructions));
