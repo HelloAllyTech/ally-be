@@ -681,6 +681,14 @@ describe('AudioUploadService', () => {
       // Attempt counter bumped so the attempt cap eventually stops re-selecting
       // a chat whose audio can never be recovered.
       expect(updateArgs.metadata.reprocessAttempts).toBe(1);
+      // Upload flipped pending -> failed so it drops out of the reprocess
+      // selection (branch c) after this one attempt instead of being re-listed.
+      expect(chatAudioUploadsService.updateAudioUpload).toHaveBeenCalledWith(
+        8,
+        {
+          status: ChatAudioUploadStatus.FAILED,
+        },
+      );
     });
 
     it('increments an existing reprocessAttempts counter on repeated failure', async () => {

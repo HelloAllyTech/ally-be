@@ -356,6 +356,13 @@ export class AudioUploadService {
           Number(existingMetadata.reprocessAttempts ?? 0) + 1;
 
         if (!audio?.storageKey) {
+          // If there is a pending upload row with no usable object, mark it
+          // failed so branch (c) of the reprocess selection stops re-listing it.
+          if (audio) {
+            await this.chatAudioUploadsService.updateAudioUpload(chat.id, {
+              status: ChatAudioUploadStatus.FAILED,
+            });
+          }
           await this.chatService.updateChat(chat.id, {
             summaryStatus: ChatSummaryStatus.FAILED,
             metadata: {
@@ -388,6 +395,13 @@ export class AudioUploadService {
             chat.id,
           );
           if (!salvaged) {
+            // Confirmed unrecoverable: flip the upload from 'pending' to
+            // 'failed' so the reprocess selection (which keys off a pending
+            // upload) stops re-listing it every hour, and the audio-state
+            // breakdown reflects "confirmed unrecoverable" vs "not yet tried".
+            await this.chatAudioUploadsService.updateAudioUpload(chat.id, {
+              status: ChatAudioUploadStatus.FAILED,
+            });
             await this.chatService.updateChat(chat.id, {
               summaryStatus: ChatSummaryStatus.FAILED,
               metadata: {
