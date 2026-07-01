@@ -17,4 +17,12 @@ export class UpdateUserPreferencesDto {
   @IsString({ each: true })
   @ArrayUnique()
   admin_sidebar_order?: string[];
+
+  // Consumer web app UI theme id (e.g. 'daylight', 'midnight', 'forest',
+  // 'sunset', 'ocean'). The canonical value set + validity guard live in the
+  // frontend (ally-web apps/ally-helpline-dashboard/src/theme/themes.ts); kept
+  // loose here like the other keys so adding a theme needs no backend deploy.
+  @IsOptional()
+  @IsString()
+  ui_theme?: string;
 }
