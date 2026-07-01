@@ -205,6 +205,40 @@ export class ScribeAnalyticsRepository {
   }
 
   /**
+   * The top raw failure reasons (metadata.error) among FAILED scribe sessions
+   * in [start, end). This is the escape hatch when failures collapse into a
+   * generic bucket ('other-error'/'unknown') on the stage chart: it shows the
+   * actual error text so the real cause is visible. Grouped by the first 80
+   * chars (to collapse near-identical messages and cap cardinality), most
+   * frequent first.
+   */
+  async getTopFailureReasons(
+    start: Date,
+    end: Date,
+    limit = 15,
+  ): Promise<ScribeKeyCountRow[]> {
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select(
+        `LEFT(COALESCE(NULLIF(c."metadata"->>'error', ''), '(no error recorded)'), 80)`,
+        'key',
+      )
+      .addSelect('COUNT(*)::int', 'count')
+      .from('chats', 'c')
+      .where('c."createdAt" >= :start', { start })
+      .andWhere('c."createdAt" < :end', { end })
+      .andWhere('c."summaryStatus" = :failed', {
+        failed: ChatSummaryStatus.FAILED,
+      })
+      .groupBy('key')
+      .orderBy('count', 'DESC')
+      .limit(limit)
+      .getRawMany<{ key: string; count: number }>();
+
+    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
+  }
+
+  /**
    * Among FAILED scribe sessions in [start, end), split into retryable
    * (`metadata->>'summaryRetryable' = 'true'`, transcript saved → recoverable)
    * vs terminal (no transcript / not recoverable).

@@ -108,6 +108,13 @@ export class ScribeSummaryFailureResponseDto {
   failuresByStage!: ScribeCountDto[];
   @ApiProperty({
     type: [ScribeCountDto],
+    description:
+      'Top raw failure reasons (metadata.error, first 80 chars) — reveals ' +
+      'what the generic stage buckets actually contain.',
+  })
+  topFailureReasons!: ScribeCountDto[];
+  @ApiProperty({
+    type: [ScribeCountDto],
     description: 'Failures split into retryable vs terminal.',
   })
   retryableBreakdown!: ScribeCountDto[];

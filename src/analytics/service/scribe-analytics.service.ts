@@ -180,14 +180,14 @@ export class ScribeAnalyticsService {
       )},${isoDate(endExclusive)}) bucket=${bucket}`,
     );
 
-    const [rateRows, stageRows, retryableRows, timeoutRows] = await Promise.all(
-      [
+    const [rateRows, stageRows, reasonRows, retryableRows, timeoutRows] =
+      await Promise.all([
         this.repo.getFailureRateByBucket(windowStart, endExclusive, bucket),
         this.repo.getFailuresByStage(windowStart, endExclusive),
+        this.repo.getTopFailureReasons(windowStart, endExclusive),
         this.repo.getFailureRetryableCounts(windowStart, endExclusive),
         this.repo.getFailureTimeoutCounts(windowStart, endExclusive),
-      ],
-    );
+      ]);
 
     const byBucket = new Map(rateRows.map((r) => [r.bucket, r]));
     const failureRateTrend = this.axisKeys(
@@ -227,6 +227,7 @@ export class ScribeAnalyticsService {
       },
       failureRateTrend,
       failuresByStage: stageRows,
+      topFailureReasons: reasonRows,
       retryableBreakdown: retryableRows,
       timeoutBreakdown: timeoutRows,
     };
