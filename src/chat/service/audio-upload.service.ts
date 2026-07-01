@@ -341,10 +341,25 @@ export class AudioUploadService {
           chat.id,
         );
 
+        // Preserve the original failure attribution: merge into existing
+        // metadata and record the reprocess outcome in a SEPARATE field rather
+        // than overwriting `error`/`stage`. Overwriting was collapsing every
+        // reprocess-failed chat into one generic reason and erasing why it
+        // originally failed.
+        const existingMetadata =
+          (chat.metadata as Record<string, any> | undefined) ?? {};
+
         if (!audio?.storageKey) {
           await this.chatService.updateChat(chat.id, {
             summaryStatus: ChatSummaryStatus.FAILED,
-            metadata: { error: 'Stuck with no stored audio to reprocess' },
+            metadata: {
+              ...existingMetadata,
+              error:
+                existingMetadata.error ??
+                'Stuck with no stored audio to reprocess',
+              reprocessError: 'No stored audio to reprocess',
+              reprocessedAt: new Date().toISOString(),
+            },
           });
           failed.push(chat.id);
           continue;
@@ -359,7 +374,13 @@ export class AudioUploadService {
         } catch {
           await this.chatService.updateChat(chat.id, {
             summaryStatus: ChatSummaryStatus.FAILED,
-            metadata: { error: 'Audio no longer present in storage' },
+            metadata: {
+              ...existingMetadata,
+              error:
+                existingMetadata.error ?? 'Audio no longer present in storage',
+              reprocessError: 'Audio no longer present in storage',
+              reprocessedAt: new Date().toISOString(),
+            },
           });
           failed.push(chat.id);
           continue;
