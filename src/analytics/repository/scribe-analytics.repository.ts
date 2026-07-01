@@ -216,6 +216,35 @@ export class ScribeAnalyticsRepository {
   }
 
   /**
+   * FAILED scribe sessions in [start, end) grouped by session mode
+   * (call_details.callInfo->>'mode': DICTATION = live, SCRIBE = upload). This
+   * is the belt-and-suspenders confirmation that failures concentrate in live
+   * sessions. Missing mode is bucketed as 'UNKNOWN' (not defaulted to SCRIBE)
+   * so it isn't masked.
+   */
+  async getFailuresByMode(
+    start: Date,
+    end: Date,
+  ): Promise<ScribeKeyCountRow[]> {
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select(`COALESCE(NULLIF(cd."callInfo"->>'mode', ''), 'UNKNOWN')`, 'key')
+      .addSelect('COUNT(*)::int', 'count')
+      .from('chats', 'c')
+      .leftJoin('call_details', 'cd', 'cd."chatId" = c.id')
+      .where('c."createdAt" >= :start', { start })
+      .andWhere('c."createdAt" < :end', { end })
+      .andWhere('c."summaryStatus" = :failed', {
+        failed: ChatSummaryStatus.FAILED,
+      })
+      .groupBy('key')
+      .orderBy('count', 'DESC')
+      .getRawMany<{ key: string; count: number }>();
+
+    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
+  }
+
+  /**
    * Among FAILED scribe sessions in [start, end), split into retryable
    * (`metadata->>'summaryRetryable' = 'true'`, transcript saved → recoverable)
    * vs terminal (no transcript / not recoverable).

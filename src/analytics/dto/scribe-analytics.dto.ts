@@ -111,6 +111,13 @@ export class ScribeSummaryFailureResponseDto {
   failureBreakdown!: ScribeCountDto[];
   @ApiProperty({
     type: [ScribeCountDto],
+    description:
+      'Failed sessions by mode (DICTATION = live, SCRIBE = upload) — confirms ' +
+      'whether failures concentrate in live sessions.',
+  })
+  failuresByMode!: ScribeCountDto[];
+  @ApiProperty({
+    type: [ScribeCountDto],
     description: 'Failures split into retryable vs terminal.',
   })
   retryableBreakdown!: ScribeCountDto[];

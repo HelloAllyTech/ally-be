@@ -180,10 +180,11 @@ export class ScribeAnalyticsService {
       )},${isoDate(endExclusive)}) bucket=${bucket}`,
     );
 
-    const [rateRows, breakdownRows, retryableRows, timeoutRows] =
+    const [rateRows, breakdownRows, modeRows, retryableRows, timeoutRows] =
       await Promise.all([
         this.repo.getFailureRateByBucket(windowStart, endExclusive, bucket),
         this.repo.getFailureBreakdown(windowStart, endExclusive),
+        this.repo.getFailuresByMode(windowStart, endExclusive),
         this.repo.getFailureRetryableCounts(windowStart, endExclusive),
         this.repo.getFailureTimeoutCounts(windowStart, endExclusive),
       ]);
@@ -226,6 +227,7 @@ export class ScribeAnalyticsService {
       },
       failureRateTrend,
       failureBreakdown: breakdownRows,
+      failuresByMode: modeRows,
       retryableBreakdown: retryableRows,
     };
   }
