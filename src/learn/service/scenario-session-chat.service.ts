@@ -7,6 +7,10 @@ import {
 } from 'src/ai-chat/service/ai-chat.service';
 import { LlmMessage } from 'src/ai-chat/interface/llm-provider.interface';
 import { AppConfigService } from 'src/config/config.service';
+import {
+  resolveChatProviderModel,
+  resolveTemperature,
+} from 'src/common/util/llm-model.util';
 import { ScenarioSessionChatRepository } from '../repository/scenario-session-chat.repository';
 import { ScenarioSessionChatMessageRepository } from '../repository/scenario-session-chat-message.repository';
 import { ScenarioSessionContextProvider } from './scenario-session-context.provider';
@@ -93,17 +97,34 @@ export class ScenarioSessionChatService {
     const subject = new Subject<SseMessageEvent>();
     let fullResponse = '';
 
-    // Resolve the sampling temperature: honor the per-simulation value
-    // (scenarios.metadata.temperature) when set, otherwise fall back to the
-    // global default.
+    // Resolve provider + model + temperature with precedence:
+    //   code default (aiChat.*) → prompt-level (chat prompt's model/temperature)
+    //   → simulation (scenarios.metadata.temperature, temperature only).
+    // The chat now runs OpenAI + Gemini; a model on a provider we can't run
+    // falls back to the code-default OpenAI model.
     const perSimulationTemperature = context?.metadata?.temperature;
-    const temperature =
-      typeof perSimulationTemperature === 'number'
-        ? perSimulationTemperature
-        : this.configService.aiChat.temperature;
-    if (temperature !== this.configService.aiChat.temperature) {
+    const promptProvider = context?.metadata?.promptProvider;
+    const promptModel = context?.metadata?.promptModel;
+    const promptTemperature = context?.metadata?.promptTemperature;
+
+    const { providerType, model } = resolveChatProviderModel(
+      promptProvider,
+      promptModel,
+      this.configService.aiChat.model,
+    );
+    const temperature = resolveTemperature(
+      model,
+      this.configService.aiChat.temperature,
+      promptTemperature,
+      perSimulationTemperature,
+    );
+    if (
+      providerType !== this.configService.aiChat.defaultProvider ||
+      model !== this.configService.aiChat.model ||
+      temperature !== this.configService.aiChat.temperature
+    ) {
       this.logger.debug(
-        `Using per-simulation LLM temperature ${temperature} for chatId: ${chat.id}`,
+        `Chat LLM override for chatId ${chat.id}: provider=${providerType}, model=${model}, temperature=${temperature}`,
       );
     }
 
@@ -113,8 +134,9 @@ export class ScenarioSessionChatService {
       systemPrompt: context.systemPrompt,
       chatHistory,
       userMessage,
+      providerType,
       llmConfig: {
-        model: this.configService.aiChat.model,
+        model,
         temperature,
         maxTokens: this.configService.aiChat.maxTokens,
       },

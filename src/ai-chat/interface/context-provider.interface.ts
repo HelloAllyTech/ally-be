@@ -14,6 +14,15 @@ export interface ChatContext {
      * fall back to the global default.
      */
     temperature?: number;
+    /**
+     * Prompt-level LLM model/temperature override for the chat prompt
+     * (prompts.model / prompts.temperature). Undefined when unset. The chat
+     * service applies these under the simulation temperature (precedence:
+     * code default → prompt-level → simulation).
+     */
+    promptProvider?: string;
+    promptModel?: string;
+    promptTemperature?: number;
   };
 }
 

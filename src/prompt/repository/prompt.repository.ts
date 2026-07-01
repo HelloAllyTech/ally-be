@@ -31,6 +31,9 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.hasStates', 'hasStates')
       .addSelect('prompt.availableVariables', 'availableVariables')
       .addSelect('prompt.usesBlocks', 'usesBlocks')
+      .addSelect('prompt.provider', 'provider')
+      .addSelect('prompt.model', 'model')
+      .addSelect('CAST(prompt.temperature AS double precision)', 'temperature')
       .where('prompt.id = :id', { id })
       .getRawOne() as unknown as Promise<PromptDetailResponse | null>;
   }
@@ -61,6 +64,9 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.hasStates', 'hasStates')
       .addSelect('prompt.availableVariables', 'availableVariables')
       .addSelect('prompt.usesBlocks', 'usesBlocks')
+      .addSelect('prompt.provider', 'provider')
+      .addSelect('prompt.model', 'model')
+      .addSelect('CAST(prompt.temperature AS double precision)', 'temperature')
       .where('prompt.promptType = :promptType', { promptType })
       .andWhere('prompt.isObsolete = false')
       .orderBy('prompt.name', 'ASC')
@@ -105,6 +111,9 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.hasStates', 'hasStates')
       .addSelect('prompt.availableVariables', 'availableVariables')
       .addSelect('prompt.usesBlocks', 'usesBlocks')
+      .addSelect('prompt.provider', 'provider')
+      .addSelect('prompt.model', 'model')
+      .addSelect('CAST(prompt.temperature AS double precision)', 'temperature')
       .where('prompt.defaultPrompt IS NOT NULL');
 
     if (!includeBlocks) {
