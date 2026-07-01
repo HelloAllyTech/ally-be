@@ -22,7 +22,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { SortOrder, SuccessResponse } from 'src/common/type/common.type';
 import { UpdateReviewDto } from 'src/review/dto/update-review.dto';
-import { ReviewSortBy } from 'src/review/type/review.type';
+import { ReadFilter, ReviewSortBy } from 'src/review/type/review.type';
 import {
   CreateScribeSessionReviewDto,
   CreateScribeSessionReviewResponseDto,
@@ -94,17 +94,25 @@ export class ScribeSessionReviewController {
     enum: SortOrder,
     description: 'Sort order: ASC or DESC',
   })
+  @ApiQuery({
+    name: 'readFilter',
+    required: false,
+    enum: ReadFilter,
+    description: 'Filter by read status: ALL (default), READ, UNREAD',
+  })
   async getAllReviews(
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
     @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
     @Query('sortBy') sortBy?: ReviewSortBy,
     @Query('sortOrder') sortOrder: SortOrder = SortOrder.DESC,
+    @Query('readFilter') readFilter?: ReadFilter,
   ) {
     return this.reviewService.getAllReviews({
       limit,
       offset,
       sortBy,
       sortOrder,
+      readFilter,
     });
   }
 

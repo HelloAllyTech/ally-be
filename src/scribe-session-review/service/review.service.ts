@@ -15,6 +15,7 @@ import { ScribeSessionReviewReactionRepository } from '../repository/reaction.re
 import { ScribeSessionReviewCommentRepository } from '../repository/comment.repository';
 import { ScribeSessionReviewCommentReactionRepository } from '../repository/comment-reaction.repository';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { LoggerService } from 'src/logger/logger.service';
 import {
   CreateScribeSessionReviewDto,
   CreateScribeSessionReviewResponseDto,
@@ -41,6 +42,10 @@ export class ScribeSessionReviewService extends BaseReviewService<
   ScribeSessionReview,
   ScribeSessionReviewReadStatus
 > {
+  private readonly logger = LoggerService.getInstance(
+    ScribeSessionReviewService.name,
+  );
+
   constructor(
     protected readonly reviewRepository: ScribeSessionReviewRepository,
     protected readonly reviewReadStatusRepository: ScribeSessionReviewReadStatusRepository,
@@ -395,6 +400,17 @@ export class ScribeSessionReviewService extends BaseReviewService<
       data,
       count: transcript.count,
     };
+  }
+
+  async markReviewAsRead(reviewId: string) {
+    const result = await super.markReviewAsRead(reviewId);
+    const userId = Number(ExecutionManager.getUserId());
+    this.logger.info({
+      event: 'scribe_review_viewed',
+      reviewId,
+      userId,
+    });
+    return result;
   }
 
   private formatReviewListResponse(result: GetScribeSessionReviews) {

@@ -4,6 +4,7 @@ import { ScribeSessionReview } from '../entity/review.entity';
 import { ScribeSessionReviewComment } from '../entity/comment.entity';
 import {
   GetReviewsOptions,
+  ReadFilter,
   ReviewSortBy,
   ReviewStatus,
 } from 'src/review/type/review.type';
@@ -48,7 +49,10 @@ export class ScribeSessionReviewRepository extends Repository<ScribeSessionRevie
       .where('review.tenantId = :tenantId', { tenantId })
       .andWhere('review.status = :status', { status: ReviewStatus.IN_REVIEW });
 
-    if (options.sortBy === ReviewSortBy.MOST_REVIEWED) {
+    if (
+      options.sortBy === ReviewSortBy.MOST_REVIEWED ||
+      options.sortBy === ReviewSortBy.MOST_COMMENTED
+    ) {
       query
         .leftJoin(
           'scribe_session_review_threads',
@@ -80,11 +84,29 @@ export class ScribeSessionReviewRepository extends Repository<ScribeSessionRevie
         .addSelect('COUNT(reviewComment.id)', 'comments_count')
         .groupBy('review.id, chat.id, user.id, callDetails.id')
         .orderBy('comments_count', 'ASC');
+    } else if (options.sortBy === ReviewSortBy.MOST_VIEWED) {
+      query.addOrderBy(
+        '(SELECT COUNT(*) FROM scribe_session_review_read_status WHERE "reviewId" = review.id)',
+        'DESC',
+      );
     } else {
       const sortBy =
         options.sortBy === ReviewSortBy.LATEST ? 'updatedAt' : 'createdAt';
       query.orderBy(`review.${sortBy}`, options.sortOrder);
     }
+
+    if (options.readFilter === ReadFilter.READ) {
+      query.andWhere(
+        'EXISTS (SELECT 1 FROM scribe_session_review_read_status WHERE "reviewId" = review.id AND "userId" = :currentUserId)',
+        { currentUserId: userId },
+      );
+    } else if (options.readFilter === ReadFilter.UNREAD) {
+      query.andWhere(
+        'NOT EXISTS (SELECT 1 FROM scribe_session_review_read_status WHERE "reviewId" = review.id AND "userId" = :currentUserId)',
+        { currentUserId: userId },
+      );
+    }
+
     if (options.limit) {
       query.limit(options.limit);
     }
