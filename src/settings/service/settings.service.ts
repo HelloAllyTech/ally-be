@@ -638,6 +638,67 @@ export class SettingsService {
     return { success: true };
   }
 
+  async getScribeNoteCreationEnabled(tenantId?: string): Promise<boolean> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    const rawTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    if (!rawTenantId) throw new BadRequestException('Tenant ID is required');
+    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+
+    const preference = await this.preferenceService.getPreference(
+      PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
+      resolvedTenantId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+
+    if (!preference?.value) return false;
+    return (
+      (preference.value as CustomFieldsEnabledPreferenceValue).enabled ?? false
+    );
+  }
+
+  async updateScribeNoteCreationEnabled(
+    tenantId: string,
+    enabled: boolean,
+  ): Promise<{ success: boolean }> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    if (!hasSystemAccess) {
+      throw new ForbiddenException(
+        'Only system administrators can modify scribe note creation settings for a tenant',
+      );
+    }
+    const resolvedId = await this.resolveTenantCode(tenantId);
+    const existing = await this.preferenceService.getPreference(
+      PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
+      resolvedId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+    if (existing) {
+      await this.preferenceService.updatePreference(existing.id, { enabled });
+    } else {
+      await this.preferenceService.createPreference({
+        name: PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
+        relatedId: resolvedId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled },
+        tenantId: ExecutionManager.getTenantId(),
+      });
+    }
+    return { success: true };
+  }
+
   async updateEnabledCustomFieldTypes(
     tenantId: string,
     enabledTypes: string[],

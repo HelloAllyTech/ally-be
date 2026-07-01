@@ -1122,6 +1122,120 @@ describe('SettingsService', () => {
     });
   });
 
+  describe('getScribeNoteCreationEnabled', () => {
+    const mockEnabledPreference = {
+      id: mockPreferenceId,
+      name: PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
+      relatedId: mockTenantId,
+      relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+      value: { enabled: true },
+      tenantId: mockTenantId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    beforeEach(() => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+    });
+
+    it('should return false by default when no preference exists', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      const result = await service.getScribeNoteCreationEnabled();
+
+      expect(result).toBe(false);
+    });
+
+    it('should return true when preference has enabled=true', async () => {
+      preferenceService.getPreference.mockResolvedValue(mockEnabledPreference);
+
+      const result = await service.getScribeNoteCreationEnabled();
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false when preference has enabled=false', async () => {
+      preferenceService.getPreference.mockResolvedValue({
+        ...mockEnabledPreference,
+        value: { enabled: false },
+      });
+
+      const result = await service.getScribeNoteCreationEnabled();
+
+      expect(result).toBe(false);
+    });
+
+    it('should throw BadRequestException when userId is missing', async () => {
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
+
+      await expect(service.getScribeNoteCreationEnabled()).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('updateScribeNoteCreationEnabled', () => {
+    beforeEach(() => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+    });
+
+    it('should throw ForbiddenException without system access', async () => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+
+      await expect(
+        service.updateScribeNoteCreationEnabled(mockTenantId, true),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should update an existing preference', async () => {
+      preferenceService.getPreference.mockResolvedValue({
+        id: mockPreferenceId,
+        name: PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
+        relatedId: mockTenantId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled: false },
+        tenantId: mockTenantId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const result = await service.updateScribeNoteCreationEnabled(
+        mockTenantId,
+        true,
+      );
+
+      expect(preferenceService.updatePreference).toHaveBeenCalledWith(
+        mockPreferenceId,
+        { enabled: true },
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should create a preference when none exists', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      const result = await service.updateScribeNoteCreationEnabled(
+        mockTenantId,
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith({
+        name: PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
+        relatedId: mockTenantId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled: true },
+        tenantId: mockTenantId,
+      });
+      expect(result).toEqual({ success: true });
+    });
+  });
+
   describe('getEnabledCustomFieldTypes', () => {
     const mockCustomFieldTypesPreference = {
       id: mockPreferenceId,
