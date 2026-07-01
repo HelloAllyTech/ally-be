@@ -678,6 +678,29 @@ describe('AudioUploadService', () => {
       )?.[1] as any;
       expect(updateArgs.summaryStatus).toBe(ChatSummaryStatus.FAILED);
       expect(updateArgs.metadata.reprocessError).toMatch(/unrecoverable/i);
+      // Attempt counter bumped so the attempt cap eventually stops re-selecting
+      // a chat whose audio can never be recovered.
+      expect(updateArgs.metadata.reprocessAttempts).toBe(1);
+    });
+
+    it('increments an existing reprocessAttempts counter on repeated failure', async () => {
+      chatService.findReprocessableStuckChats.mockResolvedValue([
+        { id: 9, metadata: { reprocessAttempts: 2 } },
+      ] as any);
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue({
+        storageKey: 'audio/9.raw',
+      } as any);
+      s3Service.getHeadObject.mockRejectedValue(new Error('NoSuchKey'));
+      s3Service.findInProgressMultipartUploadId.mockResolvedValue('upload-9');
+      s3Service.listMultipartParts.mockResolvedValue([]);
+      s3Service.abortMultipartUpload.mockResolvedValue({} as any);
+
+      await service.reprocessStuckChats();
+
+      const updateArgs = chatService.updateChat.mock.calls.find(
+        (c) => c[0] === 9,
+      )?.[1] as any;
+      expect(updateArgs.metadata.reprocessAttempts).toBe(3);
     });
   });
 });

@@ -349,6 +349,12 @@ export class AudioUploadService {
         const existingMetadata =
           (chat.metadata as Record<string, any> | undefined) ?? {};
 
+        // Count this reprocess attempt so a chat that can never be recovered
+        // (audio truly gone) isn't re-selected forever — see the attempt cap in
+        // findReprocessableStuckChats branch (c).
+        const nextAttempts =
+          Number(existingMetadata.reprocessAttempts ?? 0) + 1;
+
         if (!audio?.storageKey) {
           await this.chatService.updateChat(chat.id, {
             summaryStatus: ChatSummaryStatus.FAILED,
@@ -359,6 +365,7 @@ export class AudioUploadService {
                 'Stuck with no stored audio to reprocess',
               reprocessError: 'No stored audio to reprocess',
               reprocessedAt: new Date().toISOString(),
+              reprocessAttempts: nextAttempts,
             },
           });
           failed.push(chat.id);
@@ -391,6 +398,7 @@ export class AudioUploadService {
                 reprocessError:
                   'Audio unrecoverable (no finalizable multipart upload)',
                 reprocessedAt: new Date().toISOString(),
+                reprocessAttempts: nextAttempts,
               },
             });
             failed.push(chat.id);

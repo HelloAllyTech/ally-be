@@ -30,6 +30,7 @@ import {
   CHAT_SUMMARY_TIMEOUT_MINUTES,
   CHAT_REPROCESS_LOOKBACK_DAYS,
   CHAT_SUMMARY_TIMEOUT_ERROR,
+  MAX_STUCK_REPROCESS_ATTEMPTS,
 } from '../constants/chat.constants';
 import { TIME } from '../../common/constants/time.constants';
 import { UpdateChatInput } from '../type/chat.type';
@@ -725,7 +726,7 @@ export class ChatService {
       Date.now() - CHAT_REPROCESS_LOOKBACK_DAYS * TIME.DAY_IN_MS,
     );
 
-    return this.chatRepository.find({
+    const stuckOrTimedOut = await this.chatRepository.find({
       where: [
         {
           summaryStatus: In(ChatService.PENDING_SUMMARY_STATUSES),
@@ -741,6 +742,38 @@ export class ChatService {
         },
       ],
     });
+
+    // (c) FAILED chats whose audio upload was never finalized (status still
+    // 'pending'). These are the "upload never finalized" backlog: the live
+    // stream ended abnormally so the S3 multipart upload was never completed
+    // and transcription never ran. They can carry ANY error string (older
+    // reaper text, DLQ, etc.), so the exact-timeout filter above misses them —
+    // yet they are exactly the sessions the S3 salvage path can recover.
+    // Bounded by the per-chat reprocess attempt cap so genuinely-unrecoverable
+    // ones (parts already aged out of S3) are not retried forever.
+    const unfinalizedAudio = await this.chatRepository
+      .createQueryBuilder('chat')
+      .where('chat.summaryStatus = :failed', {
+        failed: ChatSummaryStatus.FAILED,
+      })
+      .andWhere('chat.createdAt >= :lookbackCutoff', { lookbackCutoff })
+      .andWhere(
+        `COALESCE((chat.metadata ->> 'reprocessAttempts')::int, 0) < :maxAttempts`,
+        { maxAttempts: MAX_STUCK_REPROCESS_ATTEMPTS },
+      )
+      .andWhere(
+        `EXISTS (
+          SELECT 1 FROM chat_audio_uploads au
+          WHERE au."chatId" = chat.id AND LOWER(au.status) = 'pending'
+        )`,
+      )
+      .getMany();
+
+    const byId = new Map<number, Chat>();
+    for (const chat of [...stuckOrTimedOut, ...unfinalizedAudio]) {
+      byId.set(chat.id, chat);
+    }
+    return Array.from(byId.values());
   }
 
   /**
