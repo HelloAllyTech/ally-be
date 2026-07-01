@@ -337,6 +337,7 @@ describe('ChatService', () => {
           provide: SettingsService,
           useValue: {
             getNudgeStatus: jest.fn(),
+            getScribeNoteCreationEnabled: jest.fn(),
           },
         },
         {
@@ -429,6 +430,33 @@ describe('ChatService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('createNote', () => {
+    it('throws when scribe note creation is disabled for the tenant', async () => {
+      (
+        service as any
+      ).settingsService.getScribeNoteCreationEnabled.mockResolvedValue(false);
+
+      await expect(service.createNote(1)).rejects.toThrow(
+        'Scribe note creation is not enabled for this organization',
+      );
+    });
+
+    it('creates a dictation note when scribe note creation is enabled', async () => {
+      (
+        service as any
+      ).settingsService.getScribeNoteCreationEnabled.mockResolvedValue(true);
+      jest
+        .spyOn(service, 'createChatForAnonymousClient')
+        .mockResolvedValue({ id: 42, startedAt: new Date() } as any);
+      jest.spyOn(service, 'updateChat').mockResolvedValue({} as any);
+
+      const result = await service.createNote(1);
+
+      expect(service.createChatForAnonymousClient).toHaveBeenCalled();
+      expect(result.chatId).toBe(42);
+    });
   });
 
   describe('getChat', () => {
