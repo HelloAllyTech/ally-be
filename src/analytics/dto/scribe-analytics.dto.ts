@@ -115,6 +115,14 @@ export class ScribeSummaryFailureResponseDto {
   topFailureReasons!: ScribeCountDto[];
   @ApiProperty({
     type: [ScribeCountDto],
+    description:
+      'Stored-audio state of failed sessions: upload-never-finalized ' +
+      '(abnormal end) vs uploaded-ok (lifecycle expiry) vs no-upload-record ' +
+      '/ upload-failed / audio-cleared.',
+  })
+  audioStatusBreakdown!: ScribeCountDto[];
+  @ApiProperty({
+    type: [ScribeCountDto],
     description: 'Failures split into retryable vs terminal.',
   })
   retryableBreakdown!: ScribeCountDto[];
