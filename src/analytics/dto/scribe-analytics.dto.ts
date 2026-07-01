@@ -103,24 +103,12 @@ export class ScribeSummaryFailureResponseDto {
   @ApiProperty({
     type: [ScribeCountDto],
     description:
-      'Failures by pipeline stage (transcribe/diarize/summarize/...).',
+      'Unified per-failure classification (one bucket per failure): audio ' +
+      'lifecycle state (upload never finalized / failed / cleared) first, then ' +
+      'the pipeline signal (timeout / transcription / summarization / ' +
+      'dead-letter), else the raw error text.',
   })
-  failuresByStage!: ScribeCountDto[];
-  @ApiProperty({
-    type: [ScribeCountDto],
-    description:
-      'Top raw failure reasons (metadata.error, first 80 chars) — reveals ' +
-      'what the generic stage buckets actually contain.',
-  })
-  topFailureReasons!: ScribeCountDto[];
-  @ApiProperty({
-    type: [ScribeCountDto],
-    description:
-      'Stored-audio state of failed sessions: upload-never-finalized ' +
-      '(abnormal end) vs uploaded-ok (lifecycle expiry) vs no-upload-record ' +
-      '/ upload-failed / audio-cleared.',
-  })
-  audioStatusBreakdown!: ScribeCountDto[];
+  failureBreakdown!: ScribeCountDto[];
   @ApiProperty({
     type: [ScribeCountDto],
     description: 'Failures split into retryable vs terminal.',

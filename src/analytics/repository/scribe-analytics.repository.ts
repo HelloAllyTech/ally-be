@@ -159,98 +159,18 @@ export class ScribeAnalyticsRepository {
   }
 
   /**
-   * Among FAILED scribe sessions in [start, end), counts grouped by the failing
-   * pipeline stage (`metadata->>'stage'`: transcribe / diarize / summarize /
-   * summary-timeout / ...). A null stage is bucketed as 'unknown'.
+   * A single unified classification of each FAILED scribe session in
+   * [start, end) — one bucket per failure, most-specific cause first. Combines
+   * the stored-audio lifecycle state (LEFT JOIN chat_audio_uploads) with the
+   * pipeline stage / error metadata, so it replaces the separate
+   * failures-by-stage, top-reasons and audio-state breakdowns:
+   *   1. Audio lifecycle (root cause when present): never finalized (abnormal
+   *      session end), upload failed, or audio cleared.
+   *   2. Otherwise the pipeline signal: summary timeout, transcription/
+   *      diarization error, summarization error, dead-letter.
+   *   3. Otherwise the raw error text (first 60 chars), else 'Unknown'.
    */
-  async getFailuresByStage(
-    start: Date,
-    end: Date,
-  ): Promise<ScribeKeyCountRow[]> {
-    // Stage attribution: prefer the explicit metadata.stage; otherwise infer
-    // the bucket from other metadata markers so failures that historically
-    // carried no stage are still attributed correctly without a data backfill:
-    //   - a 'dlq_message' => the message dead-lettered (exhausted SQS retries)
-    //   - the reaper's timeout error marker => 'summary-timeout'
-    //   - any other error string => 'other-error'
-    // Only genuinely empty metadata falls through to 'unknown'.
-    const rows = await this.dataSource
-      .createQueryBuilder()
-      .select(
-        `COALESCE(
-          NULLIF(c."metadata"->>'stage', ''),
-          CASE WHEN c."metadata"->>'dlq_message' IS NOT NULL
-               THEN 'dead-letter' END,
-          CASE WHEN c."metadata"->>'error' = :timeoutError
-               THEN 'summary-timeout' END,
-          CASE WHEN c."metadata"->>'error' IS NOT NULL
-               THEN 'other-error' END,
-          'unknown'
-        )`,
-        'key',
-      )
-      .addSelect('COUNT(*)::int', 'count')
-      .from('chats', 'c')
-      .where('c."createdAt" >= :start', { start })
-      .andWhere('c."createdAt" < :end', { end })
-      .andWhere('c."summaryStatus" = :failed', {
-        failed: ChatSummaryStatus.FAILED,
-      })
-      .setParameter('timeoutError', CHAT_SUMMARY_TIMEOUT_ERROR)
-      .groupBy('key')
-      .orderBy('count', 'DESC')
-      .getRawMany<{ key: string; count: number }>();
-
-    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
-  }
-
-  /**
-   * The top raw failure reasons (metadata.error) among FAILED scribe sessions
-   * in [start, end). This is the escape hatch when failures collapse into a
-   * generic bucket ('other-error'/'unknown') on the stage chart: it shows the
-   * actual error text so the real cause is visible. Grouped by the first 80
-   * chars (to collapse near-identical messages and cap cardinality), most
-   * frequent first.
-   */
-  async getTopFailureReasons(
-    start: Date,
-    end: Date,
-    limit = 15,
-  ): Promise<ScribeKeyCountRow[]> {
-    const rows = await this.dataSource
-      .createQueryBuilder()
-      .select(
-        `LEFT(COALESCE(NULLIF(c."metadata"->>'error', ''), '(no error recorded)'), 80)`,
-        'key',
-      )
-      .addSelect('COUNT(*)::int', 'count')
-      .from('chats', 'c')
-      .where('c."createdAt" >= :start', { start })
-      .andWhere('c."createdAt" < :end', { end })
-      .andWhere('c."summaryStatus" = :failed', {
-        failed: ChatSummaryStatus.FAILED,
-      })
-      .groupBy('key')
-      .orderBy('count', 'DESC')
-      .limit(limit)
-      .getRawMany<{ key: string; count: number }>();
-
-    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
-  }
-
-  /**
-   * Among FAILED scribe sessions in [start, end), the state of their stored
-   * audio (LEFT JOIN chat_audio_uploads). This distinguishes the two reasons a
-   * recording is unrecoverable:
-   *   - 'upload-never-finalized' (status=pending): the multipart upload never
-   *     completed — the session ended abnormally, so audio was never durably
-   *     saved (and transcription was never dispatched).
-   *   - 'uploaded-ok' (status=success): audio was saved fine; if it's now
-   *     missing from S3 that's lifecycle expiry, not a durability bug.
-   * Plus 'upload-failed', 'audio-cleared' (storageKey null), and
-   * 'no-upload-record' (no row at all — e.g. a pure summary-side failure).
-   */
-  async getFailureAudioStatusBreakdown(
+  async getFailureBreakdown(
     start: Date,
     end: Date,
   ): Promise<ScribeKeyCountRow[]> {
@@ -258,12 +178,24 @@ export class ScribeAnalyticsRepository {
       .createQueryBuilder()
       .select(
         `CASE
-          WHEN au.id IS NULL THEN 'no-upload-record'
-          WHEN au."storageKey" IS NULL THEN 'audio-cleared'
-          WHEN LOWER(au.status) = 'pending' THEN 'upload-never-finalized'
-          WHEN LOWER(au.status) = 'success' THEN 'uploaded-ok'
-          WHEN LOWER(au.status) = 'failed' THEN 'upload-failed'
-          ELSE COALESCE(au.status, 'unknown')
+          WHEN au.id IS NOT NULL AND LOWER(au.status) = 'pending'
+            THEN 'Upload never finalized (abnormal end)'
+          WHEN au.id IS NOT NULL AND LOWER(au.status) = 'failed'
+            THEN 'Audio upload failed'
+          WHEN au.id IS NOT NULL AND au."storageKey" IS NULL
+            THEN 'Audio cleared'
+          WHEN c."metadata"->>'error' = :timeoutError
+               OR c."metadata"->>'stage' = 'summary-timeout'
+            THEN 'Summary timed out'
+          WHEN c."metadata"->>'stage' IN ('transcribe', 'diarize')
+            THEN 'Transcription error'
+          WHEN c."metadata"->>'stage' = 'summarize'
+            THEN 'Summarization error'
+          WHEN c."metadata"->>'dlq_message' IS NOT NULL
+            THEN 'Dead-letter (retries exhausted)'
+          WHEN NULLIF(c."metadata"->>'error', '') IS NOT NULL
+            THEN LEFT(c."metadata"->>'error', 60)
+          ELSE 'Unknown'
         END`,
         'key',
       )
@@ -275,6 +207,7 @@ export class ScribeAnalyticsRepository {
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
+      .setParameter('timeoutError', CHAT_SUMMARY_TIMEOUT_ERROR)
       .groupBy('key')
       .orderBy('count', 'DESC')
       .getRawMany<{ key: string; count: number }>();

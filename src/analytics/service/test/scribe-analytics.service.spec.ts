@@ -30,9 +30,7 @@ describe('ScribeAnalyticsService', () => {
       getOutcomeCounts: jest.fn().mockResolvedValue([]),
       getModeCounts: jest.fn().mockResolvedValue([]),
       getFailureRateByBucket: jest.fn().mockResolvedValue([]),
-      getFailuresByStage: jest.fn().mockResolvedValue([]),
-      getTopFailureReasons: jest.fn().mockResolvedValue([]),
-      getFailureAudioStatusBreakdown: jest.fn().mockResolvedValue([]),
+      getFailureBreakdown: jest.fn().mockResolvedValue([]),
       getFailureRetryableCounts: jest.fn().mockResolvedValue([
         { key: 'retryable', count: 0 },
         { key: 'terminal', count: 0 },
@@ -129,9 +127,9 @@ describe('ScribeAnalyticsService', () => {
         { bucket: '2024-06-12', failed: 2, terminal: 10 },
         { bucket: '2024-06-11', failed: 0, terminal: 4 },
       ]);
-      repo.getFailuresByStage.mockResolvedValue([
-        { key: 'summarize', count: 1 },
-        { key: 'transcribe', count: 1 },
+      repo.getFailureBreakdown.mockResolvedValue([
+        { key: 'Upload never finalized (abnormal end)', count: 1 },
+        { key: 'Summarization error', count: 1 },
       ]);
       repo.getFailureRetryableCounts.mockResolvedValue([
         { key: 'retryable', count: 1 },
@@ -159,7 +157,7 @@ describe('ScribeAnalyticsService', () => {
       // retryable 1 of 2 failures = 50%, timeout 1 of 2 = 50%
       expect(res.summary.retryableSharePct).toBe(50);
       expect(res.summary.timeoutSharePct).toBe(50);
-      expect(res.failuresByStage).toHaveLength(2);
+      expect(res.failureBreakdown).toHaveLength(2);
     });
 
     it('handles zero failures without dividing by zero', async () => {

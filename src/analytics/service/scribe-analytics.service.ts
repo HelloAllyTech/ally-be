@@ -180,21 +180,13 @@ export class ScribeAnalyticsService {
       )},${isoDate(endExclusive)}) bucket=${bucket}`,
     );
 
-    const [
-      rateRows,
-      stageRows,
-      reasonRows,
-      audioStatusRows,
-      retryableRows,
-      timeoutRows,
-    ] = await Promise.all([
-      this.repo.getFailureRateByBucket(windowStart, endExclusive, bucket),
-      this.repo.getFailuresByStage(windowStart, endExclusive),
-      this.repo.getTopFailureReasons(windowStart, endExclusive),
-      this.repo.getFailureAudioStatusBreakdown(windowStart, endExclusive),
-      this.repo.getFailureRetryableCounts(windowStart, endExclusive),
-      this.repo.getFailureTimeoutCounts(windowStart, endExclusive),
-    ]);
+    const [rateRows, breakdownRows, retryableRows, timeoutRows] =
+      await Promise.all([
+        this.repo.getFailureRateByBucket(windowStart, endExclusive, bucket),
+        this.repo.getFailureBreakdown(windowStart, endExclusive),
+        this.repo.getFailureRetryableCounts(windowStart, endExclusive),
+        this.repo.getFailureTimeoutCounts(windowStart, endExclusive),
+      ]);
 
     const byBucket = new Map(rateRows.map((r) => [r.bucket, r]));
     const failureRateTrend = this.axisKeys(
@@ -233,9 +225,7 @@ export class ScribeAnalyticsService {
           totalFailed > 0 ? round1((timeout / totalFailed) * 100) : 0,
       },
       failureRateTrend,
-      failuresByStage: stageRows,
-      topFailureReasons: reasonRows,
-      audioStatusBreakdown: audioStatusRows,
+      failureBreakdown: breakdownRows,
       retryableBreakdown: retryableRows,
     };
   }
