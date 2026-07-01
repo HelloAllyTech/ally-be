@@ -237,7 +237,6 @@ export class ScribeAnalyticsService {
       topFailureReasons: reasonRows,
       audioStatusBreakdown: audioStatusRows,
       retryableBreakdown: retryableRows,
-      timeoutBreakdown: timeoutRows,
     };
   }
 }

@@ -126,9 +126,4 @@ export class ScribeSummaryFailureResponseDto {
     description: 'Failures split into retryable vs terminal.',
   })
   retryableBreakdown!: ScribeCountDto[];
-  @ApiProperty({
-    type: [ScribeCountDto],
-    description: 'Failures split into summary-timeout vs other error.',
-  })
-  timeoutBreakdown!: ScribeCountDto[];
 }
