@@ -86,4 +86,34 @@ export class Prompt extends BaseWithoutTenantEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   usesBlocks?: string[];
+
+  /**
+   * Prompt-level LLM provider override ('openai' | 'gemini' | 'anthropic').
+   * Explicit provider for the model below, so runtimes don't infer it from the
+   * model name. Null = infer from the model (backward compatible).
+   */
+  @Column({ type: 'varchar', nullable: true })
+  provider?: string;
+
+  /**
+   * Prompt-level LLM model override (e.g. 'gpt-4o', 'gemini-2.0-flash').
+   * Sits between the code/language defaults and any simulation-level value
+   * in the precedence chain. When null, the call site falls back to its
+   * code/language default. Only OpenAI/Gemini models are offered in Studio
+   * since those are the providers the voice runtime supports.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  model?: string;
+
+  /**
+   * Prompt-level LLM sampling temperature override (0–2). Sits between the
+   * code/language defaults and any simulation-level temperature. When null,
+   * the call site falls back to its code/language default.
+   */
+  @Column({ type: 'numeric', nullable: true, transformer: {
+    to: (value?: number | null) => value ?? null,
+    from: (value?: string | null) =>
+      value === null || value === undefined ? undefined : parseFloat(value),
+  } })
+  temperature?: number;
 }

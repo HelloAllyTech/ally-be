@@ -378,6 +378,17 @@ export class AppConfigService {
     };
   }
 
+  get gemini() {
+    return {
+      // Prefer an explicit GEMINI_API_KEY; fall back to the standard
+      // GOOGLE_GENERATIVE_AI_API_KEY so an existing Google key works without
+      // duplicating the secret. Used by the coaching-chat Gemini provider.
+      apiKey:
+        this.configService.get<string>('GEMINI_API_KEY') ??
+        this.configService.get<string>('GOOGLE_GENERATIVE_AI_API_KEY'),
+    };
+  }
+
   get aiChat() {
     return {
       defaultProvider: this.configService.get<string>(

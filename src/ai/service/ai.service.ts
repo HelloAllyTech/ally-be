@@ -538,6 +538,9 @@ export class AiService {
           | string
           | { name: string; label?: string; required?: boolean }
         )[];
+        provider?: string;
+        model?: string;
+        temperature?: number;
       }
     >
   > {
@@ -555,6 +558,9 @@ export class AiService {
             | string
             | { name: string; label?: string; required?: boolean }
           )[];
+          provider?: string;
+          model?: string;
+          temperature?: number;
         }
       > = {};
       for (const p of prompts) {
@@ -575,6 +581,11 @@ export class AiService {
         overrides[mappedKey] = {
           prompt: p.prompt,
           availableVariables: p.availableVariables || [],
+          // Prompt-level LLM overrides (honored by ally-ai's text-gen / drift
+          // judge). Omitted when unset so the runtime keeps its defaults.
+          ...(p.provider ? { provider: p.provider } : {}),
+          ...(p.model ? { model: p.model } : {}),
+          ...(p.temperature != null ? { temperature: p.temperature } : {}),
         };
       }
       return overrides;
