@@ -72,6 +72,7 @@ describe('AudioUploadService', () => {
             getChatWithCallDetails: jest.fn(),
             getChatById: jest.fn(),
             updateChat: jest.fn(),
+            findReprocessableStuckChats: jest.fn(),
           },
         },
         {
@@ -80,6 +81,10 @@ describe('AudioUploadService', () => {
             generatePresignedUrl: jest.fn(),
             getHeadObject: jest.fn(),
             sanitizeFileName: jest.fn(),
+            findInProgressMultipartUploadId: jest.fn(),
+            listMultipartParts: jest.fn(),
+            completeMultipartUploadWithParts: jest.fn(),
+            abortMultipartUpload: jest.fn(),
           },
         },
         {
@@ -93,6 +98,7 @@ describe('AudioUploadService', () => {
           useValue: {
             createAudioUpload: jest.fn(),
             getAudioUpload: jest.fn(),
+            updateAudioUpload: jest.fn(),
           },
         },
         {
@@ -614,6 +620,64 @@ describe('AudioUploadService', () => {
       expect(result.reprocessed).toBe(false);
       expect(result.reason).toMatch(/attempt limit/i);
       expect(aiEventService.publishTranscribeAudioEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reprocessStuckChats — salvage abandoned multipart uploads', () => {
+    it('finalizes an incomplete upload (HEAD 404 + parts present) and re-dispatches', async () => {
+      chatService.findReprocessableStuckChats.mockResolvedValue([
+        { id: 7, metadata: {} },
+      ] as any);
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue({
+        storageKey: 'audio/7.raw',
+        sampleRate: 16000,
+      } as any);
+      // Object doesn't exist yet — the multipart upload was never completed.
+      s3Service.getHeadObject.mockRejectedValue(new Error('NoSuchKey'));
+      s3Service.findInProgressMultipartUploadId.mockResolvedValue('upload-abc');
+      s3Service.listMultipartParts.mockResolvedValue([
+        { ETag: 'e1', PartNumber: 1 },
+        { ETag: 'e2', PartNumber: 2 },
+      ]);
+      s3Service.completeMultipartUploadWithParts.mockResolvedValue({} as any);
+      s3Service.generatePresignedUrl.mockResolvedValue('https://signed');
+      aiEventService.publishTranscribeAudioEvent.mockResolvedValue(
+        undefined as any,
+      );
+
+      const result = await service.reprocessStuckChats();
+
+      expect(s3Service.completeMultipartUploadWithParts).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 'audio/7.raw', uploadId: 'upload-abc' }),
+      );
+      // Recovered → transcription re-dispatched, chat counted as reprocessed.
+      expect(aiEventService.publishTranscribeAudioEvent).toHaveBeenCalled();
+      expect(result.reprocessed).toContain(7);
+    });
+
+    it('fails cleanly when the incomplete upload has no parts to finalize', async () => {
+      chatService.findReprocessableStuckChats.mockResolvedValue([
+        { id: 8, metadata: {} },
+      ] as any);
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue({
+        storageKey: 'audio/8.raw',
+      } as any);
+      s3Service.getHeadObject.mockRejectedValue(new Error('NoSuchKey'));
+      s3Service.findInProgressMultipartUploadId.mockResolvedValue('upload-xyz');
+      s3Service.listMultipartParts.mockResolvedValue([]); // nothing flushed
+      s3Service.abortMultipartUpload.mockResolvedValue({} as any);
+
+      const result = await service.reprocessStuckChats();
+
+      expect(s3Service.completeMultipartUploadWithParts).not.toHaveBeenCalled();
+      expect(aiEventService.publishTranscribeAudioEvent).not.toHaveBeenCalled();
+      expect(result.failed).toContain(8);
+      // Original attribution preserved; reprocess outcome recorded separately.
+      const updateArgs = chatService.updateChat.mock.calls.find(
+        (c) => c[0] === 8,
+      )?.[1] as any;
+      expect(updateArgs.summaryStatus).toBe(ChatSummaryStatus.FAILED);
+      expect(updateArgs.metadata.reprocessError).toMatch(/unrecoverable/i);
     });
   });
 });

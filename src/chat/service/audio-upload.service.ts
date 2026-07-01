@@ -365,25 +365,38 @@ export class AudioUploadService {
           continue;
         }
 
-        // Confirm the object still exists before re-dispatching.
+        // Confirm the object exists before re-dispatching. A live session that
+        // ended abnormally leaves an *incomplete* multipart upload — the parts
+        // are in S3 but no readable object exists yet — so HEAD 404s. In that
+        // case try to finalize it from the uploaded parts before giving up.
         try {
           await this.s3Service.getHeadObject({
             bucket: process.env.AUDIO_STORAGE_S3_BUCKET!,
             key: audio.storageKey,
           });
         } catch {
-          await this.chatService.updateChat(chat.id, {
-            summaryStatus: ChatSummaryStatus.FAILED,
-            metadata: {
-              ...existingMetadata,
-              error:
-                existingMetadata.error ?? 'Audio no longer present in storage',
-              reprocessError: 'Audio no longer present in storage',
-              reprocessedAt: new Date().toISOString(),
-            },
-          });
-          failed.push(chat.id);
-          continue;
+          const salvaged = await this.tryFinalizeIncompleteUpload(
+            process.env.AUDIO_STORAGE_S3_BUCKET!,
+            audio.storageKey,
+            chat.id,
+          );
+          if (!salvaged) {
+            await this.chatService.updateChat(chat.id, {
+              summaryStatus: ChatSummaryStatus.FAILED,
+              metadata: {
+                ...existingMetadata,
+                error:
+                  existingMetadata.error ??
+                  'Audio no longer present in storage',
+                reprocessError:
+                  'Audio unrecoverable (no finalizable multipart upload)',
+                reprocessedAt: new Date().toISOString(),
+              },
+            });
+            failed.push(chat.id);
+            continue;
+          }
+          // Salvaged: the object now exists — fall through to re-dispatch.
         }
 
         const audioUrl = await this.s3Service.generatePresignedUrl({
@@ -427,6 +440,74 @@ export class AudioUploadService {
     });
 
     return { reprocessed, failed };
+  }
+
+  /**
+   * Recover a live-session recording whose multipart upload was never completed
+   * (the session ended abnormally, so `endCallStream` never ran). The parts are
+   * still in S3 as an in-progress multipart upload; finalize it from those
+   * parts so a readable object exists at the key and transcription can run.
+   *
+   * Returns true if the object was finalized (caller re-dispatches), false if
+   * unrecoverable: no in-progress upload (already aborted / lifecycle-expired)
+   * or zero uploaded parts (a very short session whose audio only ever lived in
+   * the in-memory buffer). Best-effort — never throws. Note the finalized audio
+   * omits the final un-flushed buffer (< one part), so it may lose a small tail.
+   */
+  private async tryFinalizeIncompleteUpload(
+    bucket: string,
+    key: string,
+    chatId: number,
+  ): Promise<boolean> {
+    try {
+      const uploadId = await this.s3Service.findInProgressMultipartUploadId({
+        bucket,
+        key,
+      });
+      if (!uploadId) return false;
+
+      const parts = await this.s3Service.listMultipartParts({
+        bucket,
+        key,
+        uploadId,
+      });
+      if (parts.length === 0) {
+        // Nothing was ever flushed as a part — unrecoverable. Abort to release
+        // the in-progress upload (best-effort).
+        await this.s3Service
+          .abortMultipartUpload({
+            Bucket: bucket,
+            Key: key,
+            UploadId: uploadId,
+          })
+          .catch(() => undefined);
+        return false;
+      }
+
+      await this.s3Service.completeMultipartUploadWithParts({
+        bucket,
+        key,
+        uploadId,
+        parts,
+      });
+      // The object now exists — mark the upload SUCCESS so it isn't treated as
+      // pending again.
+      await this.chatAudioUploadsService.updateAudioUpload(chatId, {
+        status: ChatAudioUploadStatus.SUCCESS,
+      });
+      this.logger.info(
+        `Finalized abandoned multipart upload for chat ${chatId} ` +
+          `(${parts.length} part(s)); audio recovered for re-transcription`,
+      );
+      return true;
+    } catch (err) {
+      this.logger.error(
+        `Failed to finalize incomplete upload for chat ${chatId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return false;
+    }
   }
 
   /**

@@ -23,6 +23,8 @@ import {
   S3ClientConfig,
   HeadObjectCommand,
   HeadObjectCommandOutput,
+  ListMultipartUploadsCommand,
+  ListPartsCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AppConfigService } from '../../config/config.service';
@@ -191,6 +193,75 @@ export class S3Service {
       return await this.s3.send(new AbortMultipartUploadCommand(params));
     } catch (error) {
       throw new Error(`Failed to abort multipart upload: ${error.message}`);
+    }
+  }
+
+  /**
+   * Find the most-recent still-in-progress multipart upload for an exact key.
+   * Used to recover a live-session recording whose upload was never completed
+   * (abnormal session end): the parts are still in S3 as an in-progress upload
+   * even though no readable object exists at the key yet. Returns the uploadId
+   * or null if there is no in-progress upload (e.g. already completed/aborted).
+   */
+  async findInProgressMultipartUploadId(params: {
+    bucket: string;
+    key: string;
+  }): Promise<string | null> {
+    const { bucket, key } = params;
+    try {
+      const res = await this.s3.send(
+        new ListMultipartUploadsCommand({ Bucket: bucket, Prefix: key }),
+      );
+      const matches = (res.Uploads ?? [])
+        .filter((u) => u.Key === key && u.UploadId)
+        .sort(
+          (a, b) =>
+            (b.Initiated?.getTime() ?? 0) - (a.Initiated?.getTime() ?? 0),
+        );
+      return matches[0]?.UploadId ?? null;
+    } catch (error) {
+      throw new Error(
+        `Failed to list in-progress multipart uploads: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * List the already-uploaded parts of an in-progress multipart upload
+   * (paginated). Returns them in the shape completeMultipartUploadWithParts
+   * expects. An empty list means nothing was ever flushed as a part (the audio
+   * only lived in the in-memory buffer and is unrecoverable).
+   */
+  async listMultipartParts(params: {
+    bucket: string;
+    key: string;
+    uploadId: string;
+  }): Promise<Array<{ ETag: string; PartNumber: number }>> {
+    const { bucket, key, uploadId } = params;
+    const parts: Array<{ ETag: string; PartNumber: number }> = [];
+    let partNumberMarker: string | undefined;
+    try {
+      do {
+        const res = await this.s3.send(
+          new ListPartsCommand({
+            Bucket: bucket,
+            Key: key,
+            UploadId: uploadId,
+            PartNumberMarker: partNumberMarker,
+          }),
+        );
+        for (const p of res.Parts ?? []) {
+          if (p.ETag && p.PartNumber != null) {
+            parts.push({ ETag: p.ETag, PartNumber: p.PartNumber });
+          }
+        }
+        partNumberMarker = res.IsTruncated
+          ? res.NextPartNumberMarker
+          : undefined;
+      } while (partNumberMarker);
+      return parts;
+    } catch (error) {
+      throw new Error(`Failed to list multipart parts: ${error.message}`);
     }
   }
 
