@@ -59,6 +59,11 @@ export class MicrophoneChatGateway
   // don't leak entries when handleDisconnect doesn't fire (network drops, etc.)
   private sessionJanitor?: NodeJS.Timeout;
   private static readonly SESSION_JANITOR_INTERVAL_MS = 60_000;
+  // Upper bound on how long the shutdown drain may take, so finalizing
+  // in-flight recordings can't hold the process past the termination grace
+  // period (best-effort: any unflushed session still falls to the janitor/
+  // reprocess path on the surviving replicas).
+  private static readonly SHUTDOWN_DRAIN_TIMEOUT_MS = 20_000;
 
   private readonly auditLogger = AuditLoggerService.getInstance();
 
@@ -137,9 +142,59 @@ export class MicrophoneChatGateway
     }
   }
 
-  onModuleDestroy() {
+  async onModuleDestroy(): Promise<void> {
     if (this.sessionJanitor) clearInterval(this.sessionJanitor);
+
+    // On shutdown (deploy / scale-in via SIGTERM) finalize any in-flight
+    // recordings so their audio is flushed to S3 and transcription is
+    // dispatched — otherwise the process dies with the audio still only in the
+    // pod's memory/temp files, and a short session (no completed multipart
+    // part) is unrecoverable. Same finalize path as the janitor. Done
+    // sequentially to match the janitor (endChat relies on the per-call auth
+    // context) and bounded by a timeout so a slow flush can't hang shutdown
+    // past the platform's termination grace period.
+    const inFlight = Object.values(this.sessions).filter(
+      (session) =>
+        session?.chatId != null && session.chatId !== PLACEHOLDER_CHAT_ID,
+    );
     this.sessions = {};
+
+    if (inFlight.length === 0) return;
+
+    this.logger.warn(
+      `Draining ${inFlight.length} in-flight microphone recording(s) on shutdown`,
+    );
+
+    const drainAll = (async () => {
+      for (const session of inFlight) {
+        try {
+          ExecutionManager.setAuthContext(
+            session.userId ? String(session.userId) : '',
+            session.tenantId,
+          );
+          await this.chatService.endChat(session.chatId);
+          this.logger.warn(
+            `Flushed in-flight recording for chat ${session.chatId} on shutdown`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to flush recording for chat ${session.chatId} on shutdown: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+    })();
+
+    await Promise.race([
+      drainAll,
+      new Promise<void>((resolve) =>
+        setTimeout(
+          resolve,
+          MicrophoneChatGateway.SHUTDOWN_DRAIN_TIMEOUT_MS,
+        ).unref(),
+      ),
+    ]);
   }
 
   async handleConnection(client: Socket) {

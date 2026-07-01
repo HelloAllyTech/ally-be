@@ -362,6 +362,46 @@ describe('MicrophoneChatGateway', () => {
     });
   });
 
+  describe('onModuleDestroy (shutdown drain)', () => {
+    it('flushes in-flight recordings and clears sessions on shutdown', async () => {
+      gatewayPrivate.sessions = {
+        'sid-a': { ...mockSession, id: 'sid-a', chatId: 42, tenantId: 't1' },
+        'sid-b': { ...mockSession, id: 'sid-b', chatId: 43, tenantId: 't2' },
+        'sid-c': mockSession, // chatId = PLACEHOLDER — no recording to flush
+      };
+      mockChatService.endChat.mockResolvedValue(null);
+
+      await gatewayPrivate.onModuleDestroy();
+
+      expect(mockChatService.endChat).toHaveBeenCalledWith(42);
+      expect(mockChatService.endChat).toHaveBeenCalledWith(43);
+      expect(mockChatService.endChat).toHaveBeenCalledTimes(2);
+      expect(gatewayPrivate.sessions).toEqual({});
+    });
+
+    it('keeps draining other sessions when one flush throws', async () => {
+      gatewayPrivate.sessions = {
+        'sid-a': { ...mockSession, id: 'sid-a', chatId: 42 },
+        'sid-b': { ...mockSession, id: 'sid-b', chatId: 43 },
+      };
+      mockChatService.endChat
+        .mockRejectedValueOnce(new Error('flush failed'))
+        .mockResolvedValueOnce(null);
+
+      await expect(gatewayPrivate.onModuleDestroy()).resolves.toBeUndefined();
+
+      expect(mockChatService.endChat).toHaveBeenCalledTimes(2);
+    });
+
+    it('does nothing (no endChat) when there are no in-flight recordings', async () => {
+      gatewayPrivate.sessions = { 'sid-c': mockSession }; // PLACEHOLDER only
+
+      await gatewayPrivate.onModuleDestroy();
+
+      expect(mockChatService.endChat).not.toHaveBeenCalled();
+    });
+  });
+
   describe('sendMessagesToRoom', () => {
     it('should send message to room with default event', () => {
       const payload = {

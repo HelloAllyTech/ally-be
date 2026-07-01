@@ -104,6 +104,14 @@ async function bootstrap() {
       .build();
     const documentFactory = () => SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('api-docs', app, documentFactory);
+
+    // Run Nest lifecycle hooks (onModuleDestroy / onApplicationShutdown) on
+    // SIGTERM/SIGINT. Without this a deploy or scale-in just kills the process,
+    // so in-flight live scribe recordings are never flushed to S3 and are lost
+    // (short sessions have no completed multipart part to salvage). The
+    // microphone gateway drains active recordings in its shutdown hook.
+    app.enableShutdownHooks();
+
     await app.listen(port);
     logger.log(`Application is running on: http://localhost:${port}`);
   } catch (error) {
