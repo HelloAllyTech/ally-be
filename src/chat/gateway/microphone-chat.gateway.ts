@@ -84,24 +84,51 @@ export class MicrophoneChatGateway
       ]),
     );
 
-    this.sessionJanitor = setInterval(
-      () => this.reconcileSessions(),
-      MicrophoneChatGateway.SESSION_JANITOR_INTERVAL_MS,
-    );
+    this.sessionJanitor = setInterval(() => {
+      void this.reconcileSessions();
+    }, MicrophoneChatGateway.SESSION_JANITOR_INTERVAL_MS);
     if (typeof this.sessionJanitor.unref === 'function') {
       this.sessionJanitor.unref();
     }
   }
 
-  private reconcileSessions(): void {
+  private async reconcileSessions(): Promise<void> {
     const liveSockets = this.server?.sockets?.sockets;
     if (!liveSockets) return;
     let evicted = 0;
     for (const sid of Object.keys(this.sessions)) {
-      if (!liveSockets.has(sid)) {
-        delete this.sessions[sid];
-        evicted++;
+      if (liveSockets.has(sid)) continue;
+
+      const session = this.sessions[sid];
+      // The socket is gone but handleDisconnect never fired (network drop,
+      // missed close). If a recording was in progress, FINALIZE it via the
+      // normal end path — otherwise its S3 multipart upload is never completed,
+      // so it never transcribes and the session fails. endChat -> handleChatEnded
+      // -> endCallStream completes the upload (flushing the in-memory tail) and
+      // dispatches transcription. Runs on a timer, so set the auth context from
+      // the session (as processAudioUpload does for its background work).
+      if (session?.chatId != null && session.chatId !== PLACEHOLDER_CHAT_ID) {
+        try {
+          ExecutionManager.setAuthContext(
+            session.userId ? String(session.userId) : '',
+            session.tenantId,
+          );
+          await this.chatService.endChat(session.chatId);
+          this.logger.warn(
+            `Janitor finalized orphaned recording for chat ${session.chatId} ` +
+              `(socket ${sid} gone with no disconnect event)`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Janitor failed to finalize orphaned recording for chat ${session.chatId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
       }
+
+      delete this.sessions[sid];
+      evicted++;
     }
     if (evicted > 0) {
       this.logger.warn(

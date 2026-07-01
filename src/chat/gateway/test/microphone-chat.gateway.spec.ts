@@ -50,6 +50,8 @@ jest.mock('../../../logger/logger.service', () => ({
     getInstance: jest.fn(() => ({
       info: jest.fn(),
       error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
     })),
   },
 }));
@@ -307,6 +309,56 @@ describe('MicrophoneChatGateway', () => {
       expect(
         mockBroadcastMessageService.broadcastUserDisconnectedMessage,
       ).toHaveBeenCalled();
+    });
+  });
+
+  describe('reconcileSessions (janitor)', () => {
+    it('finalizes an orphaned recording whose socket is gone (no disconnect event)', async () => {
+      // Live socket set does NOT contain the stale session's id.
+      gatewayPrivate.server = { sockets: { sockets: new Map() } };
+      gatewayPrivate.sessions = {
+        'dead-sid': {
+          ...mockSession,
+          id: 'dead-sid',
+          chatId: 42,
+          userId: 7,
+          tenantId: 't1',
+        },
+      };
+      mockChatService.endChat.mockResolvedValue(null);
+
+      await gatewayPrivate.reconcileSessions();
+
+      // The abandoned recording is finalized via the normal end path, and the
+      // stale session is evicted.
+      expect(mockChatService.endChat).toHaveBeenCalledWith(42);
+      expect(gatewayPrivate.sessions['dead-sid']).toBeUndefined();
+    });
+
+    it('does not finalize a session whose socket is still live', async () => {
+      gatewayPrivate.server = {
+        sockets: { sockets: new Map([['live-sid', {}]]) },
+      };
+      gatewayPrivate.sessions = {
+        'live-sid': { ...mockSession, id: 'live-sid', chatId: 42 },
+      };
+
+      await gatewayPrivate.reconcileSessions();
+
+      expect(mockChatService.endChat).not.toHaveBeenCalled();
+      expect(gatewayPrivate.sessions['live-sid']).toBeDefined();
+    });
+
+    it('evicts a gone socket with no active recording without calling endChat', async () => {
+      gatewayPrivate.server = { sockets: { sockets: new Map() } };
+      gatewayPrivate.sessions = {
+        'dead-sid': mockSession, // chatId = PLACEHOLDER
+      };
+
+      await gatewayPrivate.reconcileSessions();
+
+      expect(mockChatService.endChat).not.toHaveBeenCalled();
+      expect(gatewayPrivate.sessions['dead-sid']).toBeUndefined();
     });
   });
 
